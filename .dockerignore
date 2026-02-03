@@ -1,0 +1,27 @@
+# Ignore Git history (reduces image size)
+.git
+.gitignore
+
+# Ignore local Python environment
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+
+# Ignore IDE settings
+.vscode
+.idea
+
+# Ignore local secrets (you should pass these via ENV variables in production)
+.env
+.env.*
+
+# Ignore logs and tests
+*.log
+.pytest_cache
+.coverage
+htmlcov
+tests/
