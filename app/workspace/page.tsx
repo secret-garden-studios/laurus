@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import Workspace from "./workspace.client";
 import { getProjects } from "./workspace.server";
-import styles from "../app.module.css"
+import styles from "../app.module.css";
+export const dynamic = 'force-dynamic';
 
 export default function Page() {
     const projects = getProjects(process.env.LAURUS_API);
