@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import Workspace from "./workspace.client";
 import { enumerateImgs, enumerateSvgs, getProjects } from "./workspace.server";
-import { geistSansLite } from "../fonts";
+import { geistSansLite, italiana } from "../fonts";
+import styles from "../app.module.css"
 
 export default function Page() {
     const mediaBrowserPageSize = 5;
@@ -25,10 +26,12 @@ export default function Page() {
 function Skeleton() {
     return (<>
         <div
-            className={geistSansLite.className}
+            className={italiana.className + ' ' + styles['grainy-background']}
             style={{
-                fontSize: 11,
-                letterSpacing: 3,
+                color: 'rgb(255, 255, 255)',
+                textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+                fontSize: 12,
+                letterSpacing: 11,
                 width: '100vw',
                 height: '100vh',
                 display: 'flex',

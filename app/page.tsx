@@ -1,6 +1,5 @@
-'use client'
-import { redirect } from 'next/navigation';
+import Landing from './landing';
 
 export default function Home() {
-  redirect('/workspace');
+  return <Landing />
 };

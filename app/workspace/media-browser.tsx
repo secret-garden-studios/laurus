@@ -186,7 +186,7 @@ export default function MediaBrowserArea({
                                         style={{
                                             objectFit: 'cover',
                                             border: 'none',
-                                            boxShadow: "8px 8px 20px rgba(0, 0, 0, 0.7)",
+                                            boxShadow: "5px 5px 12px rgba(0, 0, 0, 0.5)",
                                             borderRadius: 2,
                                         }} />}
                                 </div>}
@@ -274,7 +274,7 @@ export default function MediaBrowserArea({
                                         position: 'relative',
                                         display: 'grid',
                                         placeContent: 'center',
-                                        boxShadow: "8px 8px 20px rgba(0, 0, 0, 0.7)",
+                                        boxShadow: "5px 5px 12px rgba(0, 0, 0, 0.5)",
                                     }}>
                                     {decodedString && <svg
                                         version="1.1"
@@ -285,21 +285,6 @@ export default function MediaBrowserArea({
                                         strokeWidth={svg.stroke_width}
                                         viewBox={svg.viewbox}
                                         dangerouslySetInnerHTML={{ __html: decodedString }} />}
-                                </div>
-                                <div
-                                    className={michroma.className}
-                                    style={{
-                                        fontSize: 8,
-                                        color: 'rgb(200, 200, 200)'
-                                    }}>
-                                    {`${svg.width}x${svg.height}`}
-                                </div>
-                                <div className={redHatDisplay.className}
-                                    style={{
-                                        fontSize: 8,
-                                        color: 'rgb(200, 200, 200)'
-                                    }}>
-                                    {`${svg.media_path}`}
                                 </div>
                                 {i == appState.downloadedSvgs.length - 1 && (
                                     <div

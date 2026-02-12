@@ -35,10 +35,9 @@
 }
 
 .grainy-background {
-  background-color: #252525;
   background-image: url('/noise1.png');
   background-size: auto;
-  opacity: 0.5;
+  opacity: 0.8;
 }
 
 :global(img) {
