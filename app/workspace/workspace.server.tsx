@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 export interface ImgMetadata_V1_0 {
     media_path: string
 }
