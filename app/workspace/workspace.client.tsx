@@ -15,7 +15,7 @@ import Menubar from "../menubar";
 import Statusbar from "../statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { videoCameraBack } from "../svg-repo";
+import { hexagon, videoCameraBack } from "../svg-repo";
 import { redHatDisplay } from "../fonts";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 
@@ -42,8 +42,8 @@ export interface WorkspaceState {
 
     tool: LaurusTool | undefined,
 
-    pendingImgs: Map<string, ProjectImg_V1_0>
-    pendingSvgs: Map<string, ProjectSvg_V1_0>
+    pendingImgs: Map<string, LaurusImg>
+    pendingSvgs: Map<string, LaurusSvg>
 }
 
 export const defaultWorkspace: WorkspaceState = {
@@ -676,12 +676,8 @@ function CanvasArea() {
                 gridTemplateRows: `min-content 1fr`,
             }}>
 
-
             {/* canvas area */}
             <div style={{ gridRow: '2', gridColumn: '2', }}>
-
-
-
                 <div
                     className={styles["tiled-background-squares"]}
                     style={{
@@ -726,7 +722,15 @@ function CanvasArea() {
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
                         return (
-                            <div key={imgMeta.key}>
+                            <div
+                                onClick={(event) => {
+                                    // option key on mac
+                                    if (event.altKey) {
+                                        dispatch({ type: WorkspaceActionType.DeleteProjectImg, key: imgMeta.key });
+                                        dispatch({ type: WorkspaceActionType.SetPendingImg, value: { ...imgMeta } });
+                                    }
+                                }}
+                                key={imgMeta.key}>
                                 <DraggableReactImg
                                     contextId={`dnd-context-${imgMeta.key}`}
                                     nodeId={`dnd-node-${imgMeta.key}`}
@@ -743,11 +747,20 @@ function CanvasArea() {
                     }
                 })}
                 {Array.from(appState.project.svgs.values()).map((svgMeta) => {
-                    const svgData = appState.downloadedSvgs.find(i => i.media_path == svgMeta.media_path);
+                    const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
                     if (svgData) {
                         return (
-                            <div key={svgMeta.key}>
+                            <div
+                                onClick={(event) => {
+                                    // option key on mac
+                                    if (event.altKey) {
+                                        dispatch({ type: WorkspaceActionType.DeleteProjectSvg, key: svgMeta.key });
+                                        dispatch({ type: WorkspaceActionType.SetPendingSvg, value: { ...svgMeta } });
+                                    }
+                                }}
+                                key={svgMeta.key}>
                                 <DraggableReactSvg
+                                    key={svgMeta.key}
                                     contextId={`dnd-context-${svgMeta.key}`}
                                     nodeId={`dnd-node-${svgMeta.key}`}
                                     data={svgData}
@@ -757,7 +770,135 @@ function CanvasArea() {
                                         const newSvg: LaurusSvg = { ...svgMeta, top: newPosition.y, left: newPosition.x };
                                         dispatch({ type: WorkspaceActionType.SetProjectSvg, value: newSvg });
                                     }} />
+                            </div>
+                        );
+                    }
+                })}
+                {Array.from(appState.pendingImgs.values()).map((imgMeta) => {
+                    const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
+                    if (imgData) {
+                        return (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    width: imgMeta.width,
+                                    height: imgMeta.height,
+                                    top: imgMeta.top,
+                                    left: imgMeta.left,
+                                    zIndex: 3,
+                                }}
+                                onClick={(event) => {
+                                    // option key on mac
+                                    if (event.altKey) {
+                                        dispatch({ type: WorkspaceActionType.DeletePendingImg, key: imgMeta.key });
+                                        dispatch({ type: WorkspaceActionType.SetProjectImg, value: { ...imgMeta } });
+                                    }
+                                }}
+                                key={imgMeta.key}>
 
+                                <div style={{ position: 'relative' }}>
+                                    <div style={{
+                                        position: 'absolute', filter: 'blur(6px)',
+                                    }}>
+                                        <ReactImg
+                                            img={imgData}
+                                            containerSize={{
+                                                width: imgMeta.width,
+                                                height: imgMeta.height
+                                            }} />
+                                    </div>
+                                    <div style={{
+                                        position: 'absolute',
+                                        display: 'grid',
+                                        justifyContent: 'end',
+                                        background: imgMeta.width < 40 || imgMeta.height < 40 ? 'rgba(255, 255, 255, 0.15)' : 'none',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: 6,
+                                        height: Math.max(40, imgMeta.height),
+                                        width: Math.max(40, imgMeta.width),
+                                        padding: imgMeta.width < 80 || imgMeta.height < 80 ? 2 : 6,
+                                    }}>
+                                        <div
+                                            style={{ width: 'min-content', height: 'min-content' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                            onClick={() => {
+                                                dispatch({ type: WorkspaceActionType.DeletePendingImg, key: imgMeta.key });
+                                            }}>
+                                            <ReactSvg
+                                                svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
+                                                    width: 16,
+                                                    height: 16
+                                                }}
+                                                scale={undefined} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+                })}
+                {Array.from(appState.pendingSvgs.values()).map((svgMeta) => {
+                    const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
+                    console.log(svgData);
+                    if (svgData) {
+                        return (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    width: svgMeta.width,
+                                    height: svgMeta.height,
+                                    top: svgMeta.top,
+                                    left: svgMeta.left,
+                                    zIndex: 3,
+                                }}
+                                onClick={(event) => {
+                                    // option key on mac
+                                    if (event.altKey) {
+                                        dispatch({ type: WorkspaceActionType.DeletePendingSvg, key: svgMeta.key });
+                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, value: { ...svgMeta } });
+                                    }
+                                }}
+                                key={svgMeta.key}>
+                                <div style={{ position: 'relative' }}>
+                                    <div style={{
+                                        position: 'absolute', filter: 'blur(10px)',
+                                        border: '1px solid pink'
+                                    }}>
+                                        <ReactSvg
+                                            svg={svgData}
+                                            containerSize={{
+                                                width: svgMeta.width,
+                                                height: svgMeta.height
+
+                                            }}
+                                            scale={0.9} />
+                                    </div>
+                                    <div style={{
+                                        position: 'absolute',
+                                        display: 'grid',
+                                        justifyContent: 'end',
+                                        background: svgMeta.width < 40 || svgMeta.height < 40 ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                        borderRadius: 6,
+                                        height: Math.max(40, svgMeta.height),
+                                        width: Math.max(40, svgMeta.width),
+                                        padding: svgMeta.width < 80 || svgMeta.height < 80 ? 2 : 6,
+                                    }}>
+                                        <div
+                                            style={{ width: 'min-content', height: 'min-content' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                            onClick={() => {
+                                                dispatch({ type: WorkspaceActionType.DeletePendingSvg, key: svgMeta.key });
+                                            }}>
+                                            <ReactSvg svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
+                                                width: 16,
+                                                height: 16
+                                            }} scale={undefined} />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         );
                     }

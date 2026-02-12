@@ -2,7 +2,7 @@
 
 import { EncodedImg_V1_0, EncodedSvg_V1_0 } from "./workspace.server";
 import Image from "next/image";
-import { useDraggable, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
 import { LaurusImg, LaurusSvg } from "./workspace.client";
@@ -20,12 +20,13 @@ export function ReactSvg({ svg, containerSize, scale }: ReactSvgProps) {
             .join('')
     );
     return (
-        <div style={{
-            width: containerSize.width,
-            height: containerSize.height,
-            display: 'grid',
-            placeContent: 'center',
-        }}>
+        <div
+            style={{
+                width: containerSize.width,
+                height: containerSize.height,
+                display: 'grid',
+                placeContent: 'center',
+            }}>
             {decodedString && <svg
                 version="1.1"
                 width={scale ? scale * containerSize.width : svg.width}
@@ -49,12 +50,12 @@ export function ReactImg({ img, containerSize }: ReactImgProps) {
             height: containerSize.height,
             position: 'relative',
         }}>
-            {img.src && <Image
+            <Image
                 draggable={false}
                 alt={img.media_path}
                 src={img.src}
                 fill
-                style={{ objectFit: 'cover', border: 'none' }} />}
+                style={{ objectFit: 'cover', border: 'none' }} />
         </div>
     )
 }
@@ -75,8 +76,9 @@ export function DraggableReactImg({
     zIndex,
     onNewPosition }: DraggableReactImgProps) {
     const sensors = useSensors(
-        useSensor(PointerSensor),
-        useSensor(KeyboardSensor)
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 1, },
+        })
     );
     return (<>
         <DndContext
@@ -159,8 +161,9 @@ export function DraggableReactSvg({
     zIndex,
     onNewPosition }: DraggableReactSvgProps) {
     const sensors = useSensors(
-        useSensor(PointerSensor),
-        useSensor(KeyboardSensor)
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 1, },
+        })
     );
     return (<>
         <DndContext

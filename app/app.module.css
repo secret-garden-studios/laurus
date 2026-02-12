@@ -37,6 +37,15 @@
 .grainy-background {
   background-color: #252525;
   background-image: url('/noise1.png');
-  background-size: auto; 
-  opacity: 0.5; 
+  background-size: auto;
+  opacity: 0.5;
+}
+
+:global(img) {
+  -webkit-user-select: none;
+  /* Safari */
+  -ms-user-select: none;
+  /* IE 10 and older */
+  user-select: none;
+  /* Standard syntax */
 }
