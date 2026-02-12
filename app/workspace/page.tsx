@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Workspace from "./workspace.client";
-import { enumerateImgs, enumerateSvgs,  getProjects } from "./workspace.server";
+import { enumerateImgs, enumerateSvgs, getProjects } from "./workspace.server";
+import { geistSansLite } from "../fonts";
 
 export default function Page() {
     const mediaBrowserPageSize = 5;
@@ -23,13 +24,19 @@ export default function Page() {
 
 function Skeleton() {
     return (<>
-        <div style={{
-            width: '100vw',
-            height: '100vh',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-        }
-        }>{"loading..."}</div>
+        <div
+            className={geistSansLite.className}
+            style={{
+                fontSize: 11,
+                letterSpacing: 3,
+                width: '100vw',
+                height: '100vh',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+            }
+            }>
+            {"loading..."}
+        </div>
     </>)
 }
