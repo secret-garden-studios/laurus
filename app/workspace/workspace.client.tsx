@@ -231,10 +231,12 @@ function initReducer(
 }
 
 interface WorkspaceProps {
+    apiOrigin: string | undefined,
     projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
 }
 
 export default function Workspace({
+    apiOrigin,
     projectsInit,
 }: WorkspaceProps) {
     const p = use(projectsInit);
@@ -287,10 +289,10 @@ export default function Workspace({
             nextPageRef.current.style.visibility = 'hidden'
         }
         const response: ImgMetadataPage_V1_0[] | undefined =
-            await enumerateImgs(mediaBrowserPageSize, undefined, pageIndex + 1);
+            await enumerateImgs(apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
         if (response && pageIndex < response.length) {
             const requestedPage: ImgMetadataPage_V1_0 = response[pageIndex];
-            const encodings = await getImgsByPage(requestedPage);
+            const encodings = await getImgsByPage(apiOrigin, requestedPage);
             const cachedSrcs = appState.downloadedImgs.flatMap(c => c.media_path);
             const newEncodings = encodings.filter(e => !cachedSrcs.includes(e.media_path));
             for (let i = 0; i < newEncodings.length; i++) {
@@ -309,17 +311,17 @@ export default function Workspace({
             }
             return undefined;
         }
-    }, [appState.downloadedImgs, mediaBrowserPageSize]);
+    }, [apiOrigin, appState.downloadedImgs, mediaBrowserPageSize]);
 
     const handleSvgPageRequest = useCallback(async (pageIndex: number) => {
         if (nextPageRef.current) {
             nextPageRef.current.style.visibility = 'hidden'
         }
         const response: SvgMetadataPage_V1_0[] | undefined =
-            await enumerateSvgs(mediaBrowserPageSize, undefined, pageIndex + 1);
+            await enumerateSvgs(apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
         if (response && pageIndex < response.length) {
             const requestedPage: SvgMetadataPage_V1_0 = response[pageIndex];
-            const encodings = await getSvgsByPage(requestedPage);
+            const encodings = await getSvgsByPage(apiOrigin, requestedPage);
             const cachedSrcs = appState.downloadedSvgs.flatMap(c => c.media_path);
             const newEncodings = encodings.filter(e => !cachedSrcs.includes(e.media_path));
             for (let i = 0; i < newEncodings.length; i++) {
@@ -337,17 +339,17 @@ export default function Workspace({
             }
             return undefined;
         }
-    }, [appState.downloadedSvgs, mediaBrowserPageSize]);
+    }, [apiOrigin, appState.downloadedSvgs, mediaBrowserPageSize]);
 
     /**
      * background media download for optimization
      */
     useEffect(() => {
         const downloadImgsFromMetas = async () => {
-            const response = await enumerateImgs(mediaBrowserPageSize, 5, undefined);
+            const response = await enumerateImgs(apiOrigin, mediaBrowserPageSize, 5, undefined);
             if (response && response.length > 0) {
                 for (let i = 0; i < response.length; i++) {
-                    const response2 = await getImgsByPage(response[i]);
+                    const response2 = await getImgsByPage(apiOrigin, response[i]);
                     for (let i = 0; i < response2.length; i++) {
                         const newEncoding = response2[i];
                         if (i == 0) {
@@ -367,10 +369,10 @@ export default function Workspace({
         };
 
         const downloadSvgsFromMetas = async () => {
-            const response = await enumerateSvgs(mediaBrowserPageSize, 5, undefined);
+            const response = await enumerateSvgs(apiOrigin, mediaBrowserPageSize, 5, undefined);
             if (response && response.length > 0) {
                 for (let i = 0; i < response.length; i++) {
-                    const response2 = await getSvgsByPage(response[i]);
+                    const response2 = await getSvgsByPage(apiOrigin, response[i]);
                     for (let i = 0; i < response2.length; i++) {
                         const newEncoding = response2[i];
                         dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...newEncoding } })
@@ -386,7 +388,7 @@ export default function Workspace({
 
         downloadImgsFromMetas();
         downloadSvgsFromMetas();
-    }, [mediaBrowserPageSize]);
+    }, [apiOrigin, mediaBrowserPageSize]);
 
     return (<>
         <div

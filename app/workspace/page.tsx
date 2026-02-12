@@ -4,11 +4,11 @@ import { getProjects } from "./workspace.server";
 import styles from "../app.module.css"
 
 export default function Page() {
-    const projects = getProjects();
-
+    const projects = getProjects(process.env.LAURUS_API);
     return (
         <Suspense fallback={<Skeleton />}>
             <Workspace
+                apiOrigin={process.env.LAURUS_API}
                 projectsInit={projects}
             />
         </Suspense>

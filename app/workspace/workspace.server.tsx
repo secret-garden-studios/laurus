@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 
 export interface ImgMetadata_V1_0 {
     media_path: string
@@ -9,11 +8,12 @@ export interface ImgMetadataPage_V1_0 {
     value: ImgMetadata_V1_0[]
 }
 export async function enumerateImgs(
+    baseUrl: string | undefined,
     pageSize: number,
     top: number | undefined,
     pageCount: number | undefined) {
     try {
-        let url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/img?page_size=${pageSize}`;
+        let url = `${baseUrl}/media/img?page_size=${pageSize}`;
         if (top) {
             url += `&top=${top}`;
         }
@@ -54,9 +54,11 @@ export interface EncodedImg_V1_0 {
     height: number
     src: string
 }
-export async function getImg(filename: string) {
+export async function getImg(
+    baseUrl: string | undefined,
+    filename: string) {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/img/${filename}`;
+        const url = `${baseUrl}/media/img/${filename}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -74,19 +76,23 @@ export async function getImg(filename: string) {
         return undefined;
     }
 }
-export async function getFirstImg(media: Promise<ImgMetadataPage_V1_0[] | undefined>) {
+export async function getFirstImg(
+    baseUrl: string | undefined,
+    media: Promise<ImgMetadataPage_V1_0[] | undefined>) {
     const page: ImgMetadataPage_V1_0[] | undefined = await media;
     if (page && page.length > 0 && page[0].value.length > 0) {
         const filename = page[0].value[0].media_path;
-        return await getImg(filename);
+        return await getImg(baseUrl, filename);
     }
     return undefined;
 }
-export async function getImgsByPage(page: ImgMetadataPage_V1_0) {
+export async function getImgsByPage(
+    baseUrl: string | undefined,
+    page: ImgMetadataPage_V1_0) {
     const newEncodings: EncodedImg_V1_0[] = [];
     for (let i = 0; i < page.value.length; i++) {
         const m: ImgMetadata_V1_0 = page.value[i];
-        const encoding: EncodedImg_V1_0 | undefined = await getImg(m.media_path);
+        const encoding: EncodedImg_V1_0 | undefined = await getImg(baseUrl, m.media_path);
         if (encoding) {
             newEncodings.push({ ...encoding });
         }
@@ -104,11 +110,12 @@ export interface SvgMetadataPage_V1_0 {
     value: SvgMetadata_V1_0[]
 }
 export async function enumerateSvgs(
+    baseUrl: string | undefined,
     pageSize: number,
     top: number | undefined,
     pageCount: number | undefined) {
     try {
-        let url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/svg?page_size=${pageSize}`;
+        let url = `${baseUrl}/media/svg?page_size=${pageSize}`;
         if (top) {
             url += `&top=${top}`;
         }
@@ -157,9 +164,11 @@ export interface EncodedSvg_V1_0 {
     stroke_width: number
     markup: string
 }
-export async function getSvg(filename: string) {
+export async function getSvg(
+    baseUrl: string | undefined,
+    filename: string) {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/svg/${filename}`;
+        const url = `${baseUrl}/media/svg/${filename}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -176,11 +185,13 @@ export async function getSvg(filename: string) {
         return undefined;
     }
 }
-export async function getSvgsByPage(page: SvgMetadataPage_V1_0) {
+export async function getSvgsByPage(
+    baseUrl: string | undefined,
+    page: SvgMetadataPage_V1_0) {
     const newEncodings: EncodedSvg_V1_0[] = [];
     for (let i = 0; i < page.value.length; i++) {
         const m: SvgMetadata_V1_0 = page.value[i];
-        const encoding: EncodedSvg_V1_0 | undefined = await getSvg(m.media_path);
+        const encoding: EncodedSvg_V1_0 | undefined = await getSvg(baseUrl, m.media_path);
         if (encoding) {
             newEncodings.push({ ...encoding });
         }
@@ -213,9 +224,9 @@ export interface ProjectResult_V1_0 {
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
 }
-export async function getProjects() {
+export async function getProjects(baseUrl: string | undefined) {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects`;
+        const url = `${baseUrl}/projects`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -233,9 +244,11 @@ export async function getProjects() {
         return undefined;
     }
 }
-export async function getProject(projectId: string) {
+export async function getProject(
+    baseUrl: string | undefined,
+    projectId: string) {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
+        const url = `${baseUrl}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -253,9 +266,11 @@ export async function getProject(projectId: string) {
         return undefined;
     }
 }
-export async function createProject(project: Project_V1_0) {
+export async function createProject(
+    baseUrl: string | undefined,
+    project: Project_V1_0) {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects`;
+        const url = `${baseUrl}/projects`;
         const body = JSON.stringify({ ...project });
         const raw_response = await fetch(url, {
             method: 'POST',
@@ -277,10 +292,13 @@ export async function createProject(project: Project_V1_0) {
         return undefined;
     }
 }
-export async function updateProject(projectId: string, project: Project_V1_0) {
+export async function updateProject(
+    baseUrl: string | undefined,
+    projectId: string,
+    project: Project_V1_0) {
     try {
         const body = JSON.stringify({ ...project });
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
+        const url = `${baseUrl}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'PUT',
             headers: {
@@ -301,9 +319,11 @@ export async function updateProject(projectId: string, project: Project_V1_0) {
         return undefined;
     }
 }
-export async function deleteProject(projectId: string): Promise<boolean> {
+export async function deleteProject(
+    baseUrl: string | undefined,
+    projectId: string): Promise<boolean> {
     try {
-        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
+        const url = `${baseUrl}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'DELETE',
             headers: {
