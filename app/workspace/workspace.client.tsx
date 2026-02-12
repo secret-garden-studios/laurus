@@ -232,20 +232,12 @@ function initReducer(
 
 interface WorkspaceProps {
     projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
-    mediaBrowserPageSize: number,
-    imgsInit: Promise<ImgMetadataPage_V1_0[] | undefined>,
-    svgsInit: Promise<SvgMetadataPage_V1_0[] | undefined>,
 }
 
 export default function Workspace({
     projectsInit,
-    mediaBrowserPageSize,
-    imgsInit,
-    svgsInit,
 }: WorkspaceProps) {
     const p = use(projectsInit);
-    const mImg = use(imgsInit);
-    const mSvg = use(svgsInit);
 
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
@@ -283,6 +275,7 @@ export default function Workspace({
 
     const [mediabarHeight] = useState(50);
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
+    const [mediaBrowserPageSize] = useState(5);
     const [showTimeline] = useState<boolean>(false);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
     const [imgPageIndex, setImgPageIndex] = useState(0);
@@ -350,13 +343,13 @@ export default function Workspace({
      * background media download for optimization
      */
     useEffect(() => {
-        const initDownloadRetryLimit = 5;
         const downloadImgsFromMetas = async () => {
-            if (mImg && mImg.length > 0) {
-                for (let i = 0; i < mImg.length; i++) {
-                    const response = await getImgsByPage(mImg[i]);
-                    for (let i = 0; i < response.length; i++) {
-                        const newEncoding = response[i];
+            const response = await enumerateImgs(mediaBrowserPageSize, 5, undefined);
+            if (response && response.length > 0) {
+                for (let i = 0; i < response.length; i++) {
+                    const response2 = await getImgsByPage(response[i]);
+                    for (let i = 0; i < response2.length; i++) {
+                        const newEncoding = response2[i];
                         if (i == 0) {
                             const newThumnail: LaurusThumbnail = { media: { ...newEncoding }, type: 'img' }
                             setBrowserThumbnail(newThumnail);
@@ -365,73 +358,35 @@ export default function Workspace({
                         dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: { ...newEncoding } })
                     }
                 }
-                const newPageIndex = mImg[mImg.length - 1].page_number - 1;
+                const newPageIndex = response[response.length - 1].page_number - 1;
                 setImgPageIndex(newPageIndex);
             }
             else {
-                const response = await enumerateImgs(
-                    mediaBrowserPageSize,
-                    initDownloadRetryLimit,
-                    undefined);
-                if (response && response.length > 0) {
-                    for (let i = 0; i < response.length; i++) {
-                        const response2 = await getImgsByPage(response[i]);
-                        for (let i = 0; i < response2.length; i++) {
-                            const newEncoding = response2[i];
-                            if (i == 0) {
-                                const newThumnail: LaurusThumbnail = { media: { ...newEncoding }, type: 'img' }
-                                setBrowserThumbnail(newThumnail);
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', value: { ...newThumnail } } });
-                            }
-                            dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: { ...newEncoding } })
-                        }
-                    }
-                    const newPageIndex = response[response.length - 1].page_number - 1;
-                    setImgPageIndex(newPageIndex);
-                }
-                else {
-                    console.log('failed to find initial images');
-                }
+                console.log('failed to find initial images');
             }
         };
 
         const downloadSvgsFromMetas = async () => {
-            if (mSvg && mSvg.length > 0) {
-                for (let i = 0; i < mSvg.length; i++) {
-                    const response = await getSvgsByPage(mSvg[i]);
-                    for (let i = 0; i < response.length; i++) {
-                        const newEncoding = response[i];
-                        dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...newEncoding } });
+            const response = await enumerateSvgs(mediaBrowserPageSize, 5, undefined);
+            if (response && response.length > 0) {
+                for (let i = 0; i < response.length; i++) {
+                    const response2 = await getSvgsByPage(response[i]);
+                    for (let i = 0; i < response2.length; i++) {
+                        const newEncoding = response2[i];
+                        dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...newEncoding } })
                     }
                 }
-                const newPageIndex = mSvg[mSvg.length - 1].page_number - 1;
+                const newPageIndex = response[response.length - 1].page_number - 1;
                 setSvgPageIndex(newPageIndex);
             }
             else {
-                const response = await enumerateSvgs(
-                    mediaBrowserPageSize,
-                    initDownloadRetryLimit,
-                    undefined);
-                if (response && response.length > 0) {
-                    for (let i = 0; i < response.length; i++) {
-                        const response2 = await getSvgsByPage(response[i]);
-                        for (let i = 0; i < response2.length; i++) {
-                            const newEncoding = response2[i];
-                            dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...newEncoding } })
-                        }
-                    }
-                    const newPageIndex = response[response.length - 1].page_number - 1;
-                    setSvgPageIndex(newPageIndex);
-                }
-                else {
-                    console.log('failed to find initial svgs');
-                }
+                console.log('failed to find initial svgs');
             }
         };
 
         downloadImgsFromMetas();
         downloadSvgsFromMetas();
-    }, [mediaBrowserPageSize, mImg, mSvg]);
+    }, [mediaBrowserPageSize]);
 
     return (<>
         <div

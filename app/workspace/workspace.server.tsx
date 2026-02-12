@@ -1,6 +1,3 @@
-//const server = "http://secret-garden-server-01-lb-191725021.us-east-2.elb.amazonaws.com";
-const server = "http://127.0.0.1:8000";
-
 export interface ImgMetadata_V1_0 {
     media_path: string
 }
@@ -14,7 +11,7 @@ export async function enumerateImgs(
     top: number | undefined,
     pageCount: number | undefined) {
     try {
-        let url = `${server}/media/img?page_size=${pageSize}`;
+        let url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/img?page_size=${pageSize}`;
         if (top) {
             url += `&top=${top}`;
         }
@@ -57,7 +54,7 @@ export interface EncodedImg_V1_0 {
 }
 export async function getImg(filename: string) {
     try {
-        const url = `${server}/media/img/${filename}`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/img/${filename}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -109,7 +106,7 @@ export async function enumerateSvgs(
     top: number | undefined,
     pageCount: number | undefined) {
     try {
-        let url = `${server}/media/svg?page_size=${pageSize}`;
+        let url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/svg?page_size=${pageSize}`;
         if (top) {
             url += `&top=${top}`;
         }
@@ -160,7 +157,7 @@ export interface EncodedSvg_V1_0 {
 }
 export async function getSvg(filename: string) {
     try {
-        const url = `${server}/media/svg/${filename}`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/media/svg/${filename}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -216,7 +213,7 @@ export interface ProjectResult_V1_0 {
 }
 export async function getProjects() {
     try {
-        const url = `${server}/projects`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -236,7 +233,7 @@ export async function getProjects() {
 }
 export async function getProject(projectId: string) {
     try {
-        const url = `${server}/projects/${projectId}`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -256,7 +253,7 @@ export async function getProject(projectId: string) {
 }
 export async function createProject(project: Project_V1_0) {
     try {
-        const url = `${server}/projects`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects`;
         const body = JSON.stringify({ ...project });
         const raw_response = await fetch(url, {
             method: 'POST',
@@ -281,7 +278,7 @@ export async function createProject(project: Project_V1_0) {
 export async function updateProject(projectId: string, project: Project_V1_0) {
     try {
         const body = JSON.stringify({ ...project });
-        const url = `${server}/projects/${projectId}`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'PUT',
             headers: {
@@ -304,7 +301,7 @@ export async function updateProject(projectId: string, project: Project_V1_0) {
 }
 export async function deleteProject(projectId: string): Promise<boolean> {
     try {
-        const url = `${server}/projects/${projectId}`;
+        const url = `${process.env.NEXT_PUBLIC_LAURUS_API}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'DELETE',
             headers: {
