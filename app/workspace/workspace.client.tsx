@@ -9,7 +9,13 @@ import {
     SvgMetadataPage_V1_0,
     ProjectResult_V1_0,
     ProjectImg_V1_0,
-    ProjectSvg_V1_0
+    ProjectSvg_V1_0,
+    getImg,
+    ImgMetadata_V1_0,
+    SvgMetadata_V1_0,
+    getSvg,
+    updateProject,
+    createProject
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "../statusbar";
@@ -20,6 +26,8 @@ import { redHatDisplay } from "../fonts";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 
 export type LaurusProject = ProjectResult_V1_0;
+export type LaurusImgMetadata = ImgMetadata_V1_0;
+export type LaurusSvgMetadata = SvgMetadata_V1_0;
 export type EncodedImg = EncodedImg_V1_0;
 export type EncodedSvg = EncodedSvg_V1_0;
 export type LaurusImg = ProjectImg_V1_0;
@@ -35,6 +43,7 @@ export type LaurusTool =
  * if state is nested by three or more virtual DOM layers, it belongs in here.
  */
 export interface WorkspaceState {
+    apiOrigin: string | undefined,
     project: LaurusProject,
 
     downloadedImgs: EncodedImg[],
@@ -47,6 +56,7 @@ export interface WorkspaceState {
 }
 
 export const defaultWorkspace: WorkspaceState = {
+    apiOrigin: undefined,
     project: {
         name: "[untitled]",
         canvas_width: 5000,
@@ -96,13 +106,13 @@ export type WorkspaceAction =
 
     | { type: WorkspaceActionType.SetTool, value: LaurusTool | undefined }
 
-    | { type: WorkspaceActionType.SetProjectImg, value: LaurusImg }
-    | { type: WorkspaceActionType.SetProjectSvg, value: LaurusSvg }
+    | { type: WorkspaceActionType.SetProjectImg, key: string, value: LaurusImg }
+    | { type: WorkspaceActionType.SetProjectSvg, key: string, value: LaurusSvg }
     | { type: WorkspaceActionType.DeleteProjectImg, key: string }
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
 
-    | { type: WorkspaceActionType.SetPendingImg, value: LaurusImg }
-    | { type: WorkspaceActionType.SetPendingSvg, value: LaurusSvg }
+    | { type: WorkspaceActionType.SetPendingImg, key: string, value: LaurusImg }
+    | { type: WorkspaceActionType.SetPendingSvg, key: string, value: LaurusSvg }
     | { type: WorkspaceActionType.DeletePendingImg, key: string }
     | { type: WorkspaceActionType.DeletePendingSvg, key: string }
 
@@ -142,13 +152,13 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.SetProjectImg: {
             const newImgs = new Map(state.project.imgs);
-            newImgs.set(action.value.key, action.value);
+            newImgs.set(action.key, action.value);
             const newProject: LaurusProject = { ...state.project, imgs: newImgs }
             return { ...state, project: newProject }
         }
         case WorkspaceActionType.SetProjectSvg: {
             const newSvgs = new Map(state.project.svgs);
-            newSvgs.set(action.value.key, action.value);
+            newSvgs.set(action.key, action.value);
             const newProject: LaurusProject = { ...state.project, svgs: newSvgs }
             return { ...state, project: newProject }
         }
@@ -167,12 +177,12 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
 
         case WorkspaceActionType.SetPendingImg: {
             const newImgs = new Map(state.pendingImgs);
-            newImgs.set(action.value.key, action.value);
+            newImgs.set(action.key, action.value);
             return { ...state, pendingImgs: newImgs }
         }
         case WorkspaceActionType.SetPendingSvg: {
             const newSvgs = new Map(state.pendingSvgs);
-            newSvgs.set(action.value.key, action.value);
+            newSvgs.set(action.key, action.value);
             return { ...state, pendingSvgs: newSvgs }
         }
         case WorkspaceActionType.DeletePendingImg: {
@@ -201,11 +211,13 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
 )
 
 interface InitReducerProps {
+    api: string | undefined,
     p: ProjectResult_V1_0[] | undefined,
 }
 
 function initReducer(
     {
+        api,
         p,
     }: InitReducerProps): WorkspaceState {
 
@@ -221,6 +233,7 @@ function initReducer(
     })();
 
     return {
+        apiOrigin: api,
         project: projectInit,
         downloadedImgs: defaultWorkspace.downloadedImgs,
         downloadedSvgs: defaultWorkspace.downloadedSvgs,
@@ -236,7 +249,7 @@ interface WorkspaceProps {
 }
 
 export default function Workspace({
-    apiOrigin,
+    apiOrigin: api,
     projectsInit,
 }: WorkspaceProps) {
     const p = use(projectsInit);
@@ -244,6 +257,7 @@ export default function Workspace({
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
+            api,
             p,
         },
         initReducer);
@@ -258,8 +272,7 @@ export default function Workspace({
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
         const initCurrentPaper = (async () => {
-            if (canvasAreaRef.current && appState.project &&
-                (appState.project.frame_top < 0 || appState.project.frame_left < 0)) {
+            if (canvasAreaRef.current && (appState.project.frame_top < 0 || appState.project.frame_left < 0)) {
                 const centerX = canvasAreaRef.current.clientWidth / 2;
                 const centerY = canvasAreaRef.current.clientHeight / 2;
                 const left = centerX - (appState.project.frame_width / 2);
@@ -289,10 +302,10 @@ export default function Workspace({
             nextPageRef.current.style.visibility = 'hidden'
         }
         const response: ImgMetadataPage_V1_0[] | undefined =
-            await enumerateImgs(apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
+            await enumerateImgs(appState.apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
         if (response && pageIndex < response.length) {
             const requestedPage: ImgMetadataPage_V1_0 = response[pageIndex];
-            const encodings = await getImgsByPage(apiOrigin, requestedPage);
+            const encodings = await getImgsByPage(appState.apiOrigin, requestedPage);
             const cachedSrcs = appState.downloadedImgs.flatMap(c => c.media_path);
             const newEncodings = encodings.filter(e => !cachedSrcs.includes(e.media_path));
             for (let i = 0; i < newEncodings.length; i++) {
@@ -311,17 +324,17 @@ export default function Workspace({
             }
             return undefined;
         }
-    }, [apiOrigin, appState.downloadedImgs, mediaBrowserPageSize]);
+    }, [appState.apiOrigin, appState.downloadedImgs, mediaBrowserPageSize]);
 
     const handleSvgPageRequest = useCallback(async (pageIndex: number) => {
         if (nextPageRef.current) {
             nextPageRef.current.style.visibility = 'hidden'
         }
         const response: SvgMetadataPage_V1_0[] | undefined =
-            await enumerateSvgs(apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
+            await enumerateSvgs(appState.apiOrigin, mediaBrowserPageSize, undefined, pageIndex + 1);
         if (response && pageIndex < response.length) {
             const requestedPage: SvgMetadataPage_V1_0 = response[pageIndex];
-            const encodings = await getSvgsByPage(apiOrigin, requestedPage);
+            const encodings = await getSvgsByPage(appState.apiOrigin, requestedPage);
             const cachedSrcs = appState.downloadedSvgs.flatMap(c => c.media_path);
             const newEncodings = encodings.filter(e => !cachedSrcs.includes(e.media_path));
             for (let i = 0; i < newEncodings.length; i++) {
@@ -339,56 +352,104 @@ export default function Workspace({
             }
             return undefined;
         }
-    }, [apiOrigin, appState.downloadedSvgs, mediaBrowserPageSize]);
+    }, [appState.apiOrigin, appState.downloadedSvgs, mediaBrowserPageSize]);
 
     /**
-     * background media download for optimization
+     * background media downloader
      */
     useEffect(() => {
-        const downloadImgsFromMetas = async () => {
-            const response = await enumerateImgs(apiOrigin, mediaBrowserPageSize, 5, undefined);
+        const downloadImgsFromProjectInit = async () => {
+            const projectImgsInit = ((): Map<string, ProjectImg_V1_0> => {
+                if (p && p.length > 0) {
+                    const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+                    const mostRecent: LaurusProject = { ...sortedProjects[0] };
+                    return mostRecent.imgs;
+                }
+                else {
+                    return new Map();
+                }
+            })();
+            const a = Array.from(projectImgsInit.values());
+            for (let i = 0; i < a.length; i++) {
+                const imgMeta = a[i];
+                const img = await getImg(api, imgMeta.media_path);
+                if (img) {
+                    dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: { ...img } });
+                }
+            }
+        };
+
+        const downloadImgsForBrowser = async (top: number) => {
+            const response = await enumerateImgs(api, mediaBrowserPageSize, top, undefined);
+            let firstImg: EncodedImg | undefined = undefined;
             if (response && response.length > 0) {
                 for (let i = 0; i < response.length; i++) {
-                    const response2 = await getImgsByPage(apiOrigin, response[i]);
-                    for (let i = 0; i < response2.length; i++) {
-                        const newEncoding = response2[i];
-                        if (i == 0) {
-                            const newThumnail: LaurusThumbnail = { media: { ...newEncoding }, type: 'img' }
-                            setBrowserThumbnail(newThumnail);
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', value: { ...newThumnail } } });
+                    const page = response[i];
+                    for (let j = 0; j < page.value.length; j++) {
+                        const imgMeta = page.value[j];
+                        const img = await getImg(api, imgMeta.media_path);
+                        if (img) {
+                            if (!firstImg) {
+                                firstImg = { ...img };
+                            }
+                            dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: { ...img } })
                         }
-                        dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: { ...newEncoding } })
                     }
                 }
                 const newPageIndex = response[response.length - 1].page_number - 1;
                 setImgPageIndex(newPageIndex);
             }
-            else {
-                console.log('failed to find initial images');
+            if (firstImg) {
+                const newThumnail: LaurusThumbnail = { media: { ...firstImg }, type: 'img' }
+                setBrowserThumbnail(newThumnail);
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', value: { ...newThumnail } } });
             }
         };
 
-        const downloadSvgsFromMetas = async () => {
-            const response = await enumerateSvgs(apiOrigin, mediaBrowserPageSize, 5, undefined);
+        const downloadSvgsFromProjectInit = async () => {
+            const projectSvgsInit = ((): Map<string, ProjectSvg_V1_0> => {
+                if (p && p.length > 0) {
+                    const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+                    const mostRecent: LaurusProject = { ...sortedProjects[0] };
+                    return mostRecent.svgs;
+                }
+                else {
+                    return new Map();
+                }
+            })();
+            const a = Array.from(projectSvgsInit.values());
+            for (let i = 0; i < a.length; i++) {
+                const svgMeta = a[i];
+                const svg = await getSvg(api, svgMeta.media_path);
+                if (svg) {
+                    dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...svg } });
+                }
+            }
+        };
+
+        const downloadSvgsForBrowser = async (top: number) => {
+            const response = await enumerateSvgs(api, mediaBrowserPageSize, top, undefined);
             if (response && response.length > 0) {
                 for (let i = 0; i < response.length; i++) {
-                    const response2 = await getSvgsByPage(apiOrigin, response[i]);
-                    for (let i = 0; i < response2.length; i++) {
-                        const newEncoding = response2[i];
-                        dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...newEncoding } })
+                    const page = response[i];
+                    for (let j = 0; j < page.value.length; j++) {
+                        const svgMeta = page.value[j];
+                        const svg = await getSvg(api, svgMeta.media_path);
+                        if (svg) {
+                            dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: { ...svg } })
+                        }
                     }
                 }
                 const newPageIndex = response[response.length - 1].page_number - 1;
                 setSvgPageIndex(newPageIndex);
             }
-            else {
-                console.log('failed to find initial svgs');
-            }
         };
 
-        downloadImgsFromMetas();
-        downloadSvgsFromMetas();
-    }, [apiOrigin, mediaBrowserPageSize]);
+        downloadImgsFromProjectInit();
+        downloadImgsForBrowser(10);
+        downloadSvgsFromProjectInit();
+        downloadSvgsForBrowser(10);
+    }, [api, mediaBrowserPageSize, p]);
 
     return (<>
         <div
@@ -675,7 +736,8 @@ function CanvasArea() {
                     }} />}
 
                 {/* media overlays */}
-                {Array.from(appState.project.imgs.values()).map((imgMeta) => {
+                {Array.from(appState.project.imgs.entries()).map((e) => {
+                    const [key, imgMeta] = e;
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
                         return (
@@ -683,27 +745,44 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeleteProjectImg, key: imgMeta.key });
-                                        dispatch({ type: WorkspaceActionType.SetPendingImg, value: { ...imgMeta } });
+                                        dispatch({ type: WorkspaceActionType.DeleteProjectImg, key });
+                                        dispatch({ type: WorkspaceActionType.SetPendingImg, key, value: { ...imgMeta } });
                                     }
                                 }}
-                                key={imgMeta.key}>
+                                key={key}>
                                 <DraggableReactImg
-                                    contextId={`dnd-context-${imgMeta.key}`}
-                                    nodeId={`dnd-node-${imgMeta.key}`}
+                                    contextId={`dnd-context-${key}`}
+                                    nodeId={`dnd-node-${key}`}
                                     data={imgData}
                                     meta={imgMeta}
                                     zIndex={3}
-                                    onNewPosition={function (newPosition: { x: number; y: number; }): void {
+                                    onNewPosition={async function (newPosition: { x: number; y: number; }) {
                                         const newImg: LaurusImg = { ...imgMeta, top: newPosition.y, left: newPosition.x };
-                                        dispatch({ type: WorkspaceActionType.SetProjectImg, value: newImg });
+                                        const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
+                                        newImgs.set(key, newImg);
+                                        const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+                                        if (newProject.project_id) {
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                        }
+                                        else {
+                                            const response = await createProject(appState.apiOrigin, { ...newProject });
+                                            if (response) {
+                                                const newProject2: LaurusProject = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                            }
+                                            else {
+                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                            }
+                                        }
                                     }} />
 
                             </div>
                         );
                     }
                 })}
-                {Array.from(appState.project.svgs.values()).map((svgMeta) => {
+                {Array.from(appState.project.svgs.entries()).map((e) => {
+                    const [key, svgMeta] = e;
                     const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
                     if (svgData) {
                         return (
@@ -711,27 +790,43 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeleteProjectSvg, key: svgMeta.key });
-                                        dispatch({ type: WorkspaceActionType.SetPendingSvg, value: { ...svgMeta } });
+                                        dispatch({ type: WorkspaceActionType.DeleteProjectSvg, key });
+                                        dispatch({ type: WorkspaceActionType.SetPendingSvg, key, value: { ...svgMeta } });
                                     }
                                 }}
-                                key={svgMeta.key}>
+                                key={key}>
                                 <DraggableReactSvg
-                                    key={svgMeta.key}
-                                    contextId={`dnd-context-${svgMeta.key}`}
-                                    nodeId={`dnd-node-${svgMeta.key}`}
+                                    contextId={`dnd-context-${key}`}
+                                    nodeId={`dnd-node-${key}`}
                                     data={svgData}
                                     meta={svgMeta}
                                     zIndex={3}
-                                    onNewPosition={function (newPosition: { x: number; y: number; }): void {
+                                    onNewPosition={async function (newPosition: { x: number; y: number; }) {
                                         const newSvg: LaurusSvg = { ...svgMeta, top: newPosition.y, left: newPosition.x };
-                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, value: newSvg });
+                                        const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
+                                        newSvgs.set(key, newSvg);
+                                        const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+                                        if (newProject.project_id) {
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                        }
+                                        else {
+                                            const response = await createProject(appState.apiOrigin, { ...newProject });
+                                            if (response) {
+                                                const newProject2: LaurusProject = { ...newProject, svgs: newSvgs, project_id: response.project_id }
+                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                            }
+                                            else {
+                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                            }
+                                        }
                                     }} />
                             </div>
                         );
                     }
                 })}
-                {Array.from(appState.pendingImgs.values()).map((imgMeta) => {
+                {Array.from(appState.pendingImgs.entries()).map((e) => {
+                    const [key, imgMeta] = e;
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
                         return (
@@ -747,12 +842,11 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeletePendingImg, key: imgMeta.key });
-                                        dispatch({ type: WorkspaceActionType.SetProjectImg, value: { ...imgMeta } });
+                                        dispatch({ type: WorkspaceActionType.DeletePendingImg, key });
+                                        dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: { ...imgMeta } });
                                     }
                                 }}
-                                key={imgMeta.key}>
-
+                                key={key}>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{
                                         position: 'absolute', filter: 'blur(6px)',
@@ -780,7 +874,7 @@ function CanvasArea() {
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={() => {
-                                                dispatch({ type: WorkspaceActionType.DeletePendingImg, key: imgMeta.key });
+                                                dispatch({ type: WorkspaceActionType.DeletePendingImg, key });
                                             }}>
                                             <ReactSvg
                                                 svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
@@ -795,9 +889,9 @@ function CanvasArea() {
                         );
                     }
                 })}
-                {Array.from(appState.pendingSvgs.values()).map((svgMeta) => {
+                {Array.from(appState.pendingSvgs.entries()).map((e) => {
+                    const [key, svgMeta] = e;
                     const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
-                    console.log(svgData);
                     if (svgData) {
                         return (
                             <div
@@ -812,11 +906,11 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeletePendingSvg, key: svgMeta.key });
-                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, value: { ...svgMeta } });
+                                        dispatch({ type: WorkspaceActionType.DeletePendingSvg, key });
+                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: { ...svgMeta } });
                                     }
                                 }}
-                                key={svgMeta.key}>
+                                key={key}>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{
                                         position: 'absolute', filter: 'blur(10px)',
@@ -827,7 +921,6 @@ function CanvasArea() {
                                             containerSize={{
                                                 width: svgMeta.width,
                                                 height: svgMeta.height
-
                                             }}
                                             scale={0.9} />
                                     </div>
@@ -847,7 +940,7 @@ function CanvasArea() {
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={() => {
-                                                dispatch({ type: WorkspaceActionType.DeletePendingSvg, key: svgMeta.key });
+                                                dispatch({ type: WorkspaceActionType.DeletePendingSvg, key });
                                             }}>
                                             <ReactSvg svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
                                                 width: 16,

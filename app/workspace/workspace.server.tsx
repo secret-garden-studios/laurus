@@ -32,8 +32,8 @@ export async function enumerateImgs(
         const response: ImgMetadataPage_V1_0[] = await raw_response.json();
         return response;
     }
-    catch (e) {
-        console.log({ e });
+    catch (error) {
+        console.log({ error });
         return undefined;
     }
 }
@@ -41,7 +41,6 @@ export async function enumerateImgs(
  * metadata + absolute positioning
  */
 export interface ProjectImg_V1_0 {
-    key: string,
     media_path: string
     width: number
     height: number
@@ -100,7 +99,6 @@ export async function getImgsByPage(
     return newEncodings;
 };
 
-
 export interface SvgMetadata_V1_0 {
     media_path: string
 }
@@ -143,7 +141,6 @@ export async function enumerateSvgs(
  * metadata + absolute positioning
  */
 export interface ProjectSvg_V1_0 {
-    key: string,
     media_path: string
     width: number
     height: number
@@ -237,7 +234,13 @@ export async function getProjects(baseUrl: string | undefined) {
             return undefined;
         }
         const response: ProjectResult_V1_0[] = await raw_response.json();
-        return response;
+        return response.map(r => {
+            return {
+                ...r,
+                svgs: new Map(Object.entries(r.svgs)),
+                imgs: new Map(Object.entries(r.imgs)),
+            }
+        });
     }
     catch (error) {
         console.log({ error });
@@ -259,7 +262,11 @@ export async function getProject(
             return undefined;
         }
         const response: ProjectResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            svgs: new Map(Object.entries(response.svgs)),
+            imgs: new Map(Object.entries(response.imgs))
+        };
     }
     catch (error) {
         console.log({ error });
@@ -271,7 +278,11 @@ export async function createProject(
     project: Project_V1_0) {
     try {
         const url = `${baseUrl}/projects`;
-        const body = JSON.stringify({ ...project });
+        const body = JSON.stringify({
+            ...project,
+            svgs: Object.fromEntries(project.svgs),
+            imgs: Object.fromEntries(project.imgs)
+        });
         const raw_response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -285,10 +296,14 @@ export async function createProject(
         }
 
         const response: ProjectResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            svgs: new Map(Object.entries(response.svgs)),
+            imgs: new Map(Object.entries(response.imgs))
+        };
     }
     catch (error) {
-        console.log({ e: error });
+        console.log({ error });
         return undefined;
     }
 }
@@ -297,7 +312,11 @@ export async function updateProject(
     projectId: string,
     project: Project_V1_0) {
     try {
-        const body = JSON.stringify({ ...project });
+        const body = JSON.stringify({
+            ...project,
+            svgs: Object.fromEntries(project.svgs),
+            imgs: Object.fromEntries(project.imgs)
+        });
         const url = `${baseUrl}/projects/${projectId}`;
         const raw_response = await fetch(url, {
             method: 'PUT',
@@ -312,7 +331,11 @@ export async function updateProject(
         }
 
         const response: ProjectResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            svgs: new Map(Object.entries(response.svgs)),
+            imgs: new Map(Object.entries(response.imgs))
+        };
     }
     catch (error) {
         console.log({ error });

@@ -1,6 +1,7 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImg, LaurusSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { v4 } from "uuid"; // todo: uninstall package
+import { LaurusImg, LaurusProject, LaurusSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { v4 } from "uuid";
+import { createProject, updateProject } from "./workspace.server";
 
 function calcMousePosition(
     canvas: HTMLCanvasElement,
@@ -71,7 +72,6 @@ export default function Canvas() {
     const [liveAnchor, setLiveAnchor] = useState(false);
     const [anchor, setAnchor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-
     useLayoutEffect(() => {
         const c = drawingCanvasRef.current;
         if (c) {
@@ -89,20 +89,6 @@ export default function Canvas() {
 
         }
     }, []);
-
-    //const redrawStateCanvas = (circles: ProjectCircle[]) => {
-    //    const canvas = drawingCanvasRef.current;
-    //    if (!canvas) return;
-    //    const ctx = canvas.getContext('2d');
-    //    if (!ctx) return;
-    //
-    //    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    //    [...circles].forEach((shape) => {
-    //        ctx.beginPath();
-    //        ctx.arc(shape.cx, shape.cy, shape.radius, 0, Math.PI * 2);
-    //        ctx.stroke();
-    //    });
-    //}
 
     const click = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!appState.tool) return;
@@ -123,7 +109,6 @@ export default function Canvas() {
                     const ctx = canvas.getContext('2d');
                     if (!ctx) return;
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    //redrawStateCanvas([]);
                     break;
                 }
         }
@@ -172,43 +157,85 @@ export default function Canvas() {
                         switch (appState.tool.value.type) {
                             case "svg": {
                                 const key = appState.tool.value.media.media_path;
-                                const svg = appState.downloadedSvgs.find(s => s.media_path === key);
-                                if (!svg) break;
-                                const newFrame = getCenteredRectInCircle(
-                                    svg.width,
-                                    svg.height,
-                                    newCircle.cx,
-                                    newCircle.cy,
-                                    newCircle.radius);
-                                const laurusSvg: LaurusSvg = {
-                                    ...svg,
-                                    key: v4(),
-                                    width: newFrame.width,
-                                    height: newFrame.height,
-                                    top: newFrame.y,
-                                    left: newFrame.x
-                                }
-                                dispatch({ type: WorkspaceActionType.SetProjectSvg, value: laurusSvg });
+                                const svgData = appState.downloadedSvgs.find(s => s.media_path === key);
+                                if (!svgData) break;
+                                (async () => {
+                                    const newFrame = getCenteredRectInCircle(
+                                        svgData.width,
+                                        svgData.height,
+                                        newCircle.cx,
+                                        newCircle.cy,
+                                        newCircle.radius);
+                                    const newKey = v4();
+                                    const laurusSvg: LaurusSvg = {
+                                        width: newFrame.width,
+                                        height: newFrame.height,
+                                        top: newFrame.y,
+                                        left: newFrame.x,
+                                        media_path: svgData.media_path,
+                                        viewbox: svgData.viewbox,
+                                        fill: svgData.fill,
+                                        stroke: svgData.stroke,
+                                        stroke_width: svgData.stroke_width
+                                    }
+                                    const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
+                                    newSvgs.set(newKey, laurusSvg);
+                                    const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+                                    if (newProject.project_id) {
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                        await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                    }
+                                    else {
+                                        const response = await createProject(appState.apiOrigin, { ...newProject });
+                                        if (response) {
+                                            const newProject2: LaurusProject = { ...newProject, svgs: newSvgs, project_id: response.project_id }
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                        }
+                                        else {
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                        }
+                                    }
+                                })();
+                                break;
                             }
                             case "img": {
                                 const key = appState.tool.value.media.media_path;
-                                const img = appState.downloadedImgs.find(s => s.media_path === key);
-                                if (!img) break;
-                                const newFrame = getCenteredRectInCircle(
-                                    img.width,
-                                    img.height,
-                                    newCircle.cx,
-                                    newCircle.cy,
-                                    newCircle.radius);
-                                const laurusImg: LaurusImg = {
-                                    ...img,
-                                    key: v4(),
-                                    width: newFrame.width,
-                                    height: newFrame.height,
-                                    top: newFrame.y,
-                                    left: newFrame.x
-                                }
-                                dispatch({ type: WorkspaceActionType.SetProjectImg, value: laurusImg });
+                                const imgData = appState.downloadedImgs.find(s => s.media_path === key);
+                                if (!imgData) break;
+                                (async () => {
+                                    const newFrame = getCenteredRectInCircle(
+                                        imgData.width,
+                                        imgData.height,
+                                        newCircle.cx,
+                                        newCircle.cy,
+                                        newCircle.radius);
+                                    const newKey = v4();
+                                    const laurusImg: LaurusImg = {
+                                        width: newFrame.width,
+                                        height: newFrame.height,
+                                        top: newFrame.y,
+                                        left: newFrame.x,
+                                        media_path: imgData.media_path,
+                                    };
+                                    const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
+                                    newImgs.set(newKey, laurusImg);
+                                    const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+                                    if (newProject.project_id) {
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                        await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                    }
+                                    else {
+                                        const response = await createProject(appState.apiOrigin, { ...newProject });
+                                        if (response) {
+                                            const newProject2: LaurusProject = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                        }
+                                        else {
+                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                        }
+                                    }
+                                })();
+                                break;
                             }
                         }
                     }
