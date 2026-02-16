@@ -46,7 +46,6 @@ export type LaurusThumbnail =
     | { type: 'img', media: EncodedImg }
 export type LaurusTool =
     | { type: 'drop', value: LaurusThumbnail | undefined }
-    | { type: 'delete' }
 
 /**
  * if state is nested by three or more virtual DOM layers, it belongs in here.
