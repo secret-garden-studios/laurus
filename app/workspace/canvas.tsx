@@ -176,7 +176,8 @@ export default function Canvas() {
                                         viewbox: svgData.viewbox,
                                         fill: svgData.fill,
                                         stroke: svgData.stroke,
-                                        stroke_width: svgData.stroke_width
+                                        stroke_width: svgData.stroke_width,
+                                        pending: false,
                                     }
                                     const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
                                     newSvgs.set(newKey, laurusSvg);
@@ -216,6 +217,7 @@ export default function Canvas() {
                                         top: newFrame.y,
                                         left: newFrame.x,
                                         media_path: imgData.media_path,
+                                        pending: false,
                                     };
                                     const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
                                     newImgs.set(newKey, laurusImg);

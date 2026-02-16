@@ -25,13 +25,20 @@ import { hexagon, videoCameraBack } from "../svg-repo";
 import { redHatDisplay } from "../fonts";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 
-export type LaurusProject = ProjectResult_V1_0;
+export interface LaurusProject extends ProjectResult_V1_0 {
+    imgs: Map<string, LaurusImg>
+    svgs: Map<string, LaurusSvg>
+}
 export type LaurusImgMetadata = ImgMetadata_V1_0;
 export type LaurusSvgMetadata = SvgMetadata_V1_0;
 export type EncodedImg = EncodedImg_V1_0;
 export type EncodedSvg = EncodedSvg_V1_0;
-export type LaurusImg = ProjectImg_V1_0;
-export type LaurusSvg = ProjectSvg_V1_0;
+export interface LaurusImg extends ProjectImg_V1_0 {
+    pending: boolean,
+}
+export interface LaurusSvg extends ProjectSvg_V1_0 {
+    pending: boolean,
+}
 export type LaurusThumbnail =
     | { type: 'svg', media: EncodedSvg }
     | { type: 'img', media: EncodedImg }
@@ -50,9 +57,6 @@ export interface WorkspaceState {
     downloadedSvgs: EncodedSvg[],
 
     tool: LaurusTool | undefined,
-
-    pendingImgs: Map<string, LaurusImg>
-    pendingSvgs: Map<string, LaurusSvg>
 }
 
 export const defaultWorkspace: WorkspaceState = {
@@ -74,10 +78,7 @@ export const defaultWorkspace: WorkspaceState = {
     tool: { type: 'drop', value: undefined },
     downloadedImgs: [],
     downloadedSvgs: [],
-    pendingImgs: new Map(),
-    pendingSvgs: new Map()
 }
-
 
 export enum WorkspaceActionType {
     SetWorkspace,
@@ -93,8 +94,6 @@ export enum WorkspaceActionType {
 
     SetPendingImg,
     SetPendingSvg,
-    DeletePendingImg,
-    DeletePendingSvg,
 }
 
 export type WorkspaceAction =
@@ -110,11 +109,6 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetProjectSvg, key: string, value: LaurusSvg }
     | { type: WorkspaceActionType.DeleteProjectImg, key: string }
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
-
-    | { type: WorkspaceActionType.SetPendingImg, key: string, value: LaurusImg }
-    | { type: WorkspaceActionType.SetPendingSvg, key: string, value: LaurusSvg }
-    | { type: WorkspaceActionType.DeletePendingImg, key: string }
-    | { type: WorkspaceActionType.DeletePendingSvg, key: string }
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
     switch (action.type) {
@@ -174,27 +168,6 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newProject: LaurusProject = { ...state.project, svgs: newSvgs }
             return { ...state, project: newProject }
         }
-
-        case WorkspaceActionType.SetPendingImg: {
-            const newImgs = new Map(state.pendingImgs);
-            newImgs.set(action.key, action.value);
-            return { ...state, pendingImgs: newImgs }
-        }
-        case WorkspaceActionType.SetPendingSvg: {
-            const newSvgs = new Map(state.pendingSvgs);
-            newSvgs.set(action.key, action.value);
-            return { ...state, pendingSvgs: newSvgs }
-        }
-        case WorkspaceActionType.DeletePendingImg: {
-            const newImgs = new Map(state.pendingImgs);
-            newImgs.delete(action.key);
-            return { ...state, pendingImgs: newImgs }
-        }
-        case WorkspaceActionType.DeletePendingSvg: {
-            const newSvgs = new Map(state.pendingSvgs);
-            newSvgs.delete(action.key);
-            return { ...state, pendingSvgs: newSvgs }
-        }
     }
 }
 
@@ -224,7 +197,15 @@ function initReducer(
     const projectInit = ((): LaurusProject => {
         if (p && p.length > 0) {
             const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-            const mostRecent: LaurusProject = { ...sortedProjects[0] };
+            const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
+                .map(e => [e[0], { ...e[1], pending: false }]));
+            const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
+                .map(e => [e[0], { ...e[1], pending: false }]));
+            const mostRecent: LaurusProject = {
+                ...sortedProjects[0],
+                imgs: mostRecentImgs,
+                svgs: mostRecentSvgs
+            };
             return mostRecent;
         }
         else {
@@ -238,8 +219,6 @@ function initReducer(
         downloadedImgs: defaultWorkspace.downloadedImgs,
         downloadedSvgs: defaultWorkspace.downloadedSvgs,
         tool: defaultWorkspace.tool,
-        pendingImgs: new Map(),
-        pendingSvgs: new Map(),
     };
 }
 
@@ -362,7 +341,15 @@ export default function Workspace({
             const projectImgsInit = ((): Map<string, ProjectImg_V1_0> => {
                 if (p && p.length > 0) {
                     const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-                    const mostRecent: LaurusProject = { ...sortedProjects[0] };
+                    const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
+                        .map(e => [e[0], { ...e[1], pending: false }]));
+                    const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
+                        .map(e => [e[0], { ...e[1], pending: false }]));
+                    const mostRecent: LaurusProject = {
+                        ...sortedProjects[0],
+                        imgs: mostRecentImgs,
+                        svgs: mostRecentSvgs
+                    };
                     return mostRecent.imgs;
                 }
                 else {
@@ -410,7 +397,15 @@ export default function Workspace({
             const projectSvgsInit = ((): Map<string, ProjectSvg_V1_0> => {
                 if (p && p.length > 0) {
                     const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-                    const mostRecent: LaurusProject = { ...sortedProjects[0] };
+                    const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
+                        .map(e => [e[0], { ...e[1], pending: false }]));
+                    const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
+                        .map(e => [e[0], { ...e[1], pending: false }]));
+                    const mostRecent: LaurusProject = {
+                        ...sortedProjects[0],
+                        imgs: mostRecentImgs,
+                        svgs: mostRecentSvgs
+                    };
                     return mostRecent.svgs;
                 }
                 else {
@@ -736,7 +731,7 @@ function CanvasArea() {
                     }} />}
 
                 {/* media overlays */}
-                {Array.from(appState.project.imgs.entries()).map((e) => {
+                {Array.from(appState.project.imgs.entries().filter(e => !e[1].pending)).map((e) => {
                     const [key, imgMeta] = e;
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
@@ -745,8 +740,8 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeleteProjectImg, key });
-                                        dispatch({ type: WorkspaceActionType.SetPendingImg, key, value: { ...imgMeta } });
+                                        const newImg: LaurusImg = { ...imgMeta, pending: true }
+                                        dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                     }
                                 }}
                                 key={key}>
@@ -781,7 +776,7 @@ function CanvasArea() {
                         );
                     }
                 })}
-                {Array.from(appState.project.svgs.entries()).map((e) => {
+                {Array.from(appState.project.svgs.entries().filter(e => !e[1].pending)).map((e) => {
                     const [key, svgMeta] = e;
                     const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
                     if (svgData) {
@@ -790,8 +785,8 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeleteProjectSvg, key });
-                                        dispatch({ type: WorkspaceActionType.SetPendingSvg, key, value: { ...svgMeta } });
+                                        const newSvg: LaurusSvg = { ...svgMeta, pending: true }
+                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                                     }
                                 }}
                                 key={key}>
@@ -825,7 +820,7 @@ function CanvasArea() {
                         );
                     }
                 })}
-                {Array.from(appState.pendingImgs.entries()).map((e) => {
+                {Array.from(appState.project.imgs.entries().filter(e => e[1].pending)).map((e) => {
                     const [key, imgMeta] = e;
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
@@ -842,8 +837,8 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeletePendingImg, key });
-                                        dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: { ...imgMeta } });
+                                        const newImg: LaurusImg = { ...imgMeta, pending: false }
+                                        dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                     }
                                 }}
                                 key={key}>
@@ -873,8 +868,14 @@ function CanvasArea() {
                                             style={{ width: 'min-content', height: 'min-content' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                            onClick={() => {
-                                                dispatch({ type: WorkspaceActionType.DeletePendingImg, key });
+                                            onClick={async () => {
+                                                const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
+                                                newImgs.delete(key);
+                                                const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+                                                if (newProject.project_id) {
+                                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                                    await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                                }
                                             }}>
                                             <ReactSvg
                                                 svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
@@ -889,7 +890,7 @@ function CanvasArea() {
                         );
                     }
                 })}
-                {Array.from(appState.pendingSvgs.entries()).map((e) => {
+                {Array.from(appState.project.svgs.entries().filter(e => e[1].pending)).map((e) => {
                     const [key, svgMeta] = e;
                     const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
                     if (svgData) {
@@ -906,8 +907,8 @@ function CanvasArea() {
                                 onClick={(event) => {
                                     // option key on mac
                                     if (event.altKey) {
-                                        dispatch({ type: WorkspaceActionType.DeletePendingSvg, key });
-                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: { ...svgMeta } });
+                                        const newSvg: LaurusSvg = { ...svgMeta, pending: false }
+                                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                                     }
                                 }}
                                 key={key}>
@@ -939,8 +940,14 @@ function CanvasArea() {
                                             style={{ width: 'min-content', height: 'min-content' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                            onClick={() => {
-                                                dispatch({ type: WorkspaceActionType.DeletePendingSvg, key });
+                                            onClick={async () => {
+                                                const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
+                                                newSvgs.delete(key);
+                                                const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+                                                if (newProject.project_id) {
+                                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                                    await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                                }
                                             }}>
                                             <ReactSvg svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
                                                 width: 16,
