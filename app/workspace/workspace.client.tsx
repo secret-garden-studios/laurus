@@ -15,15 +15,16 @@ import {
     SvgMetadata_V1_0,
     getSvg,
     updateProject,
-    createProject
+    createProject,
+    ProjectLayer_V1_0
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "../statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
 import { hexagon, videoCameraBack } from "../svg-repo";
-import { redHatDisplay } from "../fonts";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
+import Projectbar from "./projectbar";
 
 export interface LaurusProject extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusImg>
@@ -39,6 +40,7 @@ export interface LaurusImg extends ProjectImg_V1_0 {
 export interface LaurusSvg extends ProjectSvg_V1_0 {
     pending: boolean,
 }
+export type LaurusLayer = ProjectLayer_V1_0;
 export type LaurusThumbnail =
     | { type: 'svg', media: EncodedSvg }
     | { type: 'img', media: EncodedImg }
@@ -74,6 +76,7 @@ export const defaultWorkspace: WorkspaceState = {
         last_active: "",
         imgs: new Map(),
         svgs: new Map(),
+        layers: new Map()
     },
     tool: { type: 'drop', value: undefined },
     downloadedImgs: [],
@@ -270,7 +273,7 @@ export default function Workspace({
     const [mediabarHeight] = useState(50);
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
     const [mediaBrowserPageSize] = useState(5);
-    const [showTimeline] = useState<boolean>(false);
+    const [showTimeline, setShowTimeline] = useState<boolean>(false);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
     const [imgPageIndex, setImgPageIndex] = useState(0);
     const [svgPageIndex, setSvgPageIndex] = useState(0);
@@ -459,34 +462,7 @@ export default function Workspace({
             <WorkspaceContext value={{ appState: appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
                     <Menubar />
-                    {/*projectbar*/}
-                    {showTimeline && <div
-                        className={styles["grainy-background"]}
-                        style={{
-                            height: 36,
-                            width: "100%",
-                            display: "flex",
-                            justifyContent: 'start',
-                            alignItems: "center",
-                            border: '1px solid black',
-                        }}>
-                        <div
-                            className={redHatDisplay.className}
-                            style={{
-                                fontSize: 14,
-                                letterSpacing: 1,
-                                width: 1000,
-                                display: 'grid',
-                                placeContent: 'center',
-                                height: '100%',
-                                borderRight: true ? '1px solid rgb(0, 0, 0)' : '1px solid rgb(37, 37, 37)',
-                                borderRadius: 0,
-                                color: true ? 'rgb(237, 237, 237)' : 'rgb(94, 94, 94)',
-
-                            }}>
-                            {appState.project.imgs.size > 0 && appState.project.name}
-                        </div>
-                    </div>}
+                    <Projectbar />
                 </div>
 
                 <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
@@ -580,7 +556,6 @@ export default function Workspace({
                         </div>
                     </>}
 
-
                 {/* right panel */}
                 <div style={{
                     gridRow: '2', gridColumn: '5',
@@ -602,6 +577,7 @@ export default function Workspace({
                         border: '1px solid black',
                     }}>
                         <div
+                            onClick={() => { setShowTimeline(v => !v); }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{

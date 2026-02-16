@@ -196,6 +196,10 @@ export async function getSvgsByPage(
     return newEncodings;
 };
 
+export interface ProjectLayer_V1_0 {
+    name: string,
+    order: number,
+}
 export interface Project_V1_0 {
     name: string
     canvas_width: number
@@ -206,6 +210,7 @@ export interface Project_V1_0 {
     frame_height: number
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
+    layers: Map<string, ProjectLayer_V1_0>
 }
 export interface ProjectResult_V1_0 {
     name: string
@@ -220,6 +225,7 @@ export interface ProjectResult_V1_0 {
     last_active: string
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
+    layers: Map<string, ProjectLayer_V1_0>
 }
 export async function getProjects(baseUrl: string | undefined) {
     try {
@@ -239,6 +245,7 @@ export async function getProjects(baseUrl: string | undefined) {
                 ...r,
                 svgs: new Map(Object.entries(r.svgs)),
                 imgs: new Map(Object.entries(r.imgs)),
+                layers: new Map(Object.entries(r.layers)),
             }
         });
     }
@@ -265,7 +272,8 @@ export async function getProject(
         return {
             ...response,
             svgs: new Map(Object.entries(response.svgs)),
-            imgs: new Map(Object.entries(response.imgs))
+            imgs: new Map(Object.entries(response.imgs)),
+            layers: new Map(Object.entries(response.layers)),
         };
     }
     catch (error) {
@@ -281,7 +289,8 @@ export async function createProject(
         const body = JSON.stringify({
             ...project,
             svgs: Object.fromEntries(project.svgs),
-            imgs: Object.fromEntries(project.imgs)
+            imgs: Object.fromEntries(project.imgs),
+            layers: Object.fromEntries(project.layers),
         });
         const raw_response = await fetch(url, {
             method: 'POST',
@@ -299,7 +308,8 @@ export async function createProject(
         return {
             ...response,
             svgs: new Map(Object.entries(response.svgs)),
-            imgs: new Map(Object.entries(response.imgs))
+            imgs: new Map(Object.entries(response.imgs)),
+            layers: new Map(Object.entries(response.layers)),
         };
     }
     catch (error) {
@@ -315,7 +325,8 @@ export async function updateProject(
         const body = JSON.stringify({
             ...project,
             svgs: Object.fromEntries(project.svgs),
-            imgs: Object.fromEntries(project.imgs)
+            imgs: Object.fromEntries(project.imgs),
+            layers: Object.fromEntries(project.layers),
         });
         const url = `${baseUrl}/projects/${projectId}`;
         const raw_response = await fetch(url, {
@@ -334,7 +345,8 @@ export async function updateProject(
         return {
             ...response,
             svgs: new Map(Object.entries(response.svgs)),
-            imgs: new Map(Object.entries(response.imgs))
+            imgs: new Map(Object.entries(response.imgs)),
+            layers: new Map(Object.entries(response.layers)),
         };
     }
     catch (error) {
