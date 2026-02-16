@@ -22,7 +22,7 @@ import Menubar from "../menubar";
 import Statusbar from "../statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { hexagon, videoCameraBack } from "../svg-repo";
+import { hexagon, motionPhotosOn, videoCameraBack } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
 
@@ -243,7 +243,7 @@ export default function Workspace({
         },
         initReducer);
 
-    const [activeThumbnail] = useState<LaurusThumbnail | undefined>(
+    const [activeThumbnail, setActiveThumbnail] = useState<LaurusThumbnail | undefined>(
         {
             media: { ...videoCameraBack('rgba(255, 255, 255, 0.15)', 32, 32) },
             type: 'svg'
@@ -472,6 +472,9 @@ export default function Workspace({
 
                 {/* left bumper */}
                 <div
+                    onClick={() => { setShowTimeline(v => !v); }}
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                     style={{
                         gridRow: '2', gridColumn: '2',
                         width: 30,
@@ -487,7 +490,7 @@ export default function Workspace({
                 <div
                     ref={canvasAreaRef}
                     style={{ gridRow: '2', gridColumn: '3', }}>
-                    <CanvasArea />
+                    <CanvasArea onActivate={setActiveThumbnail} />
                 </div>
 
                 {/* media browser */}
@@ -556,13 +559,17 @@ export default function Workspace({
                     </>}
 
                 {/* right panel */}
-                <div style={{
-                    gridRow: '2', gridColumn: '5',
-                    display: "grid",
-                    borderLeft: '6px solid black',
-                    background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
-                    width: 50,
-                }}>
+                <div
+                    onClick={() => { setShowMediaBrowser(v => !v); }}
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                    style={{
+                        gridRow: '2', gridColumn: '5',
+                        display: "grid",
+                        borderLeft: '6px solid black',
+                        background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
+                        width: 50,
+                    }}>
                 </div>
 
                 <div style={{ gridRow: '3', gridColumn: 'span 5' }}>
@@ -576,7 +583,9 @@ export default function Workspace({
                         border: '1px solid black',
                     }}>
                         <div
-                            onClick={() => { setShowTimeline(v => !v); }}
+                            onClick={() => {
+                                //todo: hightlight active element in canvasarea
+                            }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{
@@ -607,7 +616,12 @@ export default function Workspace({
                         </div>
 
                         <div
-                            onClick={() => { setShowMediaBrowser(v => !v); }}
+                            onClick={() => {
+                                if (!showMediaBrowser) {
+                                    setShowMediaBrowser(v => !v);
+                                }
+                                // todo: navigate to browser thumbnail and highlight it
+                            }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{
@@ -648,7 +662,10 @@ export default function Workspace({
     </>)
 }
 
-function CanvasArea() {
+interface CanvasAreaProps {
+    onActivate: (media: LaurusThumbnail) => void,
+}
+function CanvasArea({ onActivate }: CanvasAreaProps) {
     const [rulerSize] = useState(20);
     const { appState, dispatch } = useContext(WorkspaceContext);
 
@@ -799,6 +816,9 @@ function CanvasArea() {
                     const [key, imgMeta] = e;
                     const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
                     if (imgData) {
+                        const threshold = 80;
+                        const hexSize = imgMeta.width < threshold || imgMeta.height < threshold ? 12 : 16;
+                        const activateSize = imgMeta.width < threshold || imgMeta.height < threshold ? 32 : 52;
                         return (
                             <div
                                 style={{
@@ -819,7 +839,7 @@ function CanvasArea() {
                                 key={key}>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{
-                                        position: 'absolute', filter: 'blur(6px)',
+                                        position: 'absolute', filter: 'blur(16px)',
                                     }}>
                                         <ReactImg
                                             img={imgData}
@@ -831,16 +851,17 @@ function CanvasArea() {
                                     <div style={{
                                         position: 'absolute',
                                         display: 'grid',
-                                        justifyContent: 'end',
-                                        background: imgMeta.width < 40 || imgMeta.height < 40 ? 'rgba(255, 255, 255, 0.15)' : 'none',
+                                        gridTemplateRows: 'min-content auto',
+                                        gridTemplateColumns: '1fr',
+                                        background: imgMeta.width < threshold || imgMeta.height < threshold ? 'rgba(255, 255, 255, 0.15)' : 'none',
                                         border: '1px solid rgba(255,255,255,0.1)',
                                         borderRadius: 6,
-                                        height: Math.max(40, imgMeta.height),
-                                        width: Math.max(40, imgMeta.width),
-                                        padding: imgMeta.width < 80 || imgMeta.height < 80 ? 2 : 6,
+                                        height: Math.max(threshold * 1.25, imgMeta.height),
+                                        width: Math.max(threshold, imgMeta.width),
+                                        padding: imgMeta.width < threshold || imgMeta.height < threshold ? 2 : 6,
                                     }}>
                                         <div
-                                            style={{ width: 'min-content', height: 'min-content' }}
+                                            style={{ width: 'min-content', height: 'min-content', justifySelf: 'start' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={async () => {
@@ -853,9 +874,27 @@ function CanvasArea() {
                                                 }
                                             }}>
                                             <ReactSvg
-                                                svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
-                                                    width: 16,
-                                                    height: 16
+                                                svg={hexagon('rgb(238, 91, 108)', hexSize, hexSize)}
+                                                containerSize={{
+                                                    width: hexSize,
+                                                    height: hexSize
+                                                }}
+                                                scale={undefined} />
+                                        </div>
+                                        <div
+                                            style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                            onClick={() => {
+                                                onActivate({ type: 'img', media: { ...imgData } });
+                                                const newImg: LaurusImg = { ...imgMeta, pending: false };
+                                                dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
+                                            }}>
+                                            <ReactSvg
+                                                svg={motionPhotosOn('rgb(227, 227, 227)', activateSize, activateSize)}
+                                                containerSize={{
+                                                    width: activateSize,
+                                                    height: activateSize
                                                 }}
                                                 scale={undefined} />
                                         </div>
@@ -869,6 +908,9 @@ function CanvasArea() {
                     const [key, svgMeta] = e;
                     const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
                     if (svgData) {
+                        const threshold = 80;
+                        const hexSize = svgMeta.width < threshold || svgMeta.height < threshold ? 12 : 16;
+                        const activateSize = svgMeta.width < threshold || svgMeta.height < threshold ? 32 : 48;
                         return (
                             <div
                                 style={{
@@ -889,7 +931,7 @@ function CanvasArea() {
                                 key={key}>
                                 <div style={{ position: 'relative' }}>
                                     <div style={{
-                                        position: 'absolute', filter: 'blur(10px)',
+                                        position: 'absolute', filter: 'blur(16px)',
                                         border: '1px solid pink'
                                     }}>
                                         <ReactSvg
@@ -903,16 +945,18 @@ function CanvasArea() {
                                     <div style={{
                                         position: 'absolute',
                                         display: 'grid',
-                                        justifyContent: 'end',
-                                        background: svgMeta.width < 40 || svgMeta.height < 40 ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                        gridTemplateRows: 'min-content auto',
+                                        gridTemplateColumns: '1fr',
+                                        background: svgMeta.width < threshold || svgMeta.height < threshold ?
+                                            'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                                         border: '1px solid rgba(255,255,255,0.05)',
                                         borderRadius: 6,
-                                        height: Math.max(40, svgMeta.height),
-                                        width: Math.max(40, svgMeta.width),
-                                        padding: svgMeta.width < 80 || svgMeta.height < 80 ? 2 : 6,
+                                        height: Math.max(threshold * 1.25, svgMeta.height),
+                                        width: Math.max(threshold, svgMeta.width),
+                                        padding: svgMeta.width < threshold || svgMeta.height < threshold ? 2 : 6,
                                     }}>
                                         <div
-                                            style={{ width: 'min-content', height: 'min-content' }}
+                                            style={{ width: 'min-content', height: 'min-content', justifySelf: 'start' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={async () => {
@@ -924,10 +968,27 @@ function CanvasArea() {
                                                     await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                                 }
                                             }}>
-                                            <ReactSvg svg={hexagon('rgb(238, 91, 108)', 16, 16)} containerSize={{
-                                                width: 16,
-                                                height: 16
+                                            <ReactSvg svg={hexagon('rgb(238, 91, 108)', hexSize, hexSize)} containerSize={{
+                                                width: hexSize,
+                                                height: hexSize
                                             }} scale={undefined} />
+                                        </div>
+                                        <div
+                                            style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                            onClick={() => {
+                                                onActivate({ type: 'svg', media: { ...svgData } });
+                                                const newSvg: LaurusSvg = { ...svgMeta, pending: false }
+                                                dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
+                                            }}>
+                                            <ReactSvg
+                                                svg={motionPhotosOn('rgb(227, 227, 227)', activateSize, activateSize)}
+                                                containerSize={{
+                                                    width: activateSize,
+                                                    height: activateSize
+                                                }}
+                                                scale={undefined} />
                                         </div>
                                     </div>
                                 </div>
