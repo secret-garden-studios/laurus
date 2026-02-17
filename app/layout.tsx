@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "laurus",
+  title: "Laurus",
   description: "the first tree in a secret garden",
   icons: {
     icon: 'laurus-logo-placeholder.png',
