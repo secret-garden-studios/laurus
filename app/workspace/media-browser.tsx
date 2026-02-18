@@ -1,5 +1,5 @@
 import { RefObject, useContext, useEffect, useRef, useState } from "react";
-import { geistSansLite, michroma, redHatDisplay } from "../fonts";
+import { dellaRespira, michroma, redHatDisplay } from "../fonts";
 import { LaurusThumbnail, WorkspaceContext } from "./workspace.client";
 import Image from "next/image";
 import styles from "../app.module.css";
@@ -53,6 +53,7 @@ export default function MediaBrowserArea({
 
     return (<>
         <div
+            className={styles["grainy-background"]}
             style={{
                 position: 'relative',
                 overflow: 'hidden',
@@ -62,7 +63,6 @@ export default function MediaBrowserArea({
             }}
         >
             <div
-                className={styles["grainy-background"]}
                 style={{
                     position: 'absolute',
                     top: 0,
@@ -70,7 +70,6 @@ export default function MediaBrowserArea({
                     width: '100%',
                     height: '100%',
                 }} >
-
             </div>
 
             {/* content area */}
@@ -86,9 +85,7 @@ export default function MediaBrowserArea({
                     color: 'rgba(220, 220, 220, 1)',
                     gridTemplateColumns: `${rulerSize}px auto`,
                     gridTemplateRows: `${rulerSize}px auto`,
-
                 }} >
-
                 <div style={{
                     gridRow: 1,
                     gridColumn: 1,
@@ -113,8 +110,8 @@ export default function MediaBrowserArea({
                         alignItems: 'center',
                         justifySelf: 'center',
                         width: '100%',
-                        height: 60,
-                        marginBottom: 20,
+                        height: 50,
+                        marginBottom: 10,
                     }}>
                         <div
                             onClick={() => {
@@ -122,17 +119,17 @@ export default function MediaBrowserArea({
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            className={geistSansLite.className}
+                            className={dellaRespira.className}
                             style={{
+                                letterSpacing: "3px",
                                 display: 'grid',
                                 placeContent: 'center',
                                 width: '100%',
                                 height: '100%',
-                                border: filter == 'img' ? '1px solid rgb(40, 40, 40)' : '1px solid rgb(37, 37, 37)',
-                                borderRadius: 4,
-                                background: filter == 'img' ? "linear-gradient(45deg, rgba(17, 17, 17, 1), rgba(33, 33, 33, 1))" : 'none',
-                                color: filter == 'img' ? 'rgb(227, 227, 227)' : 'rgb(94, 94, 94)',
-                                boxShadow: filter == 'img' ? "inset 3px 3px 10px rgba(0, 0, 0, 1), inset -160px -160px 0 rgba(0, 0, 0, 0)" : 'none',
+                                border: filter == 'img' ? '1px solid rgb(20, 20, 20)' : 'none',
+                                color: filter == 'img' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
+                                filter: filter == 'img' ? 'none' : 'blur(0.8px)',
+                                boxShadow: filter == 'img' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
                             }}>
                             {'img'}
                         </div>
@@ -142,17 +139,17 @@ export default function MediaBrowserArea({
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            className={geistSansLite.className}
+                            className={dellaRespira.className}
                             style={{
+                                letterSpacing: "3px",
                                 display: 'grid',
                                 placeContent: 'center',
                                 width: '100%',
                                 height: '100%',
-                                border: filter == 'svg' ? '1px solid rgb(40, 40, 40)' : '1px solid rgb(37, 37, 37)',
-                                borderRadius: 4,
-                                background: filter == 'svg' ? "linear-gradient(45deg, rgba(17, 17, 17, 1), rgba(33, 33, 33, 1))" : 'none',
-                                color: filter == 'svg' ? 'rgb(227, 227, 227)' : 'rgb(94, 94, 94)',
-                                boxShadow: filter == 'svg' ? "inset 3px 3px 10px rgba(0, 0, 0, 1), inset -160px -160px 0 rgba(0, 0, 0, 0)" : 'none',
+                                border: filter == 'svg' ? '1px solid rgb(20, 20, 20)' : 'none',
+                                color: filter == 'svg' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
+                                filter: filter == 'svg' ? 'none' : 'blur(0.8px)',
+                                boxShadow: filter == 'svg' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
                             }}>
                             {'svg'}
                         </div>
