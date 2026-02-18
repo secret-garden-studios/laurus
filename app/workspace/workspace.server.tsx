@@ -373,3 +373,23 @@ export async function deleteProject(
         return false;
     }
 }
+export async function getEffects(baseUrl: string | undefined) {
+    try {
+        const url = `${baseUrl}/effects`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: string[] = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}

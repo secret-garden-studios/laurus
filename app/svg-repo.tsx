@@ -74,7 +74,7 @@ export function checkCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_path: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -90,7 +90,7 @@ export function cancelCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_path: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -101,13 +101,28 @@ export function cancelCircle(
     }
 }
 
+export function addCircle(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        media_path: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160Zm40 200q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/>`)
+    }
+}
 
 export function circle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_path: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -123,7 +138,7 @@ export function dragIndicator(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_path: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -139,7 +154,7 @@ export function hexagon(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_path: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",

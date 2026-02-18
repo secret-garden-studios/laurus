@@ -25,6 +25,8 @@ import MediaBrowserArea from "./media-browser";
 import { hexagon, motionPhotosOn, videoCameraBack } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
+import TimelineArea from "./timeline-area";
+import {v4} from "uuid";
 
 export interface LaurusProject extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusImg>
@@ -59,11 +61,14 @@ export interface WorkspaceState {
 
     tool: LaurusTool | undefined,
 }
-
+const defaultLayer: LaurusLayer = {
+    name: "untitled",
+    order: 0
+}
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
     project: {
-        name: "[untitled]",
+        name: "untitled",
         canvas_width: 5000,
         canvas_height: 5000,
         frame_top: -1,
@@ -75,7 +80,7 @@ export const defaultWorkspace: WorkspaceState = {
         last_active: "",
         imgs: new Map(),
         svgs: new Map(),
-        layers: new Map()
+        layers: new Map().set(v4(), { ...defaultLayer },)
     },
     tool: { type: 'drop', value: undefined },
     downloadedImgs: [],
@@ -208,6 +213,9 @@ function initReducer(
                 imgs: mostRecentImgs,
                 svgs: mostRecentSvgs
             };
+            if (mostRecent.layers.size == 0) {
+                mostRecent.layers.set(v4(), { ...defaultLayer })
+            }
             return mostRecent;
         }
         else {
@@ -227,13 +235,16 @@ function initReducer(
 interface WorkspaceProps {
     apiOrigin: string | undefined,
     projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
+    effectsEnum: Promise<string[] | undefined>,
 }
 
 export default function Workspace({
     apiOrigin: api,
     projectsInit,
+    effectsEnum,
 }: WorkspaceProps) {
     const p = use(projectsInit);
+    const e = use(effectsEnum);
 
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
@@ -256,8 +267,8 @@ export default function Workspace({
             if (canvasAreaRef.current && (appState.project.frame_top < 0 || appState.project.frame_left < 0)) {
                 const centerX = canvasAreaRef.current.clientWidth / 2;
                 const centerY = canvasAreaRef.current.clientHeight / 2;
-                const left = centerX - (appState.project.frame_width / 2);
-                const top = centerY - (appState.project.frame_height / 2);
+                const left = Math.max(0, centerX - (appState.project.frame_width / 2));
+                const top = Math.max(0, centerY - (appState.project.frame_height / 2));
                 dispatch({
                     type: WorkspaceActionType.SetProject,
                     value: { ...appState.project, frame_left: left, frame_top: top }
@@ -467,6 +478,7 @@ export default function Workspace({
                 <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline &&
                         <TimelineArea
+                            effectsEnum={e ?? []}
                             size={{ width: 1000, height: 5000 }} />}
                 </div>
 
@@ -617,9 +629,6 @@ export default function Workspace({
 
                         <div
                             onClick={() => {
-                                if (!showMediaBrowser) {
-                                    setShowMediaBrowser(v => !v);
-                                }
                                 // todo: navigate to browser thumbnail and highlight it
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
@@ -1042,85 +1051,3 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
         </div >
     </>)
 }
-
-interface TimelineArea {
-    size: { width: number, height: number },
-}
-
-function TimelineArea({
-    size,
-}: TimelineArea) {
-    const [rulerSize] = useState(20);
-    return (<>
-        <div
-            style={{
-                overflowY: 'auto',
-                position: 'relative',
-                width: "100%",
-                height: '100%',
-                display: 'grid',
-                gridTemplateColumns: 'min-content 1fr',
-                gridTemplateRows: `min-content 1fr`,
-            }}>
-
-            {/* ruler intersection */}
-            <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                zIndex: 3, gridRow: '1', gridColumn: '1',
-                width: rulerSize, height: rulerSize,
-                backgroundImage: 'linear-gradient(45deg, rgb(36, 36, 36), rgb(39, 39, 39))',
-                display: 'grid',
-                border: '1px solid black',
-                placeItems: 'center',
-            }} >
-            </div>
-            {/* tall ruler */}
-            <div
-                style={{
-                    position: 'absolute',
-                    top: rulerSize,
-                    left: 0,
-                    zIndex: 3,
-                    gridRow: '2', gridColumn: '1',
-                    width: rulerSize,
-                    height: size.height - rulerSize,
-                    display: 'grid',
-                    backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(10, 10, 10))',
-                }} />
-            {/* wide ruler */}
-            <div
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: rulerSize,
-                    zIndex: 3,
-                    gridRow: '1', gridColumn: '2',
-                    height: rulerSize,
-                    width: size.width - rulerSize,
-                    display: 'grid',
-                    backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(10, 10, 10))',
-                }} />
-            {/* content area */}
-            <div style={{
-                gridRow: '2', gridColumn: '2',
-                width: size.width,
-                height: size.height,
-            }}>
-                <div
-                    className={styles["grainy-background"]}
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: size.width,
-                        height: size.height,
-                        zIndex: 0,
-                    }} />
-
-            </div>
-        </div>
-    </>)
-}
-
