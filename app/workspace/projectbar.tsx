@@ -2,13 +2,13 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import useDebounce from "../hooks/useDebounce";
-import { LaurusProject, WorkspaceContext } from "./workspace.client";
+import { LaurusProject, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { createProject, updateProject } from "./workspace.server";
 
 export default function Projectbar() {
-    const { appState } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(WorkspaceContext);
     const [projectName, setProjectName] = useState<string>(appState.project.name);
-    const projectNameHook = useDebounce<string>(projectName, 3333);
+    const projectNameHook = useDebounce<string>(projectName, 1000);
     const projectRef = useRef<LaurusProject | undefined>(undefined);
 
     useEffect(() => {
@@ -21,14 +21,19 @@ export default function Projectbar() {
                     { ...projectRef.current, name: projectNameHook });
             }
             else if (projectRef.current && projectRef.current.name && projectNameHook) {
-                await createProject(
+                const newProject = { ...projectRef.current, name: projectNameHook };
+                const response = await createProject(
                     appState.apiOrigin,
-                    { ...projectRef.current, name: projectNameHook });
+                    newProject);
+                if (response) {
+                    const newProject2: LaurusProject = { ...newProject, project_id: response.project_id }
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                }
             }
         });
 
         renameProjectOnSever();
-    }, [appState.apiOrigin, projectNameHook]);
+    }, [appState.apiOrigin, projectNameHook, dispatch]);
 
     const onProjectNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         projectRef.current = { ...appState.project, name: e.target.value };
