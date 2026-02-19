@@ -7,10 +7,12 @@ export const dynamic = 'force-dynamic';
 export default function Page() {
     const projects = getProjects(process.env.LAURUS_API);
     const effectsEnum = getEffects(process.env.LAURUS_API);
+    const mediaPreloadLimit = process.env.MEDIA_PRELOAD_LIMIT;
     return (
         <Suspense fallback={<Skeleton />}>
             <Workspace
                 apiOrigin={process.env.LAURUS_API}
+                mediaPreloadLimit={mediaPreloadLimit}
                 projectsInit={projects}
                 effectsEnum={effectsEnum}
             />

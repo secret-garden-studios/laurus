@@ -16,7 +16,11 @@ import {
     getSvg,
     updateProject,
     createProject,
-    ProjectLayer_V1_0
+    ProjectLayer_V1_0,
+    ScaleEquation_V1_0,
+    Scale_V1_0,
+    ScaleResult_V1_0,
+    getScales
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "../statusbar";
@@ -26,9 +30,9 @@ import { hexagon, motionPhotosOn, videoCameraBack } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
-import {v4} from "uuid";
+import { v4 } from "uuid";
 
-export interface LaurusProject extends ProjectResult_V1_0 {
+export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusImg>
     svgs: Map<string, LaurusSvg>
 }
@@ -43,9 +47,19 @@ export interface LaurusSvg extends ProjectSvg_V1_0 {
     pending: boolean,
 }
 export type LaurusLayer = ProjectLayer_V1_0;
+export type LaurusScaleEquation = ScaleEquation_V1_0;
+export interface LaurusScale extends Scale_V1_0 {
+    math: LaurusScaleEquation[],
+}
+export interface LaurusScaleResult extends ScaleResult_V1_0 {
+    math: LaurusScaleEquation[],
+}
+export type LaurusEffect =
+    | { type: 'scale', value: LaurusScaleResult }
+    | { type: 'move', value: string }
 export type LaurusThumbnail =
-    | { type: 'svg', media: EncodedSvg }
-    | { type: 'img', media: EncodedImg }
+    | { type: 'svg', value: EncodedSvg }
+    | { type: 'img', value: EncodedImg }
 export type LaurusTool =
     | { type: 'drop', value: LaurusThumbnail | undefined }
 
@@ -54,12 +68,15 @@ export type LaurusTool =
  */
 export interface WorkspaceState {
     apiOrigin: string | undefined,
-    project: LaurusProject,
+    project: LaurusProjectResult,
 
     downloadedImgs: EncodedImg[],
     downloadedSvgs: EncodedSvg[],
 
     tool: LaurusTool | undefined,
+
+    effectNames: string[],
+    effects: LaurusEffect[],
 }
 const defaultLayer: LaurusLayer = {
     name: "untitled",
@@ -85,6 +102,8 @@ export const defaultWorkspace: WorkspaceState = {
     tool: { type: 'drop', value: undefined },
     downloadedImgs: [],
     downloadedSvgs: [],
+    effectNames: [],
+    effects: [],
 }
 
 export enum WorkspaceActionType {
@@ -101,11 +120,13 @@ export enum WorkspaceActionType {
 
     SetPendingImg,
     SetPendingSvg,
+
+    SetEffects,
 }
 
 export type WorkspaceAction =
     | { type: WorkspaceActionType.SetWorkspace, value: WorkspaceState }
-    | { type: WorkspaceActionType.SetProject, value: LaurusProject }
+    | { type: WorkspaceActionType.SetProject, value: LaurusProjectResult }
 
     | { type: WorkspaceActionType.AddDownloadedImg, value: EncodedImg }
     | { type: WorkspaceActionType.AddDownloadedSvg, value: EncodedSvg }
@@ -116,6 +137,8 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetProjectSvg, key: string, value: LaurusSvg }
     | { type: WorkspaceActionType.DeleteProjectImg, key: string }
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
+
+    | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
     switch (action.type) {
@@ -154,26 +177,29 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.SetProjectImg: {
             const newImgs = new Map(state.project.imgs);
             newImgs.set(action.key, action.value);
-            const newProject: LaurusProject = { ...state.project, imgs: newImgs }
+            const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
             return { ...state, project: newProject }
         }
         case WorkspaceActionType.SetProjectSvg: {
             const newSvgs = new Map(state.project.svgs);
             newSvgs.set(action.key, action.value);
-            const newProject: LaurusProject = { ...state.project, svgs: newSvgs }
+            const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
             return { ...state, project: newProject }
         }
         case WorkspaceActionType.DeleteProjectImg: {
             const newImgs = new Map(state.project.imgs);
             newImgs.delete(action.key);
-            const newProject: LaurusProject = { ...state.project, imgs: newImgs }
+            const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
             return { ...state, project: newProject }
         }
         case WorkspaceActionType.DeleteProjectSvg: {
             const newSvgs = new Map(state.project.svgs);
             newSvgs.delete(action.key);
-            const newProject: LaurusProject = { ...state.project, svgs: newSvgs }
+            const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
             return { ...state, project: newProject }
+        }
+        case WorkspaceActionType.SetEffects: {
+            return { ...state, effects: [...action.value] }
         }
     }
 }
@@ -193,30 +219,36 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
 interface InitReducerProps {
     api: string | undefined,
     p: ProjectResult_V1_0[] | undefined,
+    eN: string[] | undefined,
+}
+
+function getMostRecentProject(p: ProjectResult_V1_0[]) {
+    const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+    const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
+        .map(e => [e[0], { ...e[1], pending: false }]));
+    const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
+        .map(e => [e[0], { ...e[1], pending: false }]));
+    const mostRecent: LaurusProjectResult = {
+        ...sortedProjects[0],
+        imgs: mostRecentImgs,
+        svgs: mostRecentSvgs
+    };
+    if (mostRecent.layers.size == 0) {
+        mostRecent.layers.set(v4(), { ...defaultLayer })
+    }
+    return mostRecent;
 }
 
 function initReducer(
     {
         api,
         p,
+        eN: e,
     }: InitReducerProps): WorkspaceState {
 
-    const projectInit = ((): LaurusProject => {
+    const projectInit = ((): LaurusProjectResult => {
         if (p && p.length > 0) {
-            const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-            const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
-                .map(e => [e[0], { ...e[1], pending: false }]));
-            const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
-                .map(e => [e[0], { ...e[1], pending: false }]));
-            const mostRecent: LaurusProject = {
-                ...sortedProjects[0],
-                imgs: mostRecentImgs,
-                svgs: mostRecentSvgs
-            };
-            if (mostRecent.layers.size == 0) {
-                mostRecent.layers.set(v4(), { ...defaultLayer })
-            }
-            return mostRecent;
+            return getMostRecentProject([...p]);
         }
         else {
             return defaultWorkspace.project;
@@ -229,34 +261,39 @@ function initReducer(
         downloadedImgs: defaultWorkspace.downloadedImgs,
         downloadedSvgs: defaultWorkspace.downloadedSvgs,
         tool: defaultWorkspace.tool,
+        effectNames: e ?? [],
+        effects: defaultWorkspace.effects,
     };
 }
 
 interface WorkspaceProps {
     apiOrigin: string | undefined,
+    mediaPreloadLimit: string | undefined,
     projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
     effectsEnum: Promise<string[] | undefined>,
 }
 
 export default function Workspace({
     apiOrigin: api,
+    mediaPreloadLimit: mpl,
     projectsInit,
     effectsEnum,
 }: WorkspaceProps) {
     const p = use(projectsInit);
-    const e = use(effectsEnum);
+    const eN = use(effectsEnum);
 
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
             api,
             p,
+            eN,
         },
         initReducer);
 
     const [activeThumbnail, setActiveThumbnail] = useState<LaurusThumbnail | undefined>(
         {
-            media: { ...videoCameraBack('rgba(255, 255, 255, 0.15)', 32, 32) },
+            value: { ...videoCameraBack('rgba(255, 255, 255, 0.15)', 32, 32) },
             type: 'svg'
         });
     const [browserThumbnail, setBrowserThumbnail] = useState<LaurusThumbnail | undefined>(undefined);
@@ -283,7 +320,7 @@ export default function Workspace({
     const [mediabarHeight] = useState(50);
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
     const [mediaBrowserPageSize] = useState(5);
-    const [showTimeline, setShowTimeline] = useState<boolean>(false);
+    const [showTimeline, setShowTimeline] = useState<boolean>(true);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
     const [imgPageIndex, setImgPageIndex] = useState(0);
     const [svgPageIndex, setSvgPageIndex] = useState(0);
@@ -347,22 +384,13 @@ export default function Workspace({
     }, [appState.apiOrigin, appState.downloadedSvgs, mediaBrowserPageSize]);
 
     /**
-     * background media downloader
+     * background project downloader
      */
     useEffect(() => {
         const downloadImgsFromProjectInit = async () => {
             const projectImgsInit = ((): Map<string, ProjectImg_V1_0> => {
                 if (p && p.length > 0) {
-                    const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-                    const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
-                        .map(e => [e[0], { ...e[1], pending: false }]));
-                    const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
-                        .map(e => [e[0], { ...e[1], pending: false }]));
-                    const mostRecent: LaurusProject = {
-                        ...sortedProjects[0],
-                        imgs: mostRecentImgs,
-                        svgs: mostRecentSvgs
-                    };
+                    const mostRecent = getMostRecentProject([...p]);
                     return mostRecent.imgs;
                 }
                 else {
@@ -400,7 +428,7 @@ export default function Workspace({
                 setImgPageIndex(newPageIndex);
             }
             if (firstImg) {
-                const newThumnail: LaurusThumbnail = { media: { ...firstImg }, type: 'img' }
+                const newThumnail: LaurusThumbnail = { value: { ...firstImg }, type: 'img' }
                 setBrowserThumbnail(newThumnail);
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', value: { ...newThumnail } } });
             }
@@ -409,16 +437,7 @@ export default function Workspace({
         const downloadSvgsFromProjectInit = async () => {
             const projectSvgsInit = ((): Map<string, ProjectSvg_V1_0> => {
                 if (p && p.length > 0) {
-                    const sortedProjects = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
-                    const mostRecentImgs: Map<string, LaurusImg> = new Map(sortedProjects[0].imgs.entries()
-                        .map(e => [e[0], { ...e[1], pending: false }]));
-                    const mostRecentSvgs: Map<string, LaurusSvg> = new Map(sortedProjects[0].svgs.entries()
-                        .map(e => [e[0], { ...e[1], pending: false }]));
-                    const mostRecent: LaurusProject = {
-                        ...sortedProjects[0],
-                        imgs: mostRecentImgs,
-                        svgs: mostRecentSvgs
-                    };
+                    const mostRecent = getMostRecentProject([...p]);
                     return mostRecent.svgs;
                 }
                 else {
@@ -453,11 +472,24 @@ export default function Workspace({
             }
         };
 
+        const downloadScalesFromProjectInit = async () => {
+            if (p && p.length > 0) {
+                const mostRecent = getMostRecentProject([...p]);
+                const response = await getScales(api, mostRecent.project_id);
+                if (response) {
+                    const newEffects: LaurusEffect[] = response.map(s => { return { type: 'scale', value: { ...s } } });
+                    dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                }
+            }
+        };
+
+        const top: number = mpl ? (parseInt(mpl) || 2) : 2;
+        downloadScalesFromProjectInit();
         downloadImgsFromProjectInit();
-        downloadImgsForBrowser(10);
+        downloadImgsForBrowser(top);
         downloadSvgsFromProjectInit();
-        downloadSvgsForBrowser(10);
-    }, [api, mediaBrowserPageSize, p]);
+        downloadSvgsForBrowser(top);
+    }, [api, mpl, mediaBrowserPageSize, p]);
 
     return (<>
         <div
@@ -478,7 +510,6 @@ export default function Workspace({
                 <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline &&
                         <TimelineArea
-                            effectsEnum={e ?? []}
                             size={{ width: 1000, height: 5000 }} />}
                 </div>
 
@@ -609,7 +640,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={activeThumbnail.media as EncodedSvg_V1_0}
+                                                svg={activeThumbnail.value as EncodedSvg_V1_0}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -618,7 +649,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={activeThumbnail.media as EncodedImg_V1_0}
+                                                img={activeThumbnail.value as EncodedImg_V1_0}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -626,13 +657,7 @@ export default function Workspace({
                                 }
                             })()}
                         </div>
-
                         <div
-                            onClick={() => {
-                                // todo: navigate to browser thumbnail and highlight it
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{
                                 borderLeft: '1px solid rgb(0, 0, 0)',
                                 position: 'relative'
@@ -642,7 +667,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={browserThumbnail.media as EncodedSvg_V1_0}
+                                                svg={browserThumbnail.value as EncodedSvg_V1_0}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -651,7 +676,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={browserThumbnail.media as EncodedImg_V1_0}
+                                                img={browserThumbnail.value as EncodedImg_V1_0}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -756,7 +781,7 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                         const newImg: LaurusImg = { ...imgMeta, top: newPosition.y, left: newPosition.x };
                                         const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
                                         newImgs.set(key, newImg);
-                                        const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+                                        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
                                         if (newProject.project_id) {
                                             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                             await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
@@ -764,7 +789,7 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                         else {
                                             const response = await createProject(appState.apiOrigin, { ...newProject });
                                             if (response) {
-                                                const newProject2: LaurusProject = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                                                const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                                             }
                                             else {
@@ -801,7 +826,7 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                         const newSvg: LaurusSvg = { ...svgMeta, top: newPosition.y, left: newPosition.x };
                                         const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
                                         newSvgs.set(key, newSvg);
-                                        const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+                                        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
                                         if (newProject.project_id) {
                                             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                             await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
@@ -809,7 +834,7 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                         else {
                                             const response = await createProject(appState.apiOrigin, { ...newProject });
                                             if (response) {
-                                                const newProject2: LaurusProject = { ...newProject, svgs: newSvgs, project_id: response.project_id }
+                                                const newProject2: LaurusProjectResult = { ...newProject, svgs: newSvgs, project_id: response.project_id }
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                                             }
                                             else {
@@ -876,36 +901,36 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                             onClick={async () => {
                                                 const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
                                                 newImgs.delete(key);
-                                                const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+                                                const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
                                                 if (newProject.project_id) {
                                                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                                     await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                                 }
                                             }}>
                                             <ReactSvg
-                                                svg={hexagon('rgb(238, 91, 108)', hexSize, hexSize)}
+                                                svg={hexagon('rgb(238, 91, 108)')}
                                                 containerSize={{
                                                     width: hexSize,
                                                     height: hexSize
                                                 }}
-                                                scale={undefined} />
+                                                scale={1} />
                                         </div>
                                         <div
                                             style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={() => {
-                                                onActivate({ type: 'img', media: { ...imgData } });
+                                                onActivate({ type: 'img', value: { ...imgData } });
                                                 const newImg: LaurusImg = { ...imgMeta, pending: false };
                                                 dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                             }}>
                                             <ReactSvg
-                                                svg={motionPhotosOn('rgb(227, 227, 227)', activateSize, activateSize)}
+                                                svg={motionPhotosOn('rgb(227, 227, 227)')}
                                                 containerSize={{
                                                     width: activateSize,
                                                     height: activateSize
                                                 }}
-                                                scale={undefined} />
+                                                scale={1} />
                                         </div>
                                     </div>
                                 </div>
@@ -971,33 +996,36 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                             onClick={async () => {
                                                 const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
                                                 newSvgs.delete(key);
-                                                const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+                                                const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
                                                 if (newProject.project_id) {
                                                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                                     await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                                 }
                                             }}>
-                                            <ReactSvg svg={hexagon('rgb(238, 91, 108)', hexSize, hexSize)} containerSize={{
-                                                width: hexSize,
-                                                height: hexSize
-                                            }} scale={undefined} />
+                                            <ReactSvg
+                                                svg={hexagon('rgb(238, 91, 108)')}
+                                                containerSize={{
+                                                    width: hexSize,
+                                                    height: hexSize
+                                                }}
+                                                scale={1} />
                                         </div>
                                         <div
                                             style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
                                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                             onClick={() => {
-                                                onActivate({ type: 'svg', media: { ...svgData } });
+                                                onActivate({ type: 'svg', value: { ...svgData } });
                                                 const newSvg: LaurusSvg = { ...svgMeta, pending: false }
                                                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                                             }}>
                                             <ReactSvg
-                                                svg={motionPhotosOn('rgb(227, 227, 227)', activateSize, activateSize)}
+                                                svg={motionPhotosOn('rgb(227, 227, 227)')}
                                                 containerSize={{
                                                     width: activateSize,
                                                     height: activateSize
                                                 }}
-                                                scale={undefined} />
+                                                scale={1} />
                                         </div>
                                     </div>
                                 </div>

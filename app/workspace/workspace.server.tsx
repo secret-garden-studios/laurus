@@ -393,3 +393,144 @@ export async function getEffects(baseUrl: string | undefined) {
         return undefined;
     }
 }
+
+export interface ScaleEquation_V1_0 {
+    input_id: string
+    time: number
+    scale: number
+    loop: boolean
+    solution: number[]
+}
+export interface Scale_V1_0 {
+    offset: number
+    duration: number
+    project_id: string
+    layer_id: string
+    fps: number
+    math: ScaleEquation_V1_0[]
+}
+export interface ScaleResult_V1_0 {
+    timestamp: string
+    last_active: string
+    scale_id: string
+    offset: number
+    duration: number
+    project_id: string
+    layer_id: string
+    fps: number
+    math: ScaleEquation_V1_0[]
+}
+export async function getScales(baseUrl: string | undefined, projectId: string) {
+    try {
+        const url = `${baseUrl}/scales?project_id=${projectId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: ScaleResult_V1_0[] = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function getScale(
+    baseUrl: string | undefined,
+    scaleId: string) {
+    try {
+        const url = `${baseUrl}/scales/${scaleId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: ScaleResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function createScale(
+    baseUrl: string | undefined,
+    scale: Scale_V1_0) {
+    try {
+        const url = `${baseUrl}/scales`;
+        const body = JSON.stringify(scale);
+        const raw_response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+
+        const response: ScaleResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function updateScale(
+    baseUrl: string | undefined,
+    scaleId: string,
+    scale: Scale_V1_0) {
+    try {
+        const body = JSON.stringify(scale);
+        const url = `${baseUrl}/scales/${scaleId}`;
+        const raw_response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+
+        const response: ScaleResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function deleteScale(
+    baseUrl: string | undefined,
+    scaleId: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/scales/${scaleId}`;
+        const raw_response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        return raw_response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}

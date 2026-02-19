@@ -2,14 +2,14 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import useDebounce from "../hooks/useDebounce";
-import { LaurusProject, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusProjectResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { createProject, updateProject } from "./workspace.server";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [projectName, setProjectName] = useState<string>(appState.project.name);
     const projectNameHook = useDebounce<string>(projectName, 1000);
-    const projectRef = useRef<LaurusProject | undefined>(undefined);
+    const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
 
     useEffect(() => {
         const renameProjectOnSever = (async () => {
@@ -26,7 +26,7 @@ export default function Projectbar() {
                     appState.apiOrigin,
                     newProject);
                 if (response) {
-                    const newProject2: LaurusProject = { ...newProject, project_id: response.project_id }
+                    const newProject2: LaurusProjectResult = { ...newProject, project_id: response.project_id }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                 }
             }

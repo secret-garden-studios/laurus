@@ -1,5 +1,5 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { EncodedImg, EncodedSvg, LaurusImg, LaurusProject, LaurusSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { EncodedImg, EncodedSvg, LaurusImg, LaurusProjectResult, LaurusSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { v4 } from "uuid";
 import { createProject, updateProject } from "./workspace.server";
 
@@ -144,7 +144,7 @@ export default function Canvas() {
         }
         const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
         newSvgs.set(newKey, laurusSvg);
-        const newProject: LaurusProject = { ...appState.project, svgs: newSvgs }
+        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
         if (newProject.project_id) {
             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
             await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
@@ -152,7 +152,7 @@ export default function Canvas() {
         else {
             const response = await createProject(appState.apiOrigin, { ...newProject });
             if (response) {
-                const newProject2: LaurusProject = { ...newProject, svgs: newSvgs, project_id: response.project_id }
+                const newProject2: LaurusProjectResult = { ...newProject, svgs: newSvgs, project_id: response.project_id }
                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
             }
             else {
@@ -179,7 +179,7 @@ export default function Canvas() {
         };
         const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
         newImgs.set(newKey, laurusImg);
-        const newProject: LaurusProject = { ...appState.project, imgs: newImgs }
+        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
         if (newProject.project_id) {
             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
             await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
@@ -187,7 +187,7 @@ export default function Canvas() {
         else {
             const response = await createProject(appState.apiOrigin, { ...newProject });
             if (response) {
-                const newProject2: LaurusProject = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
             }
             else {
@@ -215,7 +215,7 @@ export default function Canvas() {
                     };
                     switch (appState.tool.value.type) {
                         case "svg": {
-                            const key = appState.tool.value.media.media_path;
+                            const key = appState.tool.value.value.media_path;
                             const svgData = appState.downloadedSvgs.find(s => s.media_path === key);
                             if (svgData) {
                                 handleSvgDrop(svgData, dropArea);
@@ -223,7 +223,7 @@ export default function Canvas() {
                             break;
                         }
                         case "img": {
-                            const key = appState.tool.value.media.media_path;
+                            const key = appState.tool.value.value.media_path;
                             const imgData = appState.downloadedImgs.find(s => s.media_path === key);
                             if (imgData) {
                                 handleImgDrop(imgData, dropArea)

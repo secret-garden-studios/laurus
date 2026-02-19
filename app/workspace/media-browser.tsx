@@ -166,7 +166,7 @@ export default function MediaBrowserArea({
                                 {!detailView && <div
                                     onDoubleClick={() => setDetailView(v => !v)}
                                     onClick={() => {
-                                        onMediaClick({ media: { ...img }, type: 'img' });
+                                        onMediaClick({ value: { ...img }, type: 'img' });
                                     }}
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
@@ -261,7 +261,7 @@ export default function MediaBrowserArea({
                             }}>
                                 <div
                                     onClick={() => {
-                                        onMediaClick({ media: { ...svg }, type: 'svg' });
+                                        onMediaClick({ value: { ...svg }, type: 'svg' });
                                     }}
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}

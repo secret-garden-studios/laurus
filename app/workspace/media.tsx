@@ -11,8 +11,9 @@ interface ReactSvgProps {
     svg: EncodedSvg_V1_0,
     containerSize: { width: number, height: number }
     scale: number | undefined,
+    onContainerClick?: () => void,
 }
-export function ReactSvg({ svg, containerSize, scale }: ReactSvgProps) {
+export function ReactSvg({ svg, containerSize, scale, onContainerClick }: ReactSvgProps) {
     const decodedString = decodeURIComponent(
         atob(svg.markup)
             .split('')
@@ -21,6 +22,9 @@ export function ReactSvg({ svg, containerSize, scale }: ReactSvgProps) {
     );
     return (
         <div
+            onMouseEnter={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'pointer' }}
+            onMouseLeave={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'default' }}
+            onClick={() => { if (onContainerClick) onContainerClick() }}
             style={{
                 width: containerSize.width,
                 height: containerSize.height,
