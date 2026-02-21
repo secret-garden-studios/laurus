@@ -1,9 +1,14 @@
-import { RefObject, useContext, useEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
-import { dellaRespira, ubuntuMono } from "../fonts";
+import { dellaRespira } from "../fonts";
 import { ReactSvg } from "./media";
 import { addCircle, circle } from "../svg-repo";
-import { LaurusEffect, LaurusProjectResult, LaurusScale, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import {
+    LaurusEffect, LaurusProjectResult, LaurusScale,
+    timelineUnits,
+    convertTime,
+    WorkspaceActionType, WorkspaceContext
+} from "./workspace.client";
 import { createProject, createScale, updateProject } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
@@ -16,8 +21,28 @@ interface TimelineArea {
 export default function TimelineArea({
     size,
 }: TimelineArea) {
+    const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
-    const [layerLight] = useState(false);
+
+    const getWideRulerParams = useCallback(() => {
+        switch (appState.timelineMaxValue) {
+            case 30: {
+                return { modulo: 10, factor: 0.5 };
+            }
+            case 60: {
+                return { modulo: 10, factor: 1 };
+            }
+            case 90: {
+                return { modulo: 10, factor: 1.5 };
+            }
+            default: {
+                return { modulo: 10, factor: 1 };
+            }
+        }
+
+    }, [appState.timelineMaxValue]);
+
+
     return (<>
         <div
             style={{
@@ -34,7 +59,7 @@ export default function TimelineArea({
                 gridRow: '1', gridColumn: '1',
                 width: 14,
                 height: rulerSize,
-                backgroundImage: 'linear-gradient(45deg, rgb(46, 46, 46), rgb(46, 46, 46))',
+                backgroundImage: 'linear-gradient(45deg, rgb(28, 28, 28), rgb(28, 28, 28))',
                 display: 'grid',
                 placeItems: 'center',
             }} >
@@ -49,46 +74,115 @@ export default function TimelineArea({
                 }} />
             {/* wide ruler (time) */}
             <div
-                className={ubuntuMono.className}
+                className={dellaRespira.className}
                 style={{
-                    fontSize: 10,
-                    display: 'flex',
-                    justifyContent: 'space-between',
                     gridRow: '1', gridColumn: '2',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    display: 'flex',
                     height: rulerSize,
-                    backgroundImage: 'linear-gradient(45deg, rgb(46, 46, 46), rgb(46, 46, 46))',
                 }} >
-                {[...Array(50)].map((_, i) => (
-                    <div key={i}>
-                        {i % 10 == 0 ?
-                            (<div
-                                style={{
-                                    paddingLeft: 2,
-                                    width: 10,
-                                    height: '75%',
-                                    borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
-                                }}
-                            >
-                                {`${i * 2}`}
-                            </div>
-                            ) :
-                            (<div
-                                style={{
-                                    height: '50%',
-                                    width: 10,
-                                    borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
-                                }}
-                            />)}
-                    </div>
-                ))}
                 <div style={{
-                    width: 48,
-                    borderRadius: 0,
-                    border: layerLight ? '1px solid rgba(69, 88, 97, 1)' : '1px solid rgba(0, 0, 0, 1)',
-                    backgroundColor: layerLight ? 'rgba(150, 214, 243, 1)' : 'rgba(33, 33, 33, 1)',
-                    boxShadow: layerLight ? 'rgba(255, 255, 255, 0.8) 0px 0px 100px -10px' : 'none'
+                    width: 15,
+                    background: 'rgba(46,46,46,1)',
                 }} />
+                <div
+                    onDoubleClick={() => {
+                        dispatch({ type: WorkspaceActionType.IncrementTimelineMaxValue });
+                    }}
+                    style={{
+                        fontSize: 10,
+                        display: 'flex',
+                        width: '100%',
+                        justifyContent: 'space-between',
+                        background: 'rgba(46,46,46,1)',
+                    }}>
+                    {[...Array(61)].map((_, i) => {
+                        const params = getWideRulerParams();
+                        return (
+                            <div key={i}>
+                                {i % params.modulo == 0 ?
+                                    (<div
+                                        style={{
+                                            paddingLeft: 2,
+                                            width: 10,
+                                            height: '75%',
+                                            borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
+                                        }}
+                                    >
+                                        {i < 60 ? `${i * params.factor}` : ''}
+                                    </div>
+                                    ) :
+                                    (<div
+                                        style={{
+                                            height: '50%',
+                                            width: 10,
+                                            borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
+                                        }}
+                                    />)}
+                            </div>
+                        )
+                    })}
+                </div>
+                <div style={{
+                    width: 5,
+                    background: 'rgba(46,46,46,1)',
+                }} />
+                <div
+                    onDoubleClick={() => {
+                        const currentUnit = appState.timelineUnit;
+                        const currentIndex = timelineUnits.findIndex(v => v == appState.timelineUnit);
+                        const newUnit: string = (currentIndex >= 0) && (currentIndex + 1 < timelineUnits.length)
+                            ? timelineUnits[currentIndex + 1]
+                            : timelineUnits[0];
+
+                        dispatch({ type: WorkspaceActionType.SetTimelineUnit, value: newUnit });
+                        const newEffects: LaurusEffect[] = appState.effects.map(e => {
+                            switch (e.type) {
+                                case "scale": {
+                                    const clientEffect: LaurusEffect = {
+                                        ...e,
+                                        value: {
+                                            ...e.value,
+                                            offset: convertTime(e.value.offset, currentUnit, newUnit),
+                                            duration: convertTime(e.value.duration, currentUnit, newUnit)
+                                        }
+                                    }
+                                    return clientEffect;
+                                }
+                                case "move": {
+                                    const clientEffect: LaurusEffect = {
+                                        ...e,
+                                        value: {
+                                            ...e.value,
+                                            offset: convertTime(e.value.offset, currentUnit, newUnit),
+                                            duration: convertTime(e.value.duration, currentUnit, newUnit)
+                                        }
+                                    }
+                                    return clientEffect;
+                                }
+                            }
+                        });
+                        dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                    }}
+                    style={{
+                        fontSize: 12,
+                        textAlign: 'center',
+                        position: 'relative',
+                        width: 48,
+                        backgroundColor: 'rgb(33, 33, 33)',
+                        color: 'rgb(255, 255, 255)',
+                    }} >
+                    {(() => {
+                        return (<>
+                            <div style={{ position: 'absolute', width: '100%', height: '100%' }}>
+                                {appState.timelineUnit}
+                            </div>
+                            <div style={{ position: 'absolute', width: '100%', height: '100%' }} />
+                        </>);
+                    })()}
+                </div>
             </div>
+
             {/* content area */}
             <div
                 className={styles["grainy-background"] + " " + dellaRespira.className}
@@ -163,7 +257,7 @@ function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
                             borderBottomLeftRadius: 10,
 
                         }}>
-                            {appState.effects.map((s, i) => {
+                            {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
                                 return <div
                                     style={{
                                         borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
@@ -246,12 +340,20 @@ function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
                                                                     duration: 0,
                                                                     project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                                                     layer_id: layerEntry[0],
-                                                                    fps: 0
+                                                                    fps: 0,
+                                                                    order: appState.effects.filter(e => e.type == 'scale').length,
                                                                 };
                                                                 const response = await createScale(appState.apiOrigin, newScale);
                                                                 if (response) {
-                                                                    const newEffect: LaurusEffect = { type: 'scale', value: { ...response } }
-                                                                    dispatch({ type: WorkspaceActionType.SetEffects, value: [...appState.effects, newEffect] });
+                                                                    const newEffect: LaurusEffect = {
+                                                                        type: 'scale',
+                                                                        key: response.scale_id,
+                                                                        value: { ...response }
+                                                                    }
+                                                                    dispatch({
+                                                                        type: WorkspaceActionType.SetEffects,
+                                                                        value: [...appState.effects, newEffect]
+                                                                    });
                                                                 }
                                                                 break;
                                                             }

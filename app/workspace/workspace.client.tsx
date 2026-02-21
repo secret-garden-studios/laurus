@@ -51,17 +51,37 @@ export type LaurusScaleEquation = ScaleEquation_V1_0;
 export interface LaurusScale extends Scale_V1_0 {
     math: LaurusScaleEquation[],
 }
+type LaurusMoveResult = {
+    offset: number,
+    duration: number,
+    order: number,
+}
 export interface LaurusScaleResult extends ScaleResult_V1_0 {
     math: LaurusScaleEquation[],
 }
 export type LaurusEffect =
-    | { type: 'scale', value: LaurusScaleResult }
-    | { type: 'move', value: string }
+    | { type: 'scale', key: string, value: LaurusScaleResult }
+    | { type: 'move', key: string, value: LaurusMoveResult }
 export type LaurusThumbnail =
     | { type: 'svg', value: EncodedSvg }
     | { type: 'img', value: EncodedImg }
 export type LaurusTool =
     | { type: 'drop', value: LaurusThumbnail | undefined }
+export const timelineValues = [30, 60, 90];
+export const timelineUnits = ['sec', 'min'];
+export function convertTime(time: number, currentUnit: string, newUnit: string) {
+    switch (currentUnit + newUnit) {
+        case 'secmin': {
+            return time / 60;
+        }
+        case 'minsec': {
+            return time * 60;
+        }
+        default: {
+            return time;
+        }
+    }
+};
 
 /**
  * if state is nested by three or more virtual DOM layers, it belongs in here.
@@ -77,6 +97,9 @@ export interface WorkspaceState {
 
     effectNames: string[],
     effects: LaurusEffect[],
+
+    timelineUnit: string,
+    timelineMaxValue: number,
 }
 const defaultLayer: LaurusLayer = {
     name: "untitled",
@@ -97,13 +120,15 @@ export const defaultWorkspace: WorkspaceState = {
         last_active: "",
         imgs: new Map(),
         svgs: new Map(),
-        layers: new Map().set(v4(), { ...defaultLayer },)
+        layers: new Map().set(v4(), { ...defaultLayer })
     },
     tool: { type: 'drop', value: undefined },
     downloadedImgs: [],
     downloadedSvgs: [],
     effectNames: [],
     effects: [],
+    timelineUnit: '',
+    timelineMaxValue: 0
 }
 
 export enum WorkspaceActionType {
@@ -122,6 +147,9 @@ export enum WorkspaceActionType {
     SetPendingSvg,
 
     SetEffects,
+
+    SetTimelineUnit,
+    IncrementTimelineMaxValue,
 }
 
 export type WorkspaceAction =
@@ -139,6 +167,9 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
 
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
+
+    | { type: WorkspaceActionType.SetTimelineUnit, value: string }
+    | { type: WorkspaceActionType.IncrementTimelineMaxValue }
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
     switch (action.type) {
@@ -200,6 +231,16 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.SetEffects: {
             return { ...state, effects: [...action.value] }
+        }
+        case WorkspaceActionType.SetTimelineUnit: {
+            return { ...state, timelineUnit: action.value }
+        }
+        case WorkspaceActionType.IncrementTimelineMaxValue: {
+            const currentIndex = timelineValues.findIndex(v => v == state.timelineMaxValue);
+            const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < timelineValues.length)
+                ? timelineValues[currentIndex + 1]
+                : timelineValues[0];
+            return { ...state, timelineMaxValue: newValue }
         }
     }
 }
@@ -263,6 +304,8 @@ function initReducer(
         tool: defaultWorkspace.tool,
         effectNames: e ?? [],
         effects: defaultWorkspace.effects,
+        timelineUnit: timelineUnits[0],
+        timelineMaxValue: timelineValues[2],
     };
 }
 
@@ -383,10 +426,9 @@ export default function Workspace({
         }
     }, [appState.apiOrigin, appState.downloadedSvgs, mediaBrowserPageSize]);
 
-    /**
-     * background project downloader
-     */
     useEffect(() => {
+        /* background project downloader */
+
         const downloadImgsFromProjectInit = async () => {
             const projectImgsInit = ((): Map<string, ProjectImg_V1_0> => {
                 if (p && p.length > 0) {
@@ -477,7 +519,15 @@ export default function Workspace({
                 const mostRecent = getMostRecentProject([...p]);
                 const response = await getScales(api, mostRecent.project_id);
                 if (response) {
-                    const newEffects: LaurusEffect[] = response.map(s => { return { type: 'scale', value: { ...s } } });
+                    const newEffects: LaurusEffect[] = response.map(s => {
+                        return {
+                            type: 'scale',
+                            key: s.scale_id,
+                            value: {
+                                ...s,
+                            }
+                        }
+                    });
                     dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
                 }
             }

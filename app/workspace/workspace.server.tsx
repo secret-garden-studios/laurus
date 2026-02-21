@@ -406,6 +406,7 @@ export interface Scale_V1_0 {
     duration: number
     project_id: string
     layer_id: string
+    order: number,
     fps: number
     math: ScaleEquation_V1_0[]
 }
@@ -417,6 +418,7 @@ export interface ScaleResult_V1_0 {
     duration: number
     project_id: string
     layer_id: string
+    order: number
     fps: number
     math: ScaleEquation_V1_0[]
 }
