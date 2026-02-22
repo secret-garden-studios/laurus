@@ -3,9 +3,9 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Laurus",
-  description: "the first tree in a secret garden",
+  description: "The first tree in a secret garden",
   icons: {
-    icon: 'laurus-logo-light-theme.png',
+    icon: 'logo.png',
   }
 };
 
