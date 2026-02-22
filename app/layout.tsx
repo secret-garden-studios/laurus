@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "Laurus",
   description: "the first tree in a secret garden",
   icons: {
-    icon: 'laurus-logo-placeholder.png',
+    icon: 'laurus-logo-light-theme.png',
   }
 };
 
@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-          {children}
+        {children}
       </body>
     </html>
   );
