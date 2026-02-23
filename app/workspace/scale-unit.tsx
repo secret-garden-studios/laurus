@@ -252,7 +252,7 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                             const rightSector: number = maxX - medianX;
                                             const leftSector: number = medianX;
                                             let rightReBase = 0;
-                                            for (let coordinate = 1; coordinate <= rightSector; coordinate++) {
+                                            for (let coordinate = 0; coordinate < rightSector; coordinate++) {
                                                 const xP: number = coordinate / rightSector;
                                                 const zoomInP: number = xP * maxScale.zoomIn;
                                                 if (zoomInP <= 1) {
@@ -270,10 +270,9 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                                 const xP: number = (newCursor.x - leftSector) / rightSector;
                                                 const zoomInP: number = xP * maxScale.zoomIn;
                                                 if (zoomInP <= 1) {
-
-                                                    const rebasedP = (((newCursor.x - leftSector) / rightReBase));
-                                                    const newScale = rebasedP * 0.11;
-                                                    console.log({ newScale, rebasedP });
+                                                    const rebasedP = ((newCursor.x - leftSector) / rightReBase);
+                                                    const maxRebasedScale = ((rightReBase / rightSector) * maxScale.zoomIn) / 10;
+                                                    const newScale = (rebasedP * maxRebasedScale);
                                                     scaleRef.current.value = (1 + newScale).toFixed(2);
                                                 }
                                                 else {
@@ -281,7 +280,7 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                                 }
                                             }
                                             else {
-                                                //...
+                                                scaleRef.current.value = "";
                                             }
                                         }
                                         setScaleCursor({ ...newCursor, y: 0 });
