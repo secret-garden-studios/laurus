@@ -23,7 +23,7 @@ import {
     getScales
 } from "./workspace.server";
 import Menubar from "../menubar";
-import Statusbar from "../statusbar";
+import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
 import { hexagon, motionPhotosOn, videoCameraBack } from "../svg-repo";
@@ -735,11 +735,7 @@ export default function Workspace({
                             })()}
                         </div>
                     </div>
-                    <Statusbar
-                        zIndex={0}
-                        action={'statusAction'}
-                        body={[]}
-                        counter={0} />
+                    <Statusbar action={'laurus workspace'} body={[]} counter={0.00} />
                 </div>
             </WorkspaceContext>
         </div>
@@ -1123,8 +1119,6 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                         display: 'grid',
                         backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(10, 10, 10))',
                     }} />
-
-
             </div>
         </div >
     </>)
