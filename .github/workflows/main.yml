@@ -6,15 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  AWS_REGION: us-east-2
-  IAM_ROLE_ARN: arn:aws:iam::964845714180:role/github-actions-ci-cd
-  ECR_REPO_NAME: secret-garden/ecr-client-01
-  ECS_CLUSTER_NAME: secret-garden-client-kpufo8
-  ECS_SERVICE_NAME: secret-garden-client-service-b6544xxz
-  TASK_DEFINITION_NAME: secret-garden-client
-  TASK_CONTAINER_NAME: secret-garden-node-container
-
 permissions:
   id-token: write
   contents: read
@@ -28,9 +19,9 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          role-to-assume: ${{env.IAM_ROLE_ARN}}
+          role-to-assume: ${{secrets.IAM_ROLE_ARN}}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Sts GetCallerIdentity
         run: |
@@ -46,12 +37,12 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{env.ECR_REPO_NAME}}:${{ github.sha }}
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{secrets.ECR_REPO_NAME}}:${{ github.sha }}
 
       - name: Download current task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ env.TASK_DEFINITION_NAME }} \
+            --task-definition ${{ secrets.TASK_DEFINITION_NAME }} \
             --query taskDefinition > task-definition.json
 
       - name: Fill in the new image ID in the Amazon ECS task definition
@@ -59,13 +50,13 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: ${{ env.TASK_CONTAINER_NAME }}
-          image: ${{ steps.login-ecr.outputs.registry }}/${{env.ECR_REPO_NAME}}:${{ github.sha }}
+          container-name: ${{ secrets.TASK_CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{secrets.ECR_REPO_NAME}}:${{ github.sha }}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE_NAME }}
-          cluster: ${{ env.ECS_CLUSTER_NAME }}
+          service: ${{ secrets.ECS_SERVICE_NAME }}
+          cluster: ${{ secrets.ECS_CLUSTER_NAME }}
           wait-for-service-stability: true
