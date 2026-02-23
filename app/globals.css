@@ -35,3 +35,12 @@ body {
 *::-webkit-scrollbar {
   display: none;
 }
+
+img {
+  -webkit-user-select: none;
+  /* Safari */
+  -ms-user-select: none;
+  /* IE 10 and older */
+  user-select: none;
+  /* Standard syntax */
+}

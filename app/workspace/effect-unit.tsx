@@ -165,8 +165,6 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
         }
     }, [appState.timelineMaxValue, effect.value, timeToCursor]);
 
-    //switch (effect.type) {
-    //    case 'scale': {
     return (
         <div style={{ display: 'grid' }} key={effect.key}>
             <div
@@ -330,8 +328,6 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
             })()}
         </div>
     );
-    //}
-    //}
 }
 
 interface TimelineSliderProps {

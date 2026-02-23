@@ -48,15 +48,10 @@ function getCenteredRectInCircle(
 } {
     const aspectRatio = width / height;
     const diameter = radius * 2;
-
-    // Calculate new dimensions based on Pythagoras: w^2 + h^2 = (2r)^2
     const newHeight = diameter / Math.sqrt(Math.pow(aspectRatio, 2) + 1);
     const newWidth = newHeight * aspectRatio;
-
-    // Calculate centered top-left coordinates
     const x = cx - newWidth / 2;
     const y = cy - newHeight / 2;
-
     return { x, y, width: newWidth, height: newHeight };
 }
 

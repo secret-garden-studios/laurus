@@ -42,7 +42,6 @@ export default function TimelineArea({
 
     }, [appState.timelineMaxValue]);
 
-
     return (<>
         <div
             style={{

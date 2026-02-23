@@ -1,26 +1,3 @@
-.scrollbar::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.scrollbar::-webkit-scrollbar-track {
-  background: #000000;
-  border-radius: 5px;
-}
-
-.chrome-hidden-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.scrollbar::-webkit-scrollbar-thumb {
-  background: #1e1e1e;
-  border-radius: 10px;
-}
-
-.scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #161616;
-}
-
 .tiled-background-squares {
   background:
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 0.5px, transparent 1px) 0 0 / 8px 8px,
@@ -28,23 +5,8 @@
   background-color: rgb(14, 14, 14);
 }
 
-.pinstripe-background {
-  background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.05) 0.5px, transparent 1px) 0 0 / 28px 28px;
-  background-color: rgb(17, 17, 17);
-}
-
 .grainy-background {
   background-image: url('/noise1.png');
   background-size: auto;
   opacity: 0.8;
-}
-
-:global(img) {
-  -webkit-user-select: none;
-  /* Safari */
-  -ms-user-select: none;
-  /* IE 10 and older */
-  user-select: none;
-  /* Standard syntax */
 }
