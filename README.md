@@ -10,9 +10,6 @@ Laurus is intended to provide us with gratification and a genuine sense of accom
 
 Laurus is available for limited public use at https://laurus.im. At this stage of the project, full access is given by invitation only.
 
-***Built With***
-React, Next.js.
-
 ## Gettting Started
 
 This client is the only publicly available repository for the Laurus project at the moment, and is intended for visibility purposes only. Without access to the APIs or the rest of the code base, the usefulness of building the project locally is limited.
