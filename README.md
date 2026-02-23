@@ -1,6 +1,6 @@
 # Laurus
 
-Laurus is an animation framework used to create 2D scenes from static images and SVGs. Anything in the scene, as well as the frame of the camera recording the scene, can be directed to move and/or transform via a web UI.
+Laurus is an animation framework used to create 2D scenes from static images and SVGs. Anything in the scene, as well as the camera recording the scene, can be directed to move and/or transform via a web UI.
 
 ## About The Project
 

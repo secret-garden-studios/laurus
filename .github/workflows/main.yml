@@ -15,10 +15,9 @@ env:
   TASK_DEFINITION_NAME: secret-garden-client
   TASK_CONTAINER_NAME: secret-garden-node-container
 
-# Permission can be added at job level or workflow level
 permissions:
-  id-token: write # This is required for requesting the JWT
-  contents: read # This is required for actions/checkout
+  id-token: write
+  contents: read
 jobs:
   DeployToAwsViaDocker:
     runs-on: ubuntu-latest
@@ -60,7 +59,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: ${{ env.TASK_CONTAINER_NAME }} # Must match the name in your task definition
+          container-name: ${{ env.TASK_CONTAINER_NAME }}
           image: ${{ steps.login-ecr.outputs.registry }}/${{env.ECR_REPO_NAME}}:${{ github.sha }}
 
       - name: Deploy Amazon ECS task definition
