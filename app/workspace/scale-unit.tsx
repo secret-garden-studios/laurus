@@ -491,7 +491,7 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                                 { ...activeEquation, scale: newScaleValue } :
                                                 {
                                                     input_id: appState.activeElement.key,
-                                                    time: 0,
+                                                    time: appState.timelineMaxValue,
                                                     scale: newScaleValue,
                                                     loop: false,
                                                     solution: []
