@@ -334,7 +334,7 @@ function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
                                                         switch (effectName) {
                                                             case 'scale': {
                                                                 const newScale: LaurusScale = {
-                                                                    math: [],
+                                                                    math: new Map(),
                                                                     offset: 0,
                                                                     duration: 0,
                                                                     project_id: appState.project.project_id ? appState.project.project_id : newProjectId,

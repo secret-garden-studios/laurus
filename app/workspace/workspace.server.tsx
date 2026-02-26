@@ -406,9 +406,9 @@ export interface Scale_V1_0 {
     duration: number
     project_id: string
     layer_id: string
-    order: number,
+    order: number
     fps: number
-    math: ScaleEquation_V1_0[]
+    math: Map<string, ScaleEquation_V1_0>
 }
 export interface ScaleResult_V1_0 {
     timestamp: string
@@ -420,7 +420,7 @@ export interface ScaleResult_V1_0 {
     layer_id: string
     order: number
     fps: number
-    math: ScaleEquation_V1_0[]
+    math: Map<string, ScaleEquation_V1_0>
 }
 export async function getScales(baseUrl: string | undefined, projectId: string) {
     try {
@@ -435,7 +435,12 @@ export async function getScales(baseUrl: string | undefined, projectId: string) 
             return undefined;
         }
         const response: ScaleResult_V1_0[] = await raw_response.json();
-        return response;
+        return response.map(r => {
+            return {
+                ...r,
+                math: new Map(Object.entries(r.math))
+            }
+        });
     }
     catch (error) {
         console.log({ error });
@@ -457,7 +462,10 @@ export async function getScale(
             return undefined;
         }
         const response: ScaleResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
     }
     catch (error) {
         console.log({ error });
@@ -469,7 +477,10 @@ export async function createScale(
     scale: Scale_V1_0) {
     try {
         const url = `${baseUrl}/scales`;
-        const body = JSON.stringify(scale);
+        const body = JSON.stringify({
+            ...scale,
+            math: Object.fromEntries(scale.math),
+        });
         const raw_response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -483,7 +494,10 @@ export async function createScale(
         }
 
         const response: ScaleResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
     }
     catch (error) {
         console.log({ error });
@@ -495,7 +509,10 @@ export async function updateScale(
     scaleId: string,
     scale: Scale_V1_0) {
     try {
-        const body = JSON.stringify(scale);
+        const body = JSON.stringify({
+            ...scale,
+            math: Object.fromEntries(scale.math),
+        });
         const url = `${baseUrl}/scales/${scaleId}`;
         const raw_response = await fetch(url, {
             method: 'PUT',
@@ -510,7 +527,10 @@ export async function updateScale(
         }
 
         const response: ScaleResult_V1_0 = await raw_response.json();
-        return response;
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
     }
     catch (error) {
         console.log({ error });

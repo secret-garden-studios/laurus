@@ -6,8 +6,9 @@ import { ReactSvg } from "./media";
 import { circle } from "../svg-repo";
 import { ScaleResult_V1_0, updateScale } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
+import { useTrackpadState } from "../hooks/useTrackpadState";
 
-function setTime(
+function injectTime(
     e: LaurusEffect,
     newOffset: number,
     newDuration: number): LaurusEffect {
@@ -24,7 +25,15 @@ function setTime(
             return newEffect;
         }
         case "move": {
-            return e;
+            const newEffect: LaurusEffect = {
+                ...e,
+                value: {
+                    ...e.value,
+                    offset: newOffset,
+                    duration: newDuration,
+                }
+            };
+            return newEffect;
         }
     }
 }
@@ -32,6 +41,7 @@ function setTime(
 interface EffectUnitProps {
     effect: LaurusEffect,
 }
+
 export default function EffectUnit({ effect }: EffectUnitProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
@@ -47,25 +57,20 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
     const [durationCursor, setDurationCursor] = useState({ x: 0, y: 0 });
     const durationRef = useRef<HTMLInputElement | null>(null);
 
-    // used to perform a delayed auto-save on input box changes
-    const localEffectRef = useRef<LaurusEffect | undefined>(undefined);
-    const [offsetDebounceInput, setOffsetDebounceInput] = useState(effect.value.offset);
-    const offsetDebounce = useDebounce(offsetDebounceInput, 1000);
-    const [durationDebounceInput, setDurationDebounceInput] = useState(effect.value.offset);
-    const durationDebounce = useDebounce(durationDebounceInput, 1000);
-
+    const { getTrackValue: getTimeCursor, getTrackCursor: getCursor } =
+        useTrackpadState(0, appState.timelineMaxValue);
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        const percentage = cursorX / (timelineTrackRef.current.clientWidth - trackSidePadding);
-        return percentage * appState.timelineMaxValue;
-    }, [appState.timelineMaxValue, trackSidePadding]);
-
+        return getTimeCursor(cursorX, (timelineTrackRef.current.clientWidth - trackSidePadding));
+    }, [getTimeCursor, trackSidePadding]);
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
-        const percentage = time / appState.timelineMaxValue;
-        return percentage * (timelineTrackRef.current.clientWidth - trackSidePadding);
-    }, [appState.timelineMaxValue, trackSidePadding]);
+        return getCursor(time, (timelineTrackRef.current.clientWidth - trackSidePadding));
+    }, [getCursor, trackSidePadding]);
 
+    const debounceDependenciesRef = useRef<LaurusEffect | undefined>(undefined);
+    const [debounceInput, setDebounceInput] = useState<LaurusEffect>(effect);
+    const effectDebouncer = useDebounce(debounceInput, 1000);
     const adjustDurationCursor = useCallback((newX: number): number => {
         if (durationCursor.x < newX && durationRef.current) {
             const newValue = cursorToTime(newX);
@@ -86,13 +91,10 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
         return cursorToTime(offsetCursor.x);
     }, [cursorToTime, offsetCursor]);
 
-    const updateAndDispatchEffect = useCallback(async (effect: LaurusEffect) => {
-        setOffsetDebounceInput(effect.value.offset);
-        setDurationDebounceInput(effect.value.duration);
-
+    const saveEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
             case "scale": {
-                const effectForServer = setTime(
+                const effectForServer = injectTime(
                     effect,
                     convertTime(effect.value.offset, appState.timelineUnit, 'sec'),
                     convertTime(effect.value.duration, appState.timelineUnit, 'sec'));
@@ -110,8 +112,7 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
                         duration: convertTime(response.duration, 'sec', appState.timelineUnit)
                     }
                 };
-                const newEffects: LaurusEffect[] = appState.effects.map(e => e.key == newEffect.key ? newEffect : e);
-                dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 break;
             }
             case "move": {
@@ -119,20 +120,48 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
             }
         }
 
-    }, [appState.apiOrigin, appState.effects, dispatch, appState.timelineUnit]);
+    }, [appState.apiOrigin, appState.timelineUnit, dispatch]);
+
+    useLayoutEffect(() => {
+        /*  reads the current track width and updates sliders 
+            using initial values from a parent component */
+
+        (async () => {
+            const offsetInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.offset));
+            const durationInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.duration));
+
+            const newOffsetCursor = timeToCursor(offsetInit);
+            const newDurationCursor = timeToCursor(durationInit);
+            setOffsetCursor({ x: newOffsetCursor, y: 0 });
+            setDurationCursor({ x: newDurationCursor, y: 0 });
+
+            if (offsetRef.current) {
+                const newOffset = cursorToTime(newOffsetCursor);
+                offsetRef.current.value = newOffset.toFixed(2);
+            }
+
+            if (durationRef.current) {
+                const newDuration = cursorToTime(newDurationCursor);
+                durationRef.current.value = newDuration.toFixed(2);
+            }
+        })();
+
+    }, [appState.timelineMaxValue, cursorToTime, effect.value, timeToCursor]);
 
     useEffect(() => {
         /* on a delay, pushes data from input boxes to the server */
-        if (localEffectRef.current) {
-            switch (localEffectRef.current.type) {
+
+        if (debounceDependenciesRef.current) {
+            switch (debounceDependenciesRef.current.type) {
                 case "scale": {
                     const newScale: LaurusScale = {
-                        ...localEffectRef.current.value,
-                        offset: convertTime(offsetDebounce, appState.timelineUnit, 'sec'),
-                        duration: convertTime(durationDebounce, appState.timelineUnit, 'sec')
+                        ...debounceDependenciesRef.current.value,
+                        offset: convertTime(effectDebouncer.value.offset, appState.timelineUnit, 'sec'),
+                        duration: convertTime(effectDebouncer.value.duration, appState.timelineUnit, 'sec')
                     };
-                    updateScale(appState.apiOrigin, localEffectRef.current.key, newScale);
-                    localEffectRef.current = undefined;
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: { ...effectDebouncer } });
+                    updateScale(appState.apiOrigin, debounceDependenciesRef.current.key, newScale);
+                    debounceDependenciesRef.current = undefined;
                     break;
                 }
                 case "move": {
@@ -140,30 +169,7 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
                 }
             }
         }
-    }, [appState.apiOrigin, durationDebounce, offsetDebounce, appState.timelineUnit]);
-
-    useLayoutEffect(() => {
-        /*  reads the current track width and updates sliders 
-            using initial values from the parent component */
-        const e = {
-            offset: Math.min(appState.timelineMaxValue, Math.max(0, effect.value.offset)),
-            duration: Math.min(appState.timelineMaxValue, Math.max(0, effect.value.duration))
-        };
-
-        (async (e) => {
-            const offsetX = timeToCursor(e.offset);
-            const durationX = timeToCursor(e.duration);
-            setOffsetCursor({ x: offsetX, y: 0 });
-            setDurationCursor({ x: durationX, y: 0 });
-        })({ ...e });
-
-        if (offsetRef.current) {
-            offsetRef.current.value = e.offset.toFixed(2);
-        }
-        if (durationRef.current) {
-            durationRef.current.value = e.duration.toFixed(2);
-        }
-    }, [appState.timelineMaxValue, effect.value, timeToCursor]);
+    }, [appState.apiOrigin, effectDebouncer, appState.timelineUnit, dispatch]);
 
     return (
         <div style={{ display: 'grid' }} key={effect.key}>
@@ -179,30 +185,21 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
                 <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
                     <div>{'start'}</div>
                     <input
+                        id={`offset-input-${effect.key}`}
                         ref={offsetRef}
                         type="text"
                         placeholder="0.00"
                         onChange={() => {
                             if (!timelineTrackRef.current || !offsetRef.current) return;
                             const newOffset: number = parseFloat(offsetRef.current.value) || 0;
-                            if (newOffset > appState.timelineMaxValue) return;
 
                             const newCursor: number = timeToCursor(newOffset);
                             setOffsetCursor(v => { return { ...v, x: newCursor } });
                             const newDuration = adjustDurationCursor(newCursor);
 
-                            const newEffects: LaurusEffect[] = appState.effects.map(e => {
-                                if (e.key == effect.key) {
-                                    return setTime(effect, newOffset, newDuration);
-                                }
-                                else {
-                                    return e;
-                                }
-                            })
-                            dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
-
-                            setOffsetDebounceInput(newOffset);
-                            localEffectRef.current = { ...effect };
+                            const newEffect: LaurusEffect = injectTime(effect, newOffset, newDuration);
+                            setDebounceInput(newEffect);
+                            debounceDependenciesRef.current = { ...effect };
                         }}
                         style={{
                             textAlign: "left",
@@ -222,30 +219,21 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
                 <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
                     <div >{'end'}</div>
                     <input
+                        id={`duration-input-${effect.key}`}
                         ref={durationRef}
                         type="text"
                         placeholder="0.00"
                         onChange={() => {
                             if (!timelineTrackRef.current || !durationRef.current) return;
                             const newDuration: number = parseFloat(durationRef.current.value) || 0;
-                            if (newDuration > appState.timelineMaxValue) return;
 
                             const newCursor: number = timeToCursor(newDuration);
                             setDurationCursor(v => { return { ...v, x: newCursor } });
                             const newOffset = adjustOffsetCursor(newCursor);
 
-                            const newEffects: LaurusEffect[] = appState.effects.map(e => {
-                                if (e.key == effect.key) {
-                                    return setTime(effect, newOffset, newDuration);
-                                }
-                                else {
-                                    return e;
-                                }
-                            })
-                            dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
-
-                            setDurationDebounceInput(newDuration);
-                            localEffectRef.current = { ...effect };
+                            const newEffect: LaurusEffect = injectTime(effect, newOffset, newDuration);
+                            setDebounceInput(newEffect);
+                            debounceDependenciesRef.current = { ...effect };
                         }}
                         style={{
                             textAlign: "left",
@@ -269,7 +257,7 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
             }}>
                 <TimelineSlider
                     label={"scale"}
-                    hash={`${effect.key}|timeline|${1}`}
+                    hash={`${effect.key}|t1`}
                     capSize={offsetCapSize}
                     rangeCapSize={durationCapSize}
                     trackSize={timelineTrackSize}
@@ -279,16 +267,16 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
                         setOffsetCursor({ ...c });
                         const adjustedDuration = adjustDurationCursor(c.x);
                         const newOffset: number = cursorToTime(c.x);
-                        const newEffect = setTime(effect, newOffset, adjustedDuration);
-                        await updateAndDispatchEffect(newEffect);
+                        const newEffect = injectTime(effect, newOffset, adjustedDuration);
+                        await saveEffect(newEffect);
                     }}
                     rangeCursor={durationCursor}
                     onNewRangeCursor={async (c) => {
                         setDurationCursor({ ...c });
                         const adjustedOffset = adjustOffsetCursor(c.x);
                         const newDuration: number = cursorToTime(c.x);
-                        const newEffect = setTime(effect, adjustedOffset, newDuration);
-                        await updateAndDispatchEffect(newEffect);
+                        const newEffect = injectTime(effect, adjustedOffset, newDuration);
+                        await saveEffect(newEffect);
                     }}
                     onCursorMove={(c) => {
                         if (!offsetRef.current) return;
@@ -370,7 +358,7 @@ function TimelineSlider({
                 }}>
                 <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
                     <Trackpad
-                        ids={{ contextId: `dnd-context-${hash}`, draggableId: `dnd-draggable-${hash}` }}
+                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
                         height={capSize.height}
                         coarsePointer={{
@@ -384,7 +372,7 @@ function TimelineSlider({
                 </div>
                 <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
                     <Trackpad
-                        ids={{ contextId: `dnd-context-${hash}`, draggableId: `dnd-draggable-${hash}` }}
+                        ids={{ contextId: `${hash}|c2`, draggableId: `${hash}|d2` }}
                         width={'100%'}
                         height={rangeCapSize.height}
                         coarsePointer={{

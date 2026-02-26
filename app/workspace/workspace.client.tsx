@@ -26,7 +26,7 @@ import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { hexagon, motionPhotosOn, videoCameraBack } from "../svg-repo";
+import { hexagon, motionPhotosOn } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
@@ -49,7 +49,7 @@ export interface LaurusSvg extends ProjectSvg_V1_0 {
 export type LaurusLayer = ProjectLayer_V1_0;
 export type LaurusScaleEquation = ScaleEquation_V1_0;
 export interface LaurusScale extends Scale_V1_0 {
-    math: LaurusScaleEquation[],
+    math: Map<string, LaurusScaleEquation>,
 }
 type LaurusMoveResult = {
     offset: number,
@@ -57,7 +57,7 @@ type LaurusMoveResult = {
     order: number,
 }
 export interface LaurusScaleResult extends ScaleResult_V1_0 {
-    math: LaurusScaleEquation[],
+    math: Map<string, LaurusScaleEquation>,
 }
 export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }
@@ -67,6 +67,7 @@ export type LaurusThumbnail =
     | { type: 'img', value: EncodedImg }
 export type LaurusTool =
     | { type: 'drop', value: LaurusThumbnail | undefined }
+export type LaurusActiveElement = { key: string, value: LaurusThumbnail };
 export const timelineValues = [30, 60, 90];
 export const timelineUnits = ['sec', 'min'];
 export function convertTime(time: number, currentUnit: string, newUnit: string) {
@@ -94,6 +95,7 @@ export interface WorkspaceState {
     downloadedSvgs: EncodedSvg[],
 
     tool: LaurusTool | undefined,
+    activeElement: LaurusActiveElement | undefined,
 
     effectNames: string[],
     effects: LaurusEffect[],
@@ -128,7 +130,8 @@ export const defaultWorkspace: WorkspaceState = {
     effectNames: [],
     effects: [],
     timelineUnit: '',
-    timelineMaxValue: 0
+    timelineMaxValue: 0,
+    activeElement: undefined
 }
 
 export enum WorkspaceActionType {
@@ -137,6 +140,7 @@ export enum WorkspaceActionType {
     AddDownloadedImg,
     AddDownloadedSvg,
     SetTool,
+    SetActiveElement,
 
     SetProjectImg,
     SetProjectSvg,
@@ -147,6 +151,7 @@ export enum WorkspaceActionType {
     SetPendingSvg,
 
     SetEffects,
+    SetEffect,
 
     SetTimelineUnit,
     IncrementTimelineMaxValue,
@@ -160,6 +165,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.AddDownloadedSvg, value: EncodedSvg }
 
     | { type: WorkspaceActionType.SetTool, value: LaurusTool | undefined }
+    | { type: WorkspaceActionType.SetActiveElement, value: LaurusActiveElement | undefined }
 
     | { type: WorkspaceActionType.SetProjectImg, key: string, value: LaurusImg }
     | { type: WorkspaceActionType.SetProjectSvg, key: string, value: LaurusSvg }
@@ -167,6 +173,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
 
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
+    | { type: WorkspaceActionType.SetEffect, value: LaurusEffect }
 
     | { type: WorkspaceActionType.SetTimelineUnit, value: string }
     | { type: WorkspaceActionType.IncrementTimelineMaxValue }
@@ -205,6 +212,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
                 return { ...state }
             }
         }
+        case WorkspaceActionType.SetActiveElement: {
+            return { ...state, activeElement: action.value }
+        }
         case WorkspaceActionType.SetProjectImg: {
             const newImgs = new Map(state.project.imgs);
             newImgs.set(action.key, action.value);
@@ -231,6 +241,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.SetEffects: {
             return { ...state, effects: [...action.value] }
+        }
+        case WorkspaceActionType.SetEffect: {
+            return { ...state, effects: state.effects.map(e => e.key == action.value.key ? { ...action.value } : e) }
         }
         case WorkspaceActionType.SetTimelineUnit: {
             return { ...state, timelineUnit: action.value }
@@ -306,6 +319,7 @@ function initReducer(
         effects: defaultWorkspace.effects,
         timelineUnit: timelineUnits[0],
         timelineMaxValue: timelineValues[2],
+        activeElement: defaultWorkspace.activeElement,
     };
 }
 
@@ -334,11 +348,7 @@ export default function Workspace({
         },
         initReducer);
 
-    const [activeThumbnail, setActiveThumbnail] = useState<LaurusThumbnail | undefined>(
-        {
-            value: { ...videoCameraBack('rgba(255, 255, 255, 0.15)', 32, 32) },
-            type: 'svg'
-        });
+    const [activeThumbnail, setActiveThumbnail] = useState<LaurusThumbnail | undefined>(undefined);
     const [browserThumbnail, setBrowserThumbnail] = useState<LaurusThumbnail | undefined>(undefined);
 
     const canvasAreaRef = useRef<HTMLDivElement>(null);
@@ -690,7 +700,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={activeThumbnail.value as EncodedSvg_V1_0}
+                                                svg={activeThumbnail.value as EncodedSvg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -699,7 +709,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={activeThumbnail.value as EncodedImg_V1_0}
+                                                img={activeThumbnail.value as EncodedImg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -717,7 +727,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={browserThumbnail.value as EncodedSvg_V1_0}
+                                                svg={browserThumbnail.value as EncodedSvg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -726,7 +736,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={browserThumbnail.value as EncodedImg_V1_0}
+                                                img={browserThumbnail.value as EncodedImg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -969,6 +979,8 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                                 onActivate({ type: 'img', value: { ...imgData } });
                                                 const newImg: LaurusImg = { ...imgMeta, pending: false };
                                                 dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
+                                                const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
+                                                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                             }}>
                                             <ReactSvg
                                                 svg={motionPhotosOn('rgb(227, 227, 227)')}
@@ -1064,6 +1076,8 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                                 onActivate({ type: 'svg', value: { ...svgData } });
                                                 const newSvg: LaurusSvg = { ...svgMeta, pending: false }
                                                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
+                                                const newActiveElement: LaurusActiveElement = { key, value: { type: 'svg', value: { ...svgData } } };
+                                                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                             }}>
                                             <ReactSvg
                                                 svg={motionPhotosOn('rgb(227, 227, 227)')}

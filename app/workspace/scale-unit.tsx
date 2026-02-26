@@ -1,11 +1,23 @@
-import { useContext, useRef, useState } from "react";
-import { LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+
+import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { EncodedImg, EncodedSvg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
-import { ReactSvg } from "./media";
-import { circle } from "../svg-repo";
+import { ReactImg, ReactSvg } from "./media";
+import { circle, add2, remove } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
-import { deleteScale } from "./workspace.server";
+import { deleteScale, updateScale } from "./workspace.server";
+import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
+import useDebounce from "../hooks/useDebounce";
+import { useTrackpadState } from "../hooks/useTrackpadState";
+
+function toClientTime(serverTime: number, maxTime: number): number {
+    return ((1 - (serverTime / maxTime)) * 100)
+}
+
+function toServerTime(clientTime: number, maxTime: number): number {
+    return maxTime - ((clientTime / 100) * maxTime);
+}
 
 interface ScaleUnitProps {
     scale: LaurusScaleResult
@@ -13,25 +25,125 @@ interface ScaleUnitProps {
 
 export default function ScaleUnit({ scale }: ScaleUnitProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const scaleRef = useRef<HTMLInputElement>(null);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
-    const [maxScale] = useState({
-        time: 90000,
-        zoomIn: 30,
-        zoomOut: 1
-    });
 
     const [displaySize] = useState({ 'width': 400, 'height': 400, 'padding': 0 });
     const [mainControls, setMainControls] = useState(true);
+    const [prevActiveElementId, setPrevActiveElementId] = useState<string>(appState.activeElement?.key ?? "");
 
+    // param 1
+    const timeRef = useRef<HTMLInputElement | null>(null);
+    const timeTrackRef = useRef<HTMLDivElement | null>(null);
+    const [timeTrackOffsets] = useState({ padding: 20, border: 2 });
     const [timeCapSize] = useState({ width: 45, height: 21 });
     const [timeTrackSize] = useState({ width: 45, height: 200 });
+    const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
+    function getCurrentTime(): string {
+        return toClientTime(scale.math.get(appState.activeElement?.key ?? "")?.time ??
+            appState.timelineMaxValue, appState.timelineMaxValue).toFixed(2);
+    }
+    const [timeInputValue, setTimeInputValue] = useState<string>(getCurrentTime);
+    const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } =
+        useTrackpadState(
+            timeCapSize.height - timeTrackOffsets.border,
+            appState.timelineMaxValue);
 
-    const [timeCursor, setTimeCursor] = useState({ x: 0, y: timeTrackSize.height - timeCapSize.height });
-
+    // main param
+    const scaleRef = useRef<HTMLInputElement | null>(null);
+    const scaleTrackRef = useRef<HTMLDivElement | null>(null);
+    const [maxScale] = useState(30);
+    const [scaleTrackOffsets] = useState({ padding: 15, border: 2 });
     const [scaleCapSize] = useState({ width: 51, height: 50 });
     const [scaleTrackSize] = useState({ width: 430, height: 50 });
-    const [scaleCursor, setScaleCursor] = useState({ x: ((scaleTrackSize.width) / 2) - (scaleCapSize.width / 2), y: 0 });
+    const [scaleCursor, setScaleCursor] = useState({ x: 0, y: 0 });
+    function getCurrentScale(): string {
+        const scaleInit = scale.math.get(appState.activeElement?.key ?? "")?.scale;
+        if (scaleInit) {
+            return scaleInit >= 1 ? scaleInit.toFixed(2) : scaleInit.toFixed(3);
+        }
+        else {
+            return '1.00'
+        }
+    }
+    const [scaleInputValue, setScaleInputValue] = useState<string>(getCurrentScale);
+    const { getComplexTrackValue: getScaleValue, getComplexTrackCursor: getScaleCursor } =
+        useComplexTrackpadState(
+            scaleCapSize.width - scaleTrackOffsets.border,
+            maxScale);
+
+    // auto save dependencies
+    const scaleDebouncerRef = useRef<[LaurusScaleResult, number] | undefined>(undefined);
+    const timeDebouncerRef = useRef<[LaurusScaleResult, number] | undefined>(undefined);
+    const [debounceInput, setDebounceInput] = useState<Map<string, LaurusScaleEquation>>(scale.math);
+    const mathDebouncer = useDebounce(debounceInput, 1000);
+
+    const saveNewEquation = useCallback((newEquation: LaurusScaleEquation) => {
+        const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
+        newMath.set(newEquation.input_id, newEquation);
+
+        const newScale: LaurusScaleResult = { ...scale, math: newMath };
+        dispatch({
+            type: WorkspaceActionType.SetEffect,
+            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
+        });
+        updateScale(appState.apiOrigin, scale.scale_id, { ...newScale });
+    }, [appState.apiOrigin, dispatch, scale]);
+
+    if (prevActiveElementId != (appState.activeElement?.key ?? "")) {
+        setPrevActiveElementId((appState.activeElement?.key ?? ""));
+        setScaleInputValue(getCurrentScale)
+        setTimeInputValue(getCurrentTime);
+    }
+
+    useLayoutEffect(() => {
+        /*  reads the current track widths and updates sliders 
+            using initial values from a parent component */
+
+        (async () => {
+            const activeEquation = scale.math.get(appState.activeElement?.key ?? "");
+            const scaleInit = activeEquation?.scale ?? 1;
+            const timeInit = activeEquation?.time ?? appState.timelineMaxValue;
+
+            if (scaleTrackRef.current) {
+                const newScaleCursor = getScaleCursor(scaleInit, scaleTrackRef.current.clientWidth);
+                setScaleCursor({ x: newScaleCursor, y: 0 });
+            }
+
+            if (timeTrackRef.current && timeRef.current) {
+                const newTimeCursor = getTimeCursor(timeInit, (timeTrackRef.current.clientHeight));
+                setTimeCursor({ y: newTimeCursor, x: 0 });
+            }
+        })();
+    }, [appState.activeElement?.key, appState.timelineMaxValue, getScaleCursor, getTimeCursor, scale.math]);
+
+    useEffect(() => {
+        /* on a delay, pushes data from input boxes to the server */
+
+        const newMath = new Map(mathDebouncer);
+        if (scaleDebouncerRef.current) {
+            if (scaleRef.current && scaleTrackRef.current) {
+                const newScaleCursor = getTimeCursor(scaleDebouncerRef.current[1], scaleTrackRef.current.clientHeight);
+                setScaleCursor({ x: newScaleCursor, y: 0 });
+            }
+
+            const newScale: LaurusScaleResult = { ...scaleDebouncerRef.current[0], math: newMath };
+            dispatch({ type: WorkspaceActionType.SetEffect, value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id } });
+            updateScale(appState.apiOrigin, newScale.scale_id, newScale);
+            scaleDebouncerRef.current = undefined;
+        }
+
+        if (timeDebouncerRef.current) {
+            if (timeRef.current && timeTrackRef.current) {
+                const newTimeCursor = getTimeCursor(timeDebouncerRef.current[1], timeTrackRef.current.clientHeight);
+                setTimeCursor({ x: 0, y: newTimeCursor });
+            }
+
+            const newScale: LaurusScaleResult = { ...timeDebouncerRef.current[0], math: newMath };
+            dispatch({ type: WorkspaceActionType.SetEffect, value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id } });
+            updateScale(appState.apiOrigin, newScale.scale_id, newScale);
+            timeDebouncerRef.current = undefined;
+        }
+    }, [appState.apiOrigin, dispatch, getTimeCursor, mathDebouncer]);
     return (
         <div style={{
             gridTemplateRows: 'min-content auto',
@@ -110,7 +222,27 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                             fontSize: 14,
                                             color: 'rgb(246, 246, 246)',
                                         }}>
-                                        {'[n/a]'}
+                                        {appState.activeElement ? (() => {
+                                            switch (appState.activeElement.value.type) {
+                                                case "svg": {
+                                                    return (
+                                                        <ReactSvg
+                                                            svg={appState.activeElement.value.value as EncodedSvg}
+                                                            containerSize={{ width: 200, height: 200 }}
+                                                            scale={1}
+                                                        />
+                                                    )
+                                                }
+                                                case "img": {
+                                                    return (
+                                                        <ReactImg
+                                                            img={appState.activeElement.value.value as EncodedImg}
+                                                            containerSize={{ width: 200, height: 200 }}
+                                                        />
+                                                    )
+                                                }
+                                            }
+                                        })() : (<div>{'n/a'}</div>)}
                                     </div>
                                 </div>
                             </div>
@@ -121,9 +253,35 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                                 padding: '8px 16px'
                             }}>
                                 <input
+                                    id={`scale-input-${scale.scale_id}`}
                                     ref={scaleRef}
                                     type="text"
                                     placeholder="0.00"
+                                    value={scaleInputValue}
+                                    onChange={() => {
+                                        if (!scaleRef.current || !scaleTrackRef.current) return;
+                                        const newScaleValue: number = parseFloat(scaleRef.current.value) || 0;
+                                        setScaleInputValue(newScaleValue >= 1 ?
+                                            (newScaleValue).toFixed(2) :
+                                            (newScaleValue).toFixed(3));
+
+                                        if (newScaleValue > maxScale || newScaleValue < 0) {
+                                            return;
+                                        }
+
+                                        const activeEq = scale.math.get(appState.activeElement?.key ?? "");
+                                        if (activeEq) {
+                                            const newEquation = { ...activeEq, scale: newScaleValue };
+                                            const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
+                                            newMath.set(newEquation.input_id, newEquation);
+                                            setDebounceInput(newMath);
+                                            timeDebouncerRef.current = [{ ...scale }, newScaleValue];
+                                        }
+                                        else {
+                                            const newScaleCursor = getScaleCursor(newScaleValue, scaleTrackRef.current.clientWidth);
+                                            setScaleCursor({ x: newScaleCursor, y: 0 });
+                                        }
+                                    }}
                                     style={{
                                         textAlign: "right",
                                         background: 'none',
@@ -158,35 +316,98 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                             }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'min-content 3fr min-content', }}>
                                     <div style={{
-                                        gridRow: 1,
-                                        gridColumn: 1,
                                         height: 'min-content',
                                         display: 'flex',
-                                        padding: '20px 15px',
+                                        padding: `${timeTrackOffsets.padding}px 15px`,
                                         gap: 20,
                                         borderRight: 'solid rgba(0, 0, 0, 1) 1px',
                                     }}>
                                         <VerticalSlider
                                             label={"speed"}
-                                            hash={`${scale.scale_id}|${2}`}
+                                            hash={`${scale.scale_id}|p1`}
                                             capSize={timeCapSize}
                                             trackSize={timeTrackSize}
+                                            trackRef={timeTrackRef}
                                             cursor={timeCursor}
-                                            onNewCursor={(newCursor: { x: number, y: number }) => {
+                                            onNewCursor={(newCursor) => {
                                                 setTimeCursor({ ...newCursor, x: 0 });
+                                                if (!timeTrackRef.current) return;
+                                                const newTime: number = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
+
+                                                setTimeInputValue(toClientTime(newTime, appState.timelineMaxValue).toFixed(2));
+
+                                                if (appState.activeElement) {
+                                                    const activeEquation = scale.math.get(appState.activeElement!.key);
+                                                    const newEquation = activeEquation ?
+                                                        { ...activeEquation, time: newTime } :
+                                                        {
+                                                            input_id: appState.activeElement.key,
+                                                            time: newTime,
+                                                            scale: 1,
+                                                            loop: false,
+                                                            solution: []
+                                                        };
+                                                    saveNewEquation(newEquation);
+                                                }
+                                            }}
+                                            onCursorMove={(newCursor) => {
+                                                if (!timeTrackRef.current || !timeRef.current) return;
+                                                const newTime: number = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
+                                                timeRef.current.value = toClientTime(newTime, appState.timelineMaxValue).toFixed(2);
                                             }} />
                                     </div>
                                     <div style={{
-                                        gridRow: 1,
-                                        gridColumn: 2,
                                         padding: 0,
-                                        display: 'grid', placeContent: 'center',
+                                        display: 'grid',
+                                        placeContent: 'center',
                                     }}>
-                                        <div style={{
-                                            gridRow: 2,
-                                            gridColumn: 'span 2',
-                                            placeSelf: 'center',
-                                        }}>{'rate'}</div>
+                                        <div style={{ display: 'grid', placeItems: 'center' }}>
+                                            <input
+                                                id={`time-input-${scale.scale_id}`}
+                                                ref={timeRef}
+                                                type="text"
+                                                placeholder="0.00"
+                                                value={timeInputValue}
+                                                onChange={() => {
+                                                    if (!timeRef.current || !timeTrackRef.current) return;
+                                                    const newClientTime: number = parseFloat(timeRef.current.value) || 0;
+                                                    setTimeInputValue(newClientTime.toFixed(2));
+
+                                                    const newTime: number = toServerTime(newClientTime, appState.timelineMaxValue);
+                                                    if (newTime > appState.timelineMaxValue || newTime < 0) {
+                                                        return;
+                                                    }
+
+                                                    const activeEq = scale.math.get(appState.activeElement?.key ?? "");
+                                                    if (activeEq) {
+                                                        const newEquation = { ...activeEq, time: newTime };
+
+                                                        const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
+                                                        newMath.set(newEquation.input_id, newEquation);
+                                                        setDebounceInput(newMath);
+                                                        timeDebouncerRef.current = [{ ...scale }, newTime];
+                                                    }
+                                                    else {
+                                                        const newTimeCursor = getTimeCursor(newTime, timeTrackRef.current.clientHeight);
+                                                        setTimeCursor({ x: 0, y: newTimeCursor });
+                                                    }
+                                                }}
+                                                style={{
+                                                    textAlign: "center",
+                                                    background: 'none',
+                                                    color: "rgba(255, 255, 255, 0.8)",
+                                                    borderRadius: "2px",
+                                                    padding: '0px 0px',
+                                                    border: 'none',
+                                                    outline: 'none',
+                                                    lineHeight: '1',
+                                                    display: 'inline-block',
+                                                    overflowX: 'scroll',
+                                                    fontSize: 24,
+                                                    height: '30px',
+                                                    textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
+                                                }} />
+                                        </div>
                                     </div>
                                     <div style={{
                                         borderLeft: '2px solid black',
@@ -229,10 +450,10 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                             </div>
                         </div>
 
-                        <div style={{ padding: '0 20px 20px 20px' }}>
+                        <div style={{ padding: `0 20px 20px 20px` }}>
                             <div style={{
                                 width: 'min-content',
-                                padding: '20px 15px',
+                                padding: `20px ${scaleTrackOffsets.padding}px`,
                                 display: 'flex',
                                 alignItems: 'start',
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
@@ -241,53 +462,45 @@ export default function ScaleUnit({ scale }: ScaleUnitProps) {
                             }}>
                                 <HorizontalSlider
                                     label={"zoom"}
-                                    hash={`${scale.scale_id}|${1}`}
+                                    hash={`${scale.scale_id}|p2`}
                                     capSize={scaleCapSize}
                                     trackSize={scaleTrackSize}
+                                    trackRef={scaleTrackRef}
                                     cursor={scaleCursor}
-                                    onNewCursor={(newCursor: { x: number, y: number }) => {
-                                        if (scaleRef.current) {
-                                            const medianX: number = Math.round(((scaleTrackSize.width) / 2) - (scaleCapSize.width / 2));
-                                            const maxX: number = scaleTrackSize.width - scaleCapSize.width;
-                                            const rightSector: number = maxX - medianX;
-                                            const leftSector: number = medianX;
-                                            let rightReBase = 0;
-                                            for (let coordinate = 0; coordinate < rightSector; coordinate++) {
-                                                const xP: number = coordinate / rightSector;
-                                                const zoomInP: number = xP * maxScale.zoomIn;
-                                                if (zoomInP <= 1) {
-                                                    rightReBase = coordinate;
-                                                }
-                                                else {
-                                                    break;
-                                                }
-                                            };
+                                    onCursorMove={(newCursor) => {
+                                        if (!scaleTrackRef.current || !scaleRef.current) return;
+                                        const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
+                                        scaleRef.current.value = newScaleValue >= 1 ?
+                                            (newScaleValue).toFixed(2) :
+                                            (newScaleValue).toFixed(3);
 
-                                            if (newCursor.x === medianX) {
-                                                scaleRef.current.value = '1';
-                                            }
-                                            else if (newCursor.x > medianX) {
-                                                const xP: number = (newCursor.x - leftSector) / rightSector;
-                                                const zoomInP: number = xP * maxScale.zoomIn;
-                                                if (zoomInP <= 1) {
-                                                    const rebasedP = ((newCursor.x - leftSector) / rightReBase);
-                                                    const maxRebasedScale = ((rightReBase / rightSector) * maxScale.zoomIn) / 10;
-                                                    const newScale = (rebasedP * maxRebasedScale);
-                                                    scaleRef.current.value = (1 + newScale).toFixed(2);
-                                                }
-                                                else {
-                                                    scaleRef.current.value = zoomInP.toFixed(2);
-                                                }
-                                            }
-                                            else {
-                                                scaleRef.current.value = "";
-                                            }
-                                        }
+                                    }}
+                                    onNewCursor={(newCursor) => {
                                         setScaleCursor({ ...newCursor, y: 0 });
+
+                                        if (!scaleTrackRef.current) return;
+                                        const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
+
+                                        setScaleInputValue(newScaleValue >= 1 ?
+                                            (newScaleValue).toFixed(2) :
+                                            (newScaleValue).toFixed(3));
+
+                                        if (appState.activeElement) {
+                                            const activeEquation = scale.math.get(appState.activeElement!.key);
+                                            const newEquation = activeEquation ?
+                                                { ...activeEquation, scale: newScaleValue } :
+                                                {
+                                                    input_id: appState.activeElement.key,
+                                                    time: 0,
+                                                    scale: newScaleValue,
+                                                    loop: false,
+                                                    solution: []
+                                                };
+                                            saveNewEquation(newEquation);
+                                        }
                                     }} />
                             </div>
                         </div>
-
                     </div>
                 </> :
                 <>
@@ -344,23 +557,27 @@ interface ScaleUnitSliderProps {
     hash: string,
     capSize: { width: number | string, height: number | string }
     trackSize: { width: number | string, height: number | string }
+    trackRef: RefObject<HTMLDivElement | null>,
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
+    onCursorMove?: (newCursor: { x: number, y: number }) => void,
 }
 function VerticalSlider({
     label,
     hash,
     capSize,
     trackSize,
+    trackRef,
     cursor,
     onNewCursor,
+    onCursorMove,
 }: ScaleUnitSliderProps) {
     return (<>
         <div style={{ height: '100%', width: 'min-content' }}>
             <div style={{ position: "relative", ...trackSize, }}>
                 <div style={{ position: 'absolute', height: '100%', width: '100%', justifySelf: 'center', }}>
                     <Trackpad
-                        ids={{ contextId: `dnd-context-${hash}`, draggableId: `dnd-draggable-${hash}` }}
+                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={capSize.width}
                         height={'100%'}
                         coarsePointer={{
@@ -369,14 +586,17 @@ function VerticalSlider({
                             zIndex: 2
                         }}
                         value={cursor}
-                        onNewValue={onNewCursor} />
+                        onNewValue={onNewCursor}
+                        onMove={onCursorMove} />
                 </div>
                 <div
+                    ref={trackRef}
                     onMouseDown={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const x = Math.round(e.clientX - rect.left);
                         const y = Math.round(e.clientY - rect.top);
-                        onNewCursor({ x, y });
+                        const yOffset: number = parseFloat(`${capSize.height}`) || 0;
+                        onNewCursor({ x, y: Math.min(y, rect.height - yOffset) });
                     }}
                     style={{
                         zIndex: 0,
@@ -404,11 +624,15 @@ function HorizontalSlider({
     hash,
     capSize,
     trackSize,
+    trackRef,
     cursor,
     onNewCursor,
+    onCursorMove
 }: ScaleUnitSliderProps) {
     return (<>
-        <div style={{ width: 'min-content', height: '100%', }}>
+        <div
+            className={dellaRespira.className}
+            style={{ width: 'min-content', height: '100%', }}>
             <div style={{
                 position: "relative",
                 ...trackSize,
@@ -416,7 +640,7 @@ function HorizontalSlider({
             }}>
                 <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
                     <Trackpad
-                        ids={{ contextId: `dnd-context-${hash}`, draggableId: `dnd-draggable-${hash}` }}
+                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
                         height={capSize.height}
                         coarsePointer={{
@@ -425,7 +649,8 @@ function HorizontalSlider({
                             zIndex: 2
                         }}
                         value={cursor}
-                        onNewValue={onNewCursor} />
+                        onNewValue={onNewCursor}
+                        onMove={onCursorMove} />
                 </div>
                 <div
                     style={{
@@ -442,18 +667,20 @@ function HorizontalSlider({
                     }}
                 >
                     <div style={{
-                        height: '100%', width: '50%',
-                        background: "linear-gradient(45deg, rgb(136, 176, 231), rgb(172, 171, 232))",
-                        border: '1px solid rgb(125, 166, 255)',
+                        height: 12,
+                        width: '50%',
+                        background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(18, 18, 18))",
+                        border: '1px solid rgb(27, 27, 27)',
                     }} />
                     <div style={{
-                        height: '100%', width: '50%',
-                        background: "linear-gradient(45deg, rgb(231, 136, 136), rgb(232, 171, 171))",
-                        border: '1px solid rgb(255, 116, 116)',
+                        height: 12,
+                        width: '50%',
+                        background: "linear-gradient(45deg, rgb(18, 18, 18), rgb(25, 25, 25))",
+                        border: '1px solid rgb(27, 27, 27)',
                     }} />
-
                 </div>
                 <div
+                    ref={trackRef}
                     onMouseDown={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const x = Math.round(e.clientX - rect.left);
@@ -468,13 +695,39 @@ function HorizontalSlider({
                         alignSelf: 'center',
                         ...trackSize,
                         background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
-                        border: '1px solid rgb(5, 5, 5)'
+                        border: '1px solid rgb(27, 27, 27)',
+                        borderBottomLeftRadius: 2,
+                        borderBottomRightRadius: 2,
+                        boxShadow: "rgba(0, 0, 0, 0.7) -10px -10px 40px inset",
                     }}
-                />
+                >
+                    <div style={{
+                        padding: '0px 10px',
+                        display: 'flex',
+                        height: '100%',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}>
+                        <ReactSvg
+                            svg={remove('rgb(227, 227, 227)')}
+                            containerSize={{
+                                width: 20,
+                                height: 20
+                            }} scale={1} />
+
+                        <ReactSvg
+                            svg={add2('rgb(227, 227, 227)')}
+                            containerSize={{
+                                width: 20,
+                                height: 20
+                            }} scale={0.75} />
+
+                    </div>
+                </div>
 
             </div>
             <div
-                className={dmSans.className}
+
                 style={{
                     alignSelf: "start", justifySelf: "center",
                     fontSize: "10px", paddingTop: '10px'
