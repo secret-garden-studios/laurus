@@ -45,9 +45,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     const [scaleTrackSize] = useState({ width: 430, height: 50 });
     const [scaleCursor, setScaleCursor] = useState({ x: 0, y: 0 });
     function initDisplayScaleValue(): string {
-        const scaleInit = scale.math.get(appState.activeElement?.key ?? "")?.scale;
-        if (scaleInit) {
-            return scaleInit >= 1 ? scaleInit.toFixed(2) : scaleInit.toFixed(3);
+        const activeMath = scale.math.get(appState.activeElement?.key ?? "");
+        if (activeMath) {
+            return activeMath.scale >= 1 ? activeMath.scale.toFixed(2) : activeMath.scale.toFixed(3);
         }
         else {
             return '1.00'
@@ -306,6 +306,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 onChange={() => {
                                                     if (!scaleRef.current || !scaleTrackRef.current) return;
                                                     const newScaleValue: number = parseFloat(scaleRef.current.value) || 0;
+                                                    console.log({ newScaleValue });
                                                     setScaleInputValue(newScaleValue >= 1 ?
                                                         (newScaleValue).toFixed(2) :
                                                         (newScaleValue).toFixed(3));
