@@ -1,5 +1,5 @@
 'use client'
-import { createContext, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { createContext, RefObject, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
     getImgsByPage, getSvgsByPage, enumerateImgs, enumerateSvgs,
@@ -551,6 +551,9 @@ export default function Workspace({
         downloadSvgsForBrowser(top);
     }, [api, mpl, mediaBrowserPageSize, p]);
 
+    const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
+    const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
+
     return (<>
         <div
             style={{
@@ -570,7 +573,9 @@ export default function Workspace({
                 <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline &&
                         <TimelineArea
-                            size={{ width: 1000, height: 5000 }} />}
+                            size={{ width: 1000, height: 5000 }}
+                            svgElementsRef={svgElementsRef}
+                            imgElementsRef={imgElementsRef} />}
                 </div>
 
                 {/* left bumper */}
@@ -593,7 +598,10 @@ export default function Workspace({
                 <div
                     ref={canvasAreaRef}
                     style={{ gridRow: '2', gridColumn: '3', }}>
-                    <CanvasArea onActivate={setActiveThumbnail} />
+                    <CanvasArea
+                        onActivate={setActiveThumbnail}
+                        svgElementsRef={svgElementsRef}
+                        imgElementsRef={imgElementsRef} />
                 </div>
 
                 {/* media browser */}
@@ -754,10 +762,46 @@ export default function Workspace({
 
 interface CanvasAreaProps {
     onActivate: (media: LaurusThumbnail) => void,
+    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function CanvasArea({ onActivate }: CanvasAreaProps) {
+function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaProps) {
     const [rulerSize] = useState(20);
     const { appState, dispatch } = useContext(WorkspaceContext);
+
+    const lazyLoadSvgElementsRef = () => {
+        if (!svgElementsRef.current) {
+            svgElementsRef.current = new Map();
+        }
+        return svgElementsRef.current;
+    }
+
+    const lazyLoadImgElementsRef = () => {
+        if (!imgElementsRef.current) {
+            imgElementsRef.current = new Map();
+        }
+        return imgElementsRef.current;
+    }
+
+    const onSvgRef = (element: SVGSVGElement | null, refKey: string) => {
+        const m = lazyLoadSvgElementsRef();
+        if (element) {
+            m.set(refKey, element);
+        }
+        else {
+            m.delete(refKey);
+        }
+    };
+
+    const onImgRef = (element: HTMLImageElement | null, refKey: string) => {
+        const m = lazyLoadImgElementsRef();
+        if (element) {
+            m.set(refKey, element);
+        }
+        else {
+            m.delete(refKey);
+        }
+    };
 
     return (<>
         <div
@@ -852,7 +896,9 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                             }
                                         }
-                                    }} />
+                                    }}
+                                    onImgRef={onImgRef}
+                                    inputId={key} />
 
                             </div>
                         );
@@ -897,7 +943,9 @@ function CanvasArea({ onActivate }: CanvasAreaProps) {
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                             }
                                         }
-                                    }} />
+                                    }}
+                                    onSvgRef={onSvgRef}
+                                    inputId={key} />
                             </div>
                         );
                     }

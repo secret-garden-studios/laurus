@@ -16,10 +16,14 @@ import EffectUnit from "./effect-unit";
 
 interface TimelineArea {
     size: { width: number, height: number },
+    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 
 export default function TimelineArea({
     size,
+    svgElementsRef,
+    imgElementsRef
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
@@ -189,7 +193,10 @@ export default function TimelineArea({
                     gridRow: '2', gridColumn: '2',
                     width: size.width,
                 }}>
-                <TimelineAreaContent maxWidth={size.width} />
+                <TimelineAreaContent
+                    maxWidth={size.width}
+                    svgElementsRef={svgElementsRef}
+                    imgElementsRef={imgElementsRef} />
             </div>
         </div >
     </>)
@@ -197,8 +204,10 @@ export default function TimelineArea({
 
 interface TimelineAreaContentProps {
     maxWidth: number,
+    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
+function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: TimelineAreaContentProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const [layerLight, setLayerLight] = useState(false);
@@ -262,7 +271,10 @@ function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
                                         borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
                                     }}
                                     key={i}>
-                                    <EffectUnit effect={s} />
+                                    <EffectUnit
+                                        effect={s}
+                                        svgElementsRef={svgElementsRef}
+                                        imgElementsRef={imgElementsRef} />
                                 </div>
 
                             })}
@@ -339,7 +351,7 @@ function TimelineAreaContent({ maxWidth }: TimelineAreaContentProps) {
                                                                     duration: 0,
                                                                     project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                                                     layer_id: layerEntry[0],
-                                                                    fps: 0,
+                                                                    fps: 30,
                                                                     order: appState.effects.filter(e => e.type == 'scale').length,
                                                                 };
                                                                 const response = await createScale(appState.apiOrigin, newScale);

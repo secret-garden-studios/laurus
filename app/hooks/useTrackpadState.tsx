@@ -18,7 +18,7 @@ export function useTrackpadState(offset: number, maxValue: number): TrackpadStat
             const clampedCX = Math.max(0, Math.min(cursor, ctx.maxCursor));
             const percentage: number = clampedCX / ctx.maxCursor;
             const value: number = percentage * maxValue;
-            return Math.max(0, value);
+            return Math.max(0.000001, value);
         },
 
         getTrackCursor: (value: number, trackSize: number): number => {

@@ -396,13 +396,22 @@ export async function getEffects(baseUrl: string | undefined) {
 
 export interface ScaleEquation_V1_0 {
     input_id: string
+    /**
+     * ms
+     */
     time: number
     scale: number
     loop: boolean
     solution: number[]
 }
 export interface Scale_V1_0 {
+    /**
+     * s
+     */
     offset: number
+    /**
+     * s
+     */
     duration: number
     project_id: string
     layer_id: string
@@ -414,7 +423,13 @@ export interface ScaleResult_V1_0 {
     timestamp: string
     last_active: string
     scale_id: string
+    /**
+     * s
+     */
     offset: number
+    /**
+     * s
+     */
     duration: number
     project_id: string
     layer_id: string
@@ -449,9 +464,13 @@ export async function getScales(baseUrl: string | undefined, projectId: string) 
 }
 export async function getScale(
     baseUrl: string | undefined,
-    scaleId: string) {
+    scaleId: string,
+    solve: string | undefined) {
     try {
-        const url = `${baseUrl}/scales/${scaleId}`;
+        let url = `${baseUrl}/scales/${scaleId}`;
+        if (solve) {
+            url += `?solve=${solve}`
+        }
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {

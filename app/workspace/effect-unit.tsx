@@ -40,9 +40,11 @@ function injectTime(
 
 interface EffectUnitProps {
     effect: LaurusEffect,
+    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 
-export default function EffectUnit({ effect }: EffectUnitProps) {
+export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnitProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
 
@@ -307,7 +309,10 @@ export default function EffectUnit({ effect }: EffectUnitProps) {
             {showUnitControls && (() => {
                 switch (effect.type) {
                     case "scale": {
-                        return <ScaleUnit scale={effect.value} />
+                        return <ScaleUnit
+                            scale={effect.value}
+                            svgElementsRef={svgElementsRef}
+                            imgElementsRef={imgElementsRef} />
                     }
                     case "move": {
                         return <></>
