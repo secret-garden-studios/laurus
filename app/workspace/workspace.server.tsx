@@ -394,6 +394,8 @@ export async function getEffects(baseUrl: string | undefined) {
     }
 }
 
+/* scale */
+
 export interface ScaleEquation_V1_0 {
     input_id: string
     /**
@@ -465,11 +467,11 @@ export async function getScales(baseUrl: string | undefined, projectId: string) 
 export async function getScale(
     baseUrl: string | undefined,
     scaleId: string,
-    solve: string | undefined) {
+    inputId: string | undefined) {
     try {
         let url = `${baseUrl}/scales/${scaleId}`;
-        if (solve) {
-            url += `?solve=${solve}`
+        if (inputId) {
+            url += `?input_id=${inputId}`
         }
         const raw_response = await fetch(url, {
             method: 'GET',
@@ -561,6 +563,179 @@ export async function deleteScale(
     scaleId: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/scales/${scaleId}`;
+        const raw_response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        return raw_response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}
+
+/* move */
+
+export interface MoveEquation_V1_0 {
+    input_id: string
+    angle: number
+    amplitude: number
+    frequency: number
+    wavelength: number
+    distance: number
+    time: number
+    loop: boolean
+    solution: { x: number, y: number }[]
+}
+export interface Move_V1_0 {
+    offset: number
+    duration: number
+    project_id: string
+    layer_id: string
+    order: number
+    fps: number
+    math: Map<string, MoveEquation_V1_0>
+}
+export interface MoveResult_V1_0 {
+    timestamp: string
+    last_active: string
+    move_id: string
+    offset: number
+    duration: number
+    project_id: string
+    layer_id: string
+    order: number
+    fps: number
+    math: Map<string, MoveEquation_V1_0>
+}
+export async function getMoves(baseUrl: string | undefined, projectId: string) {
+    try {
+        const url = `${baseUrl}/moves?project_id=${projectId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: MoveResult_V1_0[] = await raw_response.json();
+        return response.map(r => {
+            return {
+                ...r,
+                math: new Map(Object.entries(r.math))
+            }
+        });
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function getMove(
+    baseUrl: string | undefined,
+    moveId: string,
+    inputId: string | undefined) {
+    try {
+        let url = `${baseUrl}/moves/${moveId}`;
+        if (inputId) {
+            url += `?input_id=${inputId}`
+        }
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: MoveResult_V1_0 = await raw_response.json();
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function createMove(
+    baseUrl: string | undefined,
+    move: Move_V1_0) {
+    try {
+        const url = `${baseUrl}/moves`;
+        const body = JSON.stringify({
+            ...move,
+            math: Object.fromEntries(move.math),
+        });
+        const raw_response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+
+        const response: MoveResult_V1_0 = await raw_response.json();
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function updateMove(
+    baseUrl: string | undefined,
+    moveId: string,
+    move: Move_V1_0) {
+    try {
+        const body = JSON.stringify({
+            ...move,
+            math: Object.fromEntries(move.math),
+        });
+        const url = `${baseUrl}/moves/${moveId}`;
+        const raw_response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+
+        const response: MoveResult_V1_0 = await raw_response.json();
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function deleteMove(
+    baseUrl: string | undefined,
+    moveId: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/moves/${moveId}`;
         const raw_response = await fetch(url, {
             method: 'DELETE',
             headers: {

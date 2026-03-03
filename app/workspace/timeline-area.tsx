@@ -7,9 +7,10 @@ import {
     LaurusEffect, LaurusProjectResult, LaurusScale,
     timelineUnits,
     convertTime,
-    WorkspaceActionType, WorkspaceContext
+    WorkspaceActionType, WorkspaceContext,
+    LaurusMove
 } from "./workspace.client";
-import { createProject, createScale, updateProject } from "./workspace.server";
+import { createMove, createProject, createScale, updateProject } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
@@ -359,6 +360,30 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                                                     const newEffect: LaurusEffect = {
                                                                         type: 'scale',
                                                                         key: response.scale_id,
+                                                                        value: { ...response }
+                                                                    }
+                                                                    dispatch({
+                                                                        type: WorkspaceActionType.SetEffects,
+                                                                        value: [...appState.effects, newEffect]
+                                                                    });
+                                                                }
+                                                                break;
+                                                            }
+                                                            case 'move': {
+                                                                const newMove: LaurusMove = {
+                                                                    math: new Map(),
+                                                                    offset: 0,
+                                                                    duration: 0,
+                                                                    project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
+                                                                    layer_id: layerEntry[0],
+                                                                    fps: 30,
+                                                                    order: appState.effects.filter(e => e.type == 'move').length,
+                                                                };
+                                                                const response = await createMove(appState.apiOrigin, newMove);
+                                                                if (response) {
+                                                                    const newEffect: LaurusEffect = {
+                                                                        type: 'move',
+                                                                        key: response.move_id,
                                                                         value: { ...response }
                                                                     }
                                                                     dispatch({

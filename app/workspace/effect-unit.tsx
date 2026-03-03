@@ -4,9 +4,10 @@ import ScaleUnit from "./scale-unit";
 import { convertTime, LaurusEffect, LaurusScale, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { ReactSvg } from "./media";
 import { circle } from "../svg-repo";
-import { ScaleResult_V1_0, updateScale } from "./workspace.server";
+import { MoveResult_V1_0, ScaleResult_V1_0, updateMove, updateScale } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
+import MoveUnit from "./move-unit";
 
 function injectTime(
     e: LaurusEffect,
@@ -118,6 +119,25 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
             case "move": {
+                const effectForServer = injectTime(
+                    effect,
+                    convertTime(effect.value.offset, appState.timelineUnit, 'sec'),
+                    convertTime(effect.value.duration, appState.timelineUnit, 'sec'));
+                const response = await updateMove(
+                    appState.apiOrigin,
+                    effectForServer.key,
+                    effectForServer.value as MoveResult_V1_0);
+                if (!response) return;
+                const newEffect: LaurusEffect = {
+                    type: 'move',
+                    key: response.move_id,
+                    value: {
+                        ...response,
+                        offset: convertTime(response.offset, 'sec', appState.timelineUnit),
+                        duration: convertTime(response.duration, 'sec', appState.timelineUnit)
+                    }
+                };
+                dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 break;
             }
         }
@@ -258,7 +278,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 padding: `0px ${trackSidePadding}px 0px ${trackSidePadding}px`,
             }}>
                 <TimelineSlider
-                    label={"scale"}
+                    label={effect.type}
                     hash={`${effect.key}|t1`}
                     capSize={offsetCapSize}
                     rangeCapSize={durationCapSize}
@@ -315,7 +335,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             imgElementsRef={imgElementsRef} />
                     }
                     case "move": {
-                        return <></>
+                        return <MoveUnit
+                            move={effect.value}
+                            svgElementsRef={svgElementsRef}
+                            imgElementsRef={imgElementsRef} />
                     }
                 }
             })()}

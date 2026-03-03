@@ -1,8 +1,10 @@
 import { useCallback, useMemo } from 'react';
 
 export interface TrackpadState {
-    getTrackValue: (cursor: number, trackSize: number) => number;
+    getTrackValue: (cursor: number, trackSize: number, minValue?: number) => number;
     getTrackCursor: (value: number, trackSize: number) => number;
+    getInverseTrackValue: (cursor: number, trackSize: number, minValue?: number) => number;
+    getInverseTrackCursor: (value: number, trackSize: number) => number;
 }
 
 export function useTrackpadState(offset: number, maxValue: number): TrackpadState {
@@ -13,12 +15,12 @@ export function useTrackpadState(offset: number, maxValue: number): TrackpadStat
     }, [offset]);
 
     return useMemo(() => ({
-        getTrackValue: (cursor: number, trackSize: number): number => {
+        getTrackValue: (cursor: number, trackSize: number, minValue: number = 0.000001): number => {
             const ctx = getContext(trackSize);
             const clampedCX = Math.max(0, Math.min(cursor, ctx.maxCursor));
             const percentage: number = clampedCX / ctx.maxCursor;
             const value: number = percentage * maxValue;
-            return Math.max(0.000001, value);
+            return Math.max(minValue, value);
         },
 
         getTrackCursor: (value: number, trackSize: number): number => {
@@ -27,6 +29,22 @@ export function useTrackpadState(offset: number, maxValue: number): TrackpadStat
             const percentage = safeValue / maxValue;
             const coordinate = percentage * ctx.maxCursor;
             return Math.max(0, Math.min(Math.round(coordinate), ctx.maxCursor));
+        },
+
+        getInverseTrackValue: (cursor: number, trackSize: number, minValue: number = 0.000001): number => {
+            const ctx = getContext(trackSize);
+            const clampedCX = Math.max(0, Math.min(cursor, ctx.maxCursor));
+            const percentage: number = clampedCX / ctx.maxCursor;
+            const value: number = maxValue - (percentage * maxValue);
+            return Math.max(minValue, value);
+        },
+
+        getInverseTrackCursor: (value: number, trackSize: number): number => {
+            const ctx = getContext(trackSize);
+            const safeValue = Math.max(0, value);
+            const percentage = safeValue / maxValue;
+            const coordinate = percentage * ctx.maxCursor;
+            return  Math.max(0, ctx.maxCursor - Math.min(Math.round(coordinate), ctx.maxCursor));
         }
     }), [getContext, maxValue]);
 }

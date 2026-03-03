@@ -20,7 +20,11 @@ import {
     ScaleEquation_V1_0,
     Scale_V1_0,
     ScaleResult_V1_0,
-    getScales
+    getScales,
+    MoveEquation_V1_0,
+    Move_V1_0,
+    MoveResult_V1_0,
+    getMoves
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./statusbar";
@@ -51,13 +55,15 @@ export type LaurusScaleEquation = ScaleEquation_V1_0;
 export interface LaurusScale extends Scale_V1_0 {
     math: Map<string, LaurusScaleEquation>,
 }
-type LaurusMoveResult = {
-    offset: number,
-    duration: number,
-    order: number,
-}
 export interface LaurusScaleResult extends ScaleResult_V1_0 {
     math: Map<string, LaurusScaleEquation>,
+}
+export type LaurusMoveEquation = MoveEquation_V1_0;
+export interface LaurusMove extends Move_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
+}
+export interface LaurusMoveResult extends MoveResult_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
 }
 export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }
@@ -524,12 +530,14 @@ export default function Workspace({
             }
         };
 
-        const downloadScalesFromProjectInit = async () => {
+        const downloadEffectsFromProjectInit = async () => {
             if (p && p.length > 0) {
                 const mostRecent = getMostRecentProject([...p]);
-                const response = await getScales(api, mostRecent.project_id);
-                if (response) {
-                    const newEffects: LaurusEffect[] = response.map(s => {
+                const scales = await getScales(api, mostRecent.project_id);
+                const moves = await getMoves(api, mostRecent.project_id);
+                const newEffects: LaurusEffect[] = [];
+                if (scales) {
+                    const newScales: LaurusEffect[] = scales.map(s => {
                         return {
                             type: 'scale',
                             key: s.scale_id,
@@ -538,13 +546,26 @@ export default function Workspace({
                             }
                         }
                     });
-                    dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                    newEffects.push(...newScales);
                 }
+                if (moves) {
+                    const newMoves: LaurusEffect[] = moves.map(e => {
+                        return {
+                            type: 'move',
+                            key: e.move_id,
+                            value: {
+                                ...e,
+                            }
+                        }
+                    });
+                    newEffects.push(...newMoves);
+                }
+                dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
             }
         };
 
         const top: number = mpl ? (parseInt(mpl) || 2) : 2;
-        downloadScalesFromProjectInit();
+        downloadEffectsFromProjectInit();
         downloadImgsFromProjectInit();
         downloadImgsForBrowser(top);
         downloadSvgsFromProjectInit();
@@ -766,7 +787,6 @@ interface CanvasAreaProps {
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaProps) {
-    const [rulerSize] = useState(20);
     const { appState, dispatch } = useContext(WorkspaceContext);
 
     const lazyLoadSvgElementsRef = () => {
@@ -818,7 +838,7 @@ function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaPr
             {/* canvas area */}
             <div style={{ gridRow: '2', gridColumn: '2', }}>
                 <div
-                    className={styles["tiled-background-squares"]}
+                    className={styles["large-tiled-background-squares"]}
                     style={{
                         position: 'absolute',
                         top: 0,
@@ -842,6 +862,7 @@ function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaPr
 
                 {/* paper */}
                 {appState.project && <div
+                    className={styles["grainy-background"]}
                     style={{
                         position: 'absolute',
                         top: appState.project.frame_top,
@@ -849,8 +870,7 @@ function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaPr
                         width: appState.project.frame_width,
                         height: appState.project.frame_height,
                         overflow: 'hidden',
-                        backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(20, 20, 20))',
-                        boxShadow: "8px 8px 20px rgba(0, 0, 0, 0.7)",
+                        boxShadow: "6px 6px 10px rgba(0, 0, 0, 0.2)",
                         border: "1px solid black",
                         borderRadius: 2,
                         zIndex: appState.tool && appState.tool.type == 'drop' ? 1 : 0,
@@ -1141,46 +1161,6 @@ function CanvasArea({ onActivate, svgElementsRef, imgElementsRef }: CanvasAreaPr
                         );
                     }
                 })}
-
-                {/* ruler intersection */}
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    zIndex: 3, gridRow: '1', gridColumn: '1',
-                    width: rulerSize, height: rulerSize,
-                    backgroundImage: 'linear-gradient(45deg, rgb(36, 36, 36), rgb(39, 39, 39))',
-                    display: 'grid',
-                    border: '1px solid black',
-                    placeItems: 'center',
-                }} >
-                </div>
-                {/* tall ruler */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: rulerSize,
-                        left: 0,
-                        zIndex: 3,
-                        gridRow: '2', gridColumn: '1',
-                        width: rulerSize,
-                        height: appState.project.canvas_height - rulerSize,
-                        display: 'grid',
-                        backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(10, 10, 10))',
-                    }} />
-                {/* wide ruler */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: rulerSize,
-                        zIndex: 3,
-                        gridRow: '1', gridColumn: '2',
-                        height: rulerSize,
-                        width: appState.project.canvas_width - rulerSize,
-                        display: 'grid',
-                        backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(10, 10, 10))',
-                    }} />
             </div>
         </div >
     </>)
