@@ -750,3 +750,34 @@ export async function deleteMove(
         return false;
     }
 }
+
+interface Frame_V1_0 {
+    x: number
+    y: number
+    s: number
+    input_id: string
+}
+export async function getFrames(
+    baseUrl: string | undefined,
+    projectId: string,
+    inputId: string,
+    fps: number) {
+    try {
+        const url = `${baseUrl}/frames?project_id=${projectId}&input_id=${inputId}&fps=${fps}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: Frame_V1_0[] = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}

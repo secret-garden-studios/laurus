@@ -2,15 +2,15 @@ import { RefObject, useCallback, useContext, useEffect, useRef, useState } from 
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import { ReactSvg } from "./media";
-import { addCircle, circle } from "../svg-repo";
+import { addCircle, circle, playArrow, skipNext, skipPrevious } from "../svg-repo";
 import {
     LaurusEffect, LaurusProjectResult, LaurusScale,
     timelineUnits,
     convertTime,
     WorkspaceActionType, WorkspaceContext,
-    LaurusMove
+    LaurusMove,
 } from "./workspace.client";
-import { createMove, createProject, createScale, updateProject } from "./workspace.server";
+import { createMove, createProject, createScale, getFrames, updateProject } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
@@ -28,6 +28,12 @@ export default function TimelineArea({
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
+    const [recordingLight, setRecordingLight] = useState(false);
+    const [fps, setFps] = useState(60);
+    const [fastRate] = useState(70);
+    const [playEnabled, setPlayEnabled] = useState(true);
+    const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
+    const [skipNextEnabled, setSkipNextEnabled] = useState<boolean>(true);
 
     const getWideRulerParams = useCallback(() => {
         switch (appState.timelineMaxValue) {
@@ -47,17 +53,81 @@ export default function TimelineArea({
 
     }, [appState.timelineMaxValue]);
 
+    const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
+        const newAnimations: Animation[] = [];
+        const globalLimit: number = Math.max(...appState.effects
+            .map(e => e.value.duration));
+        const options: KeyframeAnimationOptions = {
+            duration: globalLimit * 1000,
+            iterations: 1,
+            fill,
+        };
+
+        const imgArray = Array.from(appState.project.imgs.entries().filter(e => !e[1].pending));
+        for (let i = 0; i < imgArray.length; i++) {
+            const [key] = imgArray[i];
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, fps);
+            if (frames) {
+                const framesToMap = firstFrame ? [frames[0]] : frames;
+                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
+                    return i < frames.length - 1 ?
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
+                });
+                const imgRef = imgElementsRef.current?.get(key);
+                if (!imgRef) return;
+                const animations = imgRef.getAnimations();
+                for (let j = 0; j < animations.length; j++) {
+                    animations[j].cancel();
+                }
+                const keyframeEffect =
+                    new KeyframeEffect(imgRef, keyframes, options);
+                newAnimations.push(new Animation(keyframeEffect, document.timeline));
+            }
+        };
+
+        const svgArray = Array.from(appState.project.svgs.entries().filter(e => !e[1].pending));
+        for (let i = 0; i < svgArray.length; i++) {
+            const [key] = svgArray[i];
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, fps);
+            if (frames) {
+                const framesToMap = firstFrame ? [frames[0]] : frames;
+                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
+                    return i < frames.length - 1 ?
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
+                });
+                const svgRef = svgElementsRef.current?.get(key);
+                if (!svgRef) return;
+                const animations = svgRef.getAnimations();
+                for (let j = 0; j < animations.length; j++) {
+                    animations[j].cancel();
+                }
+                const keyframeEffect =
+                    new KeyframeEffect(svgRef, keyframes, options);
+                newAnimations.push(new Animation(keyframeEffect, document.timeline));
+            }
+        };
+
+        return newAnimations;
+    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, fps, imgElementsRef, svgElementsRef]);
+
+    const enableAllControls = useCallback(() => {
+        setRecordingLight(false);
+        setPlayEnabled(true);
+        setSkipPreviousEnabled(true);
+        setSkipNextEnabled(true);
+    }, []);
+
     return (<>
         <div
             style={{
-                overflowY: 'auto',
                 width: "100%",
                 height: '100%',
                 display: 'grid',
                 gridTemplateColumns: 'min-content 1fr',
-                gridTemplateRows: `min-content 1fr`,
+                gridTemplateRows: `min-content 1fr min-content`,
             }}>
-
             {/* ruler intersection */}
             <div style={{
                 gridRow: '1', gridColumn: '1',
@@ -186,32 +256,187 @@ export default function TimelineArea({
                     })()}
                 </div>
             </div>
-
             {/* content area */}
             <div
                 className={styles["grainy-background"] + " " + dellaRespira.className}
                 style={{
+                    overflowY: 'auto',
                     gridRow: '2', gridColumn: '2',
                     width: size.width,
+                    display: 'grid',
+                    alignContent: 'space-between',
                 }}>
                 <TimelineAreaContent
                     maxWidth={size.width}
+                    recordingLight={recordingLight}
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
             </div>
-        </div >
+            {/* control area */}
+            <div
+                className={styles["grainy-background"] + " " + dellaRespira.className}
+                style={{
+                    gridRow: '3',
+                    gridColumn: 'span 2',
+                    display: 'grid',
+                    alignContent: 'space-between',
+                }}>
+                <div
+                    style={{
+                        borderTop: '1px solid rgb(0, 0, 0)',
+                        borderLeft: '1px solid rgb(0, 0, 0)',
+                        borderRight: '1px solid rgb(0, 0, 0)',
+                        borderTopRightRadius: 10,
+                        borderTopLeftRadius: 10,
+                        backgroundColor: "rgba(30, 30, 30, 0.6)",
+                        paddingTop: 10,
+                        paddingLeft: 6,
+                        paddingRight: 6,
+                        paddingBottom: 10,
+                        display: 'grid',
+                        width: '100%',
+                    }}>
+                    <div style={{
+                        display: 'flex',
+                        position: 'relative',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                    }}>
+                        <ReactSvg
+                            svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
+                            containerSize={{
+                                width: 20,
+                                height: 20
+                            }}
+                            scale={1}
+                            onContainerClick={async () => {
+                                if (!skipPreviousEnabled) return;
+                                const newAnimations = await getNewAnimations('forwards', true);
+                                if (newAnimations) {
+                                    Promise.all(newAnimations.map(animation => animation.finished))
+                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                        .then((_animations: Animation[]) => {
+                                            enableAllControls();
+                                        })
+                                        .catch(err => {
+                                            if (err instanceof Error && err.name !== 'AbortError') {
+                                                console.log('unknown error from waapi:', err);
+                                            }
+                                        });
+                                    setSkipPreviousEnabled(false);
+                                    newAnimations.forEach(a => {
+                                        a.updatePlaybackRate(fastRate);
+                                        a.play()
+                                    });
+                                }
+                            }} />
+                        <ReactSvg
+                            svg={playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
+                            containerSize={{
+                                width: 50,
+                                height: 50
+                            }}
+                            scale={1}
+                            onContainerClick={async () => {
+                                if (!playEnabled) return;
+                                const newAnimations = await getNewAnimations('none', false);
+                                if (newAnimations) {
+                                    Promise.all(newAnimations.map(animation => animation.finished))
+                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                        .then((_animations: Animation[]) => {
+                                            enableAllControls();
+                                        })
+                                        .catch(err => {
+                                            if (err instanceof Error && err.name !== 'AbortError') {
+                                                console.log('unknown error from waapi:', err);
+                                            }
+                                        });
+                                    setPlayEnabled(false);
+                                    newAnimations.forEach(a => a.play());
+                                    setRecordingLight(true);
+                                }
+                            }} />
+                        <ReactSvg
+                            svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
+                            containerSize={{
+                                width: 20,
+                                height: 20
+                            }}
+                            scale={1}
+                            onContainerClick={async () => {
+                                if (!skipNextEnabled) return;
+                                const newAnimations = await getNewAnimations('forwards', false);
+                                if (newAnimations) {
+                                    Promise.all(newAnimations.map(animation => animation.finished))
+                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                        .then((_animations: Animation[]) => {
+                                            enableAllControls();
+                                        })
+                                        .catch(err => {
+                                            if (err instanceof Error && err.name !== 'AbortError') {
+                                                console.log('unknown error from waapi:', err);
+                                            }
+                                        });
+                                    setSkipNextEnabled(false);
+                                    newAnimations.forEach(a => {
+                                        a.updatePlaybackRate(fastRate);
+                                        a.play();
+                                    });
+                                }
+                            }} />
+                        <div style={{
+                            right: 0,
+                            display: 'flex',
+                            position: 'absolute'
+                        }}>
+                            <input
+                                className={dellaRespira.className}
+                                id={`fps-input`}
+                                type="text"
+                                placeholder="30"
+                                value={fps}
+                                onChange={(e) => {
+                                    const newFps: number = parseFloat(e.currentTarget.value) || 30;
+                                    setFps(newFps);
+                                }}
+                                style={{
+                                    textAlign: "right",
+                                    background: 'none',
+                                    color: "rgb(227, 227, 227)",
+                                    borderRadius: "2px",
+                                    border: 'none',
+                                    outline: 'none',
+                                    lineHeight: '1',
+                                    display: 'inline-block',
+                                    overflowX: 'scroll',
+                                    fontSize: 16,
+                                }}
+                            />
+                            <div
+                                style={{
+                                    fontSize: 15,
+                                    padding: '0px 3px',
+                                    color: "rgba(255, 255, 255, 0.5)",
+                                }}>
+                                {<i>{'fps'}</i>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </>)
 }
 
 interface TimelineAreaContentProps {
     maxWidth: number,
+    recordingLight: boolean,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: TimelineAreaContentProps) {
+function TimelineAreaContent({ maxWidth, recordingLight, svgElementsRef, imgElementsRef }: TimelineAreaContentProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
-    const [layerLight, setLayerLight] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
 
     return (<>
@@ -247,8 +472,9 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 style={{
                                     display: 'grid',
                                 }}>
+                                {/* layer options placeholder */}
                                 <ReactSvg
-                                    svg={circle('rgb(204, 204, 204)')}
+                                    svg={circle('rgba(204, 204, 204, 0)')}
                                     containerSize={{
                                         width: 12,
                                         height: 12
@@ -264,7 +490,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             borderLeft: '1px solid black',
                             borderRight: '1px solid black',
                             borderBottomLeftRadius: 10,
-
                         }}>
                             {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
                                 return <div
@@ -277,7 +502,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                         svgElementsRef={svgElementsRef}
                                         imgElementsRef={imgElementsRef} />
                                 </div>
-
                             })}
                             <div
                                 style={{
@@ -405,13 +629,12 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         </div>
                     </div>
                     <div
-                        onDoubleClick={() => setLayerLight(v => !v)}
                         style={{
                             width: '48px',
                             borderRadius: '10px',
-                            border: layerLight ? '1px solid rgb(168, 168, 168)' : '1px solid rgba(0, 0, 0, 1)',
-                            background: layerLight ? 'linear-gradient(270deg, rgba(239, 239, 239, 0.6), rgba(255, 255, 255, 0.8))' : 'rgba(33, 33, 33, 1)',
-                            boxShadow: layerLight ? 'rgba(255, 255, 255, 0.8) 0px 0px 100px -7px' : 'none'
+                            border: recordingLight ? '1px solid rgb(168, 168, 168)' : '1px solid rgba(0, 0, 0, 1)',
+                            background: recordingLight ? 'linear-gradient(270deg, rgba(239, 239, 239, 0.6), rgba(255, 255, 255, 0.8))' : 'rgba(33, 33, 33, 1)',
+                            boxShadow: recordingLight ? 'rgba(255, 255, 255, 0.8) 0px 0px 100px -7px' : 'none'
                         }} />
                 </div>)
         })}

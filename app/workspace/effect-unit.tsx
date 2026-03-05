@@ -3,7 +3,7 @@ import { PointerStyle, Trackpad } from "../components/trackpad";
 import ScaleUnit from "./scale-unit";
 import { convertTime, LaurusEffect, LaurusScale, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { ReactSvg } from "./media";
-import { circle } from "../svg-repo";
+import { arrowDropDown, arrowDropUp } from "../svg-repo";
 import { MoveResult_V1_0, ScaleResult_V1_0, updateMove, updateScale } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -202,7 +202,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     display: 'flex', justifyContent: 'space-between',
                     alignItems: 'center',
                     fontSize: 12,
-                    color: 'rgba(255,255,255,1)'
+                    color: 'rgb(227, 227, 227)'
                 }}>
                 <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
                     <div>{'start'}</div>
@@ -318,12 +318,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     padding: 6, display: 'flex', justifyContent: 'end'
                 }}>
                 <ReactSvg
-                    svg={circle()}
+                    svg={showUnitControls ? arrowDropUp() : arrowDropDown()}
                     containerSize={{
-                        width: 12,
-                        height: 12
+                        width: 17,
+                        height: 17
                     }}
-                    scale={0.9}
+                    scale={1}
                     onContainerClick={() => setShowUnitControls(v => !v)} />
             </div>
             {showUnitControls && (() => {
@@ -417,7 +417,7 @@ function TimelineSlider({
                         zIndex: 1,
                         top: 0,
                         width: trackSize.width,
-                        height: 20,
+                        height: 22,
                         position: "absolute",
                         justifySelf: 'start',
                         alignSelf: 'center',
@@ -425,20 +425,13 @@ function TimelineSlider({
                         justifyContent: 'start',
                         background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(25, 25, 25))",
                         border: '1px solid rgb(27, 27, 27)',
-                        fontSize: 10,
+                        fontSize: 12,
                         paddingLeft: 7,
                         alignItems: 'center',
-                        color: 'rgba(200,200,200,1)',
+                        color: 'rgb(255, 255, 255)',
                     }}
                 >
                     {label}
-                    <ReactSvg
-                        svg={circle('rgba(200,200,200,0.7)')}
-                        containerSize={{
-                            width: 10,
-                            height: 10
-                        }}
-                        scale={0.8} />
                 </div>
                 <div
                     ref={trackRef}

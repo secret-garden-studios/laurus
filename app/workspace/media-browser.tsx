@@ -3,6 +3,8 @@ import { dellaRespira, michroma, redHatDisplay } from "../fonts";
 import { LaurusThumbnail, WorkspaceContext } from "./workspace.client";
 import Image from "next/image";
 import styles from "../app.module.css";
+import { ReactSvg } from "./media";
+import { arrowDropDown } from "../svg-repo";
 
 interface MediaBrowserArea {
     filter: 'img' | 'svg',
@@ -233,12 +235,13 @@ export default function MediaBrowserArea({
                                                 setAutoscroll(true);
                                                 onNextPage();
                                             }}>
-                                            <Image
-                                                src="/material-ui/arrow_drop_down_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg"
-                                                alt="arrow_drop_down"
-                                                width={22}
-                                                height={22}
-                                            />
+                                            <ReactSvg
+                                                svg={arrowDropDown()}
+                                                containerSize={{
+                                                    width: 22,
+                                                    height: 22
+                                                }}
+                                                scale={1} />
                                         </div>
                                     </div>
                                 )}
@@ -302,11 +305,13 @@ export default function MediaBrowserArea({
                                                 setAutoscroll(true);
                                                 onNextPage();
                                             }}>
-                                            <Image
-                                                src="/material-ui/arrow_drop_down_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg"
-                                                alt="arrow_drop_down"
-                                                width={22}
-                                                height={22} />
+                                            <ReactSvg
+                                                svg={arrowDropDown()}
+                                                containerSize={{
+                                                    width: 22,
+                                                    height: 22
+                                                }}
+                                                scale={1} />
                                         </div>
                                     </div>
                                 )}

@@ -2,7 +2,7 @@ import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef,
 import { EncodedImg, EncodedSvg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg, ReactSvg } from "./media";
-import { circle, add2, remove, playCircle, autorenew, fastRewind } from "../svg-repo";
+import { add2, remove, autorenew, fastRewind, playArrow, moreVert, allOut } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
@@ -20,7 +20,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
 
-    const [displaySize] = useState({ 'width': 400, 'height': 400, 'padding': 0 });
+    const [displaySize] = useState({ 'width': 400, 'height': 450, 'padding': 0 });
     const [mainControls, setMainControls] = useState(true);
     const [prevActiveElementId, setPrevActiveElementId] = useState<string>(appState.activeElement?.key ?? "");
 
@@ -160,23 +160,23 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     {'Scale'}
                 </div>
                 <ReactSvg
-                    svg={circle()}
+                    svg={allOut()}
                     containerSize={{
-                        width: 24,
-                        height: 24
+                        width: 40,
+                        height: 40
                     }}
-                    scale={1} />
+                    scale={0.75} />
                 <div
-                    style={{ display: 'grid', placeContent: 'start', width: 'min-content', height: '100%', marginLeft: 'auto' }}
+                    style={{ display: 'grid', placeContent: 'center', width: 'min-content', height: '100%', marginLeft: 'auto' }}
                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                     onClick={() => { setMainControls(v => !v); }}
                 >
                     <ReactSvg
-                        svg={circle()}
+                        svg={moreVert()}
                         containerSize={{
-                            width: 12,
-                            height: 12
+                            width: 24,
+                            height: 24
                         }}
                         scale={1} />
                 </div>
@@ -187,7 +187,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     {/* display */}
                     <div style={{ padding: '0 20px 20px 20px' }}>
                         <div
-                            className={styles["tiled-background-squares"]}
+                            className={styles["large-tiled-background-squares"]}
                             style={{
                                 padding: `${displaySize.padding}px`,
                                 display: 'grid',
@@ -232,7 +232,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                     )
                                                 }
                                             }
-                                        })() : (<div>{'n/a'}</div>)}
+                                        })() : (<></>)}
                                     </div>
                                 </div>
                             </div>
@@ -248,6 +248,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                         <div style={{ padding: '0 20px 20px 20px' }}>
                             <div style={{
                                 border: '1px solid black',
+                                backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 padding: 0
                             }}>
@@ -464,7 +465,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 border: '1px solid rgb(0, 0, 0)',
                                             }}>
                                             <ReactSvg
-                                                svg={playCircle()}
+                                                svg={playArrow()}
                                                 containerSize={{
                                                     width: 20,
                                                     height: 20
@@ -483,7 +484,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 display: 'flex',
                                 alignItems: 'start',
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
-                                backgroundColor: "rgb(20, 20, 20)",
+                                backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                             }}>
                                 <HorizontalSlider
