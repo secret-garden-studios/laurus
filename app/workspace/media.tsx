@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImg, LaurusSvg } from "./workspace.client";
+import { LaurusImg, LaurusSvg, WorkspaceContext } from "./workspace.client";
+import { useContext } from "react";
 
 interface ReactImgProps {
     img: EncodedImg_V1_0,
@@ -96,6 +97,7 @@ export function DraggableReactImg({
     onNewPosition,
     onImgRef,
     inputId }: DraggableReactImgProps) {
+    const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: { distance: 1, },
@@ -118,7 +120,24 @@ export function DraggableReactImg({
         >
             <ReactImgNode
                 id={nodeId}
-                position={{ x: meta.left, y: meta.top, z: zIndex }}
+                position={(() => {
+                    switch (appState.tool.type) {
+                        case "drop": {
+                            return {
+                                x: Math.max(0, meta.left),
+                                y: Math.max(0, meta.top),
+                                z: zIndex
+                            }
+                        }
+                        case "none": {
+                            return {
+                                x: (meta.left - appState.project.frame_left),
+                                y: (meta.top - appState.project.frame_top),
+                                z: zIndex
+                            }
+                        }
+                    }
+                })()}
                 data={data}
                 containerSize={{
                     width: meta.width,
@@ -236,6 +255,7 @@ export function DraggableReactSvg({
     onNewPosition,
     onSvgRef,
     inputId }: DraggableReactSvgProps) {
+    const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: { distance: 1, },
@@ -258,7 +278,24 @@ export function DraggableReactSvg({
         >
             <ReactSvgNode
                 id={nodeId}
-                position={{ x: meta.left, y: meta.top, z: zIndex }}
+                position={(() => {
+                    switch (appState.tool.type) {
+                        case "drop": {
+                            return {
+                                x: Math.max(0, meta.left),
+                                y: Math.max(0, meta.top),
+                                z: zIndex
+                            }
+                        }
+                        case "none": {
+                            return {
+                                x: (meta.left - appState.project.frame_left),
+                                y: (meta.top - appState.project.frame_top),
+                                z: zIndex
+                            }
+                        }
+                    }
+                })()}
                 data={data}
                 containerSize={{
                     width: meta.width,

@@ -2,7 +2,7 @@ import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef,
 import { EncodedImg, EncodedSvg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg, ReactSvg } from "./media";
-import { add2, remove, autorenew, fastRewind, playArrow, moreVert, allOut } from "../svg-repo";
+import { add2, remove, autorenew, playArrow, moreVert, allOut, skipPrevious } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
@@ -134,6 +134,47 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             timeDebouncerRef.current = undefined;
         }
     }, [appState.apiOrigin, dispatch, getTimeCursor, mathDebouncer]);
+
+    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
+        if (!appState.activeElement) return [];
+        const newAnimations: Animation[] = [];
+        const response: LaurusScaleResult | undefined =
+            await getScale(appState.apiOrigin, scale.scale_id, appState.activeElement.key);
+        if (response) {
+            const activeMath = response.math
+                .get(appState.activeElement.key);
+            if (!activeMath) return [];
+            const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
+                .map(s => { return { "scale": s } }) ?? [];
+            const options: KeyframeAnimationOptions = {
+                duration: firstFrame ? 2 / response.fps : response.duration * 1000,
+            }
+            const previewKey = appState.tool.type == 'drop' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
+            switch (appState.activeElement.value.type) {
+                case "svg": {
+                    const svgRef = svgElementsRef.current?.get(previewKey);
+                    if (!svgRef) return [];
+                    svgRef.getAnimations().forEach((a) => a.cancel());
+
+                    const keyframeEffect =
+                        new KeyframeEffect(svgRef, keyframes, options);
+                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
+                    break;
+                }
+                case "img": {
+                    const imgRef = imgElementsRef.current?.get(previewKey);
+                    if (!imgRef) return [];
+                    imgRef.getAnimations().forEach((a) => a.cancel());
+                    const keyframeEffect =
+                        new KeyframeEffect(imgRef, keyframes, options);
+                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
+                    break;
+                }
+            }
+        }
+        return newAnimations;
+    }, [appState.activeElement, appState.apiOrigin, appState.tool.type, imgElementsRef, scale.scale_id, svgElementsRef]);
+
     return (
         <div style={{
             gridTemplateRows: 'min-content auto',
@@ -250,228 +291,207 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 border: '1px solid black',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
-                                padding: 0
+                                padding: 0,
+                                display: 'grid',
+                                gridTemplateColumns: 'min-content 3fr min-content',
                             }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'min-content 3fr min-content', }}>
-                                    <div style={{
-                                        height: 'min-content',
-                                        display: 'flex',
-                                        padding: `${timeTrackOffsets.padding}px 15px`,
-                                        gap: 20,
-                                        borderRight: 'solid rgba(0, 0, 0, 1) 1px',
+                                <div style={{
+                                    height: 'min-content',
+                                    display: 'flex',
+                                    padding: `${timeTrackOffsets.padding}px 15px`,
+                                    gap: 20,
+                                    borderRight: 'solid rgba(0, 0, 0, 1) 1px',
+                                }}>
+                                    <VerticalSlider
+                                        label={"speed"}
+                                        hash={`${scale.scale_id}|p1`}
+                                        capSize={timeCapSize}
+                                        trackSize={timeTrackSize}
+                                        trackRef={timeTrackRef}
+                                        cursor={timeCursor}
+                                        onNewCursor={(newCursor) => {
+                                            setTimeCursor({ ...newCursor, x: 0 });
+
+                                            if (!timeTrackRef.current) return;
+                                            const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
+
+                                            if (appState.activeElement) {
+                                                const activeEquation = scale.math.get(appState.activeElement!.key);
+                                                const newServerTime = newTime * 1000;
+                                                const newEquation = activeEquation ?
+                                                    { ...activeEquation, time: newServerTime } :
+                                                    {
+                                                        input_id: appState.activeElement.key,
+                                                        time: newServerTime,
+                                                        scale: 1,
+                                                        loop: false,
+                                                        solution: []
+                                                    };
+                                                saveNewEquation(newEquation);
+                                            }
+                                        }} />
+                                </div>
+                                <div
+                                    style={{
+                                        padding: 0,
+                                        display: 'grid',
+                                        placeContent: 'center',
                                     }}>
-                                        <VerticalSlider
-                                            label={"speed"}
-                                            hash={`${scale.scale_id}|p1`}
-                                            capSize={timeCapSize}
-                                            trackSize={timeTrackSize}
-                                            trackRef={timeTrackRef}
-                                            cursor={timeCursor}
-                                            onNewCursor={(newCursor) => {
-                                                setTimeCursor({ ...newCursor, x: 0 });
+                                    <div style={{ display: 'flex' }}>
+                                        <input
+                                            className={dellaRespira.className}
+                                            id={`scale-input-${scale.scale_id}`}
+                                            ref={scaleRef}
+                                            type="text"
+                                            placeholder="0.00"
+                                            value={scaleInputValue}
+                                            onChange={() => {
+                                                if (!scaleRef.current || !scaleTrackRef.current) return;
+                                                const newScaleValue: number = parseFloat(scaleRef.current.value) || 0;
+                                                setScaleInputValue(newScaleValue >= 1 ?
+                                                    (newScaleValue).toFixed(2) :
+                                                    (newScaleValue).toFixed(3));
 
-                                                if (!timeTrackRef.current) return;
-                                                const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
-
-                                                if (appState.activeElement) {
-                                                    const activeEquation = scale.math.get(appState.activeElement!.key);
-                                                    const newServerTime = newTime * 1000;
-                                                    const newEquation = activeEquation ?
-                                                        { ...activeEquation, time: newServerTime } :
-                                                        {
-                                                            input_id: appState.activeElement.key,
-                                                            time: newServerTime,
-                                                            scale: 1,
-                                                            loop: false,
-                                                            solution: []
-                                                        };
-                                                    saveNewEquation(newEquation);
+                                                if (newScaleValue > maxScale || newScaleValue < 0) {
+                                                    return;
                                                 }
+
+                                                const activeEq = scale.math.get(appState.activeElement?.key ?? "");
+                                                if (activeEq) {
+                                                    const newEquation = { ...activeEq, scale: newScaleValue };
+                                                    const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
+                                                    newMath.set(newEquation.input_id, newEquation);
+                                                    setDebounceInput(newMath);
+                                                    timeDebouncerRef.current = [{ ...scale }, newScaleValue];
+                                                }
+                                                else {
+                                                    const newScaleCursor = getScaleCursor(newScaleValue, scaleTrackRef.current.clientWidth);
+                                                    setScaleCursor({ x: newScaleCursor, y: 0 });
+                                                }
+                                            }}
+                                            style={{
+                                                textAlign: "center",
+                                                background: 'none',
+                                                color: "rgba(255, 255, 255, 0.7)",
+                                                borderRadius: "2px",
+                                                padding: '0px 0px',
+                                                border: 'none',
+                                                outline: 'none',
+                                                lineHeight: '1',
+                                                display: 'inline-block',
+                                                overflowX: 'scroll',
+                                                letterSpacing: '5px',
+                                                fontSize: 28,
+                                                height: '30px',
+                                                textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
                                             }} />
                                     </div>
+                                </div>
+                                <div style={{
+                                    borderLeft: '2px solid black',
+                                    background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
+                                    padding: 0,
+                                    display: 'grid', alignContent: 'start',
+                                }}>
                                     <div
-                                        style={{
-                                            padding: 0,
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                        }}>
-                                        <div style={{ display: 'flex' }}>
-                                            <input
-                                                className={dellaRespira.className}
-                                                id={`scale-input-${scale.scale_id}`}
-                                                ref={scaleRef}
-                                                type="text"
-                                                placeholder="0.00"
-                                                value={scaleInputValue}
-                                                onChange={() => {
-                                                    if (!scaleRef.current || !scaleTrackRef.current) return;
-                                                    const newScaleValue: number = parseFloat(scaleRef.current.value) || 0;
-                                                    console.log({ newScaleValue });
-                                                    setScaleInputValue(newScaleValue >= 1 ?
-                                                        (newScaleValue).toFixed(2) :
-                                                        (newScaleValue).toFixed(3));
-
-                                                    if (newScaleValue > maxScale || newScaleValue < 0) {
-                                                        return;
-                                                    }
-
-                                                    const activeEq = scale.math.get(appState.activeElement?.key ?? "");
-                                                    if (activeEq) {
-                                                        const newEquation = { ...activeEq, scale: newScaleValue };
-                                                        const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
-                                                        newMath.set(newEquation.input_id, newEquation);
-                                                        setDebounceInput(newMath);
-                                                        timeDebouncerRef.current = [{ ...scale }, newScaleValue];
-                                                    }
-                                                    else {
-                                                        const newScaleCursor = getScaleCursor(newScaleValue, scaleTrackRef.current.clientWidth);
-                                                        setScaleCursor({ x: newScaleCursor, y: 0 });
-                                                    }
-                                                }}
-                                                style={{
-                                                    textAlign: "center",
-                                                    background: 'none',
-                                                    color: "rgba(255, 255, 255, 0.7)",
-                                                    borderRadius: "2px",
-                                                    padding: '0px 0px',
-                                                    border: 'none',
-                                                    outline: 'none',
-                                                    lineHeight: '1',
-                                                    display: 'inline-block',
-                                                    overflowX: 'scroll',
-                                                    letterSpacing: '5px',
-                                                    fontSize: 28,
-                                                    height: '30px',
-                                                    textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
-                                                }} />
-                                        </div>
-                                    </div>
-                                    <div style={{
-                                        borderLeft: '2px solid black',
-                                        background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
-                                        padding: 0,
-                                        display: 'grid', alignContent: 'start',
-                                    }}>
-                                        <div
-                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
-                                            onClick={() => {
-                                                if (appState.activeElement) {
-                                                    const activeEquation = scale.math.get(appState.activeElement!.key);
-                                                    const newEquation = activeEquation ?
-                                                        { ...activeEquation, loop: !activeEquation.loop } :
-                                                        {
-                                                            input_id: appState.activeElement.key,
-                                                            time: appState.timelineMaxValue * 1000,
-                                                            scale: 1,
-                                                            loop: true,
-                                                            solution: []
-                                                        };
-                                                    saveNewEquation(newEquation);
-                                                }
-                                            }}
-                                            style={{
-                                                width: 36,
-                                                height: 36,
-                                                display: 'grid', placeContent: 'center',
-                                                border: '1px solid rgb(0, 0, 0)',
-                                                background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                                            }}>
-                                            <ReactSvg
-                                                svg={autorenew()}
-                                                containerSize={{
-                                                    width: 20,
-                                                    height: 20
-                                                }}
-                                                scale={1} />
-                                        </div>
-                                        <div
-                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
-                                            onClick={() => {
-                                                if (!appState.activeElement) return;
-                                                switch (appState.activeElement.value.type) {
-                                                    case "svg": {
-                                                        const svgRef = svgElementsRef.current?.get(appState.activeElement.key);
-                                                        if (!svgRef) return;
-                                                        svgRef.getAnimations().forEach((a) => a.cancel());
-                                                        break;
-                                                    }
-                                                    case "img": {
-                                                        const imgRef = imgElementsRef.current?.get(appState.activeElement.key);
-                                                        if (!imgRef) return;
-                                                        imgRef.getAnimations().forEach((a) => a.cancel());
-                                                        break;
-                                                    }
-                                                }
-                                            }}
-                                            style={{
-                                                width: 36,
-                                                height: 36,
-                                                display: 'grid', placeContent: 'center',
-                                                border: '1px solid rgb(0, 0, 0)',
-                                            }}>
-                                            <ReactSvg
-                                                svg={fastRewind()}
-                                                containerSize={{
-                                                    width: 20,
-                                                    height: 20
-                                                }}
-                                                scale={0.9} />
-                                        </div>
-                                        <div
-                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
-                                            onClick={async () => {
-                                                if (!appState.activeElement) return;
-                                                const response: LaurusScaleResult | undefined =
-                                                    await getScale(appState.apiOrigin, scale.scale_id, appState.activeElement.key);
-                                                if (response) {
-                                                    const keyframes: Keyframe[] = response.math
-                                                        .get(appState.activeElement.key)?.solution
-                                                        .map(s => { return { "scale": s } }) ?? [];
-                                                    const options: KeyframeAnimationOptions = {
-                                                        duration: response.duration * 1000,
-                                                        iterations: 1,
+                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
+                                        onClick={() => {
+                                            if (appState.activeElement) {
+                                                const activeEquation = scale.math.get(appState.activeElement!.key);
+                                                const newEquation = activeEquation ?
+                                                    { ...activeEquation, loop: !activeEquation.loop } :
+                                                    {
+                                                        input_id: appState.activeElement.key,
+                                                        time: appState.timelineMaxValue * 1000,
+                                                        scale: 1,
+                                                        loop: true,
+                                                        solution: []
                                                     };
-                                                    switch (appState.activeElement.value.type) {
-                                                        case "svg": {
-                                                            const svgRef = svgElementsRef.current?.get(appState.activeElement.key);
-                                                            if (!svgRef) return;
-                                                            svgRef.getAnimations().forEach((a) => a.cancel());
-                                                            const keyframeEffect =
-                                                                new KeyframeEffect(svgRef, keyframes, options);
-                                                            const animation = new Animation(keyframeEffect, document.timeline);
-                                                            animation.play();
-                                                            break;
-                                                        }
-                                                        case "img": {
-                                                            const imgRef = imgElementsRef.current?.get(appState.activeElement.key);
-                                                            if (!imgRef) return;
-                                                            imgRef.getAnimations().forEach((a) => a.cancel());
-                                                            const keyframeEffect =
-                                                                new KeyframeEffect(imgRef, keyframes, options);
-                                                            const animation = new Animation(keyframeEffect, document.timeline);
-                                                            animation.play();
-                                                            break;
-                                                        }
-                                                    }
-                                                }
+                                                saveNewEquation(newEquation);
+                                            }
+                                        }}
+                                        style={{
+                                            width: 36,
+                                            height: 36,
+                                            display: 'grid', placeContent: 'center',
+                                            border: '1px solid rgb(0, 0, 0)',
+                                            background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                        }}>
+                                        <ReactSvg
+                                            svg={autorenew()}
+                                            containerSize={{
+                                                width: 20,
+                                                height: 20
                                             }}
-                                            style={{
-                                                width: 36,
-                                                height: 36,
-                                                display: 'grid', placeContent: 'center',
-                                                border: '1px solid rgb(0, 0, 0)',
-                                            }}>
-                                            <ReactSvg
-                                                svg={playArrow()}
-                                                containerSize={{
-                                                    width: 20,
-                                                    height: 20
-                                                }}
-                                                scale={1} />
-                                        </div>
+                                            scale={0.9} />
+                                    </div>
+                                    <div
+                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
+                                        onClick={async () => {
+                                            const newAnimations = await getPreviewAnimations(true);
+                                            Promise.all(newAnimations.map(animation => animation.finished))
+                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                                .then((_animations: Animation[]) => {
+                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                                })
+                                                .catch(err => {
+                                                    if (err instanceof Error && err.name !== 'AbortError') {
+                                                        console.log('unknown error from waapi:', err);
+                                                    }
+                                                });
+                                            newAnimations.forEach(a => {
+                                                a.play();
+                                            });
+                                        }}
+                                        style={{
+                                            width: 36,
+                                            height: 36,
+                                            display: 'grid', placeContent: 'center',
+                                            border: '1px solid rgb(0, 0, 0)',
+                                        }}>
+                                        <ReactSvg
+                                            svg={skipPrevious()}
+                                            containerSize={{
+                                                width: 20,
+                                                height: 20
+                                            }}
+                                            scale={0.9} />
+                                    </div>
+                                    <div
+                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
+                                        onClick={async () => {
+                                            const newAnimations = await getPreviewAnimations(false);
+                                            Promise.all(newAnimations.map(animation => animation.finished))
+                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                                .then((_animations: Animation[]) => {
+                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                                })
+                                                .catch(err => {
+                                                    if (err instanceof Error && err.name !== 'AbortError') {
+                                                        console.log('unknown error from waapi:', err);
+                                                    }
+                                                });
+                                            newAnimations.forEach(a => {
+                                                a.play();
+                                            });
+                                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                                        }}
+                                        style={{
+                                            width: 36,
+                                            height: 36,
+                                            display: 'grid', placeContent: 'center',
+                                            border: '1px solid rgb(0, 0, 0)',
+                                        }}>
+                                        <ReactSvg
+                                            svg={playArrow()}
+                                            containerSize={{
+                                                width: 20,
+                                                height: 20
+                                            }}
+                                            scale={1} />
                                     </div>
                                 </div>
                             </div>

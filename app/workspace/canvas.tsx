@@ -202,15 +202,15 @@ export default function Canvas() {
             case 'drop':
                 {
                     const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
-                    if (newRadius < minRadius || !appState.tool.value) break;
+                    if (newRadius < minRadius || !appState.browserElement) break;
                     const dropArea: ProjectCircle = {
                         cx: anchor.x,
                         cy: anchor.y,
                         radius: newRadius,
                     };
-                    switch (appState.tool.value.type) {
+                    switch (appState.browserElement.type) {
                         case "svg": {
-                            const key = appState.tool.value.value.media_path;
+                            const key = appState.browserElement.value.media_path;
                             const svgData = appState.downloadedSvgs.find(s => s.media_path === key);
                             if (svgData) {
                                 handleSvgDrop(svgData, dropArea);
@@ -218,7 +218,7 @@ export default function Canvas() {
                             break;
                         }
                         case "img": {
-                            const key = appState.tool.value.value.media_path;
+                            const key = appState.browserElement.value.media_path;
                             const imgData = appState.downloadedImgs.find(s => s.media_path === key);
                             if (imgData) {
                                 handleImgDrop(imgData, dropArea)

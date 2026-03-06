@@ -28,9 +28,8 @@ export default function TimelineArea({
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
-    const [recordingLight, setRecordingLight] = useState(false);
     const [fps, setFps] = useState(60);
-    const [fastRate] = useState(70);
+    const [fastRate] = useState(50);
     const [playEnabled, setPlayEnabled] = useState(true);
     const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
     const [skipNextEnabled, setSkipNextEnabled] = useState<boolean>(true);
@@ -58,7 +57,7 @@ export default function TimelineArea({
         const globalLimit: number = Math.max(...appState.effects
             .map(e => e.value.duration));
         const options: KeyframeAnimationOptions = {
-            duration: globalLimit * 1000,
+            duration: firstFrame ? 2 / fps : globalLimit * 1000,
             iterations: 1,
             fill,
         };
@@ -75,7 +74,7 @@ export default function TimelineArea({
                         { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
                 });
                 const imgRef = imgElementsRef.current?.get(key);
-                if (!imgRef) return;
+                if (!imgRef) return [];
                 const animations = imgRef.getAnimations();
                 for (let j = 0; j < animations.length; j++) {
                     animations[j].cancel();
@@ -98,7 +97,7 @@ export default function TimelineArea({
                         { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
                 });
                 const svgRef = svgElementsRef.current?.get(key);
-                if (!svgRef) return;
+                if (!svgRef) return [];
                 const animations = svgRef.getAnimations();
                 for (let j = 0; j < animations.length; j++) {
                     animations[j].cancel();
@@ -113,7 +112,6 @@ export default function TimelineArea({
     }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, fps, imgElementsRef, svgElementsRef]);
 
     const enableAllControls = useCallback(() => {
-        setRecordingLight(false);
         setPlayEnabled(true);
         setSkipPreviousEnabled(true);
         setSkipNextEnabled(true);
@@ -268,7 +266,7 @@ export default function TimelineArea({
                 }}>
                 <TimelineAreaContent
                     maxWidth={size.width}
-                    recordingLight={recordingLight}
+                    recordingLight={appState.recordingLight}
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
             </div>
@@ -311,12 +309,14 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!skipPreviousEnabled) return;
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                 const newAnimations = await getNewAnimations('forwards', true);
                                 if (newAnimations) {
                                     Promise.all(newAnimations.map(animation => animation.finished))
                                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                         .then((_animations: Animation[]) => {
                                             enableAllControls();
+                                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
                                         })
                                         .catch(err => {
                                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -339,22 +339,22 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!playEnabled) return;
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                 const newAnimations = await getNewAnimations('none', false);
-                                if (newAnimations) {
-                                    Promise.all(newAnimations.map(animation => animation.finished))
-                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                        .then((_animations: Animation[]) => {
-                                            enableAllControls();
-                                        })
-                                        .catch(err => {
-                                            if (err instanceof Error && err.name !== 'AbortError') {
-                                                console.log('unknown error from waapi:', err);
-                                            }
-                                        });
-                                    setPlayEnabled(false);
-                                    newAnimations.forEach(a => a.play());
-                                    setRecordingLight(true);
-                                }
+                                Promise.all(newAnimations.map(animation => animation.finished))
+                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                    .then((_animations: Animation[]) => {
+                                        enableAllControls();
+                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                    })
+                                    .catch(err => {
+                                        if (err instanceof Error && err.name !== 'AbortError') {
+                                            console.log('unknown error from waapi:', err);
+                                        }
+                                    });
+                                setPlayEnabled(false);
+                                newAnimations.forEach(a => a.play());
+                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                             }} />
                         <ReactSvg
                             svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
@@ -365,24 +365,24 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!skipNextEnabled) return;
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                 const newAnimations = await getNewAnimations('forwards', false);
-                                if (newAnimations) {
-                                    Promise.all(newAnimations.map(animation => animation.finished))
-                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                        .then((_animations: Animation[]) => {
-                                            enableAllControls();
-                                        })
-                                        .catch(err => {
-                                            if (err instanceof Error && err.name !== 'AbortError') {
-                                                console.log('unknown error from waapi:', err);
-                                            }
-                                        });
-                                    setSkipNextEnabled(false);
-                                    newAnimations.forEach(a => {
-                                        a.updatePlaybackRate(fastRate);
-                                        a.play();
+                                Promise.all(newAnimations.map(animation => animation.finished))
+                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                    .then((_animations: Animation[]) => {
+                                        enableAllControls();
+                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                    })
+                                    .catch(err => {
+                                        if (err instanceof Error && err.name !== 'AbortError') {
+                                            console.log('unknown error from waapi:', err);
+                                        }
                                     });
-                                }
+                                setSkipNextEnabled(false);
+                                newAnimations.forEach(a => {
+                                    a.updatePlaybackRate(fastRate);
+                                    a.play();
+                                });
                             }} />
                         <div style={{
                             right: 0,
