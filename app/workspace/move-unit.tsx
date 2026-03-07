@@ -26,7 +26,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
         amplitude: 1000,
         frequency: 100,
         wavelength: 1000,
-        distance: 10000,
+        distance: 5000,
     })
     const [paramCapSize] = useState({ width: 45, height: 21 });
     const [paramTrackSize] = useState({ width: 45, height: 200 });
@@ -437,7 +437,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             setTimeCursor({ ...newCursor, x: 0 });
 
                                             if (!timeTrackRef.current) return;
-                                            const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
+                                            const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight, 0);
 
                                             if (appState.activeElement) {
                                                 const activeEquation = move.math.get(appState.activeElement!.key);
