@@ -266,7 +266,6 @@ export default function TimelineArea({
                 }}>
                 <TimelineAreaContent
                     maxWidth={size.width}
-                    recordingLight={appState.recordingLight}
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
             </div>
@@ -300,6 +299,21 @@ export default function TimelineArea({
                         justifyContent: 'center',
                         alignItems: 'center',
                     }}>
+                        <div style={{
+                            left: 6,
+                            display: 'flex',
+                            position: 'absolute'
+                        }}>
+                            <div
+                                style={{
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: '50%',
+                                    border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
+                                    background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
+                                    boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 0.9) 0px 0px 100px 8px' : 'none'
+                                }} />
+                        </div>
                         <ReactSvg
                             svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
@@ -433,11 +447,10 @@ export default function TimelineArea({
 
 interface TimelineAreaContentProps {
     maxWidth: number,
-    recordingLight: boolean,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function TimelineAreaContent({ maxWidth, recordingLight, svgElementsRef, imgElementsRef }: TimelineAreaContentProps) {
+function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: TimelineAreaContentProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
@@ -445,199 +458,195 @@ function TimelineAreaContent({ maxWidth, recordingLight, svgElementsRef, imgElem
     return (<>
         {Array.from(appState.project.layers.entries()).map((layerEntry) => {
             return (
-                <div style={{ display: 'flex', maxWidth, }} key={layerEntry[0]}>
-                    <div style={{
+                <div
+                    key={layerEntry[0]}
+                    style={{
+                        maxWidth,
                         display: 'grid',
                         width: '100%',
                         gridTemplateRows: 'min-content auto',
                     }}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            width: '100%',
-                            height: 32,
-                            borderTop: '1px solid rgb(0, 0, 0)',
-                            borderLeft: '1px solid rgb(0, 0, 0)',
-                            borderRight: '1px solid rgb(0, 0, 0)',
-                            borderBottom: '1px solid rgb(18, 18, 18)',
-                            borderTopRightRadius: 10,
-                            borderTopLeftRadius: 10,
-                            background: 'rgba(30,30,30,1)',
-                            padding: 6,
-                        }}>
-                            <LayerTitle
-                                layerId={layerEntry[0]}
-                                layerNameInit={layerEntry[1].name}
-                                layerNameRef={layerNameRef} />
-                            <div
-                                className={dellaRespira.className}
-                                style={{
-                                    display: 'grid',
-                                }}>
-                                {/* layer options placeholder */}
-                                <ReactSvg
-                                    svg={circle('rgba(204, 204, 204, 0)')}
-                                    containerSize={{
-                                        width: 12,
-                                        height: 12
-                                    }}
-                                    scale={1} />
-                            </div>
-                        </div>
-
-                        <div style={{
-                            display: 'grid',
-                            alignContent: 'start',
-                            minHeight: 46,
-                            borderLeft: '1px solid black',
-                            borderRight: '1px solid black',
-                            borderBottomLeftRadius: 10,
-                        }}>
-                            {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
-                                return <div
-                                    style={{
-                                        borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
-                                    }}
-                                    key={i}>
-                                    <EffectUnit
-                                        effect={s}
-                                        svgElementsRef={svgElementsRef}
-                                        imgElementsRef={imgElementsRef} />
-                                </div>
-                            })}
-                            <div
-                                style={{
-                                    width: '100%', height: 46,
-                                    padding: 10,
-                                    borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
-                                    background: 'rgba(255,255,255,0.01)',
-                                    borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
-                                }}>
-                                <ReactSvg
-                                    svg={showEffectsBrowser ?
-                                        addCircle('rgba(204, 204, 204, 0.2)') :
-                                        addCircle('rgba(204, 204, 204, 0.8)')}
-                                    containerSize={{
-                                        width: 20,
-                                        height: 20
-                                    }}
-                                    scale={1}
-                                    onContainerClick={() => setShowEffectsBrowser(v => !v)} />
-                            </div>
-                            {showEffectsBrowser && (
-                                <div
-                                    style={{
-                                        width: '100%',
-                                        borderBottom: '1px solid black',
-                                        height: 96,
-                                        overflowY: 'auto',
-                                        borderBottomLeftRadius: 10,
-                                    }}>
-                                    {appState.effectNames.map((effectName, i) => {
-                                        return (
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    fontSize: 14,
-                                                    letterSpacing: "3px",
-                                                    height: 36,
-                                                    borderRadius: 4,
-                                                    padding: 10,
-                                                    background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)'
-                                                }}
-                                                key={effectName}>
-                                                <div>
-                                                    {effectName}
-                                                </div>
-                                                <ReactSvg
-                                                    svg={addCircle('rgba(204, 204, 204, 0.8')}
-                                                    containerSize={{
-                                                        width: 20,
-                                                        height: 20
-                                                    }}
-                                                    scale={1}
-                                                    onContainerClick={async () => {
-                                                        let newProjectId = "";
-                                                        if (!appState.project.project_id) {
-                                                            const newProject: LaurusProjectResult = { ...appState.project }
-                                                            const response = await createProject(appState.apiOrigin, { ...newProject });
-                                                            if (response) {
-                                                                newProjectId = response.project_id;
-                                                                const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectId }
-                                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                                                            }
-                                                        }
-
-                                                        switch (effectName) {
-                                                            case 'scale': {
-                                                                const newScale: LaurusScale = {
-                                                                    math: new Map(),
-                                                                    offset: 0,
-                                                                    duration: 0,
-                                                                    project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
-                                                                    layer_id: layerEntry[0],
-                                                                    fps: 30,
-                                                                    order: appState.effects.filter(e => e.type == 'scale').length,
-                                                                };
-                                                                const response = await createScale(appState.apiOrigin, newScale);
-                                                                if (response) {
-                                                                    const newEffect: LaurusEffect = {
-                                                                        type: 'scale',
-                                                                        key: response.scale_id,
-                                                                        value: { ...response }
-                                                                    }
-                                                                    dispatch({
-                                                                        type: WorkspaceActionType.SetEffects,
-                                                                        value: [...appState.effects, newEffect]
-                                                                    });
-                                                                }
-                                                                break;
-                                                            }
-                                                            case 'move': {
-                                                                const newMove: LaurusMove = {
-                                                                    math: new Map(),
-                                                                    offset: 0,
-                                                                    duration: 0,
-                                                                    project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
-                                                                    layer_id: layerEntry[0],
-                                                                    fps: 30,
-                                                                    order: appState.effects.filter(e => e.type == 'move').length,
-                                                                };
-                                                                const response = await createMove(appState.apiOrigin, newMove);
-                                                                if (response) {
-                                                                    const newEffect: LaurusEffect = {
-                                                                        type: 'move',
-                                                                        key: response.move_id,
-                                                                        value: { ...response }
-                                                                    }
-                                                                    dispatch({
-                                                                        type: WorkspaceActionType.SetEffects,
-                                                                        value: [...appState.effects, newEffect]
-                                                                    });
-                                                                }
-                                                                break;
-                                                            }
-                                                        }
-
-                                                        setShowEffectsBrowser(false);
-                                                    }} />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                    {/* layer header */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: '100%',
+                        height: 32,
+                        borderTop: '1px solid rgb(0, 0, 0)',
+                        borderLeft: '1px solid rgb(0, 0, 0)',
+                        borderRight: '1px solid rgb(0, 0, 0)',
+                        borderBottom: '1px solid rgb(18, 18, 18)',
+                        borderTopLeftRadius: 10,
+                        borderTopRightRadius: 10,
+                        background: 'rgba(30,30,30,1)',
+                        padding: 6,
+                    }}>
+                        <LayerTitle
+                            layerId={layerEntry[0]}
+                            layerNameInit={layerEntry[1].name}
+                            layerNameRef={layerNameRef} />
+                        <div
+                            className={dellaRespira.className}
+                            style={{
+                                display: 'grid',
+                            }}>
+                            {/* layer options placeholder */}
+                            <ReactSvg
+                                svg={circle('rgba(204, 204, 204, 0)')}
+                                containerSize={{
+                                    width: 12,
+                                    height: 12
+                                }}
+                                scale={1} />
                         </div>
                     </div>
-                    <div
-                        style={{
-                            width: '48px',
-                            borderRadius: '10px',
-                            border: recordingLight ? '1px solid rgb(168, 168, 168)' : '1px solid rgba(0, 0, 0, 1)',
-                            background: recordingLight ? 'linear-gradient(270deg, rgba(239, 239, 239, 0.6), rgba(255, 255, 255, 0.8))' : 'rgba(33, 33, 33, 1)',
-                            boxShadow: recordingLight ? 'rgba(255, 255, 255, 0.8) 0px 0px 100px -7px' : 'none'
-                        }} />
+                    {/* effects */}
+                    <div style={{
+                        display: 'grid',
+                        alignContent: 'start',
+                        minHeight: 46,
+                        borderLeft: '1px solid black',
+                        borderRight: '1px solid black',
+                        borderBottomLeftRadius: 10,
+                        borderBottomRightRadius: 10,
+                    }}>
+                        {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
+                            return <div
+                                style={{
+                                    borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
+                                }}
+                                key={i}>
+                                <EffectUnit
+                                    effect={s}
+                                    svgElementsRef={svgElementsRef}
+                                    imgElementsRef={imgElementsRef} />
+                            </div>
+                        })}
+                        <div
+                            style={{
+                                width: '100%', height: 46,
+                                padding: 10,
+                                borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
+                                background: 'rgba(255,255,255,0.01)',
+                                borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
+                                borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
+                            }}>
+                            <ReactSvg
+                                svg={showEffectsBrowser ?
+                                    addCircle('rgba(204, 204, 204, 0.2)') :
+                                    addCircle('rgba(204, 204, 204, 0.8)')}
+                                containerSize={{
+                                    width: 20,
+                                    height: 20
+                                }}
+                                scale={1}
+                                onContainerClick={() => setShowEffectsBrowser(v => !v)} />
+                        </div>
+                        {showEffectsBrowser && (
+                            <div
+                                style={{
+                                    width: '100%',
+                                    borderBottom: '1px solid black',
+                                    height: 96,
+                                    overflowY: 'auto',
+                                    borderBottomLeftRadius: 10,
+                                }}>
+                                {appState.effectNames.map((effectName, i) => {
+                                    return (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                fontSize: 14,
+                                                letterSpacing: "3px",
+                                                height: 36,
+                                                borderRadius: 4,
+                                                padding: 10,
+                                                background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)'
+                                            }}
+                                            key={effectName}>
+                                            <div>
+                                                {effectName}
+                                            </div>
+                                            <ReactSvg
+                                                svg={addCircle('rgba(204, 204, 204, 0.8')}
+                                                containerSize={{
+                                                    width: 20,
+                                                    height: 20
+                                                }}
+                                                scale={1}
+                                                onContainerClick={async () => {
+                                                    let newProjectId = "";
+                                                    if (!appState.project.project_id) {
+                                                        const newProject: LaurusProjectResult = { ...appState.project }
+                                                        const response = await createProject(appState.apiOrigin, { ...newProject });
+                                                        if (response) {
+                                                            newProjectId = response.project_id;
+                                                            const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectId }
+                                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                                        }
+                                                    }
+
+                                                    switch (effectName) {
+                                                        case 'scale': {
+                                                            const newScale: LaurusScale = {
+                                                                math: new Map(),
+                                                                offset: 0,
+                                                                duration: 0,
+                                                                project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
+                                                                layer_id: layerEntry[0],
+                                                                fps: 30,
+                                                                order: appState.effects.filter(e => e.type == 'scale').length,
+                                                            };
+                                                            const response = await createScale(appState.apiOrigin, newScale);
+                                                            if (response) {
+                                                                const newEffect: LaurusEffect = {
+                                                                    type: 'scale',
+                                                                    key: response.scale_id,
+                                                                    value: { ...response }
+                                                                }
+                                                                dispatch({
+                                                                    type: WorkspaceActionType.SetEffects,
+                                                                    value: [...appState.effects, newEffect]
+                                                                });
+                                                            }
+                                                            break;
+                                                        }
+                                                        case 'move': {
+                                                            const newMove: LaurusMove = {
+                                                                math: new Map(),
+                                                                offset: 0,
+                                                                duration: 0,
+                                                                project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
+                                                                layer_id: layerEntry[0],
+                                                                fps: 30,
+                                                                order: appState.effects.filter(e => e.type == 'move').length,
+                                                            };
+                                                            const response = await createMove(appState.apiOrigin, newMove);
+                                                            if (response) {
+                                                                const newEffect: LaurusEffect = {
+                                                                    type: 'move',
+                                                                    key: response.move_id,
+                                                                    value: { ...response }
+                                                                }
+                                                                dispatch({
+                                                                    type: WorkspaceActionType.SetEffects,
+                                                                    value: [...appState.effects, newEffect]
+                                                                });
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    setShowEffectsBrowser(false);
+                                                }} />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>)
         })}
     </>)
