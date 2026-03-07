@@ -35,6 +35,7 @@ import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./medi
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import { v4 } from "uuid";
+import DraggableCamera from "./camera";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusImg>
@@ -370,9 +371,6 @@ export default function Workspace({
         },
         initReducer);
 
-    const [activeThumbnail, setActiveThumbnail] = useState<LaurusThumbnail | undefined>(undefined);
-    const [browserThumbnail, setBrowserThumbnail] = useState<LaurusThumbnail | undefined>(undefined);
-
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
         const initCurrentPaper = (async () => {
@@ -503,7 +501,6 @@ export default function Workspace({
             }
             if (firstImg) {
                 const newThumnail: LaurusThumbnail = { value: { ...firstImg }, type: 'img' }
-                setBrowserThumbnail(newThumnail);
                 dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...newThumnail } });
             }
         };
@@ -664,28 +661,28 @@ export default function Workspace({
                         <Canvas />
                     </div>}
                     {/* camera frame */}
-                    <div
-                        className={styles["grainy-background"]}
-                        style={{
-                            position: 'absolute',
-                            top: appState.project.frame_top,
-                            left: appState.project.frame_left,
-                            width: appState.project.frame_width,
-                            height: appState.project.frame_height,
-                            overflow: 'hidden',
-                            boxShadow: "6px 6px 10px rgba(0, 0, 0, 0.2)",
-                            borderRadius: 2,
-                            zIndex: appState.tool.type == 'drop' ? 1 : 0,
-                        }} >
-                        {appState.tool.type == 'none' &&
-                            <MediaOverlays
-                                onActivate={setActiveThumbnail}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef} />}
-                    </div>
+                    <DraggableCamera
+                        contextId={"draggable-camera-context-id"}
+                        nodeId={"draggable-camera-node-id"}
+                        data={{
+                            svgElementsRef,
+                            imgElementsRef
+                        }}
+                        zIndex={appState.tool.type == 'drop' ? 1 : 0}
+                        onNewPosition={async function (newPosition: { x: number; y: number; }) {
+                            const newProject: LaurusProjectResult = {
+                                ...appState.project,
+                                frame_left: newPosition.x,
+                                frame_top: newPosition.y
+                            };
+                            dispatch({
+                                type: WorkspaceActionType.SetProject,
+                                value: newProject,
+                            });
+                            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                        }} />
                     {appState.tool.type == 'drop' &&
                         <MediaOverlays
-                            onActivate={setActiveThumbnail}
                             svgElementsRef={svgElementsRef}
                             imgElementsRef={imgElementsRef} />}
                 </div>
@@ -758,7 +755,6 @@ export default function Workspace({
                                     }
                                 }}
                                 onMediaClick={(m) => {
-                                    setBrowserThumbnail({ ...m });
                                     if (appState.tool && appState.tool.type == 'drop') {
                                         dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
                                     }
@@ -767,7 +763,6 @@ export default function Workspace({
                             />
                         </div>
                     </>}
-
                 {/* right panel */}
                 <div
                     style={{
@@ -800,7 +795,6 @@ export default function Workspace({
                             }} />
                     </div>
                 </div>
-
                 <div style={{ gridRow: '3', gridColumn: 'span 6' }}>
                     <div style={{
                         height: mediabarHeight,
@@ -821,12 +815,12 @@ export default function Workspace({
                                 borderRight: '1px solid rgb(0, 0, 0)',
                                 position: 'relative'
                             }}>
-                            {activeThumbnail && (() => {
-                                switch (activeThumbnail.type) {
+                            {appState.activeElement && (() => {
+                                switch (appState.activeElement.value.type) {
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={activeThumbnail.value as EncodedSvg}
+                                                svg={appState.activeElement.value.value as EncodedSvg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -835,7 +829,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={activeThumbnail.value as EncodedImg}
+                                                img={appState.activeElement.value.value as EncodedImg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -851,12 +845,12 @@ export default function Workspace({
                                 borderLeft: '1px solid rgb(0, 0, 0)',
                                 position: 'relative'
                             }}>
-                            {browserThumbnail && (() => {
-                                switch (browserThumbnail.type) {
+                            {appState.browserElement && (() => {
+                                switch (appState.browserElement.type) {
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={browserThumbnail.value as EncodedSvg}
+                                                svg={appState.browserElement.value as EncodedSvg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -865,7 +859,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={browserThumbnail.value as EncodedImg}
+                                                img={appState.browserElement.value as EncodedImg}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -882,11 +876,10 @@ export default function Workspace({
 }
 
 interface MediaOverlaysProps {
-    onActivate: (media: LaurusThumbnail) => void,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function MediaOverlays({ onActivate, svgElementsRef, imgElementsRef }: MediaOverlaysProps) {
+export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
 
     const lazyLoadSvgElementsRef = () => {
@@ -894,14 +887,14 @@ function MediaOverlays({ onActivate, svgElementsRef, imgElementsRef }: MediaOver
             svgElementsRef.current = new Map();
         }
         return svgElementsRef.current;
-    }
+    };
 
     const lazyLoadImgElementsRef = () => {
         if (!imgElementsRef.current) {
             imgElementsRef.current = new Map();
         }
         return imgElementsRef.current;
-    }
+    };
 
     const onSvgRef = (element: SVGSVGElement | null, refKey: string) => {
         const m = lazyLoadSvgElementsRef();
@@ -1098,7 +1091,6 @@ function MediaOverlays({ onActivate, svgElementsRef, imgElementsRef }: MediaOver
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                     onClick={() => {
-                                        onActivate({ type: 'img', value: { ...imgData } });
                                         const newImg: LaurusImg = { ...imgMeta, pending: false };
                                         dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                         const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
@@ -1196,7 +1188,6 @@ function MediaOverlays({ onActivate, svgElementsRef, imgElementsRef }: MediaOver
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                     onClick={() => {
-                                        onActivate({ type: 'svg', value: { ...svgData } });
                                         const newSvg: LaurusSvg = { ...svgMeta, pending: false }
                                         dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                                         const newActiveElement: LaurusActiveElement = { key, value: { type: 'svg', value: { ...svgData } } };
