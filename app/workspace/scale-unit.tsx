@@ -82,7 +82,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     }
 
     useLayoutEffect(() => {
-        /*  reads the current track widths and updates sliders 
+        /*  reads the current track size and updates sliders 
             using initial values from a parent component */
 
         (async () => {

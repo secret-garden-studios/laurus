@@ -145,7 +145,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     }, [appState.apiOrigin, appState.timelineUnit, dispatch]);
 
     useLayoutEffect(() => {
-        /*  reads the current track width and updates sliders 
+        /*  reads the current track size and updates sliders 
             using initial values from a parent component */
 
         (async () => {

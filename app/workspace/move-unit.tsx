@@ -90,7 +90,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     }, [appState.apiOrigin, dispatch, move]);
 
     useLayoutEffect(() => {
-        /*  reads the current track widths and updates sliders 
+        /*  reads the current track size and updates sliders 
             using initial values from a parent component */
 
         (async () => {
