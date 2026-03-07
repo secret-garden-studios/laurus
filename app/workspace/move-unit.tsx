@@ -183,7 +183,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
             borderTop: '1px solid rgba(255,255,255,0.05)',
             alignItems: 'center',
         }}>
-            {/* row 1 */}
+            {/* header */}
             <div
                 className={dellaRespira.className}
                 style={{
@@ -222,7 +222,6 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                         scale={1} />
                 </div>
             </div>
-
             {mainControls ?
                 <>
                     {/* display */}
@@ -282,18 +281,17 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                     {/* controls */}
                     <div style={{
-                        justifySelf: 'start',
                         display: 'grid',
                         gridTemplateRows: 'min-content auto',
                     }}>
+                        {/* parameters */}
                         <div style={{ padding: '0 20px 20px 20px' }}>
                             <div style={{
                                 border: '1px solid black',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 padding: 0,
-                                display: 'grid',
-                                gridTemplateColumns: 'auto  min-content',
+                                display: 'flex',
                             }}>
                                 <div style={{
                                     height: 'min-content',
@@ -301,6 +299,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     justifyContent: 'space-between',
                                     padding: `${paramTrackOffsets.padding}px 15px`,
                                     gap: 20,
+                                    width: '100%'
                                 }}>
                                     <VerticalSlider
                                         label={"amplitude"}
@@ -463,7 +462,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     borderLeft: '2px solid black',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
-                                    display: 'grid', alignContent: 'start',
+                                    display: 'grid',
+                                    alignContent: 'start',
                                 }}>
                                     <div
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
@@ -572,48 +572,44 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                 </div>
                             </div>
                         </div>
-
+                        {/* main control */}
                         <div style={{ padding: `0 20px 20px 20px` }}>
                             <div style={{
-                                width: 'min-content',
+                                width: '100%',
                                 padding: `15px ${angleTrackOffsets.padding}px`,
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
+                                display: 'flex',
+                                alignItems: 'start',
+                                justifyContent: 'center',
                             }}>
-                                <div style={{
-                                    width: 430,
-                                    display: 'flex',
-                                    alignItems: 'start',
-                                    justifyContent: 'center',
-                                }}>
-                                    <Dial
-                                        ids={{
-                                            contextId: `${move.move_id}|main|c1`,
-                                            draggableId: `${move.move_id}|main|d1`
-                                        }}
-                                        value={angle}
-                                        onNewValue={function (v: number): void {
-                                            const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
-                                            if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
-                                                const newEquation: LaurusMoveEquation = activeEquation ?
-                                                    { ...activeEquation, angle: newAngle } :
-                                                    {
-                                                        input_id: appState.activeElement.key,
-                                                        time: 0,
-                                                        loop: false,
-                                                        solution: [],
-                                                        angle: newAngle,
-                                                        amplitude: 0,
-                                                        frequency: 0,
-                                                        wavelength: 0,
-                                                        distance: 0,
-                                                    };
-                                                saveNewEquation(newEquation);
-                                            }
-                                        }} />
-                                </div>
+                                <Dial
+                                    ids={{
+                                        contextId: `${move.move_id}|main|c1`,
+                                        draggableId: `${move.move_id}|main|d1`
+                                    }}
+                                    value={angle}
+                                    onNewValue={function (v: number): void {
+                                        const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
+                                        if (appState.activeElement) {
+                                            const activeEquation = move.math.get(appState.activeElement!.key);
+                                            const newEquation: LaurusMoveEquation = activeEquation ?
+                                                { ...activeEquation, angle: newAngle } :
+                                                {
+                                                    input_id: appState.activeElement.key,
+                                                    time: 0,
+                                                    loop: false,
+                                                    solution: [],
+                                                    angle: newAngle,
+                                                    amplitude: 0,
+                                                    frequency: 0,
+                                                    wavelength: 0,
+                                                    distance: 0,
+                                                };
+                                            saveNewEquation(newEquation);
+                                        }
+                                    }} />
                             </div>
                         </div>
                     </div>
@@ -634,7 +630,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                 gap: 4,
                             }}>
                             <div>{'You are about to part ways with this effect forever...'}</div>
-                            <div style={{ justifySelf: 'end' }}>{'Click'}
+                            <div style={{ marginLeft: 'auto' }}>
+                                {'Click'}
                                 <span
                                     onClick={async () => {
                                         await deleteMove(appState.apiOrigin, move.move_id);
@@ -690,7 +687,7 @@ function VerticalSlider({
     return (<>
         <div style={{ height: '100%', width: 'min-content' }}>
             <div style={{ position: "relative", ...trackSize, }}>
-                <div style={{ position: 'absolute', height: '100%', width: '100%', justifySelf: 'center', }}>
+                <div style={{ position: 'absolute', height: '100%', width: '100%', }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={capSize.width}
@@ -716,8 +713,12 @@ function VerticalSlider({
                     style={{
                         zIndex: 0,
                         cursor: 'crosshair',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        margin: 'auto',
                         position: "absolute",
-                        justifySelf: 'center',
                         height: trackSize.height,
                         width: 10,
                         background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
@@ -727,8 +728,10 @@ function VerticalSlider({
             </div>
             <div className={dmSans.className}
                 style={{
-                    alignSelf: "start", justifySelf: "center",
-                    fontSize: "10px", paddingTop: '10px'
+                    display: 'grid',
+                    justifyContent: 'center',
+                    fontSize: "10px",
+                    paddingTop: '10px'
                 }}>{label}</div>
         </div>
     </>)

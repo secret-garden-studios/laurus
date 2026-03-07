@@ -110,7 +110,6 @@ export default function MediaBrowserArea({
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifySelf: 'center',
                         width: '100%',
                         height: 50,
                         marginBottom: 10,

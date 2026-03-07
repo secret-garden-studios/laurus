@@ -183,7 +183,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             borderTop: '1px solid rgba(255,255,255,0.05)',
             alignItems: 'center',
         }}>
-            {/* row 1 */}
+            {/* header */}
             <div
                 className={dellaRespira.className}
                 style={{
@@ -222,7 +222,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                         scale={1} />
                 </div>
             </div>
-
             {mainControls ?
                 <>
                     {/* display */}
@@ -279,21 +278,19 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                             </div>
                         </div>
                     </div>
-
                     {/* controls */}
                     <div style={{
-                        justifySelf: 'start',
                         display: 'grid',
                         gridTemplateRows: 'min-content auto',
                     }}>
+                        {/* parameters */}
                         <div style={{ padding: '0 20px 20px 20px' }}>
                             <div style={{
                                 border: '1px solid black',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 padding: 0,
-                                display: 'grid',
-                                gridTemplateColumns: 'min-content 3fr min-content',
+                                display: 'flex',
                             }}>
                                 <div style={{
                                     height: 'min-content',
@@ -336,6 +333,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         padding: 0,
                                         display: 'grid',
                                         placeContent: 'center',
+                                        width: '100%'
                                     }}>
                                     <div style={{ display: 'flex' }}>
                                         <input
@@ -370,7 +368,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 }
                                             }}
                                             style={{
-                                                textAlign: "center",
+                                                textAlign: "right",
                                                 background: 'none',
                                                 color: "rgba(255, 255, 255, 0.7)",
                                                 borderRadius: "2px",
@@ -383,15 +381,27 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 letterSpacing: '5px',
                                                 fontSize: 28,
                                                 height: '30px',
+                                                width: '56%',
                                                 textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
                                             }} />
+                                        <div style={{
+                                            height: 30,
+                                            display: 'grid',
+                                            alignContent: 'end',
+                                            color: "rgba(255, 255, 255, 0.5)",
+                                            fontSize: 20
+                                        }}>
+                                            <i>{'x'}</i>
+                                        </div>
                                     </div>
                                 </div>
                                 <div style={{
+                                    marginLeft: 'auto',
                                     borderLeft: '2px solid black',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
-                                    display: 'grid', alignContent: 'start',
+                                    display: 'grid',
+                                    alignContent: 'start',
                                 }}>
                                     <div
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
@@ -496,16 +506,17 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 </div>
                             </div>
                         </div>
-
+                        {/* main control */}
                         <div style={{ padding: `0 20px 20px 20px` }}>
                             <div style={{
-                                width: 'min-content',
+                                width: '100%',
                                 padding: `20px ${scaleTrackOffsets.padding}px`,
                                 display: 'flex',
                                 alignItems: 'start',
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
+                                justifyContent: 'center'
                             }}>
                                 <HorizontalSlider
                                     label={"zoom"}
@@ -566,7 +577,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 gap: 4,
                             }}>
                             <div>{'You are about to part ways with this effect forever...'}</div>
-                            <div style={{ justifySelf: 'end' }}>{'Click'}
+                            <div style={{ marginLeft: 'auto' }}>{'Click'}
                                 <span
                                     onClick={async () => {
                                         await deleteScale(appState.apiOrigin, scale.scale_id);
@@ -621,8 +632,8 @@ function VerticalSlider({
 }: ScaleUnitSliderProps) {
     return (<>
         <div style={{ height: '100%', width: 'min-content' }}>
-            <div style={{ position: "relative", ...trackSize, }}>
-                <div style={{ position: 'absolute', height: '100%', width: '100%', justifySelf: 'center', }}>
+            <div style={{ position: "relative", ...trackSize }}>
+                <div style={{ position: 'absolute', height: '100%', width: '100%' }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={capSize.width}
@@ -649,9 +660,13 @@ function VerticalSlider({
                         zIndex: 0,
                         cursor: 'crosshair',
                         position: "absolute",
-                        justifySelf: 'center',
                         height: trackSize.height,
                         width: 10,
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        margin: 'auto',
                         background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
                         border: '1px solid rgb(5, 5, 5)'
                     }}
@@ -659,15 +674,16 @@ function VerticalSlider({
             </div>
             <div className={dmSans.className}
                 style={{
-                    alignSelf: "start", justifySelf: "center",
-                    fontSize: "10px", paddingTop: '10px'
+                    display: 'grid',
+                    justifyContent: 'center',
+                    fontSize: "10px",
+                    paddingTop: '10px'
                 }}>{label}</div>
         </div>
     </>)
 }
 
 function HorizontalSlider({
-    label,
     hash,
     capSize,
     trackSize,
@@ -679,106 +695,94 @@ function HorizontalSlider({
     return (<>
         <div
             className={dellaRespira.className}
-            style={{ width: 'min-content', height: '100%', }}>
-            <div style={{
+            style={{
                 position: "relative",
                 ...trackSize,
-                alignContent: 'center',
             }}>
-                <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
-                    <Trackpad
-                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
-                        width={'100%'}
-                        height={capSize.height}
-                        coarsePointer={{
-                            ...capSize,
-                            pointerStyle: PointerStyle.Blurry,
-                            zIndex: 2
-                        }}
-                        value={cursor}
-                        onNewValue={onNewCursor}
-                        onMove={onCursorMove} />
-                </div>
-                <div
-                    style={{
-                        zIndex: 1,
-                        top: 0,
-                        width: trackSize.width,
-                        height: 8,
-                        position: "absolute",
-                        justifySelf: 'start',
-                        alignSelf: 'center',
-                        display: 'flex',
-                        gap: 1,
-                        justifyContent: 'space-between'
-                    }}
-                >
-                    <div style={{
-                        height: 12,
-                        width: '50%',
-                        background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(18, 18, 18))",
-                        border: '1px solid rgb(27, 27, 27)',
-                    }} />
-                    <div style={{
-                        height: 12,
-                        width: '50%',
-                        background: "linear-gradient(45deg, rgb(18, 18, 18), rgb(25, 25, 25))",
-                        border: '1px solid rgb(27, 27, 27)',
-                    }} />
-                </div>
-                <div
-                    ref={trackRef}
-                    onMouseDown={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = Math.round(e.clientX - rect.left);
-                        const y = Math.round(e.clientY - rect.top);
-                        onNewCursor({ x, y });
-                    }}
-                    style={{
-                        zIndex: 0,
-                        cursor: 'crosshair',
-                        position: "absolute",
-                        justifySelf: 'start',
-                        alignSelf: 'center',
-                        ...trackSize,
-                        background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
-                        border: '1px solid rgb(27, 27, 27)',
-                        borderBottomLeftRadius: 2,
-                        borderBottomRightRadius: 2,
-                        boxShadow: "rgba(0, 0, 0, 0.7) -10px -10px 40px inset",
-                    }}
-                >
-                    <div style={{
-                        padding: '0px 10px',
-                        display: 'flex',
-                        height: '100%',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <ReactSvg
-                            svg={remove('rgb(227, 227, 227)')}
-                            containerSize={{
-                                width: 20,
-                                height: 20
-                            }} scale={1} />
 
-                        <ReactSvg
-                            svg={add2('rgb(227, 227, 227)')}
-                            containerSize={{
-                                width: 20,
-                                height: 20
-                            }} scale={0.75} />
-
-                    </div>
-                </div>
-
+            <div style={{ position: 'absolute', width: '100%', top: 0, }}>
+                <Trackpad
+                    ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
+                    width={'100%'}
+                    height={capSize.height}
+                    coarsePointer={{
+                        ...capSize,
+                        pointerStyle: PointerStyle.Blurry,
+                        zIndex: 2
+                    }}
+                    value={cursor}
+                    onNewValue={onNewCursor}
+                    onMove={onCursorMove} />
+            </div>
+            {/* label */}
+            <div
+                style={{
+                    zIndex: 1,
+                    top: 0,
+                    width: trackSize.width,
+                    height: 8,
+                    position: "absolute",
+                    display: 'flex',
+                    gap: 1,
+                    justifyContent: 'space-between'
+                }}
+            >
+                <div style={{
+                    height: 12,
+                    width: '50%',
+                    background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(18, 18, 18))",
+                    border: '1px solid rgb(27, 27, 27)',
+                }} />
+                <div style={{
+                    height: 12,
+                    width: '50%',
+                    background: "linear-gradient(45deg, rgb(18, 18, 18), rgb(25, 25, 25))",
+                    border: '1px solid rgb(27, 27, 27)',
+                }} />
             </div>
             <div
-
+                ref={trackRef}
+                onMouseDown={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = Math.round(e.clientX - rect.left);
+                    const y = Math.round(e.clientY - rect.top);
+                    onNewCursor({ x, y });
+                }}
                 style={{
-                    alignSelf: "start", justifySelf: "center",
-                    fontSize: "10px", paddingTop: '10px'
-                }}>{label}</div>
+                    zIndex: 0,
+                    top: 0,
+                    cursor: 'crosshair',
+                    position: "absolute",
+                    ...trackSize,
+                    background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
+                    border: '1px solid rgb(27, 27, 27)',
+                    borderBottomLeftRadius: 2,
+                    borderBottomRightRadius: 2,
+                    boxShadow: "rgba(0, 0, 0, 0.7) -10px -10px 40px inset",
+                }}
+            >
+                <div style={{
+                    padding: '0px 10px',
+                    display: 'flex',
+                    height: '100%',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                }}>
+                    <ReactSvg
+                        svg={remove('rgb(227, 227, 227)')}
+                        containerSize={{
+                            width: 20,
+                            height: 20
+                        }} scale={1} />
+
+                    <ReactSvg
+                        svg={add2('rgb(227, 227, 227)')}
+                        containerSize={{
+                            width: 20,
+                            height: 20
+                        }} scale={0.75} />
+                </div>
+            </div>
         </div>
     </>)
 }

@@ -379,12 +379,8 @@ function TimelineSlider({
     return (<>
         <div style={{ width: '100%', height: '100%', }}>
             <div
-                style={{
-                    position: "relative",
-                    ...trackSize,
-                    alignContent: 'center',
-                }}>
-                <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
+                style={{ position: "relative", ...trackSize, }}>
+                <div style={{ position: 'absolute', width: '100%', }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
@@ -398,7 +394,7 @@ function TimelineSlider({
                         onNewValue={onNewCursor}
                         onMove={onCursorMove} />
                 </div>
-                <div style={{ position: 'absolute', width: '100%', alignSelf: 'center', justifySelf: 'center', }}>
+                <div style={{ position: 'absolute', width: '100%', }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c2`, draggableId: `${hash}|d2` }}
                         width={'100%'}
@@ -419,8 +415,6 @@ function TimelineSlider({
                         width: trackSize.width,
                         height: 22,
                         position: "absolute",
-                        justifySelf: 'start',
-                        alignSelf: 'center',
                         display: 'flex',
                         justifyContent: 'start',
                         background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(25, 25, 25))",
@@ -438,8 +432,6 @@ function TimelineSlider({
                     style={{
                         zIndex: 0,
                         position: "absolute",
-                        justifySelf: 'start',
-                        alignSelf: 'center',
                         ...trackSize,
                         background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
                         border: '1px solid rgb(27, 27, 27)',
