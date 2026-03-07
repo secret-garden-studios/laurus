@@ -5,12 +5,12 @@ import { MediaOverlays, WorkspaceContext } from "./workspace.client";
 import { CSS as DndCss } from '@dnd-kit/utilities';
 import styles from "../app.module.css";
 
-interface CameraDragOverlay {
+interface CameraDragOverlayProps {
     id: string
     position: { x: number, y: number, z: number, },
     containerSize: { width: number, height: number },
 }
-function CameraDragOverlay({ id, position, containerSize }: CameraDragOverlay) {
+function CameraDragOverlay({ id, position, containerSize }: CameraDragOverlayProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
     const dndCss = {
         left: position.x,
