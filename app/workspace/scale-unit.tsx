@@ -149,7 +149,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             const options: KeyframeAnimationOptions = {
                 duration: firstFrame ? 2 / response.fps : response.duration * 1000,
             }
-            const previewKey = appState.tool.type == 'drop' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
+            const previewKey = appState.tool.type != 'viewport' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
             switch (appState.activeElement.value.type) {
                 case "svg": {
                     const svgRef = svgElementsRef.current?.get(previewKey);

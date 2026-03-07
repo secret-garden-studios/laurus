@@ -87,12 +87,12 @@ export default function DraggableCamera({
                         overflow: 'hidden',
                         boxShadow: "6px 6px 10px rgba(0, 0, 0, 0.2)",
                         borderRadius: 2,
-                        zIndex: appState.tool.type == 'drop' ? 1 : 0,
                     }} >
-                    {appState.tool.type == 'none' &&
+                    {appState.tool.type == 'viewport' &&
                         <MediaOverlays
                             svgElementsRef={data.svgElementsRef}
-                            imgElementsRef={data.imgElementsRef} />}
+                            imgElementsRef={data.imgElementsRef}
+                            zIndex={zIndex + 1} />}
                 </div>
                 <div style={{ position: 'absolute' }}>
                     <CameraDragOverlay

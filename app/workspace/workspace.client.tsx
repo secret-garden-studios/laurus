@@ -30,7 +30,7 @@ import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { lassoSelect, hexagon, motionPhotosOn } from "../svg-repo";
+import { lassoSelect, hexagon, deployedCode, browse, checkCircle } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
@@ -75,6 +75,8 @@ export type LaurusThumbnail =
 export type LaurusTool =
     | { type: 'drop' }
     | { type: 'none' }
+    | { type: 'activate' }
+    | { type: 'viewport' }
 export type LaurusBrowserElement = LaurusThumbnail;
 export type LaurusActiveElement = { key: string, value: LaurusThumbnail };
 export const timelineValues = [30, 60, 90];
@@ -655,8 +657,7 @@ export default function Workspace({
                             left: 0,
                             width: 'min-content',
                             height: 'min-content',
-                            zIndex: appState.tool.type == 'drop' ? 2 : 1,
-
+                            zIndex: 2
                         }}>
                         <Canvas />
                     </div>}
@@ -668,7 +669,7 @@ export default function Workspace({
                             svgElementsRef,
                             imgElementsRef
                         }}
-                        zIndex={appState.tool.type == 'drop' ? 1 : 0}
+                        zIndex={1}
                         onNewPosition={async function (newPosition: { x: number; y: number; }) {
                             const newProject: LaurusProjectResult = {
                                 ...appState.project,
@@ -681,10 +682,11 @@ export default function Workspace({
                             });
                             await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                         }} />
-                    {appState.tool.type == 'drop' &&
+                    {appState.tool.type != 'viewport' &&
                         <MediaOverlays
                             svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef} />}
+                            imgElementsRef={imgElementsRef}
+                            zIndex={3} />}
                 </div>
                 {/* right bumper */}
                 {showMediaBrowser && <div
@@ -766,6 +768,7 @@ export default function Workspace({
                     style={{
                         gridRow: '2', gridColumn: '6',
                         display: "grid",
+                        gridTemplateRows: 'min-content min-content auto',
                         borderLeft: '6px solid black',
                         background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
                         width: 50,
@@ -789,6 +792,48 @@ export default function Workspace({
                                 }
                                 else {
                                     dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
+                                }
+                            }} />
+                    </div>
+                    <div style={{
+                        width: 'min-content',
+                        height: 'min-content',
+                        background: appState.tool.type == 'activate' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    }}>
+                        <ReactSvg
+                            svg={deployedCode()}
+                            containerSize={{
+                                width: 50,
+                                height: 50
+                            }}
+                            scale={0.5}
+                            onContainerClick={() => {
+                                if (appState.tool.type == 'activate') {
+                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                }
+                                else {
+                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'activate' } })
+                                }
+                            }} />
+                    </div>
+                    <div style={{
+                        width: 'min-content',
+                        height: 'min-content',
+                        background: appState.tool.type == 'viewport' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    }}>
+                        <ReactSvg
+                            svg={browse()}
+                            containerSize={{
+                                width: 50,
+                                height: 50
+                            }}
+                            scale={0.5}
+                            onContainerClick={() => {
+                                if (appState.tool.type == 'viewport') {
+                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                }
+                                else {
+                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } })
                                 }
                             }} />
                     </div>
@@ -876,8 +921,9 @@ export default function Workspace({
 interface MediaOverlaysProps {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    zIndex: number,
 }
-export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysProps) {
+export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaOverlaysProps) {
     const { appState, dispatch } = useContext(WorkspaceContext);
 
     const lazyLoadSvgElementsRef = () => {
@@ -959,14 +1005,14 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
     return (<>
         {Array.from(appState.project.imgs.entries().filter(e => !e[1].pending)).map((e) => {
             const [key, imgMeta] = e;
-            const refKey = appState.tool.type == 'drop' ? `${key}|preview` : key;
+            const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
             const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
             if (imgData) {
                 return (
                     <div
                         onClick={(event) => {
                             // option key on mac
-                            if (event.altKey) {
+                            if (event.altKey || appState.tool.type == 'activate') {
                                 const newImg: LaurusImg = { ...imgMeta, pending: true }
                                 dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                             }
@@ -977,7 +1023,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                             nodeId={`dnd-node-${key}`}
                             data={imgData}
                             meta={imgMeta}
-                            zIndex={3}
+                            zIndex={zIndex}
                             onNewPosition={(newPosition) => onNewImgPosition(key, imgMeta, newPosition)}
                             onImgRef={onImgRef}
                             inputId={refKey}
@@ -988,14 +1034,14 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
         })}
         {Array.from(appState.project.svgs.entries().filter(e => !e[1].pending)).map((e) => {
             const [key, svgMeta] = e;
-            const refKey = appState.tool.type == 'drop' ? `${key}|preview` : key;
+            const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
             const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
             if (svgData) {
                 return (
                     <div
                         onClick={(event) => {
                             // option key on mac
-                            if (event.altKey) {
+                            if (event.altKey || appState.tool.type == 'activate') {
                                 const newSvg: LaurusSvg = { ...svgMeta, pending: true }
                                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                             }
@@ -1006,7 +1052,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                             nodeId={`dnd-node-${key}`}
                             data={svgData}
                             meta={svgMeta}
-                            zIndex={3}
+                            zIndex={zIndex}
                             onNewPosition={(newPosition) => onNewSvgPosition(key, svgMeta, newPosition)}
                             onSvgRef={onSvgRef}
                             inputId={refKey} />
@@ -1016,7 +1062,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
         })}
         {Array.from(appState.project.imgs.entries().filter(e => e[1].pending)).map((e) => {
             const [key, imgMeta] = e;
-            const position = appState.tool.type == 'drop' ? { top: Math.max(0, imgMeta.top), left: Math.max(0, imgMeta.left) }
+            const position = appState.tool.type != 'viewport' ? { top: Math.max(0, imgMeta.top), left: Math.max(0, imgMeta.left) }
                 : { top: (imgMeta.top - appState.project.frame_top), left: (imgMeta.left - appState.project.frame_left) };
             const imgData = appState.downloadedImgs.find(i => i.media_path == imgMeta.media_path);
             if (imgData) {
@@ -1029,12 +1075,12 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                             position: 'absolute',
                             width: imgMeta.width,
                             height: imgMeta.height,
-                            zIndex: 3,
+                            zIndex: zIndex,
                             ...position
                         }}
                         onClick={(event) => {
                             // option key on mac
-                            if (event.altKey) {
+                            if (event.altKey || appState.tool.type == 'activate') {
                                 const newImg: LaurusImg = { ...imgMeta, pending: false }
                                 dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                             }
@@ -1095,7 +1141,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                                         dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                     }}>
                                     <ReactSvg
-                                        svg={motionPhotosOn('rgb(227, 227, 227)')}
+                                        svg={checkCircle('rgb(227, 227, 227)')}
                                         containerSize={{
                                             width: activateSize,
                                             height: activateSize
@@ -1110,7 +1156,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
         })}
         {Array.from(appState.project.svgs.entries().filter(e => e[1].pending)).map((e) => {
             const [key, svgMeta] = e;
-            const position = appState.tool.type == 'drop' ? { top: Math.max(0, svgMeta.top), left: Math.max(0, svgMeta.left) }
+            const position = appState.tool.type != 'viewport' ? { top: Math.max(0, svgMeta.top), left: Math.max(0, svgMeta.left) }
                 : { top: (svgMeta.top - appState.project.frame_top), left: (svgMeta.left - appState.project.frame_left) };
             const svgData = appState.downloadedSvgs.find(s => s.media_path == svgMeta.media_path);
             if (svgData) {
@@ -1123,12 +1169,12 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                             position: 'absolute',
                             width: svgMeta.width,
                             height: svgMeta.height,
-                            zIndex: 3,
+                            zIndex: zIndex,
                             ...position
                         }}
                         onClick={(event) => {
                             // option key on mac
-                            if (event.altKey) {
+                            if (event.altKey || appState.tool.type == 'activate') {
                                 const newSvg: LaurusSvg = { ...svgMeta, pending: false }
                                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                             }
@@ -1192,7 +1238,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef }: MediaOverlaysP
                                         dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                     }}>
                                     <ReactSvg
-                                        svg={motionPhotosOn('rgb(227, 227, 227)')}
+                                        svg={checkCircle('rgb(227, 227, 227)')}
                                         containerSize={{
                                             width: activateSize,
                                             height: activateSize

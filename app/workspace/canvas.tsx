@@ -86,7 +86,6 @@ export default function Canvas() {
     }, []);
 
     const click = (event: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!appState.tool) return;
         switch (appState.tool.type) {
             case 'drop': {
                 const canvas = drawingCanvasRef.current;
@@ -104,7 +103,6 @@ export default function Canvas() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        if (!appState.tool) return;
         switch (appState.tool.type) {
             case 'drop': {
                 const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
@@ -197,7 +195,6 @@ export default function Canvas() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        if (!appState.tool) return;
         switch (appState.tool.type) {
             case 'drop':
                 {

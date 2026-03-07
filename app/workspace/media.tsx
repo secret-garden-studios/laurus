@@ -46,6 +46,7 @@ interface ReactImgNodeProps {
 }
 function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: ReactImgNodeProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+    const { appState } = useContext(WorkspaceContext);
 
     const dndCss = {
         left: position.x,
@@ -60,7 +61,14 @@ function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: 
             {...attributes}
             style={{
                 ...dndCss,
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: (() => {
+                    if (appState.tool.type == 'activate') {
+                        return '';
+                    }
+                    else {
+                        return isDragging ? 'grabbing' : 'grab';
+                    }
+                })(),
                 position: 'absolute',
                 width: containerSize.width,
                 height: containerSize.height,
@@ -122,17 +130,17 @@ export function DraggableReactImg({
                 id={nodeId}
                 position={(() => {
                     switch (appState.tool.type) {
-                        case "drop": {
-                            return {
-                                x: Math.max(0, meta.left),
-                                y: Math.max(0, meta.top),
-                                z: zIndex
-                            }
-                        }
-                        case "none": {
+                        case "viewport": {
                             return {
                                 x: (meta.left - appState.project.frame_left),
                                 y: (meta.top - appState.project.frame_top),
+                                z: zIndex
+                            }
+                        }
+                        default: {
+                            return {
+                                x: Math.max(0, meta.left),
+                                y: Math.max(0, meta.top),
                                 z: zIndex
                             }
                         }
@@ -203,6 +211,7 @@ interface ReactSvgNodeProps {
 }
 function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: ReactSvgNodeProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+    const { appState } = useContext(WorkspaceContext);
 
     const dndCss = {
         left: position.x,
@@ -217,7 +226,14 @@ function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: 
             {...attributes}
             style={{
                 ...dndCss,
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: (() => {
+                    if (appState.tool.type == 'activate') {
+                        return '';
+                    }
+                    else {
+                        return isDragging ? 'grabbing' : 'grab';
+                    }
+                })(),
                 position: 'absolute',
                 width: containerSize.width,
                 height: containerSize.height,
@@ -280,17 +296,17 @@ export function DraggableReactSvg({
                 id={nodeId}
                 position={(() => {
                     switch (appState.tool.type) {
-                        case "drop": {
-                            return {
-                                x: Math.max(0, meta.left),
-                                y: Math.max(0, meta.top),
-                                z: zIndex
-                            }
-                        }
-                        case "none": {
+                        case "viewport": {
                             return {
                                 x: (meta.left - appState.project.frame_left),
                                 y: (meta.top - appState.project.frame_top),
+                                z: zIndex
+                            }
+                        }
+                        default: {
+                            return {
+                                x: Math.max(0, meta.left),
+                                y: Math.max(0, meta.top),
                                 z: zIndex
                             }
                         }

@@ -309,7 +309,7 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!skipPreviousEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
                                 const newAnimations = await getNewAnimations('forwards', true);
                                 if (newAnimations) {
                                     Promise.all(newAnimations.map(animation => animation.finished))
@@ -317,6 +317,7 @@ export default function TimelineArea({
                                         .then((_animations: Animation[]) => {
                                             enableAllControls();
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                         })
                                         .catch(err => {
                                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -339,13 +340,14 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!playEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
                                 const newAnimations = await getNewAnimations('none', false);
                                 Promise.all(newAnimations.map(animation => animation.finished))
                                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                     .then((_animations: Animation[]) => {
                                         enableAllControls();
                                         dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                     })
                                     .catch(err => {
                                         if (err instanceof Error && err.name !== 'AbortError') {
@@ -365,13 +367,14 @@ export default function TimelineArea({
                             scale={1}
                             onContainerClick={async () => {
                                 if (!skipNextEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
                                 const newAnimations = await getNewAnimations('forwards', false);
                                 Promise.all(newAnimations.map(animation => animation.finished))
                                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                                     .then((_animations: Animation[]) => {
                                         enableAllControls();
                                         dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                     })
                                     .catch(err => {
                                         if (err instanceof Error && err.name !== 'AbortError') {
