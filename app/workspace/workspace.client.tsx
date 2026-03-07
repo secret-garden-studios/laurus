@@ -755,9 +755,7 @@ export default function Workspace({
                                     }
                                 }}
                                 onMediaClick={(m) => {
-                                    if (appState.tool && appState.tool.type == 'drop') {
-                                        dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
-                                    }
+                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
                                 }}
                                 onFilterSelect={setMediaBrowserFilter}
                             />
