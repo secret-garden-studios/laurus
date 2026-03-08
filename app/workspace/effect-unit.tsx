@@ -197,9 +197,11 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         <div style={{ display: 'grid' }} key={effect.key}>
             <div
                 style={{
-                    width: '100%', height: 24,
-                    padding: "0px 6px 0px 8px",
-                    display: 'flex', justifyContent: 'space-between',
+                    width: '100%',
+                    height: 24,
+                    padding: "0px 0px 0px 8px",
+                    display: 'flex',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     fontSize: 12,
                     color: 'rgb(227, 227, 227)'

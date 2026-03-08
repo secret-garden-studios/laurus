@@ -24,18 +24,20 @@ import {
     MoveEquation_V1_0,
     Move_V1_0,
     MoveResult_V1_0,
-    getMoves
+    getMoves,
+    getFrames
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { lassoSelect, hexagon, deployedCode, browse, checkCircle } from "../svg-repo";
+import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import { v4 } from "uuid";
 import DraggableCamera from "./camera";
+import { dellaRespira } from "../fonts";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusImg>
@@ -116,6 +118,7 @@ export interface WorkspaceState {
     timelineMaxValue: number,
 
     recordingLight: boolean,
+    fps: number,
 }
 const defaultLayer: LaurusLayer = {
     name: "untitled",
@@ -148,6 +151,7 @@ export const defaultWorkspace: WorkspaceState = {
     browserElement: undefined,
     activeElement: undefined,
     recordingLight: false,
+    fps: 60,
 }
 
 export enum WorkspaceActionType {
@@ -174,6 +178,7 @@ export enum WorkspaceActionType {
     IncrementTimelineMaxValue,
 
     SetRecordingLight,
+    SetFps,
 }
 
 export type WorkspaceAction =
@@ -199,6 +204,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.IncrementTimelineMaxValue }
 
     | { type: WorkspaceActionType.SetRecordingLight, value: boolean }
+    | { type: WorkspaceActionType.SetFps, value: number }
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
     switch (action.type) {
@@ -278,6 +284,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.SetRecordingLight: {
             return { ...state, recordingLight: action.value }
         }
+        case WorkspaceActionType.SetFps: {
+            return { ...state, fps: action.value }
+        }
     }
 }
 
@@ -345,6 +354,7 @@ function initReducer(
         browserElement: defaultWorkspace.browserElement,
         activeElement: defaultWorkspace.activeElement,
         recordingLight: defaultWorkspace.recordingLight,
+        fps: defaultWorkspace.fps
     };
 }
 
@@ -590,6 +600,65 @@ export default function Workspace({
     const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
     const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
 
+    const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
+        const newAnimations: Animation[] = [];
+        const globalLimit: number = Math.max(...appState.effects
+            .map(e => e.value.duration));
+        const options: KeyframeAnimationOptions = {
+            duration: firstFrame ? 2 / appState.fps : globalLimit * 1000,
+            iterations: 1,
+            fill,
+        };
+
+        const imgArray = Array.from(appState.project.imgs.entries().filter(e => !e[1].pending));
+        for (let i = 0; i < imgArray.length; i++) {
+            const [key] = imgArray[i];
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
+            if (frames) {
+                const framesToMap = firstFrame ? [frames[0]] : frames;
+                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
+                    return i < frames.length - 1 ?
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
+                });
+                const imgRef = imgElementsRef.current?.get(key);
+                if (!imgRef) return [];
+                const animations = imgRef.getAnimations();
+                for (let j = 0; j < animations.length; j++) {
+                    animations[j].cancel();
+                }
+                const keyframeEffect =
+                    new KeyframeEffect(imgRef, keyframes, options);
+                newAnimations.push(new Animation(keyframeEffect, document.timeline));
+            }
+        };
+
+        const svgArray = Array.from(appState.project.svgs.entries().filter(e => !e[1].pending));
+        for (let i = 0; i < svgArray.length; i++) {
+            const [key] = svgArray[i];
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
+            if (frames) {
+                const framesToMap = firstFrame ? [frames[0]] : frames;
+                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
+                    return i < frames.length - 1 ?
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
+                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
+                });
+                const svgRef = svgElementsRef.current?.get(key);
+                if (!svgRef) return [];
+                const animations = svgRef.getAnimations();
+                for (let j = 0; j < animations.length; j++) {
+                    animations[j].cancel();
+                }
+                const keyframeEffect =
+                    new KeyframeEffect(svgRef, keyframes, options);
+                newAnimations.push(new Animation(keyframeEffect, document.timeline));
+            }
+        };
+
+        return newAnimations;
+    }, [appState.apiOrigin, appState.effects, appState.fps, appState.project.imgs, appState.project.project_id, appState.project.svgs]);
+
     return (<>
         <div
             style={{
@@ -607,26 +676,97 @@ export default function Workspace({
                 </div>
 
                 <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
-                    {showTimeline &&
+                    {showTimeline ?
                         <TimelineArea
                             size={{ width: 1000, height: 5000 }}
                             svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef} />}
-                </div>
-                {/* left bumper */}
-                <div
-                    onClick={() => { setShowTimeline(v => !v); }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                    style={{
-                        gridRow: '2', gridColumn: '2',
-                        width: 30,
-                        display: 'grid',
-                        placeContent: 'center',
-                        border: '1px solid black',
-                        background: 'rgba(20, 20, 20, 1)',
-                        borderRadius: 10
-                    }} >
+                            imgElementsRef={imgElementsRef}
+                            onRightPanelClick={() => setShowTimeline(false)}
+                        /> :
+                        <>
+                            <div
+                                style={{
+                                    width: 20,
+                                    height: '100%',
+                                    gridTemplateRows: '1fr',
+                                    display: 'grid',
+                                    placeContent: 'start',
+                                }} >
+                                <div
+                                    className={dellaRespira.className}
+                                    style={{
+                                        border: '1px solid rgb(24, 24, 24)',
+                                        background: 'rgba(20, 20, 20, 1)',
+                                        width: 20,
+                                        display: 'grid',
+                                        placeContent: 'center',
+                                    }} >
+                                    <ReactSvg
+                                        svg={moreVert('rgba(255, 255, 255, 0.5)')}
+                                        containerSize={{
+                                            width: 20,
+                                            height: 38
+                                        }}
+                                        scale={1}
+                                        onContainerClick={() => {
+                                            setShowTimeline(true);
+                                        }} />
+                                </div>
+                            </div>
+                            <div style={{
+                                zIndex: 1,
+                                position: 'fixed',
+                                bottom: 100,
+                                left: 40,
+                                width: 44,
+                                height: 44,
+                                borderRadius: '50%',
+                                border: '1px solid rgba(0, 0, 0, 0.4)',
+                                background: 'rgb(20, 20, 20)',
+                                boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
+                            }}>
+                                <ReactSvg
+                                    svg={playArrow()}
+                                    containerSize={{
+                                        width: 44,
+                                        height: 44
+                                    }}
+                                    scale={0.5}
+                                    onContainerClick={async () => {
+                                        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
+                                        const newAnimations = await getNewAnimations('none', false);
+                                        Promise.all(newAnimations.map(animation => animation.finished))
+                                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                            .then((_animations: Animation[]) => {
+                                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                            })
+                                            .catch(err => {
+                                                if (err instanceof Error && err.name !== 'AbortError') {
+                                                    console.log('unknown error from waapi:', err);
+                                                }
+                                            });
+                                        newAnimations.forEach(a => {
+                                            a.play();
+                                        });
+                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                                    }} />
+                            </div>
+                            <div style={{
+                                zIndex: 1,
+                                position: 'fixed',
+                                bottom: 115,
+                                right: 86,
+                                width: 14,
+                                height: 14,
+                                borderRadius: '50%',
+                                border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
+                                background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
+                                boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
+                            }}>
+                            </div>
+                        </>
+                    }
                 </div>
                 {/* canvas area */}
                 <div
@@ -769,7 +909,7 @@ export default function Workspace({
                         gridRow: '2', gridColumn: '6',
                         display: "grid",
                         gridTemplateRows: 'min-content min-content auto',
-                        borderLeft: '6px solid black',
+                        borderLeft: '1px solid black',
                         background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
                         width: 50,
                         justifyContent: 'center'

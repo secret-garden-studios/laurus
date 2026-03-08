@@ -2,13 +2,15 @@ import { RefObject, useCallback, useContext, useEffect, useRef, useState } from 
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import { ReactSvg } from "./media";
-import { addCircle, circle, playArrow, skipNext, skipPrevious } from "../svg-repo";
+import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious } from "../svg-repo";
 import {
-    LaurusEffect, LaurusProjectResult, LaurusScale,
+    LaurusEffect,
+    LaurusProjectResult,
+    LaurusScale,
     timelineUnits,
     convertTime,
     WorkspaceActionType, WorkspaceContext,
-    LaurusMove,
+    LaurusMove
 } from "./workspace.client";
 import { createMove, createProject, createScale, getFrames, updateProject } from "./workspace.server";
 import { v4 } from "uuid";
@@ -19,16 +21,16 @@ interface TimelineArea {
     size: { width: number, height: number },
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    onRightPanelClick: () => void,
 }
-
 export default function TimelineArea({
     size,
     svgElementsRef,
-    imgElementsRef
+    imgElementsRef,
+    onRightPanelClick
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
-    const [fps, setFps] = useState(60);
     const [fastRate] = useState(50);
     const [playEnabled, setPlayEnabled] = useState(true);
     const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
@@ -57,7 +59,7 @@ export default function TimelineArea({
         const globalLimit: number = Math.max(...appState.effects
             .map(e => e.value.duration));
         const options: KeyframeAnimationOptions = {
-            duration: firstFrame ? 2 / fps : globalLimit * 1000,
+            duration: firstFrame ? 2 / appState.fps : globalLimit * 1000,
             iterations: 1,
             fill,
         };
@@ -65,7 +67,7 @@ export default function TimelineArea({
         const imgArray = Array.from(appState.project.imgs.entries().filter(e => !e[1].pending));
         for (let i = 0; i < imgArray.length; i++) {
             const [key] = imgArray[i];
-            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, fps);
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
                 const framesToMap = firstFrame ? [frames[0]] : frames;
                 const keyframes: Keyframe[] = framesToMap.map((f, i) => {
@@ -88,7 +90,7 @@ export default function TimelineArea({
         const svgArray = Array.from(appState.project.svgs.entries().filter(e => !e[1].pending));
         for (let i = 0; i < svgArray.length; i++) {
             const [key] = svgArray[i];
-            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, fps);
+            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
                 const framesToMap = firstFrame ? [frames[0]] : frames;
                 const keyframes: Keyframe[] = framesToMap.map((f, i) => {
@@ -109,7 +111,7 @@ export default function TimelineArea({
         };
 
         return newAnimations;
-    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, fps, imgElementsRef, svgElementsRef]);
+    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
 
     const enableAllControls = useCallback(() => {
         setPlayEnabled(true);
@@ -123,45 +125,26 @@ export default function TimelineArea({
                 width: "100%",
                 height: '100%',
                 display: 'grid',
-                gridTemplateColumns: 'min-content 1fr',
+                gridTemplateColumns: 'auto 1fr',
                 gridTemplateRows: `min-content 1fr min-content`,
             }}>
-            {/* ruler intersection */}
-            <div style={{
-                gridRow: '1', gridColumn: '1',
-                width: 14,
-                height: rulerSize,
-                backgroundImage: 'linear-gradient(45deg, rgb(28, 28, 28), rgb(28, 28, 28))',
-                display: 'grid',
-                placeItems: 'center',
-            }} >
-            </div>
-            {/* tall ruler */}
-            <div
-                style={{
-                    gridRow: '2', gridColumn: '1',
-                    width: 14,
-                    display: 'grid',
-                    backgroundImage: 'linear-gradient(45deg, rgb(37, 37, 37), rgb(37, 37, 37))',
-                }} />
             {/* wide ruler (time) */}
             <div
                 className={dellaRespira.className}
                 style={{
-                    gridRow: '1', gridColumn: '2',
-                    border: '1px solid rgba(255,255,255,0.15)',
+                    gridRow: '1', gridColumn: 'span 2',
+                    borderTop: '1px solid rgba(255,255,255,0.15)',
+                    borderBottom: '1px solid rgba(255,255,255,0.15)',
+                    borderRight: '1px solid rgba(255,255,255,0.15)',
                     display: 'flex',
                     height: rulerSize,
                 }} >
-                <div style={{
-                    width: 15,
-                    background: 'rgba(46,46,46,1)',
-                }} />
                 <div
                     onDoubleClick={() => {
                         dispatch({ type: WorkspaceActionType.IncrementTimelineMaxValue });
                     }}
                     style={{
+                        padding: '0px 10px 0px 22px',
                         fontSize: 10,
                         display: 'flex',
                         width: '100%',
@@ -170,43 +153,36 @@ export default function TimelineArea({
                     }}>
                     {[...Array(61)].map((_, i) => {
                         const params = getWideRulerParams();
-                        return (
-                            <div key={i}>
-                                {i % params.modulo == 0 ?
-                                    (<div
-                                        style={{
-                                            paddingLeft: 2,
-                                            width: 10,
-                                            height: '75%',
-                                            borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
-                                        }}
-                                    >
-                                        {i < 60 ? `${i * params.factor}` : ''}
-                                    </div>
-                                    ) :
-                                    (<div
-                                        style={{
-                                            height: '50%',
-                                            width: 10,
-                                            borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
-                                        }}
-                                    />)}
-                            </div>
-                        )
+                        return <div key={i}>
+                            {i % params.modulo == 0 ?
+                                <div
+                                    style={{
+                                        paddingLeft: 2,
+                                        width: 10,
+                                        height: '75%',
+                                        borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
+                                    }} >
+                                    {`${i * params.factor}`}
+                                </div> :
+                                <div
+                                    style={{
+                                        height: '50%',
+                                        width: 10,
+                                        borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
+                                    }}
+                                />
+                            }
+                        </div>
                     })}
                 </div>
-                <div style={{
-                    width: 5,
-                    background: 'rgba(46,46,46,1)',
-                }} />
                 <div
+                    className={dellaRespira.className}
                     onDoubleClick={() => {
                         const currentUnit = appState.timelineUnit;
                         const currentIndex = timelineUnits.findIndex(v => v == appState.timelineUnit);
                         const newUnit: string = (currentIndex >= 0) && (currentIndex + 1 < timelineUnits.length)
                             ? timelineUnits[currentIndex + 1]
                             : timelineUnits[0];
-
                         dispatch({ type: WorkspaceActionType.SetTimelineUnit, value: newUnit });
                         const newEffects: LaurusEffect[] = appState.effects.map(e => {
                             switch (e.type) {
@@ -240,7 +216,7 @@ export default function TimelineArea({
                         fontSize: 12,
                         textAlign: 'center',
                         position: 'relative',
-                        width: 48,
+                        width: 38,
                         backgroundColor: 'rgb(33, 33, 33)',
                         color: 'rgb(255, 255, 255)',
                     }} >
@@ -259,7 +235,8 @@ export default function TimelineArea({
                 className={styles["grainy-background"] + " " + dellaRespira.className}
                 style={{
                     overflowY: 'auto',
-                    gridRow: '2', gridColumn: '2',
+                    gridRow: '2',
+                    gridColumn: '1',
                     width: size.width,
                     display: 'grid',
                     alignContent: 'space-between',
@@ -268,6 +245,24 @@ export default function TimelineArea({
                     maxWidth={size.width}
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
+            </div>
+            <div
+                className={dellaRespira.className}
+                style={{
+                    border: '1px solid rgb(24, 24, 24)',
+                    background: 'rgba(20, 20, 20, 1)',
+                    width: 20,
+                    display: 'grid',
+                    placeContent: 'center',
+                }}>
+                <ReactSvg
+                    svg={moreVert('rgba(255, 255, 255, 0.5)')}
+                    containerSize={{
+                        width: 20,
+                        height: 38
+                    }}
+                    scale={1}
+                    onContainerClick={onRightPanelClick} />
             </div>
             {/* control area */}
             <div
@@ -304,15 +299,37 @@ export default function TimelineArea({
                             display: 'flex',
                             position: 'absolute'
                         }}>
+                            <input
+                                className={dellaRespira.className}
+                                id={`fps-input`}
+                                type="text"
+                                placeholder="60"
+                                value={appState.fps}
+                                onChange={(e) => {
+                                    const newFps: number = parseFloat(e.currentTarget.value) || 60;
+                                    dispatch({ type: WorkspaceActionType.SetFps, value: newFps });
+                                }}
+                                style={{
+                                    textAlign: "center",
+                                    background: 'none',
+                                    color: "rgb(227, 227, 227)",
+                                    borderRadius: "2px",
+                                    border: 'none',
+                                    outline: 'none',
+                                    width: 20,
+                                    lineHeight: '1',
+                                    display: 'inline-block',
+                                    overflowX: 'scroll',
+                                    fontSize: 16,
+                                }}
+                            />
                             <div
                                 style={{
-                                    width: 16,
-                                    height: 16,
-                                    borderRadius: '50%',
-                                    border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
-                                    background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
-                                    boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 0.9) 0px 0px 100px 8px' : 'none'
-                                }} />
+                                    fontSize: 15,
+                                    color: "rgba(255, 255, 255, 0.5)",
+                                }}>
+                                {<i>{'fps'}</i>}
+                            </div>
                         </div>
                         <ReactSvg
                             svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
@@ -402,41 +419,19 @@ export default function TimelineArea({
                                 });
                             }} />
                         <div style={{
-                            right: 0,
+                            right: 6,
                             display: 'flex',
                             position: 'absolute'
                         }}>
-                            <input
-                                className={dellaRespira.className}
-                                id={`fps-input`}
-                                type="text"
-                                placeholder="30"
-                                value={fps}
-                                onChange={(e) => {
-                                    const newFps: number = parseFloat(e.currentTarget.value) || 30;
-                                    setFps(newFps);
-                                }}
-                                style={{
-                                    textAlign: "right",
-                                    background: 'none',
-                                    color: "rgb(227, 227, 227)",
-                                    borderRadius: "2px",
-                                    border: 'none',
-                                    outline: 'none',
-                                    lineHeight: '1',
-                                    display: 'inline-block',
-                                    overflowX: 'scroll',
-                                    fontSize: 16,
-                                }}
-                            />
                             <div
                                 style={{
-                                    fontSize: 15,
-                                    padding: '0px 3px',
-                                    color: "rgba(255, 255, 255, 0.5)",
-                                }}>
-                                {<i>{'fps'}</i>}
-                            </div>
+                                    width: 16,
+                                    height: 16,
+                                    borderRadius: '50%',
+                                    border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
+                                    background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
+                                    boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
+                                }} />
                         </div>
                     </div>
                 </div>
@@ -514,6 +509,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             return <div
                                 style={{
                                     borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
+                                    padding: "0px 6px",
+                                    background: 'rgba(23, 23, 23, 0.5)'
                                 }}
                                 key={i}>
                                 <EffectUnit
@@ -524,10 +521,11 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         })}
                         <div
                             style={{
-                                width: '100%', height: 46,
+                                width: '100%',
+                                height: 46,
                                 padding: 10,
                                 borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
-                                background: 'rgba(255,255,255,0.01)',
+                                background: 'rgb(20, 20, 20)',
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                                 borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
                             }}>
@@ -596,7 +594,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                                                 duration: 0,
                                                                 project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                                                 layer_id: layerEntry[0],
-                                                                fps: 30,
+                                                                fps: appState.fps,
                                                                 order: appState.effects.filter(e => e.type == 'scale').length,
                                                             };
                                                             const response = await createScale(appState.apiOrigin, newScale);
@@ -620,7 +618,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                                                 duration: 0,
                                                                 project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                                                 layer_id: layerEntry[0],
-                                                                fps: 30,
+                                                                fps: appState.fps,
                                                                 order: appState.effects.filter(e => e.type == 'move').length,
                                                             };
                                                             const response = await createMove(appState.apiOrigin, newMove);
@@ -638,7 +636,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                                             break;
                                                         }
                                                     }
-
                                                     setShowEffectsBrowser(false);
                                                 }} />
                                         </div>
@@ -726,6 +723,7 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitleProps) {
                 height: '100%',
             }}>
             <input
+                id={`layer-name-input-${layerId}`}
                 ref={layerNameRef}
                 className={dellaRespira.className}
                 placeholder="name me..."
