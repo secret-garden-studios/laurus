@@ -49,7 +49,6 @@ export default function Projectbar() {
                 display: "flex",
                 justifyContent: 'start',
                 alignItems: "center",
-                border: '1px solid black',
             }}>
             <div
                 style={{
@@ -58,6 +57,9 @@ export default function Projectbar() {
                     placeContent: 'center',
                     height: '100%',
                     padding: 2,
+                    border: '1px solid rgb(24, 24, 24)',
+                    borderRadius: 0,
+                    background: 'linear-gradient(45deg, rgba(11, 11, 11, 0.3), rgba(19, 19, 19, 0.3))',
                 }}>
                 <input
                     className={dellaRespira.className}

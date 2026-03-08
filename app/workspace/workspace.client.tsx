@@ -358,7 +358,7 @@ function initReducer(
     };
 }
 
-interface WorkspaceProps {
+interface Workspace {
     apiOrigin: string | undefined,
     mediaPreloadLimit: string | undefined,
     projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
@@ -370,7 +370,7 @@ export default function Workspace({
     mediaPreloadLimit: mpl,
     projectsInit,
     effectsEnum,
-}: WorkspaceProps) {
+}: Workspace) {
     const p = use(projectsInit);
     const eN = use(effectsEnum);
 
@@ -665,17 +665,15 @@ export default function Workspace({
                 width: "100vw",
                 height: '100vh',
                 display: 'grid',
-                gridTemplateColumns: 'min-content min-content 1fr min-content min-content min-content',
-                gridTemplateRows: `min-content 1fr min-content`,
+                gridTemplateColumns: 'min-content 1fr min-content min-content min-content',
+                gridTemplateRows: `min-content min-content 1fr min-content`,
                 overflowX: "auto",
             }}>
             <WorkspaceContext value={{ appState: appState, dispatch }}>
-                <div style={{ gridRow: '1', gridColumn: 'span 6', }}>
+                <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
                     <Menubar />
-                    <Projectbar />
                 </div>
-
-                <div style={{ gridRow: '2', gridColumn: '1', overflowY: 'auto', }}>
+                <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?
                         <TimelineArea
                             size={{ width: 1000, height: 5000 }}
@@ -684,35 +682,9 @@ export default function Workspace({
                             onRightPanelClick={() => setShowTimeline(false)}
                         /> :
                         <>
-                            <div
-                                style={{
-                                    width: 20,
-                                    height: '100%',
-                                    gridTemplateRows: '1fr',
-                                    display: 'grid',
-                                    placeContent: 'start',
-                                }} >
-                                <div
-                                    className={dellaRespira.className}
-                                    style={{
-                                        border: '1px solid rgb(24, 24, 24)',
-                                        background: 'rgba(20, 20, 20, 1)',
-                                        width: 20,
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                    }} >
-                                    <ReactSvg
-                                        svg={moreVert('rgba(255, 255, 255, 0.5)')}
-                                        containerSize={{
-                                            width: 20,
-                                            height: 38
-                                        }}
-                                        scale={1}
-                                        onContainerClick={() => {
-                                            setShowTimeline(true);
-                                        }} />
-                                </div>
-                            </div>
+                            <Bumper onBumperClick={() => {
+                                setShowTimeline(true);
+                            }} />
                             <div style={{
                                 zIndex: 1,
                                 position: 'fixed',
@@ -722,7 +694,7 @@ export default function Workspace({
                                 height: 44,
                                 borderRadius: '50%',
                                 border: '1px solid rgba(0, 0, 0, 0.4)',
-                                background: 'rgb(20, 20, 20)',
+                                background: 'rgb(32, 32, 32)',
                                 boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                             }}>
                                 <ReactSvg
@@ -756,7 +728,7 @@ export default function Workspace({
                                 zIndex: 1,
                                 position: 'fixed',
                                 bottom: 115,
-                                right: 86,
+                                right: showMediaBrowser ? 506 : 86,
                                 width: 14,
                                 height: 14,
                                 borderRadius: '50%',
@@ -768,12 +740,20 @@ export default function Workspace({
                         </>
                     }
                 </div>
+                <div
+                    style={{
+                        gridRow: '2',
+                        gridColumn: '2 / -1',
+                        width: '100%',
+                    }} >
+                    <Projectbar />
+                </div>
                 {/* canvas area */}
                 <div
-                    className={styles["large-tiled-background-squares"]}
                     ref={canvasAreaRef}
                     style={{
-                        gridRow: '2', gridColumn: '3',
+                        gridRow: '3',
+                        gridColumn: '2',
                         overflowY: 'auto',
                         position: 'relative',
                         width: "100%",
@@ -783,7 +763,6 @@ export default function Workspace({
                         className={styles["large-tiled-background-squares"]}
                         style={{
                             position: 'absolute',
-
                             top: 0,
                             left: 0,
                             width: appState.project.canvas_width,
@@ -828,85 +807,74 @@ export default function Workspace({
                             imgElementsRef={imgElementsRef}
                             zIndex={3} />}
                 </div>
-                {/* right bumper */}
-                {showMediaBrowser && <div
-                    onClick={() => setShowMediaBrowser(false)}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
-                    style={{
-                        gridRow: '2', gridColumn: '4',
-                        width: 30,
-                        display: 'grid',
-                        placeContent: 'center',
-                        border: '1px solid black',
-                        background: 'rgba(20, 20, 20, 1)',
-                        borderRadius: 10
-                    }} >
-                </div>}
-                {/* media browser */}
                 {showMediaBrowser &&
-                    <>
-                        <div
-                            style={{
-                                gridRow: '2', gridColumn: '5',
-                                width: 400,
-                                border: '1px solid black',
-                                background: 'rgba(20, 20, 20, 1)'
-                            }} >
-                            <MediaBrowserArea
-                                filter={mediaBrowserFilter}
-                                nextPageRef={nextPageRef}
-                                onPrevPage={async () => {
-                                    switch (mediaBrowserFilter) {
-                                        case "img": {
-                                            if (imgPageIndex != 0) {
-                                                const newIndex = Math.max(0, imgPageIndex - 1);
-                                                await handleImgPageRequest(newIndex);
-                                                setImgPageIndex(newIndex);
-                                            }
-                                            break;
+                    <Bumper onBumperClick={() => {
+                        setShowMediaBrowser(false);
+                    }} />
+                }
+                {showMediaBrowser &&
+                    <div
+                        style={{
+                            gridRow: '3', gridColumn: '4',
+                            width: 400,
+                            height: '100%',
+                            border: '1px solid black',
+                            background: 'rgba(20, 20, 20, 1)'
+                        }} >
+                        <MediaBrowserArea
+                            filter={mediaBrowserFilter}
+                            nextPageRef={nextPageRef}
+                            onPrevPage={async () => {
+                                switch (mediaBrowserFilter) {
+                                    case "img": {
+                                        if (imgPageIndex != 0) {
+                                            const newIndex = Math.max(0, imgPageIndex - 1);
+                                            await handleImgPageRequest(newIndex);
+                                            setImgPageIndex(newIndex);
                                         }
-                                        case "svg": {
-                                            if (svgPageIndex != 0) {
-                                                const newIndex = Math.max(0, svgPageIndex - 1);
-                                                await handleSvgPageRequest(newIndex);
-                                                setSvgPageIndex(newIndex);
-                                            }
-                                            break;
-                                        }
+                                        break;
                                     }
-                                }}
-                                onNextPage={async () => {
-                                    switch (mediaBrowserFilter) {
-                                        case "img": {
-                                            const newIndex = imgPageIndex + 1;
-                                            const response = await handleImgPageRequest(newIndex);
-                                            if (response) {
-                                                setImgPageIndex(newIndex);
-                                            }
-                                            break;
+                                    case "svg": {
+                                        if (svgPageIndex != 0) {
+                                            const newIndex = Math.max(0, svgPageIndex - 1);
+                                            await handleSvgPageRequest(newIndex);
+                                            setSvgPageIndex(newIndex);
                                         }
-                                        case "svg": {
-                                            const newIndex = svgPageIndex + 1;
-                                            const response = await handleSvgPageRequest(newIndex);
-                                            if (response) {
-                                                setSvgPageIndex(newIndex);
-                                            }
-                                            break;
-                                        }
+                                        break;
                                     }
-                                }}
-                                onMediaClick={(m) => {
-                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
-                                }}
-                                onFilterSelect={setMediaBrowserFilter}
-                            />
-                        </div>
-                    </>}
+                                }
+                            }}
+                            onNextPage={async () => {
+                                switch (mediaBrowserFilter) {
+                                    case "img": {
+                                        const newIndex = imgPageIndex + 1;
+                                        const response = await handleImgPageRequest(newIndex);
+                                        if (response) {
+                                            setImgPageIndex(newIndex);
+                                        }
+                                        break;
+                                    }
+                                    case "svg": {
+                                        const newIndex = svgPageIndex + 1;
+                                        const response = await handleSvgPageRequest(newIndex);
+                                        if (response) {
+                                            setSvgPageIndex(newIndex);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }}
+                            onMediaClick={(m) => {
+                                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
+                            }}
+                            onFilterSelect={setMediaBrowserFilter}
+                        />
+                    </div>
+                }
                 {/* right panel */}
                 <div
                     style={{
-                        gridRow: '2', gridColumn: '6',
+                        gridRow: '3', gridColumn: '5',
                         display: "grid",
                         gridTemplateRows: 'min-content min-content auto',
                         borderLeft: '1px solid black',
@@ -978,7 +946,7 @@ export default function Workspace({
                             }} />
                     </div>
                 </div>
-                <div style={{ gridRow: '3', gridColumn: 'span 6' }}>
+                <div style={{ gridRow: '4', gridColumn: 'span 5' }}>
                     <div style={{
                         height: mediabarHeight,
                         width: "100%",
@@ -989,9 +957,7 @@ export default function Workspace({
                         border: '1px solid black',
                     }}>
                         <div
-                            onClick={() => {
-                                //todo: hightlight active element in canvasarea
-                            }}
+                            onClick={() => setShowTimeline(v => !v)}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{
@@ -1058,12 +1024,12 @@ export default function Workspace({
     </>)
 }
 
-interface MediaOverlaysProps {
+interface MediaOverlays {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     zIndex: number,
 }
-export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaOverlaysProps) {
+export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaOverlays) {
     const { appState, dispatch } = useContext(WorkspaceContext);
 
     const lazyLoadSvgElementsRef = () => {
@@ -1391,5 +1357,40 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                 );
             }
         })}
+    </>)
+}
+
+interface Bumper {
+    onBumperClick: () => void,
+}
+function Bumper({ onBumperClick }: Bumper) {
+    return (<>
+        <div
+            style={{
+                width: 20,
+                height: '100%',
+                gridTemplateRows: '1fr',
+                display: 'grid',
+                placeContent: 'start',
+            }} >
+            <div
+                className={dellaRespira.className}
+                style={{
+                    border: '1px solid rgb(24, 24, 24)',
+                    background: 'rgba(20, 20, 20, 1)',
+                    width: 20,
+                    display: 'grid',
+                    placeContent: 'center',
+                }} >
+                <ReactSvg
+                    svg={moreVert('rgba(255, 255, 255, 0.5)')}
+                    containerSize={{
+                        width: 20,
+                        height: 38
+                    }}
+                    scale={1}
+                    onContainerClick={onBumperClick} />
+            </div>
+        </div>
     </>)
 }

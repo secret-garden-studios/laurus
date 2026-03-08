@@ -420,3 +420,19 @@ export function browse(
         markup: base64Encode(`<path d="M120-440v-320q0-33 23.5-56.5T200-840h240v400H120Zm400-400h240q33 0 56.5 23.5T840-760v160H520v-240Zm0 720v-400h320v320q0 33-23.5 56.5T760-120H520ZM120-360h320v240H200q-33 0-56.5-23.5T120-200v-160Z"/>`)
     }
 }
+
+export function menu(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        media_path: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-254.62v-59.99h680v59.99H140ZM140-450v-60h680v60H140Zm0-195.39v-59.99h680v59.99H140Z"/>`)
+    }
+}

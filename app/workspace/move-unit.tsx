@@ -2,20 +2,20 @@ import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState }
 import { EncodedImg, EncodedSvg, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg, ReactSvg } from "./media";
-import { autorenew, playArrow, moreVert, earthquake, skipPrevious } from "../svg-repo";
+import { autorenew, playArrow, earthquake, skipPrevious, menu } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { deleteMove, getMove, updateMove } from "./workspace.server";
 import Dial from "../components/dial";
 
-interface MoveUnitProps {
+interface MoveUnit {
     move: LaurusMoveResult
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 
-export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveUnitProps) {
+export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
 
@@ -214,7 +214,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     onClick={() => { setMainControls(v => !v); }}
                 >
                     <ReactSvg
-                        svg={moreVert()}
+                        svg={menu()}
                         containerSize={{
                             width: 24,
                             height: 24
@@ -459,7 +459,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }} />
                                 </div>
                                 <div style={{
-                                    borderLeft: '2px solid black',
+                                    borderLeft: '1px solid black',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
                                     display: 'grid',
@@ -490,8 +490,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                             background: move.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <ReactSvg
@@ -524,8 +525,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
                                         <ReactSvg
                                             svg={skipPrevious()}
@@ -558,8 +560,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
                                         <ReactSvg
                                             svg={playArrow()}

@@ -22,7 +22,6 @@ export default function MediaBrowserArea({
     onMediaClick,
     onFilterSelect,
 }: MediaBrowserArea) {
-    const [rulerSize] = useState(20);
     const { appState } = useContext(WorkspaceContext);
     const [autoscroll, setAutoscroll] = useState(false);
     const moreImgsRef = useRef<HTMLDivElement>(null);
@@ -54,108 +53,77 @@ export default function MediaBrowserArea({
     }, [filter, autoscroll, appState.downloadedImgs.length, appState.downloadedSvgs.length]);
 
     return (<>
-        <div
-            className={styles["grainy-background"]}
-            style={{
-                position: 'relative',
-                overflow: 'hidden',
-                width: "100%",
-                height: '100%',
-                overflowY: 'auto',
-            }}
-        >
-            <div
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                }} >
-            </div>
-
-            {/* content area */}
-            <div
-                style={{
-                    gridRow: '2', gridColumn: '2',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    display: 'grid',
-                    width: '100%',
-                    height: '100%',
-                    color: 'rgba(220, 220, 220, 1)',
-                    gridTemplateColumns: `${rulerSize}px auto`,
-                    gridTemplateRows: `${rulerSize}px auto`,
-                }} >
-                <div style={{
-                    gridRow: 1,
-                    gridColumn: 1,
-                    backgroundImage: 'linear-gradient(45deg, rgb(36, 36, 36), rgb(39, 39, 39))',
-                }}></div>
-                <div style={{
-                    gridRow: 1,
-                    gridColumn: 2,
-                    backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(14, 14, 14))',
-                }}></div>
-                <div style={{
-                    gridRow: 2,
-                    gridColumn: 1,
-                    backgroundImage: 'linear-gradient(45deg, rgb(7, 7, 7), rgb(14, 14, 14))',
-                }}></div>
-                <div style={{
-                    gridRow: 2,
-                    gridColumn: 2,
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
+        <div style={{
+            display: 'grid',
+            gridTemplateRows: 'min-content auto',
+            width: "100%",
+            height: '100%',
+        }}>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%',
+                height: 50,
+                marginBottom: 10,
+            }}>
+                <div
+                    onClick={() => {
+                        onFilterSelect('img');
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                    className={dellaRespira.className}
+                    style={{
+                        letterSpacing: "3px",
+                        display: 'grid',
+                        placeContent: 'center',
                         width: '100%',
-                        height: 50,
-                        marginBottom: 10,
+                        height: '100%',
+                        border: filter == 'img' ? '1px solid rgb(20, 20, 20)' : 'none',
+                        color: filter == 'img' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
+                        filter: filter == 'img' ? 'none' : 'blur(0.8px)',
+                        boxShadow: filter == 'img' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
                     }}>
-                        <div
-                            onClick={() => {
-                                onFilterSelect('img');
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            className={dellaRespira.className}
-                            style={{
-                                letterSpacing: "3px",
-                                display: 'grid',
-                                placeContent: 'center',
-                                width: '100%',
-                                height: '100%',
-                                border: filter == 'img' ? '1px solid rgb(20, 20, 20)' : 'none',
-                                color: filter == 'img' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
-                                filter: filter == 'img' ? 'none' : 'blur(0.8px)',
-                                boxShadow: filter == 'img' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
-                            }}>
-                            {'img'}
-                        </div>
-                        <div
-                            onClick={() => {
-                                onFilterSelect('svg');
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            className={dellaRespira.className}
-                            style={{
-                                letterSpacing: "3px",
-                                display: 'grid',
-                                placeContent: 'center',
-                                width: '100%',
-                                height: '100%',
-                                border: filter == 'svg' ? '1px solid rgb(20, 20, 20)' : 'none',
-                                color: filter == 'svg' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
-                                filter: filter == 'svg' ? 'none' : 'blur(0.8px)',
-                                boxShadow: filter == 'svg' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
-                            }}>
-                            {'svg'}
-                        </div>
-                    </div>
-
+                    {'img'}
+                </div>
+                <div
+                    onClick={() => {
+                        onFilterSelect('svg');
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                    className={dellaRespira.className}
+                    style={{
+                        letterSpacing: "3px",
+                        display: 'grid',
+                        placeContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        border: filter == 'svg' ? '1px solid rgb(20, 20, 20)' : 'none',
+                        color: filter == 'svg' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
+                        filter: filter == 'svg' ? 'none' : 'blur(0.8px)',
+                        boxShadow: filter == 'svg' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
+                    }}>
+                    {'svg'}
+                </div>
+            </div>
+            <div
+                className={styles["grainy-background"]}
+                style={{
+                    position: 'relative',
+                    overflowY: 'auto',
+                }}
+            >
+                {/* content area */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        display: 'grid',
+                        width: '100%',
+                        color: 'rgba(220, 220, 220, 1)',
+                    }} >
                     {filter == 'img' && appState.downloadedImgs.map((img, i) => {
                         return (
                             <div key={img.media_path} style={{

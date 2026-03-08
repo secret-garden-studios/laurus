@@ -2,7 +2,7 @@ import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef,
 import { EncodedImg, EncodedSvg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg, ReactSvg } from "./media";
-import { add2, remove, autorenew, playArrow, moreVert, allOut, skipPrevious } from "../svg-repo";
+import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
@@ -10,13 +10,13 @@ import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 
-interface ScaleUnitProps {
+interface ScaleUnit {
     scale: LaurusScaleResult
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 
-export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: ScaleUnitProps) {
+export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
 
@@ -214,7 +214,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     onClick={() => { setMainControls(v => !v); }}
                 >
                     <ReactSvg
-                        svg={moreVert()}
+                        svg={menu()}
                         containerSize={{
                             width: 24,
                             height: 24
@@ -397,7 +397,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 </div>
                                 <div style={{
                                     marginLeft: 'auto',
-                                    borderLeft: '2px solid black',
+                                    borderLeft: '1px solid black',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
                                     display: 'grid',
@@ -424,8 +424,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                             background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <ReactSvg
@@ -458,8 +459,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
                                         <ReactSvg
                                             svg={skipPrevious()}
@@ -492,8 +494,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         style={{
                                             width: 36,
                                             height: 36,
-                                            display: 'grid', placeContent: 'center',
-                                            border: '1px solid rgb(0, 0, 0)',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
                                         <ReactSvg
                                             svg={playArrow()}
