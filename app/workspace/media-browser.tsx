@@ -1,10 +1,11 @@
-import { RefObject, useContext, useEffect, useRef, useState } from "react";
+import { RefObject, useContext, useEffect, useRef, useState, DragEvent, useCallback } from "react";
 import { dellaRespira, michroma, redHatDisplay } from "../fonts";
-import { LaurusThumbnail, WorkspaceContext } from "./workspace.client";
-import Image from "next/image";
+import { LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import NextImage from "next/image";
 import styles from "../app.module.css";
 import { ReactSvg } from "./media";
 import { arrowDropDown } from "../svg-repo";
+import { createImg, createSvg } from "./workspace.server";
 
 interface MediaBrowserArea {
     filter: 'img' | 'svg',
@@ -15,6 +16,53 @@ interface MediaBrowserArea {
     onFilterSelect: (filter: 'img' | 'svg') => void,
 }
 
+function dataUrlToFile(dataUrl: string, filename: string): File {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+
+    return new File([u8arr], filename, { type: mime });
+}
+
+async function rasterizeSvg(
+    svgXml: string,
+    width: number = 1120,
+    height: number = 1120
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const svgBlob = new Blob([svgXml], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Could not get canvas context'));
+                return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            const pngDataUrl = canvas.toDataURL('image/png');
+            URL.revokeObjectURL(url);
+            resolve(pngDataUrl);
+        };
+
+        img.onerror = (err) => {
+            console.log({ err });
+            reject(err)
+        };
+        img.src = url;
+    });
+}
+
 export default function MediaBrowserArea({
     filter,
     nextPageRef,
@@ -22,7 +70,7 @@ export default function MediaBrowserArea({
     onMediaClick,
     onFilterSelect,
 }: MediaBrowserArea) {
-    const { appState } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(WorkspaceContext);
     const [autoscroll, setAutoscroll] = useState(false);
     const moreImgsRef = useRef<HTMLDivElement>(null);
     const moreSvgsRef = useRef<HTMLDivElement>(null);
@@ -52,13 +100,68 @@ export default function MediaBrowserArea({
         }
     }, [filter, autoscroll, appState.downloadedImgs.length, appState.downloadedSvgs.length]);
 
+    const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const MAX_DIMENSION = 4096;
+        const files = Array.from(event.dataTransfer.files);
+        for (const file of files) {
+            if (file.type === "image/svg+xml") {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const svgString = e.target?.result;
+                    if (typeof svgString !== "string" || !svgString.startsWith("<svg")) return;
+
+                    try {
+                        const parser = new DOMParser();
+                        const svgDoc = parser.parseFromString(svgString, "image/svg+xml");
+                        const svgElement = svgDoc.documentElement as unknown as SVGSVGElement;
+
+                        let width = svgElement.viewBox.baseVal.width ||
+                            parseFloat(svgElement.getAttribute('width') || '1120');
+                        let height = svgElement.viewBox.baseVal.height ||
+                            parseFloat(svgElement.getAttribute('height') || '1120');
+                        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                            const scale = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+                            width = Math.round(width * scale);
+                            height = Math.round(height * scale);
+                        }
+
+                        const pngDataUrl = await rasterizeSvg(svgString, width, height);
+                        const svgFile: File = dataUrlToFile(pngDataUrl, `${file.name.split('.')[0]}.png`);
+                        const response = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
+
+                        if (response) {
+                            dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: response });
+                        }
+                    } catch (err) {
+                        console.error("SVG rasterization failed", err);
+                    }
+                };
+                reader.readAsText(file);
+            } else if (file.type.startsWith("image/")) {
+                const response = await createImg(appState.apiOrigin, file);
+                if (response) {
+                    dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: response });
+                }
+            }
+        }
+    }, [appState.apiOrigin, dispatch]);
+
     return (<>
-        <div style={{
-            display: 'grid',
-            gridTemplateRows: 'min-content auto',
-            width: "100%",
-            height: '100%',
-        }}>
+        <div
+            onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }}
+            onDrop={handleDrop}
+            style={{
+                display: 'grid',
+                gridTemplateRows: 'min-content auto',
+                width: "100%",
+                height: '100%',
+            }}>
             <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -144,7 +247,7 @@ export default function MediaBrowserArea({
                                         height: 256,
                                         position: 'relative',
                                     }}>
-                                    {img.src && <Image
+                                    {img.src && <NextImage
                                         draggable={false}
                                         alt={img.media_path}
                                         src={img.src}

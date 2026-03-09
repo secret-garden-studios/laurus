@@ -44,8 +44,8 @@ export interface ProjectImg_V1_0 {
     media_path: string
     width: number
     height: number
-    top: number,
-    left: number,
+    top: number
+    left: number
 }
 export interface EncodedImg_V1_0 {
     media_path: string
@@ -97,7 +97,30 @@ export async function getImgsByPage(
         }
     }
     return newEncodings;
-};
+}
+export async function createImg(
+    baseUrl: string | undefined,
+    img: File) {
+    const formData = new FormData();
+    formData.append('img', img);
+    const url = `${baseUrl}/media/img`;
+
+    try {
+        const raw_response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: EncodedImg_V1_0 = await raw_response.json();
+        return response;
+    } catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
 
 export interface SvgMetadata_V1_0 {
     media_path: string
@@ -144,8 +167,8 @@ export interface ProjectSvg_V1_0 {
     media_path: string
     width: number
     height: number
-    top: number,
-    left: number,
+    top: number
+    left: number
     viewbox: string
     fill: string
     stroke: string
@@ -194,7 +217,31 @@ export async function getSvgsByPage(
         }
     }
     return newEncodings;
-};
+}
+export async function createSvg(
+    baseUrl: string | undefined,
+    files: { svg: File, raster: File }) {
+    const formData = new FormData();
+    formData.append('svg', files.svg);
+    formData.append('raster', files.raster);
+    const url = `${baseUrl}/media/svg`;
+
+    try {
+        const raw_response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: EncodedSvg_V1_0 = await raw_response.json();
+        return response;
+    } catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
 
 export interface ProjectLayer_V1_0 {
     name: string,
