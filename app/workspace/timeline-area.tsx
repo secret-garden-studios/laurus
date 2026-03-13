@@ -736,14 +736,15 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                             height: 36,
                             borderRadius: 4,
                             padding: 10,
-                            background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)'
+                            background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)',
+                            color: effectName == 'skew' || effectName == 'rotate' ? 'rgba(255, 255, 255, 0.3)' : 'rgb(227,227,227)'
                         }}
                         key={effectName}>
                         <div>
-                            {effectName}
+                            {`${effectName}${effectName == 'skew' || effectName == 'rotate' ? " · coming soon" : ""}`}
                         </div>
-                        <ReactSvg
-                            svg={addCircle('rgba(204, 204, 204, 0.8')}
+                        {(effectName != 'skew' && effectName != 'rotate') && <ReactSvg
+                            svg={addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
                                 width: 20,
                                 height: 20
@@ -823,7 +824,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                     }
                                 }
                                 onAddClick();
-                            }} />
+                            }} />}
                     </div>
                 );
             })}
