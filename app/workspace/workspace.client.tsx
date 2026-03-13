@@ -1,23 +1,19 @@
 'use client'
-import { createContext, RefObject, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { createContext, RefObject, use, useCallback, useContext, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
     EncodedSvg_V1_0,
     ProjectResult_V1_0,
     ProjectSvg_V1_0,
-    getImg,
-    getSvg,
     updateProject,
     createProject,
     ProjectLayer_V1_0,
     ScaleEquation_V1_0,
     Scale_V1_0,
     ScaleResult_V1_0,
-    getScales,
     MoveEquation_V1_0,
     Move_V1_0,
     MoveResult_V1_0,
-    getMoves,
     getFrames,
     ImgMedia_V1_0,
     EncodedImg_V1_0,
@@ -37,6 +33,7 @@ import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { dellaRespira } from "../fonts";
+import { ProjectDependencies, BrowserDependencies } from "./page";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
@@ -77,10 +74,8 @@ export type LaurusTool =
     | { type: 'none' }
     | { type: 'activate' }
     | { type: 'viewport' }
-export type LaurusBrowserElement = LaurusThumbnail;
-export type LaurusActiveElement = { key: string, value: LaurusThumbnail };
-export const timelineValues = [30, 60, 90];
-export const timelineUnits = ['sec', 'min'];
+export type LaurusBrowserElement = LaurusThumbnail
+export type LaurusActiveElement = { key: string, value: LaurusThumbnail }
 export function convertTime(time: number, currentUnit: string, newUnit: string) {
     switch (currentUnit + newUnit) {
         case 'secmin': {
@@ -93,7 +88,7 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
             return time;
         }
     }
-};
+}
 
 /**
  * if state is used across a depth of three or more components, it belongs in here.
@@ -114,6 +109,8 @@ export interface WorkspaceState {
     timelineMaxValue: number,
     recordingLight: boolean,
     fps: number,
+    timelineUnits: string[],
+    timelineValues: number[],
 }
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
@@ -141,6 +138,8 @@ export const defaultWorkspace: WorkspaceState = {
     effects: [],
     timelineUnit: '',
     timelineMaxValue: 0,
+    timelineUnits: [],
+    timelineValues: [],
     browserElement: undefined,
     activeElement: undefined,
     recordingLight: false,
@@ -279,10 +278,11 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             return { ...state, timelineUnit: action.value }
         }
         case WorkspaceActionType.IncrementTimelineMaxValue: {
-            const currentIndex = timelineValues.findIndex(v => v == state.timelineMaxValue);
-            const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < timelineValues.length)
-                ? timelineValues[currentIndex + 1]
-                : timelineValues[0];
+            const currentTimelineValues = [...state.timelineValues];
+            const currentIndex = currentTimelineValues.findIndex(v => v == state.timelineMaxValue);
+            const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < currentTimelineValues.length)
+                ? currentTimelineValues[currentIndex + 1]
+                : currentTimelineValues[0];
             return { ...state, timelineMaxValue: newValue }
         }
         case WorkspaceActionType.SetRecordingLight: {
@@ -306,80 +306,122 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
     }
 )
 
-interface InitReducerProps {
-    api: string | undefined,
-    p: ProjectResult_V1_0[] | undefined,
-    eN: string[] | undefined,
-}
+function initProject(p: ProjectResult_V1_0) {
+    const projectImgsInit: Map<string, LaurusProjectImg> =
+        new Map(p.imgs.entries().map(e => [e[0], { ...e[1], pending: false }]));
 
-function initProject(p: ProjectResult_V1_0[] | undefined) {
-    const sortedProjects = (p && p.length > 0) ?
-        p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active)) :
-        [{ ...defaultWorkspace.project }];
-
-    const projectImgsInit: Map<string, LaurusProjectImg> = new Map(sortedProjects[0].imgs.entries()
-        .map(e => [e[0], { ...e[1], pending: false }]));
-
-    const projectSvgsInit: Map<string, LaurusProjectSvg> = new Map(sortedProjects[0].svgs.entries()
-        .map(e => [e[0], { ...e[1], pending: false }]));
+    const projectSvgsInit: Map<string, LaurusProjectSvg> =
+        new Map(p.svgs.entries().map(e => [e[0], { ...e[1], pending: false }]));
 
     return {
-        ...sortedProjects[0],
+        ...p,
         imgs: projectImgsInit,
         svgs: projectSvgsInit
     }
 }
 
-function initReducer(
-    {
-        api,
-        p,
-        eN: e,
-    }: InitReducerProps): WorkspaceState {
+interface InitReducer {
+    arg1: ProjectDependencies | undefined,
+    arg2: string[] | undefined,
+    arg3: number[],
+    arg4: string[],
+    arg5: string | undefined,
+    arg6: BrowserDependencies,
+}
+function initReducer({
+    arg1: projectDependencies,
+    arg2: effectNames,
+    arg3: timelineValues,
+    arg4: timelineUnits,
+    arg5: apiOrigin,
+    arg6: browserDependencies,
+}: InitReducer): WorkspaceState {
+    const newBrowserImgs: EncodedImg[] =
+        browserDependencies.browserImgs.map(v => { return { ...v } });
+    const newBrowserSvgs: EncodedSvg[] =
+        browserDependencies.browserSvgs.map(v => { return { ...v } });
+    const newBrowserElement: LaurusThumbnail | undefined = newBrowserImgs.length > 0 ?
+        { value: { ...newBrowserImgs[0] }, type: 'img' } :
+        undefined;
+
+    const newEffects: LaurusEffect[] = [];
+    if (projectDependencies) {
+        projectDependencies.scales.forEach(e => {
+            newEffects.push({
+                type: 'scale',
+                key: e.scale_id,
+                value: {
+                    ...e,
+                }
+            })
+        });
+        projectDependencies?.moves.forEach(e => {
+            newEffects.push({
+                type: 'move',
+                key: e.move_id,
+                value: {
+                    ...e,
+                }
+            })
+        });
+    }
+
+    const newCanvasSvgs: EncodedSvg[] =
+        projectDependencies?.canvasSvgs.map(v => { return { ...v } }) ?? [];
+    const newCanvasImgs: EncodedImg[] =
+        projectDependencies?.canvasImgs.map(v => { return { ...v } }) ?? [];
+
     return {
-        apiOrigin: api,
-        project: initProject(p),
-        browserImgs: defaultWorkspace.browserImgs,
-        canvasImgs: defaultWorkspace.canvasImgs,
-        browserSvgs: defaultWorkspace.browserSvgs,
-        canvasSvgs: defaultWorkspace.canvasSvgs,
-        tool: defaultWorkspace.tool,
-        effectNames: e ?? [],
-        effects: defaultWorkspace.effects,
+        ...defaultWorkspace,
+        project: projectDependencies ?
+            initProject(projectDependencies.project) :
+            defaultWorkspace.project,
+        effects: newEffects,
+        canvasImgs: newCanvasImgs,
+        canvasSvgs: newCanvasSvgs,
+        effectNames: effectNames ?? [],
+        apiOrigin: apiOrigin,
         timelineUnit: timelineUnits[0],
         timelineMaxValue: timelineValues[0],
-        browserElement: defaultWorkspace.browserElement,
-        activeElement: defaultWorkspace.activeElement,
-        recordingLight: defaultWorkspace.recordingLight,
-        fps: defaultWorkspace.fps,
-    };
+        timelineUnits: [...timelineUnits],
+        timelineValues: [...timelineValues],
+        browserImgs: newBrowserImgs,
+        browserSvgs: newBrowserSvgs,
+        browserElement: newBrowserElement,
+    }
 }
 
 interface Workspace {
-    apiOrigin: string | undefined,
-    mediaPageSize: string | undefined,
-    projectsInit: Promise<ProjectResult_V1_0[] | undefined>,
-    effectsEnum: Promise<string[] | undefined>,
+    apiOriginInit: string | undefined,
+    mediaPageSizeInit: string | undefined,
+    timelineValuesInit: number[],
+    timelineUnitsInit: string[],
+    effectNamesInitPromise: Promise<string[] | undefined>,
+    projectInitPromise: Promise<ProjectDependencies | undefined>,
+    browserInitPromise: Promise<BrowserDependencies>,
 }
-
 export default function Workspace({
-    apiOrigin: api,
-    mediaPageSize: mps,
-    projectsInit,
-    effectsEnum,
+    apiOriginInit,
+    mediaPageSizeInit,
+    timelineValuesInit,
+    timelineUnitsInit,
+    effectNamesInitPromise,
+    projectInitPromise,
+    browserInitPromise,
 }: Workspace) {
-    const p = use(projectsInit);
-    const eN = use(effectsEnum);
-
+    const effectNamesInit = use(effectNamesInitPromise);
+    const projectInit = use(projectInitPromise);
+    const browserInit = use(browserInitPromise);
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
-            api,
-            p,
-            eN,
-        },
-        initReducer);
-
+            arg1: projectInit,
+            arg2: effectNamesInit,
+            arg3: timelineValuesInit,
+            arg4: timelineUnitsInit,
+            arg5: apiOriginInit,
+            arg6: browserInit,
+        }, initReducer);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
         const initCurrentPaper = (async () => {
@@ -396,12 +438,11 @@ export default function Workspace({
         });
 
         initCurrentPaper();
-
     }, [appState.project]);
 
     const [mediabarHeight] = useState(50);
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
-    const [mediaPageSize] = useState(mps ? (parseInt(mps) || 2) : 2);
+    const [mediaPageSize] = useState(mediaPageSizeInit ? (parseInt(mediaPageSizeInit) || 10) : 10);
     const [showTimeline, setShowTimeline] = useState<boolean>(true);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
     const [imgPageIndex, setImgPageIndex] = useState(0);
@@ -453,98 +494,6 @@ export default function Workspace({
             return false;
         }
     }, [appState.apiOrigin, mediaPageSize]);
-
-    useEffect(() => {
-        /* background project downloader */
-
-        const downloadImgsFromProjectInit = async () => {
-            if (p && p.length > 0) {
-                const project = initProject([...p]);
-                const imgsArray = Array.from(project.imgs.values());
-                for (let i = 0; i < imgsArray.length; i++) {
-                    const imgMediaResult = await getImg(api, imgsArray[i].img_media_id, imgsArray[i].media_path);
-                    if (imgMediaResult) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...imgMediaResult } });
-                    }
-                }
-            }
-        };
-
-        const downloadImgsForBrowser = async (pageSize: number) => {
-            const response = await getImgDiscoveryPage(api, 1, pageSize);
-            if (response && response.length > 0) {
-                const firstImg = response[0];
-                for (let i = 0; i < response.length; i++) {
-                    dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...response[i] } })
-                }
-                const newThumnail: LaurusThumbnail = { value: { ...firstImg }, type: 'img' }
-                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...newThumnail } });
-            }
-        };
-
-        const downloadSvgsFromProjectInit = async () => {
-            if (p && p.length > 0) {
-                const project = initProject([...p]);
-                const svgsArray = Array.from(project.svgs.values());
-                for (let i = 0; i < svgsArray.length; i++) {
-                    const svgMediaResult = await getSvg(api, svgsArray[i].svg_media_id, svgsArray[i].media_path);
-                    if (svgMediaResult) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...svgMediaResult } });
-                    }
-                }
-            }
-        };
-
-        const downloadSvgsForBrowser = async (pageSize: number) => {
-            const response = await getSvgDiscoveryPage(api, 1, pageSize);
-            if (response && response.length > 0) {
-                for (let i = 0; i < response.length; i++) {
-                    dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: { ...response[i] } });
-                }
-            }
-        };
-
-        const downloadEffectsFromProjectInit = async () => {
-            if (p && p.length > 0) {
-                const mostRecent = initProject([...p]);
-                const scales = await getScales(api, mostRecent.project_id);
-                const moves = await getMoves(api, mostRecent.project_id);
-                const newEffects: LaurusEffect[] = [];
-                if (scales) {
-                    const newScales: LaurusEffect[] = scales.map(s => {
-                        return {
-                            type: 'scale',
-                            key: s.scale_id,
-                            value: {
-                                ...s,
-                            }
-                        }
-                    });
-                    newEffects.push(...newScales);
-                }
-                if (moves) {
-                    const newMoves: LaurusEffect[] = moves.map(e => {
-                        return {
-                            type: 'move',
-                            key: e.move_id,
-                            value: {
-                                ...e,
-                            }
-                        }
-                    });
-                    newEffects.push(...newMoves);
-                }
-                dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
-            }
-        };
-
-        const pageSize: number = mps ? (parseInt(mps) || 2) : 2;
-        downloadEffectsFromProjectInit();
-        downloadImgsFromProjectInit();
-        downloadImgsForBrowser(pageSize);
-        downloadSvgsFromProjectInit();
-        downloadSvgsForBrowser(pageSize);
-    }, [api, mps, mediaPageSize, p]);
 
     const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
     const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);

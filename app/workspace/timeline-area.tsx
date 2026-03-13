@@ -7,7 +7,6 @@ import {
     LaurusEffect,
     LaurusProjectResult,
     LaurusScale,
-    timelineUnits,
     convertTime,
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
@@ -32,7 +31,7 @@ export default function TimelineArea({
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
-    const [fastRate] = useState(50);
+    const [fastRate] = useState(25);
     const [playEnabled, setPlayEnabled] = useState(true);
     const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
     const [skipNextEnabled, setSkipNextEnabled] = useState<boolean>(true);
@@ -180,10 +179,11 @@ export default function TimelineArea({
                     className={dellaRespira.className}
                     onDoubleClick={() => {
                         const currentUnit = appState.timelineUnit;
-                        const currentIndex = timelineUnits.findIndex(v => v == appState.timelineUnit);
-                        const newUnit: string = (currentIndex >= 0) && (currentIndex + 1 < timelineUnits.length)
-                            ? timelineUnits[currentIndex + 1]
-                            : timelineUnits[0];
+                        const currentUnits = [...appState.timelineUnits];
+                        const currentIndex = currentUnits.findIndex(v => v == currentUnit);
+                        const newUnit: string = (currentIndex >= 0) && (currentIndex + 1 < currentUnits.length)
+                            ? currentUnits[currentIndex + 1]
+                            : currentUnits[0];
                         dispatch({ type: WorkspaceActionType.SetTimelineUnit, value: newUnit });
                         const newEffects: LaurusEffect[] = appState.effects.map(e => {
                             switch (e.type) {
@@ -349,7 +349,6 @@ export default function TimelineArea({
                                         .then((_animations: Animation[]) => {
                                             enableAllControls();
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                         })
                                         .catch(err => {
                                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -406,7 +405,6 @@ export default function TimelineArea({
                                     .then((_animations: Animation[]) => {
                                         enableAllControls();
                                         dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                                     })
                                     .catch(err => {
                                         if (err instanceof Error && err.name !== 'AbortError') {

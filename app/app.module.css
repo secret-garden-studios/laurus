@@ -16,3 +16,23 @@
   background-image: url('/noise1.png');
   background-size: auto;
 }
+
+.animated-grainy-background {
+  background-image: url('/noise1.png');
+  background-size: auto;
+  animation: drift 3s linear infinite;
+}
+
+@keyframes drift {
+  0% {
+    background-position: 0% 0%;
+  }
+
+  50% {
+    background-position: 1% 2.5%;
+  }
+
+  100% {
+    background-position: 0% 0%;
+  }
+}
