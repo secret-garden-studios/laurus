@@ -14,7 +14,6 @@ interface MoveUnit {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
@@ -147,7 +146,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
             const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
                 .map(s => { return { translate: `${s.x}px ${s.y}px 0px`, } }) ?? [];
             const options: KeyframeAnimationOptions = {
-                duration: firstFrame ? 2 / response.fps : response.duration * 1000,
+                duration: firstFrame ? 2 / response.fps : response.end * 1000,
             }
             const previewKey = appState.tool.type != 'viewport' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
             switch (appState.activeElement.value.type) {
@@ -667,7 +666,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     )
 }
 
-interface VerticalSliderProps {
+interface VerticalSlider {
     label: string,
     hash: string,
     capSize: { width: number | string, height: number | string }
@@ -686,7 +685,7 @@ function VerticalSlider({
     cursor,
     onNewCursor,
     onCursorMove,
-}: VerticalSliderProps) {
+}: VerticalSlider) {
     return (<>
         <div style={{ height: '100%', width: 'min-content' }}>
             <div style={{ position: "relative", ...trackSize, }}>

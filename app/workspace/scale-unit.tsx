@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { EncodedImg, EncodedSvg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { EncodedSvg, EncodedImg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg, ReactSvg } from "./media";
 import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu } from "../svg-repo";
@@ -15,7 +15,6 @@ interface ScaleUnit {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
@@ -147,7 +146,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
                 .map(s => { return { "scale": s } }) ?? [];
             const options: KeyframeAnimationOptions = {
-                duration: firstFrame ? 2 / response.fps : response.duration * 1000,
+                duration: firstFrame ? 2 / response.fps : response.end * 1000,
             }
             const previewKey = appState.tool.type != 'viewport' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
             switch (appState.activeElement.value.type) {
@@ -613,7 +612,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     )
 }
 
-interface ScaleUnitSliderProps {
+interface ScaleUnitSlider {
     label: string,
     hash: string,
     capSize: { width: number | string, height: number | string }
@@ -632,7 +631,7 @@ function VerticalSlider({
     cursor,
     onNewCursor,
     onCursorMove,
-}: ScaleUnitSliderProps) {
+}: ScaleUnitSlider) {
     return (<>
         <div style={{ height: '100%', width: 'min-content' }}>
             <div style={{ position: "relative", ...trackSize }}>
@@ -694,7 +693,7 @@ function HorizontalSlider({
     cursor,
     onNewCursor,
     onCursorMove
-}: ScaleUnitSliderProps) {
+}: ScaleUnitSlider) {
     return (<>
         <div
             className={dellaRespira.className}

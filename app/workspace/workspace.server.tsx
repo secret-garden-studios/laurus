@@ -1,63 +1,19 @@
 
-export interface ImgMetadata_V1_0 {
-    media_path: string
-}
-export interface ImgMetadataPage_V1_0 {
-    page_size: number
-    page_number: number
-    value: ImgMetadata_V1_0[]
-}
-export async function enumerateImgs(
-    baseUrl: string | undefined,
-    pageSize: number,
-    top: number | undefined,
-    pageCount: number | undefined) {
-    try {
-        let url = `${baseUrl}/media/img?page_size=${pageSize}`;
-        if (top) {
-            url += `&top=${top}`;
-        }
-        if (pageCount) {
-            url += `&page_count=${pageCount}`;
-        }
-        const raw_response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: ImgMetadataPage_V1_0[] = await raw_response.json();
-        return response;
-    }
-    catch (error) {
-        console.log({ error });
-        return undefined;
-    }
-}
-/**
- * metadata + absolute positioning
- */
-export interface ProjectImg_V1_0 {
-    media_path: string
-    width: number
-    height: number
-    top: number
-    left: number
-}
+/* /discover */
+
 export interface EncodedImg_V1_0 {
     media_path: string
     width: number
     height: number
     src: string
+    categories: string[]
 }
-export async function getImg(
+export async function getImgDiscoveryPage(
     baseUrl: string | undefined,
-    filename: string) {
+    page: number,
+    size: number = 10) {
     try {
-        const url = `${baseUrl}/media/img/${filename}`;
+        const url = `${baseUrl}/discover/img?page=${page}&size=${size}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -67,7 +23,7 @@ export async function getImg(
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedImg_V1_0 = await raw_response.json();
+        const response: EncodedImg_V1_0[] = await raw_response.json();
         return response;
     }
     catch (error) {
@@ -75,28 +31,106 @@ export async function getImg(
         return undefined;
     }
 }
-export async function getFirstImg(
-    baseUrl: string | undefined,
-    media: Promise<ImgMetadataPage_V1_0[] | undefined>) {
-    const page: ImgMetadataPage_V1_0[] | undefined = await media;
-    if (page && page.length > 0 && page[0].value.length > 0) {
-        const filename = page[0].value[0].media_path;
-        return await getImg(baseUrl, filename);
-    }
-    return undefined;
+export interface EncodedSvg_V1_0 {
+    media_path: string
+    width: number
+    height: number
+    viewbox: string
+    fill: string
+    stroke: string
+    stroke_width: number
+    markup: string
+    categories: string[]
 }
-export async function getImgsByPage(
+export async function getSvgDiscoveryPage(
     baseUrl: string | undefined,
-    page: ImgMetadataPage_V1_0) {
-    const newEncodings: EncodedImg_V1_0[] = [];
-    for (let i = 0; i < page.value.length; i++) {
-        const m: ImgMetadata_V1_0 = page.value[i];
-        const encoding: EncodedImg_V1_0 | undefined = await getImg(baseUrl, m.media_path);
-        if (encoding) {
-            newEncodings.push({ ...encoding });
+    page: number,
+    size: number = 10) {
+    try {
+        const url = `${baseUrl}/discover/svg?page=${page}&size=${size}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
         }
+        const response: EncodedSvg_V1_0[] = await raw_response.json();
+        return response;
     }
-    return newEncodings;
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+
+/* /media */
+
+export interface ImgMedia_V1_0 {
+    media_path: string
+    width: number
+    height: number
+    categories: string[]
+}
+export interface ImgMediaResult_V1_0 {
+    timestamp: string
+    last_active: string
+    img_media_id: string
+    media_path: string
+    width: number
+    height: number
+    categories: string[]
+    src: string
+}
+export async function findImg(
+    baseUrl: string | undefined,
+    filename: string) {
+    try {
+        const url = `${baseUrl}/media/img?filename=${filename}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: ImgMediaResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function getImg(
+    baseUrl: string | undefined,
+    imgMediaId: string,
+    filename?: string) {
+    try {
+        let url = `${baseUrl}/media/img/${imgMediaId}`;
+        if (filename) {
+            url += `?filename=${filename}`
+        }
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: ImgMediaResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
 }
 export async function createImg(
     baseUrl: string | undefined,
@@ -110,49 +144,10 @@ export async function createImg(
             method: 'POST',
             body: formData,
         });
-
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedImg_V1_0 = await raw_response.json();
-        return response;
-    } catch (error) {
-        console.log({ error });
-        return undefined;
-    }
-}
-
-export interface SvgMetadata_V1_0 {
-    media_path: string
-}
-export interface SvgMetadataPage_V1_0 {
-    page_size: number
-    page_number: number
-    value: SvgMetadata_V1_0[]
-}
-export async function enumerateSvgs(
-    baseUrl: string | undefined,
-    pageSize: number,
-    top: number | undefined,
-    pageCount: number | undefined) {
-    try {
-        let url = `${baseUrl}/media/svg?page_size=${pageSize}`;
-        if (top) {
-            url += `&top=${top}`;
-        }
-        if (pageCount) {
-            url += `&page_count=${pageCount}`;
-        }
-        const raw_response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: SvgMetadataPage_V1_0[] = await raw_response.json();
+        const response: ImgMediaResult_V1_0 = await raw_response.json();
         return response;
     }
     catch (error) {
@@ -160,21 +155,52 @@ export async function enumerateSvgs(
         return undefined;
     }
 }
-/**
- * metadata + absolute positioning
- */
-export interface ProjectSvg_V1_0 {
-    media_path: string
-    width: number
-    height: number
-    top: number
-    left: number
-    viewbox: string
-    fill: string
-    stroke: string
-    stroke_width: number
+export async function updateImg(
+    baseUrl: string | undefined,
+    imgMediaId: string,
+    imgMedia: ImgMedia_V1_0) {
+    try {
+        const body = JSON.stringify(imgMedia);
+        const url = `${baseUrl}/media/img/${imgMediaId}`;
+        const raw_response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: ImgMediaResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
 }
-export interface EncodedSvg_V1_0 {
+export async function deleteImg(
+    baseUrl: string | undefined,
+    imgMediaId: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/media/img/${imgMediaId}`;
+        const raw_response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        return raw_response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}
+
+interface SvgMedia_V1_0 {
     media_path: string
     width: number
     height: number
@@ -182,13 +208,27 @@ export interface EncodedSvg_V1_0 {
     fill: string
     stroke: string
     stroke_width: number
+    categories: string[]
+}
+interface SvgMediaResult_V1_0 {
+    timestamp: string
+    last_active: string
+    svg_media_id: string
+    media_path: string
+    width: number
+    height: number
+    viewbox: string
+    fill: string
+    stroke: string
+    stroke_width: number
+    categories: string[]
     markup: string
 }
-export async function getSvg(
+export async function findSvg(
     baseUrl: string | undefined,
     filename: string) {
     try {
-        const url = `${baseUrl}/media/svg/${filename}`;
+        const url = `${baseUrl}/media/svg?filename=${filename}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -198,25 +238,39 @@ export async function getSvg(
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedSvg_V1_0 = await raw_response.json();
+        const response: SvgMediaResult_V1_0 = await raw_response.json();
         return response;
     }
-    catch {
+    catch (error) {
+        console.log({ error });
         return undefined;
     }
 }
-export async function getSvgsByPage(
+export async function getSvg(
     baseUrl: string | undefined,
-    page: SvgMetadataPage_V1_0) {
-    const newEncodings: EncodedSvg_V1_0[] = [];
-    for (let i = 0; i < page.value.length; i++) {
-        const m: SvgMetadata_V1_0 = page.value[i];
-        const encoding: EncodedSvg_V1_0 | undefined = await getSvg(baseUrl, m.media_path);
-        if (encoding) {
-            newEncodings.push({ ...encoding });
+    svgMediaId: string,
+    filename?: string) {
+    try {
+        let url = `${baseUrl}/media/svg/${svgMediaId}`;
+        if (filename) {
+            url += `?filename=${filename}`
         }
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: SvgMediaResult_V1_0 = await raw_response.json();
+        return response;
     }
-    return newEncodings;
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
 }
 export async function createSvg(
     baseUrl: string | undefined,
@@ -242,7 +296,73 @@ export async function createSvg(
         return undefined;
     }
 }
+export async function updateSvg(
+    baseUrl: string | undefined,
+    svgMediaId: string,
+    svgMedia: SvgMedia_V1_0) {
+    try {
+        const body = JSON.stringify(svgMedia);
+        const url = `${baseUrl}/media/svg/${svgMediaId}`;
+        const raw_response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body,
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: SvgMediaResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function deleteSvg(
+    baseUrl: string | undefined,
+    svgMediaId: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/media/svg/${svgMediaId}`;
+        const raw_response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
 
+        return raw_response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}
+
+/* /projects */
+
+export interface ProjectImg_V1_0 {
+    img_media_id: string
+    media_path: string
+    width: number
+    height: number
+    top: number
+    left: number
+}
+export interface ProjectSvg_V1_0 {
+    svg_media_id: string
+    media_path: string
+    width: number
+    height: number
+    top: number
+    left: number
+    viewbox: string
+    fill: string
+    stroke: string
+    stroke_width: number
+}
 export interface ProjectLayer_V1_0 {
     name: string,
     order: number,
@@ -290,8 +410,8 @@ export async function getProjects(baseUrl: string | undefined) {
         return response.map(r => {
             return {
                 ...r,
-                svgs: new Map(Object.entries(r.svgs)),
                 imgs: new Map(Object.entries(r.imgs)),
+                svgs: new Map(Object.entries(r.svgs)),
                 layers: new Map(Object.entries(r.layers)),
             }
         });
@@ -318,8 +438,8 @@ export async function getProject(
         const response: ProjectResult_V1_0 = await raw_response.json();
         return {
             ...response,
-            svgs: new Map(Object.entries(response.svgs)),
             imgs: new Map(Object.entries(response.imgs)),
+            svgs: new Map(Object.entries(response.svgs)),
             layers: new Map(Object.entries(response.layers)),
         };
     }
@@ -335,8 +455,8 @@ export async function createProject(
         const url = `${baseUrl}/projects`;
         const body = JSON.stringify({
             ...project,
-            svgs: Object.fromEntries(project.svgs),
             imgs: Object.fromEntries(project.imgs),
+            svgs: Object.fromEntries(project.svgs),
             layers: Object.fromEntries(project.layers),
         });
         const raw_response = await fetch(url, {
@@ -354,8 +474,8 @@ export async function createProject(
         const response: ProjectResult_V1_0 = await raw_response.json();
         return {
             ...response,
-            svgs: new Map(Object.entries(response.svgs)),
             imgs: new Map(Object.entries(response.imgs)),
+            svgs: new Map(Object.entries(response.svgs)),
             layers: new Map(Object.entries(response.layers)),
         };
     }
@@ -371,8 +491,8 @@ export async function updateProject(
     try {
         const body = JSON.stringify({
             ...project,
-            svgs: Object.fromEntries(project.svgs),
             imgs: Object.fromEntries(project.imgs),
+            svgs: Object.fromEntries(project.svgs),
             layers: Object.fromEntries(project.layers),
         });
         const url = `${baseUrl}/projects/${projectId}`;
@@ -391,8 +511,8 @@ export async function updateProject(
         const response: ProjectResult_V1_0 = await raw_response.json();
         return {
             ...response,
-            svgs: new Map(Object.entries(response.svgs)),
             imgs: new Map(Object.entries(response.imgs)),
+            svgs: new Map(Object.entries(response.svgs)),
             layers: new Map(Object.entries(response.layers)),
         };
     }
@@ -441,7 +561,7 @@ export async function getEffects(baseUrl: string | undefined) {
     }
 }
 
-/* scale */
+/* /scales */
 
 export interface ScaleEquation_V1_0 {
     input_id: string
@@ -457,11 +577,11 @@ export interface Scale_V1_0 {
     /**
      * s
      */
-    offset: number
+    start: number
     /**
      * s
      */
-    duration: number
+    end: number
     project_id: string
     layer_id: string
     order: number
@@ -475,11 +595,11 @@ export interface ScaleResult_V1_0 {
     /**
      * s
      */
-    offset: number
+    start: number
     /**
      * s
      */
-    duration: number
+    end: number
     project_id: string
     layer_id: string
     order: number
@@ -625,7 +745,7 @@ export async function deleteScale(
     }
 }
 
-/* move */
+/* /moves */
 
 export interface MoveEquation_V1_0 {
     input_id: string
@@ -639,8 +759,8 @@ export interface MoveEquation_V1_0 {
     solution: { x: number, y: number }[]
 }
 export interface Move_V1_0 {
-    offset: number
-    duration: number
+    start: number
+    end: number
     project_id: string
     layer_id: string
     order: number
@@ -651,8 +771,8 @@ export interface MoveResult_V1_0 {
     timestamp: string
     last_active: string
     move_id: string
-    offset: number
-    duration: number
+    start: number
+    end: number
     project_id: string
     layer_id: string
     order: number
@@ -797,6 +917,8 @@ export async function deleteMove(
         return false;
     }
 }
+
+/* /frames */
 
 interface Frame_V1_0 {
     x: number

@@ -19,8 +19,8 @@ function injectTime(
                 ...e,
                 value: {
                     ...e.value,
-                    offset: newOffset,
-                    duration: newDuration,
+                    start: newOffset,
+                    end: newDuration,
                 }
             };
             return newEffect;
@@ -30,8 +30,8 @@ function injectTime(
                 ...e,
                 value: {
                     ...e.value,
-                    offset: newOffset,
-                    duration: newDuration,
+                    start: newOffset,
+                    end: newDuration,
                 }
             };
             return newEffect;
@@ -39,13 +39,12 @@ function injectTime(
     }
 }
 
-interface EffectUnitProps {
+interface EffectUnit {
     effect: LaurusEffect,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-
-export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnitProps) {
+export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
 
@@ -64,7 +63,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         useTrackpadState(0, appState.timelineMaxValue);
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeCursor(cursorX, (timelineTrackRef.current.clientWidth - trackSidePadding));
+        return getTimeCursor(cursorX, (timelineTrackRef.current.clientWidth - trackSidePadding), 0);
     }, [getTimeCursor, trackSidePadding]);
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
@@ -99,8 +98,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "scale": {
                 const effectForServer = injectTime(
                     effect,
-                    convertTime(effect.value.offset, appState.timelineUnit, 'sec'),
-                    convertTime(effect.value.duration, appState.timelineUnit, 'sec'));
+                    convertTime(effect.value.start, appState.timelineUnit, 'sec'),
+                    convertTime(effect.value.end, appState.timelineUnit, 'sec'));
                 const response = await updateScale(
                     appState.apiOrigin,
                     effectForServer.key,
@@ -111,8 +110,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     key: response.scale_id,
                     value: {
                         ...response,
-                        offset: convertTime(response.offset, 'sec', appState.timelineUnit),
-                        duration: convertTime(response.duration, 'sec', appState.timelineUnit)
+                        start: convertTime(response.start, 'sec', appState.timelineUnit),
+                        end: convertTime(response.end, 'sec', appState.timelineUnit)
                     }
                 };
                 dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -121,8 +120,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "move": {
                 const effectForServer = injectTime(
                     effect,
-                    convertTime(effect.value.offset, appState.timelineUnit, 'sec'),
-                    convertTime(effect.value.duration, appState.timelineUnit, 'sec'));
+                    convertTime(effect.value.start, appState.timelineUnit, 'sec'),
+                    convertTime(effect.value.end, appState.timelineUnit, 'sec'));
                 const response = await updateMove(
                     appState.apiOrigin,
                     effectForServer.key,
@@ -133,8 +132,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     key: response.move_id,
                     value: {
                         ...response,
-                        offset: convertTime(response.offset, 'sec', appState.timelineUnit),
-                        duration: convertTime(response.duration, 'sec', appState.timelineUnit)
+                        start: convertTime(response.start, 'sec', appState.timelineUnit),
+                        end: convertTime(response.end, 'sec', appState.timelineUnit)
                     }
                 };
                 dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -149,8 +148,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             using initial values from a parent component */
 
         (async () => {
-            const offsetInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.offset));
-            const durationInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.duration));
+            const offsetInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.start));
+            const durationInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.end));
 
             const newOffsetCursor = timeToCursor(offsetInit);
             const newDurationCursor = timeToCursor(durationInit);
@@ -178,8 +177,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 case "scale": {
                     const newScale: LaurusScale = {
                         ...debounceDependenciesRef.current.value,
-                        offset: convertTime(effectDebouncer.value.offset, appState.timelineUnit, 'sec'),
-                        duration: convertTime(effectDebouncer.value.duration, appState.timelineUnit, 'sec')
+                        start: convertTime(effectDebouncer.value.start, appState.timelineUnit, 'sec'),
+                        end: convertTime(effectDebouncer.value.end, appState.timelineUnit, 'sec')
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: { ...effectDebouncer } });
                     updateScale(appState.apiOrigin, debounceDependenciesRef.current.key, newScale);
@@ -348,7 +347,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     );
 }
 
-interface TimelineSliderProps {
+interface TimelineSlider {
     label: string,
     hash: string,
     trackSize: { width: number | string, height: number | string }
@@ -377,7 +376,7 @@ function TimelineSlider({
     rangeCursor,
     onNewRangeCursor,
     onRangeMove,
-}: TimelineSliderProps) {
+}: TimelineSlider) {
     return (<>
         <div style={{ width: '100%', height: '100%', }}>
             <div

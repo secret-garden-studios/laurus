@@ -1,20 +1,19 @@
 'use client'
 
-import { EncodedImg_V1_0, EncodedSvg_V1_0 } from "./workspace.server";
 import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImg, LaurusSvg, WorkspaceContext } from "./workspace.client";
+import { EncodedImg, EncodedSvg, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
 import { useContext } from "react";
 
-interface ReactImgProps {
-    img: EncodedImg_V1_0,
+interface ReactImg {
+    img: EncodedImg,
     containerSize: { width: number, height: number }
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     inputId?: string,
 }
-export function ReactImg({ img, containerSize, onImgRef, inputId }: ReactImgProps) {
+export function ReactImg({ img, containerSize, onImgRef, inputId }: ReactImg) {
     return (
         <div style={{
             width: containerSize.width,
@@ -36,15 +35,15 @@ export function ReactImg({ img, containerSize, onImgRef, inputId }: ReactImgProp
     )
 }
 
-interface ReactImgNodeProps {
+interface ReactImgNode {
     id: string
     position: { x: number, y: number, z: number, },
-    data: EncodedImg_V1_0,
+    data: EncodedImg,
     containerSize: { width: number, height: number },
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     inputId?: string,
 }
-function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: ReactImgNodeProps) {
+function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: ReactImgNode) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
     const { appState } = useContext(WorkspaceContext);
 
@@ -86,11 +85,11 @@ function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: 
     )
 }
 
-interface DraggableReactImgProps {
+interface DraggableReactImg {
     contextId: string
     nodeId: string,
-    data: EncodedImg_V1_0,
-    meta: LaurusImg,
+    data: EncodedImg,
+    meta: LaurusProjectImg,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
@@ -104,7 +103,7 @@ export function DraggableReactImg({
     zIndex,
     onNewPosition,
     onImgRef,
-    inputId }: DraggableReactImgProps) {
+    inputId }: DraggableReactImg) {
     const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -157,15 +156,15 @@ export function DraggableReactImg({
     </>)
 }
 
-interface ReactSvgProps {
-    svg: EncodedSvg_V1_0,
+interface ReactSvg {
+    svg: EncodedSvg,
     containerSize: { width: number, height: number }
     scale: number | undefined,
     onContainerClick?: () => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
 }
-export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: ReactSvgProps) {
+export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: ReactSvg) {
     const decodedString = decodeURIComponent(
         atob(svg.markup)
             .split('')
@@ -201,15 +200,15 @@ export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef
     )
 }
 
-interface ReactSvgNodeProps {
+interface ReactSvgNode {
     id: string
     position: { x: number, y: number, z: number, },
-    data: EncodedSvg_V1_0,
+    data: EncodedSvg,
     containerSize: { width: number, height: number },
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
 }
-function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: ReactSvgNodeProps) {
+function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: ReactSvgNode) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
     const { appState } = useContext(WorkspaceContext);
 
@@ -252,11 +251,11 @@ function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: 
     )
 }
 
-interface DraggableReactSvgProps {
+interface DraggableReactSvg {
     contextId: string
     nodeId: string,
-    data: EncodedSvg_V1_0,
-    meta: LaurusSvg,
+    data: EncodedSvg,
+    meta: LaurusProjectSvg,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
@@ -270,7 +269,7 @@ export function DraggableReactSvg({
     zIndex,
     onNewPosition,
     onSvgRef,
-    inputId }: DraggableReactSvgProps) {
+    inputId }: DraggableReactSvg) {
     const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
         useSensor(PointerSensor, {

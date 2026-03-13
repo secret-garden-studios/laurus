@@ -1,7 +1,7 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { EncodedImg, EncodedSvg, LaurusImg, LaurusProjectResult, LaurusSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { EncodedImg, EncodedSvg, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { v4 } from "uuid";
-import { createProject, updateProject } from "./workspace.server";
+import { createProject, findImg, findSvg, updateProject } from "./workspace.server";
 
 function calcMousePosition(
     canvas: HTMLCanvasElement,
@@ -123,33 +123,40 @@ export default function Canvas() {
             dropArea.cy,
             dropArea.radius);
         const newKey = v4();
-        const laurusSvg: LaurusSvg = {
-            width: newFrame.width,
-            height: newFrame.height,
-            top: newFrame.y,
-            left: newFrame.x,
-            media_path: svgData.media_path,
-            viewbox: svgData.viewbox,
-            fill: svgData.fill,
-            stroke: svgData.stroke,
-            stroke_width: svgData.stroke_width,
-            pending: false,
-        }
-        const newSvgs: Map<string, LaurusSvg> = new Map(appState.project.svgs);
-        newSvgs.set(newKey, laurusSvg);
-        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
-        if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
-        }
-        else {
-            const response = await createProject(appState.apiOrigin, { ...newProject });
-            if (response) {
-                const newProject2: LaurusProjectResult = { ...newProject, svgs: newSvgs, project_id: response.project_id }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+        const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_path);
+        if (svgMediaResult) {
+            const projectSvg: LaurusProjectSvg = {
+                svg_media_id: svgMediaResult.svg_media_id,
+                width: newFrame.width,
+                height: newFrame.height,
+                top: newFrame.y,
+                left: newFrame.x,
+                media_path: svgData.media_path,
+                viewbox: svgData.viewbox,
+                fill: svgData.fill,
+                stroke: svgData.stroke,
+                stroke_width: svgData.stroke_width,
+                pending: false,
+            }
+            const newProjectSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+            newProjectSvgs.set(newKey, projectSvg);
+            const encodedSvg = appState.browserSvgs.find(i => i.media_path == svgData.media_path);
+            if (encodedSvg) {
+                dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
+            }
+
+            if (appState.project.project_id) {
+                const newProject: LaurusProjectResult = { ...appState.project, svgs: newProjectSvgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
             }
             else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const newProject: LaurusProjectResult = { ...appState.project, svgs: newProjectSvgs }
+                const response = await createProject(appState.apiOrigin, { ...newProject });
+                if (response) {
+                    const newProject2: LaurusProjectResult = { ...newProject, svgs: newProjectSvgs, project_id: response.project_id }
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                }
             }
         }
     }
@@ -162,29 +169,37 @@ export default function Canvas() {
             dropArea.cy,
             dropArea.radius);
         const newKey = v4();
-        const laurusImg: LaurusImg = {
-            width: newFrame.width,
-            height: newFrame.height,
-            top: newFrame.y,
-            left: newFrame.x,
-            media_path: imgData.media_path,
-            pending: false,
-        };
-        const newImgs: Map<string, LaurusImg> = new Map(appState.project.imgs);
-        newImgs.set(newKey, laurusImg);
-        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
-        if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
-        }
-        else {
-            const response = await createProject(appState.apiOrigin, { ...newProject });
-            if (response) {
-                const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+        const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_path);
+        if (imgMediaResult) {
+            const laurusImg: LaurusProjectImg = {
+                width: newFrame.width,
+                height: newFrame.height,
+                media_path: imgData.media_path,
+                pending: false,
+                img_media_id: imgMediaResult.img_media_id,
+                top: newFrame.y,
+                left: newFrame.x,
+            };
+
+            const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
+            newImgs.set(newKey, laurusImg);
+            const encodedImg = appState.browserImgs.find(i => i.media_path == imgData.media_path);
+            if (encodedImg) {
+                dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
+            }
+
+            if (appState.project.project_id) {
+                const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
             }
             else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
+                const response = await createProject(appState.apiOrigin, { ...newProject });
+                if (response) {
+                    const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                }
             }
         }
     }
@@ -208,7 +223,7 @@ export default function Canvas() {
                     switch (appState.browserElement.type) {
                         case "svg": {
                             const key = appState.browserElement.value.media_path;
-                            const svgData = appState.downloadedSvgs.find(s => s.media_path === key);
+                            const svgData = appState.browserSvgs.find(s => s.media_path === key);
                             if (svgData) {
                                 handleSvgDrop(svgData, dropArea);
                             }
@@ -216,7 +231,7 @@ export default function Canvas() {
                         }
                         case "img": {
                             const key = appState.browserElement.value.media_path;
-                            const imgData = appState.downloadedImgs.find(s => s.media_path === key);
+                            const imgData = appState.browserImgs.find(s => s.media_path === key);
                             if (imgData) {
                                 handleImgDrop(imgData, dropArea)
                             }

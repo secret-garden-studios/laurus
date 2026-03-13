@@ -10,6 +10,7 @@ export function videoCameraBack(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/video_camera_back_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -26,6 +27,7 @@ export function motionPhotosOn(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/motion_photos_on_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -42,6 +44,7 @@ export function arrowDropDown(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/arrow_drop_down_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -58,6 +61,7 @@ export function arrowDropUp(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/arrow_drop_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -74,6 +78,7 @@ export function closeIcon(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -90,6 +95,7 @@ export function checkCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -106,6 +112,7 @@ export function cancelCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -122,6 +129,7 @@ export function addCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -138,6 +146,7 @@ export function circle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -154,6 +163,7 @@ export function dragIndicator(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -170,6 +180,7 @@ export function hexagon(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -186,6 +197,7 @@ export function remove(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/remove_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -202,6 +214,7 @@ export function add2(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/add_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -218,6 +231,7 @@ export function playCircle(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/play_circle_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -234,6 +248,7 @@ export function autorenew(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/autorenew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -250,6 +265,7 @@ export function fastRewind(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/fast_rewind_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -266,6 +282,7 @@ export function skipNext(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/skip_next_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -282,6 +299,7 @@ export function skipPrevious(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/skip_previous_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -298,6 +316,7 @@ export function fastForward(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/fast_forward_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -314,6 +333,7 @@ export function playArrow(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -330,6 +350,7 @@ export function moreVert(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/more_vert_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -346,6 +367,7 @@ export function allOut(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/all_out_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -362,6 +384,7 @@ export function earthquake(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/earthquake_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -378,6 +401,7 @@ export function lassoSelect(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/lasso_select_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -394,6 +418,7 @@ export function deployedCode(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/deployed_code_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -410,6 +435,7 @@ export function browse(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/browse_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -426,6 +452,7 @@ export function menu(
     width: number = 24,
     height: number = 24): EncodedSvg_V1_0 {
     return {
+        categories: [],
         media_path: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,

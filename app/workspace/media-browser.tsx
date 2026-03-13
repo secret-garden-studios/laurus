@@ -79,7 +79,7 @@ export default function MediaBrowserArea({
         if (!autoscroll) return;
         switch (filter) {
             case "img": {
-                if (appState.downloadedImgs.length > 0) {
+                if (appState.browserImgs.length > 0) {
                     moreImgsRef.current?.scrollIntoView(
                         {
                             behavior: 'smooth'
@@ -88,7 +88,7 @@ export default function MediaBrowserArea({
                 break;
             }
             case "svg": {
-                if (appState.downloadedSvgs.length > 0) {
+                if (appState.browserSvgs.length > 0) {
                     moreSvgsRef.current?.scrollIntoView(
                         {
                             behavior: 'smooth'
@@ -98,7 +98,7 @@ export default function MediaBrowserArea({
                 break;
             }
         }
-    }, [filter, autoscroll, appState.downloadedImgs.length, appState.downloadedSvgs.length]);
+    }, [filter, autoscroll, appState.browserImgs.length, appState.browserSvgs.length]);
 
     const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -133,7 +133,7 @@ export default function MediaBrowserArea({
                         const response = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
 
                         if (response) {
-                            dispatch({ type: WorkspaceActionType.AddDownloadedSvg, value: response });
+                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: response });
                         }
                     } catch (err) {
                         console.error("SVG rasterization failed", err);
@@ -143,7 +143,7 @@ export default function MediaBrowserArea({
             } else if (file.type.startsWith("image/")) {
                 const response = await createImg(appState.apiOrigin, file);
                 if (response) {
-                    dispatch({ type: WorkspaceActionType.AddDownloadedImg, value: response });
+                    dispatch({ type: WorkspaceActionType.AddBrowserImg, value: {...response} });
                 }
             }
         }
@@ -227,7 +227,7 @@ export default function MediaBrowserArea({
                         width: '100%',
                         color: 'rgba(220, 220, 220, 1)',
                     }} >
-                    {filter == 'img' && appState.downloadedImgs.map((img, i) => {
+                    {filter == 'img' && appState.browserImgs.map((img, i) => {
                         return (
                             <div key={img.media_path} style={{
                                 padding: 10,
@@ -286,7 +286,7 @@ export default function MediaBrowserArea({
                                         </div>
                                     </div>
                                 }
-                                {i == appState.downloadedImgs.length - 1 && (
+                                {i == appState.browserImgs.length - 1 && (
                                     <div
                                         ref={moreImgsRef}
                                         style={{
@@ -318,7 +318,7 @@ export default function MediaBrowserArea({
                             </div>)
 
                     })}
-                    {filter == 'svg' && appState.downloadedSvgs.map((svg, i) => {
+                    {filter == 'svg' && appState.browserSvgs.map((svg, i) => {
                         const decodedString = decodeURIComponent(
                             atob(svg.markup)
                                 .split('')
@@ -356,7 +356,7 @@ export default function MediaBrowserArea({
                                         viewBox={svg.viewbox}
                                         dangerouslySetInnerHTML={{ __html: decodedString }} />}
                                 </div>
-                                {i == appState.downloadedSvgs.length - 1 && (
+                                {i == appState.browserSvgs.length - 1 && (
                                     <div
                                         ref={moreSvgsRef}
                                         style={{
