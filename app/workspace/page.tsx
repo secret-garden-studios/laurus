@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { cacheTag } from 'next/cache';
 import Workspace from "./workspace.client";
 import {
     EncodedImg_V1_0,
@@ -87,17 +86,11 @@ async function fetchMediaFromServer() {
     return { browserImgs, browserSvgs }
 }
 
-async function fetchMedia() {
-    'use cache';
-    cacheTag('media');
-    return await fetchMediaFromServer();
-}
-
 export default function Page() {
     const projects = getProjects(process.env.LAURUS_API);
     const effectsEnum = getEffects(process.env.LAURUS_API);
     const projectDependencies = fetchMostRecentProject(projects);
-    const browserDependencies = fetchMedia();
+    const browserDependencies = fetchMediaFromServer();
     const mediaPageSize = process.env.MEDIA_PAGE_SIZE;
     const apiOrigin = process.env.LAURUS_API;
     const timelineValues = [30, 60, 90];
