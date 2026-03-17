@@ -1,13 +1,13 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { EncodedImg, EncodedSvg, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
-import { ReactImg, ReactSvg } from "./media";
-import { autorenew, playArrow, earthquake, skipPrevious, menu } from "../svg-repo";
+import { ReactImg } from "./media";
+import { autorenew, playArrow, earthquake, skipPrevious, menu, ReactSvg } from "../svg-repo";
 import styles from "../app.module.css";
-import { PointerStyle, Trackpad } from "../components/trackpad";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { deleteMove, getMove, updateMove } from "./workspace.server";
 import Dial from "../components/dial";
+import ParameterSlider from "../components/parameter-slider";
 
 interface MoveUnit {
     move: LaurusMoveResult
@@ -30,6 +30,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [paramCapSize] = useState({ width: 45, height: 21 });
     const [paramTrackSize] = useState({ width: 45, height: 200 });
     const [paramTrackOffsets] = useState({ padding: 15, border: 2 });
+    const [paramGroveWidth] = useState(10);
 
     // param 1
     const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
@@ -300,7 +301,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     gap: 20,
                                     width: '100%'
                                 }}>
-                                    <VerticalSlider
+                                    <ParameterSlider
                                         label={"amplitude"}
                                         hash={`${move.move_id}|p1`}
                                         capSize={paramCapSize}
@@ -330,8 +331,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
-                                    <VerticalSlider
+                                        }} groveWidth={paramGroveWidth} />
+                                    <ParameterSlider
                                         label={"frequency"}
                                         hash={`${move.move_id}|p1`}
                                         capSize={paramCapSize}
@@ -361,8 +362,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
-                                    <VerticalSlider
+                                        }} groveWidth={paramGroveWidth} />
+                                    <ParameterSlider
                                         label={"wavelength"}
                                         hash={`${move.move_id}|p1`}
                                         capSize={paramCapSize}
@@ -392,8 +393,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
-                                    <VerticalSlider
+                                        }} groveWidth={paramGroveWidth} />
+                                    <ParameterSlider
                                         label={"distance"}
                                         hash={`${move.move_id}|p1`}
                                         capSize={paramCapSize}
@@ -423,8 +424,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
-                                    <VerticalSlider
+                                        }} groveWidth={paramGroveWidth} />
+                                    <ParameterSlider
                                         label={"time"}
                                         hash={`${move.move_id}|p1`}
                                         capSize={paramCapSize}
@@ -455,7 +456,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
+                                        }}
+                                        groveWidth={paramGroveWidth} />
                                 </div>
                                 <div style={{
                                     borderLeft: '1px solid black',
@@ -664,77 +666,4 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
             }
         </div >
     )
-}
-
-interface VerticalSlider {
-    label: string,
-    hash: string,
-    capSize: { width: number | string, height: number | string }
-    trackSize: { width: number | string, height: number | string }
-    trackRef: RefObject<HTMLDivElement | null>,
-    cursor: { x: number, y: number },
-    onNewCursor: (newCursor: { x: number, y: number }) => void,
-    onCursorMove?: (newCursor: { x: number, y: number }) => void,
-}
-function VerticalSlider({
-    label,
-    hash,
-    capSize,
-    trackSize,
-    trackRef,
-    cursor,
-    onNewCursor,
-    onCursorMove,
-}: VerticalSlider) {
-    return (<>
-        <div style={{ height: '100%', width: 'min-content' }}>
-            <div style={{ position: "relative", ...trackSize, }}>
-                <div style={{ position: 'absolute', height: '100%', width: '100%', }}>
-                    <Trackpad
-                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
-                        width={capSize.width}
-                        height={'100%'}
-                        coarsePointer={{
-                            ...capSize,
-                            pointerStyle: PointerStyle.Blurry,
-                            zIndex: 2
-                        }}
-                        value={cursor}
-                        onNewValue={onNewCursor}
-                        onMove={onCursorMove} />
-                </div>
-                <div
-                    ref={trackRef}
-                    onMouseDown={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = Math.round(e.clientX - rect.left);
-                        const y = Math.round(e.clientY - rect.top);
-                        const yOffset: number = parseFloat(`${capSize.height}`) || 0;
-                        onNewCursor({ x, y: Math.min(y, rect.height - yOffset) });
-                    }}
-                    style={{
-                        zIndex: 0,
-                        cursor: 'crosshair',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        margin: 'auto',
-                        position: "absolute",
-                        height: trackSize.height,
-                        width: 10,
-                        background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
-                        border: '1px solid rgb(5, 5, 5)'
-                    }}
-                />
-            </div>
-            <div className={dmSans.className}
-                style={{
-                    display: 'grid',
-                    justifyContent: 'center',
-                    fontSize: "10px",
-                    paddingTop: '10px'
-                }}>{label}</div>
-        </div>
-    </>)
 }

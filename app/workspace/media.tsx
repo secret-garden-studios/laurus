@@ -6,6 +6,7 @@ import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
 import { EncodedImg, EncodedSvg, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
 import { useContext } from "react";
+import { ReactSvg } from "../svg-repo";
 
 interface ReactImg {
     img: EncodedImg,
@@ -156,49 +157,7 @@ export function DraggableReactImg({
     </>)
 }
 
-interface ReactSvg {
-    svg: EncodedSvg,
-    containerSize: { width: number, height: number }
-    scale: number | undefined,
-    onContainerClick?: () => void,
-    onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
-    inputId?: string,
-}
-export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: ReactSvg) {
-    const decodedString = decodeURIComponent(
-        atob(svg.markup)
-            .split('')
-            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-    );
-    return (
-        <div
-            onMouseEnter={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'pointer' }}
-            onMouseLeave={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'default' }}
-            onClick={() => { if (onContainerClick) onContainerClick() }}
-            style={{
-                width: containerSize.width,
-                height: containerSize.height,
-                display: 'grid',
-                placeContent: 'center',
-            }}>
-            {decodedString && <svg
-                ref={(r) => {
-                    if (onSvgRef) {
-                        onSvgRef(r, `${inputId ?? svg.media_path}`);
-                    }
-                }}
-                version="1.1"
-                width={scale ? scale * containerSize.width : svg.width}
-                height={scale ? scale * containerSize.height : svg.height}
-                fill={svg.fill}
-                stroke={svg.stroke}
-                strokeWidth={svg.stroke_width}
-                viewBox={svg.viewbox}
-                dangerouslySetInnerHTML={{ __html: decodedString }} />}
-        </div>
-    )
-}
+
 
 interface ReactSvgNode {
     id: string

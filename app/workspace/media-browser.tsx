@@ -3,8 +3,7 @@ import { dellaRespira, michroma, redHatDisplay } from "../fonts";
 import { LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
-import { ReactSvg } from "./media";
-import { arrowDropDown } from "../svg-repo";
+import { arrowDropDown, ReactSvg } from "../svg-repo";
 import { createImg, createSvg } from "./workspace.server";
 
 interface MediaBrowserArea {

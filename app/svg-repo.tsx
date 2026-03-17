@@ -5,6 +5,50 @@ function base64Encode(markup: string) {
     return Buffer.from(cleaned).toString('base64');
 };
 
+interface ReactSvg {
+    svg: EncodedSvg_V1_0,
+    containerSize: { width: number, height: number }
+    scale: number | undefined,
+    onContainerClick?: () => void,
+    onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
+    inputId?: string,
+}
+export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: ReactSvg) {
+    const decodedString = decodeURIComponent(
+        atob(svg.markup)
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+    );
+    return (
+        <div
+            onMouseEnter={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'pointer' }}
+            onMouseLeave={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'default' }}
+            onClick={() => { if (onContainerClick) onContainerClick() }}
+            style={{
+                width: containerSize.width,
+                height: containerSize.height,
+                display: 'grid',
+                placeContent: 'center',
+            }}>
+            {decodedString && <svg
+                ref={(r) => {
+                    if (onSvgRef) {
+                        onSvgRef(r, `${inputId ?? svg.media_path}`);
+                    }
+                }}
+                version="1.1"
+                width={scale ? scale * containerSize.width : svg.width}
+                height={scale ? scale * containerSize.height : svg.height}
+                fill={svg.fill}
+                stroke={svg.stroke}
+                strokeWidth={svg.stroke_width}
+                viewBox={svg.viewbox}
+                dangerouslySetInnerHTML={{ __html: decodedString }} />}
+        </div>
+    )
+}
+
 export function videoCameraBack(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
@@ -345,6 +389,57 @@ export function playArrow(
     }
 }
 
+export function playArrowNoFill(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M360-331.46v-297.08q0-14.69 9.69-23.5t22.62-8.81q4.23 0 8.57 1.12 4.35 1.11 8.58 3.34l233.69 149.31q7.47 5.23 11.2 11.93 3.73 6.69 3.73 15.15t-3.73 15.15q-3.73 6.7-11.2 11.93L409.46-303.61q-4.23 2.23-8.58 3.34-4.34 1.12-8.57 1.12-12.93 0-22.62-8.81-9.69-8.81-9.69-23.5ZM400-480Zm0 134 211.54-134L400-614v268Z"/>`)
+    }
+}
+
+export function pause(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/pause_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z"/>`)
+    }
+}
+
+export function pauseNoFill(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/pause_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M580-240q-16.08 0-28.04-11.96T540-280v-400q0-16.08 11.96-28.04T580-720h100q16.08 0 28.04 11.96T720-680v400q0 16.08-11.96 28.04T680-240H580Zm-300 0q-16.08 0-28.04-11.96T240-280v-400q0-16.08 11.96-28.04T280-720h100q16.08 0 28.04 11.96T420-680v400q0 16.08-11.96 28.04T380-240H280Zm300-40h100v-400H580v400Zm-300 0h100v-400H280v400Zm0-400v400-400Zm300 0v400-400Z"/>`)
+    }
+}
+
 export function moreVert(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
@@ -461,5 +556,90 @@ export function menu(
         stroke: "none",
         stroke_width: 0,
         markup: base64Encode(`<path d="M140-254.62v-59.99h680v59.99H140ZM140-450v-60h680v60H140Zm0-195.39v-59.99h680v59.99H140Z"/>`)
+    }
+}
+
+export function noSound(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/no_sound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="m616-320-56-56 104-104-104-104 56-56 104 104 104-104 56 56-104 104 104 104-56 56-104-104-104 104Zm-496-40v-240h160l200-200v640L280-360H120Z"/>`)
+    }
+}
+
+export function volumeUp(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/volume_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M560-131v-82q90-26 145-100t55-168q0-94-55-168T560-749v-82q124 28 202 125.5T840-481q0 127-78 224.5T560-131ZM120-360v-240h160l200-200v640L280-360H120Zm440 40v-322q47 22 73.5 66t26.5 96q0 51-26.5 94.5T560-320Z"/>`)
+    }
+}
+
+export function firstPage(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/first_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M251.5-251.5Q240-263 240-280v-400q0-17 11.5-28.5T280-720q17 0 28.5 11.5T320-680v400q0 17-11.5 28.5T280-240q-17 0-28.5-11.5ZM552-480l156 156q11 11 11 28t-11 28q-11 11-28 11t-28-11L468-452q-6-6-8.5-13t-2.5-15q0-8 2.5-15t8.5-13l184-184q11-11 28-11t28 11q11 11 11 28t-11 28L552-480Z"/>`)
+    }
+}
+
+export function lastPage(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/last_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M408-480 252-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13t2.5 15q0 8-2.5 15t-8.5 13L308-268q-11 11-28 11t-28-11q-11-11-11-28t11-28l156-156Zm300.5-228.5Q720-697 720-680v400q0 17-11.5 28.5T680-240q-17 0-28.5-11.5T640-280v-400q0-17 11.5-28.5T680-720q17 0 28.5 11.5Z"/>`)
+    }
+}
+
+export function upload(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): EncodedSvg_V1_0 {
+    return {
+        categories: [],
+        media_path: "/material-ui/upload_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`><path d="M240-160q-33 0-56.5-23.5T160-240v-80q0-17 11.5-28.5T200-360q17 0 28.5 11.5T240-320v80h480v-80q0-17 11.5-28.5T760-360q17 0 28.5 11.5T800-320v80q0 33-23.5 56.5T720-160H240Zm200-486-75 75q-12 12-28.5 11.5T308-572q-11-12-11.5-28t11.5-28l144-144q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l144 144q12 12 11.5 28T652-572q-12 12-28.5 12.5T595-571l-75-75v286q0 17-11.5 28.5T480-320q-17 0-28.5-11.5T440-360v-286Z"/>`)
     }
 }

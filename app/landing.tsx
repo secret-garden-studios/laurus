@@ -6,7 +6,7 @@ export default function Landing() {
     return (
         <Link href="/workspace" style={{ textDecoration: 'none' }}>
             <div
-                className={italiana.className + ' ' + styles["grainy-background"]}
+                className={italiana.className + ' ' + styles["animated-grainy-background"]}
                 style={{
                     color: 'rgb(239, 239, 239)',
                     fontSize: 32,

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { cacheTag } from 'next/cache';
 import Workspace from "./workspace.client";
 import {
     EncodedImg_V1_0,
@@ -17,7 +18,6 @@ import {
 } from "./workspace.server";
 import styles from "../app.module.css";
 import { italiana } from "../fonts";
-export const dynamic = 'force-dynamic';
 
 export interface ProjectDependencies {
     project: ProjectResult_V1_0,
@@ -66,7 +66,7 @@ export interface BrowserDependencies {
     browserImgs: EncodedImg_V1_0[],
     browserSvgs: EncodedSvg_V1_0[],
 }
-async function fetchMedia() {
+async function fetchMediaFromServer() {
     const pageSize = process.env.MEDIA_PAGE_SIZE ? (parseInt(process.env.MEDIA_PAGE_SIZE) || 10) : 10;
     const imgPageOne = await getImgDiscoveryPage(process.env.LAURUS_API, 1, pageSize);
     const browserImgs: EncodedImg_V1_0[] = [];
@@ -85,6 +85,12 @@ async function fetchMedia() {
     }
 
     return { browserImgs, browserSvgs }
+}
+
+async function fetchMedia() {
+    'use cache';
+    cacheTag('media');
+    return await fetchMediaFromServer();
 }
 
 export default function Page() {
@@ -115,18 +121,6 @@ function Skeleton() {
     return (<>
         <div
             className={`${styles["animated-grainy-background"]} ${italiana.className}`}
-            style={{
-                color: 'rgb(239, 239, 239)',
-                fontSize: 32,
-                letterSpacing: 10,
-                width: '100vw',
-                height: '100vh',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                cursor: 'progress'
-            }}>
-            {"Laurus"}
-        </div>
+            style={{ width: '100vw', height: '100vh' }} />
     </>)
 }

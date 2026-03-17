@@ -1,14 +1,15 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EncodedSvg, EncodedImg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
-import { ReactImg, ReactSvg } from "./media";
-import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu } from "../svg-repo";
+import { ReactImg } from "./media";
+import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, ReactSvg } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
+import ParameterSlider from "../components/parameter-slider";
 
 interface ScaleUnit {
     scale: LaurusScaleResult
@@ -298,7 +299,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                     gap: 20,
                                     borderRight: 'solid rgba(0, 0, 0, 1) 1px',
                                 }}>
-                                    <VerticalSlider
+                                    <ParameterSlider
                                         label={"speed"}
                                         hash={`${scale.scale_id}|p1`}
                                         capSize={timeCapSize}
@@ -325,7 +326,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} />
+                                        }}
+                                        groveWidth={10} />
                                 </div>
                                 <div
                                     style={{
@@ -520,7 +522,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 borderRadius: 0,
                                 justifyContent: 'center'
                             }}>
-                                <HorizontalSlider
+                                <ScaleSlider
                                     label={"zoom"}
                                     hash={`${scale.scale_id}|p2`}
                                     capSize={scaleCapSize}
@@ -612,7 +614,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     )
 }
 
-interface ScaleUnitSlider {
+interface ScaleSlider {
     label: string,
     hash: string,
     capSize: { width: number | string, height: number | string }
@@ -622,70 +624,7 @@ interface ScaleUnitSlider {
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
 }
-function VerticalSlider({
-    label,
-    hash,
-    capSize,
-    trackSize,
-    trackRef,
-    cursor,
-    onNewCursor,
-    onCursorMove,
-}: ScaleUnitSlider) {
-    return (<>
-        <div style={{ height: '100%', width: 'min-content' }}>
-            <div style={{ position: "relative", ...trackSize }}>
-                <div style={{ position: 'absolute', height: '100%', width: '100%' }}>
-                    <Trackpad
-                        ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
-                        width={capSize.width}
-                        height={'100%'}
-                        coarsePointer={{
-                            ...capSize,
-                            pointerStyle: PointerStyle.Blurry,
-                            zIndex: 2
-                        }}
-                        value={cursor}
-                        onNewValue={onNewCursor}
-                        onMove={onCursorMove} />
-                </div>
-                <div
-                    ref={trackRef}
-                    onMouseDown={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = Math.round(e.clientX - rect.left);
-                        const y = Math.round(e.clientY - rect.top);
-                        const yOffset: number = parseFloat(`${capSize.height}`) || 0;
-                        onNewCursor({ x, y: Math.min(y, rect.height - yOffset) });
-                    }}
-                    style={{
-                        zIndex: 0,
-                        cursor: 'crosshair',
-                        position: "absolute",
-                        height: trackSize.height,
-                        width: 10,
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        margin: 'auto',
-                        background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
-                        border: '1px solid rgb(5, 5, 5)'
-                    }}
-                />
-            </div>
-            <div className={dmSans.className}
-                style={{
-                    display: 'grid',
-                    justifyContent: 'center',
-                    fontSize: "10px",
-                    paddingTop: '10px'
-                }}>{label}</div>
-        </div>
-    </>)
-}
-
-function HorizontalSlider({
+function ScaleSlider({
     hash,
     capSize,
     trackSize,
@@ -693,7 +632,7 @@ function HorizontalSlider({
     cursor,
     onNewCursor,
     onCursorMove
-}: ScaleUnitSlider) {
+}: ScaleSlider) {
     return (<>
         <div
             className={dellaRespira.className}

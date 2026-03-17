@@ -1,8 +1,7 @@
 import { CSSProperties, RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { ReactSvg } from "./media";
-import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious } from "../svg-repo";
+import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious, ReactSvg } from "../svg-repo";
 import {
     LaurusEffect,
     LaurusProjectResult,

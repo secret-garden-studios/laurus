@@ -27,8 +27,8 @@ import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow } from "../svg-repo";
-import { DraggableReactImg, DraggableReactSvg, ReactImg, ReactSvg } from "./media";
+import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, ReactSvg } from "../svg-repo";
+import { DraggableReactImg, DraggableReactSvg, ReactImg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -120,8 +120,8 @@ export const defaultWorkspace: WorkspaceState = {
         canvas_height: 5000,
         frame_top: -1,
         frame_left: -1,
-        frame_width: 1080,
-        frame_height: 1440,
+        frame_width: 780,
+        frame_height: 1140,
         project_id: "",
         timestamp: "",
         last_active: "",
