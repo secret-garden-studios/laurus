@@ -1,5 +1,6 @@
 import TestCard from "./test-card";
 import { getVideoDiscoveryPage, VideoMediaResult_V1_0 } from "./screens.server";
+export const dynamic = 'force-dynamic';
 
 async function fetchMedia(pageSize: number) {
     const videoPageOne = await getVideoDiscoveryPage(process.env.LAURUS_API, pageSize);

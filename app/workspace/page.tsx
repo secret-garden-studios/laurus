@@ -17,6 +17,7 @@ import {
 } from "./workspace.server";
 import styles from "../app.module.css";
 import { italiana } from "../fonts";
+export const dynamic = 'force-dynamic';
 
 export interface ProjectDependencies {
     project: ProjectResult_V1_0,
