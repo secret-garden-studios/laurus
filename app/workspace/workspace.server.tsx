@@ -1,19 +1,21 @@
 
 /* /discover */
 
-export interface EncodedImg_V1_0 {
-    media_path: string
-    width: number
-    height: number
-    src: string
-    categories: string[]
-}
 export async function getImgDiscoveryPage(
     baseUrl: string | undefined,
-    page: number,
-    size: number = 10) {
+    size: number = 10,
+    exclusion?: string[],
+    offset?: string) {
     try {
-        const url = `${baseUrl}/discover/img?page=${page}&size=${size}`;
+        let url = `${baseUrl}/discover/img?&size=${size}`;
+        if (exclusion) {
+            exclusion.forEach(e => {
+                url += `&x=${e}`
+            });
+        }
+        else if (offset) {
+            url += `&offset=${offset}`
+        }
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -23,7 +25,7 @@ export async function getImgDiscoveryPage(
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedImg_V1_0[] = await raw_response.json();
+        const response: ImgMediaResult_V1_0[] = await raw_response.json();
         return response;
     }
     catch (error) {
@@ -31,23 +33,21 @@ export async function getImgDiscoveryPage(
         return undefined;
     }
 }
-export interface EncodedSvg_V1_0 {
-    media_path: string
-    width: number
-    height: number
-    viewbox: string
-    fill: string
-    stroke: string
-    stroke_width: number
-    markup: string
-    categories: string[]
-}
 export async function getSvgDiscoveryPage(
     baseUrl: string | undefined,
-    page: number,
-    size: number = 10) {
+    size: number = 10,
+    exclusion?: string[],
+    offset?: string) {
     try {
-        const url = `${baseUrl}/discover/svg?page=${page}&size=${size}`;
+        let url = `${baseUrl}/discover/svg?&size=${size}`;
+        if (exclusion) {
+            exclusion.forEach(e => {
+                url += `&x=${e}`
+            });
+        }
+        else if (offset) {
+            url += `&offset=${offset}`
+        }
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -57,7 +57,7 @@ export async function getSvgDiscoveryPage(
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedSvg_V1_0[] = await raw_response.json();
+        const response: SvgMediaResult_V1_0[] = await raw_response.json();
         return response;
     }
     catch (error) {
@@ -79,6 +79,7 @@ export interface ImgMediaResult_V1_0 {
     last_active: string
     img_media_id: string
     media_path: string
+    order: number
     width: number
     height: number
     categories: string[]
@@ -200,7 +201,7 @@ export async function deleteImg(
     }
 }
 
-interface SvgMedia_V1_0 {
+export interface SvgMedia_V1_0 {
     media_path: string
     width: number
     height: number
@@ -210,7 +211,7 @@ interface SvgMedia_V1_0 {
     stroke_width: number
     categories: string[]
 }
-interface SvgMediaResult_V1_0 {
+export interface SvgMediaResult_V1_0 {
     timestamp: string
     last_active: string
     svg_media_id: string
@@ -221,6 +222,7 @@ interface SvgMediaResult_V1_0 {
     fill: string
     stroke: string
     stroke_width: number
+    order: number
     categories: string[]
     markup: string
 }
@@ -289,7 +291,7 @@ export async function createSvg(
         if (!raw_response.ok) {
             return undefined;
         }
-        const response: EncodedSvg_V1_0 = await raw_response.json();
+        const response: SvgMediaResult_V1_0 = await raw_response.json();
         return response;
     } catch (error) {
         console.log({ error });

@@ -1,5 +1,5 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { EncodedImg, EncodedSvg, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { v4 } from "uuid";
 import { createProject, findImg, findSvg, updateProject } from "./workspace.server";
 
@@ -115,7 +115,7 @@ export default function Canvas() {
         }
     }
 
-    async function handleSvgDrop(svgData: EncodedSvg, dropArea: ProjectCircle) {
+    async function handleSvgDrop(svgData: LaurusSvgResult, dropArea: ProjectCircle) {
         const newFrame = getCenteredRectInCircle(
             svgData.width,
             svgData.height,
@@ -161,7 +161,7 @@ export default function Canvas() {
         }
     }
 
-    async function handleImgDrop(imgData: EncodedImg, dropArea: ProjectCircle) {
+    async function handleImgDrop(imgData: LaurusImgResult, dropArea: ProjectCircle) {
         const newFrame = getCenteredRectInCircle(
             imgData.width,
             imgData.height,

@@ -1,8 +1,6 @@
 import { Suspense } from "react";
 import Workspace from "./workspace.client";
 import {
-    EncodedImg_V1_0,
-    EncodedSvg_V1_0,
     getEffects,
     getImg,
     getImgDiscoveryPage,
@@ -11,9 +9,11 @@ import {
     getScales,
     getSvg,
     getSvgDiscoveryPage,
+    ImgMediaResult_V1_0,
     MoveResult_V1_0,
     ProjectResult_V1_0,
-    ScaleResult_V1_0
+    ScaleResult_V1_0,
+    SvgMediaResult_V1_0
 } from "./workspace.server";
 import styles from "../app.module.css";
 import { italiana } from "../fonts";
@@ -23,8 +23,8 @@ export interface ProjectDependencies {
     project: ProjectResult_V1_0,
     scales: ScaleResult_V1_0[],
     moves: MoveResult_V1_0[],
-    canvasImgs: EncodedImg_V1_0[],
-    canvasSvgs: EncodedSvg_V1_0[],
+    canvasImgs: ImgMediaResult_V1_0[],
+    canvasSvgs: SvgMediaResult_V1_0[],
 }
 async function fetchMostRecentProject(projects: Promise<ProjectResult_V1_0[] | undefined>) {
     const p = await projects;
@@ -35,7 +35,7 @@ async function fetchMostRecentProject(projects: Promise<ProjectResult_V1_0[] | u
         const moves = await getMoves(process.env.LAURUS_API, newProject.project_id);
 
         const svgsArray = Array.from(newProject.svgs.values());
-        const canvasSvgs: EncodedSvg_V1_0[] = [];
+        const canvasSvgs: SvgMediaResult_V1_0[] = [];
         for (let i = 0; i < svgsArray.length; i++) {
             const svgMediaResult = await getSvg(process.env.LAURUS_API, svgsArray[i].svg_media_id, svgsArray[i].media_path);
             if (svgMediaResult) {
@@ -44,7 +44,7 @@ async function fetchMostRecentProject(projects: Promise<ProjectResult_V1_0[] | u
         }
 
         const imgsArray = Array.from(newProject.imgs.values());
-        const canvasImgs: EncodedImg_V1_0[] = [];
+        const canvasImgs: ImgMediaResult_V1_0[] = [];
         for (let i = 0; i < imgsArray.length; i++) {
             const imgMediaResult = await getImg(process.env.LAURUS_API, imgsArray[i].img_media_id, imgsArray[i].media_path);
             if (imgMediaResult) {
@@ -63,21 +63,21 @@ async function fetchMostRecentProject(projects: Promise<ProjectResult_V1_0[] | u
 }
 
 export interface BrowserDependencies {
-    browserImgs: EncodedImg_V1_0[],
-    browserSvgs: EncodedSvg_V1_0[],
+    browserImgs: ImgMediaResult_V1_0[],
+    browserSvgs: SvgMediaResult_V1_0[],
 }
 async function fetchMediaFromServer() {
     const pageSize = process.env.MEDIA_PAGE_SIZE ? (parseInt(process.env.MEDIA_PAGE_SIZE) || 10) : 10;
-    const imgPageOne = await getImgDiscoveryPage(process.env.LAURUS_API, 1, pageSize);
-    const browserImgs: EncodedImg_V1_0[] = [];
+    const imgPageOne = await getImgDiscoveryPage(process.env.LAURUS_API, pageSize);
+    const browserImgs: ImgMediaResult_V1_0[] = [];
     if (imgPageOne && imgPageOne.length > 0) {
         for (let i = 0; i < imgPageOne.length; i++) {
             browserImgs.push({ ...imgPageOne[i] });
         }
     }
 
-    const svgPageOne = await getSvgDiscoveryPage(process.env.LAURUS_API, 1, pageSize);
-    const browserSvgs: EncodedSvg_V1_0[] = [];
+    const svgPageOne = await getSvgDiscoveryPage(process.env.LAURUS_API, pageSize);
+    const browserSvgs: SvgMediaResult_V1_0[] = [];
     if (svgPageOne && svgPageOne.length > 0) {
         for (let i = 0; i < svgPageOne.length; i++) {
             browserSvgs.push({ ...svgPageOne[i] });

@@ -4,12 +4,12 @@ import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
-import { EncodedImg, EncodedSvg, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
 import { useContext } from "react";
 import { ReactSvg } from "../svg-repo";
 
 interface ReactImg {
-    img: EncodedImg,
+    img: LaurusImgResult,
     containerSize: { width: number, height: number }
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     inputId?: string,
@@ -39,7 +39,7 @@ export function ReactImg({ img, containerSize, onImgRef, inputId }: ReactImg) {
 interface ReactImgNode {
     id: string
     position: { x: number, y: number, z: number, },
-    data: EncodedImg,
+    data: LaurusImgResult,
     containerSize: { width: number, height: number },
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     inputId?: string,
@@ -89,7 +89,7 @@ function ReactImgNode({ id, position, data, containerSize, onImgRef, inputId }: 
 interface DraggableReactImg {
     contextId: string
     nodeId: string,
-    data: EncodedImg,
+    data: LaurusImgResult,
     meta: LaurusProjectImg,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,
@@ -162,7 +162,7 @@ export function DraggableReactImg({
 interface ReactSvgNode {
     id: string
     position: { x: number, y: number, z: number, },
-    data: EncodedSvg,
+    data: LaurusSvgResult,
     containerSize: { width: number, height: number },
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
@@ -213,7 +213,7 @@ function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: 
 interface DraggableReactSvg {
     contextId: string
     nodeId: string,
-    data: EncodedSvg,
+    data: LaurusSvgResult,
     meta: LaurusProjectSvg,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,

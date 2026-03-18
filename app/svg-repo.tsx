@@ -1,12 +1,22 @@
-import { EncodedSvg_V1_0 } from "./workspace/workspace.server";
 
 function base64Encode(markup: string) {
     const cleaned = markup.replace(/>\s+</g, '><').trim();
     return Buffer.from(cleaned).toString('base64');
 };
 
+export interface ReactSvgSvg {
+    media_path: string
+    width: number
+    height: number
+    viewbox: string
+    fill: string
+    stroke: string
+    stroke_width: number
+    markup: string
+}
+
 interface ReactSvg {
-    svg: EncodedSvg_V1_0,
+    svg: ReactSvgSvg,
     containerSize: { width: number, height: number }
     scale: number | undefined,
     onContainerClick?: () => void,
@@ -52,9 +62,8 @@ export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef
 export function videoCameraBack(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/video_camera_back_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -69,9 +78,8 @@ export function videoCameraBack(
 export function motionPhotosOn(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/motion_photos_on_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -86,9 +94,8 @@ export function motionPhotosOn(
 export function arrowDropDown(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/arrow_drop_down_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -103,9 +110,8 @@ export function arrowDropDown(
 export function arrowDropUp(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/arrow_drop_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -120,9 +126,8 @@ export function arrowDropUp(
 export function closeIcon(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -137,9 +142,8 @@ export function closeIcon(
 export function checkCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -154,9 +158,8 @@ export function checkCircle(
 export function cancelCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -171,9 +174,8 @@ export function cancelCircle(
 export function addCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -188,9 +190,8 @@ export function addCircle(
 export function circle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -205,9 +206,8 @@ export function circle(
 export function dragIndicator(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -222,9 +222,8 @@ export function dragIndicator(
 export function hexagon(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -239,9 +238,8 @@ export function hexagon(
 export function remove(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/remove_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -256,9 +254,8 @@ export function remove(
 export function add2(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/add_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -273,9 +270,8 @@ export function add2(
 export function playCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/play_circle_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -290,9 +286,8 @@ export function playCircle(
 export function autorenew(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/autorenew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -307,9 +302,8 @@ export function autorenew(
 export function fastRewind(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/fast_rewind_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -324,9 +318,8 @@ export function fastRewind(
 export function skipNext(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/skip_next_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -341,9 +334,8 @@ export function skipNext(
 export function skipPrevious(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/skip_previous_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -358,9 +350,8 @@ export function skipPrevious(
 export function fastForward(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/fast_forward_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -375,9 +366,8 @@ export function fastForward(
 export function playArrow(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -392,9 +382,8 @@ export function playArrow(
 export function playArrowNoFill(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
         height,
@@ -409,9 +398,8 @@ export function playArrowNoFill(
 export function pause(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/pause_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -426,9 +414,8 @@ export function pause(
 export function pauseNoFill(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/pause_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
         height,
@@ -443,9 +430,8 @@ export function pauseNoFill(
 export function moreVert(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/more_vert_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -460,9 +446,8 @@ export function moreVert(
 export function allOut(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/all_out_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -477,9 +462,8 @@ export function allOut(
 export function earthquake(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/earthquake_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -494,9 +478,8 @@ export function earthquake(
 export function lassoSelect(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/lasso_select_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -511,9 +494,8 @@ export function lassoSelect(
 export function deployedCode(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/deployed_code_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -528,9 +510,8 @@ export function deployedCode(
 export function browse(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/browse_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -545,9 +526,8 @@ export function browse(
 export function menu(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -562,9 +542,8 @@ export function menu(
 export function noSound(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/no_sound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -579,9 +558,8 @@ export function noSound(
 export function volumeUp(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/volume_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -596,9 +574,8 @@ export function volumeUp(
 export function firstPage(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/first_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -613,9 +590,8 @@ export function firstPage(
 export function lastPage(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/last_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -630,9 +606,8 @@ export function lastPage(
 export function upload(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): EncodedSvg_V1_0 {
+    height: number = 24): ReactSvgSvg {
     return {
-        categories: [],
         media_path: "/material-ui/upload_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
@@ -640,6 +615,54 @@ export function upload(
         fill,
         stroke: "none",
         stroke_width: 0,
-        markup: base64Encode(`><path d="M240-160q-33 0-56.5-23.5T160-240v-80q0-17 11.5-28.5T200-360q17 0 28.5 11.5T240-320v80h480v-80q0-17 11.5-28.5T760-360q17 0 28.5 11.5T800-320v80q0 33-23.5 56.5T720-160H240Zm200-486-75 75q-12 12-28.5 11.5T308-572q-11-12-11.5-28t11.5-28l144-144q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l144 144q12 12 11.5 28T652-572q-12 12-28.5 12.5T595-571l-75-75v286q0 17-11.5 28.5T480-320q-17 0-28.5-11.5T440-360v-286Z"/>`)
+        markup: base64Encode(`<path d="M240-160q-33 0-56.5-23.5T160-240v-80q0-17 11.5-28.5T200-360q17 0 28.5 11.5T240-320v80h480v-80q0-17 11.5-28.5T760-360q17 0 28.5 11.5T800-320v80q0 33-23.5 56.5T720-160H240Zm200-486-75 75q-12 12-28.5 11.5T308-572q-11-12-11.5-28t11.5-28l144-144q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l144 144q12 12 11.5 28T652-572q-12 12-28.5 12.5T595-571l-75-75v286q0 17-11.5 28.5T480-320q-17 0-28.5-11.5T440-360v-286Z"/>`)
+    }
+}
+
+export function bookmarkStacks(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): ReactSvgSvg {
+    return {
+        media_path: "/material-ui/bookmark_stacks_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M480-256.16 83.39-467.38l62.84-34.47L480-324.46l334.15-177.39L877-467.38 480-256.16ZM480-100 83.39-311.23l62.84-34.46L480-168.31l334.15-177.38L877-311.23 480-100Zm0-312.31L60.39-636.15 480-860l30 16.23v177.62h334.69l55.31 30-420 223.84Zm0-68.3 239.62-125.54H450v-169.31L185.46-636.15 480-480.61Zm-30-125.54Z"/>`)
+    }
+}
+
+export function timerArrowDown(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): ReactSvgSvg {
+    return {
+        media_path: "/material-ui/timer_arrow_down_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M147.89-261.09q-80.96-81.08-80.96-196.92 0-115.84 80.99-196.99t196.7-81.15q49.69 0 93.96 16.31 44.27 16.3 79.96 45.3l19.38-19.38q8.31-8.31 20.58-8.42 12.27-.12 21.26 8.87 8.24 8.24 8.24 20.62 0 12.39-8.31 20.7l-19 19.38q29 35.69 45.5 80.27t16.5 94.42q0 115.87-81.08 196.97Q460.52-180 344.68-180q-115.83 0-196.79-81.09Zm138.26-523.52q-12.75 0-21.37-8.63-8.62-8.63-8.62-21.39 0-12.75 8.62-21.37 8.62-8.61 21.37-8.61h117.7q12.75 0 21.37 8.63 8.63 8.62 8.63 21.38t-8.63 21.37q-8.62 8.62-21.37 8.62h-117.7Zm213.09 481.16q63.45-63.45 63.45-154.65 0-91.21-63.45-154.63-63.44-63.42-154.65-63.42-91.2 0-154.44 63.44-63.23 63.45-63.23 154.66 0 91.2 63.23 154.63Q253.39-240 344.59-240q91.21 0 154.65-63.45ZM366-440.55q8.61-8.62 8.61-21.37v-116.16q0-12.75-8.62-21.37-8.63-8.63-21.39-8.63-12.75 0-21.37 8.63-8.61 8.62-8.61 21.37v116.16q0 12.75 8.63 21.37 8.62 8.63 21.38 8.63 12.75 0 21.37-8.63Zm-21.38-17.53Zm407.76 252.77-86.23-86.23q-8.69-9.31-8.69-21.38 0-12.08 9.31-20.77t21.38-9q12.08-.31 20.77 9l38.77 38.77V-750q0-12.75 8.63-21.37 8.63-8.63 21.39-8.63 12.75 0 21.37 8.63 8.61 8.62 8.61 21.37v455.69l39.39-39.38q8.69-8.69 21.07-8.69 12.39 0 21.08 8.69 8.69 8.69 8.69 21.07 0 12.39-8.69 21.08L803-205.31q-10.85 10.85-25.31 10.85-14.46 0-25.31-10.85Z"/>`)
+    }
+}
+
+export function photo(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): ReactSvgSvg {
+    return {
+        media_path: "/material-ui/photo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M240-280h480L570-480 450-320l-90-120-120 160ZM120-120v-720h720v720H120Zm80-80h560v-560H200v560Zm0 0v-560 560Z"/>`)
     }
 }

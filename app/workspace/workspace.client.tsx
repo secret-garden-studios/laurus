@@ -2,7 +2,6 @@
 import { createContext, RefObject, use, useCallback, useContext, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
-    EncodedSvg_V1_0,
     ProjectResult_V1_0,
     ProjectSvg_V1_0,
     updateProject,
@@ -16,18 +15,19 @@ import {
     MoveResult_V1_0,
     getFrames,
     ImgMedia_V1_0,
-    EncodedImg_V1_0,
     getImgDiscoveryPage,
     ProjectImg_V1_0,
     updateMove,
     updateScale,
-    getSvgDiscoveryPage
+    getSvgDiscoveryPage,
+    ImgMediaResult_V1_0,
+    SvgMediaResult_V1_0
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowserArea from "./media-browser";
-import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, ReactSvg } from "../svg-repo";
+import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, ReactSvg, photo } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
@@ -39,8 +39,8 @@ export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
     svgs: Map<string, LaurusProjectSvg>
 }
-export type EncodedImg = EncodedImg_V1_0;
-export type EncodedSvg = EncodedSvg_V1_0;
+export type LaurusImgResult = ImgMediaResult_V1_0;
+export type LaurusSvgResult = SvgMediaResult_V1_0;
 export type LaurusImg = ImgMedia_V1_0;
 export interface LaurusProjectImg extends ProjectImg_V1_0 {
     pending: boolean,
@@ -67,8 +67,8 @@ export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }
     | { type: 'move', key: string, value: LaurusMoveResult }
 export type LaurusThumbnail =
-    | { type: 'svg', value: EncodedSvg }
-    | { type: 'img', value: EncodedImg }
+    | { type: 'svg', value: LaurusSvgResult }
+    | { type: 'img', value: LaurusImgResult }
 export type LaurusTool =
     | { type: 'drop' }
     | { type: 'none' }
@@ -96,10 +96,10 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
 export interface WorkspaceState {
     apiOrigin: string | undefined,
     project: LaurusProjectResult,
-    browserImgs: EncodedImg[],
-    canvasImgs: EncodedImg[],
-    browserSvgs: EncodedSvg[],
-    canvasSvgs: EncodedSvg[],
+    browserImgs: LaurusImgResult[],
+    canvasImgs: LaurusImgResult[],
+    browserSvgs: LaurusSvgResult[],
+    canvasSvgs: LaurusSvgResult[],
     tool: LaurusTool,
     browserElement: LaurusBrowserElement | undefined,
     activeElement: LaurusActiveElement | undefined,
@@ -150,8 +150,10 @@ export enum WorkspaceActionType {
     SetWorkspace,
     SetProject,
     AddBrowserImg,
-    AddCanvasImg,
+    UpdateBrowserImgs,
     AddBrowserSvg,
+    UpdateBrowserSvgs,
+    AddCanvasImg,
     AddCanvasSvg,
     SetTool,
     SetBrowserElement,
@@ -173,10 +175,12 @@ export enum WorkspaceActionType {
 export type WorkspaceAction =
     | { type: WorkspaceActionType.SetWorkspace, value: WorkspaceState }
     | { type: WorkspaceActionType.SetProject, value: LaurusProjectResult }
-    | { type: WorkspaceActionType.AddBrowserImg, value: EncodedImg }
-    | { type: WorkspaceActionType.AddCanvasImg, value: EncodedImg }
-    | { type: WorkspaceActionType.AddBrowserSvg, value: EncodedSvg }
-    | { type: WorkspaceActionType.AddCanvasSvg, value: EncodedSvg }
+    | { type: WorkspaceActionType.AddBrowserImg, value: LaurusImgResult, first: boolean }
+    | { type: WorkspaceActionType.UpdateBrowserImgs, value: LaurusImgResult[] }
+    | { type: WorkspaceActionType.AddBrowserSvg, value: LaurusSvgResult, first: boolean }
+    | { type: WorkspaceActionType.UpdateBrowserSvgs, value: LaurusSvgResult[] }
+    | { type: WorkspaceActionType.AddCanvasImg, value: LaurusImgResult }
+    | { type: WorkspaceActionType.AddCanvasSvg, value: LaurusSvgResult }
     | { type: WorkspaceActionType.SetTool, value: LaurusTool }
     | { type: WorkspaceActionType.SetBrowserElement, value: LaurusBrowserElement | undefined }
     | { type: WorkspaceActionType.SetActiveElement, value: LaurusActiveElement | undefined }
@@ -200,39 +204,69 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             return { ...state, project: { ...action.value } }
         }
         case WorkspaceActionType.AddBrowserImg: {
-            const i = state.browserImgs.findIndex(i => i.media_path == action.value.media_path);
+            const currentBrowserImgs = [...state.browserImgs];
+            const i = currentBrowserImgs.findIndex(i => i.media_path == action.value.media_path);
             if (i < 0) {
-                return { ...state, browserImgs: [...state.browserImgs, action.value] }
+                return action.first ?
+                    { ...state, browserImgs: [action.value, ...currentBrowserImgs] } :
+                    { ...state, browserImgs: [...currentBrowserImgs, action.value] }
             }
             else {
-                return { ...state }
+                return state
             }
         }
-        case WorkspaceActionType.AddCanvasImg: {
-            const i = state.canvasImgs.findIndex(i => i.media_path == action.value.media_path);
-            if (i < 0) {
-                return { ...state, canvasImgs: [...state.browserImgs, action.value] }
+        case WorkspaceActionType.UpdateBrowserImgs: {
+            const newBrowserImgs = [...state.browserImgs];
+            for (let i = 0; i < action.value.length; i++) {
+                const newBrowserImg = action.value[i];
+                const index = newBrowserImgs.findIndex(img => img.media_path == newBrowserImg.media_path);
+                if (index > -1) {
+                    newBrowserImgs[index] = { ...newBrowserImg }
+                }
             }
-            else {
-                return { ...state }
-            }
+            return { ...state, browserImgs: newBrowserImgs }
         }
         case WorkspaceActionType.AddBrowserSvg: {
-            const i = state.browserSvgs.findIndex(i => i.media_path == action.value.media_path);
+            const currentBrowserSvgs = [...state.browserSvgs];
+            const i = currentBrowserSvgs.findIndex(i => i.media_path == action.value.media_path);
             if (i < 0) {
-                return { ...state, browserSvgs: [...state.browserSvgs, action.value] }
+                return action.first ?
+                    { ...state, browserSvgs: [action.value, ...currentBrowserSvgs] } :
+                    { ...state, browserSvgs: [...currentBrowserSvgs, action.value] }
             }
             else {
-                return { ...state }
+                return state
+            }
+        }
+        case WorkspaceActionType.UpdateBrowserSvgs: {
+            const newBrowserSvgs = [...state.browserSvgs];
+            for (let i = 0; i < action.value.length; i++) {
+                const newBrowserSvg = action.value[i];
+                const index = newBrowserSvgs.findIndex(svg => svg.media_path == newBrowserSvg.media_path);
+                if (index > -1) {
+                    newBrowserSvgs[index] = { ...newBrowserSvg }
+                }
+            }
+            return { ...state, browserSvgs: newBrowserSvgs }
+        }
+        case WorkspaceActionType.AddCanvasImg: {
+            const currentCanvasImgs = [...state.canvasImgs];
+            const i = currentCanvasImgs.findIndex(i => i.media_path == action.value.media_path);
+            if (i < 0) {
+                return { ...state, canvasImgs: [...currentCanvasImgs, action.value] }
+            }
+            else {
+                return state
             }
         }
         case WorkspaceActionType.AddCanvasSvg: {
-            const i = state.canvasSvgs.findIndex(i => i.media_path == action.value.media_path);
+            const currentCanvasSvgs = [...state.canvasSvgs];
+            const i = currentCanvasSvgs.findIndex(i => i.media_path == action.value.media_path);
             if (i < 0) {
-                return { ...state, canvasSvgs: [...state.browserSvgs, action.value] }
+                return { ...state, canvasSvgs: [...currentCanvasSvgs, action.value] }
             }
             else {
-                return { ...state }
+                return state
             }
         }
         case WorkspaceActionType.SetTool: {
@@ -336,14 +370,6 @@ function initReducer({
     arg5: apiOrigin,
     arg6: browserDependencies,
 }: InitReducer): WorkspaceState {
-    const newBrowserImgs: EncodedImg[] =
-        browserDependencies.browserImgs.map(v => { return { ...v } });
-    const newBrowserSvgs: EncodedSvg[] =
-        browserDependencies.browserSvgs.map(v => { return { ...v } });
-    const newBrowserElement: LaurusThumbnail | undefined = newBrowserImgs.length > 0 ?
-        { value: { ...newBrowserImgs[0] }, type: 'img' } :
-        undefined;
-
     const newEffects: LaurusEffect[] = [];
     if (projectDependencies) {
         projectDependencies.scales.forEach(e => {
@@ -366,11 +392,27 @@ function initReducer({
         });
     }
 
-    const newCanvasSvgs: EncodedSvg[] =
+    const newCanvasSvgs: LaurusSvgResult[] =
         projectDependencies?.canvasSvgs.map(v => { return { ...v } }) ?? [];
-    const newCanvasImgs: EncodedImg[] =
+    const newCanvasImgs: LaurusImgResult[] =
         projectDependencies?.canvasImgs.map(v => { return { ...v } }) ?? [];
+    const newBrowserImgs: LaurusImgResult[] =
+        browserDependencies.browserImgs.map(v => { return { ...v } });
+    const newBrowserSvgs: LaurusSvgResult[] =
+        browserDependencies.browserSvgs.map(v => { return { ...v } });
 
+    const newBrowserElement: LaurusThumbnail | undefined = newBrowserImgs.length > 0 ?
+        { value: { ...newBrowserImgs[0] }, type: 'img' } :
+        {
+            value: {
+                ...photo(),
+                timestamp: "",
+                last_active: "",
+                svg_media_id: "",
+                categories: [],
+                order: 0
+            }, type: 'svg'
+        };
     return {
         ...defaultWorkspace,
         project: projectDependencies ?
@@ -445,55 +487,36 @@ export default function Workspace({
     const [mediaPageSize] = useState(mediaPageSizeInit ? (parseInt(mediaPageSizeInit) || 10) : 10);
     const [showTimeline, setShowTimeline] = useState<boolean>(true);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
-    const [imgPageIndex, setImgPageIndex] = useState(0);
-    const [svgPageIndex, setSvgPageIndex] = useState(0);
-    const nextPageRef = useRef<HTMLDivElement | null>(null);
 
-    const handleImgPageRequest = useCallback(async (pageIndex: number) => {
-        if (nextPageRef.current) {
-            nextPageRef.current.style.visibility = 'hidden'
-        }
-        const response = await getImgDiscoveryPage(appState.apiOrigin, pageIndex + 1, mediaPageSize);
+    const handleImgPageRequest = useCallback(async () => {
+        const mediaArray = Array.from(appState.browserImgs.values());
+        const response = await getImgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.img_media_id));
         if (response && response.length > 0) {
             for (let i = 0; i < response.length; i++) {
-                dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...response[i] } })
-            }
-            if (nextPageRef.current) {
-                nextPageRef.current.style.visibility = 'visible'
+                dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...response[i] }, first: false })
             }
             return true;
         }
 
         else {
-            if (nextPageRef.current) {
-                nextPageRef.current.style.visibility = 'visible'
-            }
             return false;
         }
-    }, [appState.apiOrigin, mediaPageSize]);
+    }, [appState.apiOrigin, appState.browserImgs, mediaPageSize]);
 
-    const handleSvgPageRequest = useCallback(async (pageIndex: number) => {
-        if (nextPageRef.current) {
-            nextPageRef.current.style.visibility = 'hidden'
-        }
-        const response = await getSvgDiscoveryPage(appState.apiOrigin, pageIndex + 1, mediaPageSize);
+    const handleSvgPageRequest = useCallback(async () => {
+        const mediaArray = Array.from(appState.browserSvgs.values());
+        const response = await getSvgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.svg_media_id));
         if (response && response.length > 0) {
             for (let i = 0; i < response.length; i++) {
-                dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: { ...response[i] } })
-            }
-            if (nextPageRef.current) {
-                nextPageRef.current.style.visibility = 'visible'
+                dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: { ...response[i] }, first: false })
             }
             return true;
         }
 
         else {
-            if (nextPageRef.current) {
-                nextPageRef.current.style.visibility = 'visible'
-            }
             return false;
         }
-    }, [appState.apiOrigin, mediaPageSize]);
+    }, [appState.apiOrigin, appState.browserSvgs, mediaPageSize]);
 
     const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
     const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
@@ -565,7 +588,6 @@ export default function Workspace({
                 display: 'grid',
                 gridTemplateColumns: 'min-content 1fr min-content min-content min-content',
                 gridTemplateRows: `min-content min-content 1fr min-content`,
-                overflowX: "auto",
             }}>
             <WorkspaceContext value={{ appState: appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
@@ -732,49 +754,21 @@ export default function Workspace({
                         }} >
                         <MediaBrowserArea
                             filter={mediaBrowserFilter}
-                            nextPageRef={nextPageRef}
-                            onPrevPage={async () => {
-                                switch (mediaBrowserFilter) {
-                                    case "img": {
-                                        if (imgPageIndex != 0) {
-                                            const newIndex = Math.max(0, imgPageIndex - 1);
-                                            await handleImgPageRequest(newIndex);
-                                            setImgPageIndex(newIndex);
-                                        }
-                                        break;
-                                    }
-                                    case "svg": {
-                                        if (svgPageIndex != 0) {
-                                            const newIndex = Math.max(0, svgPageIndex - 1);
-                                            await handleSvgPageRequest(newIndex);
-                                            setSvgPageIndex(newIndex);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }}
                             onNextPage={async () => {
                                 switch (mediaBrowserFilter) {
                                     case "img": {
-                                        const newIndex = imgPageIndex + 1;
-                                        const response = await handleImgPageRequest(newIndex);
-                                        if (response) {
-                                            setImgPageIndex(newIndex);
-                                        }
+                                        await handleImgPageRequest();
                                         break;
                                     }
                                     case "svg": {
-                                        const newIndex = svgPageIndex + 1;
-                                        const response = await handleSvgPageRequest(newIndex);
-                                        if (response) {
-                                            setSvgPageIndex(newIndex);
-                                        }
+                                        await handleSvgPageRequest();
                                         break;
                                     }
                                 }
                             }}
                             onMediaClick={(m) => {
                                 dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
+                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
                             }}
                             onFilterSelect={setMediaBrowserFilter}
                         />
@@ -878,7 +872,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={appState.activeElement.value.value as EncodedSvg}
+                                                svg={appState.activeElement.value.value as LaurusSvgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -887,7 +881,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={appState.activeElement.value.value as EncodedImg}
+                                                img={appState.activeElement.value.value as LaurusImgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -898,7 +892,7 @@ export default function Workspace({
                         <div
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            onClickCapture={() => setShowMediaBrowser(v => !v)}
+                            onClick={() => setShowMediaBrowser(v => !v)}
                             style={{
                                 borderLeft: '1px solid rgb(0, 0, 0)',
                                 position: 'relative'
@@ -908,7 +902,7 @@ export default function Workspace({
                                     case "svg": {
                                         return (
                                             <ReactSvg
-                                                svg={appState.browserElement.value as EncodedSvg}
+                                                svg={appState.browserElement.value as LaurusSvgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
                                             />
@@ -917,7 +911,7 @@ export default function Workspace({
                                     case "img": {
                                         return (
                                             <ReactImg
-                                                img={appState.browserElement.value as EncodedImg}
+                                                img={appState.browserElement.value as LaurusImgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                             />
                                         )
@@ -1050,7 +1044,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
         {Array.from(appState.project.svgs.entries().filter(e => !e[1].pending)).map((e) => {
             const [key, svgMeta] = e;
             const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-            const svgData = appState.browserSvgs.find(s => s.media_path == svgMeta.media_path);
+            const svgData = appState.canvasSvgs.find(s => s.media_path == svgMeta.media_path);
             if (svgData) {
                 return (
                     <div
@@ -1203,7 +1197,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                 const [key, svgMeta] = e;
                 const position = appState.tool.type != 'viewport' ? { top: Math.max(0, svgMeta.top), left: Math.max(0, svgMeta.left) }
                     : { top: (svgMeta.top - appState.project.frame_top), left: (svgMeta.left - appState.project.frame_left) };
-                const svgData = appState.browserSvgs.find(s => s.media_path == svgMeta.media_path);
+                const svgData = appState.canvasSvgs.find(s => s.media_path == svgMeta.media_path);
                 if (svgData) {
                     const threshold = 80;
                     const hexSize = svgMeta.width < threshold || svgMeta.height < threshold ? 12 : 16;

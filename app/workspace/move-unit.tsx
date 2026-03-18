@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { EncodedImg, EncodedSvg, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg } from "./media";
 import { autorenew, playArrow, earthquake, skipPrevious, menu, ReactSvg } from "../svg-repo";
@@ -257,7 +257,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 case "svg": {
                                                     return (
                                                         <ReactSvg
-                                                            svg={appState.activeElement.value.value as EncodedSvg}
+                                                            svg={appState.activeElement.value.value as LaurusSvgResult}
                                                             containerSize={{ width: 200, height: 200 }}
                                                             scale={1}
                                                         />
@@ -266,7 +266,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 case "img": {
                                                     return (
                                                         <ReactImg
-                                                            img={appState.activeElement.value.value as EncodedImg}
+                                                            img={appState.activeElement.value.value as LaurusImgResult}
                                                             containerSize={{ width: 200, height: 200 }}
                                                         />
                                                     )

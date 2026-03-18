@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { EncodedSvg, EncodedImg, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusSvgResult, LaurusImgResult, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
 import { ReactImg } from "./media";
 import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, ReactSvg } from "../svg-repo";
@@ -257,7 +257,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 case "svg": {
                                                     return (
                                                         <ReactSvg
-                                                            svg={appState.activeElement.value.value as EncodedSvg}
+                                                            svg={appState.activeElement.value.value as LaurusSvgResult}
                                                             containerSize={{ width: 200, height: 200 }}
                                                             scale={1}
                                                         />
@@ -266,7 +266,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 case "img": {
                                                     return (
                                                         <ReactImg
-                                                            img={appState.activeElement.value.value as EncodedImg}
+                                                            img={appState.activeElement.value.value as LaurusImgResult}
                                                             containerSize={{ width: 200, height: 200 }}
                                                         />
                                                     )
