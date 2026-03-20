@@ -3,7 +3,7 @@ import ParameterSlider from "../components/parameter-slider";
 import TimelineSlider from "../components/timeline-slider";
 import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, firstPage, lastPage, upload, cancelCircle } from "../svg-repo";
+import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, firstPage, lastPage, upload, cancelCircle, threeSixtyLeft, threeSixtyRight } from "../svg-repo";
 import { VideoMediaResult, YouTubePlayerControl } from "./screens.client";
 import { ScreensResolution } from "./screens-resolution";
 
@@ -48,9 +48,9 @@ export default function RemoteControl({
     const [gapSize] = useState({ outer: Math.round(10 * resolution.factor), inner: Math.round(5 * resolution.factor) });
     const [controlPanelSize] = useState({
         padding: Math.round(20 * resolution.factor),
-        playContainer: Math.round(100 * resolution.factor),
+        playContainer: Math.round(96 * resolution.factor),
         playSvg: Math.round(60 * resolution.factor),
-        clipSvg: Math.round(20 * resolution.factor)
+        clipSvg: Math.round(22 * resolution.factor)
     });
     const [notesPanelSize] = useState(() => {
         switch (resolution.type) {
@@ -356,7 +356,7 @@ export default function RemoteControl({
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <ReactSvg
-                        svg={firstPage()}
+                        svg={threeSixtyLeft()}
                         containerSize={{
                             width: controlPanelSize.clipSvg,
                             height: controlPanelSize.clipSvg
@@ -397,7 +397,7 @@ export default function RemoteControl({
                             }} />
                     </div>
                     <ReactSvg
-                        svg={lastPage()}
+                        svg={threeSixtyRight()}
                         containerSize={{
                             width: controlPanelSize.clipSvg,
                             height: controlPanelSize.clipSvg
