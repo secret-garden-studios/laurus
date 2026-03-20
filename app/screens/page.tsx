@@ -1,4 +1,4 @@
-import TestCard from "./test-card";
+import ScreensBoot from "./screens.boot";
 import { getVideoDiscoveryPage, VideoMediaResult_V1_0 } from "./screens.server";
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,7 @@ export default function Page() {
         5;
     const videoMedia = fetchMedia(pageSize);
     return (
-        <TestCard
+        <ScreensBoot
             apiOriginInit={apiOrigin}
             videoMediaPromise={videoMedia}
             videoMediaPageSize={pageSize} />

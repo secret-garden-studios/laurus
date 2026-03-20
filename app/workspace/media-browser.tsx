@@ -69,6 +69,40 @@ export default function MediaBrowserArea({
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
+    const [mediaFilterSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                container: Math.round(50 * appState.resolution.factor),
+                letterSpacing: "3px",
+                fontSize: 14
+            }
+            case "midhigh": return {
+                container: Math.round(50 * appState.resolution.factor),
+                letterSpacing: "3px",
+                fontSize: 12
+            }
+
+            case "midlow": return {
+                container: Math.round(50 * appState.resolution.factor),
+                letterSpacing: "2px",
+                fontSize: 10
+            }
+            case "low": return {
+                container: Math.round(50 * appState.resolution.factor),
+                letterSpacing: "2px",
+                fontSize: 10
+            }
+        }
+    });
+    const [mediaItemSize] = useState({
+        container: Math.round(300 * appState.resolution.factor),
+        svg: Math.round(100 * appState.resolution.factor),
+        padding: Math.round(10 * appState.resolution.factor),
+    });
+    const [mediaSortSize] = useState({
+        container: Math.round(36 * appState.resolution.factor),
+        svg: Math.round(20 * appState.resolution.factor),
+    });
     const lastScrollTop = useRef<number>(0);
 
     const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
@@ -169,7 +203,7 @@ export default function MediaBrowserArea({
                 gridRow: 1,
                 display: 'flex',
                 alignItems: 'center',
-                height: 50,
+                height: mediaFilterSize.container,
             }}>
                 <div
                     onClick={() => {
@@ -179,7 +213,8 @@ export default function MediaBrowserArea({
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                     className={dellaRespira.className}
                     style={{
-                        letterSpacing: "3px",
+                        letterSpacing: mediaFilterSize.letterSpacing,
+                        fontSize: mediaFilterSize.fontSize,
                         display: 'grid',
                         placeContent: 'center',
                         width: '100%',
@@ -199,7 +234,8 @@ export default function MediaBrowserArea({
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                     className={dellaRespira.className}
                     style={{
-                        letterSpacing: "3px",
+                        letterSpacing: mediaFilterSize.letterSpacing,
+                        fontSize: mediaFilterSize.fontSize,
                         display: 'grid',
                         placeContent: 'center',
                         width: '100%',
@@ -267,7 +303,7 @@ export default function MediaBrowserArea({
                                     key={img.media_path}
                                     style={{
                                         gridColumn: 2,
-                                        padding: 10,
+                                        padding: mediaItemSize.padding,
                                         display: 'grid',
                                         alignItems: 'start',
                                         justifyContent: 'center',
@@ -280,8 +316,8 @@ export default function MediaBrowserArea({
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                                         style={{
-                                            width: 256,
-                                            height: 256,
+                                            width: mediaItemSize.container,
+                                            height: mediaItemSize.container,
                                             position: 'relative',
                                         }}>
                                         {img.src && <NextImage
@@ -323,7 +359,7 @@ export default function MediaBrowserArea({
                             return (
                                 <div key={svg.media_path} style={{
                                     gridColumn: 2,
-                                    padding: 10,
+                                    padding: mediaItemSize.padding,
                                     display: 'grid',
                                     alignItems: 'start',
                                     justifyContent: 'center',
@@ -335,8 +371,8 @@ export default function MediaBrowserArea({
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                                         style={{
-                                            width: 256,
-                                            height: 256,
+                                            width: mediaItemSize.container,
+                                            height: mediaItemSize.container,
                                             position: 'relative',
                                             display: 'grid',
                                             placeContent: 'center',
@@ -344,8 +380,8 @@ export default function MediaBrowserArea({
                                         }}>
                                         {decodedString && <svg
                                             version="1.1"
-                                            width={100}
-                                            height={100}
+                                            width={mediaItemSize.svg}
+                                            height={mediaItemSize.svg}
                                             fill={svg.fill}
                                             stroke={svg.stroke}
                                             strokeWidth={svg.stroke_width}
@@ -362,7 +398,7 @@ export default function MediaBrowserArea({
                 gridColumn: 1,
                 display: 'flex',
                 alignItems: 'center',
-                height: 36,
+                height: mediaSortSize.container,
                 borderTop: '1px solid rgb(0, 0, 0)',
                 background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))',
             }}>
@@ -410,8 +446,8 @@ export default function MediaBrowserArea({
                     <ReactSvg
                         svg={bookmarkStacks('rgb(220, 220, 220)')}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: mediaSortSize.svg,
+                            height: mediaSortSize.svg
                         }} scale={1} />
                 </div>
                 <div
@@ -428,8 +464,8 @@ export default function MediaBrowserArea({
                         border: sortStrategy == 'timestamp' ? '1px solid rgba(255,255,255,0.05)' : 'none'
                     }}>
                     <ReactSvg svg={timerArrowDown('rgb(220, 220, 220)')} containerSize={{
-                        width: 20,
-                        height: 20
+                        width: mediaSortSize.svg,
+                        height: mediaSortSize.svg
                     }} scale={1} />
                 </div>
             </div>

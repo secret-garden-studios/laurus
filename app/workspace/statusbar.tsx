@@ -1,12 +1,14 @@
 'use client'
 
-export interface StatusbarProps {
+import { useContext } from "react";
+import { WorkspaceContext } from "./workspace.client";
+
+export interface Statusbar {
     action: string,
     body: string[],
-    counter: number,
 }
-
-export default function Statusbar({ action, body, counter }: StatusbarProps) {
+export default function Statusbar({ action, body }: Statusbar) {
+    const { appState } = useContext(WorkspaceContext);
     return (
         <>
             <div style={{
@@ -20,6 +22,7 @@ export default function Statusbar({ action, body, counter }: StatusbarProps) {
                 overflow: "hidden",
                 whiteSpace: "nowrap",
                 padding: "0px 12px",
+                gap: 6
             }}>
                 <div style={{
                     fontFamily: "monospace",
@@ -33,7 +36,6 @@ export default function Statusbar({ action, body, counter }: StatusbarProps) {
                                 fontFamily: "monospace",
                                 fontWeight: "lighter",
                                 fontSize: "9px",
-                                marginLeft: "12px",
                             }}>
                                 {`${m}`}
                             </div>
@@ -44,7 +46,7 @@ export default function Statusbar({ action, body, counter }: StatusbarProps) {
                             <div key={i} style={{
                                 fontFamily: "monospace",
                                 fontWeight: "lighter",
-                                fontSize: "9px", marginLeft: "0px"
+                                fontSize: "9px",
                             }}>
                                 {`, ${m}`}
                             </div>
@@ -56,7 +58,9 @@ export default function Statusbar({ action, body, counter }: StatusbarProps) {
                     fontFamily: "monospace",
                     fontWeight: "normal",
                     fontSize: "9px",
-                }}>{counter.toFixed(2)}</div>
+                }}>
+                    {`${appState.resolution.value.width}x${appState.resolution.value.height}`}
+                </div>
             </div>
         </>
     );

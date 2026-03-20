@@ -3,6 +3,7 @@ import { PointerStyle, Trackpad } from "./trackpad"
 
 interface TimelineSlider {
     label: string,
+    labelSize: { font: number, height: number, paddingLeft: number} | undefined
     hash: string,
     trackSize: { width: number | string, height: number | string }
     trackRef: RefObject<HTMLDivElement | null>,
@@ -19,6 +20,7 @@ interface TimelineSlider {
 }
 export default function TimelineSlider({
     label,
+    labelSize,
     hash,
     trackSize,
     trackRef,
@@ -63,19 +65,19 @@ export default function TimelineSlider({
                         onNewValue={onNewRangeCursor}
                         onMove={onRangeMove} />
                 </div>
-                {label && <div
+                {label && labelSize && <div
                     style={{
                         zIndex: 1,
                         top: 0,
                         width: trackSize.width,
-                        height: 22,
+                        height: labelSize.height,
                         position: "absolute",
                         display: 'flex',
                         justifyContent: 'start',
                         background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(25, 25, 25))",
                         border: '1px solid rgb(27, 27, 27)',
-                        fontSize: 12,
-                        paddingLeft: 7,
+                        fontSize: labelSize.font,
+                        paddingLeft: labelSize.paddingLeft,
                         alignItems: 'center',
                         color: 'rgb(255, 255, 255)',
                     }}
@@ -88,10 +90,10 @@ export default function TimelineSlider({
                         zIndex: 0,
                         position: "absolute",
                         ...trackSize,
-                        background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
+                        background: "linear-gradient(45deg, rgba(22, 22, 22, 0.3), rgba(40, 40, 40, 0.3))",
                         border: '1px solid rgb(27, 27, 27)',
                         borderRadius: 10,
-                        boxShadow: "rgba(0, 0, 0, 0.7) -10px -10px 40px inset",
+                        boxShadow: "rgba(0, 0, 0, 1) 0px 0px 42px inset",
                     }}
                 />
             </div>

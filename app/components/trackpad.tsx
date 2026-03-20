@@ -106,7 +106,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     background: 'rgba(255,255,255,0.01)',
                     border: `1px solid ${borderColor ?? "rgb(70, 70, 70)"}`,
                     backdropFilter: 'blur(3px)',
-                    borderRadius: 4,
+                    borderRadius: 2,
                     boxShadow: "1px 1px 6px rgba(0,0,0,0.4)",
                 }
             }

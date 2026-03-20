@@ -5,6 +5,7 @@ import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, firstPage, lastPage, upload, cancelCircle } from "../svg-repo";
 import { VideoMediaResult, YouTubePlayerControl } from "./screens.client";
+import { ScreensResolution } from "./screens-resolution";
 
 function formatTime(totalSeconds: number): string {
     const hours = Math.floor(totalSeconds / 3600);
@@ -19,33 +20,180 @@ function formatTime(totalSeconds: number): string {
 interface RemoteControl {
     i: number,
     videoMedia: VideoMediaResult,
+    resolution: ScreensResolution,
     onNewClip: (newStart: number, newEnd: number) => void,
     onNewControl: (newControl: YouTubePlayerControl) => void,
     onNewMute: (newMute: boolean) => void,
     onRemoteControl: (control: YouTubePlayerControl) => number | undefined,
     onNewNote: (newNote: string) => void,
-    onDeleteVideoMedia: () => void, 
+    onDeleteVideoMedia: () => void,
 }
-export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, onNewMute, onRemoteControl, onNewNote, onDeleteVideoMedia }: RemoteControl) {
-    const timelineTrackRef = useRef<HTMLDivElement | null>(null);
-    const [timelineTrackSize] = useState({ width: '100%', height: 54 });
-    const [timelineTrackPadding] = useState(15);
-    const [startCapSize] = useState({ width: 17, height: 54 });
-    const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
-    const startRef = useRef<HTMLInputElement | null>(null);
-    const [endCapSize] = useState({ width: 17, height: 54 });
-    const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
-    const endRef = useRef<HTMLInputElement | null>(null);
+export default function RemoteControl({
+    i,
+    videoMedia,
+    resolution,
+    onNewClip,
+    onNewControl,
+    onNewMute,
+    onRemoteControl,
+    onNewNote,
+    onDeleteVideoMedia }: RemoteControl) {
 
-    const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } = useTrackpadState(0, videoMedia.duration);
+    const timelineTrackRef = useRef<HTMLDivElement | null>(null);
+    const endRef = useRef<HTMLInputElement | null>(null);
+    const startRef = useRef<HTMLInputElement | null>(null);
+    const volumeTrackRef = useRef<HTMLDivElement | null>(null);
+
+    const [notepad, setNotepad] = useState<string>(videoMedia.notes);
+    const [gapSize] = useState({ outer: Math.round(10 * resolution.factor), inner: Math.round(5 * resolution.factor) });
+    const [controlPanelSize] = useState({
+        padding: Math.round(20 * resolution.factor),
+        playContainer: Math.round(100 * resolution.factor),
+        playSvg: Math.round(60 * resolution.factor),
+        clipSvg: Math.round(20 * resolution.factor)
+    });
+    const [notesPanelSize] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                padding: Math.round(10 * resolution.factor),
+                notesPaddingTop: Math.round(10 * resolution.factor),
+                textareaPaddingTop: 2,
+                svg: Math.round(20 * resolution.factor),
+                titleFont: 14,
+                timestampFont: 11,
+                notesFont: 13,
+                textareaFont: 12,
+            }
+            case "midhigh": return {
+                padding: Math.round(10 * resolution.factor),
+                notesPaddingTop: Math.round(10 * resolution.factor),
+                textareaPaddingTop: 2,
+                svg: Math.round(20 * resolution.factor),
+                titleFont: 12,
+                timestampFont: 10,
+                notesFont: 12,
+                textareaFont: 11,
+            }
+            case "midlow": return {
+                padding: Math.round(10 * resolution.factor),
+                notesPaddingTop: Math.round(10 * resolution.factor),
+                textareaPaddingTop: 2,
+                svg: Math.round(20 * resolution.factor),
+                titleFont: 11,
+                timestampFont: 9,
+                notesFont: 11,
+                textareaFont: 10,
+            }
+            case "low": return {
+                padding: Math.round(10 * resolution.factor),
+                notesPaddingTop: Math.round(10 * resolution.factor),
+                textareaPaddingTop: 2,
+                svg: Math.round(20 * resolution.factor),
+                titleFont: 11,
+                timestampFont: 9,
+                notesFont: 11,
+                textareaFont: 10,
+            }
+        }
+    });
+
+    const [timelineSize] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                padding: Math.round(5 * resolution.factor),
+                width: window.innerWidth - videoMedia.width - 140,
+                font: 12
+            }
+            case "midhigh": return {
+                padding: Math.round(5 * resolution.factor),
+                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 4,
+                font: 10
+            }
+            case "midlow": return {
+                padding: Math.round(5 * resolution.factor),
+                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 8,
+                font: 9
+            }
+            case "low": return {
+                padding: 0,
+                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 12,
+                font: 8
+            }
+        }
+    });
+
+    const [timelineTrackPadding] = useState({
+        right: Math.round(15 * resolution.factor),
+        left: Math.round(15 * resolution.factor),
+        bottom: 10
+    });
+    const [timelineTrackSize] = useState({
+        width: '100%',
+        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
+    });
+    const [startCapSize] = useState({
+        width: Math.round(17 * resolution.factor),
+        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
+    });
+    const [endCapSize] = useState({
+        width: Math.round(17 * resolution.factor),
+        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
+    });
+    const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
+    const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
+
+    const [volumeSize] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                width: 100,
+                padding: "20px 0px",
+                innerPadding: "20px 0px",
+                svg: Math.round(20 * resolution.factor),
+            }
+            case "midhigh": return {
+                width: 90,
+                padding: "20px 0px",
+                innerPadding: "20px 0px",
+                svg: Math.round(20 * resolution.factor),
+            }
+            case "midlow": return {
+                width: Math.round(100 * resolution.factor),
+                padding: "20px 0px",
+                innerPadding: "20px 0px",
+                svg: Math.round(20 * resolution.factor),
+            }
+            case "low": return {
+                width: Math.round(100 * resolution.factor),
+                padding: "20px 0px",
+                innerPadding: "20px 0px",
+                svg: Math.round(20 * resolution.factor),
+            }
+        }
+    });
+    const [volumeCapSize] = useState({
+        width: Math.round(45 * resolution.factor),
+        height: Math.round(21 * resolution.factor)
+    });
+    const [volumeTrackSize] = useState({
+        width: Math.round(45 * resolution.factor),
+        height: '100%'
+    });
+    const [volumeGrooveWidth] = useState(Math.round(10 * resolution.factor));
+    const [volumeCursor, setVolumeCursor] = useState({ x: 0, y: 0 });
+    const [volumeLimit] = useState(100);
+
+    const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } =
+        useTrackpadState(0, videoMedia.duration);
+
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackPadding), 0);
-    }, [getTimeValue, timelineTrackPadding]);
+        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackPadding.right), 0);
+    }, [getTimeValue, timelineTrackPadding.right]);
+
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackPadding));
-    }, [getTimeCursor, timelineTrackPadding]);
+        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackPadding.right));
+    }, [getTimeCursor, timelineTrackPadding.right]);
 
     const adjustEndCursor = useCallback((newX: number): number => {
         if (endCursor.x < newX && endRef.current) {
@@ -68,15 +216,9 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
         return cursorToTime(startCursor.x);
     }, [cursorToTime, startCursor]);
 
-    const volumeTrackRef = useRef<HTMLDivElement | null>(null);
-    const [volumeTrackOffsets] = useState({ padding: 20, border: 2 });
-    const [volumeCapSize] = useState({ width: 45, height: 21 });
-    const [volumeTrackSize] = useState({ width: 45, height: '100%' });
-    const [volumeCursor, setVolumeCursor] = useState({ x: 0, y: 0 });
-    const [volumeLimit] = useState(100);
     const { getInverseTrackValue: getVolumeValue, getTrackCursor: getVolumeCursor } =
         useTrackpadState(
-            volumeCapSize.height - volumeTrackOffsets.border,
+            volumeCapSize.height - 2,
             volumeLimit);
 
     useLayoutEffect(() => {
@@ -112,29 +254,28 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
         })();
     }, [cursorToTime, timeToCursor, videoMedia.duration, videoMedia.start, videoMedia.end]);
 
-    const [notepad, setNotepad] = useState<string>(videoMedia.notes);
-
     return (<>
         <div
             style={{
-
                 display: 'grid',
                 height: '100%',
+                justifyContent: 'start',
                 gridTemplateRows: 'auto min-content',
-                gridTemplateColumns: 'min-content min-content auto',
+                gridTemplateColumns: `min-content ${videoMedia.height * (3 / 4)}px auto`,
                 borderRadius: 10,
-                gap: 10,
+                gap: gapSize.outer,
             }}>
             <div style={{
+                gridColumn: 1,
                 gridRow: '1 / span 2',
-                background: i % 2 == 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
-                width: 100,
+                background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                width: volumeSize.width,
+                padding: volumeSize.padding,
                 justifyContent: 'center',
                 display: 'grid',
                 gridTemplateRows: 'min-content auto min-content',
                 border: '1px solid rgba(255,255,255, 0.1)',
                 borderRadius: 10,
-                padding: "20px 0px",
             }}>
                 <div style={{
                     display: 'grid',
@@ -143,12 +284,12 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     <ReactSvg
                         svg={volumeUp()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: volumeSize.svg,
+                            height: volumeSize.svg
                         }}
                         scale={1} />
                 </div>
-                <div style={{ padding: "20px 0px" }}>
+                <div style={{ padding: volumeSize.innerPadding }}>
                     <ParameterSlider
                         label={""}
                         hash={`${videoMedia.video_media_id}|p1`}
@@ -172,7 +313,7 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                             }
                             onNewControl(newControl);
                         }}
-                        groveWidth={10} />
+                        grooveWidth={volumeGrooveWidth} />
                 </div>
                 <div style={{
                     display: 'grid',
@@ -181,20 +322,22 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     <ReactSvg
                         svg={noSound()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: volumeSize.svg,
+                            height: volumeSize.svg
                         }}
                         scale={1} />
                 </div>
             </div>
             <div
                 style={{
+                    gridColumn: 2,
                     gridRow: '1',
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
-                    width: videoMedia.height - 100,
-                    padding: 20,
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    width: videoMedia.height * (3 / 4),
+                    height: "100%",
+                    padding: controlPanelSize.padding,
                     display: 'grid',
                     placeContent: "center",
                 }}>
@@ -202,8 +345,8 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     <ReactSvg
                         svg={firstPage()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: controlPanelSize.clipSvg,
+                            height: controlPanelSize.clipSvg
                         }}
                         scale={1}
                         onContainerClick={() => {
@@ -219,12 +362,17 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                             onNewControl({ type: 'reload', key: videoMedia.media_path, value: { newStart: currentPlayTime, newEnd: videoMedia.end } });
                         }}
                     />
-                    <div style={{ display: 'grid', placeContent: 'center', width: 100, height: 100 }}>
+                    <div style={{
+                        display: 'grid',
+                        placeContent: 'center',
+                        width: controlPanelSize.playContainer,
+                        height: controlPanelSize.playContainer
+                    }}>
                         <ReactSvg
                             svg={videoMedia.playing ? pauseNoFill() : playArrowNoFill()}
                             containerSize={{
-                                width: 60,
-                                height: 60
+                                width: controlPanelSize.playSvg,
+                                height: controlPanelSize.playSvg
                             }}
                             scale={videoMedia.playing ? 1 : 1.5}
                             onContainerClick={() => {
@@ -238,8 +386,8 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     <ReactSvg
                         svg={lastPage()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: controlPanelSize.clipSvg,
+                            height: controlPanelSize.clipSvg
                         }}
                         scale={1}
                         onContainerClick={() => {
@@ -260,35 +408,43 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
             <div
                 className={dellaRespira.className}
                 style={{
+                    gridColumn: 3,
                     gridRow: 1,
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
-                    padding: 10,
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    padding: notesPanelSize.padding,
                     display: 'grid',
-                    gap: 0,
                     gridTemplateRows: 'min-content min-content min-content auto',
                     gridTemplateColumns: 'auto min-content'
                 }}>
                 <div
-                    style={{ gridColumn: 1, fontSize: 14, letterSpacing: '2px', fontWeight: 'bold' }}>
+                    style={{
+                        gridColumn: 1,
+                        fontSize: notesPanelSize.titleFont,
+                        letterSpacing: '2px',
+                        fontWeight: 'bold'
+                    }}>
                     {videoMedia.title}
                 </div>
                 <div
-                    style={{ gridColumn: 1, fontSize: 11, letterSpacing: '1px', }}>
+                    style={{
+                        gridColumn: 1,
+                        fontSize: notesPanelSize.timestampFont,
+                        letterSpacing: '1px',
+                    }}>
                     <i>{videoMedia.timestamp}</i>
                 </div>
                 <div style={{
                     gridColumn: 1,
-                    paddingTop: 10,
-                    letterSpacing: '0'
+                    paddingTop: notesPanelSize.notesPaddingTop,
+                    fontSize: notesPanelSize.notesFont,
                 }}><i>{'notes:'}</i></div>
                 <textarea
                     value={notepad}
                     onChange={(e) => {
                         setNotepad(e.currentTarget.value);
                     }}
-
                     className={dellaRespira.className}
                     style={{
                         gridColumn: 1,
@@ -299,8 +455,8 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                         background: 'rgba(7,7,7,0)',
                         caretColor: 'rgb(255, 255, 255)',
                         outline: 'none',
-                        paddingTop: 2,
-                        fontSize: 12,
+                        paddingTop: notesPanelSize.textareaPaddingTop,
+                        fontSize: notesPanelSize.textareaFont,
                         letterSpacing: '1px',
                     }} />
                 <div style={{
@@ -313,19 +469,19 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     <ReactSvg
                         svg={upload()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: notesPanelSize.svg,
+                            height: notesPanelSize.svg
                         }}
                         scale={1}
                         onContainerClick={() => {
                             onNewNote(notepad);
                         }} />
-                    <div/>
+                    <div />
                     <ReactSvg
                         svg={cancelCircle()}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: notesPanelSize.svg,
+                            height: notesPanelSize.svg
                         }}
                         scale={0.9}
                         onContainerClick={() => {
@@ -337,19 +493,21 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                 className={dellaRespira.className}
                 style={{
                     gridRow: '2',
-                    gridColumn: '2 / span 2',
-                    padding: 5,
+                    gridColumn: '2 / -1',
+                    padding: timelineSize.padding,
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
-                    fontSize: 12,
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    fontSize: timelineSize.font,
+                    width: timelineSize.width,
+                    height: videoMedia.height * (1 / 4),
                     color: 'rgb(227, 227, 227)'
                 }}>
                 <div style={{ padding: 5, display: 'flex', justifyContent: 'space-between', }}>
-                    <div style={{ display: 'flex', gap: 5 }}>
+                    <div style={{ display: 'flex', gap: gapSize.inner }}>
                         <div ref={startRef}>{formatTime(videoMedia.start)}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 5 }}>
+                    <div style={{ display: 'flex', gap: gapSize.inner }}>
                         <div ref={endRef}>{videoMedia.duration >= videoMedia.start ? formatTime(videoMedia.duration) : ""}</div>
                     </div>
                 </div>
@@ -357,10 +515,13 @@ export default function RemoteControl({ i, videoMedia, onNewClip, onNewControl, 
                     className={dellaRespira.className}
                     style={{
                         width: '100%',
-                        padding: `0px ${timelineTrackPadding}px 10px ${timelineTrackPadding}px`,
+                        paddingRight: timelineTrackPadding.right,
+                        paddingBottom: timelineTrackPadding.bottom,
+                        paddingLeft: timelineTrackPadding.left
                     }}>
                     <TimelineSlider
                         label={''}
+                        labelSize={undefined}
                         hash={`${videoMedia.video_media_id}|t1`}
                         capSize={startCapSize}
                         rangeCapSize={endCapSize}

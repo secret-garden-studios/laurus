@@ -15,15 +15,14 @@ import { createMove, createProject, createScale, getFrames, updateProject } from
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
+import { WorkspaceResolution } from "./workspace-resolution";
 
 interface TimelineArea {
-    size: { width: number, height: number },
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     onRightPanelClick: () => void,
 }
 export default function TimelineArea({
-    size,
     svgElementsRef,
     imgElementsRef,
     onRightPanelClick
@@ -34,24 +33,75 @@ export default function TimelineArea({
     const [playEnabled, setPlayEnabled] = useState(true);
     const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
     const [skipNextEnabled, setSkipNextEnabled] = useState<boolean>(true);
-
-    const getWideRulerParams = useCallback(() => {
-        switch (appState.timelineMaxValue) {
-            case 30: {
-                return { modulo: 10, factor: 0.5 };
+    const [width] = useState<number>(() => {
+        switch (appState.resolution.type) {
+            case "high": {
+                return 1000;
             }
-            case 60: {
-                return { modulo: 10, factor: 1 };
+            case "midhigh": {
+                return 1000 * 0.7;
             }
-            case 90: {
-                return { modulo: 10, factor: 1.5 };
+            case "midlow": {
+                return 1000 * 0.5;
             }
-            default: {
-                return { modulo: 10, factor: 1 };
+            case "low": {
+                return 1000 * 0.25;
             }
         }
+    })
 
-    }, [appState.timelineMaxValue]);
+    function calculateRuler(timelineMaxValue: number, resolution: WorkspaceResolution) {
+
+        switch (resolution.type) {
+            case "high": {
+                switch (timelineMaxValue) {
+                    default:
+                    case 30: {
+                        return { modulo: 10, factor: 0.5, ticks: 61 };
+                    }
+                    case 60: {
+                        return { modulo: 10, factor: 1, ticks: 61 };
+                    }
+                    case 90: {
+                        return { modulo: 10, factor: 1.5, ticks: 61 };
+                    }
+                }
+            }
+            case "midhigh": {
+                switch (timelineMaxValue) {
+                    default:
+                    case 30: {
+                        return { modulo: 5, factor: 1, ticks: 31 };
+                    }
+                    case 60: {
+                        return { modulo: 5, factor: 2, ticks: 31 };
+                    }
+                    case 90: {
+                        return { modulo: 5, factor: 3, ticks: 31 };
+                    }
+                }
+            }
+            case "midlow":
+            case "low": {
+                switch (timelineMaxValue) {
+                    default:
+                    case 30: {
+                        return { modulo: 1, factor: 5, ticks: 7 };
+                    }
+                    case 60: {
+                        return { modulo: 1, factor: 10, ticks: 7 };
+                    }
+                    case 90: {
+                        return { modulo: 1, factor: 15, ticks: 7 };
+                    }
+                }
+            }
+        }
+    };
+
+    const [rulerParams, setRulerParams] = useState(
+        calculateRuler(appState.timelineMaxValue, appState.resolution)
+    );
 
     const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
         const newAnimations: Animation[] = [];
@@ -131,7 +181,8 @@ export default function TimelineArea({
             <div
                 className={dellaRespira.className}
                 style={{
-                    gridRow: '1', gridColumn: 'span 2',
+                    gridRow: '1',
+                    gridColumn: 'span 2',
                     borderTop: '1px solid rgba(255,255,255,0.15)',
                     borderBottom: '1px solid rgba(255,255,255,0.15)',
                     borderRight: '1px solid rgba(255,255,255,0.15)',
@@ -140,7 +191,13 @@ export default function TimelineArea({
                 }} >
                 <div
                     onDoubleClick={() => {
-                        dispatch({ type: WorkspaceActionType.IncrementTimelineMaxValue });
+                        const currentTimelineValues = [...appState.timelineValues];
+                        const currentIndex = currentTimelineValues.findIndex(v => v == appState.timelineMaxValue);
+                        const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < currentTimelineValues.length)
+                            ? currentTimelineValues[currentIndex + 1]
+                            : currentTimelineValues[0];
+                        setRulerParams(calculateRuler(newValue, appState.resolution));
+                        dispatch({ type: WorkspaceActionType.SetTimelineMaxValue, value: newValue });
                     }}
                     style={{
                         padding: '0px 10px 0px 22px',
@@ -150,10 +207,9 @@ export default function TimelineArea({
                         justifyContent: 'space-between',
                         background: 'rgba(46,46,46,1)',
                     }}>
-                    {[...Array(61)].map((_, i) => {
-                        const params = getWideRulerParams();
+                    {[...Array(rulerParams.ticks)].map((_, i) => {
                         return <div key={i}>
-                            {i % params.modulo == 0 ?
+                            {i % rulerParams.modulo == 0 ?
                                 <div
                                     style={{
                                         paddingLeft: 2,
@@ -161,7 +217,7 @@ export default function TimelineArea({
                                         height: '75%',
                                         borderLeft: `1px solid ${'rgb(72, 72, 72)'}`,
                                     }} >
-                                    {`${i * params.factor}`}
+                                    {`${i * rulerParams.factor}`}
                                 </div> :
                                 <div
                                     style={{
@@ -237,12 +293,12 @@ export default function TimelineArea({
                     overflowY: 'auto',
                     gridRow: '2',
                     gridColumn: '1',
-                    width: size.width,
+                    width,
                     display: 'grid',
                     alignContent: 'space-between',
                 }}>
                 <TimelineAreaContent
-                    maxWidth={size.width}
+                    maxWidth={width}
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
             </div>

@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusImgResult, LaurusSvgResult, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { dellaRespira, dmSans } from "../fonts";
+import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
 import { autorenew, playArrow, earthquake, skipPrevious, menu, ReactSvg } from "../svg-repo";
 import styles from "../app.module.css";
@@ -8,6 +8,7 @@ import { useTrackpadState } from "../hooks/useTrackpadState";
 import { deleteMove, getMove, updateMove } from "./workspace.server";
 import Dial from "../components/dial";
 import ParameterSlider from "../components/parameter-slider";
+import { getParamTrackPadding, getParamCapSize, getParamTrackSize, getParamButtonSize, getParamGrooveWidth, getDisplaySize, getHeaderSize, getTopLevelPadding } from "./unit-resolution";
 
 interface MoveUnit {
     move: LaurusMoveResult
@@ -18,7 +19,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
 
-    const [displaySize] = useState({ 'width': 400, 'height': 450, 'padding': 0 });
+    const [displaySize] = useState(() => getDisplaySize(appState.resolution));
+    const [headerSize] = useState(() => getHeaderSize(appState.resolution));
+    const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [mainControls, setMainControls] = useState(true);
 
     const [mathLimits] = useState({
@@ -27,17 +30,19 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
         wavelength: 1000,
         distance: 5000,
     })
-    const [paramCapSize] = useState({ width: 45, height: 21 });
-    const [paramTrackSize] = useState({ width: 45, height: 200 });
-    const [paramTrackOffsets] = useState({ padding: 15, border: 2 });
-    const [paramGroveWidth] = useState(10);
+    const [paramTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
+    const [paramCapSize] = useState(() => getParamCapSize(appState.resolution));
+    const [paramTrackSize] = useState(() => getParamTrackSize(appState.resolution));
+    const [paramButtonSize] = useState(() => getParamButtonSize(appState.resolution));
+    const [paramGrooveWidth] = useState(() => getParamGrooveWidth(appState.resolution));
+    const [paramTrackCapBorderAdj] = useState(2);
 
     // param 1
     const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
     const [amplitudeCursor, setAmplitudeCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackOffsets.border,
+            paramCapSize.height - paramTrackCapBorderAdj,
             mathLimits.amplitude);
 
 
@@ -46,7 +51,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [frequencyCursor, setFrequencyCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackOffsets.border,
+            paramCapSize.height - paramTrackCapBorderAdj,
             mathLimits.frequency);
 
     // param 3
@@ -54,7 +59,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [wavelengthCursor, setWavelengthCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackOffsets.border,
+            paramCapSize.height - paramTrackCapBorderAdj,
             mathLimits.wavelength);
 
     // param 4
@@ -62,7 +67,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [distanceCursor, setDistanceCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackOffsets.border,
+            paramCapSize.height - paramTrackCapBorderAdj,
             mathLimits.distance);
 
     // param 5
@@ -70,11 +75,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackOffsets.border,
+            paramCapSize.height - paramTrackCapBorderAdj,
             appState.timelineMaxValue);
 
     // main param
-    const [angleTrackOffsets] = useState({ padding: 15, border: 2 });
+    const [angleTrackPadding] = useState(Math.round(15 * appState.resolution.factor));
     const [angle, setAngle] = useState(0);
 
     const saveNewEquation = useCallback((newEquation: LaurusMoveEquation) => {
@@ -90,9 +95,6 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     }, [appState.apiOrigin, dispatch, move]);
 
     useLayoutEffect(() => {
-        /*  reads the current track size and updates sliders 
-            using initial values from a parent component */
-
         (async () => {
             const activeEquation = move.math.get(appState.activeElement?.key ?? "");
             let angleInit = 0;
@@ -191,11 +193,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     display: 'flex',
                     height: '100%',
                     alignItems: 'center',
-                    padding: 10,
+                    padding: headerSize.padding,
                 }}>
                 <div
                     style={{
-                        fontSize: 32,
+                        fontSize: headerSize.font,
                         display: 'grid', placeContent: 'center', width: 'min-content', height: '100%'
                     }}>
                     {'Move'}
@@ -203,8 +205,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                 <ReactSvg
                     svg={earthquake()}
                     containerSize={{
-                        width: 40,
-                        height: 40
+                        width: headerSize.logo,
+                        height: headerSize.logo
                     }}
                     scale={0.75} />
                 <div
@@ -216,8 +218,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     <ReactSvg
                         svg={menu()}
                         containerSize={{
-                            width: 24,
-                            height: 24
+                            width: headerSize.more,
+                            height: headerSize.more
                         }}
                         scale={1} />
                 </div>
@@ -225,7 +227,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
             {mainControls ?
                 <>
                     {/* display */}
-                    <div style={{ padding: '0 20px 20px 20px' }}>
+                    <div style={{ padding: topLevelPadding }}>
                         <div
                             className={styles["large-tiled-background-squares"]}
                             style={{
@@ -245,12 +247,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     overflow: 'hidden'
                                 }}>
                                     <div
-                                        className={dmSans.className}
                                         ref={placeholderElementRef}
                                         style={{
                                             position: 'absolute',
-                                            fontSize: 14,
-                                            color: 'rgb(246, 246, 246)',
                                         }}>
                                         {appState.activeElement ? (() => {
                                             switch (appState.activeElement.value.type) {
@@ -258,7 +257,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     return (
                                                         <ReactSvg
                                                             svg={appState.activeElement.value.value as LaurusSvgResult}
-                                                            containerSize={{ width: 200, height: 200 }}
+                                                            containerSize={{
+                                                                width: displaySize.activeElementSize,
+                                                                height: displaySize.activeElementSize
+                                                            }}
                                                             scale={1}
                                                         />
                                                     )
@@ -267,7 +269,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     return (
                                                         <ReactImg
                                                             img={appState.activeElement.value.value as LaurusImgResult}
-                                                            containerSize={{ width: 200, height: 200 }}
+                                                            containerSize={{
+                                                                width: displaySize.activeElementSize,
+                                                                height: displaySize.activeElementSize
+                                                            }}
                                                         />
                                                     )
                                                 }
@@ -285,7 +290,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                         gridTemplateRows: 'min-content auto',
                     }}>
                         {/* parameters */}
-                        <div style={{ padding: '0 20px 20px 20px' }}>
+                        <div style={{ padding: topLevelPadding }}>
                             <div style={{
                                 border: '1px solid black',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
@@ -297,8 +302,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     height: 'min-content',
                                     display: 'flex',
                                     justifyContent: 'space-between',
-                                    padding: `${paramTrackOffsets.padding}px 15px`,
-                                    gap: 20,
+                                    padding: paramTrackPadding,
                                     width: '100%'
                                 }}>
                                     <ParameterSlider
@@ -320,7 +324,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     { ...activeEquation, amplitude: newAmplitude } :
                                                     {
                                                         input_id: appState.activeElement.key,
-                                                        time: appState.timelineMaxValue * 1000,
+                                                        time: 0,
                                                         loop: false,
                                                         solution: [],
                                                         angle: 0,
@@ -331,7 +335,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} groveWidth={paramGroveWidth} />
+                                        }} grooveWidth={paramGrooveWidth} />
                                     <ParameterSlider
                                         label={"frequency"}
                                         hash={`${move.move_id}|p1`}
@@ -362,7 +366,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} groveWidth={paramGroveWidth} />
+                                        }} grooveWidth={paramGrooveWidth} />
                                     <ParameterSlider
                                         label={"wavelength"}
                                         hash={`${move.move_id}|p1`}
@@ -393,7 +397,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} groveWidth={paramGroveWidth} />
+                                        }} grooveWidth={paramGrooveWidth} />
                                     <ParameterSlider
                                         label={"distance"}
                                         hash={`${move.move_id}|p1`}
@@ -424,7 +428,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                     };
                                                 saveNewEquation(newEquation);
                                             }
-                                        }} groveWidth={paramGroveWidth} />
+                                        }} grooveWidth={paramGrooveWidth} />
                                     <ParameterSlider
                                         label={"time"}
                                         hash={`${move.move_id}|p1`}
@@ -457,7 +461,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(newEquation);
                                             }
                                         }}
-                                        groveWidth={paramGroveWidth} />
+                                        grooveWidth={paramGrooveWidth} />
                                 </div>
                                 <div style={{
                                     borderLeft: '1px solid black',
@@ -489,8 +493,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             }
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -499,8 +503,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         <ReactSvg
                                             svg={autorenew()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={0.9} />
                                     </div>
@@ -524,8 +528,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             });
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -533,8 +537,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         <ReactSvg
                                             svg={skipPrevious()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={0.9} />
                                     </div>
@@ -559,8 +563,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -568,8 +572,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         <ReactSvg
                                             svg={playArrow()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={1} />
                                     </div>
@@ -577,10 +581,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                             </div>
                         </div>
                         {/* main control */}
-                        <div style={{ padding: `0 20px 20px 20px` }}>
+                        <div style={{ padding: topLevelPadding }}>
                             <div style={{
                                 width: '100%',
-                                padding: `15px ${angleTrackOffsets.padding}px`,
+                                padding: angleTrackPadding,
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
@@ -622,8 +626,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     {/* deep controls */}
                     <div
                         style={{
-                            gridColumn: 'span 2', padding: '0 20px 20px 20px',
-                            display: 'flex', justifyContent: 'center', alignItems: 'center',
+                            gridColumn: 'span 2',
+                            padding: topLevelPadding,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
                             fontSize: 16,
                         }}>
                         <div

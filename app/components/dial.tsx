@@ -1,6 +1,7 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { WorkspaceContext } from "../workspace/workspace.client";
 
 interface DialProps {
     ids: { contextId: string, draggableId: string }
@@ -63,12 +64,16 @@ interface BlurryCapProps {
 
 function BlurryCap({ id, rotation }: BlurryCapProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+    const { appState } = useContext(WorkspaceContext);
     const dndCss = { touchAction: 'none', };
+    const [containerSize] = useState(Math.round(90 * appState.resolution.factor));
+    const [gaugeSize] = useState(Math.round(90 * appState.resolution.factor));
+    const [dialSize] = useState(Math.round(80 * appState.resolution.factor));
+    const [gaugeTickLength] = useState(Math.round(7 * appState.resolution.factor));
+    const [dialTickLength] = useState(Math.round(11 * appState.resolution.factor));
+
     const [dialTickLeftPercentage] = useState(73);
-    const [containerSize] = useState(90);
-    const [gaugeSize] = useState(90);
     const [gaugeFactor] = useState(45);
-    const [dialSize] = useState(80);
     const [gaugeTickCount] = useState(360 / gaugeFactor);
     const [gaugeTicks] = useState(Array.from({ length: gaugeTickCount }, (_, i) => i));
 
@@ -100,7 +105,7 @@ function BlurryCap({ id, rotation }: BlurryCapProps) {
                                     left: '50%',
                                     top: '0%',
                                     width: `${1}px`,
-                                    height: `${7}px`,
+                                    height: `${gaugeTickLength}px`,
                                     transformOrigin: `center ${gaugeSize / 2}px`,
                                     backgroundColor: 'rgba(255, 255, 255, 0.2)',
                                     transform: `translateX(-50%) rotate(${r}deg)`,
@@ -134,8 +139,8 @@ function BlurryCap({ id, rotation }: BlurryCapProps) {
                     top: '50%',
                     left: `${dialTickLeftPercentage}%`,
                     position: 'absolute',
-                    borderRadius: '2px',
-                    width: `${11}px`,
+                    borderRadius: 2,
+                    width: dialTickLength,
                     height: `${2}px`,
                     backgroundImage: 'linear-gradient(to right, rgb(189, 189, 189) 15%,rgb(228, 228, 228))',
                 }} />

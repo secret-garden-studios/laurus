@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LaurusSvgResult, LaurusImgResult, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { dellaRespira, dmSans } from "../fonts";
+import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
 import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, ReactSvg } from "../svg-repo";
 import styles from "../app.module.css";
@@ -10,6 +10,7 @@ import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import ParameterSlider from "../components/parameter-slider";
+import { getDisplaySize, getHeaderSize, getParamButtonSize, getParamCapSize, getParamGrooveWidth, getParamTrackPadding, getParamTrackSize, getTopLevelPadding } from "./unit-resolution";
 
 interface ScaleUnit {
     scale: LaurusScaleResult
@@ -20,28 +21,50 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     const { appState, dispatch } = useContext(WorkspaceContext);
     const placeholderElementRef = useRef<HTMLDivElement>(null);
 
-    const [displaySize] = useState({ 'width': 400, 'height': 450, 'padding': 0 });
+    const [displaySize] = useState(() => getDisplaySize(appState.resolution));
+    const [headerSize] = useState(() => getHeaderSize(appState.resolution));
+    const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [mainControls, setMainControls] = useState(true);
     const [prevActiveElementId, setPrevActiveElementId] = useState<string>(appState.activeElement?.key ?? "");
 
     // param 1
     const timeTrackRef = useRef<HTMLDivElement | null>(null);
-    const [timeTrackOffsets] = useState({ padding: 20, border: 2 });
-    const [timeCapSize] = useState({ width: 45, height: 21 });
-    const [timeTrackSize] = useState({ width: 45, height: 200 });
+    const [timeTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
+    const [timeCapSize] = useState(() => getParamCapSize(appState.resolution));
+    const [timeTrackSize] = useState(() => getParamTrackSize(appState.resolution));
+    const [paramButtonSize] = useState(() => getParamButtonSize(appState.resolution));
+    const [paramGrooveWidth] = useState(() => getParamGrooveWidth(appState.resolution));
     const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
     const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } =
-        useTrackpadState(
-            timeCapSize.height - timeTrackOffsets.border,
-            appState.timelineMaxValue);
+        useTrackpadState(timeCapSize.height - 2, appState.timelineMaxValue);
 
     // main param
     const scaleRef = useRef<HTMLInputElement | null>(null);
     const scaleTrackRef = useRef<HTMLDivElement | null>(null);
     const [maxScale] = useState(30);
-    const [scaleTrackOffsets] = useState({ padding: 15, border: 2 });
-    const [scaleCapSize] = useState({ width: 51, height: 50 });
-    const [scaleTrackSize] = useState({ width: 430, height: 50 });
+    const [scaleTrackPadding] = useState(() => {
+        return `${Math.round(20 * appState.resolution.factor)}px ${Math.round(15 * appState.resolution.factor)}px`
+    });
+    const [scaleCapSize] = useState(() => {
+        return {
+            width: Math.round(51 * appState.resolution.factor),
+            height: Math.round(50 * appState.resolution.factor)
+        }
+    });
+    const [scaleTrackSize] = useState(() => {
+        return {
+            width: Math.round(430 * appState.resolution.factor),
+            height: Math.round(50 * appState.resolution.factor)
+        }
+    });
+    const [scaleParamDisplay] = useState(() => {
+        return {
+            fontSize: Math.round(28 * appState.resolution.factor),
+            inputHeight: Math.round(30 * appState.resolution.factor),
+            unitFontSize: Math.round(20 * appState.resolution.factor),
+            letterSpacing: Math.round(5 * appState.resolution.factor)
+        }
+    })
     const [scaleCursor, setScaleCursor] = useState({ x: 0, y: 0 });
     function initDisplayScaleValue(): string {
         const activeMath = scale.math.get(appState.activeElement?.key ?? "");
@@ -55,7 +78,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     const [scaleInputValue, setScaleInputValue] = useState<string>(initDisplayScaleValue);
     const { getComplexTrackValue: getScaleValue, getComplexTrackCursor: getScaleCursor } =
         useComplexTrackpadState(
-            scaleCapSize.width - scaleTrackOffsets.border,
+            scaleCapSize.width - 2,
             maxScale);
 
     // auto save dependencies
@@ -82,9 +105,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     }
 
     useLayoutEffect(() => {
-        /*  reads the current track size and updates sliders 
-            using initial values from a parent component */
-
         (async () => {
             const activeEquation = scale.math.get(appState.activeElement?.key ?? "");
             let scaleInit = 1;
@@ -106,9 +126,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
         })();
     }, [appState.activeElement?.key, appState.timelineMaxValue, getScaleCursor, getTimeCursor, scale.math]);
 
+    // pushes data from input boxes to the server on a delay
     useEffect(() => {
-        /* on a delay, pushes data from input boxes to the server */
-
         const newMath = new Map(mathDebouncer);
         if (scaleDebouncerRef.current) {
             if (scaleRef.current && scaleTrackRef.current) {
@@ -191,11 +210,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     display: 'flex',
                     height: '100%',
                     alignItems: 'center',
-                    padding: 10,
+                    padding: headerSize.padding,
                 }}>
                 <div
                     style={{
-                        fontSize: 32,
+                        fontSize: headerSize.font,
                         display: 'grid', placeContent: 'center', width: 'min-content', height: '100%'
                     }}>
                     {'Scale'}
@@ -203,8 +222,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                 <ReactSvg
                     svg={allOut()}
                     containerSize={{
-                        width: 40,
-                        height: 40
+                        width: headerSize.logo,
+                        height: headerSize.logo
                     }}
                     scale={0.75} />
                 <div
@@ -216,8 +235,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     <ReactSvg
                         svg={menu()}
                         containerSize={{
-                            width: 24,
-                            height: 24
+                            width: headerSize.more,
+                            height: headerSize.more
                         }}
                         scale={1} />
                 </div>
@@ -225,7 +244,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             {mainControls ?
                 <>
                     {/* display */}
-                    <div style={{ padding: '0 20px 20px 20px' }}>
+                    <div style={{ padding: topLevelPadding }}>
                         <div
                             className={styles["large-tiled-background-squares"]}
                             style={{
@@ -245,20 +264,18 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                     overflow: 'hidden'
                                 }}>
                                     <div
-                                        className={dmSans.className}
                                         ref={placeholderElementRef}
-                                        style={{
-                                            position: 'absolute',
-                                            fontSize: 14,
-                                            color: 'rgb(246, 246, 246)',
-                                        }}>
+                                        style={{ position: 'absolute' }}>
                                         {appState.activeElement ? (() => {
                                             switch (appState.activeElement.value.type) {
                                                 case "svg": {
                                                     return (
                                                         <ReactSvg
                                                             svg={appState.activeElement.value.value as LaurusSvgResult}
-                                                            containerSize={{ width: 200, height: 200 }}
+                                                            containerSize={{
+                                                                width: displaySize.activeElementSize,
+                                                                height: displaySize.activeElementSize
+                                                            }}
                                                             scale={1}
                                                         />
                                                     )
@@ -267,7 +284,10 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                     return (
                                                         <ReactImg
                                                             img={appState.activeElement.value.value as LaurusImgResult}
-                                                            containerSize={{ width: 200, height: 200 }}
+                                                            containerSize={{
+                                                                width: displaySize.activeElementSize,
+                                                                height: displaySize.activeElementSize
+                                                            }}
                                                         />
                                                     )
                                                 }
@@ -284,7 +304,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                         gridTemplateRows: 'min-content auto',
                     }}>
                         {/* parameters */}
-                        <div style={{ padding: '0 20px 20px 20px' }}>
+                        <div style={{ padding: topLevelPadding }}>
                             <div style={{
                                 border: '1px solid black',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
@@ -295,8 +315,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 <div style={{
                                     height: 'min-content',
                                     display: 'flex',
-                                    padding: `${timeTrackOffsets.padding}px 15px`,
-                                    gap: 20,
+                                    padding: timeTrackPadding,
                                     borderRight: 'solid rgba(0, 0, 0, 1) 1px',
                                 }}>
                                     <ParameterSlider
@@ -327,7 +346,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 saveNewEquation(newEquation);
                                             }
                                         }}
-                                        groveWidth={10} />
+                                        grooveWidth={paramGrooveWidth} />
                                 </div>
                                 <div
                                     style={{
@@ -372,25 +391,23 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 textAlign: "right",
                                                 background: 'none',
                                                 color: "rgba(255, 255, 255, 0.7)",
-                                                borderRadius: "2px",
-                                                padding: '0px 0px',
+                                                borderRadius: 2,
                                                 border: 'none',
                                                 outline: 'none',
-                                                lineHeight: '1',
                                                 display: 'inline-block',
                                                 overflowX: 'scroll',
-                                                letterSpacing: '5px',
-                                                fontSize: 28,
-                                                height: '30px',
+                                                letterSpacing: `${scaleParamDisplay.letterSpacing}px`,
+                                                fontSize: scaleParamDisplay.fontSize,
+                                                height: scaleParamDisplay.inputHeight,
                                                 width: '56%',
                                                 textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
                                             }} />
                                         <div style={{
-                                            height: 30,
+                                            height: scaleParamDisplay.inputHeight,
                                             display: 'grid',
                                             alignContent: 'end',
                                             color: "rgba(255, 255, 255, 0.5)",
-                                            fontSize: 20
+                                            fontSize: scaleParamDisplay.unitFontSize
                                         }}>
                                             <i>{'x'}</i>
                                         </div>
@@ -423,8 +440,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             }
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -433,8 +450,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         <ReactSvg
                                             svg={autorenew()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={0.9} />
                                     </div>
@@ -458,8 +475,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             });
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -467,8 +484,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         <ReactSvg
                                             svg={skipPrevious()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={0.9} />
                                     </div>
@@ -493,8 +510,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                         }}
                                         style={{
-                                            width: 36,
-                                            height: 36,
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
@@ -502,8 +519,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         <ReactSvg
                                             svg={playArrow()}
                                             containerSize={{
-                                                width: 20,
-                                                height: 20
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
                                             }}
                                             scale={1} />
                                     </div>
@@ -511,10 +528,10 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                             </div>
                         </div>
                         {/* main control */}
-                        <div style={{ padding: `0 20px 20px 20px` }}>
+                        <div style={{ padding: topLevelPadding }}>
                             <div style={{
                                 width: '100%',
-                                padding: `20px ${scaleTrackOffsets.padding}px`,
+                                padding: scaleTrackPadding,
                                 display: 'flex',
                                 alignItems: 'start',
                                 border: 'solid rgba(0, 0, 0, 1) 1px',
@@ -569,8 +586,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     {/* deep controls */}
                     <div
                         style={{
-                            gridColumn: 'span 2', padding: '0 20px 20px 20px',
-                            display: 'flex', justifyContent: 'center', alignItems: 'center',
+                            gridColumn: 'span 2',
+                            padding: topLevelPadding,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
                             fontSize: 16,
                         }}>
                         <div
@@ -633,6 +653,23 @@ function ScaleSlider({
     onNewCursor,
     onCursorMove
 }: ScaleSlider) {
+    const { appState } = useContext(WorkspaceContext);
+    const [svgSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return 20;
+            case "midhigh": return Math.round(20 * 0.7);
+            case "midlow": return Math.round(20 * 0.5);
+            case "low": return Math.round(20 * 0.25);
+        }
+    });
+    const [labelHeight] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return 12;
+            case "midhigh": return Math.round(12 * 0.7);
+            case "midlow": return Math.round(12 * 0.5);
+            case "low": return Math.round(12 * 0.25);
+        }
+    });
     return (<>
         <div
             className={dellaRespira.className}
@@ -669,13 +706,13 @@ function ScaleSlider({
                 }}
             >
                 <div style={{
-                    height: 12,
+                    height: labelHeight,
                     width: '50%',
                     background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(18, 18, 18))",
                     border: '1px solid rgb(27, 27, 27)',
                 }} />
                 <div style={{
-                    height: 12,
+                    height: labelHeight,
                     width: '50%',
                     background: "linear-gradient(45deg, rgb(18, 18, 18), rgb(25, 25, 25))",
                     border: '1px solid rgb(27, 27, 27)',
@@ -712,15 +749,15 @@ function ScaleSlider({
                     <ReactSvg
                         svg={remove('rgb(227, 227, 227)')}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: svgSize,
+                            height: svgSize
                         }} scale={1} />
 
                     <ReactSvg
                         svg={add2('rgb(227, 227, 227)')}
                         containerSize={{
-                            width: 20,
-                            height: 20
+                            width: svgSize,
+                            height: svgSize
                         }} scale={0.75} />
                 </div>
             </div>

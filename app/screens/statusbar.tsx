@@ -5,18 +5,27 @@ import { dellaRespira } from "../fonts";
 import { VideoMedia, VideoMediaResult } from "./screens.client";
 import { getYouTubeEmbed, createVideo } from "./screens.server";
 import { VideoOrigin, VideoOriginType, YouTubeVideoOrigin } from "./video-origin";
+import { ScreensResolution } from "./screens-resolution";
 
 export interface Statusbar {
     action: string,
-    counter: number,
     apiOrigin: string | undefined,
+    resolution: ScreensResolution,
     defaultStyle: { width: number, height: number, filter: string },
     defaultMuted: boolean,
     defaultPlaying: boolean,
     onNewVideo: (newVideo: VideoMediaResult) => void,
     onNewAdmin: (key: string) => void,
 }
-export default function Statusbar({ action, apiOrigin, defaultStyle, defaultMuted, defaultPlaying, counter, onNewVideo, onNewAdmin }: Statusbar) {
+export default function Statusbar({
+    action,
+    apiOrigin,
+    resolution,
+    defaultStyle,
+    defaultMuted,
+    defaultPlaying,
+    onNewVideo,
+    onNewAdmin }: Statusbar) {
 
     const handleVideoDrop = useCallback(async (event: React.ClipboardEvent<HTMLInputElement>) => {
         const pastedText = event.clipboardData.getData('text/plain');
@@ -124,7 +133,9 @@ export default function Statusbar({ action, apiOrigin, defaultStyle, defaultMute
                     fontFamily: "monospace",
                     fontWeight: "normal",
                     fontSize: "9px",
-                }}>{counter.toFixed(2)}</div>
+                }}>
+                    {`${resolution.value.width}x${resolution.value.height}`}
+                </div>
             </div>
         </>
     );

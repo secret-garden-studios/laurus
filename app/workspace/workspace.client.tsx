@@ -33,7 +33,8 @@ import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { dellaRespira } from "../fonts";
-import { ProjectDependencies, BrowserDependencies } from "./page";
+import { ProjectDependencies, BrowserDependencies } from "./workspace.boot";
+import { WorkspaceResolution } from "./workspace-resolution";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
@@ -111,6 +112,7 @@ export interface WorkspaceState {
     fps: number,
     timelineUnits: string[],
     timelineValues: number[],
+    resolution: WorkspaceResolution,
 }
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
@@ -120,8 +122,8 @@ export const defaultWorkspace: WorkspaceState = {
         canvas_height: 5000,
         frame_top: -1,
         frame_left: -1,
-        frame_width: 780,
-        frame_height: 1140,
+        frame_width: 0,
+        frame_height: 0,
         project_id: "",
         timestamp: "",
         last_active: "",
@@ -144,6 +146,7 @@ export const defaultWorkspace: WorkspaceState = {
     activeElement: undefined,
     recordingLight: false,
     fps: 60,
+    resolution: { type: 'midhigh', factor: 0.7, value: { width: 0, height: 0 } }
 }
 
 export enum WorkspaceActionType {
@@ -167,7 +170,7 @@ export enum WorkspaceActionType {
     SetEffects,
     SetEffect,
     SetTimelineUnit,
-    IncrementTimelineMaxValue,
+    SetTimelineMaxValue,
     SetRecordingLight,
     SetFps,
 }
@@ -191,7 +194,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
     | { type: WorkspaceActionType.SetEffect, value: LaurusEffect }
     | { type: WorkspaceActionType.SetTimelineUnit, value: string }
-    | { type: WorkspaceActionType.IncrementTimelineMaxValue }
+    | { type: WorkspaceActionType.SetTimelineMaxValue, value: number }
     | { type: WorkspaceActionType.SetRecordingLight, value: boolean }
     | { type: WorkspaceActionType.SetFps, value: number }
 
@@ -311,13 +314,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.SetTimelineUnit: {
             return { ...state, timelineUnit: action.value }
         }
-        case WorkspaceActionType.IncrementTimelineMaxValue: {
-            const currentTimelineValues = [...state.timelineValues];
-            const currentIndex = currentTimelineValues.findIndex(v => v == state.timelineMaxValue);
-            const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < currentTimelineValues.length)
-                ? currentTimelineValues[currentIndex + 1]
-                : currentTimelineValues[0];
-            return { ...state, timelineMaxValue: newValue }
+        case WorkspaceActionType.SetTimelineMaxValue: {
+
+            return { ...state, timelineMaxValue: action.value }
         }
         case WorkspaceActionType.SetRecordingLight: {
             return { ...state, recordingLight: action.value }
@@ -350,7 +349,9 @@ function initProject(p: ProjectResult_V1_0) {
     return {
         ...p,
         imgs: projectImgsInit,
-        svgs: projectSvgsInit
+        svgs: projectSvgsInit,
+        frame_width: 780,
+        frame_height: 1140,
     }
 }
 
@@ -361,6 +362,7 @@ interface InitReducer {
     arg4: string[],
     arg5: string | undefined,
     arg6: BrowserDependencies,
+    arg7: WorkspaceResolution,
 }
 function initReducer({
     arg1: projectDependencies,
@@ -369,6 +371,7 @@ function initReducer({
     arg4: timelineUnits,
     arg5: apiOrigin,
     arg6: browserDependencies,
+    arg7: resolution,
 }: InitReducer): WorkspaceState {
     const newEffects: LaurusEffect[] = [];
     if (projectDependencies) {
@@ -413,11 +416,18 @@ function initReducer({
                 order: 0
             }, type: 'svg'
         };
+
+    const defaulProject: LaurusProjectResult = {
+        ...defaultWorkspace.project,
+        frame_width: Math.round(780 * resolution.factor),
+        frame_height: Math.round(1140 * resolution.factor)
+    };
+
     return {
         ...defaultWorkspace,
         project: projectDependencies ?
             initProject(projectDependencies.project) :
-            defaultWorkspace.project,
+            defaulProject,
         effects: newEffects,
         canvasImgs: newCanvasImgs,
         canvasSvgs: newCanvasSvgs,
@@ -430,17 +440,19 @@ function initReducer({
         browserImgs: newBrowserImgs,
         browserSvgs: newBrowserSvgs,
         browserElement: newBrowserElement,
+        resolution
     }
 }
 
 interface Workspace {
     apiOriginInit: string | undefined,
-    mediaPageSizeInit: string | undefined,
+    mediaPageSizeInit: number,
     timelineValuesInit: number[],
     timelineUnitsInit: string[],
     effectNamesInitPromise: Promise<string[] | undefined>,
     projectInitPromise: Promise<ProjectDependencies | undefined>,
     browserInitPromise: Promise<BrowserDependencies>,
+    resolutionInit: WorkspaceResolution,
 }
 export default function Workspace({
     apiOriginInit,
@@ -450,6 +462,7 @@ export default function Workspace({
     effectNamesInitPromise,
     projectInitPromise,
     browserInitPromise,
+    resolutionInit,
 }: Workspace) {
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
@@ -463,6 +476,7 @@ export default function Workspace({
             arg4: timelineUnitsInit,
             arg5: apiOriginInit,
             arg6: browserInit,
+            arg7: resolutionInit,
         }, initReducer);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -484,9 +498,10 @@ export default function Workspace({
 
     const [mediabarHeight] = useState(50);
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
-    const [mediaPageSize] = useState(mediaPageSizeInit ? (parseInt(mediaPageSizeInit) || 10) : 10);
+    const [mediaPageSize] = useState(mediaPageSizeInit);
     const [showTimeline, setShowTimeline] = useState<boolean>(true);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
+    const [mediaBrowserWidth] = useState(Math.round(400 * resolutionInit.factor));
 
     const handleImgPageRequest = useCallback(async () => {
         const mediaArray = Array.from(appState.browserImgs.values());
@@ -596,7 +611,6 @@ export default function Workspace({
                 <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?
                         <TimelineArea
-                            size={{ width: 1000, height: 5000 }}
                             svgElementsRef={svgElementsRef}
                             imgElementsRef={imgElementsRef}
                             onRightPanelClick={() => setShowTimeline(false)}
@@ -747,7 +761,7 @@ export default function Workspace({
                     <div
                         style={{
                             gridRow: '3', gridColumn: '4',
-                            width: 400,
+                            width: mediaBrowserWidth,
                             height: '100%',
                             border: '1px solid black',
                             background: 'rgba(20, 20, 20, 1)'
@@ -920,7 +934,7 @@ export default function Workspace({
                             })()}
                         </div>
                     </div>
-                    <Statusbar action={'laurus workspace'} body={[]} counter={0.00} />
+                    <Statusbar action={'laurus workspace'} body={[]} />
                 </div>
             </WorkspaceContext>
         </div>

@@ -7,6 +7,7 @@ import { deleteVideo, getVideoDiscoveryPage, updateVideo, VideoMedia_V1_0, Video
 import { RefObject, use, useCallback, useRef, useState } from "react";
 import Statusbar from "./statusbar";
 import RemoteControl from "./remote-control";
+import { ScreensResolution } from "./screens-resolution";
 
 export interface VideoMediaResult extends VideoMediaResult_V1_0 {
     filter: string
@@ -30,12 +31,36 @@ export type YouTubePlayerControl =
 
 interface Screens {
     apiOrigin: string | undefined,
+    resolution: ScreensResolution,
     videoMediaPromise: Promise<VideoMediaResult_V1_0[]>,
     videoMediaPageSize: number,
 }
-export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSize }: Screens) {
+export default function Screens({ apiOrigin, resolution, videoMediaPromise, videoMediaPageSize }: Screens) {
     const videoMediaInit = use(videoMediaPromise);
-    const [defaultStyle] = useState({ width: 740, height: 416, filter: "" });
+    const [defaultStyle] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                width: 788,
+                height: 444,
+                filter: ""
+            }
+            case "midhigh": return {
+                width: 660,
+                height: 371,
+                filter: ""
+            }
+            case "midlow": return {
+                width: 560,
+                height: 315,
+                filter: ""
+            }
+            case "low": return {
+                width: 256,
+                height: 256,
+                filter: ""
+            }
+        }
+    });
     const [defaultMuted] = useState<boolean>(true);
     const [defaultPlaying] = useState<boolean>(false);
     const [userPlacerholder, setUserPlaceholder] = useState("");
@@ -204,10 +229,13 @@ export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSi
                 style={{
                     overflowY: 'auto',
                     gridRow: 2,
-                    padding: 0,
                 }}>
                 <div style={{
-                    display: 'grid', width: '100%', padding: 10, borderRadius: 10, gap: 10,
+                    display: 'grid',
+                    width: '100%',
+                    padding: 10,
+                    borderRadius: 10,
+                    gap: 10,
                     alignContent: 'start',
                     height: '100vh',
                 }}>
@@ -218,10 +246,12 @@ export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSi
                             return <div
                                 key={media.video_media_id}
                                 style={{
-                                    height: '100%',
+                                    height: 'min-content',
                                     display: 'grid',
                                     gridTemplateRows: `${media.height}px`,
                                     gridTemplateColumns: 'min-content auto',
+                                    overflowX: 'auto',
+                                    overflowY: 'hidden',
                                 }}>
                                 <Screen
                                     apiOrigin={apiOrigin}
@@ -236,10 +266,15 @@ export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSi
                                         playerDataRefs.current.set(key, { ...newMedia });
                                     }}
                                     onRemoteControl={youtubeController} />
-                                <div style={{ paddingLeft: 10, height: `${media.height}px`, }}>
+                                <div
+                                    style={{
+                                        paddingLeft: 10,
+                                        height: `${media.height}px`,
+                                    }}>
                                     <RemoteControl
                                         i={i}
                                         videoMedia={media}
+                                        resolution={resolution}
                                         onNewClip={function (newStart: number, newEnd: number): void {
                                             const newMedia: VideoMediaResult = { ...media, start: newStart, end: newEnd };
 
@@ -310,7 +345,6 @@ export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSi
             <div style={{ gridRow: 3 }}>
                 <Statusbar
                     action={"laurus screens"}
-                    counter={0.00}
                     onNewVideo={async (newVideo) => {
                         const videoMediaArray = Array.from(playerDataRefs.current.values());
                         const newVideoMediaArray = [newVideo, ...videoMediaArray];
@@ -319,6 +353,7 @@ export default function Screens({ apiOrigin, videoMediaPromise, videoMediaPageSi
                         playerDataRefs.current.set(newVideo.video_media_id, { ...newVideo });
                     }}
                     apiOrigin={apiOrigin}
+                    resolution={resolution}
                     defaultStyle={defaultStyle}
                     defaultMuted={defaultMuted}
                     defaultPlaying={defaultPlaying}

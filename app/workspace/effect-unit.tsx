@@ -47,6 +47,14 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
 
+    const [timelineTrackLabelSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return { font: 12, height: 22, paddingLeft: 7 }
+            case "midhigh": return { font: 11, height: 16, paddingLeft: 5 }
+            case "midlow": return { font: 10, height: 14, paddingLeft: 4 }
+            case "midlow": return { font: 10, height: 14, paddingLeft: 4 }
+        }
+    });
     const [timelineTrackSize] = useState({ width: '100%', height: 54 });
     const [trackSidePadding] = useState(15);
     const timelineTrackRef = useRef<HTMLDivElement | null>(null);
@@ -143,9 +151,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     }, [appState.apiOrigin, appState.timelineUnit, dispatch]);
 
     useLayoutEffect(() => {
-        /*  reads the current track size and updates sliders 
-            using initial values from a parent component */
-
         (async () => {
             const offsetInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.start));
             const durationInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.end));
@@ -168,9 +173,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     }, [appState.timelineMaxValue, cursorToTime, effect.value, timeToCursor]);
 
+    // pushes data from input boxes to the server on a delay
     useEffect(() => {
-        /* on a delay, pushes data from input boxes to the server */
-
         if (debounceDependenciesRef.current) {
             switch (debounceDependenciesRef.current.type) {
                 case "scale": {
@@ -279,6 +283,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             }}>
                 <TimelineSlider
                     label={effect.type}
+                    labelSize={timelineTrackLabelSize}
                     hash={`${effect.key}|t1`}
                     capSize={offsetCapSize}
                     rangeCapSize={durationCapSize}

@@ -1,6 +1,7 @@
-import { RefObject } from "react";
+import { RefObject, useContext, useState } from "react";
 import { dmSans } from "../fonts";
 import { Trackpad, PointerStyle } from "./trackpad";
+import { WorkspaceContext } from "../workspace/workspace.client";
 
 interface ParameterSlider {
     label: string,
@@ -8,7 +9,7 @@ interface ParameterSlider {
     capSize: { width: number | string, height: number | string }
     trackSize: { width: number | string, height: number | string }
     trackRef: RefObject<HTMLDivElement | null>,
-    groveWidth: number,
+    grooveWidth: number,
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
@@ -19,15 +20,33 @@ export default function ParameterSlider({
     capSize,
     trackSize,
     trackRef,
-    groveWidth,
+    grooveWidth,
     cursor,
     onNewCursor,
     onCursorMove,
 }: ParameterSlider) {
+    const { appState } = useContext(WorkspaceContext);
+    const [labelFontSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high":
+            case "midhigh": return 10
+            case "midlow":
+            case "low": return 8
+        }
+    });
+    const [labelPaddingTop] = useState(Math.round(10 * appState.resolution.factor));
     return (<>
-        <div style={{ height: '100%', width: 'min-content' }}>
-            <div style={{ position: "relative", ...trackSize, }}>
-                <div style={{ position: 'absolute', height: '100%', width: '100%', }}>
+        <div style={{
+            height: '100%',
+            width: 'min-content',
+            display: 'grid',
+            justifyItems: 'center'
+        }}>
+            <div style={{
+                position: "relative",
+                ...trackSize,
+            }}>
+                <div style={{ position: 'absolute', height: '100%', width: '100%' }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={capSize.width}
@@ -60,19 +79,16 @@ export default function ParameterSlider({
                         margin: 'auto',
                         position: "absolute",
                         height: trackSize.height,
-                        width: groveWidth,
+                        width: grooveWidth,
                         background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
                         border: '1px solid rgb(5, 5, 5)'
                     }}
                 />
             </div>
             {label && <div className={dmSans.className}
-                style={{
-                    display: 'grid',
-                    justifyContent: 'center',
-                    fontSize: "10px",
-                    paddingTop: '10px'
-                }}>{label}</div>}
+                style={{ fontSize: labelFontSize, paddingTop: labelPaddingTop }}>
+                {label}
+            </div>}
         </div>
     </>)
 }
