@@ -98,26 +98,39 @@ export default function RemoteControl({
     });
 
     const [timelineSize] = useState(() => {
+        const minW = 400;
         switch (resolution.type) {
-            case "high": return {
-                padding: Math.round(5 * resolution.factor),
-                width: window.innerWidth - videoMedia.width - 140,
-                font: 12
+            case "high": {
+                const w = window.innerWidth - videoMedia.width - 140;
+                return {
+                    padding: Math.round(5 * resolution.factor),
+                    width: w > minW ? w : Math.max(window.innerHeight, window.innerWidth),
+                    font: 12
+                }
             }
-            case "midhigh": return {
-                padding: Math.round(5 * resolution.factor),
-                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 4,
-                font: 10
+            case "midhigh": {
+                const w = window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 4;
+                return {
+                    padding: Math.round(5 * resolution.factor),
+                    width: w > minW ? w : Math.max(window.innerHeight, window.innerWidth),
+                    font: 10
+                }
             }
-            case "midlow": return {
-                padding: Math.round(5 * resolution.factor),
-                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 8,
-                font: 9
+            case "midlow": {
+                const w = window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 8;
+                return {
+                    padding: Math.round(5 * resolution.factor),
+                    width: w > minW ? w : Math.max(window.innerHeight, window.innerWidth),
+                    font: 9
+                }
             }
-            case "low": return {
-                padding: 0,
-                width: window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 12,
-                font: 8
+            case "low": {
+                const w = window.innerWidth - videoMedia.width - Math.round(140 * resolution.factor) - 12;
+                return {
+                    padding: 0,
+                    width: w > minW ? w : Math.max(window.innerHeight, window.innerWidth),
+                    font: 8
+                }
             }
         }
     });
@@ -423,7 +436,10 @@ export default function RemoteControl({
                         gridColumn: 1,
                         fontSize: notesPanelSize.titleFont,
                         letterSpacing: '2px',
-                        fontWeight: 'bold'
+                        fontWeight: 'bold',
+                        overflowX: 'auto',
+                        whiteSpace: 'nowrap',
+                        marginRight: 6,
                     }}>
                     {videoMedia.title}
                 </div>
