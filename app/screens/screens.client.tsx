@@ -89,7 +89,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
             return [newVideoMedia.video_media_id, newVideoMedia];
         })));
 
-    const [alertMsg] = useState("You need an account to do that! Send an email over to laurusim@gmail.com if you interested in getting early access to the platform.");
+    const [alertMsg] = useState("You need an account to do that! Send an email over to laurusim@gmail.com if you are interested in getting early access to the platform.");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const playerRefs = useRef<Map<string, any>>(new Map());
