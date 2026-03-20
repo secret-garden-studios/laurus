@@ -3,7 +3,7 @@ import ParameterSlider from "../components/parameter-slider";
 import TimelineSlider from "../components/timeline-slider";
 import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, firstPage, lastPage, upload, cancelCircle, threeSixtyLeft, threeSixtyRight } from "../svg-repo";
+import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, upload, cancelCircle, threeSixtyLeft, threeSixtyRight } from "../svg-repo";
 import { VideoMediaResult, YouTubePlayerControl } from "./screens.client";
 import { ScreensResolution } from "./screens-resolution";
 
