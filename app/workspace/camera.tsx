@@ -1,5 +1,4 @@
 import { useDraggable, useSensors, useSensor, PointerSensor, DndContext } from "@dnd-kit/core";
-import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { RefObject, useContext } from "react";
 import { MediaOverlays, WorkspaceContext } from "./workspace.client";
 import { CSS as DndCss } from '@dnd-kit/utilities';
@@ -70,10 +69,12 @@ export default function DraggableCamera({
             onDragEnd={(e) => {
                 document.body.style.cursor = 'default';
                 const delta = e.delta;
-                const newPosition = { x: Math.round(appState.project.frame_left + delta.x), y: Math.round(appState.project.frame_top + delta.y) };
+                const newPosition = {
+                    x: Math.min(appState.project.canvas_width - appState.project.frame_width, Math.max(0, Math.round(appState.project.frame_left + delta.x))),
+                    y: Math.min(appState.project.canvas_height - appState.project.frame_height, Math.max(0, Math.round(appState.project.frame_top + delta.y)))
+                };
                 onNewPosition({ ...newPosition });
             }}
-            modifiers={[restrictToFirstScrollableAncestor]}
         >
             <div style={{ position: 'relative' }}>
                 <div

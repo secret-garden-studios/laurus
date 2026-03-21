@@ -1,10 +1,13 @@
 import { useContext, useRef, useState, DragEvent, useCallback } from "react";
 import { dellaRespira } from "../fonts";
-import { LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusProjectResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
-import { bookmarkStacks, ReactSvg, timerArrowDown } from "../svg-repo";
-import { createImg, createSvg, getImg, getSvg } from "./workspace.server";
+import { bookmarkStacks, LaurusCropSvg, SvgRepo, timerArrowDown } from "../svg-repo";
+import { createImg, createProject, createSvg, getImg, getSvg, updateProject } from "./workspace.server";
+import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
+
+export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
 function dataUrlToFile(dataUrl: string, filename: string): File {
     const arr = dataUrl.split(',');
@@ -53,56 +56,56 @@ async function rasterizeSvg(
     });
 }
 
-interface MediaBrowserArea {
-    filter: 'img' | 'svg',
+interface MediaBrowser {
+    filter: MediaBrowserFilter,
     onNextPage: () => void,
     onPrevPage?: () => void,
-    onMediaClick: (media: LaurusThumbnail) => void,
-    onFilterSelect: (filter: 'img' | 'svg') => void,
+    onFilterSelect: (filter: MediaBrowserFilter) => void,
 }
-export default function MediaBrowserArea({
+export default function MediaBrowser({
     filter,
     onNextPage,
-    onMediaClick,
     onFilterSelect,
-}: MediaBrowserArea) {
+}: MediaBrowser) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
     const [mediaFilterSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                container: Math.round(50 * appState.resolution.factor),
+                container: 50,
                 letterSpacing: "3px",
                 fontSize: 14
             }
             case "midhigh": return {
-                container: Math.round(50 * appState.resolution.factor),
-                letterSpacing: "3px",
-                fontSize: 12
+                container: 40,
+                letterSpacing: "2px",
+                fontSize: 11
             }
-
+            case "low":
             case "midlow": return {
-                container: Math.round(50 * appState.resolution.factor),
+                container: 38,
                 letterSpacing: "2px",
-                fontSize: 10
-            }
-            case "low": return {
-                container: Math.round(50 * appState.resolution.factor),
-                letterSpacing: "2px",
-                fontSize: 10
+                fontSize: 11
             }
         }
     });
     const [mediaItemSize] = useState({
         container: Math.round(300 * appState.resolution.factor),
         svg: Math.round(100 * appState.resolution.factor),
-        padding: Math.round(10 * appState.resolution.factor),
+        padding: `0px 0px ${Math.round(20 * appState.resolution.factor)}px 0px`,
     });
     const [mediaSortSize] = useState({
         container: Math.round(36 * appState.resolution.factor),
         svg: Math.round(20 * appState.resolution.factor),
     });
+    const [frameScales] = useState(() => {
+        return {
+            high: 1.6 * appState.resolution.factor,
+            midhigh: 1.1 * appState.resolution.factor,
+            midlow: 0.6 * appState.resolution.factor
+        }
+    })
     const lastScrollTop = useRef<number>(0);
 
     const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
@@ -168,12 +171,16 @@ export default function MediaBrowserArea({
         }
     }, [appState.apiOrigin, dispatch]);
 
-    function sortByTimestamp(a: LaurusImgResult | LaurusSvgResult, b: LaurusImgResult | LaurusSvgResult) {
+    function sortByTimestamp(
+        a: LaurusImgResult | LaurusSvgResult | LaurusCropSvg,
+        b: LaurusImgResult | LaurusSvgResult | LaurusCropSvg) {
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     }
 
-    function sortByOrder(a: LaurusImgResult | LaurusSvgResult, b: LaurusImgResult | LaurusSvgResult) {
-        return b.order - a.order;
+    function sortByOrder(
+        a: LaurusImgResult | LaurusSvgResult | LaurusCropSvg,
+        b: LaurusImgResult | LaurusSvgResult | LaurusCropSvg) {
+        return a.order - b.order;
     }
 
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -186,6 +193,11 @@ export default function MediaBrowserArea({
             onNextPage();
         }
     }, [onNextPage]);
+
+    const onMediaClick = useCallback((selectedMedia: LaurusThumbnail) => {
+        dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...selectedMedia } });
+        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
+    }, [dispatch]);
 
     return (<>
         <div
@@ -204,6 +216,8 @@ export default function MediaBrowserArea({
                 display: 'flex',
                 alignItems: 'center',
                 height: mediaFilterSize.container,
+                borderBottom: '1px solid rgb(0, 0, 0)',
+                background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
             }}>
                 <div
                     onClick={() => {
@@ -219,13 +233,12 @@ export default function MediaBrowserArea({
                         placeContent: 'center',
                         width: '100%',
                         height: '100%',
-                        border: filter == 'img' ? '1px solid rgb(20, 20, 20)' : 'none',
-                        color: filter == 'img' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
-                        filter: filter == 'img' ? 'none' : 'blur(0.8px)',
-                        boxShadow: filter == 'img' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
+                        background: filter == 'img' ? 'rgba(255,255,255,0.05)' : 'none',
+                        border: filter == 'img' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
                     }}>
                     {'img'}
                 </div>
+                <div style={{ height: '100%', width: 1, background: 'rgb(0, 0, 0)' }} />
                 <div
                     onClick={() => {
                         onFilterSelect('svg');
@@ -240,12 +253,30 @@ export default function MediaBrowserArea({
                         placeContent: 'center',
                         width: '100%',
                         height: '100%',
-                        border: filter == 'svg' ? '1px solid rgb(20, 20, 20)' : 'none',
-                        color: filter == 'svg' ? 'rgb(215, 215, 215)' : 'rgb(81, 81, 81)',
-                        filter: filter == 'svg' ? 'none' : 'blur(0.8px)',
-                        boxShadow: filter == 'svg' ? "none" : "rgba(0, 0, 0, 0.47) 0px 0px 2px inset, rgba(0, 0, 0, 0.28) 0px 0px 50px inset",
+                        background: filter == 'svg' ? 'rgba(255,255,255,0.05)' : 'none',
+                        border: filter == 'svg' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
                     }}>
                     {'svg'}
+                </div>
+                <div style={{ height: '100%', width: 1, background: 'rgb(0, 0, 0)' }} />
+                <div
+                    onClick={() => {
+                        onFilterSelect('frame');
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                    className={dellaRespira.className}
+                    style={{
+                        letterSpacing: mediaFilterSize.letterSpacing,
+                        fontSize: mediaFilterSize.fontSize,
+                        display: 'grid',
+                        placeContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        background: filter == 'frame' ? 'rgba(255,255,255,0.05)' : 'none',
+                        border: filter == 'frame' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
+                    }}>
+                    {'frame'}
                 </div>
             </div>
             <div
@@ -259,7 +290,6 @@ export default function MediaBrowserArea({
             >
                 {/* content area */}
                 <div
-
                     style={{
                         position: 'absolute',
                         top: 10,
@@ -269,7 +299,8 @@ export default function MediaBrowserArea({
                         gridTemplateColumns: 'min-content auto',
                         width: '100%',
                         color: 'rgba(220, 220, 220, 1)',
-                        height: '100%'
+                        height: '100%',
+                        paddingTop: Math.round(10 * appState.resolution.factor),
                     }} >
                     <div
                         style={{
@@ -307,7 +338,6 @@ export default function MediaBrowserArea({
                                         display: 'grid',
                                         alignItems: 'start',
                                         justifyContent: 'center',
-
                                     }}>
                                     <div
                                         onClick={() => {
@@ -333,7 +363,6 @@ export default function MediaBrowserArea({
                                             }} />}
                                     </div>
                                 </div>)
-
                         })}
                     {filter == 'svg' && appState.browserSvgs
                         .sort((a, b) => {
@@ -357,13 +386,15 @@ export default function MediaBrowserArea({
                                     .join('')
                             );
                             return (
-                                <div key={svg.media_path} style={{
-                                    gridColumn: 2,
-                                    padding: mediaItemSize.padding,
-                                    display: 'grid',
-                                    alignItems: 'start',
-                                    justifyContent: 'center',
-                                }}>
+                                <div
+                                    key={svg.media_path}
+                                    style={{
+                                        gridColumn: 2,
+                                        padding: mediaItemSize.padding,
+                                        display: 'grid',
+                                        alignItems: 'start',
+                                        justifyContent: 'center',
+                                    }}>
                                     <div
                                         onClick={() => {
                                             onMediaClick({ value: { ...svg }, type: 'svg' });
@@ -391,6 +422,69 @@ export default function MediaBrowserArea({
                                 </div>
                             )
                         })}
+                    {filter == 'frame' && appState.browserFrames
+                        .sort((a, b) => {
+                            switch (sortStrategy) {
+                                case 'order': {
+                                    return sortByOrder(a, b);
+                                }
+                                case 'timestamp': {
+                                    return sortByTimestamp(a, b)
+                                }
+                                case "none": {
+                                    return 0;
+                                }
+                            }
+                        })
+                        .map((frameSvg) => {
+                            const decodedString = decodeURIComponent(
+                                atob(frameSvg.svg.markup)
+                                    .split('')
+                                    .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                                    .join('')
+                            );
+                            return (
+                                <div
+                                    key={frameSvg.svg.media_path}
+                                    style={{
+                                        gridColumn: 2,
+                                        padding: mediaItemSize.padding,
+                                        display: 'grid',
+                                        alignItems: 'start',
+                                        justifyContent: 'center',
+                                    }}>
+                                    <FrameSvg
+                                        scale={frameScales.high}
+                                        footer="3x"
+                                        crop={frameSvg}
+                                        cropFactor={HIGH_FACTOR}
+                                        decodedString={decodedString}
+                                        containerSize={mediaItemSize.container}
+                                        svgSize={mediaItemSize.svg} />
+                                    <div style={{
+                                        paddingTop: Math.round(20 * appState.resolution.factor),
+                                        paddingBottom: Math.round(20 * appState.resolution.factor),
+                                    }}>
+                                        <FrameSvg
+                                            scale={frameScales.midhigh}
+                                            footer="2x"
+                                            crop={frameSvg}
+                                            cropFactor={MIDHIGH_FACTOR}
+                                            decodedString={decodedString}
+                                            containerSize={mediaItemSize.container}
+                                            svgSize={mediaItemSize.svg} />
+                                    </div>
+                                    <FrameSvg
+                                        scale={frameScales.midlow}
+                                        footer="1x"
+                                        crop={frameSvg}
+                                        cropFactor={MIDLOW_FACTOR}
+                                        decodedString={decodedString}
+                                        containerSize={mediaItemSize.container}
+                                        svgSize={mediaItemSize.svg} />
+                                </div>
+                            )
+                        })}
                 </div>
             </div>
             <div style={{
@@ -400,7 +494,7 @@ export default function MediaBrowserArea({
                 alignItems: 'center',
                 height: mediaSortSize.container,
                 borderTop: '1px solid rgb(0, 0, 0)',
-                background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))',
+                background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
             }}>
                 <div
                     onClick={async () => {
@@ -431,6 +525,10 @@ export default function MediaBrowserArea({
                                 setSortStrategy('order');
                                 break;
                             }
+                            case "frame": {
+                                setSortStrategy('order');
+                                break;
+                            }
                         }
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
@@ -443,7 +541,7 @@ export default function MediaBrowserArea({
                         background: sortStrategy == 'order' ? 'rgba(255,255,255,0.05)' : 'none',
                         border: sortStrategy == 'order' ? '1px solid rgba(255,255,255,0.05)' : 'none'
                     }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={bookmarkStacks('rgb(220, 220, 220)')}
                         containerSize={{
                             width: mediaSortSize.svg,
@@ -463,7 +561,7 @@ export default function MediaBrowserArea({
                         background: sortStrategy == 'timestamp' ? 'rgba(255,255,255,0.05)' : 'none',
                         border: sortStrategy == 'timestamp' ? '1px solid rgba(255,255,255,0.05)' : 'none'
                     }}>
-                    <ReactSvg svg={timerArrowDown('rgb(220, 220, 220)')} containerSize={{
+                    <SvgRepo svg={timerArrowDown('rgb(220, 220, 220)')} containerSize={{
                         width: mediaSortSize.svg,
                         height: mediaSortSize.svg
                     }} scale={1} />
@@ -471,4 +569,125 @@ export default function MediaBrowserArea({
             </div>
         </div>
     </>)
+}
+
+interface FrameSvg {
+    scale: number,
+    footer: string,
+    crop: LaurusCropSvg,
+    cropFactor: number,
+    decodedString: string,
+    containerSize: number,
+    svgSize: number
+}
+function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSize, svgSize }: FrameSvg) {
+    const { appState, dispatch } = useContext(WorkspaceContext);
+    const [cropSize] = useState(() => {
+        const s = getCropSize(crop);
+        return {
+            width: Math.round(s.width * cropFactor),
+            height: Math.round(s.height * cropFactor)
+        }
+    });
+    const [overlaySize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                padding: "9px 13px",
+                xWidth: 22,
+                footerPaddingBottom: 9,
+                dimensionFont: 24,
+                xFont: 19,
+                aspectFont: 17,
+                footerFont: 17,
+            }
+            case "midhigh": return {
+                padding: "6px 10px",
+                xWidth: 16,
+                footerPaddingBottom: 6,
+                dimensionFont: 18,
+                xFont: 13,
+                aspectFont: 11,
+                footerFont: 11,
+            }
+            case "low":
+            case "midlow": return {
+                padding: "5px 9px",
+                xWidth: 13,
+                footerPaddingBottom: 5,
+                dimensionFont: 15,
+                xFont: 10,
+                aspectFont: 8,
+                footerFont: 8,
+            }
+        }
+    });
+
+    return <>
+        <div
+            onClick={async () => {
+                const newProject: LaurusProjectResult = {
+                    ...appState.project,
+                    frame_width: cropSize.width,
+                    frame_height: cropSize.height
+                };
+                if (appState.project.project_id) {
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject, });
+                    await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                }
+                else {
+                    const response = await createProject(appState.apiOrigin, { ...newProject });
+                    if (response) {
+                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...response } });
+                    }
+                }
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+            onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+            style={{
+                width: containerSize,
+                height: containerSize,
+                position: 'relative',
+                display: 'grid',
+                placeContent: 'center',
+                boxShadow: "5px 5px 12px rgba(0, 0, 0, 0.2)",
+                border: '1px solid rgba(255,255,255,0.05)',
+                background: 'rgba(255,255,255,0.005)',
+                borderRadius: 5,
+            }}>
+            {decodedString && <svg
+                version="1.1"
+                width={svgSize * scale}
+                height={svgSize * scale}
+                fill={crop.svg.fill}
+                stroke={crop.svg.stroke}
+                strokeWidth={crop.svg.stroke_width}
+                viewBox={crop.svg.viewbox}
+                dangerouslySetInnerHTML={{ __html: decodedString }} />}
+            <div style={{ position: 'absolute', display: 'grid', width: '100%', height: '100%', gridTemplateRows: 'min-content auto min-content' }}>
+                <div
+                    className={dellaRespira.className}
+                    style={{
+                        display: 'flex',
+                        padding: overlaySize.padding,
+                        alignItems: 'center'
+                    }}>
+                    <div style={{ fontSize: overlaySize.dimensionFont, }}>{cropSize.width}</div>
+                    <div style={{ fontSize: overlaySize.xFont, width: overlaySize.xWidth, textAlign: 'center' }}>{'x'}</div>
+                    <div style={{ fontSize: overlaySize.dimensionFont }}>{cropSize.height}</div>
+                    <div className={dellaRespira.className} style={{ marginLeft: 'auto', fontSize: overlaySize.aspectFont, alignSelf: 'start' }}>{crop.type}</div>
+                </div>
+                <div
+                    className={dellaRespira.className}
+                    style={{
+                        gridRow: 3,
+                        display: 'grid',
+                        placeContent: 'center',
+                        paddingBottom: overlaySize.footerPaddingBottom,
+                        fontSize: overlaySize.footerFont
+                    }}>
+                    <i>{footer}</i>
+                </div>
+            </div>
+        </div>
+    </>
 }

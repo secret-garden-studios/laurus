@@ -2,7 +2,7 @@ import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState }
 import { LaurusImgResult, LaurusSvgResult, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
-import { autorenew, playArrow, earthquake, skipPrevious, menu, ReactSvg } from "../svg-repo";
+import { autorenew, playArrow, earthquake, skipPrevious, menu, SvgRepo } from "../svg-repo";
 import styles from "../app.module.css";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { deleteMove, getMove, updateMove } from "./workspace.server";
@@ -202,7 +202,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     }}>
                     {'Move'}
                 </div>
-                <ReactSvg
+                <SvgRepo
                     svg={earthquake()}
                     containerSize={{
                         width: headerSize.logo,
@@ -215,7 +215,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                     onClick={() => { setMainControls(v => !v); }}
                 >
-                    <ReactSvg
+                    <SvgRepo
                         svg={menu()}
                         containerSize={{
                             width: headerSize.more,
@@ -255,7 +255,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             switch (appState.activeElement.value.type) {
                                                 case "svg": {
                                                     return (
-                                                        <ReactSvg
+                                                        <SvgRepo
                                                             svg={appState.activeElement.value.value as LaurusSvgResult}
                                                             containerSize={{
                                                                 width: displaySize.activeElementSize,
@@ -500,7 +500,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                             background: move.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={autorenew()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
@@ -534,7 +534,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={skipPrevious()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
@@ -569,7 +569,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={playArrow()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,

@@ -26,15 +26,15 @@ import {
 import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
-import MediaBrowserArea from "./media-browser";
-import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, ReactSvg, photo } from "../svg-repo";
+import MediaBrowser, { MediaBrowserFilter } from "./media-browser";
+import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { dellaRespira } from "../fonts";
-import { ProjectDependencies, BrowserDependencies } from "./workspace.boot";
-import { WorkspaceResolution } from "./workspace-resolution";
+import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceResolution } from "./workspace-resolution";
+import { ProjectDependencies, BrowserDependencies } from "./page";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
@@ -97,10 +97,11 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
 export interface WorkspaceState {
     apiOrigin: string | undefined,
     project: LaurusProjectResult,
-    browserImgs: LaurusImgResult[],
     canvasImgs: LaurusImgResult[],
-    browserSvgs: LaurusSvgResult[],
     canvasSvgs: LaurusSvgResult[],
+    browserImgs: LaurusImgResult[],
+    browserSvgs: LaurusSvgResult[],
+    browserFrames: LaurusCropSvg[],
     tool: LaurusTool,
     browserElement: LaurusBrowserElement | undefined,
     activeElement: LaurusActiveElement | undefined,
@@ -118,8 +119,8 @@ export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
     project: {
         name: "untitled",
-        canvas_width: 5000,
-        canvas_height: 5000,
+        canvas_width: NEW_PROJECT_CANVAS_SIZE,
+        canvas_height: NEW_PROJECT_CANVAS_SIZE,
         frame_top: -1,
         frame_left: -1,
         frame_width: 0,
@@ -132,10 +133,11 @@ export const defaultWorkspace: WorkspaceState = {
         layers: new Map()
     },
     tool: { type: 'none' },
-    browserImgs: [],
     canvasImgs: [],
-    browserSvgs: [],
     canvasSvgs: [],
+    browserImgs: [],
+    browserSvgs: [],
+    browserFrames: [],
     effectNames: [],
     effects: [],
     timelineUnit: '',
@@ -350,8 +352,8 @@ function initProject(p: ProjectResult_V1_0) {
         ...p,
         imgs: projectImgsInit,
         svgs: projectSvgsInit,
-        frame_width: 780,
-        frame_height: 1140,
+        frame_width: p.frame_width > 0 && p.frame_width <= p.canvas_width ? p.frame_width : FRAME_WIDTH_5_7,
+        frame_height: p.frame_height > 0 && p.frame_height <= p.canvas_height ? p.frame_height : FRAME_HEIGHT_5_7,
     }
 }
 
@@ -399,10 +401,12 @@ function initReducer({
         projectDependencies?.canvasSvgs.map(v => { return { ...v } }) ?? [];
     const newCanvasImgs: LaurusImgResult[] =
         projectDependencies?.canvasImgs.map(v => { return { ...v } }) ?? [];
+
     const newBrowserImgs: LaurusImgResult[] =
         browserDependencies.browserImgs.map(v => { return { ...v } });
     const newBrowserSvgs: LaurusSvgResult[] =
         browserDependencies.browserSvgs.map(v => { return { ...v } });
+    const newBrowserFrames: LaurusCropSvg[] = getCrops('rgba(200, 200, 200, 1)');
 
     const newBrowserElement: LaurusThumbnail | undefined = newBrowserImgs.length > 0 ?
         { value: { ...newBrowserImgs[0] }, type: 'img' } :
@@ -439,6 +443,7 @@ function initReducer({
         timelineValues: [...timelineValues],
         browserImgs: newBrowserImgs,
         browserSvgs: newBrowserSvgs,
+        browserFrames: newBrowserFrames,
         browserElement: newBrowserElement,
         resolution
     }
@@ -464,6 +469,9 @@ export default function Workspace({
     browserInitPromise,
     resolutionInit,
 }: Workspace) {
+    const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
+    const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
+
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
@@ -495,13 +503,81 @@ export default function Workspace({
 
         initCurrentPaper();
     }, [appState.project]);
-
-    const [mediabarHeight] = useState(50);
+    const [mediabarHeight] = useState(() => {
+        switch (resolutionInit.type) {
+            case "high": return 50
+            case "midhigh": return 40
+            case "low":
+            case "midlow": return 38
+        }
+    });
     const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
     const [mediaPageSize] = useState(mediaPageSizeInit);
     const [showTimeline, setShowTimeline] = useState<boolean>(true);
-    const [mediaBrowserFilter, setMediaBrowserFilter] = useState<'img' | 'svg'>('img');
-    const [mediaBrowserWidth] = useState(Math.round(400 * resolutionInit.factor));
+    const [mediaBrowserFilter, setMediaBrowserFilter] = useState<MediaBrowserFilter>('img');
+    const [mediaBrowserWidth] = useState(() => {
+        switch (resolutionInit.type) {
+            case "high": return 400
+            case "midhigh": return 280
+            case "low":
+            case "midlow": return 240
+        }
+    });
+    const [rightPanelSize] = useState(() => {
+        switch (resolutionInit.type) {
+            case "high": return {
+                svg: 50,
+                width: 50,
+            }
+            case "midhigh": return {
+                svg: 40,
+                width: 40,
+            }
+            case "low":
+            case "midlow": return {
+                svg: 38,
+                width: 38,
+            }
+        }
+    });
+    const [minifiedControlsSize] = useState(() => {
+        switch (resolutionInit.type) {
+            case "high": return {
+                playContainer: 44,
+                playSvg: 44,
+                playBottom: 100,
+                playLeft: 40,
+                recordingWidth: 14,
+                recordingHeight: 14,
+                recordingBottom: 115,
+                recordingRight1: 506,
+                recordingRight2: 86,
+            }
+            case "midhigh": return {
+                playContainer: 44,
+                playSvg: 44,
+                playBottom: 80,
+                playLeft: 40,
+                recordingWidth: 14,
+                recordingHeight: 14,
+                recordingBottom: 95,
+                recordingRight1: 366,
+                recordingRight2: 66,
+            }
+            case "low":
+            case "midlow": return {
+                playContainer: 40,
+                playSvg: 40,
+                playBottom: 80,
+                playLeft: 40,
+                recordingWidth: 14,
+                recordingHeight: 14,
+                recordingBottom: 95,
+                recordingRight1: 336,
+                recordingRight2: 66,
+            }
+        }
+    });
 
     const handleImgPageRequest = useCallback(async () => {
         const mediaArray = Array.from(appState.browserImgs.values());
@@ -532,9 +608,6 @@ export default function Workspace({
             return false;
         }
     }, [appState.apiOrigin, appState.browserSvgs, mediaPageSize]);
-
-    const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
-    const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
 
     const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
         const newAnimations: Animation[] = [];
@@ -606,7 +679,7 @@ export default function Workspace({
             }}>
             <WorkspaceContext value={{ appState: appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
-                    <Menubar />
+                    <Menubar resolution={resolutionInit} />
                 </div>
                 <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?
@@ -622,20 +695,20 @@ export default function Workspace({
                             <div style={{
                                 zIndex: 1,
                                 position: 'fixed',
-                                bottom: 100,
-                                left: 40,
-                                width: 44,
-                                height: 44,
+                                bottom: minifiedControlsSize.playBottom,
+                                left: minifiedControlsSize.playLeft,
+                                width: minifiedControlsSize.playContainer,
+                                height: minifiedControlsSize.playContainer,
                                 borderRadius: '50%',
                                 border: '1px solid rgba(0, 0, 0, 0.4)',
                                 background: 'rgb(32, 32, 32)',
                                 boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                             }}>
-                                <ReactSvg
+                                <SvgRepo
                                     svg={playArrow()}
                                     containerSize={{
-                                        width: 44,
-                                        height: 44
+                                        width: minifiedControlsSize.playSvg,
+                                        height: minifiedControlsSize.playSvg
                                     }}
                                     scale={0.5}
                                     onContainerClick={async () => {
@@ -661,10 +734,10 @@ export default function Workspace({
                             <div style={{
                                 zIndex: 1,
                                 position: 'fixed',
-                                bottom: 115,
-                                right: showMediaBrowser ? 506 : 86,
-                                width: 14,
-                                height: 14,
+                                bottom: minifiedControlsSize.recordingBottom,
+                                right: showMediaBrowser ? minifiedControlsSize.recordingRight1 : minifiedControlsSize.recordingRight2,
+                                width: minifiedControlsSize.recordingWidth,
+                                height: minifiedControlsSize.recordingHeight,
                                 borderRadius: '50%',
                                 border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
                                 background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
@@ -724,25 +797,19 @@ export default function Workspace({
                         }}
                         zIndex={1}
                         onNewPosition={async function (newPosition: { x: number; y: number; }) {
+                            const newProject: LaurusProjectResult = {
+                                ...appState.project,
+                                frame_left: newPosition.x,
+                                frame_top: newPosition.y
+                            };
                             if (appState.project.project_id) {
-                                const newProject: LaurusProjectResult = {
-                                    ...appState.project,
-                                    frame_left: newPosition.x,
-                                    frame_top: newPosition.y
-                                };
                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject, });
                                 await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                             }
                             else {
-                                const newProject: LaurusProjectResult = {
-                                    ...appState.project,
-                                    frame_left: newPosition.x,
-                                    frame_top: newPosition.y
-                                };
                                 const response = await createProject(appState.apiOrigin, { ...newProject });
                                 if (response) {
-                                    const newProject2: LaurusProjectResult = { ...newProject, project_id: response.project_id }
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...response } });
                                 }
                             }
                         }} />
@@ -766,7 +833,7 @@ export default function Workspace({
                             border: '1px solid black',
                             background: 'rgba(20, 20, 20, 1)'
                         }} >
-                        <MediaBrowserArea
+                        <MediaBrowser
                             filter={mediaBrowserFilter}
                             onNextPage={async () => {
                                 switch (mediaBrowserFilter) {
@@ -780,10 +847,6 @@ export default function Workspace({
                                     }
                                 }
                             }}
-                            onMediaClick={(m) => {
-                                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...m } });
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
-                            }}
                             onFilterSelect={setMediaBrowserFilter}
                         />
                     </div>
@@ -796,7 +859,7 @@ export default function Workspace({
                         gridTemplateRows: 'min-content min-content auto',
                         borderLeft: '1px solid black',
                         background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
-                        width: 50,
+                        width: rightPanelSize.width,
                         justifyContent: 'center'
                     }}>
                     <div style={{
@@ -804,11 +867,11 @@ export default function Workspace({
                         height: 'min-content',
                         background: appState.tool.type == 'drop' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                     }}>
-                        <ReactSvg
+                        <SvgRepo
                             svg={lassoSelect()}
                             containerSize={{
-                                width: 50,
-                                height: 50
+                                width: rightPanelSize.svg,
+                                height: rightPanelSize.svg
                             }}
                             scale={0.5}
                             onContainerClick={() => {
@@ -825,11 +888,11 @@ export default function Workspace({
                         height: 'min-content',
                         background: appState.tool.type == 'activate' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                     }}>
-                        <ReactSvg
+                        <SvgRepo
                             svg={deployedCode()}
                             containerSize={{
-                                width: 50,
-                                height: 50
+                                width: rightPanelSize.svg,
+                                height: rightPanelSize.svg
                             }}
                             scale={0.5}
                             onContainerClick={() => {
@@ -846,11 +909,11 @@ export default function Workspace({
                         height: 'min-content',
                         background: appState.tool.type == 'viewport' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                     }}>
-                        <ReactSvg
+                        <SvgRepo
                             svg={browse()}
                             containerSize={{
-                                width: 50,
-                                height: 50
+                                width: rightPanelSize.svg,
+                                height: rightPanelSize.svg
                             }}
                             scale={0.5}
                             onContainerClick={() => {
@@ -885,7 +948,7 @@ export default function Workspace({
                                 switch (appState.activeElement.value.type) {
                                     case "svg": {
                                         return (
-                                            <ReactSvg
+                                            <SvgRepo
                                                 svg={appState.activeElement.value.value as LaurusSvgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
@@ -915,7 +978,7 @@ export default function Workspace({
                                 switch (appState.browserElement.type) {
                                     case "svg": {
                                         return (
-                                            <ReactSvg
+                                            <SvgRepo
                                                 svg={appState.browserElement.value as LaurusSvgResult}
                                                 containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
                                                 scale={undefined}
@@ -1174,7 +1237,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                         }
                                     }}>
-                                    <ReactSvg
+                                    <SvgRepo
                                         svg={hexagon('rgb(238, 91, 108)')}
                                         containerSize={{
                                             width: hexSize,
@@ -1192,7 +1255,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                         const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
                                         dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                     }}>
-                                    <ReactSvg
+                                    <SvgRepo
                                         svg={checkCircle('rgb(227, 227, 227)')}
                                         containerSize={{
                                             width: activateSize,
@@ -1238,7 +1301,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                     position: 'absolute', filter: 'blur(16px)',
                                     border: '1px solid pink'
                                 }}>
-                                    <ReactSvg
+                                    <SvgRepo
                                         svg={svgData}
                                         containerSize={{
                                             width: svgMeta.width,
@@ -1300,7 +1363,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                             }
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={hexagon('rgb(238, 91, 108)')}
                                             containerSize={{
                                                 width: hexSize,
@@ -1318,7 +1381,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                             const newActiveElement: LaurusActiveElement = { key, value: { type: 'svg', value: { ...svgData } } };
                                             dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={checkCircle('rgb(40, 40, 40)')}
                                             containerSize={{
                                                 width: activateSize,
@@ -1358,7 +1421,7 @@ function Bumper({ onBumperClick }: Bumper) {
                     display: 'grid',
                     placeContent: 'center',
                 }} >
-                <ReactSvg
+                <SvgRepo
                     svg={moreVert('rgba(255, 255, 255, 0.5)')}
                     containerSize={{
                         width: 20,

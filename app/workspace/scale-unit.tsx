@@ -2,7 +2,7 @@ import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef,
 import { LaurusSvgResult, LaurusImgResult, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
-import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, ReactSvg } from "../svg-repo";
+import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, SvgRepo } from "../svg-repo";
 import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
@@ -219,7 +219,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     }}>
                     {'Scale'}
                 </div>
-                <ReactSvg
+                <SvgRepo
                     svg={allOut()}
                     containerSize={{
                         width: headerSize.logo,
@@ -232,7 +232,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                     onClick={() => { setMainControls(v => !v); }}
                 >
-                    <ReactSvg
+                    <SvgRepo
                         svg={menu()}
                         containerSize={{
                             width: headerSize.more,
@@ -270,7 +270,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             switch (appState.activeElement.value.type) {
                                                 case "svg": {
                                                     return (
-                                                        <ReactSvg
+                                                        <SvgRepo
                                                             svg={appState.activeElement.value.value as LaurusSvgResult}
                                                             containerSize={{
                                                                 width: displaySize.activeElementSize,
@@ -447,7 +447,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                             background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={autorenew()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
@@ -481,7 +481,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={skipPrevious()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
@@ -516,7 +516,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgb(0, 0, 0)',
                                         }}>
-                                        <ReactSvg
+                                        <SvgRepo
                                             svg={playArrow()}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
@@ -746,14 +746,14 @@ function ScaleSlider({
                     alignItems: 'center',
                     justifyContent: 'space-between'
                 }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={remove('rgb(227, 227, 227)')}
                         containerSize={{
                             width: svgSize,
                             height: svgSize
                         }} scale={1} />
 
-                    <ReactSvg
+                    <SvgRepo
                         svg={add2('rgb(227, 227, 227)')}
                         containerSize={{
                             width: svgSize,

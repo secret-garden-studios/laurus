@@ -10,6 +10,29 @@ export default function Projectbar() {
     const [projectName, setProjectName] = useState<string>(appState.project.name);
     const projectNameHook = useDebounce<string>(projectName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
+    const [projectbarSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                minWidth: 200,
+                height: Math.round(36 * appState.resolution.factor),
+                font: 16,
+                inputWidth: 1000,
+            }
+            case "midhigh": return {
+                minWidth: 200,
+                height: 32,
+                font: 11,
+                inputWidth: 900
+            }
+            case "low":
+            case "midlow": return {
+                minWidth: 200,
+                height: 30,
+                font: 11,
+                inputWidth: 800
+            }
+        }
+    })
 
     useEffect(() => {
         const renameProjectOnSever = (async () => {
@@ -44,7 +67,8 @@ export default function Projectbar() {
         <div
             className={styles["grainy-background"]}
             style={{
-                height: 36,
+                height: projectbarSize.height,
+                minWidth: projectbarSize.minWidth,
                 width: "100%",
                 display: "flex",
                 justifyContent: 'start',
@@ -52,6 +76,7 @@ export default function Projectbar() {
             }}>
             <div
                 style={{
+
                     width: '100%',
                     display: 'grid',
                     placeContent: 'center',
@@ -65,11 +90,11 @@ export default function Projectbar() {
                     className={dellaRespira.className}
                     placeholder="name me..."
                     style={{
-                        width: 1080,
+                        width: projectbarSize.inputWidth,
                         letterSpacing: '3px',
                         background: 'none',
                         color: "rgb(227, 227, 227)",
-                        fontSize: "16px",
+                        fontSize: projectbarSize.font,
                         border: 'none',
                         textAlign: 'center',
                         outline: 'none',

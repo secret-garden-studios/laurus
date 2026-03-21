@@ -4,7 +4,7 @@ function base64Encode(markup: string) {
     return Buffer.from(cleaned).toString('base64');
 };
 
-export interface ReactSvgSvg {
+export interface LaurusClientSvg {
     media_path: string
     width: number
     height: number
@@ -15,15 +15,41 @@ export interface ReactSvgSvg {
     markup: string
 }
 
-interface ReactSvg {
-    svg: ReactSvgSvg,
+export type LaurusCropSvg =
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '5:4' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '7:5' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '3:2' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '16:9' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '9:16' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '2:3' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '5:7' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '4:5' }
+    | { svg: LaurusClientSvg, order: number, timestamp: string, type: '1:1' }
+
+export function getCrops(fill?: string): LaurusCropSvg[] {
+    const now = new Date().toISOString();
+    return [
+        { svg: crop5_4(fill), order: 1, timestamp: now, type: '5:4' },
+        { svg: crop7_5(fill), order: 2, timestamp: now, type: '7:5' },
+        { svg: crop3_2(fill), order: 3, timestamp: now, type: '3:2' },
+        { svg: crop16_9(fill), order: 4, timestamp: now, type: '16:9' },
+        { svg: crop9_16(fill), order: 8, timestamp: now, type: '9:16' },
+        { svg: crop2_3(fill), order: 1, timestamp: now, type: '2:3' },
+        { svg: crop5_7(fill), order: 2, timestamp: now, type: '5:7' },
+        { svg: crop4_5(fill), order: 3, timestamp: now, type: '4:5' },
+        { svg: cropSquare(fill), order: 9, timestamp: now, type: '1:1' },
+    ]
+}
+
+interface SvgRepo {
+    svg: LaurusClientSvg,
     containerSize: { width: number, height: number }
     scale: number | undefined,
     onContainerClick?: () => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
 }
-export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: ReactSvg) {
+export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: SvgRepo) {
     const decodedString = decodeURIComponent(
         atob(svg.markup)
             .split('')
@@ -62,7 +88,7 @@ export function ReactSvg({ svg, containerSize, scale, onContainerClick, onSvgRef
 export function videoCameraBack(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/video_camera_back_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -78,7 +104,7 @@ export function videoCameraBack(
 export function motionPhotosOn(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/motion_photos_on_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -94,7 +120,7 @@ export function motionPhotosOn(
 export function arrowDropDown(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/arrow_drop_down_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -110,7 +136,7 @@ export function arrowDropDown(
 export function arrowDropUp(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/arrow_drop_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -126,7 +152,7 @@ export function arrowDropUp(
 export function closeIcon(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -142,7 +168,7 @@ export function closeIcon(
 export function checkCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -158,7 +184,7 @@ export function checkCircle(
 export function cancelCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -174,7 +200,7 @@ export function cancelCircle(
 export function addCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -190,7 +216,7 @@ export function addCircle(
 export function circle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -206,7 +232,7 @@ export function circle(
 export function dragIndicator(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -222,7 +248,7 @@ export function dragIndicator(
 export function hexagon(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -238,7 +264,7 @@ export function hexagon(
 export function remove(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/remove_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -254,7 +280,7 @@ export function remove(
 export function add2(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/add_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -270,7 +296,7 @@ export function add2(
 export function playCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/play_circle_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -286,7 +312,7 @@ export function playCircle(
 export function autorenew(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/autorenew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -302,7 +328,7 @@ export function autorenew(
 export function fastRewind(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/fast_rewind_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -318,7 +344,7 @@ export function fastRewind(
 export function skipNext(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/skip_next_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -334,7 +360,7 @@ export function skipNext(
 export function skipPrevious(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/skip_previous_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -350,7 +376,7 @@ export function skipPrevious(
 export function fastForward(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/fast_forward_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -366,7 +392,7 @@ export function fastForward(
 export function playArrow(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -382,7 +408,7 @@ export function playArrow(
 export function playArrowNoFill(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
@@ -398,7 +424,7 @@ export function playArrowNoFill(
 export function pause(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/pause_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -414,7 +440,7 @@ export function pause(
 export function pauseNoFill(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/pause_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
@@ -430,7 +456,7 @@ export function pauseNoFill(
 export function moreVert(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/more_vert_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -446,7 +472,7 @@ export function moreVert(
 export function allOut(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/all_out_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -462,7 +488,7 @@ export function allOut(
 export function earthquake(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/earthquake_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -478,7 +504,7 @@ export function earthquake(
 export function lassoSelect(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/lasso_select_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -494,7 +520,7 @@ export function lassoSelect(
 export function deployedCode(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/deployed_code_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -510,7 +536,7 @@ export function deployedCode(
 export function browse(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/browse_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -526,7 +552,7 @@ export function browse(
 export function menu(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -542,7 +568,7 @@ export function menu(
 export function noSound(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/no_sound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -558,7 +584,7 @@ export function noSound(
 export function volumeUp(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/volume_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
@@ -574,7 +600,7 @@ export function volumeUp(
 export function firstPage(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/first_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -590,7 +616,7 @@ export function firstPage(
 export function lastPage(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/last_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -606,7 +632,7 @@ export function lastPage(
 export function upload(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/upload_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -622,7 +648,7 @@ export function upload(
 export function bookmarkStacks(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/bookmark_stacks_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
@@ -638,7 +664,7 @@ export function bookmarkStacks(
 export function timerArrowDown(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/timer_arrow_down_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
@@ -654,7 +680,7 @@ export function timerArrowDown(
 export function photo(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/photo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -670,7 +696,7 @@ export function photo(
 export function threeSixtyLeft(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/360_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -686,7 +712,7 @@ export function threeSixtyLeft(
 export function threeSixtyRight(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
-    height: number = 24): ReactSvgSvg {
+    height: number = 24): LaurusClientSvg {
     return {
         media_path: "/material-ui/360_right_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
@@ -696,5 +722,149 @@ export function threeSixtyRight(
         stroke: "none",
         stroke_width: 0,
         markup: base64Encode(`<path d="M 586,-288 Q 714,-305 797,-358 880,-411 880,-480 880,-563 764.5,-621.5 649,-680 480,-680 311,-680 195.5,-621.5 80,-563 80,-480 80,-424 134.5,-378.5 189,-333 279,-307 295,-302 307.5,-311.5 320,-321 320,-337 320,-355 309.5,-369 299,-383 282,-389 222,-409 191,-434.5 160,-460 160,-480 160,-512 245.5,-556 331,-600 480,-600 629,-600 714.5,-556 800,-512 800,-480 800,-456 749,-422.5 698,-389 604,-372 L 628,-396 Q 639,-407 639,-424 639,-441 628,-452 617,-463 600,-463 583,-463 572,-452 L 468,-348 Q 456,-336 456,-320 456,-304 468,-292 L 572,-188 Q 583,-177 599.5,-176.5 616,-176 628,-188 639,-199 639.5,-215.5 640,-232 629,-244 Z"/>`)
+    }
+}
+
+export function cropSquare(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_square_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-140v-680h680v680H140Zm60-60h560v-560H200v560Zm0 0v-560 560Z"/>`)
+    }
+}
+
+export function crop16_9(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_16_9_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-300v-360h680v360H140Zm60-60h560v-240H200v240Zm0 0v-240 240Z"/>`)
+    }
+}
+
+export function crop9_16(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_9_16_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M300-140v-680h360v680H300Zm60-620v560h240v-560H360Zm0 560v-560 560Z"/>`)
+    }
+}
+
+export function crop7_5(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_7_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-220v-520h680v520H140Zm60-60h560v-400H200v400Zm0 0v-400 400Z"/>`)
+    }
+}
+
+export function crop5_7(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_5_7_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 220,-820 H 740 V -140 H 220 Z M 280,-760 V -200 H 680 V -760 Z M 280,-760 H 680 Z"/>`)
+    }
+}
+
+export function crop5_4(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_5_4_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-180v-600h680v600H140Zm60-60h560v-480H200v480Zm0 0v-480 480Z"/>`)
+    }
+}
+
+export function crop4_5(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_4_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 180,-820 H 780 V -140 H 180 Z M 240,-760 V -200 H 720 V -760 Z M 240,-760 H 720 Z"/>`)
+    }
+}
+
+export function crop3_2(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_3_2_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M140-260v-440h680v440H140Zm60-60h560v-320H200v320Zm0 0v-320 320Z"/>`)
+    }
+}
+
+export function crop2_3(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/crop_2_3_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 260,-820 H 700 V -140 H 260 Z M 320,-760 V -200 H 640 V -760 Z M 320,-760 H 640 Z"/>`)
     }
 }

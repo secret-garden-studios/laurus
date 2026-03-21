@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { dellaRespira } from "../fonts";
 import { VideoMedia, VideoMediaResult } from "./screens.client";
 import { getYouTubeEmbed, createVideo } from "./screens.server";
@@ -26,6 +26,33 @@ export default function Statusbar({
     defaultPlaying,
     onNewVideo,
     onNewAdmin }: Statusbar) {
+
+    const [statusbarSize] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                height: 30,
+                fontSize: 9,
+                inputFontSize: 10,
+                padding: "0px 12px",
+                gap: 10
+            }
+            case "midhigh": return {
+                height: 24,
+                fontSize: 8,
+                inputFontSize: 9,
+                padding: "0px 12px",
+                gap: 10
+            }
+            case "midlow":
+            case "low": return {
+                height: 20,
+                fontSize: 7,
+                inputFontSize: 8,
+                padding: "0px 12px",
+                gap: 10
+            }
+        }
+    });
 
     const handleVideoDrop = useCallback(async (event: React.ClipboardEvent<HTMLInputElement>) => {
         const pastedText = event.clipboardData.getData('text/plain');
@@ -78,7 +105,7 @@ export default function Statusbar({
     return (
         <>
             <div style={{
-                height: `30px`,
+                height: statusbarSize.height,
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
@@ -87,13 +114,13 @@ export default function Statusbar({
                 backgroundColor: "#121212ff",
                 overflow: "hidden",
                 whiteSpace: "nowrap",
-                padding: "0px 12px",
-                gap: 10
+                padding: statusbarSize.padding,
+                gap: statusbarSize.gap
             }}>
                 <div style={{
                     fontFamily: "monospace",
                     fontWeight: "bolder",
-                    fontSize: "9px",
+                    fontSize: statusbarSize.fontSize,
                 }}>
                     {action}
                 </div>
@@ -105,7 +132,7 @@ export default function Statusbar({
                         height: '100%',
                         background: 'none',
                         color: "rgb(227, 227, 227)",
-                        fontSize: 10,
+                        fontSize: statusbarSize.inputFontSize,
                         border: 'none',
                         outline: 'none',
                     }}
@@ -121,7 +148,7 @@ export default function Statusbar({
                         height: '100%',
                         background: 'none',
                         color: "rgb(227, 227, 227)",
-                        fontSize: 10,
+                        fontSize: statusbarSize.inputFontSize,
                         border: 'none',
                         outline: 'none',
                     }}
@@ -132,7 +159,7 @@ export default function Statusbar({
                     marginLeft: "auto",
                     fontFamily: "monospace",
                     fontWeight: "normal",
-                    fontSize: "9px",
+                    fontSize: statusbarSize.fontSize,
                 }}>
                     {`${resolution.value.width}x${resolution.value.height}`}
                 </div>

@@ -2,34 +2,81 @@
 import { dellaRespira } from "./fonts";
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { LaurusResolution } from "./landing";
+import { useState } from "react";
 
-export default function Menubar() {
+interface Menubar {
+    resolution: LaurusResolution
+}
+export default function Menubar({ resolution }: Menubar) {
     const pathname = usePathname();
+    const [menubarSize] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                height: 50,
+                font: 20,
+                paddingLeft: 12,
+                paddingRight: 24,
+                linkWidth: 100,
+                linkFont: 12,
+                linkPaddingTop: 4
+            }
+            case "midhigh": return {
+                height: 44,
+                font: 18,
+                paddingLeft: 12,
+                paddingRight: 20,
+                linkWidth: 90,
+                linkFont: 11,
+                linkPaddingTop: 2
+            }
+            case "midlow": return {
+                height: 40,
+                font: 16,
+                paddingLeft: 12,
+                paddingRight: 16,
+                linkWidth: 80,
+                linkFont: 10,
+                linkPaddingTop: 2
+            }
+            case "low": return {
+                height: 40,
+                font: 16,
+                paddingLeft: 12,
+                paddingRight: 16,
+                linkWidth: 80,
+                linkFont: 10,
+                linkPaddingTop: 2
+            }
+        }
+    })
     return (
         <>
             <div
                 className={dellaRespira.className}
                 style={{
-                    height: 50,
+                    height: menubarSize.height,
                     display: "flex",
                     alignItems: "center",
                     background: "linear-gradient(360deg, rgba(8, 8, 8, 1), rgba(27, 27, 27, 1))",
                     boxShadow: "rgba(255, 255, 255, 0.05) 0px 0px 30px 1px",
-                    paddingLeft: 12,
-                    fontSize: 20,
+                    paddingLeft: menubarSize.paddingLeft,
+                    fontSize: menubarSize.font,
                     letterSpacing: '1px',
                     color: 'rgb(227,227,227)',
                     borderBottom: '1px solid rgb(20, 20, 20)',
                 }}>
-                <div style={{ paddingRight: 24 }}>
+                <div style={{ paddingRight: menubarSize.paddingRight }}>
                     {'Laurus'}
                 </div>
                 <Link
                     prefetch={true}
-                    href={"/workspace"} style={{
-                        textDecoration: 'none', color: 'inherit',
+                    href={"/workspace"}
+                    style={{
+                        textDecoration: 'none',
+                        color: 'inherit',
                         display: 'grid',
-                        width: 100,
+                        width: menubarSize.linkWidth,
                         height: '100%',
                         gridTemplateRows: 'auto min-content',
                     }}>
@@ -38,8 +85,8 @@ export default function Menubar() {
                         onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                         className={dellaRespira.className}
                         style={{
-                            paddingTop: 4,
-                            fontSize: 12,
+                            paddingTop: menubarSize.linkPaddingTop,
+                            fontSize: menubarSize.linkFont,
                             letterSpacing: "1px",
                             display: 'grid',
                             placeContent: 'center',
@@ -58,7 +105,7 @@ export default function Menubar() {
                 <Link href={"/screens"} style={{
                     textDecoration: 'none', color: 'inherit',
                     display: 'grid',
-                    width: 100,
+                    width: menubarSize.linkWidth,
                     height: '100%',
                     gridTemplateRows: 'auto min-content'
                 }}>
@@ -67,8 +114,8 @@ export default function Menubar() {
                         onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                         className={dellaRespira.className}
                         style={{
-                            paddingTop: 4,
-                            fontSize: 12,
+                            paddingTop: menubarSize.linkPaddingTop,
+                            fontSize: menubarSize.linkFont,
                             letterSpacing: "1px",
                             display: 'grid',
                             placeContent: 'center',

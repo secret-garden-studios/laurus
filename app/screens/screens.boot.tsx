@@ -13,9 +13,8 @@ interface ScreensBoot {
 }
 export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMediaPageSize }: ScreensBoot) {
     const [booted, setBooted] = useState(false);
-
-
     const [resolution, setResolution] = useState<ScreensResolution | undefined>(undefined);
+
     useLayoutEffect(() => {
         (() => {
             if (!resolution)

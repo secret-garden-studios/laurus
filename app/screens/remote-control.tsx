@@ -3,7 +3,7 @@ import ParameterSlider from "../components/parameter-slider";
 import TimelineSlider from "../components/timeline-slider";
 import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { ReactSvg, volumeUp, noSound, pauseNoFill, playArrowNoFill, upload, cancelCircle, threeSixtyLeft, threeSixtyRight } from "../svg-repo";
+import { SvgRepo, volumeUp, noSound, pauseNoFill, playArrowNoFill, upload, cancelCircle, threeSixtyLeft, threeSixtyRight } from "../svg-repo";
 import { VideoMediaResult, YouTubePlayerControl } from "./screens.client";
 import { ScreensResolution } from "./screens-resolution";
 
@@ -294,7 +294,7 @@ export default function RemoteControl({
                     display: 'grid',
                     placeContent: 'center'
                 }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={volumeUp()}
                         containerSize={{
                             width: volumeSize.svg,
@@ -332,7 +332,7 @@ export default function RemoteControl({
                     display: 'grid',
                     placeContent: 'center'
                 }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={noSound()}
                         containerSize={{
                             width: volumeSize.svg,
@@ -355,7 +355,7 @@ export default function RemoteControl({
                     placeContent: "center",
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={threeSixtyLeft()}
                         containerSize={{
                             width: controlPanelSize.clipSvg,
@@ -381,7 +381,7 @@ export default function RemoteControl({
                         width: controlPanelSize.playContainer,
                         height: controlPanelSize.playContainer
                     }}>
-                        <ReactSvg
+                        <SvgRepo
                             svg={videoMedia.playing ? pauseNoFill() : playArrowNoFill()}
                             containerSize={{
                                 width: controlPanelSize.playSvg,
@@ -396,7 +396,7 @@ export default function RemoteControl({
                                 onNewControl(newControl);
                             }} />
                     </div>
-                    <ReactSvg
+                    <SvgRepo
                         svg={threeSixtyRight()}
                         containerSize={{
                             width: controlPanelSize.clipSvg,
@@ -482,7 +482,7 @@ export default function RemoteControl({
                     display: 'grid',
                     gridTemplateRows: 'min-content auto min-content'
                 }}>
-                    <ReactSvg
+                    <SvgRepo
                         svg={upload()}
                         containerSize={{
                             width: notesPanelSize.svg,
@@ -493,7 +493,7 @@ export default function RemoteControl({
                             onNewNote(notepad);
                         }} />
                     <div />
-                    <ReactSvg
+                    <SvgRepo
                         svg={cancelCircle()}
                         containerSize={{
                             width: notesPanelSize.svg,

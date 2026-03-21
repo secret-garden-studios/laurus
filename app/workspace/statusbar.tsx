@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { WorkspaceContext } from "./workspace.client";
 
 export interface Statusbar {
@@ -9,10 +9,31 @@ export interface Statusbar {
 }
 export default function Statusbar({ action, body }: Statusbar) {
     const { appState } = useContext(WorkspaceContext);
+    const [statusbarSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                height: 30,
+                fontSize: 9,
+                padding: "0px 12px",
+            }
+            case "midhigh": return {
+                height: 24,
+                fontSize: 8,
+                padding: "0px 12px",
+            }
+            case "midlow":
+            case "low": return {
+                height: 20,
+                fontSize: 7,
+                padding: "0px 12px",
+            }
+        }
+    });
+
     return (
         <>
             <div style={{
-                height: `30px`,
+                height: statusbarSize.height,
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
@@ -21,13 +42,13 @@ export default function Statusbar({ action, body }: Statusbar) {
                 backgroundColor: "#121212ff",
                 overflow: "hidden",
                 whiteSpace: "nowrap",
-                padding: "0px 12px",
+                padding: statusbarSize.padding,
                 gap: 6
             }}>
                 <div style={{
                     fontFamily: "monospace",
                     fontWeight: "bolder",
-                    fontSize: "9px",
+                    fontSize: statusbarSize.fontSize,
                 }}>{action}</div>
                 {body.map((m, i) => {
                     if (i === 0) {
@@ -35,7 +56,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                             <div key={i} style={{
                                 fontFamily: "monospace",
                                 fontWeight: "lighter",
-                                fontSize: "9px",
+                                fontSize: statusbarSize.fontSize,
                             }}>
                                 {`${m}`}
                             </div>
@@ -46,7 +67,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                             <div key={i} style={{
                                 fontFamily: "monospace",
                                 fontWeight: "lighter",
-                                fontSize: "9px",
+                                fontSize: statusbarSize.fontSize,
                             }}>
                                 {`, ${m}`}
                             </div>
@@ -57,7 +78,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                     marginLeft: "auto",
                     fontFamily: "monospace",
                     fontWeight: "normal",
-                    fontSize: "9px",
+                    fontSize: statusbarSize.fontSize,
                 }}>
                     {`${appState.resolution.value.width}x${appState.resolution.value.height}`}
                 </div>

@@ -2,95 +2,9 @@
 import { useState, useLayoutEffect, Suspense } from "react";
 import { WorkspaceResolution, getScreenResolution } from "./workspace-resolution";
 import Workspace from "./workspace.client";
-import {
-    getEffects,
-    getImg,
-    getImgDiscoveryPage,
-    getMoves,
-    getProjects,
-    getScales,
-    getSvg,
-    getSvgDiscoveryPage,
-    ImgMediaResult_V1_0,
-    MoveResult_V1_0,
-    ProjectResult_V1_0,
-    ScaleResult_V1_0,
-    SvgMediaResult_V1_0
-} from "./workspace.server";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
-
-export interface ProjectDependencies {
-    project: ProjectResult_V1_0,
-    scales: ScaleResult_V1_0[],
-    moves: MoveResult_V1_0[],
-    canvasImgs: ImgMediaResult_V1_0[],
-    canvasSvgs: SvgMediaResult_V1_0[],
-}
-async function fetchMostRecentProject(laurusApi: string | undefined, projects: Promise<ProjectResult_V1_0[] | undefined>) {
-    const p = await projects;
-    if (p && p.length > 0) {
-        const newProject: ProjectResult_V1_0 = p.sort((a, b) =>
-            Date.parse(b.last_active) - Date.parse(a.last_active))[0];
-        const scales = await getScales(laurusApi, newProject.project_id);
-        const moves = await getMoves(laurusApi, newProject.project_id);
-
-        const svgsArray = Array.from(newProject.svgs.values());
-        const canvasSvgs: SvgMediaResult_V1_0[] = [];
-        for (let i = 0; i < svgsArray.length; i++) {
-            const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id, svgsArray[i].media_path);
-            if (svgMediaResult) {
-                canvasSvgs.push({ ...svgMediaResult });
-            }
-        }
-
-        const imgsArray = Array.from(newProject.imgs.values());
-        const canvasImgs: ImgMediaResult_V1_0[] = [];
-        for (let i = 0; i < imgsArray.length; i++) {
-            const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id, imgsArray[i].media_path);
-            if (imgMediaResult) {
-                canvasImgs.push({ ...imgMediaResult });
-            }
-        }
-
-        return {
-            project: newProject,
-            scales: scales ?? [],
-            moves: moves ?? [],
-            canvasImgs,
-            canvasSvgs,
-        }
-    }
-}
-
-export interface BrowserDependencies {
-    browserImgs: ImgMediaResult_V1_0[],
-    browserSvgs: SvgMediaResult_V1_0[],
-}
-async function fetchMediaFromServer(laurusApi: string | undefined, pageSize: number) {
-    const browserImgs: ImgMediaResult_V1_0[] = [];
-    const browserSvgs: SvgMediaResult_V1_0[] = [];
-
-    if (pageSize <= 0) {
-        return { browserImgs, browserSvgs }
-    }
-
-    const imgPageOne = await getImgDiscoveryPage(laurusApi, pageSize);
-    if (imgPageOne && imgPageOne.length > 0) {
-        for (let i = 0; i < imgPageOne.length; i++) {
-            browserImgs.push({ ...imgPageOne[i] });
-        }
-    }
-
-    const svgPageOne = await getSvgDiscoveryPage(laurusApi, pageSize);
-    if (svgPageOne && svgPageOne.length > 0) {
-        for (let i = 0; i < svgPageOne.length; i++) {
-            browserSvgs.push({ ...svgPageOne[i] });
-        }
-    }
-
-    return { browserImgs, browserSvgs }
-}
+import { BrowserDependencies, ProjectDependencies } from "./page";
 
 function Skeleton() {
     return (<>
@@ -135,10 +49,22 @@ function Forbidden({ resolution }: Forbidden) {
 
 interface WorkspaceBoot {
     laurusApi: string | undefined
-    mediaPageSize: string | undefined,
+    mediaPageSizeInit: number,
+    effectsEnum: Promise<string[] | undefined>,
+    projectDependencies: Promise<ProjectDependencies | undefined>,
+    browserDependencies: Promise<BrowserDependencies>,
 }
-export default function WorkspaceBoot({ laurusApi, mediaPageSize }: WorkspaceBoot) {
-    const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined)
+export default function WorkspaceBoot({
+    laurusApi,
+    mediaPageSizeInit,
+    effectsEnum,
+    projectDependencies,
+    browserDependencies }: WorkspaceBoot) {
+
+    const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
+    const timelineValues = [30, 60, 90];
+    const timelineUnits = ['sec', 'min'];
+
     useLayoutEffect(() => {
         (() => {
             if (!resolution)
@@ -146,13 +72,6 @@ export default function WorkspaceBoot({ laurusApi, mediaPageSize }: WorkspaceBoo
         })();
     });
 
-    const mediaPageSizeInit = mediaPageSize ? (parseInt(mediaPageSize) || 0) : 0;
-    const projects = getProjects(laurusApi);
-    const effectsEnum = getEffects(laurusApi);
-    const projectDependencies = fetchMostRecentProject(laurusApi, projects);
-    const browserDependencies = fetchMediaFromServer(laurusApi, mediaPageSizeInit);
-    const timelineValues = [30, 60, 90];
-    const timelineUnits = ['sec', 'min'];
     return resolution ?
         resolution.type != 'low' ?
             <Suspense fallback={<Skeleton />}>

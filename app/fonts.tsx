@@ -44,8 +44,10 @@ export const italiana = Italiana({
 
 export const ubuntuMono = Ubuntu_Mono({
     weight: "400",
+    subsets: ['latin'],
 });
 
 export const redHatDisplay = Red_Hat_Display({
     weight: "400",
+    subsets: ['latin'],
 });

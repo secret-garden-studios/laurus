@@ -2,11 +2,10 @@
 
 import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from '@dnd-kit/utilities';
 import { LaurusImgResult, LaurusSvgResult, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
 import { useContext } from "react";
-import { ReactSvg } from "../svg-repo";
+import { SvgRepo } from "../svg-repo";
 
 interface ReactImg {
     img: LaurusImgResult,
@@ -121,10 +120,12 @@ export function DraggableReactImg({
             onDragEnd={(e) => {
                 document.body.style.cursor = 'default';
                 const delta = e.delta;
-                const newPosition = { x: Math.round(meta.left + delta.x), y: Math.round(meta.top + delta.y) };
+                const newPosition = {
+                    x: Math.min(appState.project.canvas_width - meta.width, Math.max(0, Math.round(meta.left + delta.x))),
+                    y: Math.min(appState.project.canvas_height - meta.height, Math.max(0, Math.round(meta.top + delta.y)))
+                };
                 onNewPosition({ ...newPosition });
             }}
-            modifiers={[restrictToFirstScrollableAncestor]}
         >
             <ReactImgNode
                 id={nodeId}
@@ -197,7 +198,7 @@ function ReactSvgNode({ id, position, data, containerSize, onSvgRef, inputId }: 
                 height: containerSize.height,
                 zIndex: position.z
             }} >
-            <ReactSvg
+            <SvgRepo
                 svg={data}
                 containerSize={{
                     width: containerSize.width,
@@ -245,10 +246,12 @@ export function DraggableReactSvg({
             onDragEnd={(e) => {
                 document.body.style.cursor = 'default';
                 const delta = e.delta;
-                const newPosition = { x: Math.round(meta.left + delta.x), y: Math.round(meta.top + delta.y) };
+                const newPosition = {
+                    x: Math.min(appState.project.canvas_width - meta.width, Math.max(0, Math.round(meta.left + delta.x))),
+                    y: Math.min(appState.project.canvas_height - meta.height, Math.max(0, Math.round(meta.top + delta.y)))
+                };
                 onNewPosition({ ...newPosition });
             }}
-            modifiers={[restrictToFirstScrollableAncestor]}
         >
             <ReactSvgNode
                 id={nodeId}

@@ -221,7 +221,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                 gridTemplateRows: 'min-content 1fr min-content'
             }}>
             <div style={{ gridRow: 1 }}>
-                <Menubar />
+                <Menubar resolution={resolution} />
             </div>
             <div
                 ref={containerRef}

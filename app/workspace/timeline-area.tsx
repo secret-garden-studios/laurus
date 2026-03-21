@@ -1,7 +1,7 @@
 import { CSSProperties, RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious, ReactSvg } from "../svg-repo";
+import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
 import {
     LaurusEffect,
     LaurusProjectResult,
@@ -311,7 +311,7 @@ export default function TimelineArea({
                     display: 'grid',
                     placeContent: 'center',
                 }}>
-                <ReactSvg
+                <SvgRepo
                     svg={moreVert('rgba(255, 255, 255, 0.5)')}
                     containerSize={{
                         width: 20,
@@ -387,7 +387,7 @@ export default function TimelineArea({
                                 {<i>{'fps'}</i>}
                             </div>
                         </div>
-                        <ReactSvg
+                        <SvgRepo
                             svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: 20,
@@ -417,7 +417,7 @@ export default function TimelineArea({
                                     });
                                 }
                             }} />
-                        <ReactSvg
+                        <SvgRepo
                             svg={playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: 50,
@@ -444,7 +444,7 @@ export default function TimelineArea({
                                 newAnimations.forEach(a => a.play());
                                 dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                             }} />
-                        <ReactSvg
+                        <SvgRepo
                             svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: 20,
@@ -548,7 +548,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             display: 'grid',
                         }}>
                         {/* layer options placeholder */}
-                        <ReactSvg
+                        <SvgRepo
                             svg={circle('rgba(204, 204, 204, 0)')}
                             containerSize={{
                                 width: 12,
@@ -568,7 +568,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                             borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
                         }}>
-                        <ReactSvg
+                        <SvgRepo
                             svg={showEffectsBrowser ?
                                 addCircle('rgba(204, 204, 204, 0.2)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
@@ -608,7 +608,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 display: 'grid',
                             }}>
                             {/* layer options placeholder */}
-                            <ReactSvg
+                            <SvgRepo
                                 svg={circle('rgba(204, 204, 204, 0)')}
                                 containerSize={{
                                     width: 12,
@@ -643,7 +643,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                                 borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
                             }}>
-                            <ReactSvg
+                            <SvgRepo
                                 svg={showEffectsBrowser ?
                                     addCircle('rgba(204, 204, 204, 0.2)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
@@ -798,7 +798,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                         <div>
                             {`${effectName}${effectName == 'skew' || effectName == 'rotate' ? " · coming soon" : ""}`}
                         </div>
-                        {(effectName != 'skew' && effectName != 'rotate') && <ReactSvg
+                        {(effectName != 'skew' && effectName != 'rotate') && <SvgRepo
                             svg={addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
                                 width: 20,

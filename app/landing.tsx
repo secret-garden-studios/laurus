@@ -4,7 +4,7 @@ import styles from "./app.module.css";
 import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
 
-type LaurusResolution =
+export type LaurusResolution =
     | { type: 'high' }
     | { type: 'midhigh' }
     | { type: 'midlow' }

@@ -1,7 +1,7 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
 import { convertTime, LaurusEffect, LaurusScale, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { arrowDropDown, arrowDropUp, ReactSvg } from "../svg-repo";
+import { arrowDropDown, arrowDropUp, SvgRepo } from "../svg-repo";
 import { MoveResult_V1_0, ScaleResult_V1_0, updateMove, updateScale } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -322,7 +322,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     width: '100%', height: 24,
                     padding: 6, display: 'flex', justifyContent: 'end'
                 }}>
-                <ReactSvg
+                <SvgRepo
                     svg={showUnitControls ? arrowDropUp() : arrowDropDown()}
                     containerSize={{
                         width: 17,
