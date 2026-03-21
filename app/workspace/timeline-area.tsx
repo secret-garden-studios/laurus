@@ -827,8 +827,9 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                     await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                 }
-                                const newOrder = appState.effects
-                                    .sort((a, b) => new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime()).length + 1;
+                                const sortedEffects = appState.effects
+                                    .sort((a, b) => new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime());
+                                const newOrder = sortedEffects.length > 0 ? Math.max(...sortedEffects.map(e => e.value.order)) + 1 : 1;
 
                                 switch (effectName) {
                                     case 'scale': {
