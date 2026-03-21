@@ -593,31 +593,31 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
         switch (appState.resolution.type) {
             case "high": return {
                 padding: "9px 13px",
-                xWidth: 22,
+                xWidth: 17,
                 footerPaddingBottom: 9,
-                dimensionFont: 24,
-                xFont: 19,
+                dimensionFont: 17,
+                xFont: 15,
                 aspectFont: 17,
-                footerFont: 17,
+                footerFont: 16,
             }
             case "midhigh": return {
                 padding: "6px 10px",
-                xWidth: 16,
+                xWidth: 11,
                 footerPaddingBottom: 6,
-                dimensionFont: 18,
-                xFont: 13,
+                dimensionFont: 11,
+                xFont: 9,
                 aspectFont: 11,
-                footerFont: 11,
+                footerFont: 10,
             }
             case "low":
             case "midlow": return {
                 padding: "5px 9px",
-                xWidth: 13,
+                xWidth: 8,
                 footerPaddingBottom: 5,
-                dimensionFont: 15,
-                xFont: 10,
-                aspectFont: 8,
-                footerFont: 8,
+                dimensionFont: 10,
+                xFont: 8,
+                aspectFont: 10,
+                footerFont: 9,
             }
         }
     });
@@ -669,7 +669,6 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
                     style={{
                         display: 'flex',
                         padding: overlaySize.padding,
-                        alignItems: 'center'
                     }}>
                     <div style={{ fontSize: overlaySize.dimensionFont, }}>{cropSize.width}</div>
                     <div style={{ fontSize: overlaySize.xFont, width: overlaySize.xWidth, textAlign: 'center' }}>{'x'}</div>
