@@ -40,12 +40,12 @@ export default function Menubar({ resolution }: Menubar) {
                 linkPaddingTop: 2
             }
             case "low": return {
-                height: 40,
-                font: 16,
+                height: 48,
+                font: 18,
                 paddingLeft: 12,
                 paddingRight: 16,
                 linkWidth: 80,
-                linkFont: 10,
+                linkFont: 12,
                 linkPaddingTop: 2
             }
         }
