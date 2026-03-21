@@ -107,6 +107,7 @@ export interface WorkspaceState {
     activeElement: LaurusActiveElement | undefined,
     effectNames: string[],
     effects: LaurusEffect[],
+    effectClipboard: LaurusEffect | undefined,
     timelineUnit: string,
     timelineMaxValue: number,
     recordingLight: boolean,
@@ -140,6 +141,7 @@ export const defaultWorkspace: WorkspaceState = {
     browserFrames: [],
     effectNames: [],
     effects: [],
+    effectClipboard: undefined,
     timelineUnit: '',
     timelineMaxValue: 0,
     timelineUnits: [],
@@ -171,6 +173,7 @@ export enum WorkspaceActionType {
     SetPendingSvg,
     SetEffects,
     SetEffect,
+    SetEffectClipboard,
     SetTimelineUnit,
     SetTimelineMaxValue,
     SetRecordingLight,
@@ -195,6 +198,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
     | { type: WorkspaceActionType.SetEffect, value: LaurusEffect }
+    | { type: WorkspaceActionType.SetEffectClipboard, value: LaurusEffect }
     | { type: WorkspaceActionType.SetTimelineUnit, value: string }
     | { type: WorkspaceActionType.SetTimelineMaxValue, value: number }
     | { type: WorkspaceActionType.SetRecordingLight, value: boolean }
@@ -312,6 +316,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.SetEffect: {
             return { ...state, effects: state.effects.map(e => e.key == action.value.key ? { ...action.value } : e) }
+        }
+        case WorkspaceActionType.SetEffectClipboard: {
+            return { ...state, effectClipboard: { ...action.value } }
         }
         case WorkspaceActionType.SetTimelineUnit: {
             return { ...state, timelineUnit: action.value }
@@ -1249,11 +1256,31 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                     style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         const newImg: LaurusProjectImg = { ...imgMeta, pending: false };
                                         dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                         const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
                                         dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                                        if (appState.effectClipboard) {
+                                            for (let i = 0; i < appState.effects.length; i++) {
+                                                const effect = appState.effects[i];
+                                                switch (effect.type) {
+                                                    case "scale": break;
+                                                    case "move": {
+                                                        if (appState.effectClipboard.type != 'move') break;
+                                                        const activeMath = effect.value.math.get(key);
+                                                        if (activeMath) break;
+                                                        const eq = appState.effectClipboard.value.math.get("clipboard");
+                                                        if (!eq) break;
+                                                        const newEquation: LaurusMoveEquation = { ...eq, input_id: key, loop: false, solution: [] };
+                                                        const newMath: Map<string, LaurusMoveEquation> = new Map();
+                                                        newMath.set(newEquation.input_id, newEquation);
+                                                        const newMove: LaurusMove = { ...effect.value, math: newMath };
+                                                        await updateMove(appState.apiOrigin, effect.key, newMove);
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }}>
                                     <SvgRepo
                                         svg={checkCircle('rgb(227, 227, 227)')}

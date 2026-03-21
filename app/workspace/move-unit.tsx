@@ -1,14 +1,23 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
-import { autorenew, playArrow, earthquake, skipPrevious, menu, SvgRepo } from "../svg-repo";
+import { autorenew, playArrow, earthquake, skipPrevious, menu, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
 import styles from "../app.module.css";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { deleteMove, getMove, updateMove } from "./workspace.server";
 import Dial from "../components/dial";
 import ParameterSlider from "../components/parameter-slider";
 import { getParamTrackPadding, getParamCapSize, getParamTrackSize, getParamButtonSize, getParamGrooveWidth, getDisplaySize, getHeaderSize, getTopLevelPadding } from "./unit-resolution";
+
+interface MoveUnitControls {
+    amplitude: number,
+    frequency: number,
+    wavelength: number,
+    distance: number,
+    time: number,
+    angle: number,
+}
 
 interface MoveUnit {
     move: LaurusMoveResult
@@ -23,13 +32,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [headerSize] = useState(() => getHeaderSize(appState.resolution));
     const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [mainControls, setMainControls] = useState(true);
-
-    const [mathLimits] = useState({
-        amplitude: 1000,
-        frequency: 100,
-        wavelength: 1000,
-        distance: 5000,
-    })
+    const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
+        amplitude: 0,
+        frequency: 0,
+        wavelength: 0,
+        distance: 0,
+        time: 0,
+        angle: 0,
+    });
     const [paramTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
     const [paramCapSize] = useState(() => getParamCapSize(appState.resolution));
     const [paramTrackSize] = useState(() => getParamTrackSize(appState.resolution));
@@ -43,8 +53,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
             paramCapSize.height - paramTrackCapBorderAdj,
-            mathLimits.amplitude);
-
+            1000);
 
     // param 2
     const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
@@ -52,7 +61,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
             paramCapSize.height - paramTrackCapBorderAdj,
-            mathLimits.frequency);
+            100);
 
     // param 3
     const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
@@ -60,7 +69,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } =
         useTrackpadState(
             paramCapSize.height - paramTrackCapBorderAdj,
-            mathLimits.wavelength);
+            1000);
 
     // param 4
     const distanceTrackRef = useRef<HTMLDivElement | null>(null);
@@ -68,7 +77,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } =
         useTrackpadState(
             paramCapSize.height - paramTrackCapBorderAdj,
-            mathLimits.distance);
+            5000);
 
     // param 5
     const timeTrackRef = useRef<HTMLDivElement | null>(null);
@@ -94,48 +103,48 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
         updateMove(appState.apiOrigin, move.move_id, { ...newMove });
     }, [appState.apiOrigin, dispatch, move]);
 
+    const updateTrackpads = useCallback((newControls: MoveUnitControls) => {
+        setAngle(newControls.angle);
+
+        if (amplitudeTrackRef.current) {
+            const newCursor = getAmplitudeCursor(newControls.amplitude, (amplitudeTrackRef.current.clientHeight));
+            setAmplitudeCursor({ y: newCursor, x: 0 });
+        }
+        if (frequencyTrackRef.current) {
+            const newCursor = getFrequencyCursor(newControls.frequency, (frequencyTrackRef.current.clientHeight));
+            setFrequencyCursor({ y: newCursor, x: 0 });
+        }
+        if (wavelengthTrackRef.current) {
+            const newCursor = getWavelengthCursor(newControls.wavelength, (wavelengthTrackRef.current.clientHeight));
+            setWavelengthCursor({ y: newCursor, x: 0 });
+        }
+        if (distanceTrackRef.current) {
+            const newCursor = getDistanceCursor(newControls.distance, (distanceTrackRef.current.clientHeight));
+            setDistanceCursor({ y: newCursor, x: 0 });
+        }
+        if (timeTrackRef.current) {
+            const newCursor = getTimeCursor(newControls.time, (timeTrackRef.current.clientHeight));
+            setTimeCursor({ y: newCursor, x: 0 });
+        }
+    }, [getAmplitudeCursor, getDistanceCursor, getFrequencyCursor, getTimeCursor, getWavelengthCursor]);
+
     useLayoutEffect(() => {
         (async () => {
             const activeEquation = move.math.get(appState.activeElement?.key ?? "");
-            let angleInit = 0;
-            let amplitudeInit = 0
-            let frequencyInit = 0
-            let wavelengthInit = 0
-            let distanceInit = 0
-            let timeInit = 0
+            const initControls: MoveUnitControls = { ...currentControls }
+
             if (activeEquation) {
-                amplitudeInit = activeEquation.amplitude;
-                frequencyInit = activeEquation.frequency;
-                wavelengthInit = activeEquation.wavelength;
-                distanceInit = activeEquation.distance;
-                timeInit = activeEquation.time / 1000;
-                angleInit = activeEquation.angle;
+                initControls.amplitude = activeEquation.amplitude;
+                initControls.frequency = activeEquation.frequency;
+                initControls.wavelength = activeEquation.wavelength;
+                initControls.distance = activeEquation.distance;
+                initControls.time = activeEquation.time / 1000;
+                initControls.angle = activeEquation.angle;
             }
 
-            setAngle(angleInit);
-
-            if (amplitudeTrackRef.current) {
-                const newCursor = getAmplitudeCursor(amplitudeInit, (amplitudeTrackRef.current.clientHeight));
-                setAmplitudeCursor({ y: newCursor, x: 0 });
-            }
-            if (frequencyTrackRef.current) {
-                const newCursor = getFrequencyCursor(frequencyInit, (frequencyTrackRef.current.clientHeight));
-                setFrequencyCursor({ y: newCursor, x: 0 });
-            }
-            if (wavelengthTrackRef.current) {
-                const newCursor = getWavelengthCursor(wavelengthInit, (wavelengthTrackRef.current.clientHeight));
-                setWavelengthCursor({ y: newCursor, x: 0 });
-            }
-            if (distanceTrackRef.current) {
-                const newCursor = getDistanceCursor(distanceInit, (distanceTrackRef.current.clientHeight));
-                setDistanceCursor({ y: newCursor, x: 0 });
-            }
-            if (timeTrackRef.current) {
-                const newCursor = getTimeCursor(timeInit, (timeTrackRef.current.clientHeight));
-                setTimeCursor({ y: newCursor, x: 0 });
-            }
+            updateTrackpads(initControls);
         })();
-    }, [appState.activeElement?.key, appState.timelineMaxValue, getAmplitudeCursor, getDistanceCursor, getFrequencyCursor, getTimeCursor, getWavelengthCursor, move.math]);
+    }, [appState.activeElement?.key, currentControls, move.math, updateTrackpads]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         if (!appState.activeElement) return [];
@@ -317,9 +326,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                                             if (!amplitudeTrackRef.current) return;
                                             const newAmplitude = getAmplitudeValue(newCursor.y, amplitudeTrackRef.current.clientHeight, 0);
+                                            setCurrentControls(v => { return { ...v, amplitude: newAmplitude } });
 
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newEquation: LaurusMoveEquation = activeEquation ?
                                                     { ...activeEquation, amplitude: newAmplitude } :
                                                     {
@@ -348,9 +358,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                                             if (!frequencyTrackRef.current) return;
                                             const newFrequency = getFrequencyValue(newCursor.y, frequencyTrackRef.current.clientHeight);
+                                            setCurrentControls(v => { return { ...v, frequency: newFrequency } });
 
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newEquation: LaurusMoveEquation = activeEquation ?
                                                     { ...activeEquation, frequency: newFrequency } :
                                                     {
@@ -379,9 +390,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                                             if (!wavelengthTrackRef.current) return;
                                             const newWavelength = getWavelengthValue(newCursor.y, wavelengthTrackRef.current.clientHeight);
+                                            setCurrentControls(v => { return { ...v, wavelength: newWavelength } });
 
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newEquation: LaurusMoveEquation = activeEquation ?
                                                     { ...activeEquation, wavelength: newWavelength } :
                                                     {
@@ -410,9 +422,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                                             if (!distanceTrackRef.current) return;
                                             const newDistance = getDistanceValue(newCursor.y, distanceTrackRef.current.clientHeight);
+                                            setCurrentControls(v => { return { ...v, distance: newDistance } });
 
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newEquation: LaurusMoveEquation = activeEquation ?
                                                     { ...activeEquation, distance: newDistance } :
                                                     {
@@ -441,9 +454,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight, 0);
+                                            setCurrentControls(v => { return { ...v, time: newTime } });
 
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newServerTime = newTime * 1000;
                                                 const newEquation: LaurusMoveEquation = activeEquation ?
                                                     { ...activeEquation, time: newServerTime } :
@@ -475,7 +489,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                                         onClick={() => {
                                             if (appState.activeElement) {
-                                                const activeEquation = move.math.get(appState.activeElement!.key);
+                                                const activeEquation = move.math.get(appState.activeElement.key);
                                                 const newEquation = activeEquation ?
                                                     { ...activeEquation, loop: !activeEquation.loop } :
                                                     {
@@ -577,6 +591,84 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             }}
                                             scale={1} />
                                     </div>
+                                    <div
+                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
+                                        onClick={() => {
+                                            if (!wavelengthTrackRef.current) return;
+                                            let clipboardData: MoveUnitControls = { ...currentControls };
+                                            if (appState.activeElement) {
+                                                const activeEquation = move.math.get(appState.activeElement.key);
+                                                if (activeEquation) {
+                                                    clipboardData = { ...activeEquation };
+                                                    setCurrentControls({ ...activeEquation });
+                                                }
+                                            }
+                                            const currentMoveEq: LaurusMoveEquation = {
+                                                ...clipboardData,
+                                                input_id: "clipboard",
+                                                loop: false,
+                                                solution: []
+                                            }
+                                            const newMath: Map<string, LaurusMoveEquation> = new Map();
+                                            newMath.set("clipboard", currentMoveEq);
+                                            const newClipboardEffect: LaurusEffect = {
+                                                type: 'move',
+                                                key: move.move_id,
+                                                value: { ...move, math: newMath }
+                                            };
+                                            dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
+                                        }}
+                                        style={{
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                        }}>
+                                        <SvgRepo
+                                            svg={fileCopy()}
+                                            containerSize={{
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
+                                            }}
+                                            scale={0.8} />
+                                    </div>
+                                    <div
+                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
+                                        onClick={() => {
+                                            if (appState.effectClipboard && appState.effectClipboard.type == 'move') {
+                                                const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
+                                                if (!clipboardEquation) return;
+                                                const newEquation: LaurusMoveEquation = { ...clipboardEquation };
+                                                const newControls: MoveUnitControls = { ...clipboardEquation };
+                                                setCurrentControls(newControls);
+                                                updateTrackpads(newControls);
+                                                if (appState.activeElement) {
+                                                    const newMath: LaurusMoveEquation = {
+                                                        ...newEquation,
+                                                        input_id: appState.activeElement.key
+                                                    }
+                                                    saveNewEquation(newMath);
+                                                }
+                                            }
+                                        }}
+                                        style={{
+                                            width: paramButtonSize.container,
+                                            height: paramButtonSize.container,
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                        }}>
+                                        <SvgRepo
+                                            svg={appState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
+                                            containerSize={{
+                                                width: paramButtonSize.svg,
+                                                height: paramButtonSize.svg
+                                            }}
+                                            scale={0.88} />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -600,8 +692,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     value={angle}
                                     onNewValue={function (v: number): void {
                                         const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
+                                        setCurrentControls(v => { return { ...v, angle: newAngle } });
                                         if (appState.activeElement) {
-                                            const activeEquation = move.math.get(appState.activeElement!.key);
+                                            const activeEquation = move.math.get(appState.activeElement.key);
                                             const newEquation: LaurusMoveEquation = activeEquation ?
                                                 { ...activeEquation, angle: newAngle } :
                                                 {

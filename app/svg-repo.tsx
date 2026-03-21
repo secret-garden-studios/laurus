@@ -868,3 +868,35 @@ export function crop2_3(
         markup: base64Encode(`<path d="M 260,-820 H 700 V -140 H 260 Z M 320,-760 V -200 H 640 V -760 Z M 320,-760 H 640 Z"/>`)
     }
 }
+
+export function contentPaste(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/content_paste_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 166.29024,-120 V -840 H 381.52999 Q 391.11557,-875 419.00088,-897.5 446.88619,-920 480,-920 514.85664,-920 542.30624,-897.5 569.75585,-875 579.34142,-840 H 793.70976 V -120 Z M 236.00352,-200 H 723.99648 V -760 H 654.2832 V -640 H 305.7168 V -760 H 236.00352 Z M 504.83536,-771.5 Q 514.85664,-783 514.85664,-800 514.85664,-817 504.83536,-828.5 494.81407,-840 480,-840 465.18593,-840 455.16464,-828.5 445.14336,-817 445.14336,-800 445.14336,-783 455.16464,-771.5 465.18593,-760 480,-760 494.81407,-760 504.83536,-771.5 Z"/>`)
+    }
+}
+
+export function fileCopy(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_path: "/material-ui/file_copy_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M240-200v-720h360l240 240v480H240Zm320-440v-200H320v560h440v-360H560ZM80-40v-640h80v560h440v80H80Zm240-800v200-200 560-560Z"/>`)
+    }
+}
