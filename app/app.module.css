@@ -20,19 +20,22 @@
 .animated-grainy-background {
   background-image: url('/noise2.png');
   background-size: auto;
-  animation: drift 3.5s linear infinite;
+  animation: drift 5s linear infinite;
 }
 
 @keyframes drift {
   0% {
     background-position: 0% 0%;
+    scale: 1;
   }
 
   50% {
-    background-position: 1% 10%;
+    background-position: 1% 1.5%;
+    scale: 1.03;
   }
 
   100% {
     background-position: 0% 0%;
+    scale: 1;
   }
 }
