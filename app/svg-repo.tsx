@@ -33,10 +33,10 @@ export function getCrops(fill?: string): LaurusCropSvg[] {
         { svg: crop7_5(fill), order: 2, timestamp: now, type: '7:5' },
         { svg: crop3_2(fill), order: 3, timestamp: now, type: '3:2' },
         { svg: crop16_9(fill), order: 4, timestamp: now, type: '16:9' },
-        { svg: crop9_16(fill), order: 8, timestamp: now, type: '9:16' },
-        { svg: crop2_3(fill), order: 1, timestamp: now, type: '2:3' },
-        { svg: crop5_7(fill), order: 2, timestamp: now, type: '5:7' },
-        { svg: crop4_5(fill), order: 3, timestamp: now, type: '4:5' },
+        { svg: crop9_16(fill), order: 5, timestamp: now, type: '9:16' },
+        { svg: crop2_3(fill), order: 6, timestamp: now, type: '2:3' },
+        { svg: crop5_7(fill), order: 7, timestamp: now, type: '5:7' },
+        { svg: crop4_5(fill), order: 8, timestamp: now, type: '4:5' },
         { svg: cropSquare(fill), order: 9, timestamp: now, type: '1:1' },
     ]
 }
