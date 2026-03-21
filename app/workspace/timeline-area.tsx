@@ -827,6 +827,8 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                     await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                 }
+                                const newOrder = appState.effects
+                                    .sort((a, b) => new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime()).length + 1;
 
                                 switch (effectName) {
                                     case 'scale': {
@@ -837,7 +839,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                             layer_id,
                                             fps: appState.fps,
-                                            order: appState.effects.filter(e => e.type == 'scale').length,
+                                            order: newOrder,
                                         };
                                         const response = await createScale(appState.apiOrigin, newScale);
                                         if (response) {
@@ -861,7 +863,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
                                             layer_id,
                                             fps: appState.fps,
-                                            order: appState.effects.filter(e => e.type == 'move').length,
+                                            order: newOrder,
                                         };
                                         const response = await createMove(appState.apiOrigin, newMove);
                                         if (response) {
