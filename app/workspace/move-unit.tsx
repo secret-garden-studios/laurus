@@ -132,7 +132,6 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
         (async () => {
             const activeEquation = move.math.get(appState.activeElement?.key ?? "");
             const initControls: MoveUnitControls = { ...currentControls }
-
             if (activeEquation) {
                 initControls.amplitude = activeEquation.amplitude;
                 initControls.frequency = activeEquation.frequency;
@@ -141,10 +140,17 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                 initControls.time = activeEquation.time / 1000;
                 initControls.angle = activeEquation.angle;
             }
-
+            else if (appState.activeElement) {
+                initControls.amplitude = 0;
+                initControls.frequency = 0;
+                initControls.wavelength = 0;
+                initControls.distance = 0;
+                initControls.time = 0;
+                initControls.angle = 0;
+            }
             updateTrackpads(initControls);
         })();
-    }, [appState.activeElement?.key, currentControls, move.math, updateTrackpads]);
+    }, [appState.activeElement, currentControls, move.math, updateTrackpads]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         if (!appState.activeElement) return [];
@@ -601,7 +607,6 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 const activeEquation = move.math.get(appState.activeElement.key);
                                                 if (activeEquation) {
                                                     clipboardData = { ...activeEquation };
-                                                    setCurrentControls({ ...activeEquation });
                                                 }
                                             }
                                             const currentMoveEq: LaurusMoveEquation = {

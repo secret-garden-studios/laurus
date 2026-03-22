@@ -1214,8 +1214,12 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                                     if (effect.value.math.has(key)) {
                                                         const newMath = new Map(effect.value.math);
                                                         newMath.delete(key);
-                                                        const newMove: LaurusScale = { ...effect.value, math: newMath }
-                                                        await updateScale(appState.apiOrigin, effect.key, newMove);
+                                                        const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
+                                                        dispatch({
+                                                            type: WorkspaceActionType.SetEffect,
+                                                            value: { type: 'scale', key: effect.key, value: { ...newScale } }
+                                                        });
+                                                        await updateScale(appState.apiOrigin, effect.key, newScale);
                                                     }
                                                     break;
                                                 }
@@ -1223,13 +1227,16 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                                     if (effect.value.math.has(key)) {
                                                         const newMath = new Map(effect.value.math);
                                                         newMath.delete(key);
-                                                        const newMove: LaurusMove = { ...effect.value, math: newMath }
+                                                        const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
+                                                        dispatch({
+                                                            type: WorkspaceActionType.SetEffect,
+                                                            value: { type: 'move', key: effect.key, value: { ...newMove } }
+                                                        });
                                                         await updateMove(appState.apiOrigin, effect.key, newMove);
                                                     }
                                                     break;
                                                 }
                                             }
-
                                         }
 
                                         if (appState.activeElement?.key == key) {
@@ -1261,26 +1268,6 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                         dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                                         const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
                                         dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                                        if (appState.effectClipboard) {
-                                            for (let i = 0; i < appState.effects.length; i++) {
-                                                const effect = appState.effects[i];
-                                                switch (effect.type) {
-                                                    case "scale": break;
-                                                    case "move": {
-                                                        if (appState.effectClipboard.type != 'move') break;
-                                                        const activeMath = effect.value.math.get(key);
-                                                        if (activeMath) break;
-                                                        const eq = appState.effectClipboard.value.math.get("clipboard");
-                                                        if (!eq) break;
-                                                        const newEquation: LaurusMoveEquation = { ...eq, input_id: key, loop: false, solution: [] };
-                                                        const newMath: Map<string, LaurusMoveEquation> = new Map();
-                                                        newMath.set(newEquation.input_id, newEquation);
-                                                        const newMove: LaurusMove = { ...effect.value, math: newMath };
-                                                        await updateMove(appState.apiOrigin, effect.key, newMove);
-                                                    }
-                                                }
-                                            }
-                                        }
                                     }}>
                                     <SvgRepo
                                         svg={checkCircle('rgb(227, 227, 227)')}
