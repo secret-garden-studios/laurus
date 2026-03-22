@@ -11,11 +11,26 @@ export function getDisplaySize(resolution: WorkspaceResolution) {
 }
 
 export function getHeaderSize(resolution: WorkspaceResolution) {
-    return {
-        font: Math.round(32 * resolution.factor),
-        logo: Math.round(40 * resolution.factor),
-        more: Math.round(24 * resolution.factor),
-        padding: Math.round(10 * resolution.factor),
+    switch (resolution.type) {
+        case "high": return {
+            font: 32,
+            logo: 40,
+            more: 24,
+            padding: 10,
+        }
+        case "midhigh": return {
+            font: 24,
+            logo: 28,
+            more: 18,
+            padding: 12,
+        }
+        case "midlow":
+        case "low": return {
+            font: 20,
+            logo: 24,
+            more: 16,
+            padding: 6,
+        }
     }
 }
 

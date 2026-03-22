@@ -837,7 +837,7 @@ export default function Workspace({
                             gridRow: '3', gridColumn: '4',
                             width: mediaBrowserWidth,
                             height: '100%',
-                            border: '1px solid black',
+                            border: '1px solid rgba(10, 10, 10, 1)',
                             background: 'rgba(20, 20, 20, 1)'
                         }} >
                         <MediaBrowser
@@ -864,7 +864,7 @@ export default function Workspace({
                         gridRow: '3', gridColumn: '5',
                         display: "grid",
                         gridTemplateRows: 'min-content min-content auto',
-                        borderLeft: '1px solid black',
+                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
                         background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
                         width: rightPanelSize.width,
                         justifyContent: 'center'
@@ -941,14 +941,14 @@ export default function Workspace({
                         alignItems: "center",
                         justifyContent: 'space-between',
                         backgroundImage: "linear-gradient(34deg, rgba(21, 21, 21, 1) 34%, rgba(13, 13, 13, 1))",
-                        border: '1px solid black',
+                        border: '1px solid rgba(10, 10, 10, 1)',
                     }}>
                         <div
                             onClick={() => setShowTimeline(v => !v)}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             style={{
-                                borderRight: '1px solid rgb(0, 0, 0)',
+                                borderRight: '1px solid rgba(10, 10, 10, 1)',
                                 position: 'relative'
                             }}>
                             {appState.activeElement && (() => {
@@ -978,7 +978,7 @@ export default function Workspace({
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             onClick={() => setShowMediaBrowser(v => !v)}
                             style={{
-                                borderLeft: '1px solid rgb(0, 0, 0)',
+                                borderLeft: '1px solid rgba(10, 10, 10, 1)',
                                 position: 'relative'
                             }}>
                             {appState.browserElement && (() => {

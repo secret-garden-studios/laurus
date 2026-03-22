@@ -250,7 +250,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                 display: 'grid',
                                 width: `${displaySize.width}px`, height: `${displaySize.height}px`,
                                 borderRadius: 10,
-                                border: '1px solid black',
+                                border: '1px solid rgba(10,10,10,1)',
                                 position: 'relative',
                             }}>
                             {/* active element */}
@@ -307,7 +307,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                         {/* parameters */}
                         <div style={{ padding: topLevelPadding }}>
                             <div style={{
-                                border: '1px solid black',
+                                border: '1px solid rgba(10,10,10,1)',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 padding: 0,
@@ -484,7 +484,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         grooveWidth={paramGrooveWidth} />
                                 </div>
                                 <div style={{
-                                    borderLeft: '1px solid black',
+                                    borderLeft: '1px solid rgba(10,10,10,1)',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
                                     display: 'grid',
@@ -517,7 +517,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                             background: move.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <SvgRepo
@@ -552,7 +552,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={skipPrevious()}
@@ -587,7 +587,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={playArrow()}
@@ -629,7 +629,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={fileCopy()}
@@ -664,7 +664,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={appState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
@@ -682,7 +682,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                             <div style={{
                                 width: '100%',
                                 padding: angleTrackPadding,
-                                border: 'solid rgba(0, 0, 0, 1) 1px',
+                                border: 'solid rgba(10,10,10,1) 1px',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 display: 'flex',

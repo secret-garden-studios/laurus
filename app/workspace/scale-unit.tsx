@@ -252,7 +252,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 display: 'grid',
                                 width: `${displaySize.width}px`, height: `${displaySize.height}px`,
                                 borderRadius: 10,
-                                border: '1px solid black',
+                                border: '1px solid rgba(10,10,10,1)',
                                 position: 'relative',
                             }}>
                             {/* active element */}
@@ -306,7 +306,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                         {/* parameters */}
                         <div style={{ padding: topLevelPadding }}>
                             <div style={{
-                                border: '1px solid black',
+                                border: '1px solid rgba(10,10,10,1)',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 padding: 0,
@@ -316,7 +316,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                     height: 'min-content',
                                     display: 'flex',
                                     padding: timeTrackPadding,
-                                    borderRight: 'solid rgba(0, 0, 0, 1) 1px',
+                                    borderRight: 'solid rgba(10,10,10,1) 1px',
                                 }}>
                                     <ParameterSlider
                                         label={"speed"}
@@ -400,7 +400,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                 fontSize: scaleParamDisplay.fontSize,
                                                 height: scaleParamDisplay.inputHeight,
                                                 width: '56%',
-                                                textShadow: '2px 2px 3px rgba(0, 0, 0, 1)',
+                                                textShadow: '2px 2px 3px rgba(10,10,10,1)',
                                             }} />
                                         <div style={{
                                             height: scaleParamDisplay.inputHeight,
@@ -415,7 +415,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 </div>
                                 <div style={{
                                     marginLeft: 'auto',
-                                    borderLeft: '1px solid black',
+                                    borderLeft: '1px solid rgba(10,10,10,1)',
                                     background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
                                     padding: 0,
                                     display: 'grid',
@@ -444,7 +444,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                             background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <SvgRepo
@@ -479,7 +479,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={skipPrevious()}
@@ -514,7 +514,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgb(0, 0, 0)',
+                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
                                             svg={playArrow()}
@@ -534,7 +534,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 padding: scaleTrackPadding,
                                 display: 'flex',
                                 alignItems: 'start',
-                                border: 'solid rgba(0, 0, 0, 1) 1px',
+                                border: 'solid rgba(10,10,10,1) 1px',
                                 backgroundColor: "rgba(20, 20, 20, 0.2)",
                                 borderRadius: 0,
                                 justifyContent: 'center'

@@ -216,7 +216,7 @@ export default function MediaBrowser({
                 display: 'flex',
                 alignItems: 'center',
                 height: mediaFilterSize.container,
-                borderBottom: '1px solid rgb(0, 0, 0)',
+                borderBottom: '1px solid rgba(10, 10, 10, 1)',
                 background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
             }}>
                 <div
@@ -238,7 +238,7 @@ export default function MediaBrowser({
                     }}>
                     {'img'}
                 </div>
-                <div style={{ height: '100%', width: 1, background: 'rgb(0, 0, 0)' }} />
+                <div style={{ height: '100%', width: 1, background: 'rgba(10, 10, 10, 1)' }} />
                 <div
                     onClick={() => {
                         onFilterSelect('svg');
@@ -258,7 +258,7 @@ export default function MediaBrowser({
                     }}>
                     {'svg'}
                 </div>
-                <div style={{ height: '100%', width: 1, background: 'rgb(0, 0, 0)' }} />
+                <div style={{ height: '100%', width: 1, background: 'rgba(10, 10, 10, 1)' }} />
                 <div
                     onClick={() => {
                         onFilterSelect('frame');
@@ -407,7 +407,6 @@ export default function MediaBrowser({
                                             position: 'relative',
                                             display: 'grid',
                                             placeContent: 'center',
-                                            boxShadow: "5px 5px 12px rgba(0, 0, 0, 0.2)",
                                         }}>
                                         {decodedString && <svg
                                             version="1.1"
@@ -493,7 +492,7 @@ export default function MediaBrowser({
                 display: 'flex',
                 alignItems: 'center',
                 height: mediaSortSize.container,
-                borderTop: '1px solid rgb(0, 0, 0)',
+                borderTop: '1px solid rgba(10, 10, 10, 1)',
                 background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
             }}>
                 <div
@@ -555,7 +554,7 @@ export default function MediaBrowser({
                     style={{
                         display: 'grid',
                         placeContent: 'center',
-                        borderLeft: '1px solid rgb(0, 0, 0)',
+                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
                         width: '100%',
                         height: '100%',
                         background: sortStrategy == 'timestamp' ? 'rgba(255,255,255,0.05)' : 'none',

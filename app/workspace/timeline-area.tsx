@@ -362,9 +362,9 @@ export default function TimelineArea({
                 }}>
                 <div
                     style={{
-                        borderTop: '1px solid rgb(0, 0, 0)',
-                        borderLeft: '1px solid rgb(0, 0, 0)',
-                        borderRight: '1px solid rgb(0, 0, 0)',
+                        borderTop: '1px solid rgba(10, 10, 10, 1)',
+                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
+                        borderRight: '1px solid rgba(10, 10, 10, 1)',
                         borderTopRightRadius: 10,
                         borderTopLeftRadius: 10,
                         backgroundColor: "rgba(30, 30, 30, 0.6)",
@@ -543,9 +543,9 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                 case "low": return 20
             }
         })(),
-        borderTop: '1px solid rgb(0, 0, 0)',
-        borderLeft: '1px solid rgb(0, 0, 0)',
-        borderRight: '1px solid rgb(0, 0, 0)',
+        borderTop: '1px solid rgba(10, 10, 10, 1)',
+        borderLeft: '1px solid rgba(10, 10, 10, 1)',
+        borderRight: '1px solid rgba(10, 10, 10, 1)',
         borderBottom: '1px solid rgb(18, 18, 18)',
         borderTopLeftRadius: 10,
         borderTopRightRadius: 10,
@@ -556,8 +556,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         display: 'grid',
         alignContent: 'start',
         minHeight: 46,
-        borderLeft: '1px solid black',
-        borderRight: '1px solid black',
+        borderLeft: '1px solid rgba(10,10,10,1)',
+        borderRight: '1px solid rgba(10,10,10,1)',
         borderBottomLeftRadius: 10,
         borderBottomRightRadius: 10,
     };
@@ -604,7 +604,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             width: '100%',
                             height: timelineAreaContentSize.height,
                             padding: timelineAreaContentSize.padding,
-                            borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
+                            borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(10,10,10,1)',
                             background: 'rgb(20, 20, 20)',
                             borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                             borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
@@ -649,7 +649,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
                             return <div
                                 style={{
-                                    borderBottom: 'solid rgba(0, 0, 0, 1) 1px',
+                                    borderBottom: 'solid rgba(10, 10, 10, 1) 1px',
                                     padding: "0px 6px",
                                     background: 'rgba(23, 23, 23, 0.5)'
                                 }}
@@ -665,7 +665,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 width: '100%',
                                 height: timelineAreaContentSize.height,
                                 padding: timelineAreaContentSize.padding,
-                                borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
+                                borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(10,10,10,1)',
                                 background: 'rgb(20, 20, 20)',
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                                 borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
@@ -836,7 +836,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
         <div
             style={{
                 width: '100%',
-                borderBottom: '1px solid black',
+                borderBottom: '1px solid rgba(10,10,10,1)',
                 height: effectBrowserSize.height,
                 overflowY: 'auto',
                 borderBottomLeftRadius: 10,

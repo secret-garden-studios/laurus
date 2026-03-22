@@ -28,10 +28,10 @@ export default function ParameterSlider({
     const { appState } = useContext(WorkspaceContext);
     const [labelFontSize] = useState(() => {
         switch (appState.resolution.type) {
-            case "high":
-            case "midhigh": return 10
+            case "high": return 10
+            case "midhigh": return 8
             case "midlow":
-            case "low": return 8
+            case "low": return 7
         }
     });
     const [labelPaddingTop] = useState(Math.round(10 * appState.resolution.factor));
