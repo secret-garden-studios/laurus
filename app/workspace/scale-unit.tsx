@@ -273,8 +273,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                         <SvgRepo
                                                             svg={appState.activeElement.value.value as LaurusSvgResult}
                                                             containerSize={{
-                                                                width: displaySize.activeElementSize,
-                                                                height: displaySize.activeElementSize
+                                                                width: displaySize.activeSvgElementSize,
+                                                                height: displaySize.activeSvgElementSize
                                                             }}
                                                             scale={1}
                                                         />
@@ -285,8 +285,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                                         <ReactImg
                                                             img={appState.activeElement.value.value as LaurusImgResult}
                                                             containerSize={{
-                                                                width: displaySize.activeElementSize,
-                                                                height: displaySize.activeElementSize
+                                                                width: displaySize.activeImgElementSize,
+                                                                height: displaySize.activeImgElementSize
                                                             }}
                                                         />
                                                     )

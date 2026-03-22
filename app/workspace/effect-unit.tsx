@@ -52,19 +52,34 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "high": return { font: 12, height: 22, paddingLeft: 7 }
             case "midhigh": return { font: 11, height: 16, paddingLeft: 5 }
             case "midlow": return { font: 10, height: 14, paddingLeft: 4 }
-            case "midlow": return { font: 10, height: 14, paddingLeft: 4 }
+            case "low": return { font: 10, height: 14, paddingLeft: 4 }
         }
     });
-    const [timelineTrackSize] = useState({ width: '100%', height: 54 });
-    const [trackSidePadding] = useState(15);
+    const [timelineTrackCapsSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return { height: 54, width: 17 }
+            case "midhigh": return { height: 53, width: 16 }
+            case "midlow":
+            case "low": return { height: 48, width: 16 }
+        }
+    });
+    const [timelineTrackSize] = useState({ width: '100%', height: timelineTrackCapsSize.height });
+    const [trackSidePadding] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return 15
+            case "midhigh": return 14
+            case "midlow":
+            case "low": return 14
+        }
+    });
     const timelineTrackRef = useRef<HTMLDivElement | null>(null);
 
-    const [offsetCapSize] = useState({ width: 17, height: 54 });
-    const [offsetCursor, setOffsetCursor] = useState({ x: 0, y: 0 });
-    const offsetRef = useRef<HTMLInputElement | null>(null);
-    const [durationCapSize] = useState({ width: 17, height: 54 });
-    const [durationCursor, setDurationCursor] = useState({ x: 0, y: 0 });
-    const durationRef = useRef<HTMLInputElement | null>(null);
+    const [startCapSize] = useState({ width: timelineTrackCapsSize.width, height: timelineTrackCapsSize.height });
+    const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
+    const startRef = useRef<HTMLInputElement | null>(null);
+    const [endCapSize] = useState({ width: timelineTrackCapsSize.width, height: timelineTrackCapsSize.height });
+    const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
+    const endRef = useRef<HTMLInputElement | null>(null);
 
     const { getTrackValue: getTimeCursor, getTrackCursor: getCursor } =
         useTrackpadState(0, appState.timelineMaxValue);
@@ -80,25 +95,25 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const debounceDependenciesRef = useRef<LaurusEffect | undefined>(undefined);
     const [debounceInput, setDebounceInput] = useState<LaurusEffect>(effect);
     const effectDebouncer = useDebounce(debounceInput, 1000);
-    const adjustDurationCursor = useCallback((newX: number): number => {
-        if (durationCursor.x < newX && durationRef.current) {
+    const adjustEndCursor = useCallback((newX: number): number => {
+        if (endCursor.x < newX && endRef.current) {
             const newValue = cursorToTime(newX);
-            setDurationCursor({ ...durationCursor, x: newX });
-            durationRef.current.value = newValue.toFixed(2);
+            setEndCursor({ ...endCursor, x: newX });
+            endRef.current.value = newValue.toFixed(2);
             return newValue;
         }
-        return cursorToTime(durationCursor.x);
-    }, [cursorToTime, durationCursor]);
+        return cursorToTime(endCursor.x);
+    }, [cursorToTime, endCursor]);
 
-    const adjustOffsetCursor = useCallback((newX: number): number => {
-        if (offsetCursor.x > newX && offsetRef.current) {
+    const adjustStartCursor = useCallback((newX: number): number => {
+        if (startCursor.x > newX && startRef.current) {
             const newValue = cursorToTime(newX);
-            setOffsetCursor({ ...offsetCursor, x: newX });
-            offsetRef.current.value = newValue.toFixed(2);
+            setStartCursor({ ...startCursor, x: newX });
+            startRef.current.value = newValue.toFixed(2);
             return newValue;
         }
-        return cursorToTime(offsetCursor.x);
-    }, [cursorToTime, offsetCursor]);
+        return cursorToTime(startCursor.x);
+    }, [cursorToTime, startCursor]);
 
     const saveEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
@@ -152,22 +167,22 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     useLayoutEffect(() => {
         (async () => {
-            const offsetInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.start));
-            const durationInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.end));
+            const startInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.start));
+            const endInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.end));
 
-            const newOffsetCursor = timeToCursor(offsetInit);
-            const newDurationCursor = timeToCursor(durationInit);
-            setOffsetCursor({ x: newOffsetCursor, y: 0 });
-            setDurationCursor({ x: newDurationCursor, y: 0 });
+            const newStartCursor = timeToCursor(startInit);
+            const newEndCursor = timeToCursor(endInit);
+            setStartCursor({ x: newStartCursor, y: 0 });
+            setEndCursor({ x: newEndCursor, y: 0 });
 
-            if (offsetRef.current) {
-                const newOffset = cursorToTime(newOffsetCursor);
-                offsetRef.current.value = newOffset.toFixed(2);
+            if (startRef.current) {
+                const newStart = cursorToTime(newStartCursor);
+                startRef.current.value = newStart.toFixed(2);
             }
 
-            if (durationRef.current) {
-                const newDuration = cursorToTime(newDurationCursor);
-                durationRef.current.value = newDuration.toFixed(2);
+            if (endRef.current) {
+                const newEnd = cursorToTime(newEndCursor);
+                endRef.current.value = newEnd.toFixed(2);
             }
         })();
 
@@ -195,35 +210,82 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         }
     }, [appState.apiOrigin, effectDebouncer, appState.timelineUnit, dispatch]);
 
+    const [timelineUnitsSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                height: 30,
+                fontSize: 12,
+                gap: 4,
+                inputFontSize: 10,
+                inputWidth: 30,
+            }
+            case "midhigh": return {
+                height: 26,
+                fontSize: 11,
+                gap: 3,
+                inputFontSize: 10,
+                inputWidth: 26,
+            }
+            case "midlow":
+            case "low": return {
+                height: 26,
+                fontSize: 11,
+                gap: 4,
+                inputFontSize: 9,
+                inputWidth: 28,
+            }
+        }
+    });
+    const [timelineDropDownSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                height: 24,
+                padding: '0px 4px',
+                svg: 17
+            }
+            case "midhigh": return {
+                height: 22,
+                padding: '0px 2px',
+                svg: 16
+            }
+            case "midlow":
+            case "low": return {
+                height: 20,
+                padding: '0px 1px',
+                svg: 16
+            }
+        }
+    });
+
     return (
         <div style={{ display: 'grid' }} key={effect.key}>
             <div
                 style={{
                     width: '100%',
-                    height: 24,
+                    height: timelineUnitsSize.height,
                     padding: "0px 0px 0px 8px",
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    fontSize: 12,
+                    fontSize: timelineUnitsSize.fontSize,
                     color: 'rgb(227, 227, 227)'
                 }}>
-                <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
-                    <div>{'start'}</div>
+                <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'start'}</div>
                     <input
-                        id={`offset-input-${effect.key}`}
-                        ref={offsetRef}
+                        id={`start-input-${effect.key}`}
+                        ref={startRef}
                         type="text"
                         placeholder="0.00"
                         onChange={() => {
-                            if (!timelineTrackRef.current || !offsetRef.current) return;
-                            const newOffset: number = parseFloat(offsetRef.current.value) || 0;
+                            if (!timelineTrackRef.current || !startRef.current) return;
+                            const newStart: number = parseFloat(startRef.current.value) || 0;
 
-                            const newCursor: number = timeToCursor(newOffset);
-                            setOffsetCursor(v => { return { ...v, x: newCursor } });
-                            const newDuration = adjustDurationCursor(newCursor);
+                            const newCursor: number = timeToCursor(newStart);
+                            setStartCursor(v => { return { ...v, x: newCursor } });
+                            const newEnd = adjustEndCursor(newCursor);
 
-                            const newEffect: LaurusEffect = injectTime(effect, newOffset, newDuration);
+                            const newEffect: LaurusEffect = injectTime(effect, newStart, newEnd);
                             setDebounceInput(newEffect);
                             debounceDependenciesRef.current = { ...effect };
                         }}
@@ -234,28 +296,28 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             borderRadius: "2px",
                             border: 'none',
                             outline: 'none',
-                            lineHeight: '1',
+                            height: '100%',
                             display: 'inline-block',
                             overflowX: 'scroll',
-                            fontSize: 10,
-                            width: 30,
+                            fontSize: timelineUnitsSize.inputFontSize,
+                            width: timelineUnitsSize.inputWidth,
                         }}
                     />
                 </div>
                 <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
-                    <div >{'end'}</div>
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'end'}</div>
                     <input
-                        id={`duration-input-${effect.key}`}
-                        ref={durationRef}
+                        id={`end-input-${effect.key}`}
+                        ref={endRef}
                         type="text"
                         placeholder="0.00"
                         onChange={() => {
-                            if (!timelineTrackRef.current || !durationRef.current) return;
-                            const newDuration: number = parseFloat(durationRef.current.value) || 0;
+                            if (!timelineTrackRef.current || !endRef.current) return;
+                            const newDuration: number = parseFloat(endRef.current.value) || 0;
 
                             const newCursor: number = timeToCursor(newDuration);
-                            setDurationCursor(v => { return { ...v, x: newCursor } });
-                            const newOffset = adjustOffsetCursor(newCursor);
+                            setEndCursor(v => { return { ...v, x: newCursor } });
+                            const newOffset = adjustStartCursor(newCursor);
 
                             const newEffect: LaurusEffect = injectTime(effect, newOffset, newDuration);
                             setDebounceInput(newEffect);
@@ -268,11 +330,11 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             borderRadius: "2px",
                             border: 'none',
                             outline: 'none',
-                            lineHeight: '1',
+                            height: '100%',
                             display: 'inline-block',
                             overflowX: 'scroll',
-                            fontSize: 10,
-                            width: 30,
+                            fontSize: timelineUnitsSize.inputFontSize,
+                            width: timelineUnitsSize.inputWidth,
                         }}
                     />
                 </div>
@@ -285,48 +347,51 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     label={effect.type}
                     labelSize={timelineTrackLabelSize}
                     hash={`${effect.key}|t1`}
-                    capSize={offsetCapSize}
-                    rangeCapSize={durationCapSize}
+                    capSize={startCapSize}
+                    rangeCapSize={endCapSize}
                     trackSize={timelineTrackSize}
                     trackRef={timelineTrackRef}
-                    cursor={offsetCursor}
+                    cursor={startCursor}
                     onNewCursor={async (c) => {
-                        setOffsetCursor({ ...c });
-                        const adjustedDuration = adjustDurationCursor(c.x);
+                        setStartCursor({ ...c });
+                        const adjustedDuration = adjustEndCursor(c.x);
                         const newOffset: number = cursorToTime(c.x);
                         const newEffect = injectTime(effect, newOffset, adjustedDuration);
                         await saveEffect(newEffect);
                     }}
-                    rangeCursor={durationCursor}
+                    rangeCursor={endCursor}
                     onNewRangeCursor={async (c) => {
-                        setDurationCursor({ ...c });
-                        const adjustedOffset = adjustOffsetCursor(c.x);
+                        setEndCursor({ ...c });
+                        const adjustedOffset = adjustStartCursor(c.x);
                         const newDuration: number = cursorToTime(c.x);
                         const newEffect = injectTime(effect, adjustedOffset, newDuration);
                         await saveEffect(newEffect);
                     }}
                     onCursorMove={(c) => {
-                        if (!offsetRef.current) return;
+                        if (!startRef.current) return;
                         const newValue = cursorToTime(c.x);
-                        offsetRef.current.value = newValue.toFixed(2);
+                        startRef.current.value = newValue.toFixed(2);
                     }}
                     onRangeMove={(c) => {
-                        if (!durationRef.current) return;
+                        if (!endRef.current) return;
                         const newValue = cursorToTime(c.x);
-                        durationRef.current.value = newValue.toFixed(2);
+                        endRef.current.value = newValue.toFixed(2);
                     }}
                 />
             </div>
             <div
                 style={{
-                    width: '100%', height: 24,
-                    padding: 6, display: 'flex', justifyContent: 'end'
+                    width: '100%',
+                    height: timelineDropDownSize.height,
+                    padding: timelineDropDownSize.padding,
+                    display: 'flex',
+                    justifyContent: 'end'
                 }}>
                 <SvgRepo
                     svg={showUnitControls ? arrowDropUp() : arrowDropDown()}
                     containerSize={{
-                        width: 17,
-                        height: 17
+                        width: timelineDropDownSize.svg,
+                        height: timelineDropDownSize.svg
                     }}
                     scale={1}
                     onContainerClick={() => setShowUnitControls(v => !v)} />

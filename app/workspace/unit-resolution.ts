@@ -2,10 +2,11 @@ import { WorkspaceResolution } from "./workspace-resolution";
 
 export function getDisplaySize(resolution: WorkspaceResolution) {
     return {
-        'width': Math.round(400 * resolution.factor),
-        'height': Math.round(450 * resolution.factor),
-        'padding': 0,
-        'activeElementSize': Math.round(300 * resolution.factor)
+        width: Math.round(400 * resolution.factor),
+        height: Math.round(450 * resolution.factor),
+        padding: 0,
+        activeImgElementSize: Math.round(280 * resolution.factor),
+        activeSvgElementSize: Math.round(200 * resolution.factor),
     }
 }
 

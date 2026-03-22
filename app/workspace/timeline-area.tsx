@@ -1,7 +1,7 @@
 import { CSSProperties, RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, circle, moreVert, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
+import { addCircle, moreVert, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
 import {
     LaurusEffect,
     LaurusProjectResult,
@@ -48,10 +48,41 @@ export default function TimelineArea({
                 return 1000 * 0.25;
             }
         }
+    });
+    const [controlAreaSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                padding: '10px 6px',
+                fpsInputWidth: 20,
+                fpsInputFontSize: 16,
+                fpsLabelFontSize: 15,
+                mainSvg: 50,
+                secondarySvg: 20,
+                recordingLightSize: 16
+            }
+            case "midhigh": return {
+                padding: '10px 6px',
+                fpsInputWidth: 20,
+                fpsInputFontSize: 14,
+                fpsLabelFontSize: 13,
+                mainSvg: 40,
+                secondarySvg: 16,
+                recordingLightSize: 12
+            }
+            case "midlow":
+            case "low": return {
+                padding: '10px 6px',
+                fpsInputWidth: 20,
+                fpsInputFontSize: 12,
+                fpsLabelFontSize: 11,
+                mainSvg: 38,
+                secondarySvg: 14,
+                recordingLightSize: 11
+            }
+        }
     })
 
     function calculateRuler(timelineMaxValue: number, resolution: WorkspaceResolution) {
-
         switch (resolution.type) {
             case "high": {
                 switch (timelineMaxValue) {
@@ -337,10 +368,7 @@ export default function TimelineArea({
                         borderTopRightRadius: 10,
                         borderTopLeftRadius: 10,
                         backgroundColor: "rgba(30, 30, 30, 0.6)",
-                        paddingTop: 10,
-                        paddingLeft: 6,
-                        paddingRight: 6,
-                        paddingBottom: 10,
+                        padding: controlAreaSize.padding,
                         display: 'grid',
                         width: '100%',
                     }}>
@@ -372,16 +400,16 @@ export default function TimelineArea({
                                     borderRadius: "2px",
                                     border: 'none',
                                     outline: 'none',
-                                    width: 20,
+                                    width: controlAreaSize.fpsInputWidth,
                                     lineHeight: '1',
                                     display: 'inline-block',
                                     overflowX: 'scroll',
-                                    fontSize: 16,
+                                    fontSize: controlAreaSize.fpsInputFontSize,
                                 }}
                             />
                             <div
                                 style={{
-                                    fontSize: 15,
+                                    fontSize: controlAreaSize.fpsLabelFontSize,
                                     color: "rgba(255, 255, 255, 0.5)",
                                 }}>
                                 {<i>{'fps'}</i>}
@@ -390,8 +418,8 @@ export default function TimelineArea({
                         <SvgRepo
                             svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
-                                width: 20,
-                                height: 20
+                                width: controlAreaSize.secondarySvg,
+                                height: controlAreaSize.secondarySvg
                             }}
                             scale={1}
                             onContainerClick={async () => {
@@ -420,8 +448,8 @@ export default function TimelineArea({
                         <SvgRepo
                             svg={playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
-                                width: 50,
-                                height: 50
+                                width: controlAreaSize.mainSvg,
+                                height: controlAreaSize.mainSvg
                             }}
                             scale={1}
                             onContainerClick={async () => {
@@ -447,8 +475,8 @@ export default function TimelineArea({
                         <SvgRepo
                             svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
-                                width: 20,
-                                height: 20
+                                width: controlAreaSize.secondarySvg,
+                                height: controlAreaSize.secondarySvg
                             }}
                             scale={1}
                             onContainerClick={async () => {
@@ -479,8 +507,8 @@ export default function TimelineArea({
                         }}>
                             <div
                                 style={{
-                                    width: 16,
-                                    height: 16,
+                                    width: controlAreaSize.recordingLightSize,
+                                    height: controlAreaSize.recordingLightSize,
                                     borderRadius: '50%',
                                     border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
                                     background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
@@ -507,7 +535,14 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         display: 'flex',
         alignItems: 'center',
         width: '100%',
-        height: 32,
+        height: (() => {
+            switch (appState.resolution.type) {
+                case "high": return 32
+                case "midhigh": return 24
+                case "midlow":
+                case "low": return 20
+            }
+        })(),
         borderTop: '1px solid rgb(0, 0, 0)',
         borderLeft: '1px solid rgb(0, 0, 0)',
         borderRight: '1px solid rgb(0, 0, 0)',
@@ -526,6 +561,26 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         borderBottomLeftRadius: 10,
         borderBottomRightRadius: 10,
     };
+    const [timelineAreaContentSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                height: 46,
+                padding: 10,
+                svg: 20
+            }
+            case "midhigh": return {
+                height: 36,
+                padding: 8,
+                svg: 16
+            }
+            case "midlow":
+            case "low": return {
+                height: 32,
+                padding: 8,
+                svg: 14
+            }
+        }
+    });
 
     return (<>
         {appState.project.layers.size == 0 && (
@@ -542,27 +597,13 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         layerId={""}
                         layerNameInit={"untitled"}
                         layerNameRef={layerNameRef} />
-                    <div
-                        className={dellaRespira.className}
-                        style={{
-                            display: 'grid',
-                        }}>
-                        {/* layer options placeholder */}
-                        <SvgRepo
-                            svg={circle('rgba(204, 204, 204, 0)')}
-                            containerSize={{
-                                width: 12,
-                                height: 12
-                            }}
-                            scale={1} />
-                    </div>
                 </div>
                 <div style={layerBodyStyle}>
                     <div
                         style={{
                             width: '100%',
-                            height: 46,
-                            padding: 10,
+                            height: timelineAreaContentSize.height,
+                            padding: timelineAreaContentSize.padding,
                             borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
                             background: 'rgb(20, 20, 20)',
                             borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
@@ -573,8 +614,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 addCircle('rgba(204, 204, 204, 0.2)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
-                                width: 20,
-                                height: 20
+                                width: timelineAreaContentSize.svg,
+                                height: timelineAreaContentSize.svg
                             }}
                             scale={1}
                             onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -602,20 +643,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             layerId={layerEntry[0]}
                             layerNameInit={layerEntry[1].name}
                             layerNameRef={layerNameRef} />
-                        <div
-                            className={dellaRespira.className}
-                            style={{
-                                display: 'grid',
-                            }}>
-                            {/* layer options placeholder */}
-                            <SvgRepo
-                                svg={circle('rgba(204, 204, 204, 0)')}
-                                containerSize={{
-                                    width: 12,
-                                    height: 12
-                                }}
-                                scale={1} />
-                        </div>
                     </div>
                     {/* effects */}
                     <div style={layerBodyStyle}>
@@ -636,8 +663,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         <div
                             style={{
                                 width: '100%',
-                                height: 46,
-                                padding: 10,
+                                height: timelineAreaContentSize.height,
+                                padding: timelineAreaContentSize.padding,
                                 borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid black',
                                 background: 'rgb(20, 20, 20)',
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
@@ -648,8 +675,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                     addCircle('rgba(204, 204, 204, 0.2)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
                                 containerSize={{
-                                    width: 20,
-                                    height: 20
+                                    width: timelineAreaContentSize.svg,
+                                    height: timelineAreaContentSize.svg
                                 }}
                                 scale={1}
                                 onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -676,6 +703,14 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
     const layerNameHook = useDebounce<string>(layerName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
     const layerIdRef = useRef<string | undefined>(undefined);
+    const [fontSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return 10
+            case "midhigh": return 9
+            case "midlow":
+            case "low": return 8
+        }
+    });
 
     useEffect(() => {
         const renameProjectOnSever = (async () => {
@@ -751,7 +786,7 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
                     letterSpacing: '3px',
                     background: 'none',
                     color: "rgb(227, 227, 227)",
-                    fontSize: 10,
+                    fontSize: fontSize,
                     border: 'none',
                     outline: 'none',
                 }}
@@ -770,12 +805,39 @@ interface EffectsBrowser {
 }
 function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const [effectBrowserSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                height: 96,
+                itemFontSize: 14,
+                itemHeight: 36,
+                itemPadding: 10,
+                svg: 20,
+            }
+            case "midhigh": return {
+                height: 96,
+                itemFontSize: 12,
+                itemHeight: 36,
+                itemPadding: 10,
+                svg: 16,
+            }
+            case "midlow":
+            case "low": return {
+                height: 96,
+                itemFontSize: 10,
+                itemHeight: 32,
+                itemPadding: 8,
+                svg: 14,
+            }
+        }
+    });
+
     return (<>
         <div
             style={{
                 width: '100%',
                 borderBottom: '1px solid black',
-                height: 96,
+                height: effectBrowserSize.height,
                 overflowY: 'auto',
                 borderBottomLeftRadius: 10,
             }}>
@@ -786,11 +848,11 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            fontSize: 14,
+                            fontSize: effectBrowserSize.itemFontSize,
                             letterSpacing: "3px",
-                            height: 36,
+                            height: effectBrowserSize.itemHeight,
                             borderRadius: 4,
-                            padding: 10,
+                            padding: effectBrowserSize.itemPadding,
                             background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)',
                             color: effectName == 'skew' || effectName == 'rotate' ? 'rgba(255, 255, 255, 0.3)' : 'rgb(227,227,227)'
                         }}
@@ -801,8 +863,8 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                         {(effectName != 'skew' && effectName != 'rotate') && <SvgRepo
                             svg={addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
-                                width: 20,
-                                height: 20
+                                width: effectBrowserSize.svg,
+                                height: effectBrowserSize.svg
                             }}
                             scale={1}
                             onContainerClick={async () => {
