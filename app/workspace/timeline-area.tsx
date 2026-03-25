@@ -319,7 +319,7 @@ export default function TimelineArea({
             </div>
             {/* content area */}
             <div
-                className={styles["grainy-background"] + " " + dellaRespira.className}
+                className={styles["noisy-background"] + " " + dellaRespira.className}
                 style={{
                     overflowY: 'auto',
                     gridRow: '2',
@@ -353,7 +353,7 @@ export default function TimelineArea({
             </div>
             {/* control area */}
             <div
-                className={styles["grainy-background"] + " " + dellaRespira.className}
+                className={styles["noisy-background"] + " " + dellaRespira.className}
                 style={{
                     gridRow: '3',
                     gridColumn: 'span 2',

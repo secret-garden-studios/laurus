@@ -25,27 +25,65 @@ function getScreenResolution(): LaurusResolution {
 }
 
 function LandingBody() {
-    return (<>
+    return <>
         <div
-            className={`${styles["animated-grainy-background"]} ${dellaRespira.className}`}
+            className={dellaRespira.className}
             style={{
-                width: '100vw', height: '100vh',
                 display: 'grid',
-                placeContent: 'center',
-                letterSpacing: '2px',
-                color: 'rgb(227, 227, 227)'
+                height: '100vh',
+                width: '100vw',
+                gridTemplateRows: 'auto min-content',
+                color: 'rgb(227,227,227)'
             }} >
-            <div style={{ display: 'grid', width: '100%', padding: 24 }}>
-                <div className={`${italiana.className}`}
-                    style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', padding: "10px 0px" }}>
-                    <p style={{ fontSize: 54 }}>{"Laurus"}</p>
+            <div style={{ position: 'relative', }} >
+                <div
+                    className={styles["animated-noisy-background"]}
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        zIndex: -1,
+                        width: '100vw',
+                        height: '100%',
+                        display: 'grid',
+                        placeContent: 'center',
+                        background: 'rgb(10, 10, 10)',
+                    }} >
                 </div>
-                <div style={{ fontSize: 18, justifySelf: 'center', padding: 4 }}>
-                    <div >{'beta version'}</div>
+                <div
+                    className={styles["animated-font"]}
+                    style={{
+                        width: '100vw',
+                        height: '100%',
+                        display: 'grid',
+                        placeContent: 'center',
+                        position: 'relative',
+                        letterSpacing: '2px',
+                    }}>
+                    <div style={{ display: 'grid', width: '100%', padding: 24 }}>
+                        <div className={`${italiana.className}`}
+                            style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', padding: "10px 0px" }}>
+                            <p style={{ fontSize: 56 }}>{"Laurus"}</p>
+                        </div>
+                        <div style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
+                            <div >{'beta version'}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <div style={{
+                height: 'min-content',
+                padding: 20,
+                width: '100%',
+                display: 'grid',
+                placeContent: 'center',
+                fontSize: 10,
+                letterSpacing: "3px"
+            }}>
+                <div >{`click anywhere to start`}</div>
+            </div>
         </div>
-    </>)
+    </>
 }
 export default function Landing() {
     const [resolution, setResolution] = useState<LaurusResolution | undefined>(undefined)

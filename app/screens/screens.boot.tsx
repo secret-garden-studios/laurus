@@ -60,7 +60,7 @@ export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMed
 function Skeleton() {
     return (<>
         <div
-            className={`${styles["animated-grainy-background"]} ${italiana.className}`}
-            style={{ width: '100vw', height: '100vh' }} />
+            className={`${styles["noisy-background"]} ${italiana.className}`}
+            style={{ cursor: 'progress', width: '100vw', height: '100vh' }} />
     </>)
 }

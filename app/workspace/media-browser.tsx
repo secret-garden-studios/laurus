@@ -280,7 +280,7 @@ export default function MediaBrowser({
                 </div>
             </div>
             <div
-                className={styles["grainy-background"]}
+                className={styles["noisy-background"]}
                 onScroll={handleScroll}
                 style={{
                     gridRow: 2,

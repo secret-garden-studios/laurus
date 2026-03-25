@@ -3,7 +3,7 @@ import { dellaRespira } from "./fonts";
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { LaurusResolution } from "./landing";
-import { useState } from "react";
+import { CSSProperties, useState } from "react";
 
 interface Menubar {
     resolution: LaurusResolution
@@ -49,89 +49,100 @@ export default function Menubar({ resolution }: Menubar) {
                 linkPaddingTop: 2
             }
         }
-    })
-    return (
-        <>
-            <div
-                className={dellaRespira.className}
-                style={{
-                    height: menubarSize.height,
-                    display: "flex",
-                    alignItems: "center",
-                    background: "linear-gradient(360deg, rgba(8, 8, 8, 1), rgba(27, 27, 27, 1))",
-                    boxShadow: "rgba(255, 255, 255, 0.05) 0px 0px 30px 1px",
-                    paddingLeft: menubarSize.paddingLeft,
-                    fontSize: menubarSize.font,
-                    letterSpacing: '1px',
-                    color: 'rgb(227,227,227)',
-                    borderBottom: '1px solid rgb(20, 20, 20)',
-                }}>
-                <div style={{ paddingRight: menubarSize.paddingRight }}>
+    });
+
+    const linkStyle: CSSProperties = {
+        textDecoration: 'none',
+        color: 'inherit',
+    };
+
+    const linkGridStyle: CSSProperties = {
+        ...linkStyle,
+        height: '100%',
+        display: 'grid',
+        gridTemplateRows: 'auto min-content',
+        width: menubarSize.linkWidth,
+    };
+
+    return <>
+        <div
+            className={dellaRespira.className}
+            style={{
+                height: menubarSize.height,
+                display: "flex",
+                alignItems: "center",
+                background: "linear-gradient(360deg, rgba(8, 8, 8, 1), rgba(27, 27, 27, 1))",
+                boxShadow: "rgba(255, 255, 255, 0.05) 0px 0px 30px 1px",
+                paddingLeft: menubarSize.paddingLeft,
+                fontSize: menubarSize.font,
+                letterSpacing: '1px',
+                color: 'rgb(227,227,227)',
+                borderBottom: '1px solid rgb(20, 20, 20)',
+            }}>
+            <Link
+                prefetch={true}
+                href={"/"}
+                style={linkStyle}>
+                <div
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                    style={{
+                        paddingRight: menubarSize.paddingRight
+                    }}>
                     {'Laurus'}
                 </div>
-                <Link
-                    prefetch={true}
-                    href={"/workspace"}
+            </Link>
+            <Link
+                prefetch={true}
+                href={"/workspace"}
+                style={linkGridStyle}>
+                <div
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                    className={dellaRespira.className}
                     style={{
-                        textDecoration: 'none',
-                        color: 'inherit',
+                        paddingTop: menubarSize.linkPaddingTop,
+                        fontSize: menubarSize.linkFont,
+                        letterSpacing: "1px",
                         display: 'grid',
-                        width: menubarSize.linkWidth,
-                        height: '100%',
-                        gridTemplateRows: 'auto min-content',
+                        placeContent: 'center',
+                        color: 'rgb(227, 227, 227)',
+                        textShadow: pathname == '/workspace' ? "0 0 12px rgba(255, 255, 255, 0.3)" : 'none',
                     }}>
-                    <div
-                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                        className={dellaRespira.className}
-                        style={{
-                            paddingTop: menubarSize.linkPaddingTop,
-                            fontSize: menubarSize.linkFont,
-                            letterSpacing: "1px",
-                            display: 'grid',
-                            placeContent: 'center',
-                            color: 'rgb(227, 227, 227)',
-                            textShadow: pathname == '/workspace' ? "0 0 12px rgba(255, 255, 255, 0.3)" : 'none',
-                        }}>
-                        {'workspace'}
-                    </div>
-                    <div style={{
-                        height: 1,
-                        borderRadius: 10,
-                        background: pathname == '/workspace' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
-                        boxShadow: pathname == '/workspace' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
-                    }} />
-                </Link>
-                <Link href={"/screens"} style={{
-                    textDecoration: 'none', color: 'inherit',
-                    display: 'grid',
-                    width: menubarSize.linkWidth,
-                    height: '100%',
-                    gridTemplateRows: 'auto min-content'
-                }}>
-                    <div
-                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                        className={dellaRespira.className}
-                        style={{
-                            paddingTop: menubarSize.linkPaddingTop,
-                            fontSize: menubarSize.linkFont,
-                            letterSpacing: "1px",
-                            display: 'grid',
-                            placeContent: 'center',
-                            color: 'rgb(227, 227, 227)',
-                            textShadow: pathname == '/screens' ? "0 0 12px rgba(255, 255, 255, 0.3)" : 'none',
-                        }}>
-                        {'screens'}
-                    </div>
-                    <div style={{
-                        height: 1,
-                        borderRadius: 10,
-                        background: pathname == '/screens' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
-                        boxShadow: pathname == '/screens' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
-                    }} />
-                </Link>
-            </div>
-        </>
-    );
+                    {'workspace'}
+                </div>
+                <div style={{
+                    height: 1,
+                    borderRadius: 10,
+                    background: pathname == '/workspace' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
+                    boxShadow: pathname == '/workspace' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
+                }} />
+            </Link>
+            <Link
+                href={"/screens"}
+                style={linkGridStyle}>
+                <div
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                    className={dellaRespira.className}
+                    style={{
+                        paddingTop: menubarSize.linkPaddingTop,
+                        fontSize: menubarSize.linkFont,
+                        letterSpacing: "1px",
+                        display: 'grid',
+                        placeContent: 'center',
+                        color: 'rgb(227, 227, 227)',
+                        textShadow: pathname == '/screens' ? "0 0 12px rgba(255, 255, 255, 0.3)" : 'none',
+                    }}>
+                    {'screens'}
+                </div>
+                <div style={{
+                    height: 1,
+                    borderRadius: 10,
+                    background: pathname == '/screens' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
+                    boxShadow: pathname == '/screens' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
+                }} />
+            </Link>
+        </div>
+    </>;
 }

@@ -27,7 +27,7 @@ import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowser, { MediaBrowserFilter } from "./media-browser";
-import { lassoSelect, hexagon, deployedCode, browse, checkCircle, moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
+import { hexagon, checkCircle, moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
 import { DraggableReactImg, DraggableReactSvg, ReactImg } from "./media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
@@ -35,6 +35,7 @@ import DraggableCamera from "./camera";
 import { dellaRespira } from "../fonts";
 import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceResolution } from "./workspace-resolution";
 import { ProjectDependencies, BrowserDependencies } from "./page";
+import Toolbar from "./toolbar";
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
@@ -530,23 +531,7 @@ export default function Workspace({
             case "midlow": return 240
         }
     });
-    const [rightPanelSize] = useState(() => {
-        switch (resolutionInit.type) {
-            case "high": return {
-                svg: 50,
-                width: 50,
-            }
-            case "midhigh": return {
-                svg: 40,
-                width: 40,
-            }
-            case "low":
-            case "midlow": return {
-                svg: 38,
-                width: 38,
-            }
-        }
-    });
+
     const [minifiedControlsSize] = useState(() => {
         switch (resolutionInit.type) {
             case "high": return {
@@ -585,6 +570,8 @@ export default function Workspace({
             }
         }
     });
+    const [statusAction] = useState<string>("laurus workspace");
+    const [statusBody] = useState<string[]>([]);
 
     const handleImgPageRequest = useCallback(async () => {
         const mediaArray = Array.from(appState.browserImgs.values());
@@ -866,72 +853,10 @@ export default function Workspace({
                         gridTemplateRows: 'min-content min-content auto',
                         borderLeft: '1px solid rgba(10, 10, 10, 1)',
                         background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
-                        width: rightPanelSize.width,
+                        width: 'min-content',
                         justifyContent: 'center'
                     }}>
-                    <div style={{
-                        width: 'min-content',
-                        height: 'min-content',
-                        background: appState.tool.type == 'drop' ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                    }}>
-                        <SvgRepo
-                            svg={lassoSelect()}
-                            containerSize={{
-                                width: rightPanelSize.svg,
-                                height: rightPanelSize.svg
-                            }}
-                            scale={0.5}
-                            onContainerClick={() => {
-                                if (appState.tool.type == 'drop') {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                                }
-                                else {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
-                                }
-                            }} />
-                    </div>
-                    <div style={{
-                        width: 'min-content',
-                        height: 'min-content',
-                        background: appState.tool.type == 'activate' ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                    }}>
-                        <SvgRepo
-                            svg={deployedCode()}
-                            containerSize={{
-                                width: rightPanelSize.svg,
-                                height: rightPanelSize.svg
-                            }}
-                            scale={0.5}
-                            onContainerClick={() => {
-                                if (appState.tool.type == 'activate') {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                                }
-                                else {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'activate' } })
-                                }
-                            }} />
-                    </div>
-                    <div style={{
-                        width: 'min-content',
-                        height: 'min-content',
-                        background: appState.tool.type == 'viewport' ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                    }}>
-                        <SvgRepo
-                            svg={browse()}
-                            containerSize={{
-                                width: rightPanelSize.svg,
-                                height: rightPanelSize.svg
-                            }}
-                            scale={0.5}
-                            onContainerClick={() => {
-                                if (appState.tool.type == 'viewport') {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                                }
-                                else {
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } })
-                                }
-                            }} />
-                    </div>
+                    <Toolbar resolution={resolutionInit} />
                 </div>
                 <div style={{ gridRow: '4', gridColumn: 'span 5' }}>
                     <div style={{
@@ -944,6 +869,7 @@ export default function Workspace({
                         border: '1px solid rgba(10, 10, 10, 1)',
                     }}>
                         <div
+                            title='active element'
                             onClick={() => setShowTimeline(v => !v)}
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
@@ -974,6 +900,7 @@ export default function Workspace({
                             })()}
                         </div>
                         <div
+                            title='browser element'
                             onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             onClick={() => setShowMediaBrowser(v => !v)}
@@ -1004,7 +931,7 @@ export default function Workspace({
                             })()}
                         </div>
                     </div>
-                    <Statusbar action={'laurus workspace'} body={[]} />
+                    <Statusbar action={statusAction} body={statusBody} />
                 </div>
             </WorkspaceContext>
         </div>

@@ -65,7 +65,7 @@ export default function Projectbar() {
 
     return (<>
         <div
-            className={styles["grainy-background"]}
+            className={styles["noisy-background"]}
             style={{
                 height: projectbarSize.height,
                 minWidth: projectbarSize.minWidth,

@@ -213,7 +213,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
 
     return (<>
         <div
-            className={styles["grainy-background"]}
+            className={styles["noisy-background"]}
             style={{
                 width: "100vw",
                 height: '100vh',

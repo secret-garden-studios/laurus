@@ -31,14 +31,16 @@ export default function Statusbar({
         switch (resolution.type) {
             case "high": return {
                 height: 30,
-                fontSize: 9,
+                actionFont: 11,
+                bodyFont: 10,
                 inputFontSize: 10,
                 padding: "0px 12px",
                 gap: 10
             }
             case "midhigh": return {
                 height: 24,
-                fontSize: 8,
+                actionFont: 9,
+                bodyFont: 8,
                 inputFontSize: 9,
                 padding: "0px 12px",
                 gap: 10
@@ -46,7 +48,8 @@ export default function Statusbar({
             case "midlow":
             case "low": return {
                 height: 20,
-                fontSize: 7,
+                actionFont: 8,
+                bodyFont: 7,
                 inputFontSize: 8,
                 padding: "0px 12px",
                 gap: 10
@@ -117,11 +120,12 @@ export default function Statusbar({
                 padding: statusbarSize.padding,
                 gap: statusbarSize.gap
             }}>
-                <div style={{
-                    fontFamily: "monospace",
-                    fontWeight: "bolder",
-                    fontSize: statusbarSize.fontSize,
-                }}>
+                <div
+                    className={dellaRespira.className}
+                    style={{
+                        fontWeight: "bolder",
+                        fontSize: statusbarSize.actionFont,
+                    }}>
                     {action}
                 </div>
                 <input
@@ -155,12 +159,13 @@ export default function Statusbar({
                     type="text"
                     onPaste={handleNewAdmin}
                 />
-                <div style={{
-                    marginLeft: "auto",
-                    fontFamily: "monospace",
-                    fontWeight: "normal",
-                    fontSize: statusbarSize.fontSize,
-                }}>
+                <div
+                    title="screen resolution"
+                    className={dellaRespira.className}
+                    style={{
+                        fontSize: statusbarSize.bodyFont,
+                        letterSpacing: '1px'
+                    }}>
                     {`${resolution.value.width}x${resolution.value.height}`}
                 </div>
             </div>

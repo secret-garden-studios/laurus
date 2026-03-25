@@ -9,8 +9,8 @@ import { BrowserDependencies, ProjectDependencies } from "./page";
 function Skeleton() {
     return (<>
         <div
-            className={`${styles["animated-grainy-background"]} ${italiana.className}`}
-            style={{ width: '100vw', height: '100vh' }} />
+            className={`${styles["noisy-background"]} ${italiana.className}`}
+            style={{ cursor: 'progress', width: '100vw', height: '100vh' }} />
     </>)
 }
 
@@ -18,7 +18,7 @@ interface Forbidden { resolution: WorkspaceResolution }
 function Forbidden({ resolution }: Forbidden) {
     return (<>
         <div
-            className={`${styles["animated-grainy-background"]} ${dellaRespira.className}`}
+            className={`${styles["noisy-background"]} ${dellaRespira.className}`}
             style={{
                 width: '100vw', height: '100vh',
                 display: 'grid',
