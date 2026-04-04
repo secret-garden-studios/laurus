@@ -66,7 +66,7 @@ export default function Projectbar() {
 
     return (<>
         <div
-            className={styles["noisy-background"]}
+            className={styles["noisy-background-lite"]}
             style={{
                 height: projectbarSize.height,
                 width: "100%",
@@ -82,7 +82,7 @@ export default function Projectbar() {
                     placeItems: 'center',
                     height: '100%',
                     padding: projectbarSize.inputPadding,
-                    border: '1px solid rgb(24, 24, 24)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
                     borderRadius: 0,
                     background: 'linear-gradient(45deg, rgba(11, 11, 11, 0.3), rgba(19, 19, 19, 0.3))',
                 }}>

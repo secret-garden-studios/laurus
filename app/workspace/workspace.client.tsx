@@ -849,7 +849,7 @@ export default function Workspace({
                         display: "grid",
                         gridTemplateRows: 'min-content min-content auto',
                         borderLeft: '1px solid rgba(10, 10, 10, 1)',
-                        background: 'linear-gradient(45deg, rgb(11, 11, 11), rgb(19, 19, 19))',
+                        background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
                         width: 'min-content',
                         justifyContent: 'center'
                     }}>
@@ -862,8 +862,8 @@ export default function Workspace({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: 'space-between',
-                        backgroundImage: "linear-gradient(34deg, rgba(21, 21, 21, 1) 34%, rgba(13, 13, 13, 1))",
-                        border: '1px solid rgba(10, 10, 10, 1)',
+                        background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
+                        border: '1px solid rgb(19, 19, 19)',
                     }}>
                         <div
                             title='active element'

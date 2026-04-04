@@ -368,7 +368,7 @@ export default function TimelineArea({
                         borderRight: '1px solid rgba(10, 10, 10, 1)',
                         borderTopRightRadius: 10,
                         borderTopLeftRadius: 10,
-                        backgroundColor: "rgba(30, 30, 30, 0.6)",
+                        background: 'rgb(20, 20, 20)',
                         padding: controlAreaSize.padding,
                         display: 'grid',
                         width: '100%',

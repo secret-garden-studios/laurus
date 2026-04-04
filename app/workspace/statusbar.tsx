@@ -48,7 +48,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                     alignItems: "center",
                     left: "0",
                     bottom: "0",
-                    backgroundColor: "#121212ff",
+                    backgroundColor: "rgb(18, 18, 18)",
                     whiteSpace: "nowrap",
                     padding: statusbarSize.padding,
                     gap: 6,
