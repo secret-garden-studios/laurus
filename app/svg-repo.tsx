@@ -5,7 +5,7 @@ function base64Encode(markup: string) {
 };
 
 export interface LaurusClientSvg {
-    media_path: string
+    media_key: string
     width: number
     height: number
     viewbox: string
@@ -48,8 +48,9 @@ interface SvgRepo {
     onContainerClick?: () => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
+    title?: string,
 }
-export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId }: SvgRepo) {
+export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId, title, }: SvgRepo) {
     const decodedString = decodeURIComponent(
         atob(svg.markup)
             .split('')
@@ -58,6 +59,7 @@ export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef,
     );
     return (
         <div
+            title={title ?? ""}
             onMouseEnter={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'pointer' }}
             onMouseLeave={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'default' }}
             onClick={() => { if (onContainerClick) onContainerClick() }}
@@ -70,7 +72,7 @@ export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef,
             {decodedString && <svg
                 ref={(r) => {
                     if (onSvgRef) {
-                        onSvgRef(r, `${inputId ?? svg.media_path}`);
+                        onSvgRef(r, `${inputId ?? svg.media_key}`);
                     }
                 }}
                 version="1.1"
@@ -90,7 +92,7 @@ export function videoCameraBack(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/video_camera_back_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/video_camera_back_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -106,7 +108,7 @@ export function motionPhotosOn(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/motion_photos_on_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/motion_photos_on_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -122,7 +124,7 @@ export function arrowDropDown(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/arrow_drop_down_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/arrow_drop_down_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -138,7 +140,7 @@ export function arrowDropUp(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/arrow_drop_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/arrow_drop_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -154,7 +156,7 @@ export function closeIcon(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/close_24dp_D9D9D9_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -170,7 +172,7 @@ export function checkCircle(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/check_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -186,7 +188,7 @@ export function cancelCircle(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/cancel_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -197,12 +199,28 @@ export function cancelCircle(
     }
 }
 
+export function cancelCircleFillZero(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/cancel_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="m480-424 116 116q11 11 28 11t28-11q11-11 11-28t-11-28L536-480l116-116q11-11 11-28t-11-28q-11-11-28-11t-28 11L480-536 364-652q-11-11-28-11t-28 11q-11 11-11 28t11 28l116 116-116 116q-11 11-11 28t11 28q11 11 28 11t28-11l116-116Zm0 344q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>`)
+    }
+}
+
 export function addCircle(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/add_circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -218,7 +236,7 @@ export function circle(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/circle_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -234,7 +252,7 @@ export function dragIndicator(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/drag_indicator_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -250,7 +268,7 @@ export function hexagon(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/hexagon_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -266,7 +284,7 @@ export function remove(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/remove_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/remove_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -282,7 +300,7 @@ export function add2(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/add_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/add_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -298,7 +316,7 @@ export function playCircle(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/play_circle_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/play_circle_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -314,7 +332,7 @@ export function autorenew(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/autorenew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/autorenew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -330,7 +348,7 @@ export function fastRewind(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/fast_rewind_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/fast_rewind_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -346,7 +364,7 @@ export function skipNext(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/skip_next_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/skip_next_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -362,7 +380,7 @@ export function skipPrevious(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/skip_previous_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/skip_previous_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -378,7 +396,7 @@ export function fastForward(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/fast_forward_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/fast_forward_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -394,7 +412,7 @@ export function playArrow(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/play_arrow_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -410,7 +428,7 @@ export function playArrowNoFill(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/play_arrow_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+        media_key: "/material-ui/play_arrow_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -426,7 +444,7 @@ export function pause(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/pause_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/pause_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -442,7 +460,7 @@ export function pauseNoFill(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/pause_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+        media_key: "/material-ui/pause_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -458,7 +476,7 @@ export function moreVert(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/more_vert_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/more_vert_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -474,7 +492,7 @@ export function allOut(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/all_out_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/all_out_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -490,7 +508,7 @@ export function earthquake(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/earthquake_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/earthquake_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -506,7 +524,7 @@ export function lassoSelect(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/lasso_select_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/lasso_select_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -522,7 +540,7 @@ export function deployedCode(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/deployed_code_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/deployed_code_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -538,7 +556,7 @@ export function browse(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/browse_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/browse_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -554,7 +572,7 @@ export function menu(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/menu_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -570,7 +588,7 @@ export function noSound(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/no_sound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/no_sound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -586,7 +604,7 @@ export function volumeUp(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/volume_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/volume_up_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -602,7 +620,7 @@ export function firstPage(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/first_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/first_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -618,7 +636,7 @@ export function lastPage(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/last_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/last_page_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -634,7 +652,7 @@ export function upload(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/upload_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/upload_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -650,7 +668,7 @@ export function bookmarkStacks(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/bookmark_stacks_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/bookmark_stacks_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -666,7 +684,7 @@ export function timerArrowDown(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/timer_arrow_down_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/timer_arrow_down_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -682,7 +700,7 @@ export function photo(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/photo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/photo_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -698,7 +716,7 @@ export function threeSixtyLeft(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/360_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/360_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -714,7 +732,7 @@ export function threeSixtyRight(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/360_right_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/360_right_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -730,7 +748,7 @@ export function cropSquare(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_square_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_square_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -746,7 +764,7 @@ export function crop16_9(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_16_9_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_16_9_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -762,7 +780,7 @@ export function crop9_16(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_9_16_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_9_16_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -778,7 +796,7 @@ export function crop7_5(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_7_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_7_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -794,7 +812,7 @@ export function crop5_7(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_5_7_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_5_7_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -810,7 +828,7 @@ export function crop5_4(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_5_4_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_5_4_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -826,7 +844,7 @@ export function crop4_5(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_4_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_4_5_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -842,7 +860,7 @@ export function crop3_2(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_3_2_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_3_2_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -858,7 +876,7 @@ export function crop2_3(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/crop_2_3_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+        media_key: "/material-ui/crop_2_3_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -874,7 +892,7 @@ export function contentPaste(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/content_paste_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/content_paste_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -890,7 +908,7 @@ export function fileCopy(
     width: number = 24,
     height: number = 24): LaurusClientSvg {
     return {
-        media_path: "/material-ui/file_copy_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        media_key: "/material-ui/file_copy_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
         width,
         height,
         viewbox: "0 -960 960 960",
@@ -898,5 +916,86 @@ export function fileCopy(
         stroke: "none",
         stroke_width: 0,
         markup: base64Encode(`<path d="M240-200v-720h360l240 240v480H240Zm320-440v-200H320v560h440v-360H560ZM80-40v-640h80v560h440v80H80Zm240-800v200-200 560-560Z"/>`)
+    }
+}
+
+export function outbound(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/outbound_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="m356-300 204-204v90h80v-226H414v80h89L300-357l56 57ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/>`)
+    }
+}
+
+export function search(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/search_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M380-320q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l224 224q11 11 11 28t-11 28q-11 11-28 11t-28-11L532-372q-30 24-69 38t-83 14Zm0-80q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>`)
+    }
+}
+
+
+export function folder(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/folder_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h207q16 0 30.5 6t25.5 17l57 57h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>`)
+    }
+}
+
+export function arrowDownwardAlt(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/arrow_downward_alt_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M480-240 240-480l56-56 144 144v-368h80v368l144-144 56 56-240 240Z"/>`)
+    }
+}
+
+export function arrowUpwardAlt(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/arrow_upward_alt_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M440-240v-368L296-464l-56-56 240-240 240 240-56 56-144-144v368h-80Z"/>`)
     }
 }

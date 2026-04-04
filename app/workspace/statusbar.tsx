@@ -3,7 +3,7 @@
 import { useContext, useState } from "react";
 import { WorkspaceContext } from "./workspace.client";
 import { dellaRespira, ubuntuMono } from "../fonts";
-import { allOut, browse, contentPaste, deployedCode, earthquake, lassoSelect, SvgRepo } from "../svg-repo";
+import { allOut, browse, contentPaste, deployedCode, earthquake, folder, lassoSelect, SvgRepo } from "../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -85,6 +85,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                         fontSize: statusbarSize.actionFont,
                     }}>
                     <SvgRepo
+                        title={appState.effectClipboard ? "" : "clipboard"}
                         svg={appState.effectClipboard ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
                         containerSize={{
                             width: 30,
@@ -150,6 +151,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                             <RiToolsLine size={15} color="rgb(62, 62, 62)" />
                         </div> :
                         <SvgRepo
+                            title="active tool"
                             svg={(() => {
                                 switch (appState.tool.type) {
                                     case "drop": return lassoSelect();
@@ -163,6 +165,20 @@ export default function Statusbar({ action, body }: Statusbar) {
                             }}
                             scale={0.5} />
                     }
+                </div>
+                <div
+                    title="media source"
+                    style={{
+                        fontSize: statusbarSize.actionFont,
+                    }}>
+                    <SvgRepo
+                        title="media source"
+                        svg={folder("rgb(62, 62, 62)")}
+                        containerSize={{
+                            width: 30,
+                            height: 30
+                        }}
+                        scale={0.5} />
                 </div>
                 <div
                     title="screen resolution"

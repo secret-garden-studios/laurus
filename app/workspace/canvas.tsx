@@ -1,7 +1,8 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, LaurusProjectSvg, LaurusProjectResult, LaurusProjectImg } from "./workspace.client";
 import { v4 } from "uuid";
-import { createProject, findImg, findSvg, updateProject } from "./workspace.server";
+import { findImg, findSvg } from "./workspace.server";
+import { updateProject, createProject } from "../projects/projects.server";
 
 function calcMousePosition(
     canvas: HTMLCanvasElement,
@@ -123,7 +124,7 @@ export default function Canvas() {
             dropArea.cy,
             dropArea.radius);
         const newKey = v4();
-        const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_path);
+        const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_key);
         if (svgMediaResult) {
             const projectSvg: LaurusProjectSvg = {
                 svg_media_id: svgMediaResult.svg_media_id,
@@ -131,7 +132,7 @@ export default function Canvas() {
                 height: newFrame.height,
                 top: newFrame.y,
                 left: newFrame.x,
-                media_path: svgData.media_path,
+                media_key: svgData.media_key,
                 viewbox: svgData.viewbox,
                 fill: svgData.fill,
                 stroke: svgData.stroke,
@@ -140,7 +141,7 @@ export default function Canvas() {
             }
             const newProjectSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
             newProjectSvgs.set(newKey, projectSvg);
-            const encodedSvg = appState.browserSvgs.find(i => i.media_path == svgData.media_path);
+            const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
             if (encodedSvg) {
                 dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
             }
@@ -169,12 +170,12 @@ export default function Canvas() {
             dropArea.cy,
             dropArea.radius);
         const newKey = v4();
-        const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_path);
+        const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_key);
         if (imgMediaResult) {
             const laurusImg: LaurusProjectImg = {
                 width: newFrame.width,
                 height: newFrame.height,
-                media_path: imgData.media_path,
+                media_key: imgData.media_key,
                 pending: false,
                 img_media_id: imgMediaResult.img_media_id,
                 top: newFrame.y,
@@ -183,7 +184,7 @@ export default function Canvas() {
 
             const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
             newImgs.set(newKey, laurusImg);
-            const encodedImg = appState.browserImgs.find(i => i.media_path == imgData.media_path);
+            const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
             if (encodedImg) {
                 dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
             }
@@ -222,16 +223,16 @@ export default function Canvas() {
                     };
                     switch (appState.browserElement.type) {
                         case "svg": {
-                            const key = appState.browserElement.value.media_path;
-                            const svgData = appState.browserSvgs.find(s => s.media_path === key);
+                            const key = appState.browserElement.value.media_key;
+                            const svgData = appState.browserSvgs.find(s => s.media_key === key);
                             if (svgData) {
                                 handleSvgDrop(svgData, dropArea);
                             }
                             break;
                         }
                         case "img": {
-                            const key = appState.browserElement.value.media_path;
-                            const imgData = appState.browserImgs.find(s => s.media_path === key);
+                            const key = appState.browserElement.value.media_key;
+                            const imgData = appState.browserImgs.find(s => s.media_key === key);
                             if (imgData) {
                                 handleImgDrop(imgData, dropArea)
                             }

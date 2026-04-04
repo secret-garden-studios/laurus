@@ -1,11 +1,12 @@
 import { useContext, useRef, useState, DragEvent, useCallback } from "react";
 import { dellaRespira } from "../fonts";
-import { LaurusImgResult, LaurusProjectResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext, LaurusProjectResult } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, SvgRepo, timerArrowDown } from "../svg-repo";
-import { createImg, createProject, createSvg, getImg, getSvg, updateProject } from "./workspace.server";
+import { createImg, createSvg, getImg, getSvg } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
+import { updateProject, createProject } from "../projects/projects.server";
 
 export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
@@ -331,7 +332,7 @@ export default function MediaBrowser({
                         .map((img) => {
                             return (
                                 <div
-                                    key={img.media_path}
+                                    key={img.media_key}
                                     style={{
                                         gridColumn: 2,
                                         padding: mediaItemSize.padding,
@@ -352,7 +353,7 @@ export default function MediaBrowser({
                                         }}>
                                         {img.src && <NextImage
                                             draggable={false}
-                                            alt={img.media_path}
+                                            alt={img.media_key}
                                             src={img.src}
                                             fill
                                             style={{
@@ -387,7 +388,7 @@ export default function MediaBrowser({
                             );
                             return (
                                 <div
-                                    key={svg.media_path}
+                                    key={svg.media_key}
                                     style={{
                                         gridColumn: 2,
                                         padding: mediaItemSize.padding,
@@ -444,7 +445,7 @@ export default function MediaBrowser({
                             );
                             return (
                                 <div
-                                    key={frameSvg.svg.media_path}
+                                    key={frameSvg.svg.media_key}
                                     style={{
                                         gridColumn: 2,
                                         padding: mediaItemSize.padding,

@@ -289,7 +289,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                         onNewControl={youtubeController}
                                         onNewMute={(newMute) => {
                                             if (newMute) {
-                                                youtubeController({ type: 'mute', key: media.media_path });
+                                                youtubeController({ type: 'mute', key: media.media_key });
                                                 const newMedia: VideoMediaResult = {
                                                     ...media,
                                                     filter: ''
@@ -301,7 +301,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                                 playerDataRefs.current.set(key, { ...newMedia });
                                             }
                                             else {
-                                                youtubeController({ type: 'unmute', key: media.media_path });
+                                                youtubeController({ type: 'unmute', key: media.media_key });
                                                 const newMedia: VideoMediaResult = {
                                                     ...media,
                                                     filter: `none`
@@ -382,7 +382,7 @@ function Screen({
     return (<>
         <YoutubePlayer
             playerRefs={playerRefs}
-            videoId={videoMedia.media_path}
+            videoId={videoMedia.media_key}
             start={videoMedia.start}
             end={videoMedia.end}
             width={videoMedia.width}

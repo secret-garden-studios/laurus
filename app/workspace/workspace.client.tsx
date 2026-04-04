@@ -2,11 +2,6 @@
 import { createContext, RefObject, use, useCallback, useContext, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
-    ProjectResult_V1_0,
-    ProjectSvg_V1_0,
-    updateProject,
-    createProject,
-    ProjectLayer_V1_0,
     ScaleEquation_V1_0,
     Scale_V1_0,
     ScaleResult_V1_0,
@@ -16,7 +11,6 @@ import {
     getFrames,
     ImgMedia_V1_0,
     getImgDiscoveryPage,
-    ProjectImg_V1_0,
     updateMove,
     updateScale,
     getSvgDiscoveryPage,
@@ -36,21 +30,12 @@ import { dellaRespira } from "../fonts";
 import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceResolution } from "./workspace-resolution";
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./toolbar";
+import { ProjectResult_V1_0, updateProject, createProject, ProjectImg_V1_0, ProjectSvg_V1_0, ProjectLayer_V1_0 } from "../projects/projects.server";
 
-export interface LaurusProjectResult extends ProjectResult_V1_0 {
-    imgs: Map<string, LaurusProjectImg>
-    svgs: Map<string, LaurusProjectSvg>
-}
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
 export type LaurusImg = ImgMedia_V1_0;
-export interface LaurusProjectImg extends ProjectImg_V1_0 {
-    pending: boolean,
-}
-export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
-    pending: boolean,
-}
-export type LaurusLayer = ProjectLayer_V1_0;
+
 export type LaurusScaleEquation = ScaleEquation_V1_0;
 export interface LaurusScale extends Scale_V1_0 {
     math: Map<string, LaurusScaleEquation>,
@@ -90,6 +75,17 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
             return time;
         }
     }
+}
+export interface LaurusProjectImg extends ProjectImg_V1_0 {
+    pending: boolean
+}
+export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
+    pending: boolean
+}
+export type LaurusLayer = ProjectLayer_V1_0;
+export interface LaurusProjectResult extends ProjectResult_V1_0 {
+    imgs: Map<string, LaurusProjectImg>
+    svgs: Map<string, LaurusProjectSvg>
 }
 
 /**
@@ -215,7 +211,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.AddBrowserImg: {
             const currentBrowserImgs = [...state.browserImgs];
-            const i = currentBrowserImgs.findIndex(i => i.media_path == action.value.media_path);
+            const i = currentBrowserImgs.findIndex(i => i.media_key == action.value.media_key);
             if (i < 0) {
                 return action.first ?
                     { ...state, browserImgs: [action.value, ...currentBrowserImgs] } :
@@ -229,7 +225,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newBrowserImgs = [...state.browserImgs];
             for (let i = 0; i < action.value.length; i++) {
                 const newBrowserImg = action.value[i];
-                const index = newBrowserImgs.findIndex(img => img.media_path == newBrowserImg.media_path);
+                const index = newBrowserImgs.findIndex(img => img.media_key == newBrowserImg.media_key);
                 if (index > -1) {
                     newBrowserImgs[index] = { ...newBrowserImg }
                 }
@@ -238,7 +234,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.AddBrowserSvg: {
             const currentBrowserSvgs = [...state.browserSvgs];
-            const i = currentBrowserSvgs.findIndex(i => i.media_path == action.value.media_path);
+            const i = currentBrowserSvgs.findIndex(i => i.media_key == action.value.media_key);
             if (i < 0) {
                 return action.first ?
                     { ...state, browserSvgs: [action.value, ...currentBrowserSvgs] } :
@@ -252,7 +248,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newBrowserSvgs = [...state.browserSvgs];
             for (let i = 0; i < action.value.length; i++) {
                 const newBrowserSvg = action.value[i];
-                const index = newBrowserSvgs.findIndex(svg => svg.media_path == newBrowserSvg.media_path);
+                const index = newBrowserSvgs.findIndex(svg => svg.media_key == newBrowserSvg.media_key);
                 if (index > -1) {
                     newBrowserSvgs[index] = { ...newBrowserSvg }
                 }
@@ -261,7 +257,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.AddCanvasImg: {
             const currentCanvasImgs = [...state.canvasImgs];
-            const i = currentCanvasImgs.findIndex(i => i.media_path == action.value.media_path);
+            const i = currentCanvasImgs.findIndex(i => i.media_key == action.value.media_key);
             if (i < 0) {
                 return { ...state, canvasImgs: [...currentCanvasImgs, action.value] }
             }
@@ -271,7 +267,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.AddCanvasSvg: {
             const currentCanvasSvgs = [...state.canvasSvgs];
-            const i = currentCanvasSvgs.findIndex(i => i.media_path == action.value.media_path);
+            const i = currentCanvasSvgs.findIndex(i => i.media_key == action.value.media_key);
             if (i < 0) {
                 return { ...state, canvasSvgs: [...currentCanvasSvgs, action.value] }
             }
@@ -425,14 +421,15 @@ function initReducer({
                 last_active: "",
                 svg_media_id: "",
                 categories: [],
-                order: 0
+                order: 0,
+                media_uri: ""
             }, type: 'svg'
         };
 
     const defaulProject: LaurusProjectResult = {
         ...defaultWorkspace.project,
-        frame_width: Math.round(780 * resolution.factor),
-        frame_height: Math.round(1140 * resolution.factor)
+        frame_width: Math.round(FRAME_WIDTH_5_7 * resolution.factor),
+        frame_height: Math.round(FRAME_HEIGHT_5_7 * resolution.factor)
     };
 
     return {
@@ -1026,7 +1023,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
         {Array.from(appState.project.imgs.entries().filter(e => !e[1].pending)).map((e) => {
             const [key, imgMeta] = e;
             const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-            const imgData = appState.canvasImgs.find(i => i.media_path == imgMeta.media_path);
+            const imgData = appState.canvasImgs.find(i => i.media_key == imgMeta.media_key);
             if (imgData) {
                 return (
                     <div
@@ -1055,7 +1052,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
         {Array.from(appState.project.svgs.entries().filter(e => !e[1].pending)).map((e) => {
             const [key, svgMeta] = e;
             const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-            const svgData = appState.canvasSvgs.find(s => s.media_path == svgMeta.media_path);
+            const svgData = appState.canvasSvgs.find(s => s.media_key == svgMeta.media_key);
             if (svgData) {
                 return (
                     <div
@@ -1084,7 +1081,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
             const [key, imgMeta] = e;
             const position = appState.tool.type != 'viewport' ? { top: Math.max(0, imgMeta.top), left: Math.max(0, imgMeta.left) }
                 : { top: (imgMeta.top - appState.project.frame_top), left: (imgMeta.left - appState.project.frame_left) };
-            const imgData = appState.canvasImgs.find(i => i.media_path == imgMeta.media_path);
+            const imgData = appState.canvasImgs.find(i => i.media_key == imgMeta.media_key);
             if (imgData) {
                 const threshold = 80;
                 const hexSize = imgMeta.width < threshold || imgMeta.height < threshold ? 12 : 16;
@@ -1215,7 +1212,7 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                 const [key, svgMeta] = e;
                 const position = appState.tool.type != 'viewport' ? { top: Math.max(0, svgMeta.top), left: Math.max(0, svgMeta.left) }
                     : { top: (svgMeta.top - appState.project.frame_top), left: (svgMeta.left - appState.project.frame_left) };
-                const svgData = appState.canvasSvgs.find(s => s.media_path == svgMeta.media_path);
+                const svgData = appState.canvasSvgs.find(s => s.media_key == svgMeta.media_key);
                 if (svgData) {
                     const threshold = 80;
                     const hexSize = svgMeta.width < threshold || svgMeta.height < threshold ? 12 : 16;

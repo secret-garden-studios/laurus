@@ -1,6 +1,6 @@
 
 export interface VideoMedia_V1_0 {
-    media_path: string
+    media_key: string
     origin: string
     title: string
     start: number
@@ -13,7 +13,7 @@ export interface VideoMediaResult_V1_0 {
     timestamp: string
     last_active: string
     video_media_id: string
-    media_path: string
+    media_key: string
     origin: string
     title: string
     start: number
@@ -52,7 +52,7 @@ export async function findVideo(
     baseUrl: string | undefined,
     mediaPath: string) {
     try {
-        const url = `${baseUrl}/media/video?media_path=${mediaPath}`;
+        const url = `${baseUrl}/media/video?media_key=${mediaPath}`;
         const raw_response = await fetch(url, {
             method: 'GET',
             headers: {

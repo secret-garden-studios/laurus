@@ -4,18 +4,19 @@ import { dellaRespira } from "../fonts";
 import { addCircle, moreVert, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
 import {
     LaurusEffect,
-    LaurusProjectResult,
     LaurusScale,
     convertTime,
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
+    LaurusProjectResult,
     LaurusLayer
 } from "./workspace.client";
-import { createMove, createProject, createScale, getFrames, updateProject } from "./workspace.server";
+import { createMove, createScale, getFrames } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
 import { WorkspaceResolution } from "./workspace-resolution";
+import { updateProject, createProject } from "../projects/projects.server";
 
 interface TimelineArea {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,

@@ -16,7 +16,7 @@ export default function Menubar({ resolution }: Menubar) {
                 height: 50,
                 font: 20,
                 paddingLeft: 12,
-                paddingRight: 24,
+                paddingRight: 12,
                 linkWidth: 100,
                 linkFont: 12,
                 linkPaddingTop: 4
@@ -25,7 +25,7 @@ export default function Menubar({ resolution }: Menubar) {
                 height: 44,
                 font: 18,
                 paddingLeft: 12,
-                paddingRight: 20,
+                paddingRight: 12,
                 linkWidth: 90,
                 linkFont: 11,
                 linkPaddingTop: 2
@@ -91,6 +91,32 @@ export default function Menubar({ resolution }: Menubar) {
                     }}>
                     {'Laurus'}
                 </div>
+            </Link>
+            <Link
+                prefetch={true}
+                href={"/projects"}
+                style={linkGridStyle}>
+                <div
+                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                    className={dellaRespira.className}
+                    style={{
+                        paddingTop: menubarSize.linkPaddingTop,
+                        fontSize: menubarSize.linkFont,
+                        letterSpacing: "1px",
+                        display: 'grid',
+                        placeContent: 'center',
+                        color: 'rgb(227, 227, 227)',
+                        textShadow: pathname == '/projects' ? "0 0 12px rgba(255, 255, 255, 0.3)" : 'none',
+                    }}>
+                    {'projects'}
+                </div>
+                <div style={{
+                    height: 1,
+                    borderRadius: 10,
+                    background: pathname == '/projects' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
+                    boxShadow: pathname == '/projects' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
+                }} />
             </Link>
             <Link
                 prefetch={true}

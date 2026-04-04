@@ -2,8 +2,8 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import useDebounce from "../hooks/useDebounce";
-import { LaurusProjectResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { createProject, updateProject } from "./workspace.server";
+import { WorkspaceActionType, WorkspaceContext, LaurusProjectResult } from "./workspace.client";
+import { updateProject, createProject } from "../projects/projects.server";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -13,35 +13,36 @@ export default function Projectbar() {
     const [projectbarSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                minWidth: 200,
                 height: Math.round(36 * appState.resolution.factor),
                 font: 16,
-                inputWidth: 1000,
+                inputPadding: '0px 20px'
             }
             case "midhigh": return {
-                minWidth: 200,
                 height: 32,
                 font: 11,
-                inputWidth: 900
+                inputPadding: '0px 20px'
             }
             case "low":
             case "midlow": return {
-                minWidth: 200,
                 height: 30,
                 font: 11,
-                inputWidth: 800
+                inputPadding: '0px 20px'
             }
         }
-    })
+    });
 
     useEffect(() => {
         const renameProjectOnSever = (async () => {
             if (projectRef.current && projectRef.current.project_id &&
                 projectRef.current.name && projectNameHook) {
-                await updateProject(
+                const newProject = { ...projectRef.current, name: projectNameHook }
+                const response = await updateProject(
                     appState.apiOrigin,
                     projectRef.current.project_id,
-                    { ...projectRef.current, name: projectNameHook });
+                    newProject);
+                if (response) {
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                }
             }
             else if (projectRef.current && projectRef.current.name && projectNameHook) {
                 const newProject = { ...projectRef.current, name: projectNameHook };
@@ -68,29 +69,30 @@ export default function Projectbar() {
             className={styles["noisy-background"]}
             style={{
                 height: projectbarSize.height,
-                minWidth: projectbarSize.minWidth,
                 width: "100%",
                 display: "flex",
                 justifyContent: 'start',
                 alignItems: "center",
+                overflowX: 'auto'
             }}>
             <div
                 style={{
-
                     width: '100%',
                     display: 'grid',
-                    placeContent: 'center',
+                    placeItems: 'center',
                     height: '100%',
-                    padding: 2,
+                    padding: projectbarSize.inputPadding,
                     border: '1px solid rgb(24, 24, 24)',
                     borderRadius: 0,
                     background: 'linear-gradient(45deg, rgba(11, 11, 11, 0.3), rgba(19, 19, 19, 0.3))',
                 }}>
                 <input
+                    id={`porject-name-input-${appState.project.project_id}`}
                     className={dellaRespira.className}
                     placeholder="name me..."
                     style={{
-                        width: projectbarSize.inputWidth,
+                        width: '100%',
+                        boxSizing: 'border-box',
                         letterSpacing: '3px',
                         background: 'none',
                         color: "rgb(227, 227, 227)",

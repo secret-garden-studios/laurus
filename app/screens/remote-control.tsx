@@ -321,7 +321,7 @@ export default function RemoteControl({
                             const newVolume = getVolumeValue(newCursor.y, volumeTrackRef.current.clientHeight, 0);
                             const newControl: YouTubePlayerControl = {
                                 type: 'setVolume',
-                                key: videoMedia.media_path,
+                                key: videoMedia.media_key,
                                 value: Math.round(newVolume)
                             }
                             onNewControl(newControl);
@@ -363,7 +363,7 @@ export default function RemoteControl({
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_path });
+                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_key });
                             if (!currentPlayTime) return;
                             const newCursor = timeToCursor(currentPlayTime);
                             setStartCursor({ x: newCursor, y: 0 });
@@ -372,7 +372,7 @@ export default function RemoteControl({
                                 startRef.current.value = formatTime(newStart);
                             }
                             onNewClip(currentPlayTime, videoMedia.end);
-                            onNewControl({ type: 'reload', key: videoMedia.media_path, value: { newStart: currentPlayTime, newEnd: videoMedia.end } });
+                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: currentPlayTime, newEnd: videoMedia.end } });
                         }}
                     />
                     <div style={{
@@ -391,7 +391,7 @@ export default function RemoteControl({
                             onContainerClick={() => {
                                 const newControl: YouTubePlayerControl = {
                                     type: 'playPause',
-                                    key: videoMedia.media_path,
+                                    key: videoMedia.media_key,
                                 }
                                 onNewControl(newControl);
                             }} />
@@ -404,7 +404,7 @@ export default function RemoteControl({
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_path });
+                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_key });
                             if (!currentPlayTime) return;
                             const newCursor = timeToCursor(currentPlayTime);
                             setEndCursor({ x: newCursor, y: 0 });
@@ -413,7 +413,7 @@ export default function RemoteControl({
                                 endRef.current.value = formatTime(newEnd);
                             }
                             onNewClip(videoMedia.start, currentPlayTime);
-                            onNewControl({ type: 'reload', key: videoMedia.media_path, value: { newStart: videoMedia.start, newEnd: currentPlayTime } });
+                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: videoMedia.start, newEnd: currentPlayTime } });
                         }} />
                 </div>
             </div>
@@ -549,7 +549,7 @@ export default function RemoteControl({
                             const adjustedEnd = adjustEndCursor(c.x);
                             const newStart: number = cursorToTime(c.x);
                             onNewClip(newStart, adjustedEnd);
-                            onNewControl({ type: 'seekTo', key: videoMedia.media_path, value: newStart });
+                            onNewControl({ type: 'seekTo', key: videoMedia.media_key, value: newStart });
                         }}
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
@@ -557,7 +557,7 @@ export default function RemoteControl({
                             const adjustedStart = adjustStartCursor(c.x);
                             const newEnd: number = cursorToTime(c.x);
                             onNewClip(adjustedStart, newEnd);
-                            onNewControl({ type: 'reload', key: videoMedia.media_path, value: { newStart: adjustedStart, newEnd } });
+                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: adjustedStart, newEnd } });
                         }}
                         onCursorMove={(c) => {
                             if (!startRef.current) return;

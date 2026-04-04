@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImgResult, LaurusSvgResult, LaurusProjectImg, LaurusProjectSvg, WorkspaceContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, LaurusProjectImg, LaurusProjectSvg } from "./workspace.client";
 import { useContext } from "react";
 import { SvgRepo } from "../svg-repo";
 
@@ -23,11 +23,11 @@ export function ReactImg({ img, containerSize, onImgRef, inputId }: ReactImg) {
             <Image
                 ref={(r) => {
                     if (onImgRef) {
-                        onImgRef(r, `${inputId ?? img.media_path}`);
+                        onImgRef(r, `${inputId ?? img.media_key}`);
                     }
                 }}
                 draggable={false}
-                alt={img.media_path}
+                alt={img.media_key}
                 src={img.src}
                 fill
                 style={{ objectFit: 'cover', border: 'none' }} />

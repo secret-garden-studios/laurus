@@ -69,7 +69,7 @@ export default function Statusbar({
                         const ytMeta = await getYouTubeEmbed(videoOrigin.rawData)
                         if (videoId && ytMeta) {
                             const newVideoMedia: VideoMedia = {
-                                media_path: videoId,
+                                media_key: videoId,
                                 origin: videoOrigin.type,
                                 title: ytMeta.title,
                                 start: start,

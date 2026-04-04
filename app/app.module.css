@@ -85,3 +85,18 @@
     text-shadow: 0px 0px 2px rgb(255, 255, 255);
   }
 }
+
+.hoverable-button {
+  transition: all 0.15s ease-in-out;
+  background: none;
+}
+
+.hoverable-button.is-active {
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  cursor: pointer;
+}
+
+.hoverable-button.is-active:hover {
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1));
+  box-shadow: rgba(255, 255, 255, 0.1) 0px 0px 10px 1px;
+}
