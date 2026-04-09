@@ -31,6 +31,7 @@ export type WorkspaceResolution =
     | { type: 'low', factor: number, value: { width: number, height: number } }
 
 export function getScreenResolution(): WorkspaceResolution {
+    if (typeof screen === 'undefined') return { type: 'midhigh', factor: MIDHIGH_FACTOR, value: { width: 2560, height: 1440 } };
     if (screen.width > 2560) {
         return { type: 'high', factor: HIGH_FACTOR, value: { width: screen.width, height: screen.height } };
     }

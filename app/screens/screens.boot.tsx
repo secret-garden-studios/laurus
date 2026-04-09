@@ -1,26 +1,29 @@
 'use client'
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { VideoMediaResult_V1_0 } from "./screens.server";
 import Screens from "./screens.client";
 import { italiana } from "../fonts";
 import styles from "../app.module.css";
 import { getScreenResolution, ScreensResolution } from "./screens-resolution";
+import { LaurusUserResult } from "../landing.server";
 
 interface ScreensBoot {
     apiOriginInit: string | undefined,
+    accessTokenInit: string | undefined,
     videoMediaPromise: Promise<VideoMediaResult_V1_0[]>,
     videoMediaPageSize: number,
+    me: Promise<LaurusUserResult | undefined> | undefined
 }
-export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMediaPageSize }: ScreensBoot) {
+export default function ScreensBoot({ apiOriginInit, accessTokenInit, videoMediaPromise, videoMediaPageSize, me }: ScreensBoot) {
     const [booted, setBooted] = useState(false);
     const [resolution, setResolution] = useState<ScreensResolution | undefined>(undefined);
 
-    useLayoutEffect(() => {
+    useEffect(() => {
         (() => {
             if (!resolution)
                 setResolution(getScreenResolution())
         })();
-    });
+    }, [resolution]);
 
     useEffect(() => {
         function boot() {
@@ -45,12 +48,14 @@ export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMed
 
     return (
         <>
-            {booted && resolution ?
+            {booted && resolution !== undefined ?
                 <Screens
                     apiOrigin={apiOriginInit}
+                    accessToken={accessTokenInit}
                     resolution={resolution}
                     videoMediaPromise={videoMediaPromise}
-                    videoMediaPageSize={videoMediaPageSize} />
+                    videoMediaPageSize={videoMediaPageSize}
+                    mePromise={me} />
                 : <Skeleton />
             }
         </>

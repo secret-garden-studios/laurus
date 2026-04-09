@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { dellaRespira } from './fonts';
 
 export const metadata: Metadata = {
   title: "Laurus",
@@ -15,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" className={dellaRespira.variable}>
+      <body className={dellaRespira.className}>
         {children}
       </body>
     </html>

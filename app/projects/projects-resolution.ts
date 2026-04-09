@@ -5,6 +5,7 @@ export type ProjectsResolution =
     | { type: 'low', factor: 0.65, value: { width: number, height: number } }
 
 export function getScreenResolution(): ProjectsResolution {
+    if (typeof screen === 'undefined') return { type: 'midhigh', factor: 0.9, value: { width: 2560, height: 1440 } };
     if (screen.width > 2560) {
         return { type: 'high', factor: 1, value: { width: screen.width, height: screen.height } };
     }

@@ -22,43 +22,13 @@
   background-size: auto;
 }
 
-.animated-noisy-background::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  width: 100%;
-  height: 100%;
-  background-image: url('/noise2_16_2.png');
-  animation: drift 11s cubic-bezier(0.4, 0, 0.4, 1) infinite;
+.noisy-background-20-3 {
+  background-image: url('/noise2_20_3.png');
+  background-size: auto;
 }
 
 .animated-font {
   animation: text-focus 11s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes drift {
-
-  0%,
-  5%,
-  100% {
-    transform: scale(1);
-    filter: sepia(0.9) hue-rotate(200deg) saturate(0) opacity(1);
-  }
-
-  40% {
-    transform: scale(8);
-    filter: sepia(0.5) hue-rotate(240deg) saturate(0) opacity(0.4);
-  }
-
-  60% {
-    transform: scale(15);
-    filter: sepia(0.5) hue-rotate(240deg) saturate(0) opacity(0.05);
-  }
-
-  75% {
-    transform: scale(20);
-    filter: sepia(0.5) hue-rotate(240deg) saturate(0) opacity(0);
-  }
 }
 
 @keyframes text-focus {
@@ -66,26 +36,22 @@
   0%,
   5%,
   100% {
-    transform: scale(1);
     color: rgba(227, 227, 227, 1);
     text-shadow: 0px 0px 5px rgb(255, 255, 255);
 
   }
 
   40% {
-    transform: scale(1);
     color: rgba(227, 227, 227, 1);
     text-shadow: 0px 0px 20px rgba(255, 255, 255. 0.9);
   }
 
   60% {
-    transform: scale(1);
     color: rgba(227, 227, 227, 1);
     text-shadow: 0px 0px 1px rgba(255, 255, 255, 1);
   }
 
   75% {
-    transform: scale(1.1);
     color: rgb(227, 227, 227);
     text-shadow: 0px 0px 2px rgb(255, 255, 255);
   }
@@ -104,4 +70,93 @@
 .hoverable-button.is-active:hover {
   background: linear-gradient(45deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1));
   box-shadow: rgba(255, 255, 255, 0.1) 0px 0px 10px 1px;
+}
+
+@property --grad-color {
+  syntax: '<color>';
+  initial-value: rgba(23, 23, 23, 1);
+  inherits: false;
+}
+
+.animated-button-dark {
+  cursor: pointer;
+  transition: --grad-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  background: linear-gradient(45deg, rgba(25, 25, 25, 1), var(--grad-color));
+}
+
+.animated-button-dark:hover {
+  --grad-color: rgba(35, 35, 35, 1);
+  box-shadow: rgba(255, 255, 255, 0.1) 0px 0px 10px 1px;
+}
+
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --color-primary {
+  syntax: '<color>';
+  initial-value: rgb(140, 121, 179);
+  inherits: false;
+}
+
+@property --color-secondary {
+  syntax: '<color>';
+  initial-value: rgb(21, 21, 21);
+  inherits: false;
+}
+
+@property --color-tertiary {
+  syntax: '<color>';
+  initial-value: rgb(40, 40, 40);
+  inherits: false;
+}
+
+.glowing-border {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background:
+    linear-gradient(rgb(25, 25, 25), rgb(23, 23, 23)) padding-box,
+    conic-gradient(from var(--angle),
+      var(--color-primary, rgb(140, 121, 179)),
+      var(--color-secondary, rgb(21, 21, 21)),
+      var(--color-tertiary, rgb(40, 40, 40)),
+      var(--color-tertiary, rgb(40, 40, 40)),
+      var(--color-secondary, rgb(21, 21, 21)),
+      var(--color-primary, rgb(140, 121, 179))) border-box;
+
+  appearance: none;
+  animation: rotateGradient 8s linear infinite;
+}
+
+@keyframes rotateGradient {
+  to {
+    --angle: 360deg;
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px rgb(25, 25, 25) inset !important;
+  -webkit-text-fill-color: rgb(229, 229, 229) !important;
+  border: 1px solid rgb(50, 50, 50) !important;
+  outline: none !important;
+  font-family: var(--font-della-respira), serif !important;
+}
+
+input:-webkit-autofill::first-line {
+  font-family: var(--font-della-respira), serif !important;
 }

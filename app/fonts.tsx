@@ -20,6 +20,7 @@ export const geistMono = Geist_Mono({
 export const dellaRespira = Della_Respira({
     weight: '400',
     subsets: ['latin'],
+    variable: '--font-della-respira',
 });
 
 export const dmSans = DM_Sans({

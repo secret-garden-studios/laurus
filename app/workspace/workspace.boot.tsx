@@ -1,10 +1,11 @@
 'use client'
-import { useState, useLayoutEffect, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { WorkspaceResolution, getScreenResolution } from "./workspace-resolution";
 import Workspace from "./workspace.client";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import { BrowserDependencies, ProjectDependencies } from "./page";
+import { LaurusUserResult } from "../landing.server";
 
 function Skeleton() {
     return (<>
@@ -49,34 +50,39 @@ function Forbidden({ resolution }: Forbidden) {
 
 interface WorkspaceBoot {
     laurusApi: string | undefined
+    accessToken: string | undefined,
     mediaPageSizeInit: number,
     effectsEnum: Promise<string[] | undefined>,
     projectDependencies: Promise<ProjectDependencies | undefined>,
     browserDependencies: Promise<BrowserDependencies>,
+    me: Promise<LaurusUserResult | undefined> | undefined
 }
 export default function WorkspaceBoot({
     laurusApi,
+    accessToken,
     mediaPageSizeInit,
     effectsEnum,
     projectDependencies,
-    browserDependencies }: WorkspaceBoot) {
+    browserDependencies,
+    me }: WorkspaceBoot) {
 
     const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
     const timelineValues = [30, 60, 90];
     const timelineUnits = ['sec', 'min'];
 
-    useLayoutEffect(() => {
+    useEffect(() => {
         (() => {
             if (!resolution)
                 setResolution(getScreenResolution())
         })();
-    });
+    }, [resolution]);
 
-    return resolution ?
+    return resolution !== undefined ?
         resolution.type != 'low' ?
             <Suspense fallback={<Skeleton />}>
                 <Workspace
                     apiOriginInit={laurusApi}
+                    accessTokenInit={accessToken}
                     mediaPageSizeInit={mediaPageSizeInit}
                     effectNamesInitPromise={effectsEnum}
                     timelineValuesInit={timelineValues}
@@ -84,6 +90,7 @@ export default function WorkspaceBoot({
                     projectInitPromise={projectDependencies}
                     browserInitPromise={browserDependencies}
                     resolutionInit={resolution}
+                    mePromise={me}
                 />
             </Suspense> :
             <Forbidden resolution={resolution} /> :

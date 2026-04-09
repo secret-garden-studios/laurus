@@ -9,6 +9,7 @@ import { FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, NEW_PROJECT_CANVAS_SIZE } from "../w
 import Statusbar from "./statusbar";
 import { useRouter } from 'next/navigation'
 import useDebounce from "../hooks/useDebounce";
+import { LaurusUserResult } from "../landing.server";
 
 type LaurusProjectImg = ProjectImg_V1_0;
 type LaurusProjectSvg = ProjectSvg_V1_0;
@@ -83,12 +84,15 @@ function projectsDeepSearch(
 
 interface Projects {
     apiOriginInit: string | undefined,
+    accessTokenInit: string | undefined,
     projectsPromise: Promise<ProjectResult_V1_0[] | undefined>,
     resolutionInit: ProjectsResolution,
+    mePromise: Promise<LaurusUserResult | undefined> | undefined
 }
-export default function Projects({ apiOriginInit, projectsPromise, resolutionInit }: Projects) {
+export default function Projects({ apiOriginInit, accessTokenInit, projectsPromise, resolutionInit, mePromise }: Projects) {
     const router = useRouter();
     const p = use(projectsPromise);
+    const me = mePromise ? use(mePromise) : undefined;
     const [projects, setProjects] = useState<LaurusProjectResult[]>(() => {
         if (p) {
             return p.map(x => {
@@ -188,7 +192,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
             }}>
             <div
                 style={{ gridColumn: '1 / -1' }}>
-                <Menubar resolution={resolutionInit} />
+                <Menubar resolution={resolutionInit} me={me} accessToken={accessTokenInit} />
             </div>
             {/* top panel */}
             <div

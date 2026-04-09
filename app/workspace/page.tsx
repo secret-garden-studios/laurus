@@ -1,3 +1,4 @@
+import { getMe } from "../landing.server";
 import { getProjects, ProjectResult_V1_0 } from "../projects/projects.server";
 import WorkspaceBoot from "./workspace.boot";
 import {
@@ -86,10 +87,11 @@ async function fetchMediaFromServer(
     return { browserImgs, browserSvgs }
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ project_id?: string }> }) {
-    const { project_id } = await searchParams;
+export default async function Page({ searchParams }: { searchParams: Promise<{ access?: string, project_id?: string }> }) {
+    const { access, project_id } = await searchParams;
     const mediaPageSize = process.env.MEDIA_PAGE_SIZE;
     const laurusApi = process.env.LAURUS_API;
+    const me = access ? getMe(laurusApi, access) : undefined;
     const projects = getProjects(laurusApi);
     const effectsEnum = getEffects(laurusApi);
     const mediaPageSizeInit = mediaPageSize ? (parseInt(mediaPageSize) || 0) : 0;
@@ -98,8 +100,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
     return <WorkspaceBoot
         laurusApi={laurusApi}
+        accessToken={access}
         mediaPageSizeInit={mediaPageSizeInit}
         effectsEnum={effectsEnum}
         projectDependencies={projectDependencies}
-        browserDependencies={browserDependencies} />
+        browserDependencies={browserDependencies}
+        me={me} />
 }

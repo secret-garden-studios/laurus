@@ -1,3 +1,4 @@
+import { getMe } from "../landing.server";
 import ScreensBoot from "./screens.boot";
 import { getVideoDiscoveryPage, VideoMediaResult_V1_0 } from "./screens.server";
 export const dynamic = 'force-dynamic';
@@ -13,16 +14,20 @@ async function fetchMedia(pageSize: number) {
     return videoMedia
 }
 
-export default function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ access?: string }> }) {
+    const { access } = await searchParams;
     const apiOrigin = process.env.LAURUS_API;
     const pageSize = process.env.VIDEO_MEDIA_PAGE_SIZE ?
         (parseInt(process.env.VIDEO_MEDIA_PAGE_SIZE) || 5) :
         5;
+    const me = access ? getMe(apiOrigin, access) : undefined;
     const videoMedia = fetchMedia(pageSize);
     return (
         <ScreensBoot
             apiOriginInit={apiOrigin}
+            accessTokenInit={access}
             videoMediaPromise={videoMedia}
-            videoMediaPageSize={pageSize} />
+            videoMediaPageSize={pageSize}
+            me={me} />
     );
 }

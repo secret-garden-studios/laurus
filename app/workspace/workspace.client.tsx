@@ -31,6 +31,7 @@ import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceRe
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./toolbar";
 import { ProjectResult_V1_0, updateProject, createProject, ProjectImg_V1_0, ProjectSvg_V1_0, ProjectLayer_V1_0 } from "../projects/projects.server";
+import { LaurusUserResult } from "../landing.server";
 
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
@@ -93,6 +94,7 @@ export interface LaurusProjectResult extends ProjectResult_V1_0 {
  */
 export interface WorkspaceState {
     apiOrigin: string | undefined,
+    accessToken: string | undefined,
     project: LaurusProjectResult,
     canvasImgs: LaurusImgResult[],
     canvasSvgs: LaurusSvgResult[],
@@ -115,6 +117,7 @@ export interface WorkspaceState {
 }
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
+    accessToken: undefined,
     project: {
         name: "untitled",
         canvas_width: NEW_PROJECT_CANVAS_SIZE,
@@ -369,6 +372,7 @@ interface InitReducer {
     arg5: string | undefined,
     arg6: BrowserDependencies,
     arg7: WorkspaceResolution,
+    arg8: string | undefined,
 }
 function initReducer({
     arg1: projectDependencies,
@@ -378,6 +382,7 @@ function initReducer({
     arg5: apiOrigin,
     arg6: browserDependencies,
     arg7: resolution,
+    arg8: accessToken,
 }: InitReducer): WorkspaceState {
     const newEffects: LaurusEffect[] = [];
     if (projectDependencies) {
@@ -450,12 +455,14 @@ function initReducer({
         browserSvgs: newBrowserSvgs,
         browserFrames: newBrowserFrames,
         browserElement: newBrowserElement,
-        resolution
+        resolution,
+        accessToken
     }
 }
 
 interface Workspace {
     apiOriginInit: string | undefined,
+    accessTokenInit: string | undefined,
     mediaPageSizeInit: number,
     timelineValuesInit: number[],
     timelineUnitsInit: string[],
@@ -463,9 +470,11 @@ interface Workspace {
     projectInitPromise: Promise<ProjectDependencies | undefined>,
     browserInitPromise: Promise<BrowserDependencies>,
     resolutionInit: WorkspaceResolution,
+    mePromise: Promise<LaurusUserResult | undefined> | undefined,
 }
 export default function Workspace({
     apiOriginInit,
+    accessTokenInit,
     mediaPageSizeInit,
     timelineValuesInit,
     timelineUnitsInit,
@@ -473,10 +482,11 @@ export default function Workspace({
     projectInitPromise,
     browserInitPromise,
     resolutionInit,
+    mePromise
 }: Workspace) {
     const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
     const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
-
+    const me = mePromise ? use(mePromise) : undefined;
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
@@ -490,6 +500,7 @@ export default function Workspace({
             arg5: apiOriginInit,
             arg6: browserInit,
             arg7: resolutionInit,
+            arg8: accessTokenInit,
         }, initReducer);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -670,7 +681,7 @@ export default function Workspace({
             }}>
             <WorkspaceContext value={{ appState: appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
-                    <Menubar resolution={resolutionInit} />
+                    <Menubar resolution={resolutionInit} me={me} accessToken={accessTokenInit} />
                 </div>
                 <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?

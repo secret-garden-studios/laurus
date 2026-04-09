@@ -1,36 +1,43 @@
 'use client'
-import { useState, useLayoutEffect, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { getScreenResolution } from "../screens/screens-resolution";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import { ProjectResult_V1_0 } from "./projects.server";
 import Projects from "./projects.client";
 import { ProjectsResolution } from "./projects-resolution";
+import { LaurusUserResult } from "../landing.server";
 
 interface ProjectsBoot {
     laurusApi: string | undefined,
+    accessToken: string | undefined,
     projectsPromise: Promise<ProjectResult_V1_0[] | undefined>,
+    mePromise: Promise<LaurusUserResult | undefined> | undefined,
 }
 export default function ProjectsBoot({
     laurusApi,
-    projectsPromise }: ProjectsBoot) {
+    accessToken,
+    projectsPromise,
+    mePromise }: ProjectsBoot) {
 
     const [resolution, setResolution] = useState<ProjectsResolution | undefined>(undefined);
 
-    useLayoutEffect(() => {
+    useEffect(() => {
         (() => {
             if (!resolution)
                 setResolution(getScreenResolution())
         })();
-    });
+    }, [resolution]);
 
-    return resolution ?
+    return resolution !== undefined ?
         resolution.type != 'low' ?
             <Suspense fallback={<Skeleton />}>
                 <Projects
                     apiOriginInit={laurusApi}
+                    accessTokenInit={accessToken}
                     projectsPromise={projectsPromise}
                     resolutionInit={resolution}
+                    mePromise={mePromise}
                 />
             </Suspense> :
             <Forbidden resolution={resolution} /> :

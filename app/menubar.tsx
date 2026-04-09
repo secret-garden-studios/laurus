@@ -2,15 +2,18 @@
 import { dellaRespira } from "./fonts";
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { LaurusResolution } from "./landing";
+import { LaurusResolution } from "./landing.boot";
 import { CSSProperties, useState } from "react";
+import { LaurusUserResult } from "./landing.server";
 
 interface Menubar {
-    resolution: LaurusResolution
+    resolution: LaurusResolution,
+    me: LaurusUserResult | undefined,
+    accessToken: string | undefined,
 }
-export default function Menubar({ resolution }: Menubar) {
+export default function Menubar({ resolution, me, accessToken }: Menubar) {
     const pathname = usePathname();
-    const [menubarSize] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (resolution.type) {
             case "high": return {
                 height: 50,
@@ -19,7 +22,8 @@ export default function Menubar({ resolution }: Menubar) {
                 paddingRight: 12,
                 linkWidth: 100,
                 linkFont: 12,
-                linkPaddingTop: 4
+                linkPaddingTop: 4,
+                me: { paddingRight: 12, fontSize: 10, letterSpacing: 2 }
             }
             case "midhigh": return {
                 height: 44,
@@ -28,7 +32,8 @@ export default function Menubar({ resolution }: Menubar) {
                 paddingRight: 12,
                 linkWidth: 90,
                 linkFont: 11,
-                linkPaddingTop: 2
+                linkPaddingTop: 2,
+                me: { paddingRight: 12, fontSize: 10, letterSpacing: 2 }
             }
             case "midlow": return {
                 height: 40,
@@ -37,7 +42,8 @@ export default function Menubar({ resolution }: Menubar) {
                 paddingRight: 16,
                 linkWidth: 80,
                 linkFont: 10,
-                linkPaddingTop: 2
+                linkPaddingTop: 2,
+                me: { paddingRight: 12, fontSize: 10, letterSpacing: 2 }
             }
             case "low": return {
                 height: 48,
@@ -46,7 +52,8 @@ export default function Menubar({ resolution }: Menubar) {
                 paddingRight: 16,
                 linkWidth: 80,
                 linkFont: 12,
-                linkPaddingTop: 2
+                linkPaddingTop: 2,
+                me: { paddingRight: 12, fontSize: 10, letterSpacing: 2 }
             }
         }
     });
@@ -61,48 +68,45 @@ export default function Menubar({ resolution }: Menubar) {
         height: '100%',
         display: 'grid',
         gridTemplateRows: 'auto min-content',
-        width: menubarSize.linkWidth,
+        width: dynamicSizes.linkWidth,
+        cursor: 'pointer',
     };
 
     return <>
         <div
             className={dellaRespira.className}
             style={{
-                height: menubarSize.height,
+                height: dynamicSizes.height,
                 display: "flex",
                 alignItems: "center",
                 backgroundColor: "rgb(18, 18, 18)",
                 boxShadow: "rgba(255, 255, 255, 0.05) 0px 0px 30px 1px",
-                paddingLeft: menubarSize.paddingLeft,
-                fontSize: menubarSize.font,
+                paddingLeft: dynamicSizes.paddingLeft,
+                fontSize: dynamicSizes.font,
                 letterSpacing: '1px',
                 color: 'rgb(227,227,227)',
                 borderBottom: '1px solid rgb(20, 20, 20)',
             }}>
             <Link
                 prefetch={true}
-                href={"/"}
+                href={`/${accessToken ? `?access=${accessToken}` : ""}`}
                 style={linkStyle}>
                 <div
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     style={{
-                        paddingRight: menubarSize.paddingRight
+                        paddingRight: dynamicSizes.paddingRight
                     }}>
                     {'Laurus'}
                 </div>
             </Link>
             <Link
                 prefetch={true}
-                href={"/projects"}
+                href={`/projects${accessToken ? `?access=${accessToken}` : ""}`}
                 style={linkGridStyle}>
                 <div
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     className={dellaRespira.className}
                     style={{
-                        paddingTop: menubarSize.linkPaddingTop,
-                        fontSize: menubarSize.linkFont,
+                        paddingTop: dynamicSizes.linkPaddingTop,
+                        fontSize: dynamicSizes.linkFont,
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
@@ -120,15 +124,13 @@ export default function Menubar({ resolution }: Menubar) {
             </Link>
             <Link
                 prefetch={true}
-                href={"/workspace"}
+                href={`/workspace${accessToken ? `?access=${accessToken}` : ""}`}
                 style={linkGridStyle}>
                 <div
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     className={dellaRespira.className}
                     style={{
-                        paddingTop: menubarSize.linkPaddingTop,
-                        fontSize: menubarSize.linkFont,
+                        paddingTop: dynamicSizes.linkPaddingTop,
+                        fontSize: dynamicSizes.linkFont,
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
@@ -145,15 +147,13 @@ export default function Menubar({ resolution }: Menubar) {
                 }} />
             </Link>
             <Link
-                href={"/screens"}
+                href={`/screens${accessToken ? `?access=${accessToken}` : ""}`}
                 style={linkGridStyle}>
                 <div
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     className={dellaRespira.className}
                     style={{
-                        paddingTop: menubarSize.linkPaddingTop,
-                        fontSize: menubarSize.linkFont,
+                        paddingTop: dynamicSizes.linkPaddingTop,
+                        fontSize: dynamicSizes.linkFont,
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
@@ -169,6 +169,12 @@ export default function Menubar({ resolution }: Menubar) {
                     boxShadow: pathname == '/screens' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
                 }} />
             </Link>
+            {me && <Link
+                prefetch={true}
+                href={`/${accessToken ? `?access=${accessToken}` : ""}`}
+                style={{ ...linkStyle, marginLeft: 'auto', ...dynamicSizes.me }}>
+                {me.username}
+            </Link>}
         </div>
     </>;
 }
