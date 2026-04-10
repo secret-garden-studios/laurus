@@ -49,7 +49,7 @@ export default function Menubar({ resolution, me, accessToken }: Menubar) {
                 height: 48,
                 font: 18,
                 paddingLeft: 12,
-                paddingRight: 16,
+                paddingRight: 12,
                 linkWidth: 80,
                 linkFont: 12,
                 linkPaddingTop: 2,

@@ -36,7 +36,7 @@ interface Landing {
     me: LaurusUserResult | undefined,
 }
 export default function Landing({ laurusApi, accessToken, resolution, resetPasswordToken, formInit, me }: Landing) {
-
+    const router = useRouter();
     const [formType, setFormType] = useState<LandingFormType>(formInit);
     const [newUsername, setNewUsername] = useState("");
 
@@ -50,7 +50,7 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                 gridTemplateRows: 'auto min-content',
                 color: 'rgb(227,227,227)'
             }} >
-            {(() => {
+            {resolution.type == 'low' ? <LowResBody /> : (() => {
                 switch (formType) {
                     case LandingFormType.login: return <>
                         <LoginBody
@@ -109,20 +109,41 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                     display: 'grid',
                     placeContent: 'center',
                 }}>
-                {formType == LandingFormType.login && <div
-                    onClick={async () => {
-                        setFormType(LandingFormType.passwordReset);
-                    }}
-                    style={{
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        letterSpacing: "3px",
-                        textDecoration: 'underline',
-                        textUnderlineOffset: 2,
-                        textDecorationColor: 'rgba(255,255,255,0.4)',
-                    }}>
-                    {'reset your password'}
-                </div>}
+                {resolution.type == 'low' ?
+                    <div
+                        onClick={async () => {
+                            if (accessToken) {
+                                await logout(laurusApi, accessToken);
+                            }
+                            router.push('/screens');
+                        }}
+                        style={{
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            letterSpacing: "3px",
+                            textDecoration: 'underline',
+                            textUnderlineOffset: 2,
+                            textDecorationColor: 'rgba(255,255,255,0.4)',
+                        }}>
+                        {'tap here to enter'}
+                    </div> :
+                    formType == LandingFormType.login ?
+                        <div
+                            onClick={async () => {
+                                setFormType(LandingFormType.passwordReset);
+                            }}
+                            style={{
+                                cursor: 'pointer',
+                                fontSize: 12,
+                                letterSpacing: "3px",
+                                textDecoration: 'underline',
+                                textUnderlineOffset: 2,
+                                textDecorationColor: 'rgba(255,255,255,0.4)',
+                            }}>
+                            {'reset your password'}
+                        </div> :
+                        <></>
+                }
             </div>
         </div >
     </>
@@ -371,6 +392,37 @@ function LaurusSvgDef({ ids, color, durations }: LaurusSvgDef) {
     </>
 }
 
+function LowResBody() {
+    return <>
+        <div
+            style={{
+                display: 'grid',
+                placeContent: 'center',
+                position: 'relative',
+                letterSpacing: '2px',
+                gap: 10,
+            }}>
+            <div style={{ display: 'grid', width: '100%', padding: 24 }}>
+                <div style={{ padding: "10px 0px" }}>
+                    <LaurusText
+                        scale={1}
+                        color={{
+                            a: "rgb(255, 255, 255)",
+                            b: "rgb(190, 190, 190)",
+                            c: "rgb(163, 163, 163)",
+                            d: "rgb(255, 255, 255)",
+                            e: "rgb(255, 255, 255)",
+                            f: "rgb(155, 114, 215)",
+                        }} />
+                </div>
+                <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
+                    <div >{'beta version'}</div>
+                </div>
+            </div>
+        </div>
+    </>
+}
+
 interface LoginBody {
     laurusApi: string | undefined,
     accessToken: string | undefined,
@@ -593,15 +645,15 @@ function LoginBody({ laurusApi, accessToken, resolution, onNewFormType, newUsern
                     {'create a new account'}
                 </div>
                 <div style={{
-
-                    fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    //height: 30
+                    fontSize: 11,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                 }}>
                     <div style={{ height: '1px', width: '100%', background: 'rgba(255,255,255,0.05)' }} />
                     <div style={{ padding: '0 8px', display: 'grid', placeContent: 'center' }}>{'or'}</div>
                     <div style={{ height: '1px', width: '100%', background: 'rgba(255,255,255,0.05)' }} />
                 </div>
-
                 <div
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={async () => {
