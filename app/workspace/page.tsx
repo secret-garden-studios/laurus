@@ -1,4 +1,5 @@
-import { getMe } from "../landing.server";
+import { getMe, logout } from "../landing.server";
+import { fetchMe } from "../page";
 import { getProjects, ProjectResult_V1_0 } from "../projects/projects.server";
 import WorkspaceBoot from "./workspace.boot";
 import {
@@ -15,6 +16,7 @@ import {
     getEffects,
 } from "./workspace.server";
 export const dynamic = 'force-dynamic';
+import { cookies } from 'next/headers';
 
 export interface ProjectDependencies {
     project: ProjectResult_V1_0,
@@ -25,13 +27,38 @@ export interface ProjectDependencies {
 }
 async function fetchProject(
     laurusApi: string | undefined,
+    logoutFlag: boolean,
     projects: Promise<ProjectResult_V1_0[] | undefined>,
     project_id: string | undefined): Promise<ProjectDependencies | undefined> {
     const p = await projects;
     if (p && p.length > 0) {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('refresh_token')?.value;
+        if (token && logoutFlag) {
+            await logout(laurusApi, token);
+        }
+
         const requestedProject = project_id ? p.find(p => p.project_id == project_id) : undefined;
-        const newProject: ProjectResult_V1_0 = requestedProject ? requestedProject : p.sort((a, b) =>
-            Date.parse(b.last_active) - Date.parse(a.last_active))[0];
+        const myUsername: string = token && !logoutFlag ? (await getMe(laurusApi, token))?.username ?? "" : "";
+        let newProject: ProjectResult_V1_0 | undefined = undefined;
+        if (requestedProject) {
+            newProject = requestedProject;
+        }
+        else if (myUsername) {
+            const myLatestEdits = p
+                .filter(n => n.last_editor == myUsername)
+                .sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+            if (myLatestEdits.length > 0) {
+                newProject = myLatestEdits[0];
+            }
+        }
+        else {
+            const thePublicsLatestEdits = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+            if (thePublicsLatestEdits.length > 0) {
+                newProject = thePublicsLatestEdits[0];
+            }
+        }
+        if (!newProject) return undefined;
         const scales = await getScales(laurusApi, newProject.project_id);
         const moves = await getMoves(laurusApi, newProject.project_id);
         const svgsArray = Array.from(newProject.svgs.values());
@@ -87,23 +114,24 @@ async function fetchMediaFromServer(
     return { browserImgs, browserSvgs }
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ access?: string, project_id?: string }> }) {
-    const { access, project_id } = await searchParams;
+export default async function Page({ searchParams }: { searchParams: Promise<{ logout?: string, project_id?: string }> }) {
+    const { logout, project_id } = await searchParams;
     const mediaPageSize = process.env.MEDIA_PAGE_SIZE;
     const laurusApi = process.env.LAURUS_API;
-    const me = access ? getMe(laurusApi, access) : undefined;
+    const me = fetchMe(laurusApi, Boolean(logout));
     const projects = getProjects(laurusApi);
     const effectsEnum = getEffects(laurusApi);
     const mediaPageSizeInit = mediaPageSize ? (parseInt(mediaPageSize) || 0) : 0;
-    const projectDependencies = fetchProject(laurusApi, projects, project_id);
+    const projectDependencies = fetchProject(laurusApi, Boolean(logout), projects, project_id,);
     const browserDependencies = fetchMediaFromServer(laurusApi, mediaPageSizeInit);
 
-    return <WorkspaceBoot
-        laurusApi={laurusApi}
-        accessToken={access}
-        mediaPageSizeInit={mediaPageSizeInit}
-        effectsEnum={effectsEnum}
-        projectDependencies={projectDependencies}
-        browserDependencies={browserDependencies}
-        me={me} />
+    return <>
+        <WorkspaceBoot
+            laurusApi={laurusApi}
+            mediaPageSizeInit={mediaPageSizeInit}
+            effectsEnum={effectsEnum}
+            projectDependencies={projectDependencies}
+            browserDependencies={browserDependencies}
+            mePromise={me} />
+    </>
 }

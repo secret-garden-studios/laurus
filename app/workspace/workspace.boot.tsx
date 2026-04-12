@@ -1,11 +1,11 @@
 'use client'
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense, useEffect, use } from "react";
 import { WorkspaceResolution, getScreenResolution } from "./workspace-resolution";
 import Workspace from "./workspace.client";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import { BrowserDependencies, ProjectDependencies } from "./page";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 function Skeleton() {
     return (<>
@@ -50,49 +50,51 @@ function Forbidden({ resolution }: Forbidden) {
 
 interface WorkspaceBoot {
     laurusApi: string | undefined
-    accessToken: string | undefined,
     mediaPageSizeInit: number,
     effectsEnum: Promise<string[] | undefined>,
     projectDependencies: Promise<ProjectDependencies | undefined>,
     browserDependencies: Promise<BrowserDependencies>,
-    me: Promise<LaurusUserResult | undefined> | undefined
+    mePromise: Promise<MeDependencies>
 }
 export default function WorkspaceBoot({
     laurusApi,
-    accessToken,
     mediaPageSizeInit,
     effectsEnum,
     projectDependencies,
     browserDependencies,
-    me }: WorkspaceBoot) {
-
+    mePromise }: WorkspaceBoot) {
     const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
     const timelineValues = [30, 60, 90];
     const timelineUnits = ['sec', 'min'];
+    const me = use(mePromise);
 
     useEffect(() => {
         (() => {
-            if (!resolution)
-                setResolution(getScreenResolution())
+            if (!resolution) {
+                setResolution(getScreenResolution());
+            }
         })();
     }, [resolution]);
 
     return resolution !== undefined ?
         resolution.type != 'low' ?
+
             <Suspense fallback={<Skeleton />}>
-                <Workspace
-                    apiOriginInit={laurusApi}
-                    accessTokenInit={accessToken}
-                    mediaPageSizeInit={mediaPageSizeInit}
-                    effectNamesInitPromise={effectsEnum}
-                    timelineValuesInit={timelineValues}
-                    timelineUnitsInit={timelineUnits}
-                    projectInitPromise={projectDependencies}
-                    browserInitPromise={browserDependencies}
-                    resolutionInit={resolution}
-                    mePromise={me}
-                />
+                <>
+                    <Workspace
+                        apiOriginInit={laurusApi}
+                        mediaPageSizeInit={mediaPageSizeInit}
+                        effectNamesInitPromise={effectsEnum}
+                        timelineValuesInit={timelineValues}
+                        timelineUnitsInit={timelineUnits}
+                        projectInitPromise={projectDependencies}
+                        browserInitPromise={browserDependencies}
+                        resolutionInit={resolution}
+                        me={me}
+                    />
+                </>
             </Suspense> :
-            <Forbidden resolution={resolution} /> :
+            <Forbidden resolution={resolution} />
+        :
         <Skeleton />
 }

@@ -1,20 +1,20 @@
 'use client'
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { VideoMediaResult_V1_0 } from "./screens.server";
 import Screens from "./screens.client";
 import { italiana } from "../fonts";
 import styles from "../app.module.css";
 import { getScreenResolution, ScreensResolution } from "./screens-resolution";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 interface ScreensBoot {
     apiOriginInit: string | undefined,
-    accessTokenInit: string | undefined,
     videoMediaPromise: Promise<VideoMediaResult_V1_0[]>,
     videoMediaPageSize: number,
-    me: Promise<LaurusUserResult | undefined> | undefined
+    mePromise: Promise<MeDependencies>
 }
-export default function ScreensBoot({ apiOriginInit, accessTokenInit, videoMediaPromise, videoMediaPageSize, me }: ScreensBoot) {
+export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMediaPageSize, mePromise }: ScreensBoot) {
+    const me = use(mePromise);
     const [booted, setBooted] = useState(false);
     const [resolution, setResolution] = useState<ScreensResolution | undefined>(undefined);
 
@@ -51,11 +51,10 @@ export default function ScreensBoot({ apiOriginInit, accessTokenInit, videoMedia
             {booted && resolution !== undefined ?
                 <Screens
                     apiOrigin={apiOriginInit}
-                    accessToken={accessTokenInit}
                     resolution={resolution}
                     videoMediaPromise={videoMediaPromise}
                     videoMediaPageSize={videoMediaPageSize}
-                    mePromise={me} />
+                    me={me} />
                 : <Skeleton />
             }
         </>

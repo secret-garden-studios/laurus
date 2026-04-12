@@ -624,7 +624,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     {showEffectsBrowser && (
                         <EffectsBrowser
                             onAddClick={() => setShowEffectsBrowser(false)}
-                            layer_id={""} layerNameRef={layerNameRef} />
+                            layer_id={""}
+                            layerNameRef={layerNameRef} />
                     )}
                 </div>
             </div>)}
@@ -701,6 +702,7 @@ interface LayerTitle {
 function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [layerName, setLayerName] = useState<string>(layerNameInit);
+    const [layerNameSnapshot] = useState<string>(layerNameInit);
     const layerNameHook = useDebounce<string>(layerName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
     const layerIdRef = useRef<string | undefined>(undefined);
@@ -728,28 +730,40 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
             }
 
             if (layerIdRef.current && projectRef.current.project_id && layerNameHook) {
-                const response = await updateProject(
+                const updated = await updateProject(
                     appState.apiOrigin,
+                    appState.accessToken,
                     projectRef.current.project_id,
                     { ...projectRef.current, layers: newLayers });
-                if (response) {
-                    const newProject: LaurusProjectResult = { ...response }
+                if (updated) {
+                    const newProject: LaurusProjectResult = { ...updated }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                }
+                else {
+                    if (layerNameRef.current) {
+                        layerNameRef.current.value = layerNameSnapshot;
+                    }
                 }
             }
             else if (layerIdRef.current && layerNameHook) {
                 const newProject = { ...projectRef.current, layers: newLayers };
-                const response = await createProject(
+                const created = await createProject(
                     appState.apiOrigin,
+                    appState.accessToken,
                     newProject);
-                if (response) {
-                    const newProject2: LaurusProjectResult = { ...newProject, project_id: response.project_id }
+                if (created) {
+                    const newProject2: LaurusProjectResult = { ...newProject, project_id: created.project_id }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                }
+                else {
+                    if (layerNameRef.current) {
+                        layerNameRef.current.value = layerNameSnapshot;
+                    }
                 }
             }
         });
         renameProjectOnSever();
-    }, [appState.apiOrigin, layerNameHook, dispatch]);
+    }, [appState.apiOrigin, layerNameHook, dispatch, appState.accessToken, layerNameSnapshot, layerNameRef]);
 
     const onLayerNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 
@@ -875,21 +889,25 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                     const newLayerName = layerNameRef.current?.value ?? "untitled";
                                     newLayers.set(newLayerId, { name: newLayerName, order: 0 });
                                 }
-                                let newProjectId = "";
+                                let newProjectIdAck = "";
                                 if (!appState.project.project_id) {
                                     const newProject: LaurusProjectResult = { ...appState.project, layers: newLayers }
-                                    const response = await createProject(appState.apiOrigin, { ...newProject });
-                                    if (response) {
-                                        newProjectId = response.project_id;
-                                        const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectId }
+                                    const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+                                    if (projectCreated) {
+                                        newProjectIdAck = projectCreated.project_id;
+                                        const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
                                         dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                                     }
                                 }
                                 else {
                                     const newProject: LaurusProjectResult = { ...appState.project, layers: newLayers }
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                                    await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                    const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                                    if (projectUpdated) {
+                                        newProjectIdAck = projectUpdated.project_id;
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                    }
                                 }
+                                if (!newProjectIdAck) return;
                                 const sortedEffects = appState.effects
                                     .sort((a, b) => new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime());
                                 const newOrder = sortedEffects.length > 0 ? Math.max(...sortedEffects.map(e => e.value.order)) + 1 : 1;
@@ -900,17 +918,19 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             math: new Map(),
                                             start: 0,
                                             end: 0,
-                                            project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
+                                            project_id: newProjectIdAck,
                                             layer_id,
                                             fps: appState.fps,
+                                            locked: false,
                                             order: newOrder,
                                         };
-                                        const response = await createScale(appState.apiOrigin, newScale);
-                                        if (response) {
+                                        const created = await createScale(appState.apiOrigin, appState.accessToken, newScale);
+                                        if (created) {
                                             const newEffect: LaurusEffect = {
                                                 type: 'scale',
-                                                key: response.scale_id,
-                                                value: { ...response }
+                                                key: created.scale_id,
+                                                locked: created.locked,
+                                                value: { ...created }
                                             }
                                             dispatch({
                                                 type: WorkspaceActionType.SetEffects,
@@ -924,17 +944,19 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             math: new Map(),
                                             start: 0,
                                             end: 0,
-                                            project_id: appState.project.project_id ? appState.project.project_id : newProjectId,
+                                            project_id: newProjectIdAck,
                                             layer_id,
                                             fps: appState.fps,
+                                            locked: false,
                                             order: newOrder,
                                         };
-                                        const response = await createMove(appState.apiOrigin, newMove);
-                                        if (response) {
+                                        const created = await createMove(appState.apiOrigin, appState.accessToken, newMove);
+                                        if (created) {
                                             const newEffect: LaurusEffect = {
                                                 type: 'move',
-                                                key: response.move_id,
-                                                value: { ...response }
+                                                key: created.move_id,
+                                                locked: created.locked,
+                                                value: { ...created }
                                             }
                                             dispatch({
                                                 type: WorkspaceActionType.SetEffects,

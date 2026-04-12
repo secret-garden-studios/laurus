@@ -3,20 +3,19 @@ import { PointerStyle, Trackpad } from "./trackpad"
 
 interface TimelineSlider {
     label: string,
-    labelSize: { font: number, height: number, paddingLeft: number} | undefined
+    labelSize: { font: number, height: number, paddingLeft: number } | undefined
     hash: string,
     trackSize: { width: number | string, height: number | string }
     trackRef: RefObject<HTMLDivElement | null>,
-
     capSize: { width: number | string, height: number | string }
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
-
     rangeCapSize: { width: number | string, height: number | string }
     rangeCursor: { x: number, y: number },
     onNewRangeCursor: (newCursor: { x: number, y: number }) => void,
     onRangeMove?: (newCursor: { x: number, y: number }) => void,
+    disabled?: boolean,
 }
 export default function TimelineSlider({
     label,
@@ -32,6 +31,7 @@ export default function TimelineSlider({
     rangeCursor,
     onNewRangeCursor,
     onRangeMove,
+    disabled,
 }: TimelineSlider) {
     return (<>
         <div style={{ width: '100%', height: '100%', }}>
@@ -49,7 +49,8 @@ export default function TimelineSlider({
                         }}
                         value={cursor}
                         onNewValue={onNewCursor}
-                        onMove={onCursorMove} />
+                        onMove={onCursorMove}
+                        disabled={disabled} />
                 </div>
                 <div style={{ position: 'absolute', width: '100%', }}>
                     <Trackpad
@@ -63,7 +64,8 @@ export default function TimelineSlider({
                         }}
                         value={rangeCursor}
                         onNewValue={onNewRangeCursor}
-                        onMove={onRangeMove} />
+                        onMove={onRangeMove}
+                        disabled={disabled} />
                 </div>
                 {label && labelSize && <div
                     style={{

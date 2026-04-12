@@ -1,6 +1,13 @@
 
 /* /projects */
 
+import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
+const onNotOk = (status: number) => {
+    switch (status) {
+        case 401: { alert(UNAUTHORIZED_EDIT); return; }
+        case 403: { alert(FORBIDDEN_ACTION); return; }
+    }
+}
 export interface ProjectImg_V1_0 {
     img_media_id: string
     media_key: string
@@ -51,21 +58,23 @@ export interface ProjectResult_V1_0 {
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
     layers: Map<string, ProjectLayer_V1_0>
+    creator: string
+    last_editor: string
 }
 export async function getProjects(baseUrl: string | undefined) {
     try {
         const url = `${baseUrl}/projects`;
-        const raw_response = await fetch(url, {
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
             }
         });
-        if (!raw_response.ok) {
+        if (!response.ok) {
             return undefined;
         }
-        const response: ProjectResult_V1_0[] = await raw_response.json();
-        return response.map(r => {
+        const result: ProjectResult_V1_0[] = await response.json();
+        return result.map(r => {
             return {
                 ...r,
                 imgs: new Map(Object.entries(r.imgs)),
@@ -84,21 +93,21 @@ export async function getProject(
     projectId: string) {
     try {
         const url = `${baseUrl}/projects/${projectId}`;
-        const raw_response = await fetch(url, {
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
             }
         });
-        if (!raw_response.ok) {
+        if (!response.ok) {
             return undefined;
         }
-        const response: ProjectResult_V1_0 = await raw_response.json();
+        const result: ProjectResult_V1_0 = await response.json();
         return {
-            ...response,
-            imgs: new Map(Object.entries(response.imgs)),
-            svgs: new Map(Object.entries(response.svgs)),
-            layers: new Map(Object.entries(response.layers)),
+            ...result,
+            imgs: new Map(Object.entries(result.imgs)),
+            svgs: new Map(Object.entries(result.svgs)),
+            layers: new Map(Object.entries(result.layers)),
         };
     }
     catch (error) {
@@ -108,6 +117,7 @@ export async function getProject(
 }
 export async function createProject(
     baseUrl: string | undefined,
+    accessToken: string | undefined,
     project: Project_V1_0) {
     try {
         const url = `${baseUrl}/projects`;
@@ -117,24 +127,25 @@ export async function createProject(
             svgs: Object.fromEntries(project.svgs),
             layers: Object.fromEntries(project.layers),
         });
-        const raw_response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body,
-        });
-
-        if (!raw_response.ok) {
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'POST');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'POST');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status);
             return undefined;
         }
-
-        const response: ProjectResult_V1_0 = await raw_response.json();
+        const result: ProjectResult_V1_0 = await response.json();
         return {
-            ...response,
-            imgs: new Map(Object.entries(response.imgs)),
-            svgs: new Map(Object.entries(response.svgs)),
-            layers: new Map(Object.entries(response.layers)),
+            ...result,
+            imgs: new Map(Object.entries(result.imgs)),
+            svgs: new Map(Object.entries(result.svgs)),
+            layers: new Map(Object.entries(result.layers)),
         };
     }
     catch (error) {
@@ -144,34 +155,36 @@ export async function createProject(
 }
 export async function updateProject(
     baseUrl: string | undefined,
+    accessToken: string | undefined,
     projectId: string,
     project: Project_V1_0) {
     try {
+        const url = `${baseUrl}/projects/${projectId}`;
         const body = JSON.stringify({
             ...project,
             imgs: Object.fromEntries(project.imgs),
             svgs: Object.fromEntries(project.svgs),
             layers: Object.fromEntries(project.layers),
         });
-        const url = `${baseUrl}/projects/${projectId}`;
-        const raw_response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body,
-        });
-
-        if (!raw_response.ok) {
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'PUT');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'PUT');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status);
             return undefined;
         }
-
-        const response: ProjectResult_V1_0 = await raw_response.json();
+        const result: ProjectResult_V1_0 = await response.json();
         return {
-            ...response,
-            imgs: new Map(Object.entries(response.imgs)),
-            svgs: new Map(Object.entries(response.svgs)),
-            layers: new Map(Object.entries(response.layers)),
+            ...result,
+            imgs: new Map(Object.entries(result.imgs)),
+            svgs: new Map(Object.entries(result.svgs)),
+            layers: new Map(Object.entries(result.layers)),
         };
     }
     catch (error) {
@@ -181,17 +194,26 @@ export async function updateProject(
 }
 export async function deleteProject(
     baseUrl: string | undefined,
+    accessToken: string | undefined,
     projectId: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/projects/${projectId}`;
-        const raw_response = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        return raw_response.ok;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, undefined, url, 'DELETE');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, 'DELETE');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status);
+            return false;
+        }
+        else {
+            return true;
+        }
     }
     catch (error) {
         console.log({ error });

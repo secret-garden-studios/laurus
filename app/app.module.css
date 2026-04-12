@@ -160,3 +160,12 @@ input:-webkit-autofill:active {
 input:-webkit-autofill::first-line {
   font-family: var(--font-della-respira), serif !important;
 }
+
+.animated-nav-dark {
+  cursor: pointer;
+  transition: text-shadow 0.2s ease-in-out;
+}
+
+.animated-nav-dark:hover {
+  text-shadow: 0 0 2px rgba(255, 255, 255, 1);
+}

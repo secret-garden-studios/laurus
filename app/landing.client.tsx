@@ -3,8 +3,21 @@ import styles from "./app.module.css";
 import { useEffect, useRef, useState } from "react";
 import { SvgRepo, visibility, visibilityOff } from "./svg-repo";
 import { LaurusResolution } from "./landing.boot";
-import { login, registerUser, Register_V1_0, resetPassword, resetPasswordConfirm, EMAIL_ERROR, USERNAME_ERROR, UNAUTHORIZED_ERROR, LANDING_ERROR, logout, LaurusUserResult, refreshAccessToken, getMe } from "./landing.server";
+import {
+    login,
+    registerUser,
+    Register_V1_0,
+    resetPassword,
+    resetPasswordConfirm,
+    EMAIL_ERROR,
+    USERNAME_ERROR,
+    UNAUTHORIZED_ERROR,
+    LANDING_ERROR,
+    LaurusUserResult,
+    refreshAccessToken
+} from "./landing.server";
 import { useRouter } from 'next/navigation'
+import { MeDependencies } from "./page";
 
 export enum LandingFormType {
     login,
@@ -29,13 +42,12 @@ const buttonBorderRecord: Record<ButtonBorderColor, { p: string, s: string, t: s
 
 interface Landing {
     laurusApi: string | undefined,
-    accessToken: string | undefined,
     resolution: LaurusResolution,
     resetPasswordToken: string | undefined,
     formInit: LandingFormType,
-    me: LaurusUserResult | undefined,
+    me: MeDependencies,
 }
-export default function Landing({ laurusApi, accessToken, resolution, resetPasswordToken, formInit, me }: Landing) {
+export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit, me }: Landing) {
     const router = useRouter();
     const [formType, setFormType] = useState<LandingFormType>(formInit);
     const [newUsername, setNewUsername] = useState("");
@@ -55,21 +67,19 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                     case LandingFormType.login: return <>
                         <LoginBody
                             laurusApi={laurusApi}
-                            accessToken={accessToken}
                             resolution={resolution}
                             onNewFormType={(form) => { setNewUsername(""); setFormType(form); }}
                             newUsername={newUsername} />
                     </>
                     case LandingFormType.loggedIn: return <>
-                        {accessToken && me ?
+                        {me.me ?
                             <LoggedInBody
-                                me={me}
+                                me={me.me}
                                 laurusApi={laurusApi}
                                 resolution={resolution}
                                 onNewFormType={setFormType} /> :
                             <LoginBody
                                 laurusApi={laurusApi}
-                                accessToken={accessToken}
                                 resolution={resolution}
                                 onNewFormType={(form) => { setNewUsername(""); setFormType(form); }}
                                 newUsername={newUsername} />}
@@ -77,7 +87,6 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                     case LandingFormType.registration: return <>
                         <RegistrationBody
                             laurusApi={laurusApi}
-                            accessToken={accessToken}
                             resolution={resolution}
                             onNewUsername={setNewUsername}
                             onNewFormType={setFormType}
@@ -93,7 +102,6 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                         <PasswordConfirmationBody
                             resetPasswordToken={resetPasswordToken}
                             laurusApi={laurusApi}
-                            accessToken={accessToken}
                             resolution={resolution}
                             onNewFormType={(form) => { setNewUsername(""); setFormType(form); }} />
                     </>
@@ -112,9 +120,6 @@ export default function Landing({ laurusApi, accessToken, resolution, resetPassw
                 {resolution.type == 'low' ?
                     <div
                         onClick={async () => {
-                            if (accessToken) {
-                                await logout(laurusApi, accessToken);
-                            }
                             router.push('/screens');
                         }}
                         style={{
@@ -425,12 +430,11 @@ function LowResBody() {
 
 interface LoginBody {
     laurusApi: string | undefined,
-    accessToken: string | undefined,
     resolution: LaurusResolution,
     onNewFormType: (newFormType: LandingFormType) => void,
     newUsername: string
 }
-function LoginBody({ laurusApi, accessToken, resolution, onNewFormType, newUsername }: LoginBody) {
+function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginBody) {
     const router = useRouter();
     const [username, setUsername] = useState<string>(newUsername ? newUsername : "");
     const [password, setPassword] = useState<string>("");
@@ -581,19 +585,19 @@ function LoginBody({ laurusApi, accessToken, resolution, onNewFormType, newUsern
                             setButtonBorder(ButtonBorderColor.red);
                             return;
                         }
-                        const token = await login(laurusApi, username, password);
-                        if (!token.success) {
-                            setMsg(token.message == UNAUTHORIZED_ERROR ? "try different credentials" : LANDING_ERROR);
+                        const loginResult = await login(laurusApi, username, password);
+                        if (!loginResult.success) {
+                            setMsg(loginResult.message == UNAUTHORIZED_ERROR ? "try different credentials" : LANDING_ERROR);
                             buttonBorderRef.current = ButtonBorderColor.red;
                             setButtonBorder(ButtonBorderColor.red);
                             return;
                         }
                         else {
                             if (resolution.type == 'low') {
-                                router.push(`/screens?access=${token.access_token}`);
+                                router.push('/screens');
                             }
                             else {
-                                router.push(`/workspace?access=${token.access_token}`);
+                                router.push('/workspace');
                             }
                         }
                     }}
@@ -657,14 +661,11 @@ function LoginBody({ laurusApi, accessToken, resolution, onNewFormType, newUsern
                 <div
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={async () => {
-                        if (accessToken) {
-                            await logout(laurusApi, accessToken);
-                        }
                         if (resolution.type == 'low') {
-                            router.push('/screens');
+                            router.push('/screens?logout=true');
                         }
                         else {
-                            router.push('/workspace');
+                            router.push('/workspace?logout=true');
                         }
                     }}
                     style={{
@@ -726,20 +727,13 @@ function LoggedInBody({ me, laurusApi, resolution, onNewFormType }: LoggedInBody
                 <div
                     className={dellaRespira.className + ' ' + styles['glowing-border'] + ' ' + styles['animated-button-dark']}
                     onClick={async () => {
-                        let authed = false;
-                        const refresh = await refreshAccessToken(laurusApi);
-                        if (refresh.success) {
-                            const me = await getMe(laurusApi, refresh.access_token);
-                            if (me) {
-                                authed = true;
-                            }
-                        }
-                        if (authed) {
+                        const refreshResult = await refreshAccessToken(laurusApi);
+                        if (refreshResult.success) {
                             if (resolution.type == 'low') {
-                                router.push(`/screens?access=${refresh.access_token}`);
+                                router.push('/screens');
                             }
                             else {
-                                router.push(`/workspace?access=${refresh.access_token}`);
+                                router.push('/workspace');
                             }
                         }
                         else {
@@ -796,12 +790,11 @@ function LoggedInBody({ me, laurusApi, resolution, onNewFormType }: LoggedInBody
 
 interface RegistrationBody {
     laurusApi: string | undefined,
-    accessToken: string | undefined,
     resolution: LaurusResolution,
     onNewFormType: (newFormType: LandingFormType) => void,
     onNewUsername: (newUsername: string) => void,
 }
-function RegistrationBody({ laurusApi, accessToken, resolution, onNewFormType, onNewUsername }: RegistrationBody) {
+function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername }: RegistrationBody) {
     const [username, setUsername] = useState<string>("");
     const [password, setPassword] = useState<string>("");
     const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -996,14 +989,11 @@ function RegistrationBody({ laurusApi, accessToken, resolution, onNewFormType, o
                         }
                         else {
                             if (registerResult.success) {
-                                if (accessToken) {
-                                    await logout(laurusApi, accessToken);
-                                }
                                 setMsg("");
                                 buttonBorderRef.current = ButtonBorderColor.purple;
                                 setButtonBorder(ButtonBorderColor.purple);
                                 onNewUsername(username);
-                                onNewFormType(LandingFormType.login,);
+                                onNewFormType(LandingFormType.login);
                             }
                             else {
                                 setMsg(registerResult.message);
@@ -1249,11 +1239,10 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
 interface PasswordConfirmationBody {
     resetPasswordToken: string | undefined,
     laurusApi: string | undefined,
-    accessToken: string | undefined
     resolution: LaurusResolution,
     onNewFormType: (newFormType: LandingFormType) => void,
 }
-function PasswordConfirmationBody({ resetPasswordToken, laurusApi, accessToken, resolution, onNewFormType }: PasswordConfirmationBody) {
+function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, onNewFormType }: PasswordConfirmationBody) {
     const router = useRouter();
     const [password, setPassword] = useState<string>("");
     const [msg, setMsg] = useState<string>("");
@@ -1344,9 +1333,6 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, accessToken, 
                         }
                         const response = await resetPasswordConfirm(laurusApi, newPassword);
                         if (response) {
-                            if (accessToken) {
-                                await logout(laurusApi, accessToken);
-                            }
                             setMsg("login with new password");
                             buttonBorderRef.current = ButtonBorderColor.purple;
                             setButtonBorder(ButtonBorderColor.purple);
@@ -1384,14 +1370,11 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, accessToken, 
                 <div
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={async () => {
-                        if (accessToken) {
-                            await logout(laurusApi, accessToken);
-                        }
                         if (resolution.type == 'low') {
-                            router.push('/screens');
+                            router.push('/screens?logout=true');
                         }
                         else {
-                            router.push('/workspace');
+                            router.push('/workspace?logout=true');
                         }
                     }}
                     style={{

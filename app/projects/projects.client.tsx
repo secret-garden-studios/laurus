@@ -9,7 +9,7 @@ import { FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, NEW_PROJECT_CANVAS_SIZE } from "../w
 import Statusbar from "./statusbar";
 import { useRouter } from 'next/navigation'
 import useDebounce from "../hooks/useDebounce";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 type LaurusProjectImg = ProjectImg_V1_0;
 type LaurusProjectSvg = ProjectSvg_V1_0;
@@ -21,7 +21,7 @@ interface LaurusProject extends Project_V1_0 {
     imgs: Map<string, LaurusProjectImg>
     svgs: Map<string, LaurusProjectSvg>
 }
-type SortStrategy = 'name_az' | 'name_za' | 'timestamp_123' | 'timestamp_321' | 'last_active_123' | 'last_active_321' | 'frame_123' | 'frame_321' | 'canvas_123' | 'canvas_321' | 'none';
+type SortStrategy = 'name_az' | 'name_za' | 'creator_az' | 'creator_za' | 'timestamp_123' | 'timestamp_321' | 'editor_az' | 'editor_za' | 'last_active_123' | 'last_active_321' | 'frame_123' | 'frame_321' | 'canvas_123' | 'canvas_321' | 'none';
 
 function sortByNameAz(a: LaurusProjectResult, b: LaurusProjectResult) {
     return a.name.localeCompare(b.name);
@@ -31,12 +31,28 @@ function sortByNameZa(a: LaurusProjectResult, b: LaurusProjectResult) {
     return b.name.localeCompare(a.name);
 }
 
+function sortByCreatorAz(a: LaurusProjectResult, b: LaurusProjectResult) {
+    return a.creator.localeCompare(b.creator);
+}
+
+function sortByCreatorZa(a: LaurusProjectResult, b: LaurusProjectResult) {
+    return b.creator.localeCompare(a.creator);
+}
+
 function sortByTimestamp321(a: LaurusProjectResult, b: LaurusProjectResult) {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
 }
 
 function sortByTimestamp123(a: LaurusProjectResult, b: LaurusProjectResult) {
     return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+}
+
+function sortByEditorAz(a: LaurusProjectResult, b: LaurusProjectResult) {
+    return a.last_editor.localeCompare(b.last_editor);
+}
+
+function sortByEditorZa(a: LaurusProjectResult, b: LaurusProjectResult) {
+    return b.last_editor.localeCompare(a.last_editor);
 }
 
 function sortByLastActive321(a: LaurusProjectResult, b: LaurusProjectResult) {
@@ -84,15 +100,13 @@ function projectsDeepSearch(
 
 interface Projects {
     apiOriginInit: string | undefined,
-    accessTokenInit: string | undefined,
     projectsPromise: Promise<ProjectResult_V1_0[] | undefined>,
     resolutionInit: ProjectsResolution,
-    mePromise: Promise<LaurusUserResult | undefined> | undefined
+    me: MeDependencies,
 }
-export default function Projects({ apiOriginInit, accessTokenInit, projectsPromise, resolutionInit, mePromise }: Projects) {
+export default function Projects({ apiOriginInit, projectsPromise, resolutionInit, me }: Projects) {
     const router = useRouter();
     const p = use(projectsPromise);
-    const me = mePromise ? use(mePromise) : undefined;
     const [projects, setProjects] = useState<LaurusProjectResult[]>(() => {
         if (p) {
             return p.map(x => {
@@ -114,7 +128,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                 gridMargins: { top: 110, bottom: 90, leftRight: 140 },
                 searchBar: { width: 500, height: 50, fontSize: 14 },
                 searchBarSvg: { size: 20, right: 10, scale: 1 },
-                contentsWrapper: { height: 90, fontSize: 12 },
+                contentsWrapper: { height: 90, fontSize: 12, padding: "0 10px" },
                 footerParent: { padding: '30px 40px', gap: 12 },
                 footerSvg: { size: 24, padding: 10 }
             }
@@ -122,7 +136,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                 gridMargins: { top: 90, bottom: 74, leftRight: 120 },
                 searchBar: { width: 400, height: 40, fontSize: 11 },
                 searchBarSvg: { size: 20, right: 10, scale: 0.8 },
-                contentsWrapper: { height: 78, fontSize: 11 },
+                contentsWrapper: { height: 78, fontSize: 11, padding: "0 10px" },
                 footerParent: { padding: '30px 40px', gap: 8 },
                 footerSvg: { size: 18, padding: 8 }
             }
@@ -131,7 +145,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                 gridMargins: { top: 90, bottom: 74, leftRight: 120 },
                 searchBar: { width: 400, height: 40, fontSize: 11 },
                 searchBarSvg: { size: 20, right: 10, scale: 0.8 },
-                contentsWrapper: { height: 78, fontSize: 11 },
+                contentsWrapper: { height: 78, fontSize: 11, padding: "0 10px" },
                 footerParent: { padding: '30px 40px', gap: 8 },
                 footerSvg: { size: 18, padding: 8 }
             }
@@ -192,7 +206,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
             }}>
             <div
                 style={{ gridColumn: '1 / -1' }}>
-                <Menubar resolution={resolutionInit} me={me} accessToken={accessTokenInit} />
+                <Menubar resolution={resolutionInit} me={me.me} />
             </div>
             {/* top panel */}
             <div
@@ -256,7 +270,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                         gridColumn: 2,
                         gridRow: 3,
                         display: 'grid',
-                        gridTemplateColumns: '7fr 3fr 3fr 3fr 3fr 2fr 2fr',
+                        gridTemplateColumns: '4.5fr 2.5fr 3fr 2.5fr 3fr 2fr 2fr 2fr 2fr',
                         fontWeight: 'bolder',
                         letterSpacing: "1px",
                         borderTopLeftRadius: 10,
@@ -267,7 +281,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                         zIndex: 1,
                     }}>
                     <HeaderCell
-                        label={"Name"}
+                        label={"Title"}
                         row={1}
                         column={1}
                         sortStrategy={sortStrategy}
@@ -277,9 +291,19 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                         onSortDescedingClick={() => setSortStrategy("name_za")}
                         resolution={resolutionInit} />
                     <HeaderCell
-                        label={"Created"}
+                        label={"Creator"}
                         row={1}
                         column={2}
+                        sortStrategy={sortStrategy}
+                        sortStrategyKeys={{ startsWith: "creator", ascending: "creator_az", descending: "creator_za" }}
+                        onCellClick={() => setSortStrategy("creator_az")}
+                        onSortAscendingClick={() => setSortStrategy("creator_az")}
+                        onSortDescedingClick={() => setSortStrategy("creator_za")}
+                        resolution={resolutionInit} />
+                    <HeaderCell
+                        label={"Date Created"}
+                        row={1}
+                        column={3}
                         sortStrategy={sortStrategy}
                         sortStrategyKeys={{ startsWith: "timestamp", ascending: "timestamp_123", descending: "timestamp_321" }}
                         onCellClick={() => setSortStrategy("timestamp_321")}
@@ -287,9 +311,19 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                         onSortDescedingClick={() => setSortStrategy("timestamp_321")}
                         resolution={resolutionInit} />
                     <HeaderCell
-                        label={"Last Edit"}
+                        label={"Last Editor"}
                         row={1}
-                        column={3}
+                        column={4}
+                        sortStrategy={sortStrategy}
+                        sortStrategyKeys={{ startsWith: "editor", ascending: "editor_az", descending: "editor_za" }}
+                        onCellClick={() => setSortStrategy("editor_az")}
+                        onSortAscendingClick={() => setSortStrategy("editor_az")}
+                        onSortDescedingClick={() => setSortStrategy("editor_za")}
+                        resolution={resolutionInit} />
+                    <HeaderCell
+                        label={"Date Edited"}
+                        row={1}
+                        column={5}
                         sortStrategy={sortStrategy}
                         sortStrategyKeys={{ startsWith: "last_active", ascending: "last_active_123", descending: "last_active_321" }}
                         onCellClick={() => setSortStrategy("last_active_321")}
@@ -299,7 +333,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                     <HeaderCell
                         label={"Frame"}
                         row={1}
-                        column={4}
+                        column={6}
                         sortStrategy={sortStrategy}
                         sortStrategyKeys={{ startsWith: "frame", ascending: "frame_123", descending: "frame_321" }}
                         onCellClick={() => setSortStrategy("frame_321")}
@@ -309,7 +343,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                     <HeaderCell
                         label={"Canvas"}
                         row={1}
-                        column={5}
+                        column={7}
                         sortStrategy={sortStrategy}
                         sortStrategyKeys={{ startsWith: "canvas", ascending: "canvas_123", descending: "canvas_321" }}
                         onCellClick={() => setSortStrategy("canvas_321")}
@@ -319,12 +353,12 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                     <HeaderCell
                         label={"Images"}
                         row={1}
-                        column={6}
+                        column={8}
                         resolution={resolutionInit} />
                     <HeaderCell
                         label={"Svgs"}
                         row={1}
-                        column={7}
+                        column={9}
                         resolution={resolutionInit} />
                 </div>
                 <div
@@ -358,6 +392,10 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                                     case "frame_321": return sortByFrame321(a, b);
                                     case "canvas_123": return sortByCanvas123(a, b);
                                     case "canvas_321": return sortByCanvas321(a, b);
+                                    case "creator_az": return sortByCreatorAz(a, b);
+                                    case "creator_za": return sortByCreatorZa(a, b);
+                                    case "editor_az": return sortByEditorAz(a, b);
+                                    case "editor_za": return sortByEditorZa(a, b)
                                     case "none": return 0;
                                 }
                             })
@@ -377,7 +415,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                                         }}
                                         style={{
                                             display: 'grid',
-                                            gridTemplateColumns: '7fr 3fr 3fr 3fr 3fr 2fr 2fr',
+                                            gridTemplateColumns: '4.5fr 2.5fr 3fr 2.5fr 3fr 2fr 2fr 2fr 2fr',
                                             alignItems: 'center',
                                             textWrap: 'nowrap',
                                             background: selectedProject?.project_id == project.project_id ? "rgba(255,255,255,0.15)" : i % 2 != 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.025)',
@@ -400,40 +438,54 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 2,
                                             }}>
-                                            <div style={{ ...contentCellStyle }}>{new Date(project.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
+                                            <div style={{ ...contentCellStyle }}>{project.creator}</div>
                                         </div>
                                         <div
                                             style={{
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 3,
                                             }}>
-                                            <div style={{ ...contentCellStyle }}>{new Date(project.last_active).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
+                                            <div style={{ ...contentCellStyle }}>{new Date(project.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
                                         </div>
                                         <div
                                             style={{
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 4,
                                             }}>
-                                            <div style={{ ...contentCellStyle }}>{project.frame_width}x{project.frame_height}</div>
+                                            <div style={{ ...contentCellStyle }}>{project.last_editor}</div>
                                         </div>
                                         <div
                                             style={{
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 5,
                                             }}>
-                                            <div style={{ ...contentCellStyle }}>{project.canvas_width}x{project.canvas_height}</div>
+                                            <div style={{ ...contentCellStyle }}>{new Date(project.last_active).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
                                         </div>
                                         <div
                                             style={{
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 6,
                                             }}>
-                                            <div style={{ ...contentCellStyle }}>{project.imgs.size}</div>
+                                            <div style={{ ...contentCellStyle }}>{project.frame_width}x{project.frame_height}</div>
                                         </div>
                                         <div
                                             style={{
                                                 ...contentCellWrapperStyle,
                                                 gridColumn: 7,
+                                            }}>
+                                            <div style={{ ...contentCellStyle }}>{project.canvas_width}x{project.canvas_height}</div>
+                                        </div>
+                                        <div
+                                            style={{
+                                                ...contentCellWrapperStyle,
+                                                gridColumn: 8,
+                                            }}>
+                                            <div style={{ ...contentCellStyle }}>{project.imgs.size}</div>
+                                        </div>
+                                        <div
+                                            style={{
+                                                ...contentCellWrapperStyle,
+                                                gridColumn: 9,
                                             }}>
                                             <div style={{ ...contentCellStyle }}>{project.svgs.size}</div>
                                         </div>
@@ -505,7 +557,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                             svgs: new Map(),
                             layers: new Map()
                         }
-                        const response = await createProject(apiOriginInit, newProject);
+                        const response = await createProject(apiOriginInit, me.accessToken, newProject);
                         if (response) {
                             setProjects(v => [...v, { ...response }]);
                         }
@@ -559,7 +611,6 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                         if (!selectedProject) return
                         const newImgs: Map<string, LaurusProjectImg> =
                             new Map(selectedProject.imgs.entries().map(e => [e[0], { ...e[1] }]));
-
                         const newSvgs: Map<string, LaurusProjectSvg> =
                             new Map(selectedProject.svgs.entries().map(e => [e[0], { ...e[1] }]));
                         const newProject: LaurusProject = {
@@ -569,7 +620,7 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                             svgs: newSvgs,
                             layers: new Map(selectedProject.layers)
                         }
-                        const response = await createProject(apiOriginInit, newProject);
+                        const response = await createProject(apiOriginInit, me.accessToken, newProject);
                         if (response) {
                             setProjects(v => [...v, { ...response }]);
                         }
@@ -594,15 +645,16 @@ export default function Projects({ apiOriginInit, accessTokenInit, projectsPromi
                 <div
                     className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="delete selected project"
-                    onClick={() => {
+                    onClick={async () => {
                         if (selectedProject) {
                             const confirmed = window.confirm(`Are you sure you want to delete "${selectedProject.name}"?`);
                             if (confirmed) {
                                 const selectedProjectId = selectedProject.project_id;
-
-                                setProjects(v => v.filter(p => p.project_id != selectedProjectId));
-                                setSelectedProject(undefined);
-                                deleteProject(apiOriginInit, selectedProjectId);
+                                const deleted = await deleteProject(apiOriginInit, me.accessToken, selectedProjectId);
+                                if (deleted) {
+                                    setProjects(v => v.filter(p => p.project_id != selectedProjectId));
+                                    setSelectedProject(undefined);
+                                }
                             }
                         }
                     }}
@@ -686,11 +738,10 @@ function HeaderCell({
 
     return <>
         <div
-            onMouseEnter={(e) => {
+            onMouseEnter={() => {
                 if (!sortStrategy) return;
                 if (!sortStrategyKeys) return;
                 if (sortStrategy.startsWith(sortStrategyKeys.startsWith)) return;
-                e.currentTarget.style.cursor = 'pointer'
             }}
             onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
             onClick={() => {
@@ -704,11 +755,14 @@ function HeaderCell({
                 gridRow: row,
                 gridColumn: column,
             }}>
-            <div style={{
-                width: dynamicSizes.svgSize,
-                height: '100%'
-            }} />
-            {label}
+            <div
+                style={{
+                    width: dynamicSizes.svgSize,
+                    height: '100%'
+                }} />
+            <div className={(label != 'Images' && label != 'Svgs') ? styles['animated-nav-dark'] : ''}>
+                {label}
+            </div>
             {(() => {
                 if (!sortStrategyKeys) return <div style={{
                     width: dynamicSizes.svgSize,

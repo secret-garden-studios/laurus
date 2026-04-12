@@ -632,10 +632,10 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
                 };
                 if (appState.project.project_id) {
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject, });
-                    await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                    await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
                 }
                 else {
-                    const response = await createProject(appState.apiOrigin, { ...newProject });
+                    const response = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
                     if (response) {
                         dispatch({ type: WorkspaceActionType.SetProject, value: { ...response } });
                     }

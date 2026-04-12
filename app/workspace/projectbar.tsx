@@ -8,8 +8,10 @@ import { updateProject, createProject } from "../projects/projects.server";
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [projectName, setProjectName] = useState<string>(appState.project.name);
+    const [projectNameSnapshot] = useState<string>(appState.project.name);
     const projectNameHook = useDebounce<string>(projectName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
+    const projectTitleRef = useRef<HTMLInputElement>(null);
     const [projectbarSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -36,28 +38,40 @@ export default function Projectbar() {
             if (projectRef.current && projectRef.current.project_id &&
                 projectRef.current.name && projectNameHook) {
                 const newProject = { ...projectRef.current, name: projectNameHook }
-                const response = await updateProject(
+                const updated = await updateProject(
                     appState.apiOrigin,
-                    projectRef.current.project_id,
+                    appState.accessToken,
+                    newProject.project_id,
                     newProject);
-                if (response) {
+                if (updated) {
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                }
+                else {
+                    if (projectTitleRef.current) {
+                        projectTitleRef.current.value = projectNameSnapshot;
+                    }
                 }
             }
             else if (projectRef.current && projectRef.current.name && projectNameHook) {
                 const newProject = { ...projectRef.current, name: projectNameHook };
-                const response = await createProject(
+                const created = await createProject(
                     appState.apiOrigin,
+                    appState.accessToken,
                     newProject);
-                if (response) {
-                    const newProject2: LaurusProjectResult = { ...newProject, project_id: response.project_id }
+                if (created) {
+                    const newProject2: LaurusProjectResult = { ...created }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                }
+                else {
+                    if (projectTitleRef.current) {
+                        projectTitleRef.current.value = projectNameSnapshot;
+                    }
                 }
             }
         });
 
         renameProjectOnSever();
-    }, [appState.apiOrigin, projectNameHook, dispatch]);
+    }, [appState.apiOrigin, projectNameHook, dispatch, appState.accessToken, projectNameSnapshot]);
 
     const onProjectNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         projectRef.current = { ...appState.project, name: e.target.value };
@@ -87,6 +101,7 @@ export default function Projectbar() {
                     background: 'linear-gradient(45deg, rgba(11, 11, 11, 0.3), rgba(19, 19, 19, 0.3))',
                 }}>
                 <input
+                    ref={projectTitleRef}
                     id={`porject-name-input-${appState.project.project_id}`}
                     className={dellaRespira.className}
                     placeholder="name me..."

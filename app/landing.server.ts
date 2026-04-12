@@ -4,7 +4,49 @@ export const LANDING_ERROR = "try again later";
 export const EMAIL_ERROR = "try another email";
 export const USERNAME_ERROR = "try another username";
 export const UNAUTHORIZED_ERROR = "unauthorized";
+export const UNAUTHORIZED_EDIT = "You need to be logged in to do that!";
+export const FORBIDDEN_ACTION = "You don't have permission to do that!";
 
+export interface AuthResponse {
+    response: Response,
+    newToken: string | undefined,
+}
+export async function authFetch(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    body: string | undefined,
+    url: string,
+    method: string): Promise<AuthResponse> {
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+        },
+        body,
+    });
+    if (response.status == 401) {
+        const newToken = await refreshAccessToken(baseUrl);
+        if (newToken.success) {
+            return {
+                response,
+                newToken: newToken.access_token,
+            }
+        }
+        else {
+            return {
+                response,
+                newToken: undefined,
+            };
+        }
+    }
+    else {
+        return {
+            response,
+            newToken: undefined,
+        };
+    }
+}
 export interface Register_V1_0 {
     username: string
     email: string
@@ -112,16 +154,7 @@ export async function login(
             credentials: "include",
             body: formData,
         });
-
         if (!raw_response.ok) {
-            if (raw_response.status == 401) {
-                return {
-                    success: false,
-                    message: UNAUTHORIZED_ERROR,
-                    access_token: "",
-                    token_type: ""
-                }
-            }
             return {
                 success: false,
                 message: raw_response.statusText,
@@ -179,15 +212,16 @@ export async function logout(
     accessToken: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/logout`;
-        const raw_response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-        });
-
-        return raw_response.ok;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, undefined, url, 'POST');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, 'POST');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        return response.ok;
     }
     catch (error) {
         console.log({ error });
@@ -199,18 +233,20 @@ export async function getMe(
     accessToken: string): Promise<UserResult_V1_0 | undefined> {
     try {
         const url = `${baseUrl}/users/me`;
-        const raw_response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            }
-        });
-        if (!raw_response.ok) {
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, undefined, url, 'GET');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, 'GET');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
             return undefined;
         }
-        const response: UserResult_V1_0 = await raw_response.json();
-        return response;
+        const result: UserResult_V1_0 = await response.json();
+        return result;
     }
     catch (error) {
         console.log({ error });

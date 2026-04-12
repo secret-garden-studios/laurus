@@ -139,24 +139,32 @@ export default function Canvas() {
                 stroke_width: svgData.stroke_width,
                 pending: false,
             }
-            const newProjectSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-            newProjectSvgs.set(newKey, projectSvg);
-            const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
-            if (encodedSvg) {
-                dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
-            }
-
+            const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+            newSvgs.set(newKey, projectSvg);
+            const rollback: LaurusProjectResult = { ...appState.project }
+            const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
             if (appState.project.project_id) {
-                const newProject: LaurusProjectResult = { ...appState.project, svgs: newProjectSvgs }
                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                if (projectUpdated) {
+                    const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                    if (encodedSvg) {
+                        dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
+                    }
+                }
+                else {
+                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                }
             }
             else {
-                const newProject: LaurusProjectResult = { ...appState.project, svgs: newProjectSvgs }
-                const response = await createProject(appState.apiOrigin, { ...newProject });
-                if (response) {
-                    const newProject2: LaurusProjectResult = { ...newProject, svgs: newProjectSvgs, project_id: response.project_id }
+                const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+                if (projectCreated) {
+                    const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                    const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                    if (encodedSvg) {
+                        dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
+                    }
                 }
             }
         }
@@ -181,25 +189,32 @@ export default function Canvas() {
                 top: newFrame.y,
                 left: newFrame.x,
             };
-
             const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
             newImgs.set(newKey, laurusImg);
-            const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
-            if (encodedImg) {
-                dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
-            }
-
+            const rollback: LaurusProjectResult = { ...appState.project }
+            const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
             if (appState.project.project_id) {
-                const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                if (projectUpdated) {
+                    const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                    if (encodedImg) {
+                        dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
+                    }
+                }
+                else {
+                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                }
             }
             else {
-                const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
-                const response = await createProject(appState.apiOrigin, { ...newProject });
-                if (response) {
-                    const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
+                const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+                if (projectCreated) {
+                    const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                    const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                    if (encodedImg) {
+                        dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
+                    }
                 }
             }
         }

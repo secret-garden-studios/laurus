@@ -1,25 +1,23 @@
 'use client'
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense, useEffect, use } from "react";
 import { getScreenResolution } from "../screens/screens-resolution";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import { ProjectResult_V1_0 } from "./projects.server";
 import Projects from "./projects.client";
 import { ProjectsResolution } from "./projects-resolution";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 interface ProjectsBoot {
     laurusApi: string | undefined,
-    accessToken: string | undefined,
     projectsPromise: Promise<ProjectResult_V1_0[] | undefined>,
-    mePromise: Promise<LaurusUserResult | undefined> | undefined,
+    mePromise: Promise<MeDependencies>
 }
 export default function ProjectsBoot({
     laurusApi,
-    accessToken,
     projectsPromise,
     mePromise }: ProjectsBoot) {
-
+    const me = use(mePromise);
     const [resolution, setResolution] = useState<ProjectsResolution | undefined>(undefined);
 
     useEffect(() => {
@@ -34,10 +32,9 @@ export default function ProjectsBoot({
             <Suspense fallback={<Skeleton />}>
                 <Projects
                     apiOriginInit={laurusApi}
-                    accessTokenInit={accessToken}
                     projectsPromise={projectsPromise}
                     resolutionInit={resolution}
-                    mePromise={mePromise}
+                    me={me}
                 />
             </Suspense> :
             <Forbidden resolution={resolution} /> :

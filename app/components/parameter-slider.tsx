@@ -13,6 +13,7 @@ interface ParameterSlider {
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
+    disabled?: boolean,
 }
 export default function ParameterSlider({
     label,
@@ -24,6 +25,7 @@ export default function ParameterSlider({
     cursor,
     onNewCursor,
     onCursorMove,
+    disabled,
 }: ParameterSlider) {
     const { appState } = useContext(WorkspaceContext);
     const [labelFontSize] = useState(() => {
@@ -58,7 +60,8 @@ export default function ParameterSlider({
                         }}
                         value={cursor}
                         onNewValue={onNewCursor}
-                        onMove={onCursorMove} />
+                        onMove={onCursorMove}
+                        disabled={disabled} />
                 </div>
                 <div
                     ref={trackRef}

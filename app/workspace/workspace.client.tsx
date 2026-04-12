@@ -31,7 +31,7 @@ import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceRe
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./toolbar";
 import { ProjectResult_V1_0, updateProject, createProject, ProjectImg_V1_0, ProjectSvg_V1_0, ProjectLayer_V1_0 } from "../projects/projects.server";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
@@ -52,8 +52,8 @@ export interface LaurusMoveResult extends MoveResult_V1_0 {
     math: Map<string, LaurusMoveEquation>,
 }
 export type LaurusEffect =
-    | { type: 'scale', key: string, value: LaurusScaleResult }
-    | { type: 'move', key: string, value: LaurusMoveResult }
+    | { type: 'scale', key: string, locked: boolean, value: LaurusScaleResult }
+    | { type: 'move', key: string, locked: boolean, value: LaurusMoveResult }
 export type LaurusThumbnail =
     | { type: 'svg', value: LaurusSvgResult }
     | { type: 'img', value: LaurusImgResult }
@@ -131,7 +131,9 @@ export const defaultWorkspace: WorkspaceState = {
         last_active: "",
         imgs: new Map(),
         svgs: new Map(),
-        layers: new Map()
+        layers: new Map(),
+        creator: "",
+        last_editor: ""
     },
     tool: { type: 'none' },
     canvasImgs: [],
@@ -390,6 +392,7 @@ function initReducer({
             newEffects.push({
                 type: 'scale',
                 key: e.scale_id,
+                locked: e.locked,
                 value: {
                     ...e,
                 }
@@ -399,6 +402,7 @@ function initReducer({
             newEffects.push({
                 type: 'move',
                 key: e.move_id,
+                locked: e.locked,
                 value: {
                     ...e,
                 }
@@ -462,7 +466,6 @@ function initReducer({
 
 interface Workspace {
     apiOriginInit: string | undefined,
-    accessTokenInit: string | undefined,
     mediaPageSizeInit: number,
     timelineValuesInit: number[],
     timelineUnitsInit: string[],
@@ -470,11 +473,10 @@ interface Workspace {
     projectInitPromise: Promise<ProjectDependencies | undefined>,
     browserInitPromise: Promise<BrowserDependencies>,
     resolutionInit: WorkspaceResolution,
-    mePromise: Promise<LaurusUserResult | undefined> | undefined,
+    me: MeDependencies,
 }
 export default function Workspace({
     apiOriginInit,
-    accessTokenInit,
     mediaPageSizeInit,
     timelineValuesInit,
     timelineUnitsInit,
@@ -482,11 +484,10 @@ export default function Workspace({
     projectInitPromise,
     browserInitPromise,
     resolutionInit,
-    mePromise
+    me
 }: Workspace) {
     const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
     const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
-    const me = mePromise ? use(mePromise) : undefined;
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
@@ -500,7 +501,7 @@ export default function Workspace({
             arg5: apiOriginInit,
             arg6: browserInit,
             arg7: resolutionInit,
-            arg8: accessTokenInit,
+            arg8: me.accessToken,
         }, initReducer);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -681,7 +682,7 @@ export default function Workspace({
             }}>
             <WorkspaceContext value={{ appState: appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
-                    <Menubar resolution={resolutionInit} me={me} accessToken={accessTokenInit} />
+                    <Menubar resolution={resolutionInit} me={me.me} />
                 </div>
                 <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?
@@ -799,19 +800,26 @@ export default function Workspace({
                         }}
                         zIndex={1}
                         onNewPosition={async function (newPosition: { x: number; y: number; }) {
+                            const rollback: LaurusProjectResult = { ...appState.project };
                             const newProject: LaurusProjectResult = {
                                 ...appState.project,
                                 frame_left: newPosition.x,
                                 frame_top: newPosition.y
                             };
                             if (appState.project.project_id) {
-                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject, });
-                                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
+                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                                if (!updated) {
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                                }
                             }
                             else {
-                                const response = await createProject(appState.apiOrigin, { ...newProject });
-                                if (response) {
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...response } });
+                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                const created = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+                                if (created) {
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...created } });
+                                } else {
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...rollback } });
                                 }
                             }
                         }} />
@@ -992,43 +1000,31 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
         const newImg: LaurusProjectImg = { ...imgMeta, top: newPosition.y, left: newPosition.x };
         const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
         newImgs.set(key, newImg);
+        const rollback: LaurusProjectResult = { ...appState.project }
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
+        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
         if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
-        }
-        else {
-            const response = await createProject(appState.apiOrigin, { ...newProject });
-            if (response) {
-                const newProject2: LaurusProjectResult = { ...newProject, imgs: newImgs, project_id: response.project_id }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-            }
-            else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (!updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
             }
         }
-    }, [appState.apiOrigin, appState.project, dispatch]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
 
     const onNewSvgPosition = useCallback(async (key: string, svgMeta: LaurusProjectSvg, newPosition: { x: number, y: number }) => {
         const newSvg: LaurusProjectSvg = { ...svgMeta, top: newPosition.y, left: newPosition.x };
         const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
         newSvgs.set(key, newSvg);
+        const rollback: LaurusProjectResult = { ...appState.project }
         const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
+        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
         if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
-        }
-        else {
-            const response = await createProject(appState.apiOrigin, { ...newProject });
-            if (response) {
-                const newProject2: LaurusProjectResult = { ...newProject, svgs: newSvgs, project_id: response.project_id }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-            }
-            else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (!updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
             }
         }
-    }, [appState.apiOrigin, appState.project, dispatch]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
 
     return (<>
         {Array.from(appState.project.imgs.entries().filter(e => !e[1].pending)).map((e) => {
@@ -1142,48 +1138,58 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                     onClick={async () => {
-                                        for (let i = 0; i < appState.effects.length; i++) {
-                                            const effect = appState.effects[i];
-                                            switch (effect.type) {
-                                                case "scale": {
-                                                    if (effect.value.math.has(key)) {
-                                                        const newMath = new Map(effect.value.math);
-                                                        newMath.delete(key);
-                                                        const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
-                                                        dispatch({
-                                                            type: WorkspaceActionType.SetEffect,
-                                                            value: { type: 'scale', key: effect.key, value: { ...newScale } }
-                                                        });
-                                                        await updateScale(appState.apiOrigin, effect.key, newScale);
-                                                    }
-                                                    break;
-                                                }
-                                                case "move": {
-                                                    if (effect.value.math.has(key)) {
-                                                        const newMath = new Map(effect.value.math);
-                                                        newMath.delete(key);
-                                                        const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
-                                                        dispatch({
-                                                            type: WorkspaceActionType.SetEffect,
-                                                            value: { type: 'move', key: effect.key, value: { ...newMove } }
-                                                        });
-                                                        await updateMove(appState.apiOrigin, effect.key, newMove);
-                                                    }
-                                                    break;
-                                                }
-                                            }
-                                        }
-
                                         if (appState.activeElement?.key == key) {
                                             dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
                                         }
 
-                                        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
+                                        const snapshot: LaurusProjectResult = { ...appState.project };
+                                        const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
                                         newImgs.delete(key);
-                                        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
+                                        const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
                                         if (newProject.project_id) {
-                                            await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                             dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                                            if (!updated) {
+                                                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+                                            }
+                                            else {
+                                                // clean up effects
+                                                for (let i = 0; i < appState.effects.length; i++) {
+                                                    const effect = appState.effects[i];
+                                                    switch (effect.type) {
+                                                        case "scale": {
+                                                            if (effect.value.math.has(key)) {
+                                                                const newMath = new Map(effect.value.math);
+                                                                newMath.delete(key);
+                                                                const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
+                                                                const updated = await updateScale(appState.apiOrigin, appState.accessToken, effect.key, newScale);
+                                                                if (updated) {
+                                                                    dispatch({
+                                                                        type: WorkspaceActionType.SetEffect,
+                                                                        value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
+                                                                    });
+                                                                }
+                                                            }
+                                                            break;
+                                                        }
+                                                        case "move": {
+                                                            if (effect.value.math.has(key)) {
+                                                                const newMath = new Map(effect.value.math);
+                                                                newMath.delete(key);
+                                                                const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
+                                                                const updated = await updateMove(appState.apiOrigin, appState.accessToken, effect.key, { ...newMove });
+                                                                if (updated) {
+                                                                    dispatch({
+                                                                        type: WorkspaceActionType.SetEffect,
+                                                                        value: { type: 'move', key: effect.key, locked: effect.locked, value: newMove }
+                                                                    });
+                                                                }
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }}>
                                     <SvgRepo
@@ -1276,40 +1282,58 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                         onClick={async () => {
-                                            for (let i = 0; i < appState.effects.length; i++) {
-                                                const effect = appState.effects[i];
-                                                switch (effect.type) {
-                                                    case "scale": {
-                                                        if (effect.value.math.has(key)) {
-                                                            const newMath = new Map(effect.value.math);
-                                                            newMath.delete(key);
-                                                            const newMove: LaurusScale = { ...effect.value, math: newMath }
-                                                            await updateScale(appState.apiOrigin, effect.key, newMove);
-                                                        }
-                                                        break;
-                                                    }
-                                                    case "move": {
-                                                        if (effect.value.math.has(key)) {
-                                                            const newMath = new Map(effect.value.math);
-                                                            newMath.delete(key);
-                                                            const newMove: LaurusMove = { ...effect.value, math: newMath }
-                                                            await updateMove(appState.apiOrigin, effect.key, newMove);
-                                                        }
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
                                             if (appState.activeElement?.key == key) {
                                                 dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
                                             }
 
-                                            const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+                                            const snapshot: LaurusProjectResult = { ...appState.project };
+                                            const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
                                             newSvgs.delete(key);
-                                            const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
+                                            const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs }
                                             if (newProject.project_id) {
-                                                await updateProject(appState.apiOrigin, newProject.project_id, { ...newProject });
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                                const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                                                if (!updated) {
+                                                    dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+                                                }
+                                                else {
+                                                    // clean up effects
+                                                    for (let i = 0; i < appState.effects.length; i++) {
+                                                        const effect = appState.effects[i];
+                                                        switch (effect.type) {
+                                                            case "scale": {
+                                                                if (effect.value.math.has(key)) {
+                                                                    const newMath = new Map(effect.value.math);
+                                                                    newMath.delete(key);
+                                                                    const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
+                                                                    const updated = await updateScale(appState.apiOrigin, appState.accessToken, effect.key, newScale);
+                                                                    if (updated) {
+                                                                        dispatch({
+                                                                            type: WorkspaceActionType.SetEffect,
+                                                                            value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
+                                                                        });
+                                                                    }
+                                                                }
+                                                                break;
+                                                            }
+                                                            case "move": {
+                                                                if (effect.value.math.has(key)) {
+                                                                    const newMath = new Map(effect.value.math);
+                                                                    newMath.delete(key);
+                                                                    const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
+                                                                    const updated = await updateMove(appState.apiOrigin, appState.accessToken, effect.key, { ...newMove });
+                                                                    if (updated) {
+                                                                        dispatch({
+                                                                            type: WorkspaceActionType.SetEffect,
+                                                                            value: { type: 'move', key: effect.key, locked: effect.locked, value: { ...newMove } }
+                                                                        });
+                                                                    }
+                                                                }
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }}>
                                         <SvgRepo

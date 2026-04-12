@@ -8,7 +8,7 @@ import { RefObject, use, useCallback, useRef, useState } from "react";
 import Statusbar from "./statusbar";
 import RemoteControl from "./remote-control";
 import { ScreensResolution } from "./screens-resolution";
-import { LaurusUserResult } from "../landing.server";
+import { MeDependencies } from "../page";
 
 export interface VideoMediaResult extends VideoMediaResult_V1_0 {
     filter: string
@@ -32,15 +32,13 @@ export type YouTubePlayerControl =
 
 interface Screens {
     apiOrigin: string | undefined,
-    accessToken: string | undefined,
     resolution: ScreensResolution,
     videoMediaPromise: Promise<VideoMediaResult_V1_0[]>,
     videoMediaPageSize: number,
-    mePromise: Promise<LaurusUserResult | undefined> | undefined
+    me: MeDependencies,
 }
-export default function Screens({ apiOrigin, accessToken, resolution, videoMediaPromise, videoMediaPageSize, mePromise }: Screens) {
+export default function Screens({ apiOrigin, resolution, videoMediaPromise, videoMediaPageSize, me }: Screens) {
     const videoMediaInit = use(videoMediaPromise);
-    const me = mePromise ? use(mePromise) : undefined;
     const [defaultStyle] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -225,7 +223,7 @@ export default function Screens({ apiOrigin, accessToken, resolution, videoMedia
                 gridTemplateRows: 'min-content 1fr min-content'
             }}>
             <div style={{ gridRow: 1 }}>
-                <Menubar resolution={resolution} me={me} accessToken={accessToken} />
+                <Menubar resolution={resolution} me={me.me} />
             </div>
             <div
                 ref={containerRef}

@@ -22,6 +22,7 @@ interface TrackpadProps {
     onNewValue: (v: { x: number, y: number }) => void,
     onMove?: (v: { x: number, y: number }) => void
     zIndex?: number,
+    disabled?: boolean
 }
 
 export function Trackpad({
@@ -32,7 +33,8 @@ export function Trackpad({
     value,
     onNewValue,
     onMove,
-    zIndex }: TrackpadProps) {
+    zIndex,
+    disabled }: TrackpadProps) {
 
     const sensors = useSensors(
         useSensor(PointerSensor)
@@ -73,6 +75,7 @@ export function Trackpad({
                     pointerStyle={coarsePointer.pointerStyle}
                     zIndex={coarsePointer.zIndex}
                     borderColor={coarsePointer.borderColor}
+                    disabled={disabled}
                 />
             </DndContext>
         </div>
@@ -87,10 +90,11 @@ interface CoarsePointerProps {
     pointerStyle: PointerStyle,
     zIndex?: number,
     borderColor?: string,
+    disabled?: boolean
 }
 
-function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor }: CoarsePointerProps) {
-    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled }: CoarsePointerProps) {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
 
     const dndCss = {
         left: coords.x,

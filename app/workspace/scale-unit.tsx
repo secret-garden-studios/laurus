@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusSvgResult, LaurusImgResult, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { ReactImg } from "./media";
@@ -7,7 +7,6 @@ import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
-import useDebounce from "../hooks/useDebounce";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import ParameterSlider from "../components/parameter-slider";
 import { getDisplaySize, getHeaderSize, getParamButtonSize, getParamCapSize, getParamGrooveWidth, getParamTrackPadding, getParamTrackSize, getTopLevelPadding } from "./unit-resolution";
@@ -25,7 +24,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
     const [headerSize] = useState(() => getHeaderSize(appState.resolution));
     const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [mainControls, setMainControls] = useState(true);
-    const [prevActiveElementId, setPrevActiveElementId] = useState<string>(appState.activeElement?.key ?? "");
 
     // param 1
     const timeTrackRef = useRef<HTMLDivElement | null>(null);
@@ -66,43 +64,28 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
         }
     })
     const [scaleCursor, setScaleCursor] = useState({ x: 0, y: 0 });
-    function initDisplayScaleValue(): string {
-        const activeMath = scale.math.get(appState.activeElement?.key ?? "");
-        if (activeMath) {
-            return activeMath.scale >= 1 ? activeMath.scale.toFixed(2) : activeMath.scale.toFixed(3);
-        }
-        else {
-            return '1.00'
-        }
-    }
-    const [scaleInputValue, setScaleInputValue] = useState<string>(initDisplayScaleValue);
     const { getComplexTrackValue: getScaleValue, getComplexTrackCursor: getScaleCursor } =
         useComplexTrackpadState(
             scaleCapSize.width - 2,
             maxScale);
 
-    // auto save dependencies
-    const scaleDebouncerRef = useRef<[LaurusScaleResult, number] | undefined>(undefined);
-    const timeDebouncerRef = useRef<[LaurusScaleResult, number] | undefined>(undefined);
-    const [debounceInput, setDebounceInput] = useState<Map<string, LaurusScaleEquation>>(scale.math);
-    const mathDebouncer = useDebounce(debounceInput, 1000);
-
-    const saveNewEquation = useCallback((newEquation: LaurusScaleEquation) => {
-        const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
+    const saveNewEquation = useCallback(async (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => {
+        const newMath: Map<string, LaurusScaleEquation> = new Map(rollback.math);
         newMath.set(newEquation.input_id, newEquation);
 
-        const newScale: LaurusScaleResult = { ...scale, math: newMath };
+        const newScale: LaurusScaleResult = { ...rollback, math: newMath };
         dispatch({
             type: WorkspaceActionType.SetEffect,
-            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
+            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id, locked: newScale.locked },
         });
-        updateScale(appState.apiOrigin, scale.scale_id, { ...newScale });
-    }, [appState.apiOrigin, dispatch, scale]);
-
-    if (prevActiveElementId != (appState.activeElement?.key ?? "")) {
-        setPrevActiveElementId((appState.activeElement?.key ?? ""));
-        setScaleInputValue(initDisplayScaleValue);
-    }
+        const updated = await updateScale(appState.apiOrigin, appState.accessToken, rollback.scale_id, { ...newScale });
+        if (!updated) {
+            dispatch({
+                type: WorkspaceActionType.SetEffect,
+                value: { type: 'scale', value: { ...rollback }, key: rollback.scale_id, locked: rollback.locked },
+            });
+        }
+    }, [appState.apiOrigin, appState.accessToken, dispatch]);
 
     useLayoutEffect(() => {
         (async () => {
@@ -123,36 +106,18 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                 const newTimeCursor = getTimeCursor(timeInit, (timeTrackRef.current.clientHeight));
                 setTimeCursor({ y: newTimeCursor, x: 0 });
             }
+
+            if (scaleRef.current) {
+                const activeMath = scale.math.get(appState.activeElement?.key ?? "");
+                if (activeMath) {
+                    scaleRef.current.value = activeMath.scale >= 1 ? activeMath.scale.toFixed(2) : activeMath.scale.toFixed(3);
+                }
+                else {
+                    scaleRef.current.value = '1.00'
+                }
+            }
         })();
     }, [appState.activeElement?.key, appState.timelineMaxValue, getScaleCursor, getTimeCursor, scale.math]);
-
-    // pushes data from input boxes to the server on a delay
-    useEffect(() => {
-        const newMath = new Map(mathDebouncer);
-        if (scaleDebouncerRef.current) {
-            if (scaleRef.current && scaleTrackRef.current) {
-                const newScaleCursor = getTimeCursor(scaleDebouncerRef.current[1], scaleTrackRef.current.clientHeight);
-                setScaleCursor({ x: newScaleCursor, y: 0 });
-            }
-
-            const newScale: LaurusScaleResult = { ...scaleDebouncerRef.current[0], math: newMath };
-            dispatch({ type: WorkspaceActionType.SetEffect, value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id } });
-            updateScale(appState.apiOrigin, newScale.scale_id, newScale);
-            scaleDebouncerRef.current = undefined;
-        }
-
-        if (timeDebouncerRef.current) {
-            if (timeTrackRef.current) {
-                const newTimeCursor = getTimeCursor(timeDebouncerRef.current[1], timeTrackRef.current.clientHeight);
-                setTimeCursor({ x: 0, y: newTimeCursor });
-            }
-
-            const newScale: LaurusScaleResult = { ...timeDebouncerRef.current[0], math: newMath };
-            dispatch({ type: WorkspaceActionType.SetEffect, value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id } });
-            updateScale(appState.apiOrigin, newScale.scale_id, newScale);
-            timeDebouncerRef.current = undefined;
-        }
-    }, [appState.apiOrigin, dispatch, getTimeCursor, mathDebouncer]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         if (!appState.activeElement) return [];
@@ -330,23 +295,25 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
 
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
-
-                                            if (appState.activeElement) {
-                                                const activeEquation = scale.math.get(appState.activeElement!.key);
+                                            const activeId = appState.activeElement?.key ?? "";
+                                            if (activeId) {
+                                                const snapshot: LaurusScaleResult = { ...scale }
+                                                const activeEquation = snapshot.math.get(activeId);
                                                 const newServerTime = newTime * 1000;
                                                 const newEquation = activeEquation ?
                                                     { ...activeEquation, time: newServerTime } :
                                                     {
-                                                        input_id: appState.activeElement.key,
+                                                        input_id: activeId,
                                                         time: newServerTime,
                                                         scale: 1,
                                                         loop: false,
                                                         solution: []
                                                     };
-                                                saveNewEquation(newEquation);
+                                                saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth} />
+                                        grooveWidth={paramGrooveWidth}
+                                        disabled={scale.locked} />
                                 </div>
                                 <div
                                     style={{
@@ -359,34 +326,10 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         <input
                                             className={dellaRespira.className}
                                             id={`scale-input-${scale.scale_id}`}
+                                            disabled
                                             ref={scaleRef}
                                             type="text"
                                             placeholder="0.00"
-                                            value={scaleInputValue}
-                                            onChange={() => {
-                                                if (!scaleRef.current || !scaleTrackRef.current) return;
-                                                const newScaleValue: number = parseFloat(scaleRef.current.value) || 0;
-                                                setScaleInputValue(newScaleValue >= 1 ?
-                                                    (newScaleValue).toFixed(2) :
-                                                    (newScaleValue).toFixed(3));
-
-                                                if (newScaleValue > maxScale || newScaleValue < 0) {
-                                                    return;
-                                                }
-
-                                                const activeEq = scale.math.get(appState.activeElement?.key ?? "");
-                                                if (activeEq) {
-                                                    const newEquation = { ...activeEq, scale: newScaleValue };
-                                                    const newMath: Map<string, LaurusScaleEquation> = new Map(scale.math);
-                                                    newMath.set(newEquation.input_id, newEquation);
-                                                    setDebounceInput(newMath);
-                                                    timeDebouncerRef.current = [{ ...scale }, newScaleValue];
-                                                }
-                                                else {
-                                                    const newScaleCursor = getScaleCursor(newScaleValue, scaleTrackRef.current.clientWidth);
-                                                    setScaleCursor({ x: newScaleCursor, y: 0 });
-                                                }
-                                            }}
                                             style={{
                                                 textAlign: "right",
                                                 background: 'none',
@@ -422,24 +365,25 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                     alignContent: 'start',
                                 }}>
                                     <div
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                                         onClick={() => {
-                                            if (appState.activeElement) {
-                                                const activeEquation = scale.math.get(appState.activeElement!.key);
+                                            const activeId = appState.activeElement?.key ?? "";
+                                            if (activeId) {
+                                                const snapshot: LaurusScaleResult = { ...scale };
+                                                const activeEquation = snapshot.math.get(activeId);
                                                 const newEquation = activeEquation ?
                                                     { ...activeEquation, loop: !activeEquation.loop } :
                                                     {
-                                                        input_id: appState.activeElement.key,
+                                                        input_id: activeId,
                                                         time: appState.timelineMaxValue * 1000,
                                                         scale: 1,
                                                         loop: true,
                                                         solution: []
                                                     };
-                                                saveNewEquation(newEquation);
+                                                saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
                                         style={{
+                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -448,7 +392,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <SvgRepo
-                                            svg={autorenew()}
+                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? autorenew() : autorenew("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -456,8 +400,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             scale={0.9} />
                                     </div>
                                     <div
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                                         onClick={async () => {
                                             const newAnimations = await getPreviewAnimations(true);
                                             Promise.all(newAnimations.map(animation => animation.finished))
@@ -475,6 +417,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             });
                                         }}
                                         style={{
+                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -482,7 +425,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
-                                            svg={skipPrevious()}
+                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -490,8 +433,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             scale={0.9} />
                                     </div>
                                     <div
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
                                         onClick={async () => {
                                             const newAnimations = await getPreviewAnimations(false);
                                             Promise.all(newAnimations.map(animation => animation.finished))
@@ -510,6 +451,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                         }}
                                         style={{
+                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -517,7 +459,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
-                                            svg={playArrow()}
+                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? playArrow() : playArrow("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -560,24 +502,23 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         if (!scaleTrackRef.current) return;
                                         const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
 
-                                        setScaleInputValue(newScaleValue >= 1 ?
-                                            (newScaleValue).toFixed(2) :
-                                            (newScaleValue).toFixed(3));
-
-                                        if (appState.activeElement) {
-                                            const activeEquation = scale.math.get(appState.activeElement!.key);
+                                        const activeId = appState.activeElement?.key ?? "";
+                                        if (activeId) {
+                                            const snapshot: LaurusScaleResult = { ...scale };
+                                            const activeEquation = snapshot.math.get(activeId);
                                             const newEquation = activeEquation ?
                                                 { ...activeEquation, scale: newScaleValue } :
                                                 {
-                                                    input_id: appState.activeElement.key,
+                                                    input_id: activeId,
                                                     time: appState.timelineMaxValue * 1000,
                                                     scale: newScaleValue,
                                                     loop: false,
                                                     solution: []
                                                 };
-                                            saveNewEquation(newEquation);
+                                            saveNewEquation(snapshot, newEquation);
                                         }
-                                    }} />
+                                    }}
+                                    disabled={scale.locked} />
                             </div>
                         </div>
                     </div>
@@ -604,20 +545,23 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                             <div style={{ marginLeft: 'auto' }}>{'Click'}
                                 <span
                                     onClick={async () => {
-                                        await deleteScale(appState.apiOrigin, scale.scale_id);
-                                        dispatch({
-                                            type: WorkspaceActionType.SetEffects,
-                                            value: appState.effects.filter(e => {
-                                                switch (e.type) {
-                                                    case "scale": {
-                                                        return e.value.scale_id != scale.scale_id;
+                                        const scaleId = scale.scale_id;
+                                        const deleted = await deleteScale(appState.apiOrigin, appState.accessToken, scaleId);
+                                        if (deleted) {
+                                            dispatch({
+                                                type: WorkspaceActionType.SetEffects,
+                                                value: appState.effects.filter(e => {
+                                                    switch (e.type) {
+                                                        case "scale": {
+                                                            return e.value.scale_id != scaleId;
+                                                        }
+                                                        case "move": {
+                                                            return true;
+                                                        }
                                                     }
-                                                    case "move": {
-                                                        return true;
-                                                    }
-                                                }
-                                            })
-                                        });
+                                                })
+                                            });
+                                        }
                                     }}
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
@@ -643,6 +587,7 @@ interface ScaleSlider {
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
+    disabled?: boolean,
 }
 function ScaleSlider({
     hash,
@@ -651,7 +596,8 @@ function ScaleSlider({
     trackRef,
     cursor,
     onNewCursor,
-    onCursorMove
+    onCursorMove,
+    disabled,
 }: ScaleSlider) {
     const { appState } = useContext(WorkspaceContext);
     const [svgSize] = useState(() => {
@@ -690,7 +636,8 @@ function ScaleSlider({
                     }}
                     value={cursor}
                     onNewValue={onNewCursor}
-                    onMove={onCursorMove} />
+                    onMove={onCursorMove}
+                    disabled={disabled} />
             </div>
             {/* label */}
             <div

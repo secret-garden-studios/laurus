@@ -1,8 +1,8 @@
 'use client'
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Landing, { LandingFormType } from "./landing.client";
 import styles from "./app.module.css";
-import { getMe, refreshAccessToken, LaurusUserResult } from "./landing.server";
+import { MeDependencies } from "./page";
 
 export type LaurusResolution =
     | { type: 'high' }
@@ -28,53 +28,24 @@ function getScreenResolution(): LaurusResolution {
 
 interface LandingBoot {
     laurusApi: string | undefined,
-    accessTokenInit: string | undefined,
+    mePromise: Promise<MeDependencies>
     resetPassword: string | undefined,
 }
-export default function LandingBoot({ laurusApi, accessTokenInit, resetPassword }: LandingBoot) {
+export default function LandingBoot({ laurusApi, mePromise, resetPassword }: LandingBoot) {
+    const me = use(mePromise);
     const [resolution, setResolution] = useState<LaurusResolution | undefined>(undefined);
     const [formType, setFormType] = useState<LandingFormType | undefined>(undefined);
-    const [me, setMe] = useState<LaurusUserResult | undefined>(undefined);
-    const [accessToken, setAccessToken] = useState<string | undefined>(undefined);
 
     useEffect(() => {
-        (() => {
-            if (!resolution) {
-                setResolution(getScreenResolution())
-            }
-        })();
-    }, [resolution]);
-
-    useEffect(() => {
-        const checkIfImLoggedIn = async (token: string) => {
-            const me = await getMe(laurusApi, token);
-            if (me) {
-                setAccessToken(token);
-                setMe(me);
-                return true;
-            }
-            else {
-                return false;
-            }
-        }
-
         (async () => {
+            if (!resolution) {
+                setResolution(getScreenResolution());
+            }
             try {
-                let loggedIn = false;
-                if (accessTokenInit) {
-                    loggedIn = await checkIfImLoggedIn(accessTokenInit);
-                }
-                else {
-                    const refresh = await refreshAccessToken(laurusApi);
-                    if (refresh.success) {
-                        loggedIn = await checkIfImLoggedIn(refresh.access_token);
-                    }
-                }
-
                 if (resetPassword) {
                     setFormType(LandingFormType.passwordConfirmation);
                 }
-                else if (loggedIn) {
+                else if (me.me) {
                     setFormType(LandingFormType.loggedIn);
                 }
                 else {
@@ -85,7 +56,7 @@ export default function LandingBoot({ laurusApi, accessTokenInit, resetPassword 
                 setFormType(LandingFormType.login);
             }
         })();
-    }, [accessTokenInit, laurusApi, resetPassword])
+    }, [me.me, resetPassword, resolution])
 
     return (resolution !== undefined && formType !== undefined) ?
         <Landing
@@ -93,8 +64,7 @@ export default function LandingBoot({ laurusApi, accessTokenInit, resetPassword 
             resolution={resolution}
             resetPasswordToken={resetPassword}
             formInit={formType}
-            me={me}
-            accessToken={accessToken} />
+            me={me} />
         : <Skeleton />
 }
 

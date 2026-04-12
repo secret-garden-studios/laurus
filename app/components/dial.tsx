@@ -8,9 +8,10 @@ interface DialProps {
     value: number,
     onNewValue: (v: number) => void,
     onMove?: (v: number) => void,
+    disabled?: boolean,
 }
 
-export default function Dial({ ids, value, onMove, onNewValue }: DialProps) {
+export default function Dial({ ids, value, onMove, onNewValue, disabled }: DialProps) {
     const rotationRef = useRef(value);
     const [rotation, setRotation] = useState(value);
     const sensors = useSensors(useSensor(PointerSensor));
@@ -52,7 +53,8 @@ export default function Dial({ ids, value, onMove, onNewValue }: DialProps) {
             modifiers={[restrictToVerticalAxis]}>
             <BlurryCap
                 id={ids.draggableId}
-                rotation={rotation} />
+                rotation={rotation}
+                disabled={disabled} />
         </DndContext>
     </>)
 }
@@ -60,10 +62,11 @@ export default function Dial({ ids, value, onMove, onNewValue }: DialProps) {
 interface BlurryCapProps {
     id: string,
     rotation: number,
+    disabled?: boolean,
 }
 
-function BlurryCap({ id, rotation }: BlurryCapProps) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id });
+function BlurryCap({ id, rotation, disabled }: BlurryCapProps) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
     const { appState } = useContext(WorkspaceContext);
     const dndCss = { touchAction: 'none', };
     const [containerSize] = useState(Math.round(90 * appState.resolution.factor));

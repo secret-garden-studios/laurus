@@ -1,9 +1,8 @@
-import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
-import { convertTime, LaurusEffect, LaurusScale, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { arrowDropDown, arrowDropUp, SvgRepo } from "../svg-repo";
-import { MoveResult_V1_0, ScaleResult_V1_0, updateMove, updateScale } from "./workspace.server";
-import useDebounce from "../hooks/useDebounce";
+import { convertTime, LaurusEffect, LaurusMove, LaurusMoveResult, LaurusScale, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { arrowDropDown, arrowDropUp, lock, lockOpenRight, SvgRepo } from "../svg-repo";
+import { updateMove, updateScale } from "./workspace.server";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import MoveUnit from "./move-unit";
 import TimelineSlider from "../components/timeline-slider";
@@ -83,87 +82,97 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     const { getTrackValue: getTimeCursor, getTrackCursor: getCursor } =
         useTrackpadState(0, appState.timelineMaxValue);
+
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
         return getTimeCursor(cursorX, (timelineTrackRef.current.clientWidth - trackSidePadding), 0);
     }, [getTimeCursor, trackSidePadding]);
+
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
         return getCursor(time, (timelineTrackRef.current.clientWidth - trackSidePadding));
     }, [getCursor, trackSidePadding]);
 
-    const debounceDependenciesRef = useRef<LaurusEffect | undefined>(undefined);
-    const [debounceInput, setDebounceInput] = useState<LaurusEffect>(effect);
-    const effectDebouncer = useDebounce(debounceInput, 1000);
-    const adjustEndCursor = useCallback((newX: number): number => {
-        if (endCursor.x < newX && endRef.current) {
-            const newValue = cursorToTime(newX);
-            setEndCursor({ ...endCursor, x: newX });
-            endRef.current.value = newValue.toFixed(2);
-            return newValue;
-        }
-        return cursorToTime(endCursor.x);
-    }, [cursorToTime, endCursor]);
+    const getNewEndTime = useCallback((newStartCursorX: number): [number, boolean] => {
+        return (endCursor.x < newStartCursorX) ?
+            [cursorToTime(newStartCursorX), true] :
+            [cursorToTime(endCursor.x), false];
+    }, [cursorToTime, endCursor.x]);
 
-    const adjustStartCursor = useCallback((newX: number): number => {
-        if (startCursor.x > newX && startRef.current) {
-            const newValue = cursorToTime(newX);
-            setStartCursor({ ...startCursor, x: newX });
-            startRef.current.value = newValue.toFixed(2);
-            return newValue;
-        }
-        return cursorToTime(startCursor.x);
-    }, [cursorToTime, startCursor]);
+    const getNewStartTime = useCallback((newEndCursorX: number): [number, boolean] => {
+        return (startCursor.x > newEndCursorX) ?
+            [cursorToTime(newEndCursorX), true] :
+            [cursorToTime(startCursor.x), false];
+    }, [cursorToTime, startCursor.x]);
 
-    const saveEffect = useCallback(async (effect: LaurusEffect) => {
+    const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect) => {
         switch (effect.type) {
             case "scale": {
-                const effectForServer = injectTime(
-                    effect,
-                    convertTime(effect.value.start, appState.timelineUnit, 'sec'),
-                    convertTime(effect.value.end, appState.timelineUnit, 'sec'));
-                const response = await updateScale(
+                const newScale: LaurusScale = { ...effect.value, locked: effect.locked }
+                const updated = await updateScale(
                     appState.apiOrigin,
-                    effectForServer.key,
-                    effectForServer.value as ScaleResult_V1_0);
-                if (!response) return;
-                const newEffect: LaurusEffect = {
-                    type: 'scale',
-                    key: response.scale_id,
-                    value: {
-                        ...response,
-                        start: convertTime(response.start, 'sec', appState.timelineUnit),
-                        end: convertTime(response.end, 'sec', appState.timelineUnit)
-                    }
-                };
-                dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                    appState.accessToken,
+                    effect.key,
+                    newScale);
+                if (updated) {
+                    const newEffect: LaurusEffect = {
+                        type: 'scale',
+                        key: updated.scale_id,
+                        locked: updated.locked,
+                        value: {
+                            ...updated,
+                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
+                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                        }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
+                else {
+                    const rollbackScaleResult = rollback.value as LaurusScaleResult;
+                    const newEffect: LaurusEffect = {
+                        type: 'scale',
+                        key: rollback.key,
+                        locked: rollback.locked,
+                        value: { ...rollbackScaleResult }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
                 break;
             }
             case "move": {
-                const effectForServer = injectTime(
-                    effect,
-                    convertTime(effect.value.start, appState.timelineUnit, 'sec'),
-                    convertTime(effect.value.end, appState.timelineUnit, 'sec'));
-                const response = await updateMove(
+                const newMove: LaurusMove = { ...effect.value, locked: effect.locked }
+                const updated = await updateMove(
                     appState.apiOrigin,
-                    effectForServer.key,
-                    effectForServer.value as MoveResult_V1_0);
-                if (!response) return;
-                const newEffect: LaurusEffect = {
-                    type: 'move',
-                    key: response.move_id,
-                    value: {
-                        ...response,
-                        start: convertTime(response.start, 'sec', appState.timelineUnit),
-                        end: convertTime(response.end, 'sec', appState.timelineUnit)
-                    }
-                };
-                dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                    appState.accessToken,
+                    effect.key,
+                    newMove);
+                if (updated) {
+                    const newEffect: LaurusEffect = {
+                        type: 'move',
+                        key: updated.move_id,
+                        locked: updated.locked,
+                        value: {
+                            ...updated,
+                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
+                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                        }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
+                else {
+                    const rollbackMoveResult = rollback.value as LaurusMoveResult;
+                    const newEffect: LaurusEffect = {
+                        type: 'move',
+                        key: rollback.key,
+                        locked: rollback.locked,
+                        value: { ...rollbackMoveResult }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
                 break;
             }
         }
-
-    }, [appState.apiOrigin, appState.timelineUnit, dispatch]);
+    }, [appState.accessToken, appState.apiOrigin, appState.timelineUnit, dispatch]);
 
     useLayoutEffect(() => {
         (async () => {
@@ -187,28 +196,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         })();
 
     }, [appState.timelineMaxValue, cursorToTime, effect.value, timeToCursor]);
-
-    // pushes data from input boxes to the server on a delay
-    useEffect(() => {
-        if (debounceDependenciesRef.current) {
-            switch (debounceDependenciesRef.current.type) {
-                case "scale": {
-                    const newScale: LaurusScale = {
-                        ...debounceDependenciesRef.current.value,
-                        start: convertTime(effectDebouncer.value.start, appState.timelineUnit, 'sec'),
-                        end: convertTime(effectDebouncer.value.end, appState.timelineUnit, 'sec')
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: { ...effectDebouncer } });
-                    updateScale(appState.apiOrigin, debounceDependenciesRef.current.key, newScale);
-                    debounceDependenciesRef.current = undefined;
-                    break;
-                }
-                case "move": {
-                    break;
-                }
-            }
-        }
-    }, [appState.apiOrigin, effectDebouncer, appState.timelineUnit, dispatch]);
 
     const [timelineUnitsSize] = useState(() => {
         switch (appState.resolution.type) {
@@ -274,21 +261,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'start'}</div>
                     <input
                         id={`start-input-${effect.key}`}
+                        disabled
                         ref={startRef}
                         type="text"
                         placeholder="0.00"
-                        onChange={() => {
-                            if (!timelineTrackRef.current || !startRef.current) return;
-                            const newStart: number = parseFloat(startRef.current.value) || 0;
-
-                            const newCursor: number = timeToCursor(newStart);
-                            setStartCursor(v => { return { ...v, x: newCursor } });
-                            const newEnd = adjustEndCursor(newCursor);
-
-                            const newEffect: LaurusEffect = injectTime(effect, newStart, newEnd);
-                            setDebounceInput(newEffect);
-                            debounceDependenciesRef.current = { ...effect };
-                        }}
                         style={{
                             textAlign: "left",
                             background: 'none',
@@ -308,21 +284,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'end'}</div>
                     <input
                         id={`end-input-${effect.key}`}
+                        disabled
                         ref={endRef}
                         type="text"
                         placeholder="0.00"
-                        onChange={() => {
-                            if (!timelineTrackRef.current || !endRef.current) return;
-                            const newDuration: number = parseFloat(endRef.current.value) || 0;
-
-                            const newCursor: number = timeToCursor(newDuration);
-                            setEndCursor(v => { return { ...v, x: newCursor } });
-                            const newOffset = adjustStartCursor(newCursor);
-
-                            const newEffect: LaurusEffect = injectTime(effect, newOffset, newDuration);
-                            setDebounceInput(newEffect);
-                            debounceDependenciesRef.current = { ...effect };
-                        }}
                         style={{
                             textAlign: "left",
                             background: 'none',
@@ -353,30 +318,49 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     trackRef={timelineTrackRef}
                     cursor={startCursor}
                     onNewCursor={async (c) => {
+                        const newStart = cursorToTime(c.x);
+                        const newEnd = getNewEndTime(c.x);
+
                         setStartCursor({ ...c });
-                        const adjustedDuration = adjustEndCursor(c.x);
-                        const newOffset: number = cursorToTime(c.x);
-                        const newEffect = injectTime(effect, newOffset, adjustedDuration);
-                        await saveEffect(newEffect);
+                        if (newEnd[1] && endRef.current) {
+                            setEndCursor({ ...endCursor, x: c.x });
+                            endRef.current.value = newStart.toFixed(2);
+                        }
+
+                        const newServerStart = convertTime(newStart, appState.timelineUnit, 'sec');
+                        const newServerEnd = convertTime(newEnd[0], appState.timelineUnit, 'sec');
+                        const rollback: LaurusEffect = { ...effect };
+                        const newEffect = injectTime(effect, newServerStart, newServerEnd);
+                        await saveEffect(newEffect, rollback);
                     }}
                     rangeCursor={endCursor}
                     onNewRangeCursor={async (c) => {
+                        const newStart = getNewStartTime(c.x);
+                        const newEnd = cursorToTime(c.x);
+
                         setEndCursor({ ...c });
-                        const adjustedOffset = adjustStartCursor(c.x);
-                        const newDuration: number = cursorToTime(c.x);
-                        const newEffect = injectTime(effect, adjustedOffset, newDuration);
-                        await saveEffect(newEffect);
+                        if (newStart[1] && startRef.current) {
+                            setStartCursor({ ...startCursor, x: c.x });
+                            startRef.current.value = newEnd.toFixed(2);
+                        }
+
+                        const newServerStart = convertTime(newStart[0], appState.timelineUnit, 'sec');
+                        const newServerEnd = convertTime(newEnd, appState.timelineUnit, 'sec');
+                        const rollback: LaurusEffect = { ...effect };
+                        const newEffect = injectTime(effect, newServerStart, newServerEnd);
+                        await saveEffect(newEffect, rollback);
                     }}
                     onCursorMove={(c) => {
-                        if (!startRef.current) return;
+                        if (!startRef.current || effect.locked) return;
                         const newValue = cursorToTime(c.x);
                         startRef.current.value = newValue.toFixed(2);
                     }}
                     onRangeMove={(c) => {
-                        if (!endRef.current) return;
+                        if (!endRef.current || effect.locked) return;
                         const newValue = cursorToTime(c.x);
                         endRef.current.value = newValue.toFixed(2);
                     }}
+                    disabled={effect.locked}
                 />
             </div>
             <div
@@ -385,9 +369,27 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     height: timelineDropDownSize.height,
                     padding: timelineDropDownSize.padding,
                     display: 'flex',
-                    justifyContent: 'end'
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
                 }}>
                 <SvgRepo
+                    title={effect.locked ? "locked" : "unlocked"}
+                    svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
+                    containerSize={{
+                        width: timelineDropDownSize.svg,
+                        height: timelineDropDownSize.svg
+                    }}
+                    scale={0.7}
+                    onContainerClick={async () => {
+                        const rollback: LaurusEffect = { ...effect };
+                        const newEffect: LaurusEffect = {
+                            ...effect,
+                            locked: !effect.locked,
+                        }
+                        await saveEffect(newEffect, rollback);
+                    }} />
+                <SvgRepo
+                    title={showUnitControls ? "hide controls" : "show controls"}
                     svg={showUnitControls ? arrowDropUp() : arrowDropDown()}
                     containerSize={{
                         width: timelineDropDownSize.svg,
