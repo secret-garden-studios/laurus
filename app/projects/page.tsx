@@ -1,6 +1,7 @@
 import { fetchMe } from "../page";
 import ProjectsBoot from "./projects.boot";
 import { getProjects } from "./projects.server";
+export const dynamic = 'force-dynamic';
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ logout?: string }> }) {
     const { logout } = await searchParams;
