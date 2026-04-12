@@ -42,6 +42,7 @@ export default function LandingBoot({ laurusApi, mePromise, resetPassword }: Lan
                 setResolution(getScreenResolution());
             }
             try {
+                console.log(me.me);
                 if (resetPassword) {
                     setFormType(LandingFormType.passwordConfirmation);
                 }
