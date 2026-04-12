@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import LandingBoot from './landing.boot';
 import { logout, getMe, UserResult_V1_0 } from './landing.server';
+export const dynamic = 'force-dynamic';
 
 export interface MeDependencies {
   me: UserResult_V1_0 | undefined,
@@ -10,6 +11,7 @@ export async function fetchMe(
   laurusApi: string | undefined,
   logoutFlag: boolean): Promise<MeDependencies> {
   const cookieStore = await cookies();
+  console.log('All Cookies:', cookieStore.getAll());
   const token = cookieStore.get('refresh_token')?.value;
   if (token) {
     if (logoutFlag) {
@@ -31,7 +33,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   const laurusApi = process.env.LAURUS_API;
   const mePromise = fetchMe(laurusApi, Boolean(logout));
   return <>
-   
     <LandingBoot
       laurusApi={laurusApi}
       mePromise={mePromise}
