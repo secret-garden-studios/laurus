@@ -59,9 +59,10 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                 display: 'grid',
                 height: '100vh',
                 width: '100vw',
-                gridTemplateRows: 'auto min-content',
+                gridTemplateRows: `${formType == LandingFormType.loggedIn || formType == LandingFormType.passwordConfirmation ? 35 : 30}vh auto min-content`,
                 color: 'rgb(227,227,227)'
             }} >
+            <div />
             {resolution.type == 'low' ? <LowResBody /> : (() => {
                 switch (formType) {
                     case LandingFormType.login: return <>
@@ -88,7 +89,10 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                         <RegistrationBody
                             laurusApi={laurusApi}
                             resolution={resolution}
-                            onNewUsername={setNewUsername}
+                            onNewUsername={(v) => {
+                                alert("We received your request to become a creator! Keep an eye out for an email from us.");
+                                setNewUsername(v);
+                            }}
                             onNewFormType={setFormType}
                         />
                     </>
@@ -149,8 +153,9 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                         </div> :
                         <></>
                 }
-            </div>
-        </div >
+            </div >
+        </div>
+
     </>
 }
 
@@ -448,11 +453,11 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                 input: { height: 50, fontSize: 14, padding: "8px 35px 8px 12px", },
             }
             case "midhigh": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
             case "midlow":
             case "low": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
         }
     });
@@ -460,7 +465,8 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
         <div
             style={{
                 display: 'grid',
-                placeContent: 'center',
+                alignContent: 'start',
+                justifyContent: 'center',
                 position: 'relative',
                 letterSpacing: '2px',
                 gap: 10,
@@ -483,15 +489,6 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                 </div>
             </div>
             <div style={{ display: 'grid', gap: 12 }}>
-                {newUsername && <div style={{
-                    fontSize: 12,
-                    display: 'grid',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                }}>
-                    <div style={{ padding: '0 8px', display: 'grid', placeContent: 'center' }}>{`your new account is ready!`}</div>
-                </div>}
-
                 <input
                     className={dellaRespira.className}
                     id="username"
@@ -637,7 +634,6 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                     }}
                     style={{
                         display: 'grid',
-
                         border: '1px solid rgba(255, 255, 255, 0.1)',
                         borderRadius: 10,
                         height: 50,
@@ -646,7 +642,7 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                         fontSize: 13,
                         placeContent: 'center',
                     }}>
-                    {'create a new account'}
+                    {'become a creator'}
                 </div>
                 <div style={{
                     fontSize: 11,
@@ -701,7 +697,8 @@ function LoggedInBody({ me, laurusApi, resolution, onNewFormType }: LoggedInBody
         <div
             style={{
                 display: 'grid',
-                placeContent: 'center',
+                alignContent: 'start',
+                justifyContent: 'center',
                 position: 'relative',
                 letterSpacing: '2px',
                 gap: 10,
@@ -780,10 +777,7 @@ function LoggedInBody({ me, laurusApi, resolution, onNewFormType }: LoggedInBody
                     }}>
                     {'switch accounts'}
                 </div>
-
             </div>
-
-
         </div>
     </>
 }
@@ -808,11 +802,11 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                 input: { height: 50, fontSize: 14, padding: "8px 35px 8px 12px", },
             }
             case "midhigh": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
             case "midlow":
             case "low": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 11, padding: "8px 35px 8px 12px", },
             }
         }
     });
@@ -820,7 +814,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
         <div
             style={{
                 display: 'grid',
-                placeContent: 'center',
+                alignContent: 'start',
+                justifyContent: 'center',
                 position: 'relative',
                 letterSpacing: '2px',
                 gap: 10,
@@ -892,7 +887,6 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                     required
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                         <input
                             className={dellaRespira.className}
@@ -969,36 +963,39 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                             setButtonBorder(ButtonBorderColor.red);
                             return;
                         }
-                        const register: Register_V1_0 = {
-                            username,
-                            email,
-                            password
-                        }
-                        buttonBorderRef.current = ButtonBorderColor.white;
-                        setButtonBorder(ButtonBorderColor.white);
-                        setMsg("wait a sec");
-                        const registerResult = await registerUser(laurusApi, register);
-                        if (!registerResult.success) {
-                            buttonBorderRef.current = ButtonBorderColor.red;
-                            const newMsg = (registerResult.message == EMAIL_ERROR || registerResult.message == USERNAME_ERROR) ?
-                                registerResult.message :
-                                LANDING_ERROR;
-                            setMsg(newMsg);
-                            setButtonBorder(ButtonBorderColor.red);
-                            return;
-                        }
-                        else {
-                            if (registerResult.success) {
-                                setMsg("");
-                                buttonBorderRef.current = ButtonBorderColor.purple;
-                                setButtonBorder(ButtonBorderColor.purple);
-                                onNewUsername(username);
-                                onNewFormType(LandingFormType.login);
+                        const confirmed = window.confirm('Becoming a creator this early in the project is subject to further approval. Are you sure you want to continue?');
+                        if (confirmed) {
+                            const register: Register_V1_0 = {
+                                username,
+                                email,
+                                password
+                            }
+                            buttonBorderRef.current = ButtonBorderColor.white;
+                            setButtonBorder(ButtonBorderColor.white);
+                            setMsg("wait a sec");
+                            const registerResult = await registerUser(laurusApi, register);
+                            if (!registerResult.success) {
+                                buttonBorderRef.current = ButtonBorderColor.red;
+                                const newMsg = (registerResult.message == EMAIL_ERROR || registerResult.message == USERNAME_ERROR) ?
+                                    registerResult.message :
+                                    LANDING_ERROR;
+                                setMsg(newMsg);
+                                setButtonBorder(ButtonBorderColor.red);
+                                return;
                             }
                             else {
-                                setMsg(registerResult.message);
-                                buttonBorderRef.current = ButtonBorderColor.red;
-                                setButtonBorder(ButtonBorderColor.red);
+                                if (registerResult.success) {
+                                    setMsg("");
+                                    buttonBorderRef.current = ButtonBorderColor.purple;
+                                    setButtonBorder(ButtonBorderColor.purple);
+                                    onNewUsername(username);
+                                    onNewFormType(LandingFormType.login);
+                                }
+                                else {
+                                    setMsg(registerResult.message);
+                                    buttonBorderRef.current = ButtonBorderColor.red;
+                                    setButtonBorder(ButtonBorderColor.red);
+                                }
                             }
                         }
                     }}
@@ -1016,7 +1013,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                         '--color-secondary': buttonBorderRecord[buttonBorder].s,
                         '--color-tertiary': buttonBorderRecord[buttonBorder].t,
                     } as React.CSSProperties}>
-                    {msg ? msg : 'create account'}
+                    {msg ? msg : 'become a creator'}
                 </div>
                 <div style={{
                     fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1067,11 +1064,11 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                 input: { height: 50, fontSize: 14, padding: "8px 35px 8px 12px", },
             }
             case "midhigh": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
             case "midlow":
             case "low": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
         }
     });
@@ -1108,7 +1105,8 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
         <div
             style={{
                 display: 'grid',
-                placeContent: 'center',
+                alignContent: 'start',
+                justifyContent: 'center',
                 position: 'relative',
                 letterSpacing: '2px',
                 gap: 10,
@@ -1143,6 +1141,8 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                         setEmail(v.currentTarget.value);
                         setMsg("");
                         setButtonBorder(ButtonBorderColor.purple);
+                        setTimeLeft(0);
+                        setIsRunning(false);
                     }}
                     style={{
                         ...dynamicSizes.input,
@@ -1202,7 +1202,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                         '--color-secondary': buttonBorderRecord[buttonBorder].s,
                         '--color-tertiary': buttonBorderRecord[buttonBorder].t,
                     } as React.CSSProperties}>
-                    {msg ? msg : 'email me'}
+                    {msg ? msg : 'reset password'}
                 </div>
                 <div style={{
                     fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1254,11 +1254,11 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
                 input: { height: 50, fontSize: 14, padding: "8px 35px 8px 12px", },
             }
             case "midhigh": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
             case "midlow":
             case "low": return {
-                input: { height: 40, fontSize: 11, padding: "8px 35px 8px 12px", },
+                input: { height: 50, fontSize: 12, padding: "8px 35px 8px 12px", },
             }
         }
     });
@@ -1266,7 +1266,8 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
         <div
             style={{
                 display: 'grid',
-                placeContent: 'center',
+                alignContent: 'start',
+                justifyContent: 'center',
                 position: 'relative',
                 letterSpacing: '2px',
                 gap: 10,
