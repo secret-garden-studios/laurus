@@ -59,7 +59,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                 display: 'grid',
                 height: '100vh',
                 width: '100vw',
-                gridTemplateRows: `${formType == LandingFormType.loggedIn || formType == LandingFormType.passwordConfirmation ? 35 : 30}vh auto min-content`,
+                gridTemplateRows: `${resolution.type == 'low' ? 0 : formType == LandingFormType.loggedIn || formType == LandingFormType.passwordConfirmation ? 35 : 30}vh auto min-content`,
                 color: 'rgb(227,227,227)'
             }} >
             <div />
