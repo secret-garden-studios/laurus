@@ -114,15 +114,15 @@ async function fetchMediaFromServer(
     return { browserImgs, browserSvgs }
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ logout?: string, project_id?: string }> }) {
-    const { logout, project_id } = await searchParams;
+export default async function Page({ searchParams }: { searchParams: Promise<{ guest?: string, project_id?: string }> }) {
+    const { guest, project_id } = await searchParams;
     const mediaPageSize = process.env.MEDIA_PAGE_SIZE;
     const laurusApi = process.env.LAURUS_API;
-    const me = fetchMe(laurusApi, Boolean(logout));
+    const me = fetchMe(laurusApi, Boolean(guest));
     const projects = getProjects(laurusApi);
     const effectsEnum = getEffects(laurusApi);
     const mediaPageSizeInit = mediaPageSize ? (parseInt(mediaPageSize) || 0) : 0;
-    const projectDependencies = fetchProject(laurusApi, Boolean(logout), projects, project_id,);
+    const projectDependencies = fetchProject(laurusApi, Boolean(guest), projects, project_id,);
     const browserDependencies = fetchMediaFromServer(laurusApi, mediaPageSizeInit);
 
     return <>

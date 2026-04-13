@@ -3,11 +3,11 @@ import ProjectsBoot from "./projects.boot";
 import { getProjects } from "./projects.server";
 export const dynamic = 'force-dynamic';
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ logout?: string }> }) {
-    const { logout } = await searchParams;
+export default async function Page({ searchParams }: { searchParams: Promise<{ guest?: string }> }) {
+    const { guest } = await searchParams;
     const laurusApi = process.env.LAURUS_API;
     const projects = getProjects(laurusApi);
-    const mePromise = fetchMe(laurusApi, Boolean(logout));
+    const mePromise = fetchMe(laurusApi, Boolean(guest));
     return <ProjectsBoot
         laurusApi={laurusApi}
         projectsPromise={projects}

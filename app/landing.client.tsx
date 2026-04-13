@@ -658,10 +658,10 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={async () => {
                         if (resolution.type == 'low') {
-                            router.push('/screens?logout=true');
+                            router.push('/screens?guest=true');
                         }
                         else {
-                            router.push('/workspace?logout=true');
+                            router.push('/workspace?guest=true');
                         }
                     }}
                     style={{
@@ -1372,10 +1372,10 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={async () => {
                         if (resolution.type == 'low') {
-                            router.push('/screens?logout=true');
+                            router.push('/screens?guest=true');
                         }
                         else {
-                            router.push('/workspace?logout=true');
+                            router.push('/workspace?guest=true');
                         }
                     }}
                     style={{

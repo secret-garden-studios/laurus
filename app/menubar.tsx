@@ -81,7 +81,7 @@ export default function Menubar({ resolution, me }: Menubar) {
             <div
                 className={styles['animated-nav-dark']}
                 onClick={async () => {
-                    router.push(me ? '/' : '/?logout=true');
+                    router.push(me ? '/' : '/?guest=true');
                 }}
                 style={{
                     cursor: 'pointer',
@@ -94,7 +94,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                 style={linkGridStyle}>
                 <div
                     onClick={async () => {
-                        router.push(me ? '/projects' : '/projects?logout=true');
+                        router.push(me ? '/projects' : '/projects?guest=true');
                     }}
                     style={{
                         paddingTop: dynamicSizes.linkPaddingTop,
@@ -118,7 +118,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                 style={linkGridStyle}>
                 <div
                     onClick={async () => {
-                        router.push(me ? '/workspace' : '/workspace?logout=true');
+                        router.push(me ? '/workspace' : '/workspace?guest=true');
                     }}
                     style={{
                         paddingTop: dynamicSizes.linkPaddingTop,
@@ -142,7 +142,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                 style={linkGridStyle}>
                 <div
                     onClick={async () => {
-                        router.push(me ? '/screens' : '/screens?logout=true');
+                        router.push(me ? '/screens' : '/screens?guest=true');
                     }}
                     style={{
                         paddingTop: dynamicSizes.linkPaddingTop,
@@ -173,7 +173,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                 <div
                     className={styles['animated-nav-dark']}
                     onClick={async () => {
-                        router.push('/?logout=true');
+                        router.push('/?guest=true');
                     }}
                     style={{ ...linkStyle, marginLeft: 'auto', ...dynamicSizes.me }}>
                     {'login'}

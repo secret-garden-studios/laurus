@@ -14,13 +14,13 @@ async function fetchMedia(pageSize: number) {
     return videoMedia
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ logout?: string }> }) {
-    const { logout } = await searchParams;
+export default async function Page({ searchParams }: { searchParams: Promise<{ guest?: string }> }) {
+    const { guest } = await searchParams;
     const laurusApi = process.env.LAURUS_API;
     const pageSize = process.env.VIDEO_MEDIA_PAGE_SIZE ?
         (parseInt(process.env.VIDEO_MEDIA_PAGE_SIZE) || 5) :
         5;
-    const mePromise = fetchMe(laurusApi, Boolean(logout));
+    const mePromise = fetchMe(laurusApi, Boolean(guest));
     const videoMedia = fetchMedia(pageSize);
     return (
         <ScreensBoot
