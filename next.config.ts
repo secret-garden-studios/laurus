@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
       {
         source: '/api/:path*',
         destination: 'https://amazonaws.com*',
+        basePath: false,
       },
     ];
   },
