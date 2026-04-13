@@ -2,19 +2,25 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  // Check if the request is for our proxied API
   if (request.nextUrl.pathname.startsWith('/api')) {
-    // 1. Construct the new URL
-    const targetPath = request.nextUrl.pathname.replace(/^\/api/, '');
-    const searchParams = request.nextUrl.search;
-    const destination = `https://amazonaws.com${targetPath}${searchParams}`;
+    // 1. Extract the path after '/api' (e.g., '/login')
+    const path = request.nextUrl.pathname.replace(/^\/api/, '');
+    
+    // 2. Build the exact AWS URL including the stage '/prod'
+    // Ensure no double slashes: if path is '/login', it becomes .../prod/login
+    const awsUrl = `https://amazonaws.com${path}`;
+    
+    const url = new URL(awsUrl);
+    // Add any existing query parameters
+    url.search = request.nextUrl.search;
 
-    // 2. Clone headers and set the correct Host for AWS
     const requestHeaders = new Headers(request.headers);
+    
+    // 3. CRITICAL: AWS API Gateway often rejects requests if 'host' isn't its own URL.
     requestHeaders.set('host', 'j9w1qh5b65.execute-api.us-east-2.amazonaws.com');
 
-    // 3. Rewrite to the destination with corrected headers
-    return NextResponse.rewrite(new URL(destination), {
+    // 4. Perform the rewrite
+    return NextResponse.rewrite(url, {
       request: {
         headers: requestHeaders,
       },
@@ -22,7 +28,6 @@ export function middleware(request: NextRequest) {
   }
 }
 
-// Ensure middleware only runs for /api routes to save performance
 export const config = {
   matcher: '/api/:path*',
 };
