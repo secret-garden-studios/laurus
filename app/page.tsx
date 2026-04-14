@@ -11,7 +11,6 @@ export async function fetchMe(
   laurusApi: string | undefined,
   logoutFlag: boolean): Promise<MeDependencies> {
   const cookieStore = await cookies();
-  console.log('All Cookies:', cookieStore.getAll());
   const token = cookieStore.get('refresh_token')?.value;
   if (token) {
     if (logoutFlag) {
