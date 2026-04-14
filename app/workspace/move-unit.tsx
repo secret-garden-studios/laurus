@@ -144,10 +144,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
             const carouselEntry = appState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
-                    return appState.project.svgs.entries().find(m => m[1].svg_media_id == carouselEntry.value.svg_media_id)?.[0] ?? "";
+                    return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
                 }
                 case "img": {
-                    return appState.project.imgs.entries().find(m => m[1].img_media_id == carouselEntry.value.img_media_id)?.[0] ?? "";
+                    return appState.project.imgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
                 }
             }
         }

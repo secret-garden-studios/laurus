@@ -150,7 +150,7 @@ export default function Canvas() {
                     const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
                     if (encodedSvg) {
                         dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', value: { ...projectSvg } } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey, value: { ...projectSvg } } });
                     }
                 }
                 else {
@@ -165,7 +165,7 @@ export default function Canvas() {
                     const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
                     if (encodedSvg) {
                         dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
-                         dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', value: { ...projectSvg } } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey, value: { ...projectSvg } } });
                     }
                 }
             }
@@ -202,7 +202,7 @@ export default function Canvas() {
                     const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
                     if (encodedImg) {
                         dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', value: { ...projectImg } } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey, value: { ...projectImg } } });
                     }
                 }
                 else {
@@ -217,7 +217,7 @@ export default function Canvas() {
                     const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
                     if (encodedImg) {
                         dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', value: { ...projectImg } } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey, value: { ...projectImg } } });
                     }
                 }
             }

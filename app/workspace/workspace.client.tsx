@@ -89,8 +89,8 @@ export interface LaurusProjectResult extends ProjectResult_V1_0 {
     svgs: Map<string, LaurusProjectSvg>
 }
 export type CarouselEntry =
-    | { type: 'svg', value: LaurusProjectSvg }
-    | { type: 'img', value: LaurusProjectImg }
+    | { type: 'svg', key: string, value: LaurusProjectSvg }
+    | { type: 'img', key: string, value: LaurusProjectImg }
 
 /**
  * if state is used across a depth of three or more components, it belongs in here.
@@ -186,6 +186,7 @@ export enum WorkspaceActionType {
     SetRecordingLight,
     SetFps,
     AddCarouselEntry,
+    DeleteCarouselEntry,
 }
 
 export type WorkspaceAction =
@@ -212,6 +213,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetRecordingLight, value: boolean }
     | { type: WorkspaceActionType.SetFps, value: number }
     | { type: WorkspaceActionType.AddCarouselEntry, value: CarouselEntry }
+    | { type: WorkspaceActionType.DeleteCarouselEntry, key: string }
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
     switch (action.type) {
@@ -345,6 +347,10 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.AddCarouselEntry: {
             return { ...state, carouselEntries: [...state.carouselEntries, action.value] }
         }
+        case WorkspaceActionType.DeleteCarouselEntry: {
+            const newEntries = [...state.carouselEntries].filter(m => m.key != action.key);
+            return { ...state, carouselEntries: newEntries }
+        }
     }
 }
 
@@ -380,17 +386,17 @@ function initCarouselEntries(
     project: LaurusProjectResult,
 ): CarouselEntry[] {
     const temp: { entry: CarouselEntry, distance: number }[] = [];
-    project.imgs.forEach((projectImg) => {
-        const distance = Math.sqrt(projectImg.top ** 2 + projectImg.left ** 2);
+    project.imgs.entries().forEach((projectImg) => {
+        const distance = Math.sqrt(projectImg[1].top ** 2 + projectImg[1].left ** 2);
         temp.push({
-            entry: { type: 'img', value: { ...projectImg } },
+            entry: { type: 'img', key: projectImg[0], value: { ...projectImg[1] } },
             distance
         });
     });
-    project.svgs.forEach((projectSvg) => {
-        const distance = Math.sqrt(projectSvg.top ** 2 + projectSvg.left ** 2);
+    project.svgs.entries().forEach((projectSvg) => {
+        const distance = Math.sqrt(projectSvg[1].top ** 2 + projectSvg[1].left ** 2);
         temp.push({
-            entry: { type: 'svg', value: { ...projectSvg } },
+            entry: { type: 'svg', key: projectSvg[0], value: { ...projectSvg[1] } },
             distance
         });
     });
@@ -1163,10 +1169,6 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                     onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                     onClick={async () => {
-                                        if (appState.activeElement?.key == key) {
-                                            dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
-                                        }
-
                                         const snapshot: LaurusProjectResult = { ...appState.project };
                                         const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
                                         newImgs.delete(key);
@@ -1178,6 +1180,10 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                                 dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
                                             }
                                             else {
+                                                if (appState.activeElement?.key == key) {
+                                                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                                                }
+                                                dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key });
                                                 // clean up effects
                                                 for (let i = 0; i < appState.effects.length; i++) {
                                                     const effect = appState.effects[i];
@@ -1307,10 +1313,6 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                         onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                                         onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                                         onClick={async () => {
-                                            if (appState.activeElement?.key == key) {
-                                                dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
-                                            }
-
                                             const snapshot: LaurusProjectResult = { ...appState.project };
                                             const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
                                             newSvgs.delete(key);
@@ -1322,6 +1324,10 @@ export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaO
                                                     dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
                                                 }
                                                 else {
+                                                    if (appState.activeElement?.key == key) {
+                                                        dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                                                    }
+                                                    dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key });
                                                     // clean up effects
                                                     for (let i = 0; i < appState.effects.length; i++) {
                                                         const effect = appState.effects[i];

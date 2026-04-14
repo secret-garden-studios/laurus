@@ -9,11 +9,11 @@ interface UnitDisplay {
     carouselIndex: number,
     onNewCarouselIndex: (newIndex: number) => void,
 }
-export default function UnitDisplay({carouselIndex, onNewCarouselIndex}: UnitDisplay) {
+export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitDisplay) {
     const { appState } = useContext(WorkspaceContext);
     const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [displaySize] = useState(() => getDisplaySize(appState.resolution));
-    
+
     useEffect(() => {
         (async () => {
             const index = appState.carouselEntries.findIndex(c => c.value.media_key == appState.activeElement?.value.value.media_key);
@@ -40,7 +40,7 @@ export default function UnitDisplay({carouselIndex, onNewCarouselIndex}: UnitDis
                 }}>
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
-                        svg={carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
+                        svg={appState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
                         containerSize={{
                             width: 30,
                             height: 30
@@ -50,9 +50,6 @@ export default function UnitDisplay({carouselIndex, onNewCarouselIndex}: UnitDis
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             if (appState.carouselEntries.length > newIndex) {
                                 onNewCarouselIndex(newIndex);
-                            }
-                            else {
-                                onNewCarouselIndex(-1);
                             }
                         }} />
                 </div>
@@ -101,19 +98,16 @@ export default function UnitDisplay({carouselIndex, onNewCarouselIndex}: UnitDis
                 </div>
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
-                        svg={carouselIndex == appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
+                        svg={appState.carouselEntries.length == 0 || carouselIndex >= appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
                         containerSize={{
                             width: 30,
                             height: 30
                         }}
                         scale={0.7}
                         onContainerClick={() => {
-                            const newIndex = Math.min(carouselIndex + 1, appState.carouselEntries.length - 1);
+                            const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             if (appState.carouselEntries.length > newIndex) {
                                 onNewCarouselIndex(newIndex);
-                            }
-                            else {
-                                onNewCarouselIndex(-1);
                             }
                         }} />
                 </div>
