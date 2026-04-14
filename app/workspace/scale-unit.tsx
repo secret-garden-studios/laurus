@@ -1,15 +1,14 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusSvgResult, LaurusImgResult, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
-import { ReactImg } from "./media";
 import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, SvgRepo } from "../svg-repo";
-import styles from "../app.module.css";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { deleteScale, getScale, updateScale } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import ParameterSlider from "../components/parameter-slider";
 import { getDisplaySize, getHeaderSize, getParamButtonSize, getParamCapSize, getParamGrooveWidth, getParamTrackPadding, getParamTrackSize, getTopLevelPadding } from "./unit-resolution";
+import UnitDisplay from "./unit-display";
 
 interface ScaleUnit {
     scale: LaurusScaleResult
@@ -18,9 +17,16 @@ interface ScaleUnit {
 }
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const placeholderElementRef = useRef<HTMLDivElement>(null);
-
     const [displaySize] = useState(() => getDisplaySize(appState.resolution));
+    const [carouselIndex, setCarouselIndex] = useState(() => {
+        const index = appState.carouselEntries.findIndex(c => c.value.media_key == appState.activeElement?.value.value.media_key)
+        if (index > -1) {
+            return index;
+        }
+        else {
+            return 0;
+        }
+    });
     const [headerSize] = useState(() => getHeaderSize(appState.resolution));
     const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
     const [mainControls, setMainControls] = useState(true);
@@ -87,9 +93,27 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
         }
     }, [appState.apiOrigin, appState.accessToken, dispatch]);
 
+    const getCarouselEntryKey = useCallback(() => {
+        if (carouselIndex < appState.carouselEntries.length) {
+            const carouselEntry = appState.carouselEntries[carouselIndex];
+            switch (carouselEntry.type) {
+                case "svg": {
+                    return appState.project.svgs.entries().find(m => m[1].svg_media_id == carouselEntry.value.svg_media_id)?.[0] ?? "";
+                }
+                case "img": {
+                    return appState.project.imgs.entries().find(m => m[1].img_media_id == carouselEntry.value.img_media_id)?.[0] ?? "";
+                }
+            }
+        }
+        else {
+            return "";
+        }
+    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
+
     useLayoutEffect(() => {
         (async () => {
-            const activeEquation = scale.math.get(appState.activeElement?.key ?? "");
+            const activeKey = getCarouselEntryKey();
+            const activeEquation = scale.math.get(activeKey);
             let scaleInit = 1;
             let timeInit = appState.timelineMaxValue
             if (activeEquation) {
@@ -108,7 +132,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             }
 
             if (scaleRef.current) {
-                const activeMath = scale.math.get(appState.activeElement?.key ?? "");
+                const activeMath = scale.math.get(activeKey);
                 if (activeMath) {
                     scaleRef.current.value = activeMath.scale >= 1 ? activeMath.scale.toFixed(2) : activeMath.scale.toFixed(3);
                 }
@@ -117,24 +141,25 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                 }
             }
         })();
-    }, [appState.activeElement?.key, appState.timelineMaxValue, getScaleCursor, getTimeCursor, scale.math]);
+    }, [appState.timelineMaxValue, getCarouselEntryKey, getScaleCursor, getTimeCursor, scale.math]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        if (!appState.activeElement) return [];
+        const activeKey = getCarouselEntryKey();
+        if (!activeKey) return [];
         const newAnimations: Animation[] = [];
         const response: LaurusScaleResult | undefined =
-            await getScale(appState.apiOrigin, scale.scale_id, appState.activeElement.key);
+            await getScale(appState.apiOrigin, scale.scale_id, activeKey);
         if (response) {
             const activeMath = response.math
-                .get(appState.activeElement.key);
+                .get(activeKey);
             if (!activeMath) return [];
             const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
                 .map(s => { return { "scale": s } }) ?? [];
             const options: KeyframeAnimationOptions = {
                 duration: firstFrame ? 2 / response.fps : response.end * 1000,
             }
-            const previewKey = appState.tool.type != 'viewport' ? `${appState.activeElement.key}|preview` : appState.activeElement.key;
-            switch (appState.activeElement.value.type) {
+            const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
+            switch (appState.carouselEntries[carouselIndex].type) {
                 case "svg": {
                     const svgRef = svgElementsRef.current?.get(previewKey);
                     if (!svgRef) return [];
@@ -157,7 +182,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             }
         }
         return newAnimations;
-    }, [appState.activeElement, appState.apiOrigin, appState.tool.type, imgElementsRef, scale.scale_id, svgElementsRef]);
+    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, getCarouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
 
     return (
         <div style={{
@@ -209,60 +234,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
             {mainControls ?
                 <>
                     {/* display */}
-                    <div style={{ padding: topLevelPadding }}>
-                        <div
-                            className={styles["large-tiled-background-squares"]}
-                            style={{
-                                padding: `${displaySize.padding}px`,
-                                display: 'grid',
-                                width: `${displaySize.width}px`, height: `${displaySize.height}px`,
-                                borderRadius: 10,
-                                border: '1px solid rgba(10,10,10,1)',
-                                position: 'relative',
-                            }}>
-                            {/* active element */}
-                            <div style={{ position: 'absolute', width: '100%', height: '100%', }}>
-                                <div style={{
-                                    position: 'relative',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    width: '100%', height: '100%',
-                                    overflow: 'hidden'
-                                }}>
-                                    <div
-                                        ref={placeholderElementRef}
-                                        style={{ position: 'absolute' }}>
-                                        {appState.activeElement ? (() => {
-                                            switch (appState.activeElement.value.type) {
-                                                case "svg": {
-                                                    return (
-                                                        <SvgRepo
-                                                            svg={appState.activeElement.value.value as LaurusSvgResult}
-                                                            containerSize={{
-                                                                width: displaySize.activeSvgElementSize,
-                                                                height: displaySize.activeSvgElementSize
-                                                            }}
-                                                            scale={1}
-                                                        />
-                                                    )
-                                                }
-                                                case "img": {
-                                                    return (
-                                                        <ReactImg
-                                                            img={appState.activeElement.value.value as LaurusImgResult}
-                                                            containerSize={{
-                                                                width: displaySize.activeImgElementSize,
-                                                                height: displaySize.activeImgElementSize
-                                                            }}
-                                                        />
-                                                    )
-                                                }
-                                            }
-                                        })() : (<></>)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
                     {/* controls */}
                     <div style={{
                         display: 'grid',
@@ -295,15 +267,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
 
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
-                                            const activeId = appState.activeElement?.key ?? "";
-                                            if (activeId) {
+                                            const activeKey = getCarouselEntryKey();
+                                            if (activeKey) {
                                                 const snapshot: LaurusScaleResult = { ...scale }
-                                                const activeEquation = snapshot.math.get(activeId);
+                                                const activeEquation = snapshot.math.get(activeKey);
                                                 const newServerTime = newTime * 1000;
                                                 const newEquation = activeEquation ?
                                                     { ...activeEquation, time: newServerTime } :
                                                     {
-                                                        input_id: activeId,
+                                                        input_id: activeKey,
                                                         time: newServerTime,
                                                         scale: 1,
                                                         loop: false,
@@ -366,14 +338,14 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 }}>
                                     <div
                                         onClick={() => {
-                                            const activeId = appState.activeElement?.key ?? "";
-                                            if (activeId) {
+                                            const activeKey = getCarouselEntryKey();
+                                            if (activeKey) {
                                                 const snapshot: LaurusScaleResult = { ...scale };
-                                                const activeEquation = snapshot.math.get(activeId);
+                                                const activeEquation = snapshot.math.get(activeKey);
                                                 const newEquation = activeEquation ?
                                                     { ...activeEquation, loop: !activeEquation.loop } :
                                                     {
-                                                        input_id: activeId,
+                                                        input_id: activeKey,
                                                         time: appState.timelineMaxValue * 1000,
                                                         scale: 1,
                                                         loop: true,
@@ -383,16 +355,16 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             }
                                         }}
                                         style={{
-                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
+                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
                                             borderBottom: '1px solid rgba(10,10,10,1)',
-                                            background: scale.math.get(appState.activeElement?.key ?? "")?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                            background: scale.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         }}>
                                         <SvgRepo
-                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                                            svg={scale.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -417,7 +389,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             });
                                         }}
                                         style={{
-                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
+                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -425,7 +397,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
-                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                                            svg={scale.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -451,7 +423,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                         }}
                                         style={{
-                                            cursor: scale.math.has(appState.activeElement?.key ?? "") ? 'pointer' : '',
+                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -459,7 +431,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             borderBottom: '1px solid rgba(10,10,10,1)',
                                         }}>
                                         <SvgRepo
-                                            svg={scale.math.has(appState.activeElement?.key ?? "") ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                                            svg={scale.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
                                             containerSize={{
                                                 width: paramButtonSize.svg,
                                                 height: paramButtonSize.svg
@@ -502,14 +474,14 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                         if (!scaleTrackRef.current) return;
                                         const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
 
-                                        const activeId = appState.activeElement?.key ?? "";
-                                        if (activeId) {
+                                        const activeKey = getCarouselEntryKey();
+                                        if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
-                                            const activeEquation = snapshot.math.get(activeId);
+                                            const activeEquation = snapshot.math.get(activeKey);
                                             const newEquation = activeEquation ?
                                                 { ...activeEquation, scale: newScaleValue } :
                                                 {
-                                                    input_id: activeId,
+                                                    input_id: activeKey,
                                                     time: appState.timelineMaxValue * 1000,
                                                     scale: newScaleValue,
                                                     loop: false,

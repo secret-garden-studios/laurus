@@ -2,7 +2,7 @@ import { useContext, useState } from "react"
 import { WorkspaceActionType, WorkspaceContext } from "./workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../fonts";
-import { SvgRepo, lassoSelect, deployedCode, browse, checkCircle } from "../svg-repo";
+import { SvgRepo, lassoSelect, deployedCode, browse } from "../svg-repo";
 import { WorkspaceResolution } from "./workspace-resolution";
 
 interface Toolbar {
@@ -118,31 +118,16 @@ export default function Toolbar({ resolution }: Toolbar) {
                 fontSize: rightPanelSize.tooltipFont2,
                 borderRadius: "8px",
                 boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-                maxWidth: "400px",
+                maxWidth: "300px",
                 zIndex: 99
             }}
             render={() => (
                 <div style={{ padding: 4, width: '100%' }}>
                     <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Activate Tool</h4>
                     <p style={{ marginBottom: rightPanelSize.tooltipMarginBottom2 }}>
-                        With this tool selected, click an image or svg on the canvas to view the <strong>context menu</strong>.
+                        With this tool selected, click an image or svg on the canvas to view its <strong>context menu</strong>.
                     </p>
-                    <div style={{ marginBottom: 10, display: 'flex' }}>
-                        <p>Click</p>
-                        <div style={{ padding: '0px 6px' }}>
-                            <SvgRepo
-                                svg={checkCircle()}
-                                containerSize={{
-                                    width: 18,
-                                    height: 18
-                                }}
-                                scale={0.9} />
-                        </div>
-                        <p>in the <strong>context menu</strong> to set the <strong>active element</strong>.</p>
-                    </div>
-                    <p style={{ marginBottom: 10 }}>
-                        Apply visual effects to the <strong>active element</strong> in the <strong>timeline area</strong>.
-                    </p>
+
                 </div>
             )}
         />
@@ -184,7 +169,7 @@ export default function Toolbar({ resolution }: Toolbar) {
             render={() => (
                 <div style={{ padding: 4, width: '100%' }}>
                     <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Viewport Tool</h4>
-                    <p style={{ }}>
+                    <p>
                         Hides all media on the canvas that lands outside of the <strong>frame</strong>.
                     </p>
                 </div>

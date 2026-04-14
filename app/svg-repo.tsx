@@ -1063,3 +1063,35 @@ export function lockOpenRight(
         markup: base64Encode(`<path d="M536.5-303.5Q560-327 560-360t-23.5-56.5Q513-440 480-440t-56.5 23.5Q400-393 400-360t23.5 56.5Q447-280 480-280t56.5-23.5ZM240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h280v-80q0-83 58.5-141.5T720-920q75 0 130.5 48.5T917-752q2 13-9 22.5t-28 9.5q-17 0-28-7t-16-23q-11-38-42.5-64T720-840q-50 0-85 35t-35 85v80h120q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Z"/>`)
     }
 }
+
+export function chevronLeft(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/chevron_left_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/>`)
+    }
+}
+
+export function chevronRight(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/chevron_right_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>`)
+    }
+}
