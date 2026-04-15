@@ -41,7 +41,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
         x: 0,
         y: 0,
         z: 0,
-        time: 0,
+        time: 0.000001,
         angle: 0,
     });
     const [paramTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
@@ -172,7 +172,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                 initControls.x = 0;
                 initControls.y = 0;
                 initControls.z = 0;
-                initControls.time = 0;
+                initControls.time = 0.000001;
                 initControls.angle = 0;
             }
             updateTrackpads(initControls);
@@ -314,7 +314,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                                                     { ...activeEquation, x: newX } :
                                                     {
                                                         input_id: activeKey,
-                                                        time: 0,
+                                                        time: 0.000001,
                                                         loop: false,
                                                         solution: [],
                                                         angle: 0,
@@ -349,7 +349,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                                                     { ...activeEquation, y: newY } :
                                                     {
                                                         input_id: activeKey,
-                                                        time: 0,
+                                                        time: 0.000001,
                                                         loop: false,
                                                         solution: [],
                                                         angle: 0,
@@ -384,7 +384,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                                                     { ...activeEquation, z: newZ } :
                                                     {
                                                         input_id: activeKey,
-                                                        time: 0,
+                                                        time: 0.000001,
                                                         loop: false,
                                                         solution: [],
                                                         angle: 0,
@@ -453,7 +453,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                                                     { ...activeEquation, loop: !activeEquation.loop } :
                                                     {
                                                         input_id: activeKey,
-                                                        time: 0,
+                                                        time: 0.000001,
                                                         loop: true,
                                                         solution: [],
                                                         angle: 0,
@@ -654,7 +654,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef }: R
                                                 { ...activeEquation, angle: newAngle } :
                                                 {
                                                     input_id: activeKey,
-                                                    time: 0,
+                                                    time: 0.000001,
                                                     loop: false,
                                                     solution: [],
                                                     angle: newAngle,
