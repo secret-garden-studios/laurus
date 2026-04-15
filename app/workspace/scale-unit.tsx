@@ -338,6 +338,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                 }}>
                                     <div
                                         onClick={() => {
+                                            if (scale.locked) return;
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusScaleResult = { ...scale };
@@ -355,7 +356,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                             }
                                         }}
                                         style={{
-                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: scale.locked ? '' : scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
@@ -640,6 +641,7 @@ function ScaleSlider({
             <div
                 ref={trackRef}
                 onMouseDown={(e) => {
+                    if (disabled) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = Math.round(e.clientX - rect.left);
                     const y = Math.round(e.clientY - rect.top);
@@ -648,7 +650,7 @@ function ScaleSlider({
                 style={{
                     zIndex: 0,
                     top: 0,
-                    cursor: 'crosshair',
+                    cursor: disabled ? '' : 'crosshair',
                     position: "absolute",
                     ...trackSize,
                     background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",

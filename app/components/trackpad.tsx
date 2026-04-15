@@ -125,7 +125,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
             style={{
                 ...dndCss,
                 ...css,
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
                 position: 'absolute',
                 width,
                 height,

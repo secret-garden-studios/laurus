@@ -158,7 +158,7 @@ function BlurryCap({ id, rotation, disabled }: BlurryCapProps) {
                     position: 'absolute',
                     width: `${dialSize}px`,
                     height: `${dialSize}px`,
-                    cursor: isDragging ? 'grabbing' : 'grab',
+                    cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
                     borderRadius: '50%',
                 }} />
         </div >

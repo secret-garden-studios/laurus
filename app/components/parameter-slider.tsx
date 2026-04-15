@@ -66,6 +66,7 @@ export default function ParameterSlider({
                 <div
                     ref={trackRef}
                     onMouseDown={(e) => {
+                        if (disabled) return;
                         const rect = e.currentTarget.getBoundingClientRect();
                         const x = Math.round(e.clientX - rect.left);
                         const y = Math.round(e.clientY - rect.top);
@@ -74,7 +75,7 @@ export default function ParameterSlider({
                     }}
                     style={{
                         zIndex: 0,
-                        cursor: 'crosshair',
+                        cursor: disabled ? '' : 'crosshair',
                         top: 0,
                         left: 0,
                         right: 0,

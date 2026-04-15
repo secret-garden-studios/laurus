@@ -484,6 +484,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                 }}>
                                     <div
                                         onClick={() => {
+                                            if (move.locked) return;
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -505,7 +506,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             }
                                         }}
                                         style={{
-                                            cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.locked ? '' : move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
                                             width: paramButtonSize.container,
                                             height: paramButtonSize.container,
                                             display: 'grid',
