@@ -1095,3 +1095,19 @@ export function chevronRight(
         markup: base64Encode(`<path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>`)
     }
 }
+
+export function toysFan(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/toys_fan_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M480-480q0-91 64.5-155.5T700-700q91 0 155.5 64.5T920-480H480ZM104.5-324.5Q40-389 40-480h440q0 91-64.5 155.5T260-260q-91 0-155.5-64.5ZM480-480q-91 0-155.5-64.5T260-700q0-91 64.5-155.5T480-920v440Zm0 440v-440q91 0 155.5 64.5T700-260q0 91-64.5 155.5T480-40Z"/>`)
+    }
+}

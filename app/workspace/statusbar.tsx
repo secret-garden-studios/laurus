@@ -3,7 +3,7 @@
 import { useContext, useState } from "react";
 import { WorkspaceContext } from "./workspace.client";
 import { dellaRespira, ubuntuMono } from "../fonts";
-import { allOut, browse, contentPaste, deployedCode, earthquake, folder, lassoSelect, SvgRepo } from "../svg-repo";
+import { allOut, browse, contentPaste, deployedCode, earthquake, folder, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -118,6 +118,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                                                 switch (appState.effectClipboard!.type) {
                                                     case "scale": return allOut();
                                                     case "move": return earthquake();
+                                                    case "rotate": return toysFan();
                                                 }
                                             })()}
                                             containerSize={{

@@ -764,12 +764,202 @@ export async function deleteMove(
     }
 }
 
-/* /frames */
+/* /rotates */
 
+export interface RotateEquation_V1_0 {
+    input_id: string
+    x: number
+    y: number
+    z: number
+    angle: number
+    time: number
+    loop: boolean
+    solution: { x: number, y: number, z: number, angle: number }[]
+}
+export interface Rotate_V1_0 {
+    start: number
+    end: number
+    project_id: string
+    layer_id: string
+    order: number
+    fps: number
+    locked: boolean
+    math: Map<string, RotateEquation_V1_0>
+}
+export interface RotateResult_V1_0 {
+    timestamp: string
+    last_active: string
+    rotate_id: string
+    start: number
+    end: number
+    project_id: string
+    layer_id: string
+    order: number
+    fps: number
+    locked: boolean
+    math: Map<string, RotateEquation_V1_0>
+}
+export async function getRotates(baseUrl: string | undefined, projectId: string) {
+    try {
+        const url = `${baseUrl}/rotates?project_id=${projectId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: RotateResult_V1_0[] = await raw_response.json();
+        return response.map(r => {
+            return {
+                ...r,
+                math: new Map(Object.entries(r.math))
+            }
+        });
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function getRotate(
+    baseUrl: string | undefined,
+    rotateId: string,
+    inputId: string | undefined) {
+    try {
+        let url = `${baseUrl}/rotates/${rotateId}`;
+        if (inputId) {
+            url += `?input_id=${inputId}`
+        }
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: RotateResult_V1_0 = await raw_response.json();
+        return {
+            ...response,
+            math: new Map(Object.entries(response.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function createRotate(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    rotate: Rotate_V1_0) {
+    try {
+        const url = `${baseUrl}/rotates`;
+        const body = JSON.stringify({
+            ...rotate,
+            math: Object.fromEntries(rotate.math),
+        });
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'POST');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'POST');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+
+        if (!response.ok) {
+            onNotOk(response.status);
+            return undefined;
+        }
+
+        const result: RotateResult_V1_0 = await response.json();
+        return {
+            ...result,
+            math: new Map(Object.entries(result.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function updateRotate(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    rotateId: string,
+    rotate: Rotate_V1_0) {
+    try {
+        const body = JSON.stringify({
+            ...rotate,
+            math: Object.fromEntries(rotate.math),
+        });
+        const url = `${baseUrl}/rotates/${rotateId}`;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'PUT');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'PUT');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status);
+            return undefined;
+        }
+        const result: RotateResult_V1_0 = await response.json();
+        return {
+            ...result,
+            math: new Map(Object.entries(result.math)),
+        };
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function deleteRotate(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    rotateId: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/rotates/${rotateId}`;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, undefined, url, 'DELETE');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, 'DELETE');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status);
+        }
+        return response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}
+
+/* /frames */
+export type LaurusFrame = Frame_V1_0;
 interface Frame_V1_0 {
     x: number
     y: number
     s: number
+    rx: number
+    ry: number
+    rz: number
+    rangle: number
     input_id: string
 }
 export async function getFrames(

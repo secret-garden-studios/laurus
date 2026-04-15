@@ -14,6 +14,8 @@ import {
     getImgDiscoveryPage,
     getSvgDiscoveryPage,
     getEffects,
+    getRotates,
+    RotateResult_V1_0,
 } from "./workspace.server";
 export const dynamic = 'force-dynamic';
 import { cookies } from 'next/headers';
@@ -22,6 +24,7 @@ export interface ProjectDependencies {
     project: ProjectResult_V1_0,
     scales: ScaleResult_V1_0[],
     moves: MoveResult_V1_0[],
+    rotates: RotateResult_V1_0[],
     canvasImgs: ImgMediaResult_V1_0[],
     canvasSvgs: SvgMediaResult_V1_0[],
 }
@@ -61,6 +64,7 @@ async function fetchProject(
         if (!newProject) return undefined;
         const scales = await getScales(laurusApi, newProject.project_id);
         const moves = await getMoves(laurusApi, newProject.project_id);
+        const rotates = await getRotates(laurusApi, newProject.project_id);
         const svgsArray = Array.from(newProject.svgs.values());
         const canvasSvgs: SvgMediaResult_V1_0[] = [];
         for (let i = 0; i < svgsArray.length; i++) {
@@ -81,6 +85,7 @@ async function fetchProject(
             project: newProject,
             scales: scales ?? [],
             moves: moves ?? [],
+            rotates: rotates ?? [],
             canvasImgs,
             canvasSvgs,
         }

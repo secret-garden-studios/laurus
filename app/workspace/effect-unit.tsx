@@ -1,11 +1,12 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
-import { convertTime, LaurusEffect, LaurusMove, LaurusMoveResult, LaurusScale, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { convertTime, LaurusEffect, LaurusMove, LaurusMoveResult, LaurusRotate, LaurusRotateResult, LaurusScale, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { arrowDropDown, arrowDropUp, lock, lockOpenRight, SvgRepo } from "../svg-repo";
-import { updateMove, updateScale } from "./workspace.server";
+import { updateMove, updateRotate, updateScale } from "./workspace.server";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import MoveUnit from "./move-unit";
 import TimelineSlider from "../components/timeline-slider";
+import RotateUnit from "./rotate-unit";
 
 function injectTime(
     e: LaurusEffect,
@@ -24,6 +25,17 @@ function injectTime(
             return newEffect;
         }
         case "move": {
+            const newEffect: LaurusEffect = {
+                ...e,
+                value: {
+                    ...e.value,
+                    start: newOffset,
+                    end: newDuration,
+                }
+            };
+            return newEffect;
+        }
+        case "rotate": {
             const newEffect: LaurusEffect = {
                 ...e,
                 value: {
@@ -166,6 +178,38 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         key: rollback.key,
                         locked: rollback.locked,
                         value: { ...rollbackMoveResult }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
+                break;
+            }
+            case "rotate": {
+                const newRotate: LaurusRotate = { ...effect.value, locked: effect.locked }
+                const updated = await updateRotate(
+                    appState.apiOrigin,
+                    appState.accessToken,
+                    effect.key,
+                    newRotate);
+                if (updated) {
+                    const newEffect: LaurusEffect = {
+                        type: 'rotate',
+                        key: updated.rotate_id,
+                        locked: updated.locked,
+                        value: {
+                            ...updated,
+                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
+                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                        }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                }
+                else {
+                    const rollbackRotateResult = rollback.value as LaurusRotateResult;
+                    const newEffect: LaurusEffect = {
+                        type: 'rotate',
+                        key: rollback.key,
+                        locked: rollback.locked,
+                        value: { ...rollbackRotateResult }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 }
@@ -409,6 +453,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     case "move": {
                         return <MoveUnit
                             move={effect.value}
+                            svgElementsRef={svgElementsRef}
+                            imgElementsRef={imgElementsRef} />
+                    }
+                    case "rotate": {
+                        return <RotateUnit
+                            rotate={effect.value}
                             svgElementsRef={svgElementsRef}
                             imgElementsRef={imgElementsRef} />
                     }

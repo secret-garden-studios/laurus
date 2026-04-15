@@ -15,7 +15,11 @@ import {
     updateScale,
     getSvgDiscoveryPage,
     ImgMediaResult_V1_0,
-    SvgMediaResult_V1_0
+    SvgMediaResult_V1_0,
+    Rotate_V1_0,
+    RotateEquation_V1_0,
+    RotateResult_V1_0,
+    LaurusFrame
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./statusbar";
@@ -36,7 +40,6 @@ import { MeDependencies } from "../page";
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
 export type LaurusImg = ImgMedia_V1_0;
-
 export type LaurusScaleEquation = ScaleEquation_V1_0;
 export interface LaurusScale extends Scale_V1_0 {
     math: Map<string, LaurusScaleEquation>,
@@ -51,9 +54,17 @@ export interface LaurusMove extends Move_V1_0 {
 export interface LaurusMoveResult extends MoveResult_V1_0 {
     math: Map<string, LaurusMoveEquation>,
 }
+export type LaurusRotateEquation = RotateEquation_V1_0;
+export interface LaurusRotate extends Rotate_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+}
+export interface LaurusRotateResult extends RotateResult_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+}
 export type LaurusEffect =
     | { type: 'scale', key: string, locked: boolean, value: LaurusScaleResult }
     | { type: 'move', key: string, locked: boolean, value: LaurusMoveResult }
+    | { type: 'rotate', key: string, locked: boolean, value: LaurusRotateResult }
 export type LaurusThumbnail =
     | { type: 'svg', value: LaurusSvgResult }
     | { type: 'img', value: LaurusImgResult }
@@ -64,19 +75,6 @@ export type LaurusTool =
     | { type: 'viewport' }
 export type LaurusBrowserElement = LaurusThumbnail
 export type LaurusActiveElement = { key: string, value: LaurusThumbnail }
-export function convertTime(time: number, currentUnit: string, newUnit: string) {
-    switch (currentUnit + newUnit) {
-        case 'secmin': {
-            return time / 60;
-        }
-        case 'minsec': {
-            return time * 60;
-        }
-        default: {
-            return time;
-        }
-    }
-}
 export interface LaurusProjectImg extends ProjectImg_V1_0 {
     pending: boolean
 }
@@ -91,6 +89,39 @@ export interface LaurusProjectResult extends ProjectResult_V1_0 {
 export type CarouselEntry =
     | { type: 'svg', key: string, value: LaurusProjectSvg }
     | { type: 'img', key: string, value: LaurusProjectImg }
+
+export function convertTime(time: number, currentUnit: string, newUnit: string) {
+    switch (currentUnit + newUnit) {
+        case 'secmin': {
+            return time / 60;
+        }
+        case 'minsec': {
+            return time * 60;
+        }
+        default: {
+            return time;
+        }
+    }
+}
+
+export function toKeyframes(firstFrame: boolean, frames: LaurusFrame[]): Keyframe[] {
+    const framesToMap = firstFrame ? [frames[0]] : frames;
+    const keyframes: Keyframe[] = framesToMap.map((f, i) => {
+        return i < frames.length - 1 ?
+            {
+                translate: `${f.x}px ${f.y}px 0px`,
+                scale: f.s,
+                transform: `rotate3d(${f.rx},${f.ry},${f.rz},${f.rangle}deg)`,
+                easing: 'step-end'
+            } :
+            {
+                translate: `${f.x}px ${f.y}px 0px`,
+                scale: f.s,
+                transform: `rotate3d(${f.rx},${f.ry},${f.rz},${f.rangle}deg)`,
+            }
+    });
+    return keyframes;
+}
 
 /**
  * if state is used across a depth of three or more components, it belongs in here.
@@ -448,6 +479,16 @@ function initReducer({
                 }
             })
         });
+        projectDependencies?.rotates.forEach(e => {
+            newEffects.push({
+                type: 'rotate',
+                key: e.rotate_id,
+                locked: e.locked,
+                value: {
+                    ...e,
+                }
+            })
+        });
     }
     const newCanvasSvgs: LaurusSvgResult[] =
         projectDependencies?.canvasSvgs.map(v => { return { ...v } }) ?? [];
@@ -689,12 +730,7 @@ export default function Workspace({
             const [key] = imgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
-                const framesToMap = firstFrame ? [frames[0]] : frames;
-                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
-                    return i < frames.length - 1 ?
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
-                });
+                const keyframes = toKeyframes(firstFrame, frames);
                 const imgRef = imgElementsRef.current?.get(key);
                 if (!imgRef) return [];
                 const animations = imgRef.getAnimations();
@@ -712,12 +748,7 @@ export default function Workspace({
             const [key] = svgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
-                const framesToMap = firstFrame ? [frames[0]] : frames;
-                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
-                    return i < frames.length - 1 ?
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
-                });
+                const keyframes = toKeyframes(firstFrame, frames);
                 const svgRef = svgElementsRef.current?.get(key);
                 if (!svgRef) return [];
                 const animations = svgRef.getAnimations();

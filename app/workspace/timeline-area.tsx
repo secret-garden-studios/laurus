@@ -9,9 +9,11 @@ import {
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
     LaurusProjectResult,
-    LaurusLayer
+    LaurusLayer,
+    LaurusRotate,
+    toKeyframes
 } from "./workspace.client";
-import { createMove, createScale, getFrames } from "./workspace.server";
+import { createMove, createRotate, createScale, getFrames } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
@@ -150,12 +152,7 @@ export default function TimelineArea({
             const [key] = imgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
-                const framesToMap = firstFrame ? [frames[0]] : frames;
-                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
-                    return i < frames.length - 1 ?
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
-                });
+                const keyframes = toKeyframes(firstFrame, frames);
                 const imgRef = imgElementsRef.current?.get(key);
                 if (!imgRef) return [];
                 const animations = imgRef.getAnimations();
@@ -173,12 +170,7 @@ export default function TimelineArea({
             const [key] = svgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
-                const framesToMap = firstFrame ? [frames[0]] : frames;
-                const keyframes: Keyframe[] = framesToMap.map((f, i) => {
-                    return i < frames.length - 1 ?
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s, easing: 'step-end' } :
-                        { translate: `${f.x}px ${f.y}px 0px`, scale: f.s }
-                });
+                const keyframes = toKeyframes(firstFrame, frames);
                 const svgRef = svgElementsRef.current?.get(key);
                 if (!svgRef) return [];
                 const animations = svgRef.getAnimations();
@@ -286,6 +278,17 @@ export default function TimelineArea({
                                     return clientEffect;
                                 }
                                 case "move": {
+                                    const clientEffect: LaurusEffect = {
+                                        ...e,
+                                        value: {
+                                            ...e.value,
+                                            start: convertTime(e.value.start, currentUnit, newUnit),
+                                            end: convertTime(e.value.end, currentUnit, newUnit)
+                                        }
+                                    }
+                                    return clientEffect;
+                                }
+                                case "rotate": {
                                     const clientEffect: LaurusEffect = {
                                         ...e,
                                         value: {
@@ -869,13 +872,13 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                             borderRadius: 4,
                             padding: effectBrowserSize.itemPadding,
                             background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)',
-                            color: effectName == 'skew' || effectName == 'rotate' ? 'rgba(255, 255, 255, 0.3)' : 'rgb(227,227,227)'
+                            color: effectName == 'skew' ? 'rgba(255, 255, 255, 0.3)' : 'rgb(227,227,227)'
                         }}
                         key={effectName}>
                         <div>
-                            {`${effectName}${effectName == 'skew' || effectName == 'rotate' ? " · coming soon" : ""}`}
+                            {`${effectName}${effectName == 'skew' ? " · coming soon" : ""}`}
                         </div>
-                        {(effectName != 'skew' && effectName != 'rotate') && <SvgRepo
+                        {(effectName != 'skew') && <SvgRepo
                             svg={addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
                                 width: effectBrowserSize.svg,
@@ -955,6 +958,32 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             const newEffect: LaurusEffect = {
                                                 type: 'move',
                                                 key: created.move_id,
+                                                locked: created.locked,
+                                                value: { ...created }
+                                            }
+                                            dispatch({
+                                                type: WorkspaceActionType.SetEffects,
+                                                value: [...appState.effects, newEffect]
+                                            });
+                                        }
+                                        break;
+                                    }
+                                    case 'rotate': {
+                                        const newRotate: LaurusRotate = {
+                                            math: new Map(),
+                                            start: 0,
+                                            end: 0,
+                                            project_id: newProjectIdAck,
+                                            layer_id,
+                                            fps: appState.fps,
+                                            locked: false,
+                                            order: newOrder,
+                                        };
+                                        const created = await createRotate(appState.apiOrigin, appState.accessToken, newRotate);
+                                        if (created) {
+                                            const newEffect: LaurusEffect = {
+                                                type: 'rotate',
+                                                key: created.rotate_id,
                                                 locked: created.locked,
                                                 value: { ...created }
                                             }

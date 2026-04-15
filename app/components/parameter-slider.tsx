@@ -30,7 +30,7 @@ export default function ParameterSlider({
     const { appState } = useContext(WorkspaceContext);
     const [labelFontSize] = useState(() => {
         switch (appState.resolution.type) {
-            case "high": return 10
+            case "high": return 11
             case "midhigh": return 8
             case "midlow":
             case "low": return 7
@@ -89,10 +89,12 @@ export default function ParameterSlider({
                     }}
                 />
             </div>
-            {label && <div className={dmSans.className}
-                style={{ fontSize: labelFontSize, paddingTop: labelPaddingTop }}>
-                {label}
-            </div>}
+            {label &&
+                <div
+                    className={dmSans.className}
+                    style={{ fontSize: labelFontSize, paddingTop: labelPaddingTop }}>
+                    {label}
+                </div>}
         </div>
     </>)
 }
