@@ -120,7 +120,7 @@ export default function Toolbar({ resolution }: Toolbar) {
                     <div style={{ padding: 4, width: '100%' }}>
                         <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Drop Tool</h4>
                         <p style={{ marginBottom: rightPanelSize.tooltipMarginBottom2 }}>
-                            Select this tool then drop the <strong>browser element</strong> onto the canvas by dragging the cursor over the area you it to land.
+                            Select this tool then click and drag anywhere on the canvas to drop the <strong>browser element</strong> in that area.
                         </p>
                     </div>
                 )}
