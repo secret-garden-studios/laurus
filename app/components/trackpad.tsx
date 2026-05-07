@@ -5,6 +5,7 @@ import { CSSProperties } from "react";
 
 export enum PointerStyle {
     Blurry,
+    Solid,
 }
 
 interface TrackpadProps {
@@ -110,8 +111,15 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     background: 'rgba(255,255,255,0.01)',
                     border: `1px solid ${borderColor ?? "rgb(70, 70, 70)"}`,
                     backdropFilter: 'blur(3px)',
-                    borderRadius: 2,
+                    borderRadius: '50%',
                     boxShadow: "1px 1px 6px rgba(0,0,0,0.4)",
+                }
+            }
+            case PointerStyle.Solid:{
+                return {
+                    background: 'radial-gradient(circle at 30% 30%, rgb(250, 250, 250) 0%, rgb(190, 190, 190) 45%, rgb(135, 135, 135) 100%)',
+                    borderRadius: '50%',
+                    boxShadow: "1px 1px 6px rgba(0, 0, 0, 0.9)",
                 }
             }
         }

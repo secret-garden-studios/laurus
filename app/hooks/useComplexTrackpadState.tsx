@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
 export interface ComplexTrackpadState {
-    getComplexTrackValue: (cursor: number, trackWidth: number) => number;
+    getComplexTrackValue: (cursor: number, trackWidth: number, minValue?: number) => number;
     getComplexTrackCursor: (value: number, trackWidth: number) => number;
 }
 
@@ -12,7 +12,6 @@ export function useComplexTrackpadState(offset: number, maxValue: number): Compl
         const medianCursor = Math.ceil(maxCursor / 2);
         const leftSector = Math.max(1, medianCursor);
         const rightSector = Math.max(1, maxCursor - medianCursor);
-
         let rightReBase = 0;
         for (let coordinate = 0; coordinate < rightSector; coordinate++) {
             if ((coordinate / rightSector) * maxValue <= 1) {
@@ -21,20 +20,16 @@ export function useComplexTrackpadState(offset: number, maxValue: number): Compl
                 break;
             }
         }
-
         const safeReBase = Math.max(1, rightReBase);
         const maxRebasedScale = ((rightReBase / rightSector) * maxValue) / 10;
-
         return { medianCursor, maxCursor, rightSector, leftSector, rightReBase, safeReBase, maxRebasedScale };
     }, [offset, maxValue]);
 
     return useMemo(() => ({
-        getComplexTrackValue: (cursor: number, trackWidth: number): number => {
+        getComplexTrackValue: (cursor: number, trackWidth: number, minValue: number = 0): number => {
             const ctx = getContext(trackWidth);
             const clampedCursor = Math.max(0, Math.min(cursor, ctx.maxCursor));
-
             if (clampedCursor === ctx.medianCursor) return 1;
-
             let value: number;
             if (clampedCursor > ctx.medianCursor) {
                 const cursorPercentage = (clampedCursor - ctx.medianCursor) / ctx.rightSector;
@@ -46,14 +41,13 @@ export function useComplexTrackpadState(offset: number, maxValue: number): Compl
             } else {
                 value = clampedCursor / ctx.leftSector;
             }
-            return Math.max(0, value);
+            return Math.max(minValue, value);
         },
 
         getComplexTrackCursor: (value: number, trackWidth: number): number => {
             const ctx = getContext(trackWidth);
             const safeValue = Math.max(0, value);
             let cursor: number;
-
             if (safeValue === 1) {
                 cursor = ctx.medianCursor;
             } else if (safeValue > 1) {

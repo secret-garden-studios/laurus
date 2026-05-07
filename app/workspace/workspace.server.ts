@@ -380,15 +380,20 @@ export async function getEffects(baseUrl: string | undefined) {
 
 /* /scales */
 
+export interface ScaleSolution_V1_0 {
+    x: number
+    y: number
+}
 export interface ScaleEquation_V1_0 {
     input_id: string
     /**
      * ms
      */
     time: number
-    scale: number
+    scale_x: number
+    scale_y: number
     loop: boolean
-    solution: number[]
+    solution: ScaleSolution_V1_0[]
 }
 export interface Scale_V1_0 {
     /**
@@ -404,6 +409,7 @@ export interface Scale_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, ScaleEquation_V1_0>
 }
 export interface ScaleResult_V1_0 {
@@ -423,6 +429,7 @@ export interface ScaleResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, ScaleEquation_V1_0>
 }
 export async function getScales(baseUrl: string | undefined, projectId: string) {
@@ -519,7 +526,7 @@ export async function updateScale(
     baseUrl: string | undefined,
     accessToken: string | undefined,
     scaleId: string,
-    scale: Scale_V1_0) {
+    scale: Scale_V1_0): Promise<boolean> {
     try {
         const body = JSON.stringify({
             ...scale,
@@ -537,17 +544,15 @@ export async function updateScale(
         }
         if (!response.ok) {
             onNotOk(response.status);
-            return undefined;
+            return false;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const result: ScaleResult_V1_0 = await response.json();
-        return {
-            ...result,
-            math: new Map(Object.entries(result.math)),
-        };
+        return true;
     }
     catch (error) {
         console.log({ error });
-        return undefined;
+        return false;
     }
 }
 export async function deleteScale(
@@ -597,6 +602,7 @@ export interface Move_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, MoveEquation_V1_0>
 }
 export interface MoveResult_V1_0 {
@@ -610,6 +616,7 @@ export interface MoveResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, MoveEquation_V1_0>
 }
 export async function getMoves(baseUrl: string | undefined, projectId: string) {
@@ -706,7 +713,7 @@ export async function updateMove(
     baseUrl: string | undefined,
     accessToken: string | undefined,
     moveId: string,
-    move: Move_V1_0) {
+    move: Move_V1_0): Promise<boolean> {
     try {
         const body = JSON.stringify({
             ...move,
@@ -724,17 +731,15 @@ export async function updateMove(
         }
         if (!response.ok) {
             onNotOk(response.status);
-            return undefined;
+            return false;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const result: MoveResult_V1_0 = await response.json();
-        return {
-            ...result,
-            math: new Map(Object.entries(result.math)),
-        };
+        return true;
     }
     catch (error) {
         console.log({ error });
-        return undefined;
+        return false;
     }
 }
 
@@ -784,6 +789,7 @@ export interface Rotate_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, RotateEquation_V1_0>
 }
 export interface RotateResult_V1_0 {
@@ -797,6 +803,7 @@ export interface RotateResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    description: string
     math: Map<string, RotateEquation_V1_0>
 }
 export async function getRotates(baseUrl: string | undefined, projectId: string) {
@@ -893,7 +900,7 @@ export async function updateRotate(
     baseUrl: string | undefined,
     accessToken: string | undefined,
     rotateId: string,
-    rotate: Rotate_V1_0) {
+    rotate: Rotate_V1_0): Promise<boolean> {
     try {
         const body = JSON.stringify({
             ...rotate,
@@ -911,17 +918,15 @@ export async function updateRotate(
         }
         if (!response.ok) {
             onNotOk(response.status);
-            return undefined;
+            return false;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const result: RotateResult_V1_0 = await response.json();
-        return {
-            ...result,
-            math: new Map(Object.entries(result.math)),
-        };
+        return true;
     }
     catch (error) {
         console.log({ error });
-        return undefined;
+        return false;
     }
 }
 export async function deleteRotate(
@@ -955,7 +960,8 @@ export type LaurusFrame = Frame_V1_0;
 interface Frame_V1_0 {
     x: number
     y: number
-    s: number
+    sx: number
+    sy: number
     rx: number
     ry: number
     rz: number

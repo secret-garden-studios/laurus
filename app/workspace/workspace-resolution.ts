@@ -59,3 +59,93 @@ export function getCropSize(crop: LaurusCropSvg): { width: number, height: numbe
         case "1:1": return { width: FRAME_WIDTH_1_1, height: FRAME_HEIGHT_1_1 };
     }
 }
+
+export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
+    {
+        switch (resolution.type) {
+            case "high": return {
+                param: { padding: `0 ${20}px ${20}px ${20}px` },
+                paramFlex: { gap: 38, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                paramSlider: {
+                    containerHeight: Math.round(200 * resolution.factor),
+                    containerWidth: Math.round(45 * resolution.factor),
+                    trackWidth: 1,
+                    capWidth: 18,
+                    capHeight: 18,
+                    capBorderOffset: 0
+                },
+                paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },
+                paramButton: { width: Math.round(20 * resolution.factor), height: Math.round(20 * resolution.factor) },
+                display: {
+                    width: Math.round(400 * resolution.factor),
+                    height: Math.round(450 * resolution.factor),
+                    padding: 0,
+                },
+                displayImg: {
+                    width: Math.round(280 * resolution.factor),
+                    height: Math.round(280 * resolution.factor),
+                },
+                displaySvg: {
+                    width: Math.round(200 * resolution.factor),
+                    height: Math.round(200 * resolution.factor)
+                }
+
+            }
+            case "midhigh": return {
+                param: { padding: `0 ${14}px ${14}px ${14}px` },
+                paramFlex: { gap: 28, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                paramSlider: {
+                    containerHeight: Math.round(200 * resolution.factor),
+                    containerWidth: Math.round(45 * resolution.factor),
+                    trackWidth: 1,
+                    capWidth: 18,
+                    capHeight: 18,
+                    capBorderOffset: 0
+                },
+                paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },
+                paramButton: { width: Math.round(20 * resolution.factor), height: Math.round(20 * resolution.factor) },
+                display: {
+                    width: Math.round(400 * resolution.factor),
+                    height: Math.round(450 * resolution.factor),
+                    padding: 0,
+                },
+                displayImg: {
+                    width: Math.round(280 * resolution.factor),
+                    height: Math.round(280 * resolution.factor),
+                },
+                displaySvg: {
+                    width: Math.round(200 * resolution.factor),
+                    height: Math.round(200 * resolution.factor)
+                }
+            }
+            case "midlow":
+            case "low": return {
+                param: { padding: `0 ${10}px ${10}px ${10}px` },
+                paramFlex: { gap: 30, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                paramSlider: {
+                    containerHeight: Math.round(200 * resolution.factor),
+                    containerWidth: Math.round(45 * resolution.factor),
+                    trackWidth: 1,
+                    capWidth: 18,
+                    capHeight: 18,
+                    capBorderOffset: 0
+                },
+                paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },
+                paramButton: { width: Math.round(20 * resolution.factor), height: Math.round(20 * resolution.factor) },
+                display: {
+                    width: Math.round(400 * resolution.factor),
+                    height: Math.round(450 * resolution.factor),
+                    padding: 0,
+                },
+                displayImg: {
+                    width: Math.round(280 * resolution.factor),
+                    height: Math.round(280 * resolution.factor),
+                },
+                displaySvg: {
+                    width: Math.round(200 * resolution.factor),
+                    height: Math.round(200 * resolution.factor)
+                }
+            }
+        }
+    }
+}

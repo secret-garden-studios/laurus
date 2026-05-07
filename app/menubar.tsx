@@ -72,11 +72,11 @@ export default function Menubar({ resolution, me }: Menubar) {
                 ...dynamicSizes.container,
                 display: "flex",
                 alignItems: "center",
-                backgroundColor: "rgb(18, 18, 18)",
+                background: "rgb(31, 29, 29)",
                 boxShadow: "rgba(255, 255, 255, 0.05) 0px 0px 30px 1px",
                 letterSpacing: '1px',
-                color: 'rgb(227,227,227)',
-                borderBottom: '1px solid rgb(20, 20, 20)',
+                color: 'rgb(240, 240, 240)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
             }}>
             <div
                 className={styles['animated-nav-dark']}
@@ -102,7 +102,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
-                        color: 'rgb(227, 227, 227)',
+                        color: 'rgb(240, 240, 240)',
                     }}>
                     {'projects'}
                 </div>
@@ -126,7 +126,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
-                        color: 'rgb(227, 227, 227)',
+                        color: 'rgb(240, 240, 240)',
                     }}>
                     {'workspace'}
                 </div>
@@ -150,7 +150,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                         letterSpacing: "1px",
                         display: 'grid',
                         placeContent: 'center',
-                        color: 'rgb(227, 227, 227)',
+                        color: 'rgb(240, 240, 240)',
                     }}>
                     {'screens'}
                 </div>

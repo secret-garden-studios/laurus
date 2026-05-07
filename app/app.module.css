@@ -1,15 +1,8 @@
-.tiled-background-squares {
-  background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.05) 0.5px, transparent 1px) 0 0 / 8px 8px,
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 0.5px, transparent 1px) 0 0 / 8px 8px;
-  background-color: rgb(14, 14, 14);
-}
-
 .large-tiled-background-squares {
   background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 0.5px, transparent 1px) 0 0 / 36px 36px,
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 0.5px, transparent 1px) 0 0 / 36px 36px;
-  background-color: rgb(14, 14, 14);
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 0.5px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 0.5px, transparent 1px) 0 0 / 20px 20px;
+  background-color: rgb(24, 24, 24);
 }
 
 .noisy-background {
@@ -24,6 +17,16 @@
 
 .noisy-background-20-3 {
   background-image: url('/noise2_20_3.png');
+  background-size: auto;
+}
+
+.noisy-background-7-3 {
+  background-image: url('/noise2_7_3.png');
+  background-size: auto;
+}
+
+.noisy-background-32-3 {
+  background-image: url('/noise2_32_3.png');
   background-size: auto;
 }
 

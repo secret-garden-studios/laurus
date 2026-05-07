@@ -1,42 +1,92 @@
-import { useContext, useState, useEffect } from "react";
+import { useContext, useState, useEffect, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../svg-repo";
-import { ReactImg } from "./media";
-import { getTopLevelPadding, getDisplaySize } from "./unit-resolution";
-import { WorkspaceContext } from "./workspace.client";
+import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import styles from "../app.module.css";
+import NextImage from "next/image";
+import { getDynamicUnitSizes } from "./workspace-resolution";
 
 interface UnitDisplay {
     carouselIndex: number,
     onNewCarouselIndex: (newIndex: number) => void,
 }
 export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitDisplay) {
-    const { appState } = useContext(WorkspaceContext);
-    const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
-    const [displaySize] = useState(() => getDisplaySize(appState.resolution));
+    const { appState, dispatch } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
 
     useEffect(() => {
         (async () => {
-            const index = appState.carouselEntries.findIndex(c => c.value.media_key == appState.activeElement?.value.value.media_key);
-            if (index > -1) {
+            const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
+            const lowPriority: boolean = appState.activeElement?.lowPriority ?? false;
+            if (index > -1 && !lowPriority) {
                 onNewCarouselIndex(index);
             }
-            else {
+            else if (!lowPriority) {
                 onNewCarouselIndex(0);
             }
         })()
-    }, [appState.activeElement?.value.value.media_key, appState.carouselEntries, onNewCarouselIndex]);
+    }, [appState.activeElement?.key, appState.activeElement?.lowPriority, appState.carouselEntries, onNewCarouselIndex]);
+
+    const setActiveElement = useCallback((newCarouselIndex: number) => {
+        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
+        switch (entry.type) {
+            case "svg": {
+                const projectSvg = appState.project.svgs.get(entry.key);
+                if (!projectSvg) break;
+                const canvasSvg = appState.canvasSvgs.get(entry.key);
+                if (!canvasSvg) break;
+                const newActiveElement: LaurusActiveElement = {
+                    key: entry.key,
+                    type: 'svg',
+                    lowPriority: true,
+                }
+                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
+                break;
+            }
+            case "img": {
+                const projectImg = appState.project.imgs.get(entry.key);
+                if (!projectImg) break;
+                const canvasImg = appState.canvasImgs.get(entry.key);
+                if (!canvasImg) break;
+                const newActiveElement: LaurusActiveElement = {
+                    key: entry.key,
+                    type: 'img',
+                    lowPriority: true,
+                }
+                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
+                break;
+            }
+        }
+    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
+
+    const hideContextMenu = useCallback((entry: CarouselEntry) => {
+        switch (entry.type) {
+            case "svg": {
+                const projectSvg = appState.project.svgs.get(entry.key);
+                if (!projectSvg) break;
+                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false } });
+                break;
+            }
+            case "img": {
+                const projectImg = appState.project.imgs.get(entry.key);
+                if (!projectImg) break;
+                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false } });
+                break;
+            }
+        }
+    }, [appState.project.imgs, appState.project.svgs, dispatch]);
 
     return <>
-        <div style={{ padding: topLevelPadding }}>
+        <div style={{ padding: dynamicSizes.param.padding }}>
             <div
                 className={styles["large-tiled-background-squares"]}
                 style={{
-                    padding: `${displaySize.padding}px`,
                     display: 'grid',
-                    width: `${displaySize.width}px`, height: `${displaySize.height}px`,
                     borderRadius: 10,
                     border: '1px solid rgba(10,10,10,1)',
-                    gridTemplateColumns: 'min-content auto min-content'
+                    gridTemplateColumns: 'min-content auto min-content',
+                    ...dynamicSizes.display
                 }}>
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
@@ -50,7 +100,12 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             if (appState.carouselEntries.length > newIndex) {
                                 onNewCarouselIndex(newIndex);
+                                setActiveElement(newIndex);
                             }
+                            const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
+                            inactives.forEach(ce => {
+                                hideContextMenu(ce);
+                            });
                         }} />
                 </div>
                 {/* active element */}
@@ -64,30 +119,39 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                         if (i == carouselIndex) {
                             switch (c.type) {
                                 case "img": {
-                                    const canvasImg = appState.canvasImgs.find(i => i.img_media_id == c.value.img_media_id);
+                                    const projectImg = appState.project.imgs.get(c.key);
+                                    if (!projectImg) break;
+                                    const canvasImg = appState.canvasImgs.get(c.key);
                                     if (!canvasImg) return;
                                     return (
-                                        <ReactImg
-                                            key={c.value.img_media_id}
-                                            img={canvasImg}
-                                            containerSize={{
-                                                width: displaySize.activeImgElementSize,
-                                                height: displaySize.activeImgElementSize
-                                            }}
-                                        />
+                                        <div
+                                            key={c.key}
+                                            style={{
+                                                position: 'relative',
+                                                ...dynamicSizes.displayImg
+                                            }}>
+                                            <NextImage
+                                                draggable={false}
+                                                alt={c.key}
+                                                src={canvasImg.src}
+                                                fill
+                                                style={{
+                                                    objectFit: 'cover',
+                                                }}
+                                            />
+                                        </div>
                                     )
                                 }
                                 case "svg": {
-                                    const canvasSvg = appState.canvasSvgs.find(i => i.svg_media_id == c.value.svg_media_id);
+                                    const projectSvg = appState.project.svgs.get(c.key);
+                                    if (!projectSvg) break;
+                                    const canvasSvg = appState.canvasSvgs.get(c.key);
                                     if (!canvasSvg) return;
                                     return (
                                         <SvgRepo
-                                            key={c.value.svg_media_id}
+                                            key={c.key}
                                             svg={canvasSvg}
-                                            containerSize={{
-                                                width: displaySize.activeSvgElementSize,
-                                                height: displaySize.activeSvgElementSize
-                                            }}
+                                            containerSize={{ ...dynamicSizes.displaySvg }}
                                             scale={1}
                                         />
                                     )
@@ -108,9 +172,40 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                             const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             if (appState.carouselEntries.length > newIndex) {
                                 onNewCarouselIndex(newIndex);
+                                setActiveElement(newIndex);
                             }
+                            const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
+                            inactives.forEach(ce => {
+                                hideContextMenu(ce);
+                            });
                         }} />
                 </div>
+            </div>
+        </div>
+    </>
+}
+
+export function DeepControls() {
+    const { appState } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
+    return <>
+        <div
+            style={{
+                gridColumn: 'span 2',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                fontSize: 16,
+                padding: dynamicSizes.param.padding
+            }}>
+            <div
+                style={{
+                    display: 'grid',
+                    height: `${dynamicSizes.display.height}px`,
+                    alignContent: 'center',
+                    gap: 4,
+                }}>
+                <div>{'coming soon...'}</div>
             </div>
         </div>
     </>

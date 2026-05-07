@@ -1,6 +1,6 @@
 import { CSSProperties, use, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectsResolution } from "./projects-resolution"
-import { createProject, deleteProject, Project_V1_0, ProjectImg_V1_0, ProjectResult_V1_0, ProjectSvg_V1_0 } from "./projects.server"
+import { createProject, deleteProject, Project_V1_0, ProjectImg_V1_0, ProjectLayer_V1_0, ProjectResult_V1_0, ProjectSvg_V1_0 } from "./projects.server"
 import { addCircle, arrowDropDown, arrowDropUp, fileCopy, outbound, search, SvgRepo, cancelCircle } from "../svg-repo";
 import Menubar from "../menubar";
 import { dellaRespira, italiana } from "../fonts";
@@ -10,10 +10,18 @@ import Statusbar from "./statusbar";
 import { useRouter } from 'next/navigation'
 import useDebounce from "../hooks/useDebounce";
 import { MeDependencies } from "../page";
+import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../workspace/workspace.client";
 
-type LaurusProjectImg = ProjectImg_V1_0;
-type LaurusProjectSvg = ProjectSvg_V1_0;
-interface LaurusProjectResult extends ProjectResult_V1_0 {
+export interface LaurusProjectImg extends ProjectImg_V1_0 {
+    showContextMenu: boolean
+    contextMenuConfig: ContextMenuConfig
+}
+export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
+    showContextMenu: boolean
+    contextMenuConfig: ContextMenuConfig
+}
+export type LaurusProjectLayer = ProjectLayer_V1_0;
+export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
     svgs: Map<string, LaurusProjectSvg>
 }
@@ -21,6 +29,25 @@ interface LaurusProject extends Project_V1_0 {
     imgs: Map<string, LaurusProjectImg>
     svgs: Map<string, LaurusProjectSvg>
 }
+
+export function projectSvgIsTransformed(svg: LaurusProjectSvg) {
+    if (svg.scale_x == 1 && svg.scale_y == 1 && svg.rotate_x == 0 && svg.rotate_y == 0 && svg.rotate_z == 0) {
+        return false;
+    }
+    else {
+        return true;
+    }
+}
+
+export function projectImgIsTransformed(img: LaurusProjectImg) {
+    if (img.scale_x == 1 && img.scale_y == 1 && img.rotate_x == 0 && img.rotate_y == 0 && img.rotate_z == 0) {
+        return false;
+    }
+    else {
+        return true;
+    }
+}
+
 type SortStrategy = 'name_az' | 'name_za' | 'creator_az' | 'creator_za' | 'timestamp_123' | 'timestamp_321' | 'editor_az' | 'editor_za' | 'last_active_123' | 'last_active_321' | 'frame_123' | 'frame_321' | 'canvas_123' | 'canvas_321' | 'none';
 
 function sortByNameAz(a: LaurusProjectResult, b: LaurusProjectResult) {
@@ -81,8 +108,8 @@ function sortByCanvas321(a: LaurusProjectResult, b: LaurusProjectResult) {
 
 function projectsDeepSearch(
     query: string,
-    projects: ProjectResult_V1_0[]
-): ProjectResult_V1_0[] {
+    projects: LaurusProjectResult[]
+): LaurusProjectResult[] {
     const term = query.toLowerCase().trim();
     if (!term) return projects;
     const deepMatch = (val: unknown): boolean => {
@@ -111,9 +138,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
         if (p) {
             return p.map(x => {
                 const newImgs: Map<string, LaurusProjectImg> =
-                    new Map(x.imgs.entries().map(e => [e[0], { ...e[1] }]));
+                    new Map(x.imgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
                 const newSvgs: Map<string, LaurusProjectSvg> =
-                    new Map(x.svgs.entries().map(e => [e[0], { ...e[1] }]));
+                    new Map(x.svgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
                 return { ...x, imgs: newImgs, svgs: newSvgs, layers: new Map(x.layers) }
             })
         }
@@ -405,6 +432,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                                         onClick={() => {
                                             setSelectedProject(project);
                                         }}
+                                        onDoubleClick={() => {
+                                            router.push(`/workspace?project_id=${project.project_id}`)
+                                        }}
                                         onMouseEnter={(e) => {
                                             if (selectedProject?.project_id == project.project_id) e.currentTarget.style.cursor = '';
                                             else e.currentTarget.style.cursor = 'pointer';
@@ -555,7 +585,13 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             frame_height: Math.round(FRAME_HEIGHT_5_7 * resolutionInit.factor),
                             imgs: new Map(),
                             svgs: new Map(),
-                            layers: new Map()
+                            layers: new Map(),
+                            frame_rotate_x: 0,
+                            frame_rotate_y: 0,
+                            frame_rotate_z: 0,
+                            frame_rotate_angle: 0,
+                            frame_scale_x: 1,
+                            frame_scale_y: 1
                         }
                         const response = await createProject(apiOriginInit, me.accessToken, newProject);
                         if (response) {
@@ -610,9 +646,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     onClick={async () => {
                         if (!selectedProject) return
                         const newImgs: Map<string, LaurusProjectImg> =
-                            new Map(selectedProject.imgs.entries().map(e => [e[0], { ...e[1] }]));
+                            new Map(selectedProject.imgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
                         const newSvgs: Map<string, LaurusProjectSvg> =
-                            new Map(selectedProject.svgs.entries().map(e => [e[0], { ...e[1] }]));
+                            new Map(selectedProject.svgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
                         const newProject: LaurusProject = {
                             ...selectedProject,
                             name: `${selectedProject.name} (copy)`,

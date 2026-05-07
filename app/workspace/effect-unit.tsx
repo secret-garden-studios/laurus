@@ -1,12 +1,14 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
-import { convertTime, LaurusEffect, LaurusMove, LaurusMoveResult, LaurusRotate, LaurusRotateResult, LaurusScale, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { arrowDropDown, arrowDropUp, lock, lockOpenRight, SvgRepo } from "../svg-repo";
-import { updateMove, updateRotate, updateScale } from "./workspace.server";
+import { CarouselEntry, convertTime, LaurusActiveElement, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { allOut, cancelCircle, earthquake, lock, lockOpenRight, SvgRepo, toysFan, tune } from "../svg-repo";
+import { deleteMove, deleteRotate, deleteScale, updateMove, updateRotate, updateScale } from "./workspace.server";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import MoveUnit from "./move-unit";
 import TimelineSlider from "../components/timeline-slider";
 import RotateUnit from "./rotate-unit";
+import { dellaRespira } from "../fonts";
+import useDebounce from "../hooks/useDebounce";
 
 function injectTime(
     e: LaurusEffect,
@@ -57,24 +59,7 @@ interface EffectUnit {
 export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
-
-    const [timelineTrackLabelSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return { font: 12, height: 22, paddingLeft: 7 }
-            case "midhigh": return { font: 11, height: 16, paddingLeft: 5 }
-            case "midlow": return { font: 10, height: 14, paddingLeft: 4 }
-            case "low": return { font: 10, height: 14, paddingLeft: 4 }
-        }
-    });
-    const [timelineTrackCapsSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return { height: 54, width: 17 }
-            case "midhigh": return { height: 53, width: 16 }
-            case "midlow":
-            case "low": return { height: 48, width: 16 }
-        }
-    });
-    const [timelineTrackSize] = useState({ width: '100%', height: timelineTrackCapsSize.height });
+    const [carouselIndexInit, setCarouselIndexInit] = useState(0);
     const [trackSidePadding] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return 15
@@ -84,26 +69,32 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         }
     });
     const timelineTrackRef = useRef<HTMLDivElement | null>(null);
-
-    const [startCapSize] = useState({ width: timelineTrackCapsSize.width, height: timelineTrackCapsSize.height });
+    const [timelineTrackSize] = useState(() => {
+        return {
+            containerHeight: 44,
+            containerWidth: '100%',
+            trackHeight: 1,
+            capWidth: 16,
+            capHeight: 16,
+        }
+    });
     const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
     const startRef = useRef<HTMLInputElement | null>(null);
-    const [endCapSize] = useState({ width: timelineTrackCapsSize.width, height: timelineTrackCapsSize.height });
     const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
     const endRef = useRef<HTMLInputElement | null>(null);
 
-    const { getTrackValue: getTimeCursor, getTrackCursor: getCursor } =
+    const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } =
         useTrackpadState(0, appState.timelineMaxValue);
 
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeCursor(cursorX, (timelineTrackRef.current.clientWidth - trackSidePadding), 0);
-    }, [getTimeCursor, trackSidePadding]);
+        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth), 0);
+    }, [getTimeValue, timelineTrackSize.capWidth]);
 
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getCursor(time, (timelineTrackRef.current.clientWidth - trackSidePadding));
-    }, [getCursor, trackSidePadding]);
+        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth));
+    }, [getTimeCursor, timelineTrackSize.capWidth]);
 
     const getNewEndTime = useCallback((newStartCursorX: number): [number, boolean] => {
         return (endCursor.x < newStartCursorX) ?
@@ -120,7 +111,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect) => {
         switch (effect.type) {
             case "scale": {
-                const newScale: LaurusScale = { ...effect.value, locked: effect.locked }
+                const newScale: LaurusScaleResult = { ...effect.value, locked: effect.locked }
                 const updated = await updateScale(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -129,12 +120,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 if (updated) {
                     const newEffect: LaurusEffect = {
                         type: 'scale',
-                        key: updated.scale_id,
-                        locked: updated.locked,
+                        key: effect.key,
+                        locked: newScale.locked,
                         value: {
-                            ...updated,
-                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
-                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                            ...newScale,
+                            start: convertTime(newScale.start, 'sec', appState.timelineUnit),
+                            end: convertTime(newScale.end, 'sec', appState.timelineUnit)
                         }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -152,7 +143,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
             case "move": {
-                const newMove: LaurusMove = { ...effect.value, locked: effect.locked }
+                const newMove: LaurusMoveResult = { ...effect.value, locked: effect.locked }
                 const updated = await updateMove(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -161,12 +152,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 if (updated) {
                     const newEffect: LaurusEffect = {
                         type: 'move',
-                        key: updated.move_id,
-                        locked: updated.locked,
+                        key: effect.key,
+                        locked: newMove.locked,
                         value: {
-                            ...updated,
-                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
-                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                            ...newMove,
+                            start: convertTime(newMove.start, 'sec', appState.timelineUnit),
+                            end: convertTime(newMove.end, 'sec', appState.timelineUnit)
                         }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -184,7 +175,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
             case "rotate": {
-                const newRotate: LaurusRotate = { ...effect.value, locked: effect.locked }
+                const newRotate: LaurusRotateResult = { ...effect.value, locked: effect.locked }
                 const updated = await updateRotate(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -193,12 +184,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 if (updated) {
                     const newEffect: LaurusEffect = {
                         type: 'rotate',
-                        key: updated.rotate_id,
-                        locked: updated.locked,
+                        key: effect.key,
+                        locked: newRotate.locked,
                         value: {
-                            ...updated,
-                            start: convertTime(updated.start, 'sec', appState.timelineUnit),
-                            end: convertTime(updated.end, 'sec', appState.timelineUnit)
+                            ...newRotate,
+                            start: convertTime(newRotate.start, 'sec', appState.timelineUnit),
+                            end: convertTime(newRotate.end, 'sec', appState.timelineUnit)
                         }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -244,7 +235,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const [timelineUnitsSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                height: 30,
+                height: 36,
                 fontSize: 12,
                 gap: 4,
                 inputFontSize: 10,
@@ -270,7 +261,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const [timelineDropDownSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                height: 24,
+                height: 20,
                 padding: '0px 4px',
                 svg: 17
             }
@@ -288,183 +279,496 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         }
     });
 
+    const setActiveElement = useCallback((newCarouselIndex: number) => {
+        if (newCarouselIndex > appState.carouselEntries.length - 1) return;
+        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
+        switch (entry.type) {
+            case "svg": {
+                const projectSvg = appState.project.svgs.get(entry.key);
+                if (!projectSvg) break;
+                const canvasSvg = appState.canvasSvgs.get(entry.key);
+                if (!canvasSvg) break;
+                const newActiveElement: LaurusActiveElement = {
+                    key: entry.key,
+                    type: 'svg',
+                }
+                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                break;
+            }
+            case "img": {
+                const projectImg = appState.project.imgs.get(entry.key);
+                if (!projectImg) break;
+                const canvasImg = appState.canvasImgs.get(entry.key);
+
+                if (!canvasImg) break;
+                const newActiveElement: LaurusActiveElement = {
+                    key: entry.key,
+                    type: 'img',
+                }
+                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                break;
+            }
+        }
+    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
+
+    const setShowContextMenu = useCallback((newCarouselIndex: number) => {
+        if (newCarouselIndex > appState.carouselEntries.length - 1) return;
+        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
+        switch (entry.type) {
+            case "svg": {
+                const projectSvg = appState.project.svgs.get(entry.key);
+                if (!projectSvg) break;
+                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
+                const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != entry.key);
+                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                inactiveSvgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                inactiveImgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                break;
+            }
+            case "img": {
+                const projectImg = appState.project.imgs.get(entry.key);
+                if (!projectImg) break;
+                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
+                const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != entry.key);
+                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                inactiveImgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                inactiveSvgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                break;
+            }
+        }
+    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
+
+    const deleteEffect = useCallback(async (effect: LaurusEffect) => {
+        switch (effect.type) {
+            case "move": {
+                const deleted = await deleteMove(appState.apiOrigin, appState.accessToken, effect.value.move_id);
+                if (deleted) {
+                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                }
+                break;
+            }
+            case "rotate": {
+                const deleted = await deleteRotate(appState.apiOrigin, appState.accessToken, effect.value.rotate_id);
+                if (deleted) {
+                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                }
+                break;
+            }
+            case "scale": {
+                const deleted = await deleteScale(appState.apiOrigin, appState.accessToken, effect.value.scale_id);
+                if (deleted) {
+                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                }
+                break;
+            }
+        }
+    }, [appState.accessToken, appState.apiOrigin, dispatch]);
+
+
     return (
-        <div style={{ display: 'grid' }} key={effect.key}>
-            <div
-                style={{
+        <div style={{ display: 'flex', width: '100%', }}>
+            <div style={{ display: 'grid', width: '100%', }}>
+                <div
+                    style={{
+                        width: '100%',
+                        height: timelineUnitsSize.height,
+                        padding: "0px 0px 0px 8px",
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: timelineUnitsSize.fontSize,
+                        color: 'rgb(227, 227, 227)',
+                    }}>
+                    <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'start'}</div>
+                        <input
+                            id={`start-input-${effect.key}`}
+                            disabled
+                            ref={startRef}
+                            type="text"
+                            placeholder="0.00"
+                            style={{
+                                textAlign: "left",
+                                background: 'none',
+                                color: "rgba(255, 255, 255, 0.8)",
+                                borderRadius: "2px",
+                                border: 'none',
+                                outline: 'none',
+                                height: '100%',
+                                display: 'inline-block',
+                                overflowX: 'scroll',
+                                fontSize: timelineUnitsSize.inputFontSize,
+                                width: timelineUnitsSize.inputWidth,
+                            }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', height: '100%', width: '60%', marginTop: 4, alignItems: 'center' }}>
+                        <EffectDescription
+                            effectKey={effect.key}
+                            effectDescriptionInit={effect.value.description} />
+                    </div>
+                    <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'end'}</div>
+                        <input
+                            id={`end-input-${effect.key}`}
+                            disabled
+                            ref={endRef}
+                            type="text"
+                            placeholder="0.00"
+                            style={{
+                                textAlign: "left",
+                                background: 'none',
+                                color: "rgba(255, 255, 255, 0.8)",
+                                borderRadius: "2px",
+                                border: 'none',
+                                outline: 'none',
+                                height: '100%',
+                                display: 'inline-block',
+                                overflowX: 'scroll',
+                                fontSize: timelineUnitsSize.inputFontSize,
+                                width: timelineUnitsSize.inputWidth,
+                            }}
+                        />
+                    </div>
+                </div>
+                <div style={{
                     width: '100%',
-                    height: timelineUnitsSize.height,
-                    padding: "0px 0px 0px 8px",
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: timelineUnitsSize.fontSize,
-                    color: 'rgb(227, 227, 227)'
+                    height: '100%',
+                    padding: `0px ${trackSidePadding}px 0px ${trackSidePadding}px`,
                 }}>
-                <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'start'}</div>
-                    <input
-                        id={`start-input-${effect.key}`}
-                        disabled
-                        ref={startRef}
-                        type="text"
-                        placeholder="0.00"
-                        style={{
-                            textAlign: "left",
-                            background: 'none',
-                            color: "rgba(255, 255, 255, 0.8)",
-                            borderRadius: "2px",
-                            border: 'none',
-                            outline: 'none',
-                            height: '100%',
-                            display: 'inline-block',
-                            overflowX: 'scroll',
-                            fontSize: timelineUnitsSize.inputFontSize,
-                            width: timelineUnitsSize.inputWidth,
+                    <TimelineSlider
+                        hash={`${effect.key}|t1`}
+                        size={timelineTrackSize}
+                        trackRef={timelineTrackRef}
+                        cursor={startCursor}
+                        onNewCursor={async (c) => {
+                            const newStart = cursorToTime(c.x);
+                            const newEnd = getNewEndTime(c.x);
+                            setStartCursor({ ...c });
+                            if (newEnd[1] && endRef.current) {
+                                setEndCursor({ ...endCursor, x: c.x });
+                                endRef.current.value = newStart.toFixed(2);
+                            }
+                            const newServerStart = convertTime(newStart, appState.timelineUnit, 'sec');
+                            const newServerEnd = convertTime(newEnd[0], appState.timelineUnit, 'sec');
+                            const rollback: LaurusEffect = { ...effect };
+                            const newEffect = injectTime(effect, newServerStart, newServerEnd);
+                            await saveEffect(newEffect, rollback);
                         }}
+                        rangeCursor={endCursor}
+                        onNewRangeCursor={async (c) => {
+                            const newStart = getNewStartTime(c.x);
+                            const newEnd = cursorToTime(c.x);
+                            setEndCursor({ ...c });
+                            if (newStart[1] && startRef.current) {
+                                setStartCursor({ ...startCursor, x: c.x });
+                                startRef.current.value = newEnd.toFixed(2);
+                            }
+                            const newServerStart = convertTime(newStart[0], appState.timelineUnit, 'sec');
+                            const newServerEnd = convertTime(newEnd, appState.timelineUnit, 'sec');
+                            const rollback: LaurusEffect = { ...effect };
+                            const newEffect = injectTime(effect, newServerStart, newServerEnd);
+                            await saveEffect(newEffect, rollback);
+                        }}
+                        onCursorMove={(c) => {
+                            if (!startRef.current || effect.locked) return;
+                            const newValue = cursorToTime(c.x);
+                            startRef.current.value = newValue.toFixed(2);
+                        }}
+                        onRangeMove={(c) => {
+                            if (!endRef.current || effect.locked) return;
+                            const newValue = cursorToTime(c.x);
+                            endRef.current.value = newValue.toFixed(2);
+                        }}
+                        disabled={effect.locked}
                     />
                 </div>
-                <div style={{ display: 'flex', height: '100%', gap: 4, alignItems: 'center' }}>
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'end'}</div>
-                    <input
-                        id={`end-input-${effect.key}`}
-                        disabled
-                        ref={endRef}
-                        type="text"
-                        placeholder="0.00"
-                        style={{
-                            textAlign: "left",
-                            background: 'none',
-                            color: "rgba(255, 255, 255, 0.8)",
-                            borderRadius: "2px",
-                            border: 'none',
-                            outline: 'none',
-                            height: '100%',
-                            display: 'inline-block',
-                            overflowX: 'scroll',
-                            fontSize: timelineUnitsSize.inputFontSize,
-                            width: timelineUnitsSize.inputWidth,
-                        }}
-                    />
-                </div>
+                <div
+                    style={{
+                        width: '100%',
+                        height: timelineDropDownSize.height
+                    }} />
+                {showUnitControls && (() => {
+                    switch (effect.type) {
+                        case "scale": {
+                            return <ScaleUnit
+                                scale={effect.value}
+                                svgElementsRef={svgElementsRef}
+                                imgElementsRef={imgElementsRef}
+                                carouselIndexInit={carouselIndexInit} />
+                        }
+                        case "move": {
+                            return <MoveUnit
+                                move={effect.value}
+                                svgElementsRef={svgElementsRef}
+                                imgElementsRef={imgElementsRef}
+                                carouselIndexInit={carouselIndexInit} />
+                        }
+                        case "rotate": {
+                            return <RotateUnit
+                                rotate={effect.value}
+                                svgElementsRef={svgElementsRef}
+                                imgElementsRef={imgElementsRef}
+                                carouselIndexInit={carouselIndexInit} />
+                        }
+                    }
+                })()}
             </div>
             <div style={{
-                width: '100%',
-                padding: `0px ${trackSidePadding}px 0px ${trackSidePadding}px`,
+                width: 24,
+                height: '100%',
+                background: 'rgba(22, 22, 22, 0.9)',
+                display: 'flex',
+                flexDirection: 'column',
             }}>
-                <TimelineSlider
-                    label={effect.type}
-                    labelSize={timelineTrackLabelSize}
-                    hash={`${effect.key}|t1`}
-                    capSize={startCapSize}
-                    rangeCapSize={endCapSize}
-                    trackSize={timelineTrackSize}
-                    trackRef={timelineTrackRef}
-                    cursor={startCursor}
-                    onNewCursor={async (c) => {
-                        const newStart = cursorToTime(c.x);
-                        const newEnd = getNewEndTime(c.x);
-
-                        setStartCursor({ ...c });
-                        if (newEnd[1] && endRef.current) {
-                            setEndCursor({ ...endCursor, x: c.x });
-                            endRef.current.value = newStart.toFixed(2);
+                <div
+                    style={{ width: 24, height: 24, }}>
+                    <SvgRepo svg={(() => {
+                        switch (effect.type) {
+                            case "scale": return allOut();
+                            case "move": return earthquake();
+                            case "rotate": return toysFan();
                         }
-
-                        const newServerStart = convertTime(newStart, appState.timelineUnit, 'sec');
-                        const newServerEnd = convertTime(newEnd[0], appState.timelineUnit, 'sec');
-                        const rollback: LaurusEffect = { ...effect };
-                        const newEffect = injectTime(effect, newServerStart, newServerEnd);
-                        await saveEffect(newEffect, rollback);
-                    }}
-                    rangeCursor={endCursor}
-                    onNewRangeCursor={async (c) => {
-                        const newStart = getNewStartTime(c.x);
-                        const newEnd = cursorToTime(c.x);
-
-                        setEndCursor({ ...c });
-                        if (newStart[1] && startRef.current) {
-                            setStartCursor({ ...startCursor, x: c.x });
-                            startRef.current.value = newEnd.toFixed(2);
+                    })()}
+                        containerSize={{ width: 24, height: 24 }}
+                        scale={0.6} />
+                </div>
+                <div
+                    onClick={() => {
+                        const closed = !showUnitControls;
+                        if (closed) {
+                            if (!appState.activeElement) {
+                                setActiveElement(0);
+                                setCarouselIndexInit(0);
+                                setShowContextMenu(0);
+                            }
+                            else {
+                                const activeKey = appState.activeElement.key;
+                                const initialIndex = appState.carouselEntries.findIndex(c => c.key == activeKey);
+                                if (initialIndex > -1) {
+                                    setCarouselIndexInit(initialIndex);
+                                    setShowContextMenu(initialIndex);
+                                }
+                            }
+                            setShowUnitControls(true);
                         }
-
-                        const newServerStart = convertTime(newStart[0], appState.timelineUnit, 'sec');
-                        const newServerEnd = convertTime(newEnd, appState.timelineUnit, 'sec');
-                        const rollback: LaurusEffect = { ...effect };
-                        const newEffect = injectTime(effect, newServerStart, newServerEnd);
-                        await saveEffect(newEffect, rollback);
+                        else {
+                            setShowUnitControls(false);
+                        }
                     }}
-                    onCursorMove={(c) => {
-                        if (!startRef.current || effect.locked) return;
-                        const newValue = cursorToTime(c.x);
-                        startRef.current.value = newValue.toFixed(2);
-                    }}
-                    onRangeMove={(c) => {
-                        if (!endRef.current || effect.locked) return;
-                        const newValue = cursorToTime(c.x);
-                        endRef.current.value = newValue.toFixed(2);
-                    }}
-                    disabled={effect.locked}
-                />
-            </div>
-            <div
-                style={{
-                    width: '100%',
-                    height: timelineDropDownSize.height,
-                    padding: timelineDropDownSize.padding,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                }}>
-                <SvgRepo
-                    title={effect.locked ? "locked" : "unlocked"}
-                    svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
-                    containerSize={{
-                        width: timelineDropDownSize.svg,
-                        height: timelineDropDownSize.svg
-                    }}
-                    scale={0.7}
-                    onContainerClick={async () => {
+                    style={{
+                        cursor: 'pointer',
+                        width: 24,
+                        height: 24,
+                        background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
+                        border: '1px solid rgba(0,0,0,0)',
+                        transition: 'border-left 0.25s ease-out'
+                    }}>
+                    <SvgRepo svg={tune()}
+                        containerSize={{ width: 24, height: 24 }}
+                        scale={0.65} />
+                </div>
+                <div
+                    onClick={async () => {
                         const rollback: LaurusEffect = { ...effect };
                         const newEffect: LaurusEffect = {
                             ...effect,
                             locked: !effect.locked,
                         }
                         await saveEffect(newEffect, rollback);
-                    }} />
-                <SvgRepo
-                    title={showUnitControls ? "hide controls" : "show controls"}
-                    svg={showUnitControls ? arrowDropUp() : arrowDropDown()}
-                    containerSize={{
-                        width: timelineDropDownSize.svg,
-                        height: timelineDropDownSize.svg
                     }}
-                    scale={1}
-                    onContainerClick={() => setShowUnitControls(v => !v)} />
+                    style={{
+                        cursor: 'pointer', width: 24, height: 24,
+                        background: 'none',
+                        border: '1px solid rgba(0,0,0,0)',
+                        transition: 'border-left 0.25s ease-out'
+                    }}>
+                    <SvgRepo
+                        title={effect.locked ? "locked" : "unlocked"}
+                        svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
+                        containerSize={{
+                            width: 24,
+                            height: 24
+                        }}
+                        scale={0.6} />
+                </div>
+                {showUnitControls && <div
+                    onClick={() => {
+                        const confirmed = confirm('are you sure you want to delete this effect?');
+                        if (confirmed) {
+                            deleteEffect(effect);
+                        }
+                    }}
+                    style={{
+                        cursor: 'pointer', width: 24, height: 24,
+                        background: 'none',
+                        border: '1px solid rgba(0,0,0,0)',
+                        transition: 'border-left 0.25s ease-out'
+                    }}>
+                    <SvgRepo
+                        title={"delete effect"}
+                        svg={cancelCircle('rgb(220, 112, 112)')}
+                        containerSize={{
+                            width: 24,
+                            height: 24
+                        }}
+                        scale={0.6} />
+                </div>}
             </div>
-            {showUnitControls && (() => {
-                switch (effect.type) {
-                    case "scale": {
-                        return <ScaleUnit
-                            scale={effect.value}
-                            svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef} />
-                    }
-                    case "move": {
-                        return <MoveUnit
-                            move={effect.value}
-                            svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef} />
-                    }
-                    case "rotate": {
-                        return <RotateUnit
-                            rotate={effect.value}
-                            svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef} />
-                    }
-                }
-            })()}
         </div>
     );
 }
 
+interface EffectDescription {
+    effectKey: string,
+    effectDescriptionInit: string,
+}
+function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescription) {
+    const { appState, dispatch } = useContext(WorkspaceContext);
+    const [effectDescription, setEffectDescription] = useState<string>(effectDescriptionInit);
+    const [effectDescriptionSnapshot] = useState<string>(effectDescriptionInit);
+    const effectDescriptionHook = useDebounce<string>(effectDescription, 300);
+    const dependenciesRef = useRef<LaurusEffect | undefined>(undefined);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return { fontSize: 12, padding: 6 }
+            case "midhigh": return { fontSize: 12, padding: 6 }
+            case "midlow":
+            case "low": return { fontSize: 12, padding: 6 }
+        }
+    });
+    const effectDescriptionInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        (async () => {
+            if (!dependenciesRef.current || !effectDescriptionInputRef.current) return;
+            if (effectDescriptionHook) {
+                const effect: LaurusEffect = { ...dependenciesRef.current }
+                switch (effect.type) {
+                    case "scale": {
+                        const newScale: LaurusScaleResult = { ...effect.value, description: effectDescriptionHook }
+                        const updated = await updateScale(
+                            appState.apiOrigin,
+                            appState.accessToken,
+                            effect.key,
+                            newScale);
+                        if (updated) {
+                            const newEffect: LaurusEffect = {
+                                ...effect,
+                                value: {
+                                    ...newScale,
+                                }
+                            };
+                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                        }
+                        else {
+                            effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
+                        }
+                        break;
+                    }
+                    case "move": {
+                        const newMove: LaurusMoveResult = { ...effect.value, description: effectDescriptionHook }
+                        const updated = await updateMove(
+                            appState.apiOrigin,
+                            appState.accessToken,
+                            effect.key,
+                            newMove);
+                        if (updated) {
+                            const newEffect: LaurusEffect = {
+                                ...effect,
+                                value: {
+                                    ...newMove,
+                                }
+                            };
+                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                        }
+                        else {
+                            effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
+                        }
+                        break;
+                    }
+                    case "rotate": {
+                        const newRotate: LaurusRotateResult = { ...effect.value, description: effectDescriptionHook }
+                        const updated = await updateRotate(
+                            appState.apiOrigin,
+                            appState.accessToken,
+                            effect.key,
+                            newRotate);
+                        if (updated) {
+                            const newEffect: LaurusEffect = {
+                                ...effect,
+                                value: {
+                                    ...newRotate,
+                                }
+                            };
+                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                        }
+                        else {
+                            effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
+                        }
+                        break;
+                    }
+                }
+            }
+        })();
+    }, [appState.accessToken, appState.apiOrigin, dispatch, effectDescriptionHook, effectDescriptionSnapshot]);
+
+    const onEffectDescriptionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const effect = appState.effects.find(e => e.key == effectKey);
+        if (!effect) return;
+
+        switch (effect.type) {
+            case "scale": {
+                const newEffect: LaurusScaleResult = { ...effect.value, description: e.target.value }
+                dependenciesRef.current = { ...effect, value: { ...newEffect } };
+                setEffectDescription(e.target.value);
+                break;
+            }
+            case "move": {
+                const newEffect: LaurusMoveResult = { ...effect.value, description: e.target.value }
+                dependenciesRef.current = { ...effect, value: { ...newEffect } };
+                setEffectDescription(e.target.value);
+                break;
+            }
+            case "rotate": {
+                const newEffect: LaurusRotateResult = { ...effect.value, description: e.target.value }
+                dependenciesRef.current = { ...effect, value: { ...newEffect } };
+                setEffectDescription(e.target.value);
+                break;
+            }
+        }
+    }, [appState.effects, effectKey]);
+
+    return (<>
+        <input
+            ref={effectDescriptionInputRef}
+            className={dellaRespira.className}
+            id={`effect-description-input-${effectKey}`}
+            type="text"
+            placeholder="describe me..."
+            style={{
+                textAlign: "center",
+                background: 'none',
+                color: "rgba(255, 255, 255, 0.8)",
+                borderRadius: "2px",
+                border: 'none',
+                outline: 'none',
+                height: '100%',
+                display: 'inline-block',
+                overflowX: 'scroll',
+                width: '100%',
+                ...dynamicSizes
+            }}
+            value={effectDescription}
+            onChange={onEffectDescriptionChange}
+        />
+    </>)
+}

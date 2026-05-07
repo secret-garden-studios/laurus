@@ -7,11 +7,18 @@ interface DialProps {
     ids: { contextId: string, draggableId: string }
     value: number,
     onNewValue: (v: number) => void,
+    size: {
+        container: number,
+        gauge: number,
+        gaugeTick: number,
+        dial: number,
+        dialTick: number,
+    }
     onMove?: (v: number) => void,
     disabled?: boolean,
 }
 
-export default function Dial({ ids, value, onMove, onNewValue, disabled }: DialProps) {
+export default function Dial({ ids, value, size, onMove, onNewValue, disabled }: DialProps) {
     const rotationRef = useRef(value);
     const [rotation, setRotation] = useState(value);
     const sensors = useSensors(useSensor(PointerSensor));
@@ -53,6 +60,7 @@ export default function Dial({ ids, value, onMove, onNewValue, disabled }: DialP
             modifiers={[restrictToVerticalAxis]}>
             <BlurryCap
                 id={ids.draggableId}
+                size={size}
                 rotation={rotation}
                 disabled={disabled} />
         </DndContext>
@@ -62,18 +70,25 @@ export default function Dial({ ids, value, onMove, onNewValue, disabled }: DialP
 interface BlurryCapProps {
     id: string,
     rotation: number,
+    size: {
+        container: number,
+        gauge: number,
+        gaugeTick: number,
+        dial: number,
+        dialTick: number,
+    },
     disabled?: boolean,
 }
 
-function BlurryCap({ id, rotation, disabled }: BlurryCapProps) {
+function BlurryCap({ id, rotation, size, disabled }: BlurryCapProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
     const { appState } = useContext(WorkspaceContext);
     const dndCss = { touchAction: 'none', };
-    const [containerSize] = useState(Math.round(90 * appState.resolution.factor));
-    const [gaugeSize] = useState(Math.round(90 * appState.resolution.factor));
-    const [dialSize] = useState(Math.round(80 * appState.resolution.factor));
-    const [gaugeTickLength] = useState(Math.round(7 * appState.resolution.factor));
-    const [dialTickLength] = useState(Math.round(11 * appState.resolution.factor));
+    const [containerSize] = useState(Math.round(size.container * appState.resolution.factor));
+    const [gaugeSize] = useState(Math.round(size.gauge * appState.resolution.factor));
+    const [dialSize] = useState(Math.round(size.dial * appState.resolution.factor));
+    const [gaugeTickLength] = useState(Math.round(size.gaugeTick * appState.resolution.factor));
+    const [dialTickLength] = useState(Math.round(size.dialTick * appState.resolution.factor));
 
     const [dialTickLeftPercentage] = useState(73);
     const [gaugeFactor] = useState(45);

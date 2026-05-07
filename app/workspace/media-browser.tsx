@@ -1,12 +1,13 @@
 import { useContext, useRef, useState, DragEvent, useCallback } from "react";
 import { dellaRespira } from "../fonts";
-import { LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext, LaurusProjectResult } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, SvgRepo, timerArrowDown } from "../svg-repo";
 import { createImg, createSvg, getImg, getSvg } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
+import { LaurusProjectResult } from "../projects/projects.client";
 
 export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
@@ -217,71 +218,30 @@ export default function MediaBrowser({
                 display: 'flex',
                 alignItems: 'center',
                 height: mediaFilterSize.container,
-                borderBottom: '1px solid rgba(10, 10, 10, 1)',
-                background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
+                borderBottom: '1px solid rgb(33, 33, 33)',
+                background: "rgb(15, 15, 15)",
             }}>
-                <div
-                    onClick={() => {
-                        onFilterSelect('img');
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                    className={dellaRespira.className}
-                    style={{
-                        letterSpacing: mediaFilterSize.letterSpacing,
-                        fontSize: mediaFilterSize.fontSize,
-                        display: 'grid',
-                        placeContent: 'center',
-                        width: '100%',
-                        height: '100%',
-                        background: filter == 'img' ? 'rgba(255,255,255,0.05)' : 'none',
-                        border: filter == 'img' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
-                    }}>
-                    {'img'}
-                </div>
-                <div style={{ height: '100%', width: 1, background: 'rgba(10, 10, 10, 1)' }} />
-                <div
-                    onClick={() => {
-                        onFilterSelect('svg');
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                    className={dellaRespira.className}
-                    style={{
-                        letterSpacing: mediaFilterSize.letterSpacing,
-                        fontSize: mediaFilterSize.fontSize,
-                        display: 'grid',
-                        placeContent: 'center',
-                        width: '100%',
-                        height: '100%',
-                        background: filter == 'svg' ? 'rgba(255,255,255,0.05)' : 'none',
-                        border: filter == 'svg' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
-                    }}>
-                    {'svg'}
-                </div>
-                <div style={{ height: '100%', width: 1, background: 'rgba(10, 10, 10, 1)' }} />
-                <div
-                    onClick={() => {
-                        onFilterSelect('frame');
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                    className={dellaRespira.className}
-                    style={{
-                        letterSpacing: mediaFilterSize.letterSpacing,
-                        fontSize: mediaFilterSize.fontSize,
-                        display: 'grid',
-                        placeContent: 'center',
-                        width: '100%',
-                        height: '100%',
-                        background: filter == 'frame' ? 'rgba(255,255,255,0.05)' : 'none',
-                        border: filter == 'frame' ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)'
-                    }}>
-                    {'frame'}
-                </div>
+                <MediaBrowserTab
+                    label={'img'}
+                    letterSpacing={mediaFilterSize.letterSpacing}
+                    fontSize={mediaFilterSize.fontSize}
+                    onClick={() => onFilterSelect('img')}
+                    selected={(filter == 'img')} />
+                <MediaBrowserTab
+                    label={'svg'}
+                    letterSpacing={mediaFilterSize.letterSpacing}
+                    fontSize={mediaFilterSize.fontSize}
+                    onClick={() => onFilterSelect('svg')}
+                    selected={(filter == 'svg')} />
+                <MediaBrowserTab
+                    label={'frame'}
+                    letterSpacing={mediaFilterSize.letterSpacing}
+                    fontSize={mediaFilterSize.fontSize}
+                    onClick={() => onFilterSelect('frame')}
+                    selected={(filter == 'frame')} />
             </div>
             <div
-                className={styles["noisy-background"]}
+                className={styles["noisy-background-lite"]}
                 onScroll={handleScroll}
                 style={{
                     gridRow: 2,
@@ -315,6 +275,50 @@ export default function MediaBrowser({
                             background: uploading ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
                             boxShadow: uploading ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
                         }} />
+                    {filter == 'frame' && <>
+                        <div style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 10,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            fontSize: 12,
+                            letterSpacing: 1,
+                        }}>
+                            <span style={{ opacity: appState.lightFrameBackground ? 1 : 1 }}>
+                                <i>{'light background'}</i>
+                            </span>
+                            <div
+                                onClick={() => {
+                                    dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
+                                }}
+                                style={{
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    width: 30,
+                                    height: 16,
+                                    background: appState.lightFrameBackground ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                                    borderRadius: 20,
+                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '2px',
+                                    border: appState.lightFrameBackground ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: appState.lightFrameBackground ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                }}>
+                                <div style={{
+                                    width: 10,
+                                    height: 10,
+                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
+                                    borderRadius: '50%',
+                                    transition: 'transform 0.2s',
+                                    transform: appState.lightFrameBackground ? 'translateX(15px)' : 'translateX(0px)',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                }} />
+                            </div>
+                        </div>
+                    </>}
                     {filter == 'img' && appState.browserImgs
                         .sort((a, b) => {
                             switch (sortStrategy) {
@@ -436,7 +440,7 @@ export default function MediaBrowser({
                                 }
                             }
                         })
-                        .map((frameSvg) => {
+                        .map((frameSvg, i) => {
                             const decodedString = decodeURIComponent(
                                 atob(frameSvg.svg.markup)
                                     .split('')
@@ -452,6 +456,7 @@ export default function MediaBrowser({
                                         display: 'grid',
                                         alignItems: 'start',
                                         justifyContent: 'center',
+                                        marginTop: i == 0 ? 28 : 0,
                                     }}>
                                     <FrameSvg
                                         scale={frameScales.high}
@@ -493,8 +498,8 @@ export default function MediaBrowser({
                 display: 'flex',
                 alignItems: 'center',
                 height: mediaSortSize.container,
-                borderTop: '1px solid rgba(10, 10, 10, 1)',
-                background: 'linear-gradient(45deg, rgb(17, 17, 17), rgb(13, 13, 13))'
+                borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                background: 'rgba(20,20,20,1)'
             }}>
                 <div
                     onClick={async () => {
@@ -548,6 +553,7 @@ export default function MediaBrowser({
                             height: mediaSortSize.svg
                         }} scale={1} />
                 </div>
+                <div style={{height: '100%', width: 1, background: 'rgba(255, 255, 255, 0.05)'}}/>
                 <div
                     onClick={() => { setSortStrategy('timestamp') }}
                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
@@ -555,7 +561,6 @@ export default function MediaBrowser({
                     style={{
                         display: 'grid',
                         placeContent: 'center',
-                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
                         width: '100%',
                         height: '100%',
                         background: sortStrategy == 'timestamp' ? 'rgba(255,255,255,0.05)' : 'none',
@@ -687,6 +692,43 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
                     <i>{footer}</i>
                 </div>
             </div>
+        </div>
+    </>
+}
+
+interface MediaBrowserTab {
+    label: string,
+    letterSpacing: number | string,
+    fontSize: number | string,
+    onClick: () => void,
+    selected: boolean,
+}
+function MediaBrowserTab({ label, letterSpacing, fontSize, onClick, selected }: MediaBrowserTab) {
+    return <>
+        <div
+            className={styles['animated-nav-dark']}
+            onClick={onClick}
+            style={{
+                display: 'grid',
+                width: '100%',
+                height: '100%',
+                gridTemplateRows: 'auto min-content',
+            }}>
+            <div style={{
+                letterSpacing,
+                fontSize,
+                display: 'grid',
+                placeContent: 'center',
+                color: 'rgb(240,240,240)'
+            }}>
+                {label}
+            </div>
+            <div style={{
+                height: 1,
+                borderRadius: 10,
+                background: selected ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
+                boxShadow: selected ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
+            }} />
         </div>
     </>
 }

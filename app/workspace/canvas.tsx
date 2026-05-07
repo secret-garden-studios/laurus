@@ -1,8 +1,9 @@
 import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, LaurusProjectSvg, LaurusProjectResult, LaurusProjectImg } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG } from "./workspace.client";
 import { v4 } from "uuid";
 import { findImg, findSvg } from "./workspace.server";
 import { updateProject, createProject } from "../projects/projects.server";
+import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 
 function calcMousePosition(
     canvas: HTMLCanvasElement,
@@ -132,12 +133,20 @@ export default function Canvas() {
                 height: newFrame.height,
                 top: newFrame.y,
                 left: newFrame.x,
+                order: 0,
                 media_key: svgData.media_key,
                 viewbox: svgData.viewbox,
                 fill: svgData.fill,
                 stroke: svgData.stroke,
                 stroke_width: svgData.stroke_width,
-                pending: false,
+                showContextMenu: false,
+                rotate_x: 0,
+                rotate_y: 0,
+                rotate_z: 0,
+                rotate_angle: 0,
+                scale_x: 1,
+                scale_y: 1,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
             }
             const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
             newSvgs.set(newKey, projectSvg);
@@ -149,8 +158,8 @@ export default function Canvas() {
                 if (projectUpdated) {
                     const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
                     if (encodedSvg) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey, value: { ...projectSvg } } });
+                        dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                     }
                 }
                 else {
@@ -164,8 +173,8 @@ export default function Canvas() {
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                     const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
                     if (encodedSvg) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasSvg, value: { ...encodedSvg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey, value: { ...projectSvg } } });
+                        dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                     }
                 }
             }
@@ -186,10 +195,18 @@ export default function Canvas() {
                 width: newFrame.width,
                 height: newFrame.height,
                 media_key: imgData.media_key,
-                pending: false,
+                showContextMenu: false,
                 img_media_id: imgMediaResult.img_media_id,
                 top: newFrame.y,
                 left: newFrame.x,
+                order: 0,
+                rotate_x: 0,
+                rotate_y: 0,
+                rotate_z: 0,
+                rotate_angle: 0,
+                scale_x: 1,
+                scale_y: 1,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
             };
             const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
             newImgs.set(newKey, projectImg);
@@ -201,8 +218,8 @@ export default function Canvas() {
                 if (projectUpdated) {
                     const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
                     if (encodedImg) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey, value: { ...projectImg } } });
+                        dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                     }
                 }
                 else {
@@ -216,8 +233,8 @@ export default function Canvas() {
                     dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
                     const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
                     if (encodedImg) {
-                        dispatch({ type: WorkspaceActionType.AddCanvasImg, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey, value: { ...projectImg } } });
+                        dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                     }
                 }
             }

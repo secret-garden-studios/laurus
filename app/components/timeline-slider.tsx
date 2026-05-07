@@ -1,103 +1,152 @@
-import { RefObject } from "react"
+import { RefObject, useCallback, useEffect, useState } from "react"
 import { PointerStyle, Trackpad } from "./trackpad"
+import { useTrackpadState } from "../hooks/useTrackpadState";
 
 interface TimelineSlider {
-    label: string,
-    labelSize: { font: number, height: number, paddingLeft: number } | undefined
     hash: string,
-    trackSize: { width: number | string, height: number | string }
+    size: {
+        containerHeight: number | string,
+        containerWidth: number | string,
+        trackHeight: number | string,
+        capWidth: number | string,
+        capHeight: number | string,
+    },
     trackRef: RefObject<HTMLDivElement | null>,
-    capSize: { width: number | string, height: number | string }
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
-    rangeCapSize: { width: number | string, height: number | string }
     rangeCursor: { x: number, y: number },
     onNewRangeCursor: (newCursor: { x: number, y: number }) => void,
     onRangeMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
 }
 export default function TimelineSlider({
-    label,
-    labelSize,
+    size,
     hash,
-    trackSize,
     trackRef,
-    capSize,
     cursor,
     onNewCursor,
     onCursorMove,
-    rangeCapSize,
     rangeCursor,
     onNewRangeCursor,
     onRangeMove,
     disabled,
 }: TimelineSlider) {
+    const { getTrackValue } = useTrackpadState(0, 100);
+
+    const cursorToValue = useCallback((cursorX: number): number => {
+        if (!trackRef.current) return 0;
+        const offset: number = parseFloat(size.capWidth.toString()) || 0;
+        const value = getTrackValue(cursorX, (trackRef.current.clientWidth - offset), 0);
+        return value;
+    }, [getTrackValue, size.capWidth, trackRef]);
+
+    const [startValue, setStartValue] = useState(0);
+    const [rangeValue, setRangeValue] = useState(0);
+
+    useEffect(() => {
+        (async () => {
+            setStartValue(cursorToValue(cursor.x))
+            setRangeValue(cursorToValue(rangeCursor.x));
+        })();
+    }, [cursor.x, cursorToValue, rangeCursor.x]);
+
     return (<>
         <div style={{ width: '100%', height: '100%', }}>
             <div
-                style={{ position: "relative", ...trackSize, }}>
-                <div style={{ position: 'absolute', width: '100%', }}>
+                style={{
+                    position: "relative",
+                    width: size.containerWidth,
+                    height: size.containerHeight,
+                }}>
+                <div style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: size.capHeight,
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    margin: 'auto',
+                }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
-                        height={capSize.height}
+                        height={size.capHeight}
                         coarsePointer={{
-                            ...capSize,
-                            pointerStyle: PointerStyle.Blurry,
+                            width: size.capWidth,
+                            height: size.capHeight,
+                            pointerStyle: PointerStyle.Solid,
                             zIndex: 2
                         }}
                         value={cursor}
                         onNewValue={onNewCursor}
-                        onMove={onCursorMove}
+                        onMove={(c) => {
+                            const newStartValue = cursorToValue(c.x);
+                            setStartValue(newStartValue);
+                            if (onCursorMove) { onCursorMove(c) }
+                        }}
                         disabled={disabled} />
                 </div>
-                <div style={{ position: 'absolute', width: '100%', }}>
+                <div style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: size.capHeight,
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    margin: 'auto',
+                }}>
                     <Trackpad
                         ids={{ contextId: `${hash}|c2`, draggableId: `${hash}|d2` }}
                         width={'100%'}
-                        height={rangeCapSize.height}
+                        height={size.capHeight}
                         coarsePointer={{
-                            ...rangeCapSize,
-                            pointerStyle: PointerStyle.Blurry,
+                            width: size.capWidth,
+                            height: size.capHeight,
+                            pointerStyle: PointerStyle.Solid,
                             zIndex: 2
                         }}
                         value={rangeCursor}
                         onNewValue={onNewRangeCursor}
-                        onMove={onRangeMove}
+                        onMove={(c) => {
+                            const newRangeValue = cursorToValue(c.x);
+                            setRangeValue(newRangeValue);
+                            if (onRangeMove) { onRangeMove(c) }
+                        }}
                         disabled={disabled} />
                 </div>
-                {label && labelSize && <div
-                    style={{
-                        zIndex: 1,
-                        top: 0,
-                        width: trackSize.width,
-                        height: labelSize.height,
-                        position: "absolute",
-                        display: 'flex',
-                        justifyContent: 'start',
-                        background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(25, 25, 25))",
-                        border: '1px solid rgb(27, 27, 27)',
-                        fontSize: labelSize.font,
-                        paddingLeft: labelSize.paddingLeft,
-                        alignItems: 'center',
-                        color: 'rgb(255, 255, 255)',
-                    }}
-                >
-                    {label}
-                </div>}
+                {/* Track */}
                 <div
                     ref={trackRef}
                     style={{
                         zIndex: 0,
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
                         position: "absolute",
-                        ...trackSize,
-                        background: "linear-gradient(45deg, rgba(22, 22, 22, 0.3), rgba(40, 40, 40, 0.3))",
-                        border: '1px solid rgb(27, 27, 27)',
-                        borderRadius: 10,
-                        boxShadow: "rgba(0, 0, 0, 1) 0px 0px 42px inset",
+                        margin: 'auto',
+                        width: size.containerWidth,
+                        height: size.trackHeight,
+                        background: 'rgb(60, 60, 60)',
+                        borderRadius: 8,
                     }}
-                />
+                >
+                    {/* Highlighted Glowing Section */}
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: `${Math.min(startValue, rangeValue)}%`,
+                            width: `${Math.abs(rangeValue - startValue)}%`,
+                            height: '100%',
+                            zIndex: 1,
+                            background: 'linear-gradient(1deg, rgb(219, 219, 219), rgb(141, 141, 141))',
+                            boxShadow: '0 0 8px 1px rgba(255, 255, 255, 0.275)',
+                        }}
+                    />
+                </div>
             </div>
         </div>
     </>)

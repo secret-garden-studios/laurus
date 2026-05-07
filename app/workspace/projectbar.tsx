@@ -2,8 +2,9 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import useDebounce from "../hooks/useDebounce";
-import { WorkspaceActionType, WorkspaceContext, LaurusProjectResult } from "./workspace.client";
+import { WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { updateProject, createProject } from "../projects/projects.server";
+import { LaurusProjectResult } from "../projects/projects.client";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -15,9 +16,9 @@ export default function Projectbar() {
     const [projectbarSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                height: Math.round(36 * appState.resolution.factor),
-                font: 16,
-                inputPadding: '0px 20px'
+                height: '',
+                font: 14,
+                inputPadding: '4px 20px'
             }
             case "midhigh": return {
                 height: 32,
@@ -80,47 +81,55 @@ export default function Projectbar() {
 
     return (<>
         <div
-            className={styles["noisy-background-lite"]}
+            className={styles["noisy-background"]}
             style={{
                 height: projectbarSize.height,
                 width: "100%",
-                display: "flex",
-                justifyContent: 'start',
-                alignItems: "center",
-                overflowX: 'auto'
+                display: "grid",
+                gridTemplateRows: 'min-content',
+                gridTemplateColumns: '1fr',
+                placeContent: 'start',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                borderBottom: '1px solid rgb(33, 33, 33)',
+                padding: 6,
             }}>
+
             <div
                 style={{
                     width: '100%',
-                    display: 'grid',
+                    display: 'flex',
                     placeItems: 'center',
                     height: '100%',
-                    padding: projectbarSize.inputPadding,
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    borderRadius: 0,
-                    background: 'linear-gradient(45deg, rgba(11, 11, 11, 0.3), rgba(19, 19, 19, 0.3))',
+                    padding: 0,
                 }}>
-                <input
-                    ref={projectTitleRef}
-                    id={`porject-name-input-${appState.project.project_id}`}
-                    className={dellaRespira.className}
-                    placeholder="name me..."
-                    style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        letterSpacing: '3px',
-                        background: 'none',
-                        color: "rgb(227, 227, 227)",
-                        fontSize: projectbarSize.font,
-                        border: 'none',
-                        textAlign: 'center',
-                        outline: 'none',
-                        padding: 4,
-                    }}
-                    type="text"
-                    value={projectName}
-                    onChange={onProjectNameChange}
-                />
+                <div style={{
+                    width: "100%",
+                    padding: 0,
+                }}>
+                    <input
+                        ref={projectTitleRef}
+                        id={`project-name-input-${appState.project.project_id}`}
+                        className={dellaRespira.className}
+                        placeholder="name me..."
+                        style={{
+                            fontWeight: 'bold',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            background: 'none',
+                            color: "rgb(242, 242, 242)",
+                            fontSize: projectbarSize.font,
+                            letterSpacing: 1,
+                            textAlign: 'center',
+                            border: 'none',
+                            outline: 'none',
+                            padding: 4,
+                        }}
+                        type="text"
+                        value={projectName}
+                        onChange={onProjectNameChange}
+                    />
+                </div>
             </div>
         </div>
     </>)

@@ -3,7 +3,7 @@
 import { useContext, useState } from "react";
 import { WorkspaceContext } from "./workspace.client";
 import { dellaRespira, ubuntuMono } from "../fonts";
-import { allOut, browse, contentPaste, deployedCode, earthquake, folder, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
+import { allOut, browse, contentPaste, earthquake, folder, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -13,7 +13,6 @@ export interface Statusbar {
 }
 export default function Statusbar({ action, body }: Statusbar) {
     const { appState } = useContext(WorkspaceContext);
-
     const [statusbarSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -156,8 +155,11 @@ export default function Statusbar({ action, body }: Statusbar) {
                             svg={(() => {
                                 switch (appState.tool.type) {
                                     case "drop": return lassoSelect();
-                                    case "activate": return deployedCode();
+                                    case "contextmenu": return keyboardCommandKey();
                                     case "viewport": return browse();
+                                    case "move": return earthquake();
+                                    case "scale": return allOut();
+                                    case "rotate": return toysFan();
                                 }
                             })()}
                             containerSize={{

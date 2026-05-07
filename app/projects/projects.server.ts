@@ -15,6 +15,13 @@ export interface ProjectImg_V1_0 {
     height: number
     top: number
     left: number
+    order: number
+    scale_x: number
+    scale_y: number
+    rotate_x: number
+    rotate_y: number
+    rotate_z: number
+    rotate_angle: number
 }
 export interface ProjectSvg_V1_0 {
     svg_media_id: string
@@ -23,6 +30,13 @@ export interface ProjectSvg_V1_0 {
     height: number
     top: number
     left: number
+    order: number
+    scale_x: number
+    scale_y: number
+    rotate_x: number
+    rotate_y: number
+    rotate_z: number
+    rotate_angle: number
     viewbox: string
     fill: string
     stroke: string
@@ -40,6 +54,12 @@ export interface Project_V1_0 {
     frame_left: number
     frame_width: number
     frame_height: number
+    frame_scale_x: number
+    frame_scale_y: number
+    frame_rotate_x: number
+    frame_rotate_y: number
+    frame_rotate_z: number
+    frame_rotate_angle: number
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
     layers: Map<string, ProjectLayer_V1_0>
@@ -52,6 +72,12 @@ export interface ProjectResult_V1_0 {
     frame_left: number
     frame_width: number
     frame_height: number
+    frame_scale_x: number
+    frame_scale_y: number
+    frame_rotate_x: number
+    frame_rotate_y: number
+    frame_rotate_z: number
+    frame_rotate_angle: number
     project_id: string
     timestamp: string
     last_active: string
@@ -157,7 +183,7 @@ export async function updateProject(
     baseUrl: string | undefined,
     accessToken: string | undefined,
     projectId: string,
-    project: Project_V1_0) {
+    project: Project_V1_0): Promise<boolean> {
     try {
         const url = `${baseUrl}/projects/${projectId}`;
         const body = JSON.stringify({
@@ -177,19 +203,15 @@ export async function updateProject(
         }
         if (!response.ok) {
             onNotOk(response.status);
-            return undefined;
+            return false;
         }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const result: ProjectResult_V1_0 = await response.json();
-        return {
-            ...result,
-            imgs: new Map(Object.entries(result.imgs)),
-            svgs: new Map(Object.entries(result.svgs)),
-            layers: new Map(Object.entries(result.layers)),
-        };
+        return true;
     }
     catch (error) {
         console.log({ error });
-        return undefined;
+        return false;
     }
 }
 export async function deleteProject(

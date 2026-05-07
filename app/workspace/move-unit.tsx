@@ -1,13 +1,12 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect } from "./workspace.client";
-import { dellaRespira } from "../fonts";
-import { autorenew, playArrow, earthquake, skipPrevious, menu, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
+import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement } from "./workspace.client";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { deleteMove, getMove, updateMove } from "./workspace.server";
+import { getMove, updateMove } from "./workspace.server";
 import Dial from "../components/dial";
-import ParameterSlider from "../components/parameter-slider";
-import { getParamTrackPadding, getParamCapSize, getParamTrackSize, getParamButtonSize, getParamGrooveWidth, getDisplaySize, getHeaderSize, getTopLevelPadding } from "./unit-resolution";
-import UnitDisplay from "./unit-display";
+import ParameterSliderY from "../components/parameter-slider";
+import UnitDisplay, { DeepControls } from "./unit-display";
+import { getDynamicUnitSizes } from "./workspace-resolution";
 
 interface MoveUnitControls {
     amplitude: number,
@@ -22,22 +21,12 @@ interface MoveUnit {
     move: LaurusMoveResult
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    carouselIndexInit: number,
 }
-export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveUnit) {
+export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [displaySize] = useState(() => getDisplaySize(appState.resolution));
-    const [carouselIndex, setCarouselIndex] = useState(() => {
-        const index = appState.carouselEntries.findIndex(c => c.value.media_key == appState.activeElement?.value.value.media_key)
-        if (index > -1) {
-            return index;
-        }
-        else {
-            return 0;
-        }
-    });
-    const [headerSize] = useState(() => getHeaderSize(appState.resolution));
-    const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
-    const [mainControls, setMainControls] = useState(true);
+    const [carouselIndex, setCarouselIndex] = useState(carouselIndexInit);
+    const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
         amplitude: 0,
         frequency: 0,
@@ -46,19 +35,36 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
         time: 0,
         angle: 0,
     });
-    const [paramTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
-    const [paramCapSize] = useState(() => getParamCapSize(appState.resolution));
-    const [paramTrackSize] = useState(() => getParamTrackSize(appState.resolution));
-    const [paramButtonSize] = useState(() => getParamButtonSize(appState.resolution));
-    const [paramGrooveWidth] = useState(() => getParamGrooveWidth(appState.resolution));
-    const [paramTrackCapBorderAdj] = useState(2);
+
+    const [dynamicSizes] = useState(() => {
+        const ds = getDynamicUnitSizes(appState.resolution);
+        switch (appState.resolution.type) {
+            case "high": return {
+                ...ds,
+                angleParam: { padding: 15 }
+            }
+            case "midhigh": return {
+                ...ds,
+                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+
+            }
+            case "midlow": return {
+                ...ds,
+                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+            }
+            case "low": return {
+                ...ds,
+                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+            }
+        }
+    });
 
     // param 1
     const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
     const [amplitudeCursor, setAmplitudeCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackCapBorderAdj,
+            dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1000);
 
     // param 2
@@ -66,7 +72,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [frequencyCursor, setFrequencyCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackCapBorderAdj,
+            dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             100);
 
     // param 3
@@ -74,7 +80,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [wavelengthCursor, setWavelengthCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackCapBorderAdj,
+            dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1000);
 
     // param 4
@@ -82,7 +88,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [distanceCursor, setDistanceCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackCapBorderAdj,
+            dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             5000);
 
     // param 5
@@ -90,17 +96,41 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
     const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
-            paramCapSize.height - paramTrackCapBorderAdj,
+            dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             appState.timelineMaxValue);
 
     // main param
-    const [angleTrackPadding] = useState(Math.round(15 * appState.resolution.factor));
     const [angle, setAngle] = useState(0);
+
+    const setActiveElementIfNull = useCallback(() => {
+        if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
+            const carouselEntry = appState.carouselEntries[carouselIndex];
+            switch (carouselEntry.type) {
+                case "svg": {
+                    const newActiveElement: LaurusActiveElement = {
+                        key: carouselEntry.key,
+                        type: "svg"
+                    }
+                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    break;
+                }
+                case "img": {
+                    const newActiveElement: LaurusActiveElement = {
+                        key: carouselEntry.key,
+                        type: "img"
+                    }
+                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    break;
+                }
+            }
+        }
+    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => {
         const newMath: Map<string, LaurusMoveEquation> = new Map(rollback.math);
         newMath.set(newEquation.input_id, newEquation);
         const newMove: LaurusMoveResult = { ...rollback, math: newMath };
+        setActiveElementIfNull();
         dispatch({
             type: WorkspaceActionType.SetEffect,
             value: { type: 'move', value: { ...newMove }, key: newMove.move_id, locked: newMove.locked },
@@ -112,11 +142,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                 value: { type: 'move', value: { ...rollback }, key: rollback.move_id, locked: rollback.locked },
             });
         }
-    }, [appState.accessToken, appState.apiOrigin, dispatch]);
+    }, [appState.accessToken, appState.apiOrigin, dispatch, setActiveElementIfNull]);
 
     const updateTrackpads = useCallback((newControls: MoveUnitControls) => {
         setAngle(newControls.angle);
-
         if (amplitudeTrackRef.current) {
             const newCursor = getAmplitudeCursor(newControls.amplitude, (amplitudeTrackRef.current.clientHeight));
             setAmplitudeCursor({ y: newCursor, x: 0 });
@@ -224,64 +253,21 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
 
     return (
         <div style={{
-            gridTemplateRows: 'min-content auto',
+            gridTemplateRows: 'auto',
             gridTemplateColumns: 'min-content auto',
             display: "grid",
-            borderTop: '1px solid rgba(255,255,255,0.05)',
             alignItems: 'center',
         }}>
-            {/* header */}
-            <div
-                className={dellaRespira.className}
-                style={{
-                    gridColumn: 'span 2',
-                    display: 'flex',
-                    height: '100%',
-                    alignItems: 'center',
-                    padding: headerSize.padding,
-                }}>
-                <div
-                    style={{
-                        fontSize: headerSize.font,
-                        display: 'grid', placeContent: 'center', width: 'min-content', height: '100%'
-                    }}>
-                    {'Move'}
-                </div>
-                <SvgRepo
-                    svg={earthquake()}
-                    containerSize={{
-                        width: headerSize.logo,
-                        height: headerSize.logo
-                    }}
-                    scale={0.75} />
-                <div
-                    style={{ display: 'grid', placeContent: 'center', width: 'min-content', height: '100%', marginLeft: 'auto' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
-                    onClick={() => { setMainControls(v => !v); }}
-                >
-                    <SvgRepo
-                        svg={menu()}
-                        containerSize={{
-                            width: headerSize.more,
-                            height: headerSize.more
-                        }}
-                        scale={1} />
-                </div>
-            </div>
             {mainControls ?
                 <>
                     <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
                     {/* controls */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateRows: 'min-content auto',
-                    }}>
+                    <div style={{ display: 'grid' }}>
                         {/* parameters */}
-                        <div style={{ padding: topLevelPadding }}>
+                        <div style={{ ...dynamicSizes.param }}>
                             <div style={{
-                                border: '1px solid rgba(10,10,10,1)',
-                                backgroundColor: "rgba(20, 20, 20, 0.2)",
+                                border: '1px solid rgb(20, 20, 20)',
+                                backgroundColor: "rgba(20, 20, 20, 0.25)",
                                 borderRadius: 0,
                                 padding: 0,
                                 display: 'flex',
@@ -290,23 +276,20 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     height: 'min-content',
                                     display: 'flex',
                                     justifyContent: 'space-between',
-                                    padding: paramTrackPadding,
-                                    width: '100%'
+                                    width: '100%',
+                                    ...dynamicSizes.paramFlex
                                 }}>
-                                    <ParameterSlider
+                                    <ParameterSliderY
                                         label={"amplitude"}
                                         hash={`${move.move_id}|p1`}
-                                        capSize={paramCapSize}
-                                        trackSize={paramTrackSize}
+                                        size={dynamicSizes.paramSlider}
                                         trackRef={amplitudeTrackRef}
                                         cursor={amplitudeCursor}
                                         onNewCursor={(newCursor) => {
                                             setAmplitudeCursor({ ...newCursor, x: 0 });
-
                                             if (!amplitudeTrackRef.current) return;
                                             const newAmplitude = getAmplitudeValue(newCursor.y, amplitudeTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, amplitude: newAmplitude } });
-
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -327,22 +310,18 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth}
                                         disabled={move.locked} />
-                                    <ParameterSlider
+                                    <ParameterSliderY
                                         label={"frequency"}
                                         hash={`${move.move_id}|p1`}
-                                        capSize={paramCapSize}
-                                        trackSize={paramTrackSize}
+                                        size={dynamicSizes.paramSlider}
                                         trackRef={frequencyTrackRef}
                                         cursor={frequencyCursor}
                                         onNewCursor={(newCursor) => {
                                             setFrequencyCursor({ ...newCursor, x: 0 });
-
                                             if (!frequencyTrackRef.current) return;
                                             const newFrequency = getFrequencyValue(newCursor.y, frequencyTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, frequency: newFrequency } });
-
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -363,22 +342,18 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth}
                                         disabled={move.locked} />
-                                    <ParameterSlider
+                                    <ParameterSliderY
                                         label={"wavelength"}
                                         hash={`${move.move_id}|p1`}
-                                        capSize={paramCapSize}
-                                        trackSize={paramTrackSize}
+                                        size={dynamicSizes.paramSlider}
                                         trackRef={wavelengthTrackRef}
                                         cursor={wavelengthCursor}
                                         onNewCursor={(newCursor) => {
                                             setWavelengthCursor({ ...newCursor, x: 0 });
-
                                             if (!wavelengthTrackRef.current) return;
                                             const newWavelength = getWavelengthValue(newCursor.y, wavelengthTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, wavelength: newWavelength } });
-
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -399,22 +374,18 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth}
                                         disabled={move.locked} />
-                                    <ParameterSlider
+                                    <ParameterSliderY
                                         label={"distance"}
                                         hash={`${move.move_id}|p1`}
-                                        capSize={paramCapSize}
-                                        trackSize={paramTrackSize}
+                                        size={dynamicSizes.paramSlider}
                                         trackRef={distanceTrackRef}
                                         cursor={distanceCursor}
                                         onNewCursor={(newCursor) => {
                                             setDistanceCursor({ ...newCursor, x: 0 });
-
                                             if (!distanceTrackRef.current) return;
                                             const newDistance = getDistanceValue(newCursor.y, distanceTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, distance: newDistance } });
-
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -435,22 +406,18 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth}
                                         disabled={move.locked} />
-                                    <ParameterSlider
+                                    <ParameterSliderY
                                         label={"time"}
                                         hash={`${move.move_id}|p1`}
-                                        capSize={paramCapSize}
-                                        trackSize={paramTrackSize}
+                                        size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
                                         cursor={timeCursor}
                                         onNewCursor={(newCursor) => {
                                             setTimeCursor({ ...newCursor, x: 0 });
-
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, time: newTime } });
-
                                             const activeKey = getCarouselEntryKey();
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
@@ -472,12 +439,12 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        grooveWidth={paramGrooveWidth}
                                         disabled={move.locked} />
                                 </div>
+                                {/* toolbar */}
                                 <div style={{
                                     borderLeft: '1px solid rgba(10,10,10,1)',
-                                    background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
+                                    background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
                                     padding: 0,
                                     display: 'grid',
                                     alignContent: 'start',
@@ -507,19 +474,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }}
                                         style={{
                                             cursor: move.locked ? '' : move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
                                             background: move.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                            ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             svg={move.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
                                     <div
@@ -541,18 +503,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }}
                                         style={{
                                             cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
+                                            ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             svg={move.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
                                     <div
@@ -575,18 +532,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }}
                                         style={{
                                             cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
+                                            ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             svg={move.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={1} />
                                     </div>
                                     <div
@@ -615,18 +567,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }}
                                         style={{
                                             cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
+                                            ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             svg={move.math.has(getCarouselEntryKey()) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.8} />
                                     </div>
                                     <div
@@ -651,34 +598,29 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                         }}
                                         style={{
                                             cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
                                             display: 'grid',
                                             placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
+                                            ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             svg={appState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.88} />
                                     </div>
                                 </div>
                             </div>
                         </div>
                         {/* main control */}
-                        <div style={{ padding: topLevelPadding }}>
+                        <div style={{ ...dynamicSizes.param }}>
                             <div style={{
                                 width: '100%',
-                                padding: angleTrackPadding,
-                                border: 'solid rgba(10,10,10,1) 1px',
-                                backgroundColor: "rgba(20, 20, 20, 0.2)",
+                                border: '1px solid rgb(20, 20, 20)',
+                                backgroundColor: "rgba(20, 20, 20, 0.25)",
                                 borderRadius: 0,
                                 display: 'flex',
                                 alignItems: 'start',
                                 justifyContent: 'center',
+                                ...dynamicSizes.angleParam
                             }}>
                                 <Dial
                                     ids={{
@@ -688,7 +630,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                     value={angle}
                                     onNewValue={function (v: number): void {
                                         const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
-                                        setCurrentControls(v => { return { ...v, angle: newAngle } });
+                                        setCurrentControls(v => { return { ...v, angle: newAngle }; });
                                         const activeKey = getCarouselEntryKey();
                                         if (activeKey) {
                                             const snapshot: LaurusMoveResult = { ...move };
@@ -709,61 +651,21 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef }: MoveU
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                    disabled={move.locked} />
+                                    disabled={move.locked}
+                                    size={{
+                                        container: 90,
+                                        gauge: 90,
+                                        gaugeTick: 7,
+                                        dial: 80,
+                                        dialTick: 11
+                                    }} />
                             </div>
                         </div>
                     </div>
                 </> :
                 <>
                     {/* deep controls */}
-                    <div
-                        style={{
-                            gridColumn: 'span 2',
-                            padding: topLevelPadding,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            fontSize: 16,
-                        }}>
-                        <div
-                            style={{
-                                display: 'grid',
-                                height: `${displaySize.height}px`,
-                                alignContent: 'center',
-                                gap: 4,
-                            }}>
-                            <div>{'You are about to part ways with this effect forever...'}</div>
-                            <div style={{ marginLeft: 'auto' }}>
-                                {'Click'}
-                                <span
-                                    onClick={async () => {
-                                        const snapshot: LaurusMoveResult = { ...move };
-                                        const deleted = await deleteMove(appState.apiOrigin, appState.accessToken, snapshot.move_id);
-                                        if (deleted) {
-                                            dispatch({
-                                                type: WorkspaceActionType.SetEffects,
-                                                value: appState.effects.filter(e => {
-                                                    switch (e.type) {
-                                                        case "scale": {
-                                                            return true;
-                                                        }
-                                                        case "move": {
-                                                            return e.value.move_id != snapshot.move_id;
-                                                        }
-                                                    }
-                                                })
-                                            });
-                                        }
-                                    }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
-                                    style={{ color: 'rgb(243, 115, 120)' }}>
-                                    {' delete '}
-                                </span>
-                                {'to proceed.'}
-                            </div>
-                        </div>
-                    </div>
+                    <DeepControls />
                 </>
             }
         </div >

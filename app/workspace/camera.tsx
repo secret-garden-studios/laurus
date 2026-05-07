@@ -1,16 +1,18 @@
 import { useDraggable, useSensors, useSensor, PointerSensor, DndContext } from "@dnd-kit/core";
 import { RefObject, useContext } from "react";
-import { MediaOverlays, WorkspaceContext } from "./workspace.client";
+import { WorkspaceContext } from "./workspace.client";
 import { CSS as DndCss } from '@dnd-kit/utilities';
 import styles from "../app.module.css";
+import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 
-interface CameraDragOverlayProps {
+interface CameraDragOverlay {
     id: string
     position: { x: number, y: number, z: number, },
     containerSize: { width: number, height: number },
+    disabled?: boolean,
 }
-function CameraDragOverlay({ id, position, containerSize }: CameraDragOverlayProps) {
-    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDragOverlay) {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
     const dndCss = {
         left: position.x,
         top: position.y,
@@ -27,7 +29,7 @@ function CameraDragOverlay({ id, position, containerSize }: CameraDragOverlayPro
             {...attributes}
             style={{
                 ...dndCss,
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: disabled ? '' : isDragging ? 'grabbing' : 'grab',
                 position: 'absolute',
                 width: containerSize.width,
                 height: containerSize.height,
@@ -37,22 +39,23 @@ function CameraDragOverlay({ id, position, containerSize }: CameraDragOverlayPro
     )
 }
 
-interface DraggableCameraProps {
+interface DraggableCamera {
     contextId: string
     nodeId: string,
-    data: {
-        svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-        imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>
-    }
+    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,
+    disabled?: boolean,
 }
 export default function DraggableCamera({
     contextId,
     nodeId,
-    data,
+    svgElementsRef,
+    imgElementsRef,
     zIndex,
-    onNewPosition }: DraggableCameraProps) {
+    onNewPosition,
+    disabled }: DraggableCamera) {
     const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -86,14 +89,58 @@ export default function DraggableCamera({
                         width: appState.project.frame_width,
                         height: appState.project.frame_height,
                         overflow: 'hidden',
-                        boxShadow: "6px 6px 10px rgba(0, 0, 0, 0.2)",
-                        borderRadius: 2,
+                        boxShadow: "0px 0px 30px rgba(0, 0, 0, 0.65)",
+                        borderRadius: 3,
+                        outline: appState.lightFrameBackground ? '1px solid rgb(10, 10, 10)' : '1px solid rgba(255,255,255,0.2)',
+                        background: appState.lightFrameBackground ? 'rgb(200, 200, 200)' : 'none'
                     }} >
                     {appState.tool.type == 'viewport' &&
-                        <MediaOverlays
-                            svgElementsRef={data.svgElementsRef}
-                            imgElementsRef={data.imgElementsRef}
-                            zIndex={zIndex + 1} />}
+                        <>
+                            {Array.from(appState.project.imgs.entries()).map((e) => {
+                                const [key, meta] = e;
+                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const imgData = appState.canvasImgs.get(key);
+                                if (imgData) {
+                                    return (
+                                        <div key={key}>
+                                            <DraggableProjectImg
+                                                mediaKey={key}
+                                                data={imgData}
+                                                meta={meta}
+                                                zIndex={meta.order + zIndex + 1}
+                                                imgElementsRef={imgElementsRef}
+                                                refKey={refKey}
+                                                disbaled={{
+                                                    value: appState.tool.type != 'move',
+                                                    cursor: ""
+                                                }} />
+                                        </div>
+                                    );
+                                }
+                            })}
+                            {Array.from(appState.project.svgs.entries()).map((e) => {
+                                const [key, meta] = e;
+                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const svgData = appState.canvasSvgs.get(key);
+                                if (svgData) {
+                                    return (
+                                        <div key={key}>
+                                            <DraggableProjectSvg
+                                                mediaKey={key}
+                                                data={svgData}
+                                                meta={meta}
+                                                zIndex={meta.order + zIndex + 1}
+                                                svgElementsRef={svgElementsRef}
+                                                refKey={refKey}
+                                                disabled={{
+                                                    value: appState.tool.type != 'move',
+                                                    cursor: ""
+                                                }} />
+                                        </div>
+                                    );
+                                }
+                            })}
+                        </>}
                 </div>
                 <div style={{ position: 'absolute' }}>
                     <CameraDragOverlay
@@ -108,7 +155,8 @@ export default function DraggableCamera({
                         containerSize={{
                             width: appState.project.frame_width,
                             height: appState.project.frame_height
-                        }} />
+                        }}
+                        disabled={disabled} />
                 </div>
             </div>
         </DndContext>

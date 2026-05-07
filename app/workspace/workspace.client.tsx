@@ -1,5 +1,5 @@
 'use client'
-import { createContext, RefObject, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { createContext, CSSProperties, use, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
     ScaleEquation_V1_0,
@@ -11,8 +11,6 @@ import {
     getFrames,
     ImgMedia_V1_0,
     getImgDiscoveryPage,
-    updateMove,
-    updateScale,
     getSvgDiscoveryPage,
     ImgMediaResult_V1_0,
     SvgMediaResult_V1_0,
@@ -25,17 +23,19 @@ import Menubar from "../menubar";
 import Statusbar from "./statusbar";
 import Canvas from "./canvas";
 import MediaBrowser, { MediaBrowserFilter } from "./media-browser";
-import { hexagon, checkCircle, moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
-import { DraggableReactImg, DraggableReactSvg, ReactImg } from "./media";
+import { moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
+import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import Projectbar from "./projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
-import { dellaRespira } from "../fonts";
 import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceResolution } from "./workspace-resolution";
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./toolbar";
-import { ProjectResult_V1_0, updateProject, createProject, ProjectImg_V1_0, ProjectSvg_V1_0, ProjectLayer_V1_0 } from "../projects/projects.server";
+import { ProjectResult_V1_0, updateProject, createProject } from "../projects/projects.server";
 import { MeDependencies } from "../page";
+import SubProjectbar from "./sub-projectbar";
+import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
+import NextImage from "next/image";
 
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
@@ -71,24 +71,62 @@ export type LaurusThumbnail =
 export type LaurusTool =
     | { type: 'drop' }
     | { type: 'none' }
-    | { type: 'activate' }
+    | { type: 'contextmenu' }
     | { type: 'viewport' }
+    | { type: 'move' }
+    | { type: 'scale' }
+    | { type: 'rotate' }
 export type LaurusBrowserElement = LaurusThumbnail
-export type LaurusActiveElement = { key: string, value: LaurusThumbnail }
-export interface LaurusProjectImg extends ProjectImg_V1_0 {
-    pending: boolean
+export type LaurusActiveElement = { key: string, type: 'svg' | 'img', lowPriority?: boolean }
+export enum AbsolutePosition {
+    topRight = 'topRight',
+    topLeft = 'topLeft',
+    bottomRight = 'bottomRight',
+    bottomLeft = 'bottomLeft',
 }
-export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
-    pending: boolean
+export type ContextMenuConfig =
+    | { position: AbsolutePosition.topRight, width: number, height: number }
+    | { position: AbsolutePosition.topLeft, width: number, height: number }
+    | { position: AbsolutePosition.bottomRight, width: number, height: number }
+    | { position: AbsolutePosition.bottomLeft, width: number, height: number }
+export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = { position: AbsolutePosition.topRight, width: 300, height: 400 }
+export function getNewContextMenuConfig(
+    newPosition: { top: number, left: number },
+    canvasSize: { width: number, height: number },
+    mediaSize: { width: number, height: number },
+    mediaScale: { x: number, y: number },
+    currentValue: ContextMenuConfig): ContextMenuConfig {
+    const left = (newPosition.left + (mediaSize.width * mediaScale.x) + currentValue.width > canvasSize.width) ? true : false;
+    const bottom = (newPosition.top + (mediaSize.height * mediaScale.y) + currentValue.height > canvasSize.height) ? true : false;
+    if (bottom && left) {
+        return { ...currentValue, position: AbsolutePosition.bottomLeft };
+    }
+    else if (bottom && !left) {
+        return { ...currentValue, position: AbsolutePosition.bottomRight };
+    }
+    else if (!bottom && left) {
+        return { ...currentValue, position: AbsolutePosition.topLeft };
+    }
+    else {
+        return { ...currentValue, position: AbsolutePosition.topRight };
+    }
 }
-export type LaurusLayer = ProjectLayer_V1_0;
-export interface LaurusProjectResult extends ProjectResult_V1_0 {
-    imgs: Map<string, LaurusProjectImg>
-    svgs: Map<string, LaurusProjectSvg>
+export interface LaurusTransform {
+    cssProps: CSSProperties,
+    bounds: {
+        width: number,
+        height: number,
+        deltas: {
+            top: number;
+            right: number;
+            bottom: number;
+            left: number;
+        }
+    }
 }
 export type CarouselEntry =
-    | { type: 'svg', key: string, value: LaurusProjectSvg }
-    | { type: 'img', key: string, value: LaurusProjectImg }
+    | { type: 'svg', key: string }
+    | { type: 'img', key: string }
 
 export function convertTime(time: number, currentUnit: string, newUnit: string) {
     switch (currentUnit + newUnit) {
@@ -110,14 +148,14 @@ export function toKeyframes(firstFrame: boolean, frames: LaurusFrame[]): Keyfram
         return i < frames.length - 1 ?
             {
                 translate: `${f.x}px ${f.y}px 0px`,
-                scale: f.s,
-                transform: `rotate3d(${f.rx},${f.ry},${f.rz},${f.rangle}deg)`,
+                scale: `${f.sx} ${f.sy}`,
+                rotate: `${f.rx} ${f.ry} ${f.rz} ${f.rangle}deg`,
                 easing: 'step-end'
             } :
             {
                 translate: `${f.x}px ${f.y}px 0px`,
-                scale: f.s,
-                transform: `rotate3d(${f.rx},${f.ry},${f.rz},${f.rangle}deg)`,
+                scale: `${f.sx} ${f.sy}`,
+                rotate: `${f.rx} ${f.ry} ${f.rz} ${f.rangle}deg`,
             }
     });
     return keyframes;
@@ -130,8 +168,9 @@ export interface WorkspaceState {
     apiOrigin: string | undefined,
     accessToken: string | undefined,
     project: LaurusProjectResult,
-    canvasImgs: LaurusImgResult[],
-    canvasSvgs: LaurusSvgResult[],
+    lightFrameBackground: boolean,
+    canvasImgs: Map<string, LaurusImgResult>,
+    canvasSvgs: Map<string, LaurusSvgResult>,
     browserImgs: LaurusImgResult[],
     browserSvgs: LaurusSvgResult[],
     browserFrames: LaurusCropSvg[],
@@ -161,6 +200,12 @@ export const defaultWorkspace: WorkspaceState = {
         frame_left: -1,
         frame_width: 0,
         frame_height: 0,
+        frame_scale_x: 1,
+        frame_scale_y: 1,
+        frame_rotate_x: 0,
+        frame_rotate_y: 0,
+        frame_rotate_z: 0,
+        frame_rotate_angle: 0,
         project_id: "",
         timestamp: "",
         last_active: "",
@@ -170,9 +215,10 @@ export const defaultWorkspace: WorkspaceState = {
         creator: "",
         last_editor: ""
     },
+    lightFrameBackground: false,
     tool: { type: 'none' },
-    canvasImgs: [],
-    canvasSvgs: [],
+    canvasImgs: new Map(),
+    canvasSvgs: new Map(),
     browserImgs: [],
     browserSvgs: [],
     browserFrames: [],
@@ -198,8 +244,12 @@ export enum WorkspaceActionType {
     UpdateBrowserImgs,
     AddBrowserSvg,
     UpdateBrowserSvgs,
-    AddCanvasImg,
-    AddCanvasSvg,
+    SetCanvasImg,
+    DeleteCanvasImg,
+    SetCanvasImgs,
+    SetCanvasSvg,
+    DeleteCanvasSvg,
+    SetCanvasSvgs,
     SetTool,
     SetBrowserElement,
     SetActiveElement,
@@ -207,10 +257,10 @@ export enum WorkspaceActionType {
     SetProjectSvg,
     DeleteProjectImg,
     DeleteProjectSvg,
-    SetPendingImg,
-    SetPendingSvg,
+    SetLightFrameBackground,
     SetEffects,
     SetEffect,
+    DeleteEffect,
     SetEffectClipboard,
     SetTimelineUnit,
     SetTimelineMaxValue,
@@ -227,8 +277,12 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.UpdateBrowserImgs, value: LaurusImgResult[] }
     | { type: WorkspaceActionType.AddBrowserSvg, value: LaurusSvgResult, first: boolean }
     | { type: WorkspaceActionType.UpdateBrowserSvgs, value: LaurusSvgResult[] }
-    | { type: WorkspaceActionType.AddCanvasImg, value: LaurusImgResult }
-    | { type: WorkspaceActionType.AddCanvasSvg, value: LaurusSvgResult }
+    | { type: WorkspaceActionType.SetCanvasImg, key: string, value: LaurusImgResult }
+    | { type: WorkspaceActionType.DeleteCanvasImg, key: string }
+    | { type: WorkspaceActionType.SetCanvasImgs, value: Map<string, LaurusImgResult> }
+    | { type: WorkspaceActionType.SetCanvasSvg, key: string, value: LaurusSvgResult }
+    | { type: WorkspaceActionType.DeleteCanvasSvg, key: string }
+    | { type: WorkspaceActionType.SetCanvasSvgs, value: Map<string, LaurusSvgResult> }
     | { type: WorkspaceActionType.SetTool, value: LaurusTool }
     | { type: WorkspaceActionType.SetBrowserElement, value: LaurusBrowserElement | undefined }
     | { type: WorkspaceActionType.SetActiveElement, value: LaurusActiveElement | undefined }
@@ -236,8 +290,10 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.DeleteProjectImg, key: string }
     | { type: WorkspaceActionType.SetProjectSvg, key: string, value: LaurusProjectSvg }
     | { type: WorkspaceActionType.DeleteProjectSvg, key: string }
+    | { type: WorkspaceActionType.SetLightFrameBackground, value: boolean }
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
     | { type: WorkspaceActionType.SetEffect, value: LaurusEffect }
+    | { type: WorkspaceActionType.DeleteEffect, key: string }
     | { type: WorkspaceActionType.SetEffectClipboard, value: LaurusEffect }
     | { type: WorkspaceActionType.SetTimelineUnit, value: string }
     | { type: WorkspaceActionType.SetTimelineMaxValue, value: number }
@@ -300,25 +356,31 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             }
             return { ...state, browserSvgs: newBrowserSvgs }
         }
-        case WorkspaceActionType.AddCanvasImg: {
-            const currentCanvasImgs = [...state.canvasImgs];
-            const i = currentCanvasImgs.findIndex(i => i.media_key == action.value.media_key);
-            if (i < 0) {
-                return { ...state, canvasImgs: [...currentCanvasImgs, action.value] }
-            }
-            else {
-                return state
-            }
+        case WorkspaceActionType.SetCanvasImg: {
+            const newImgs = new Map(state.canvasImgs);
+            newImgs.set(action.key, action.value);
+            return { ...state, canvasImgs: newImgs }
         }
-        case WorkspaceActionType.AddCanvasSvg: {
-            const currentCanvasSvgs = [...state.canvasSvgs];
-            const i = currentCanvasSvgs.findIndex(i => i.media_key == action.value.media_key);
-            if (i < 0) {
-                return { ...state, canvasSvgs: [...currentCanvasSvgs, action.value] }
-            }
-            else {
-                return state
-            }
+        case WorkspaceActionType.DeleteCanvasImg: {
+            const newImgs = new Map(state.canvasImgs);
+            newImgs.delete(action.key);
+            return { ...state, canvasImgs: newImgs }
+        }
+        case WorkspaceActionType.SetCanvasImgs: {
+            return { ...state, canvasImgs: new Map(action.value) }
+        }
+        case WorkspaceActionType.SetCanvasSvg: {
+            const newSvgs = new Map(state.canvasSvgs);
+            newSvgs.set(action.key, action.value);
+            return { ...state, canvasSvgs: newSvgs }
+        }
+        case WorkspaceActionType.DeleteCanvasSvg: {
+            const newSvgs = new Map(state.canvasSvgs);
+            newSvgs.delete(action.key);
+            return { ...state, canvasSvgs: newSvgs }
+        }
+        case WorkspaceActionType.SetCanvasSvgs: {
+            return { ...state, canvasSvgs: new Map(action.value) }
         }
         case WorkspaceActionType.SetTool: {
             return { ...state, tool: { ...action.value } }
@@ -353,11 +415,18 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
             return { ...state, project: newProject }
         }
+        case WorkspaceActionType.SetLightFrameBackground: {
+            return { ...state, lightFrameBackground: action.value }
+        }
         case WorkspaceActionType.SetEffects: {
             return { ...state, effects: [...action.value] }
         }
         case WorkspaceActionType.SetEffect: {
             return { ...state, effects: state.effects.map(e => e.key == action.value.key ? { ...action.value } : e) }
+        }
+        case WorkspaceActionType.DeleteEffect: {
+            const newEffects = state.effects.filter(e => e.key != action.key);
+            return { ...state, effects: newEffects }
         }
         case WorkspaceActionType.SetEffectClipboard: {
             return { ...state, effectClipboard: { ...action.value } }
@@ -399,10 +468,29 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
 
 function initProject(p: ProjectResult_V1_0) {
     const projectImgsInit: Map<string, LaurusProjectImg> =
-        new Map(p.imgs.entries().map(e => [e[0], { ...e[1], pending: false }]));
+        new Map(p.imgs.entries().map(e => [e[0],
+        {
+            ...e[1],
+            showContextMenu: false,
+            contextMenuConfig: getNewContextMenuConfig(
+                { top: e[1].top, left: e[1].left },
+                { width: p.canvas_width, height: p.canvas_height },
+                { ...e[1] },
+                { x: e[1].scale_x, y: e[1].scale_y },
+                { ...DEFAULT_CONTEXT_MENU_CONFIG })
+        }]));
 
     const projectSvgsInit: Map<string, LaurusProjectSvg> =
-        new Map(p.svgs.entries().map(e => [e[0], { ...e[1], pending: false }]));
+        new Map(p.svgs.entries().map(e => [e[0], {
+            ...e[1],
+            showContextMenu: false,
+            contextMenuConfig: getNewContextMenuConfig(
+                { top: e[1].top, left: e[1].left },
+                { width: p.canvas_width, height: p.canvas_height },
+                { ...e[1] },
+                { x: e[1].scale_x, y: e[1].scale_y },
+                { ...DEFAULT_CONTEXT_MENU_CONFIG })
+        }]));
 
     return {
         ...p,
@@ -420,14 +508,20 @@ function initCarouselEntries(
     project.imgs.entries().forEach((projectImg) => {
         const distance = Math.sqrt(projectImg[1].top ** 2 + projectImg[1].left ** 2);
         temp.push({
-            entry: { type: 'img', key: projectImg[0], value: { ...projectImg[1] } },
+            entry: {
+                type: 'img',
+                key: projectImg[0],
+            },
             distance
         });
     });
     project.svgs.entries().forEach((projectSvg) => {
         const distance = Math.sqrt(projectSvg[1].top ** 2 + projectSvg[1].left ** 2);
         temp.push({
-            entry: { type: 'svg', key: projectSvg[0], value: { ...projectSvg[1] } },
+            entry: {
+                type: 'svg',
+                key: projectSvg[0],
+            },
             distance
         });
     });
@@ -490,10 +584,16 @@ function initReducer({
             })
         });
     }
-    const newCanvasSvgs: LaurusSvgResult[] =
-        projectDependencies?.canvasSvgs.map(v => { return { ...v } }) ?? [];
-    const newCanvasImgs: LaurusImgResult[] =
-        projectDependencies?.canvasImgs.map(v => { return { ...v } }) ?? [];
+    const newCanvasSvgs: Map<string, LaurusSvgResult> = projectDependencies ?
+        new Map(projectDependencies.project.svgs.entries().map(e => [e[0],
+        {
+            ...projectDependencies.canvasSvgs.find(i => i.svg_media_id == e[1].svg_media_id)
+        }])) : new Map();
+    const newCanvasImgs: Map<string, LaurusImgResult> = projectDependencies ?
+        new Map(projectDependencies.project.imgs.entries().map(e => [e[0],
+        {
+            ...projectDependencies.canvasImgs.find(i => i.img_media_id == e[1].img_media_id)
+        }])) : new Map();
     const newBrowserImgs: LaurusImgResult[] =
         browserDependencies.browserImgs.map(v => { return { ...v } });
     const newBrowserSvgs: LaurusSvgResult[] =
@@ -591,7 +691,7 @@ export default function Workspace({
             case "midlow": return 38
         }
     });
-    const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(false);
+    const [showMediaBrowser, setShowMediaBrowser] = useState<boolean>(true);
     const [mediaPageSize] = useState(mediaPageSizeInit);
     const [showTimeline, setShowTimeline] = useState<boolean>(true);
     const [mediaBrowserFilter, setMediaBrowserFilter] = useState<MediaBrowserFilter>('img');
@@ -664,16 +764,16 @@ export default function Workspace({
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
-                const pendingSvgs = Array.from(appState.project.svgs.entries().filter(m => m[1].pending));
+                const pendingSvgs = Array.from(appState.project.svgs.entries().filter(m => m[1].showContextMenu));
                 for (let i = 0; i < pendingSvgs.length; i++) {
                     const [key, svgMeta] = pendingSvgs[i];
-                    const newSvg: LaurusProjectSvg = { ...svgMeta, pending: false }
+                    const newSvg: LaurusProjectSvg = { ...svgMeta, showContextMenu: false }
                     dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                 }
-                const pendingImgs = Array.from(appState.project.imgs.entries().filter(m => m[1].pending));
+                const pendingImgs = Array.from(appState.project.imgs.entries().filter(m => m[1].showContextMenu));
                 for (let i = 0; i < pendingImgs.length; i++) {
                     const [key, imgMeta] = pendingImgs[i];
-                    const newImg: LaurusProjectImg = { ...imgMeta, pending: false }
+                    const newImg: LaurusProjectImg = { ...imgMeta, showContextMenu: false }
                     dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                 }
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
@@ -725,7 +825,7 @@ export default function Workspace({
             fill,
         };
 
-        const imgArray = Array.from(appState.project.imgs.entries().filter(e => !e[1].pending));
+        const imgArray = Array.from(appState.project.imgs.entries());
         for (let i = 0; i < imgArray.length; i++) {
             const [key] = imgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
@@ -743,7 +843,7 @@ export default function Workspace({
             }
         };
 
-        const svgArray = Array.from(appState.project.svgs.entries().filter(e => !e[1].pending));
+        const svgArray = Array.from(appState.project.svgs.entries());
         for (let i = 0; i < svgArray.length; i++) {
             const [key] = svgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
@@ -771,13 +871,13 @@ export default function Workspace({
                 height: '100vh',
                 display: 'grid',
                 gridTemplateColumns: 'min-content 1fr min-content min-content min-content',
-                gridTemplateRows: `min-content min-content 1fr min-content`,
+                gridTemplateRows: `min-content min-content min-content 1fr min-content`,
             }}>
-            <WorkspaceContext value={{ appState: appState, dispatch }}>
+            <WorkspaceContext value={{ appState, dispatch }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
                     <Menubar resolution={resolutionInit} me={me.me} />
                 </div>
-                <div style={{ gridRow: '2 / span 2', gridColumn: '1', overflowY: 'auto', }}>
+                <div style={{ gridRow: '2 / span 3', gridColumn: '1', overflowY: 'auto', }}>
                     {showTimeline ?
                         <TimelineArea
                             svgElementsRef={svgElementsRef}
@@ -787,7 +887,7 @@ export default function Workspace({
                         <>
                             <Bumper onBumperClick={() => {
                                 setShowTimeline(true);
-                            }} />
+                            }} borderLeft={'1px solid rgba(255, 255, 255, 0.05)'} borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
                             <div style={{
                                 zIndex: 1,
                                 position: 'fixed',
@@ -809,6 +909,14 @@ export default function Workspace({
                                     scale={0.5}
                                     onContainerClick={async () => {
                                         dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
+                                        const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                                        const inactiveImgs = Array.from(appState.project.imgs.entries());
+                                        inactiveSvgs.forEach(i => {
+                                            dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                        });
+                                        inactiveImgs.forEach(i => {
+                                            dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                        });
                                         const newAnimations = await getNewAnimations('none', false);
                                         Promise.all(newAnimations.map(animation => animation.finished))
                                             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -851,11 +959,19 @@ export default function Workspace({
                     }} >
                     <Projectbar />
                 </div>
+                <div
+                    style={{
+                        gridRow: '3',
+                        gridColumn: '2 / span 2',
+                        width: '100%',
+                    }} >
+                    <SubProjectbar />
+                </div>
                 {/* canvas area */}
                 <div
                     ref={canvasAreaRef}
                     style={{
-                        gridRow: '3',
+                        gridRow: '4',
                         gridColumn: '2',
                         overflowY: 'auto',
                         position: 'relative',
@@ -863,7 +979,7 @@ export default function Workspace({
                         height: '100%',
                     }}>
                     <div
-                        className={styles["large-tiled-background-squares"]}
+                        className={styles["noisy-background-20-3"]}
                         style={{
                             position: 'absolute',
                             top: 0,
@@ -887,10 +1003,8 @@ export default function Workspace({
                     <DraggableCamera
                         contextId={"draggable-camera-context-id"}
                         nodeId={"draggable-camera-node-id"}
-                        data={{
-                            svgElementsRef,
-                            imgElementsRef
-                        }}
+                        svgElementsRef={svgElementsRef}
+                        imgElementsRef={imgElementsRef}
                         zIndex={1}
                         onNewPosition={async function (newPosition: { x: number; y: number; }) {
                             const rollback: LaurusProjectResult = { ...appState.project };
@@ -915,26 +1029,74 @@ export default function Workspace({
                                     dispatch({ type: WorkspaceActionType.SetProject, value: { ...rollback } });
                                 }
                             }
-                        }} />
+                        }}
+                        disabled={appState.tool.type != 'move'} />
                     {appState.tool.type != 'viewport' &&
-                        <MediaOverlays
-                            svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef}
-                            zIndex={3} />}
+                        <>
+                            {Array.from(appState.project.imgs.entries()).map((e) => {
+                                const [key, meta] = e;
+                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const imgData = appState.canvasImgs.get(key);
+                                if (imgData) {
+                                    return (
+                                        <div key={key}>
+                                            <DraggableProjectImg
+                                                mediaKey={key}
+                                                data={imgData}
+                                                meta={meta}
+                                                zIndex={meta.order + 3}
+                                                imgElementsRef={imgElementsRef}
+                                                refKey={refKey}
+                                                disbaled={{
+                                                    value: appState.tool.type != 'move',
+                                                    cursor: ""
+                                                }} />
+                                        </div>
+                                    );
+                                }
+                            })}
+                            {Array.from(appState.project.svgs.entries()).map((e) => {
+                                const [key, meta] = e;
+                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const svgData = appState.canvasSvgs.get(key);
+                                if (svgData) {
+                                    return (
+                                        <div key={key}>
+                                            <DraggableProjectSvg
+                                                mediaKey={key}
+                                                data={svgData}
+                                                meta={meta}
+                                                zIndex={meta.order + 3}
+                                                svgElementsRef={svgElementsRef}
+                                                refKey={refKey}
+                                                disabled={{
+                                                    value: appState.tool.type != 'move',
+                                                    cursor: ""
+                                                }} />
+                                        </div>
+                                    );
+                                }
+                            })}
+                        </>}
                 </div>
                 {showMediaBrowser &&
-                    <Bumper onBumperClick={() => {
-                        setShowMediaBrowser(false);
-                    }} />
+                    <div
+                        style={{
+                            gridRow: '4',
+                            gridColumn: '3',
+                        }}>
+                        <Bumper onBumperClick={() => {
+                            setShowMediaBrowser(false);
+                        }} borderLeft={'1px solid rgba(255,255,255,0.05)'} borderRight={'1px solid rgba(255,255,255,0.05)'} />
+                    </div>
                 }
                 {showMediaBrowser &&
                     <div
                         style={{
-                            gridRow: '3', gridColumn: '4',
+                            gridRow: '3 / span 2',
+                            gridColumn: '4',
                             width: mediaBrowserWidth,
                             height: '100%',
-                            border: '1px solid rgba(10, 10, 10, 1)',
-                            background: 'rgba(20, 20, 20, 1)'
                         }} >
                         <MediaBrowser
                             filter={mediaBrowserFilter}
@@ -957,17 +1119,13 @@ export default function Workspace({
                 {/* right panel */}
                 <div
                     style={{
-                        gridRow: '3', gridColumn: '5',
-                        display: "grid",
-                        gridTemplateRows: 'min-content min-content auto',
-                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
-                        background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
-                        width: 'min-content',
-                        justifyContent: 'center'
+                        gridRow: '3 / span 2',
+                        gridColumn: '5',
                     }}>
                     <Toolbar resolution={resolutionInit} />
                 </div>
-                <div style={{ gridRow: '4', gridColumn: 'span 5' }}>
+                {/* mediabar */}
+                <div style={{ gridRow: '5', gridColumn: 'span 5' }}>
                     <div style={{
                         height: mediabarHeight,
                         width: "100%",
@@ -975,7 +1133,7 @@ export default function Workspace({
                         alignItems: "center",
                         justifyContent: 'end',
                         background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
-                        border: '1px solid rgb(19, 19, 19)',
+                        border: '1px solid rgba(255, 255, 255, 0.05)',
                     }}>
                         <div
                             title='browser element'
@@ -983,7 +1141,7 @@ export default function Workspace({
                             onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
                             onClick={() => setShowMediaBrowser(v => !v)}
                             style={{
-                                borderLeft: '1px solid rgba(10, 10, 10, 1)',
+                                borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
                                 position: 'relative'
                             }}>
                             {appState.browserElement && (() => {
@@ -998,12 +1156,25 @@ export default function Workspace({
                                         )
                                     }
                                     case "img": {
-                                        return (
-                                            <ReactImg
-                                                img={appState.browserElement.value as LaurusImgResult}
-                                                containerSize={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
-                                            />
-                                        )
+                                        return <>
+                                            <div
+                                                style={{
+                                                    width: mediabarHeight - 2,
+                                                    height: mediabarHeight - 2,
+                                                    position: 'relative',
+                                                }}
+                                            >
+                                                <NextImage
+                                                    draggable={false}
+                                                    alt={appState.browserElement.value.media_key}
+                                                    src={appState.browserElement.value.src}
+                                                    fill
+                                                    style={{
+                                                        objectFit: 'cover',
+                                                    }}
+                                                />
+                                            </div>
+                                        </>
                                     }
                                 }
                             })()}
@@ -1011,455 +1182,39 @@ export default function Workspace({
                     </div>
                     <Statusbar action={statusAction} body={statusBody} />
                 </div>
-            </WorkspaceContext>
-        </div>
-    </>)
-}
-
-interface MediaOverlays {
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
-    zIndex: number,
-}
-export function MediaOverlays({ svgElementsRef, imgElementsRef, zIndex }: MediaOverlays) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
-
-    const lazyLoadSvgElementsRef = () => {
-        if (!svgElementsRef.current) {
-            svgElementsRef.current = new Map();
-        }
-        return svgElementsRef.current;
-    };
-
-    const lazyLoadImgElementsRef = () => {
-        if (!imgElementsRef.current) {
-            imgElementsRef.current = new Map();
-        }
-        return imgElementsRef.current;
-    };
-
-    const onSvgRef = (element: SVGSVGElement | null, refKey: string) => {
-        const m = lazyLoadSvgElementsRef();
-        if (element) {
-            m.set(refKey, element);
-        }
-        else {
-            m.delete(refKey);
-        }
-    };
-
-    const onImgRef = (element: HTMLImageElement | null, refKey: string) => {
-        const m = lazyLoadImgElementsRef();
-        if (element) {
-            m.set(refKey, element);
-        }
-        else {
-            m.delete(refKey);
-        }
-    };
-
-    const onNewImgPosition = useCallback(async (key: string, imgMeta: LaurusProjectImg, newPosition: { x: number, y: number }) => {
-        const newImg: LaurusProjectImg = { ...imgMeta, top: newPosition.y, left: newPosition.x };
-        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        newImgs.set(key, newImg);
-        const rollback: LaurusProjectResult = { ...appState.project }
-        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
-        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-        if (newProject.project_id) {
-            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
-            }
-        }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
-
-    const onNewSvgPosition = useCallback(async (key: string, svgMeta: LaurusProjectSvg, newPosition: { x: number, y: number }) => {
-        const newSvg: LaurusProjectSvg = { ...svgMeta, top: newPosition.y, left: newPosition.x };
-        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        newSvgs.set(key, newSvg);
-        const rollback: LaurusProjectResult = { ...appState.project }
-        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
-        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-        if (newProject.project_id) {
-            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
-            }
-        }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
-
-    return (<>
-        {Array.from(appState.project.imgs.entries().filter(e => !e[1].pending)).map((e) => {
-            const [key, imgMeta] = e;
-            const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-            const imgData = appState.canvasImgs.find(i => i.media_key == imgMeta.media_key);
-            if (imgData) {
-                return (
-                    <div
-                        onClick={(event) => {
-                            // option key on mac
-                            if (event.altKey || appState.tool.type == 'activate') {
-                                const newImg: LaurusProjectImg = { ...imgMeta, pending: true }
-                                dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
-                            }
-                        }}
-                        key={key}>
-                        <DraggableReactImg
-                            contextId={`dnd-context-${key}`}
-                            nodeId={`dnd-node-${key}`}
-                            data={imgData}
-                            meta={imgMeta}
-                            zIndex={zIndex}
-                            onNewPosition={(newPosition) => onNewImgPosition(key, imgMeta, newPosition)}
-                            onImgRef={onImgRef}
-                            inputId={refKey}
-                        />
-                    </div>
-                );
-            }
-        })}
-        {Array.from(appState.project.svgs.entries().filter(e => !e[1].pending)).map((e) => {
-            const [key, svgMeta] = e;
-            const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-            const svgData = appState.canvasSvgs.find(s => s.media_key == svgMeta.media_key);
-            if (svgData) {
-                return (
-                    <div
-                        onClick={(event) => {
-                            // option key on mac
-                            if (event.altKey || appState.tool.type == 'activate') {
-                                const newSvg: LaurusProjectSvg = { ...svgMeta, pending: true }
-                                dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
-                            }
-                        }}
-                        key={key}>
-                        <DraggableReactSvg
-                            contextId={`dnd-context-${key}`}
-                            nodeId={`dnd-node-${key}`}
-                            data={svgData}
-                            meta={svgMeta}
-                            zIndex={zIndex}
-                            onNewPosition={(newPosition) => onNewSvgPosition(key, svgMeta, newPosition)}
-                            onSvgRef={onSvgRef}
-                            inputId={refKey} />
-                    </div>
-                );
-            }
-        })}
-        {Array.from(appState.project.imgs.entries().filter(e => e[1].pending)).map((e) => {
-            const [key, imgMeta] = e;
-            const position = appState.tool.type != 'viewport' ? { top: Math.max(0, imgMeta.top), left: Math.max(0, imgMeta.left) }
-                : { top: (imgMeta.top - appState.project.frame_top), left: (imgMeta.left - appState.project.frame_left) };
-            const imgData = appState.canvasImgs.find(i => i.media_key == imgMeta.media_key);
-            if (imgData) {
-                const threshold = 80;
-                const hexSize = imgMeta.width < threshold || imgMeta.height < threshold ? 12 : 16;
-                const activateSize = imgMeta.width < threshold || imgMeta.height < threshold ? 32 : 52;
-                return (
-                    <div
-                        style={{
-                            position: 'absolute',
-                            width: imgMeta.width,
-                            height: imgMeta.height,
-                            zIndex: zIndex,
-                            ...position
-                        }}
-                        onClick={(event) => {
-                            // option key on mac
-                            if (event.altKey || appState.tool.type == 'activate') {
-                                const newImg: LaurusProjectImg = { ...imgMeta, pending: false }
-                                dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
-                            }
-                        }}
-                        key={key}>
-                        <div style={{ position: 'relative' }}>
-                            <div style={{
-                                position: 'absolute', filter: 'blur(16px)',
-                            }}>
-                                <ReactImg
-                                    img={imgData}
-                                    containerSize={{
-                                        width: imgMeta.width,
-                                        height: imgMeta.height
-                                    }} />
-                            </div>
-                            <div style={{
-                                position: 'absolute',
-                                display: 'grid',
-                                gridTemplateRows: 'min-content auto',
-                                gridTemplateColumns: '1fr',
-                                background: imgMeta.width < threshold || imgMeta.height < threshold ? 'rgba(255, 255, 255, 0.15)' : 'none',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                height: Math.max(threshold * 1.25, imgMeta.height),
-                                width: Math.max(threshold, imgMeta.width),
-                                padding: imgMeta.width < threshold || imgMeta.height < threshold ? 2 : 6,
-                            }}>
-                                <div
-                                    style={{ width: 'min-content', height: 'min-content', justifySelf: 'start' }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                    onClick={async () => {
-                                        const snapshot: LaurusProjectResult = { ...appState.project };
-                                        const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
-                                        newImgs.delete(key);
-                                        const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
-                                        if (newProject.project_id) {
-                                            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                                            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-                                            if (!updated) {
-                                                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
-                                            }
-                                            else {
-                                                if (appState.activeElement?.key == key) {
-                                                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
-                                                }
-                                                dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key });
-                                                // clean up effects
-                                                for (let i = 0; i < appState.effects.length; i++) {
-                                                    const effect = appState.effects[i];
-                                                    switch (effect.type) {
-                                                        case "scale": {
-                                                            if (effect.value.math.has(key)) {
-                                                                const newMath = new Map(effect.value.math);
-                                                                newMath.delete(key);
-                                                                const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
-                                                                const updated = await updateScale(appState.apiOrigin, appState.accessToken, effect.key, newScale);
-                                                                if (updated) {
-                                                                    dispatch({
-                                                                        type: WorkspaceActionType.SetEffect,
-                                                                        value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
-                                                                    });
-                                                                }
-                                                            }
-                                                            break;
-                                                        }
-                                                        case "move": {
-                                                            if (effect.value.math.has(key)) {
-                                                                const newMath = new Map(effect.value.math);
-                                                                newMath.delete(key);
-                                                                const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
-                                                                const updated = await updateMove(appState.apiOrigin, appState.accessToken, effect.key, { ...newMove });
-                                                                if (updated) {
-                                                                    dispatch({
-                                                                        type: WorkspaceActionType.SetEffect,
-                                                                        value: { type: 'move', key: effect.key, locked: effect.locked, value: newMove }
-                                                                    });
-                                                                }
-                                                            }
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }}>
-                                    <SvgRepo
-                                        svg={hexagon('rgb(238, 91, 108)')}
-                                        containerSize={{
-                                            width: hexSize,
-                                            height: hexSize
-                                        }}
-                                        scale={1} />
-                                </div>
-                                <div
-                                    style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                    onClick={async () => {
-                                        const newImg: LaurusProjectImg = { ...imgMeta, pending: false };
-                                        dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
-                                        const newActiveElement: LaurusActiveElement = { key, value: { type: 'img', value: { ...imgData } } };
-                                        dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                                    }}>
-                                    <SvgRepo
-                                        svg={checkCircle('rgb(227, 227, 227)')}
-                                        containerSize={{
-                                            width: activateSize,
-                                            height: activateSize
-                                        }}
-                                        scale={1} />
-                                </div>
-                            </div>
-                        </div>
-                    </div >
-                );
-            }
-        })}
-        {
-            Array.from(appState.project.svgs.entries().filter(e => e[1].pending)).map((e) => {
-                const [key, svgMeta] = e;
-                const position = appState.tool.type != 'viewport' ? { top: Math.max(0, svgMeta.top), left: Math.max(0, svgMeta.left) }
-                    : { top: (svgMeta.top - appState.project.frame_top), left: (svgMeta.left - appState.project.frame_left) };
-                const svgData = appState.canvasSvgs.find(s => s.media_key == svgMeta.media_key);
-                if (svgData) {
-                    const threshold = 80;
-                    const hexSize = svgMeta.width < threshold || svgMeta.height < threshold ? 12 : 16;
-                    const activateSize = svgMeta.width < threshold || svgMeta.height < threshold ? 32 : 48;
-                    return (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                width: svgMeta.width,
-                                height: svgMeta.height,
-                                zIndex: zIndex,
-                                ...position
-                            }}
-                            onClick={(event) => {
-                                // option key on mac
-                                if (event.altKey || appState.tool.type == 'activate') {
-                                    const newSvg: LaurusProjectSvg = { ...svgMeta, pending: false }
-                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
-                                }
-                            }}
-                            key={key}>
-                            <div style={{ position: 'relative' }}>
-                                <div style={{
-                                    position: 'absolute', filter: 'blur(16px)',
-                                    border: '1px solid pink'
-                                }}>
-                                    <SvgRepo
-                                        svg={svgData}
-                                        containerSize={{
-                                            width: svgMeta.width,
-                                            height: svgMeta.height
-                                        }}
-                                        scale={0.9} />
-                                </div>
-                                <div style={{
-                                    position: 'absolute',
-                                    display: 'grid',
-                                    gridTemplateRows: 'min-content auto',
-                                    gridTemplateColumns: '1fr',
-                                    background: svgMeta.width < threshold || svgMeta.height < threshold ?
-                                        'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255,255,255,0.05)',
-                                    borderRadius: 6,
-                                    height: Math.max(threshold * 1.25, svgMeta.height),
-                                    width: Math.max(threshold, svgMeta.width),
-                                    padding: svgMeta.width < threshold || svgMeta.height < threshold ? 2 : 6,
-                                }}>
-                                    <div
-                                        style={{ width: 'min-content', height: 'min-content', justifySelf: 'start' }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                        onClick={async () => {
-                                            const snapshot: LaurusProjectResult = { ...appState.project };
-                                            const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
-                                            newSvgs.delete(key);
-                                            const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs }
-                                            if (newProject.project_id) {
-                                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                                                const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-                                                if (!updated) {
-                                                    dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
-                                                }
-                                                else {
-                                                    if (appState.activeElement?.key == key) {
-                                                        dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
-                                                    }
-                                                    dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key });
-                                                    // clean up effects
-                                                    for (let i = 0; i < appState.effects.length; i++) {
-                                                        const effect = appState.effects[i];
-                                                        switch (effect.type) {
-                                                            case "scale": {
-                                                                if (effect.value.math.has(key)) {
-                                                                    const newMath = new Map(effect.value.math);
-                                                                    newMath.delete(key);
-                                                                    const newScale: LaurusScaleResult = { ...effect.value, math: newMath }
-                                                                    const updated = await updateScale(appState.apiOrigin, appState.accessToken, effect.key, newScale);
-                                                                    if (updated) {
-                                                                        dispatch({
-                                                                            type: WorkspaceActionType.SetEffect,
-                                                                            value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
-                                                                        });
-                                                                    }
-                                                                }
-                                                                break;
-                                                            }
-                                                            case "move": {
-                                                                if (effect.value.math.has(key)) {
-                                                                    const newMath = new Map(effect.value.math);
-                                                                    newMath.delete(key);
-                                                                    const newMove: LaurusMoveResult = { ...effect.value, math: newMath }
-                                                                    const updated = await updateMove(appState.apiOrigin, appState.accessToken, effect.key, { ...newMove });
-                                                                    if (updated) {
-                                                                        dispatch({
-                                                                            type: WorkspaceActionType.SetEffect,
-                                                                            value: { type: 'move', key: effect.key, locked: effect.locked, value: { ...newMove } }
-                                                                        });
-                                                                    }
-                                                                }
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }}>
-                                        <SvgRepo
-                                            svg={hexagon('rgb(238, 91, 108)')}
-                                            containerSize={{
-                                                width: hexSize,
-                                                height: hexSize
-                                            }}
-                                            scale={1} />
-                                    </div>
-                                    <div
-                                        style={{ width: 'min-content', height: 'min-content', placeSelf: 'center' }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                                        onClick={() => {
-                                            const newSvg: LaurusProjectSvg = { ...svgMeta, pending: false }
-                                            dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
-                                            const newActiveElement: LaurusActiveElement = { key, value: { type: 'svg', value: { ...svgData } } };
-                                            dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                                        }}>
-                                        <SvgRepo
-                                            svg={checkCircle('rgb(40, 40, 40)')}
-                                            containerSize={{
-                                                width: activateSize,
-                                                height: activateSize
-                                            }}
-                                            scale={1} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                }
-            })
-        }
+            </WorkspaceContext >
+        </div >
     </>)
 }
 
 interface Bumper {
+    borderLeft: string,
+    borderRight: string,
     onBumperClick: () => void,
 }
-function Bumper({ onBumperClick }: Bumper) {
+export function Bumper({ borderLeft, borderRight, onBumperClick }: Bumper) {
     return (<>
         <div
             style={{
-                width: 20,
+                width: 18,
                 height: '100%',
                 gridTemplateRows: '1fr',
                 display: 'grid',
                 placeContent: 'start',
             }} >
             <div
-                className={dellaRespira.className}
+                className={styles['noisy-background']}
                 style={{
-                    border: '1px solid rgb(24, 24, 24)',
-                    background: 'rgba(20, 20, 20, 1)',
-                    width: 20,
+                    borderLeft,
+                    borderRight,
+                    width: 18,
                     display: 'grid',
                     placeContent: 'center',
                 }} >
                 <SvgRepo
-                    svg={moreVert('rgba(255, 255, 255, 0.5)')}
+                    svg={moreVert('rgba(255, 255, 255, 0.6)')}
                     containerSize={{
-                        width: 20,
+                        width: 18,
                         height: 38
                     }}
                     scale={1}

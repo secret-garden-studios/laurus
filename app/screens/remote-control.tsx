@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useLayoutEffect } from "react";
-import ParameterSlider from "../components/parameter-slider";
+import ParameterSliderY from "../components/parameter-slider";
 import TimelineSlider from "../components/timeline-slider";
 import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -140,18 +140,6 @@ export default function RemoteControl({
         left: Math.round(15 * resolution.factor),
         bottom: 10
     });
-    const [timelineTrackSize] = useState({
-        width: '100%',
-        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
-    });
-    const [startCapSize] = useState({
-        width: Math.round(17 * resolution.factor),
-        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
-    });
-    const [endCapSize] = useState({
-        width: Math.round(17 * resolution.factor),
-        height: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor)
-    });
     const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
     const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
 
@@ -183,15 +171,25 @@ export default function RemoteControl({
             }
         }
     });
-    const [volumeCapSize] = useState({
-        width: Math.round(45 * resolution.factor),
-        height: Math.round(21 * resolution.factor)
+    const [timelineTrackSize] = useState(() => {
+        return {
+            containerHeight: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor),
+            containerWidth: '100%',
+            trackHeight: 1,
+            capWidth: 18,
+            capHeight: 18,
+        }
     });
-    const [volumeTrackSize] = useState({
-        width: Math.round(45 * resolution.factor),
-        height: '100%'
+    const [paramSize] = useState(() => {
+        return {
+            containerHeight: '100%',
+            containerWidth: Math.round(45 * resolution.factor),
+            trackWidth: 1,
+            capWidth: 18,
+            capHeight: 18,
+            capBorderOffset: 0,
+        }
     });
-    const [volumeGrooveWidth] = useState(Math.round(10 * resolution.factor));
     const [volumeCursor, setVolumeCursor] = useState({ x: 0, y: 0 });
     const [volumeLimit] = useState(100);
 
@@ -200,13 +198,13 @@ export default function RemoteControl({
 
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackPadding.right), 0);
-    }, [getTimeValue, timelineTrackPadding.right]);
+        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth), 0);
+    }, [getTimeValue, timelineTrackSize.capWidth]);
 
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackPadding.right));
-    }, [getTimeCursor, timelineTrackPadding.right]);
+        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth));
+    }, [getTimeCursor, timelineTrackSize.capWidth]);
 
     const adjustEndCursor = useCallback((newX: number): number => {
         if (endCursor.x < newX && endRef.current) {
@@ -231,7 +229,7 @@ export default function RemoteControl({
 
     const { getInverseTrackValue: getVolumeValue, getTrackCursor: getVolumeCursor } =
         useTrackpadState(
-            volumeCapSize.height - 2,
+            paramSize.capHeight - 2,
             volumeLimit);
 
     useLayoutEffect(() => {
@@ -303,11 +301,10 @@ export default function RemoteControl({
                         scale={1} />
                 </div>
                 <div style={{ padding: volumeSize.innerPadding }}>
-                    <ParameterSlider
+                    <ParameterSliderY
                         label={""}
                         hash={`${videoMedia.video_media_id}|p1`}
-                        capSize={volumeCapSize}
-                        trackSize={volumeTrackSize}
+                        size={paramSize}
                         trackRef={volumeTrackRef}
                         cursor={volumeCursor}
                         onNewCursor={(newCursor) => {
@@ -325,8 +322,7 @@ export default function RemoteControl({
                                 value: Math.round(newVolume)
                             }
                             onNewControl(newControl);
-                        }}
-                        grooveWidth={volumeGrooveWidth} />
+                        }} />
                 </div>
                 <div style={{
                     display: 'grid',
@@ -533,15 +529,11 @@ export default function RemoteControl({
                         width: '100%',
                         paddingRight: timelineTrackPadding.right,
                         paddingBottom: timelineTrackPadding.bottom,
-                        paddingLeft: timelineTrackPadding.left
+                        paddingLeft: timelineTrackPadding.left,
                     }}>
                     <TimelineSlider
-                        label={''}
-                        labelSize={undefined}
+                        size={timelineTrackSize}
                         hash={`${videoMedia.video_media_id}|t1`}
-                        capSize={startCapSize}
-                        rangeCapSize={endCapSize}
-                        trackSize={timelineTrackSize}
                         trackRef={timelineTrackRef}
                         cursor={startCursor}
                         onNewCursor={async (c) => {
@@ -568,8 +560,7 @@ export default function RemoteControl({
                             if (!endRef.current) return;
                             const newValue = cursorToTime(c.x);
                             endRef.current.innerHTML = formatTime(newValue);
-                        }}
-                    />
+                        }} />
                 </div>
             </div>
         </div>

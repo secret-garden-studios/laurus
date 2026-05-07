@@ -1,85 +1,184 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
-import { add2, remove, autorenew, playArrow, allOut, skipPrevious, menu, SvgRepo } from "../svg-repo";
-import { PointerStyle, Trackpad } from "../components/trackpad";
-import { deleteScale, getScale, updateScale } from "./workspace.server";
+import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, } from "../svg-repo";
+import { getScale, updateScale } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import ParameterSlider from "../components/parameter-slider";
-import { getDisplaySize, getHeaderSize, getParamButtonSize, getParamCapSize, getParamGrooveWidth, getParamTrackPadding, getParamTrackSize, getTopLevelPadding } from "./unit-resolution";
-import UnitDisplay from "./unit-display";
+import ParameterSliderY, { ParameterSliderX } from "../components/parameter-slider";
+import UnitDisplay, { DeepControls } from "./unit-display";
+import { getDynamicUnitSizes } from "./workspace-resolution";
+import { LaurusProjectResult } from "../projects/projects.client";
 
 interface ScaleUnit {
     scale: LaurusScaleResult
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    carouselIndexInit: number,
 }
-export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: ScaleUnit) {
+export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [displaySize] = useState(() => getDisplaySize(appState.resolution));
-    const [carouselIndex, setCarouselIndex] = useState(() => {
-        const index = appState.carouselEntries.findIndex(c => c.value.media_key == appState.activeElement?.value.value.media_key)
-        if (index > -1) {
-            return index;
-        }
-        else {
-            return 0;
+    const [carouselIndex, setCarouselIndex] = useState(carouselIndexInit);
+    const [mainControls] = useState(true);
+    const [dynamicSizes] = useState(() => {
+        const ds = getDynamicUnitSizes(appState.resolution);
+        switch (appState.resolution.type) {
+            case "high": return {
+                ...ds,
+                scaleParam: {
+                    capWidth: 21,
+                    capHeight: 21,
+                    capBorderOffset: 1,
+                    containerWidth: 280,
+                    containerHeight: 38,
+                    trackHeight: 1,
+                    tickHeight: 28,
+                    tickLeft: 2
+                },
+                scaleParamDisplay: {
+                    fontSize: Math.round(28 * appState.resolution.factor),
+                    inputHeight: Math.round(30 * appState.resolution.factor),
+                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
+                    unitFontSize: Math.round(20 * appState.resolution.factor),
+                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                }
+            }
+            case "midhigh": return {
+                ...ds,
+                scaleParam: {
+                    capWidth: 17,
+                    capHeight: 17,
+                    capBorderOffset: 2,
+                    containerWidth: Math.round(230 * appState.resolution.factor),
+                    containerHeight: 38,
+                    trackHeight: 1,
+                    tickHeight: 28,
+                    tickLeft: 2
+                },
+                scaleParamDisplay: {
+                    fontSize: Math.round(28 * appState.resolution.factor),
+                    inputHeight: Math.round(30 * appState.resolution.factor),
+                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
+                    unitFontSize: Math.round(20 * appState.resolution.factor),
+                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                }
+            }
+            case "midlow": return {
+                ...ds,
+                scaleParam: {
+                    capWidth: 17,
+                    capHeight: 17,
+                    capBorderOffset: 2,
+                    containerWidth: Math.round(230 * appState.resolution.factor),
+                    containerHeight: 38,
+                    trackHeight: 1,
+                    tickHeight: 28,
+                    tickLeft: 2
+                },
+                scaleParamDisplay: {
+                    fontSize: Math.round(28 * appState.resolution.factor),
+                    inputHeight: Math.round(30 * appState.resolution.factor),
+                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
+                    unitFontSize: Math.round(20 * appState.resolution.factor),
+                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                }
+            }
+            case "low": return {
+                ...ds,
+                scaleParam: {
+                    capWidth: 17,
+                    capHeight: 17,
+                    capBorderOffset: 2,
+                    containerWidth: Math.round(230 * appState.resolution.factor),
+                    containerHeight: 38,
+                    trackHeight: 1,
+                    tickHeight: 28,
+                    tickLeft: 2
+                },
+                scaleParamDisplay: {
+                    fontSize: Math.round(28 * appState.resolution.factor),
+                    inputHeight: Math.round(30 * appState.resolution.factor),
+                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
+                    unitFontSize: Math.round(20 * appState.resolution.factor),
+                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                }
+            }
         }
     });
-    const [headerSize] = useState(() => getHeaderSize(appState.resolution));
-    const [topLevelPadding] = useState(() => getTopLevelPadding(appState.resolution));
-    const [mainControls, setMainControls] = useState(true);
 
     // param 1
     const timeTrackRef = useRef<HTMLDivElement | null>(null);
-    const [timeTrackPadding] = useState(() => getParamTrackPadding(appState.resolution));
-    const [timeCapSize] = useState(() => getParamCapSize(appState.resolution));
-    const [timeTrackSize] = useState(() => getParamTrackSize(appState.resolution));
-    const [paramButtonSize] = useState(() => getParamButtonSize(appState.resolution));
-    const [paramGrooveWidth] = useState(() => getParamGrooveWidth(appState.resolution));
     const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
     const { getTrackValue: getTimeValue, getTrackCursor: getTimeCursor } =
-        useTrackpadState(timeCapSize.height - 2, appState.timelineMaxValue);
+        useTrackpadState(dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset, appState.timelineMaxValue);
 
-    // main param
-    const scaleRef = useRef<HTMLInputElement | null>(null);
-    const scaleTrackRef = useRef<HTMLDivElement | null>(null);
+    // main params
     const [maxScale] = useState(30);
-    const [scaleTrackPadding] = useState(() => {
-        return `${Math.round(20 * appState.resolution.factor)}px ${Math.round(15 * appState.resolution.factor)}px`
-    });
-    const [scaleCapSize] = useState(() => {
-        return {
-            width: Math.round(51 * appState.resolution.factor),
-            height: Math.round(50 * appState.resolution.factor)
-        }
-    });
-    const [scaleTrackSize] = useState(() => {
-        return {
-            width: Math.round(430 * appState.resolution.factor),
-            height: Math.round(50 * appState.resolution.factor)
-        }
-    });
-    const [scaleParamDisplay] = useState(() => {
-        return {
-            fontSize: Math.round(28 * appState.resolution.factor),
-            inputHeight: Math.round(30 * appState.resolution.factor),
-            unitFontSize: Math.round(20 * appState.resolution.factor),
-            letterSpacing: Math.round(5 * appState.resolution.factor)
-        }
-    })
-    const [scaleCursor, setScaleCursor] = useState({ x: 0, y: 0 });
-    const { getComplexTrackValue: getScaleValue, getComplexTrackCursor: getScaleCursor } =
+    const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
+    const scaleXRef = useRef<HTMLInputElement | null>(null);
+    const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
+    const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
+    const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
         useComplexTrackpadState(
-            scaleCapSize.width - 2,
+            dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
             maxScale);
+
+    const scaleYRef = useRef<HTMLInputElement | null>(null);
+    const scaleYTrackRef = useRef<HTMLDivElement | null>(null);
+    const [scaleYCursor, setScaleYCursor] = useState({ x: 0, y: 0 });
+    const { getComplexTrackValue: getScaleYValue, getComplexTrackCursor: getScaleYCursor } =
+        useComplexTrackpadState(
+            dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
+            maxScale);
+
+    const setActiveElementIfNull = useCallback(() => {
+        if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
+            const carouselEntry = appState.carouselEntries[carouselIndex];
+            switch (carouselEntry.type) {
+                case "svg": {
+                    const newActiveElement: LaurusActiveElement = {
+                        key: carouselEntry.key,
+                        type: "svg"
+                    }
+                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    break;
+                }
+                case "img": {
+                    const newActiveElement: LaurusActiveElement = {
+                        key: carouselEntry.key,
+                        type: "img"
+                    }
+                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    break;
+                }
+            }
+        }
+    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch]);
+
+    const getActiveScale = useCallback((): [number, number] => {
+        if (!appState.activeElement) return [1, 1];
+        const activeElement = { ...appState.activeElement };
+        if (!activeElement) return [1, 1];
+        const snapshot: LaurusProjectResult = { ...appState.project };
+        switch (activeElement.type) {
+            case "svg": {
+                const svg = snapshot.svgs.get(activeElement.key);
+                if (!svg) return [1, 1];
+                return [svg.scale_x, svg.scale_y]
+            }
+            case "img": {
+                const img = snapshot.imgs.get(activeElement.key);
+                if (!img) return [1, 1];
+                return [img.scale_x, img.scale_y]
+            }
+        }
+    }, [appState.activeElement, appState.project]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => {
         const newMath: Map<string, LaurusScaleEquation> = new Map(rollback.math);
         newMath.set(newEquation.input_id, newEquation);
-
         const newScale: LaurusScaleResult = { ...rollback, math: newMath };
+        setActiveElementIfNull();
         dispatch({
             type: WorkspaceActionType.SetEffect,
             value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id, locked: newScale.locked },
@@ -91,7 +190,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                 value: { type: 'scale', value: { ...rollback }, key: rollback.scale_id, locked: rollback.locked },
             });
         }
-    }, [appState.apiOrigin, appState.accessToken, dispatch]);
+    }, [setActiveElementIfNull, dispatch, appState.apiOrigin, appState.accessToken]);
 
     const getCarouselEntryKey = useCallback(() => {
         if (carouselIndex < appState.carouselEntries.length) {
@@ -114,34 +213,46 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
         (async () => {
             const activeKey = getCarouselEntryKey();
             const activeEquation = scale.math.get(activeKey);
-            let scaleInit = 1;
+            let scaleXInit = 1;
+            let scaleYInit = 1;
             let timeInit = appState.timelineMaxValue
             if (activeEquation) {
                 timeInit = activeEquation.time / 1000;
-                scaleInit = activeEquation.scale;
+                scaleXInit = activeEquation.scale_x;
+                scaleYInit = activeEquation.scale_y;
             }
-
-            if (scaleTrackRef.current) {
-                const newScaleCursor = getScaleCursor(scaleInit, scaleTrackRef.current.clientWidth);
-                setScaleCursor({ x: newScaleCursor, y: 0 });
+            if (scaleXTrackRef.current) {
+                const newScaleXCursor = getScaleXCursor(scaleXInit, scaleXTrackRef.current.clientWidth);
+                setScaleXCursor({ x: newScaleXCursor, y: 0 });
             }
-
+            if (scaleYTrackRef.current) {
+                const newScaleYCursor = getScaleYCursor(scaleYInit, scaleYTrackRef.current.clientWidth);
+                setScaleYCursor({ x: newScaleYCursor, y: 0 });
+            }
             if (timeTrackRef.current) {
                 const newTimeCursor = getTimeCursor(timeInit, (timeTrackRef.current.clientHeight));
                 setTimeCursor({ y: newTimeCursor, x: 0 });
             }
-
-            if (scaleRef.current) {
+            if (scaleXRef.current) {
                 const activeMath = scale.math.get(activeKey);
                 if (activeMath) {
-                    scaleRef.current.value = activeMath.scale >= 1 ? activeMath.scale.toFixed(2) : activeMath.scale.toFixed(3);
+                    scaleXRef.current.value = activeMath.scale_x >= 1 ? activeMath.scale_x.toFixed(2) : activeMath.scale_x.toFixed(3);
                 }
                 else {
-                    scaleRef.current.value = '1.00'
+                    scaleXRef.current.value = '1.00'
+                }
+            }
+            if (scaleYRef.current) {
+                const activeMath = scale.math.get(activeKey);
+                if (activeMath) {
+                    scaleYRef.current.value = activeMath.scale_y >= 1 ? activeMath.scale_y.toFixed(2) : activeMath.scale_y.toFixed(3);
+                }
+                else {
+                    scaleYRef.current.value = '1.00'
                 }
             }
         })();
-    }, [appState.timelineMaxValue, getCarouselEntryKey, getScaleCursor, getTimeCursor, scale.math]);
+    }, [appState.timelineMaxValue, getCarouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         const activeKey = getCarouselEntryKey();
@@ -154,7 +265,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                 .get(activeKey);
             if (!activeMath) return [];
             const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-                .map(s => { return { "scale": s } }) ?? [];
+                .map(s => { return { "scale": `${s.x} ${s.y}` } }) ?? [];
             const options: KeyframeAnimationOptions = {
                 duration: firstFrame ? 2 / response.fps : response.end * 1000,
             }
@@ -164,7 +275,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                     const svgRef = svgElementsRef.current?.get(previewKey);
                     if (!svgRef) return [];
                     svgRef.getAnimations().forEach((a) => a.cancel());
-
                     const keyframeEffect =
                         new KeyframeEffect(svgRef, keyframes, options);
                     newAnimations.push(new Animation(keyframeEffect, document.timeline));
@@ -186,305 +296,54 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
 
     return (
         <div style={{
-            gridTemplateRows: 'min-content auto',
+            gridTemplateRows: 'auto',
             gridTemplateColumns: 'min-content auto',
             display: "grid",
-            borderTop: '1px solid rgba(255,255,255,0.05)',
             alignItems: 'center',
         }}>
-            {/* header */}
-            <div
-                className={dellaRespira.className}
-                style={{
-                    gridColumn: 'span 2',
-                    display: 'flex',
-                    height: '100%',
-                    alignItems: 'center',
-                    padding: headerSize.padding,
-                }}>
-                <div
-                    style={{
-                        fontSize: headerSize.font,
-                        display: 'grid', placeContent: 'center', width: 'min-content', height: '100%'
-                    }}>
-                    {'Scale'}
-                </div>
-                <SvgRepo
-                    svg={allOut()}
-                    containerSize={{
-                        width: headerSize.logo,
-                        height: headerSize.logo
-                    }}
-                    scale={0.75} />
-                <div
-                    style={{ display: 'grid', placeContent: 'center', width: 'min-content', height: '100%', marginLeft: 'auto' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default'; }}
-                    onClick={() => { setMainControls(v => !v); }}
-                >
-                    <SvgRepo
-                        svg={menu()}
-                        containerSize={{
-                            width: headerSize.more,
-                            height: headerSize.more
-                        }}
-                        scale={1} />
-                </div>
-            </div>
             {mainControls ?
                 <>
                     {/* display */}
                     <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
                     {/* controls */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateRows: 'min-content auto',
-                    }}>
-                        {/* parameters */}
-                        <div style={{ padding: topLevelPadding }}>
+                    {/* parameters */}
+                    <div style={{ ...dynamicSizes.param }}>
+                        <div style={{
+                            border: '1px solid rgb(20, 20, 20)',
+                            backgroundColor: "rgba(20, 20, 20, 0.25)",
+                            borderRadius: 0,
+                            padding: 0,
+                            display: 'flex',
+                        }}>
                             <div style={{
-                                border: '1px solid rgba(10,10,10,1)',
-                                backgroundColor: "rgba(20, 20, 20, 0.2)",
-                                borderRadius: 0,
-                                padding: 0,
+                                height: 'min-content',
                                 display: 'flex',
+                                borderRight: '1px solid rgb(20, 20, 20)',
+                                ...dynamicSizes.paramFlex
                             }}>
-                                <div style={{
-                                    height: 'min-content',
-                                    display: 'flex',
-                                    padding: timeTrackPadding,
-                                    borderRight: 'solid rgba(10,10,10,1) 1px',
-                                }}>
-                                    <ParameterSlider
-                                        label={"speed"}
-                                        hash={`${scale.scale_id}|p1`}
-                                        capSize={timeCapSize}
-                                        trackSize={timeTrackSize}
-                                        trackRef={timeTrackRef}
-                                        cursor={timeCursor}
-                                        onNewCursor={(newCursor) => {
-                                            setTimeCursor({ ...newCursor, x: 0 });
-
-                                            if (!timeTrackRef.current) return;
-                                            const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
-                                            const activeKey = getCarouselEntryKey();
-                                            if (activeKey) {
-                                                const snapshot: LaurusScaleResult = { ...scale }
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newServerTime = newTime * 1000;
-                                                const newEquation = activeEquation ?
-                                                    { ...activeEquation, time: newServerTime } :
-                                                    {
-                                                        input_id: activeKey,
-                                                        time: newServerTime,
-                                                        scale: 1,
-                                                        loop: false,
-                                                        solution: []
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        grooveWidth={paramGrooveWidth}
-                                        disabled={scale.locked} />
-                                </div>
-                                <div
-                                    style={{
-                                        padding: 0,
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        width: '100%'
-                                    }}>
-                                    <div style={{ display: 'flex' }}>
-                                        <input
-                                            className={dellaRespira.className}
-                                            id={`scale-input-${scale.scale_id}`}
-                                            disabled
-                                            ref={scaleRef}
-                                            type="text"
-                                            placeholder="0.00"
-                                            style={{
-                                                textAlign: "right",
-                                                background: 'none',
-                                                color: "rgba(255, 255, 255, 0.7)",
-                                                borderRadius: 2,
-                                                border: 'none',
-                                                outline: 'none',
-                                                display: 'inline-block',
-                                                overflowX: 'scroll',
-                                                letterSpacing: `${scaleParamDisplay.letterSpacing}px`,
-                                                fontSize: scaleParamDisplay.fontSize,
-                                                height: scaleParamDisplay.inputHeight,
-                                                width: '56%',
-                                                textShadow: '2px 2px 3px rgba(10,10,10,1)',
-                                            }} />
-                                        <div style={{
-                                            height: scaleParamDisplay.inputHeight,
-                                            display: 'grid',
-                                            alignContent: 'end',
-                                            color: "rgba(255, 255, 255, 0.5)",
-                                            fontSize: scaleParamDisplay.unitFontSize
-                                        }}>
-                                            <i>{'x'}</i>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style={{
-                                    marginLeft: 'auto',
-                                    borderLeft: '1px solid rgba(10,10,10,1)',
-                                    background: 'linear-gradient(45deg, rgb(13, 13, 13), rgb(17, 17, 17))',
-                                    padding: 0,
-                                    display: 'grid',
-                                    alignContent: 'start',
-                                }}>
-                                    <div
-                                        onClick={() => {
-                                            if (scale.locked) return;
-                                            const activeKey = getCarouselEntryKey();
-                                            if (activeKey) {
-                                                const snapshot: LaurusScaleResult = { ...scale };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation = activeEquation ?
-                                                    { ...activeEquation, loop: !activeEquation.loop } :
-                                                    {
-                                                        input_id: activeKey,
-                                                        time: appState.timelineMaxValue * 1000,
-                                                        scale: 1,
-                                                        loop: true,
-                                                        solution: []
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: scale.locked ? '' : scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
-                                            background: scale.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                                        }}>
-                                        <SvgRepo
-                                            svg={scale.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
-                                            scale={0.9} />
-                                    </div>
-                                    <div
-                                        onClick={async () => {
-                                            const newAnimations = await getPreviewAnimations(true);
-                                            Promise.all(newAnimations.map(animation => animation.finished))
-                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                                .then((_animations: Animation[]) => {
-                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                                })
-                                                .catch(err => {
-                                                    if (err instanceof Error && err.name !== 'AbortError') {
-                                                        console.log('unknown error from waapi:', err);
-                                                    }
-                                                });
-                                            newAnimations.forEach(a => {
-                                                a.play();
-                                            });
-                                        }}
-                                        style={{
-                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
-                                        }}>
-                                        <SvgRepo
-                                            svg={scale.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
-                                            scale={0.9} />
-                                    </div>
-                                    <div
-                                        onClick={async () => {
-                                            const newAnimations = await getPreviewAnimations(false);
-                                            Promise.all(newAnimations.map(animation => animation.finished))
-                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                                .then((_animations: Animation[]) => {
-                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                                })
-                                                .catch(err => {
-                                                    if (err instanceof Error && err.name !== 'AbortError') {
-                                                        console.log('unknown error from waapi:', err);
-                                                    }
-                                                });
-                                            newAnimations.forEach(a => {
-                                                a.play();
-                                            });
-                                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
-                                        }}
-                                        style={{
-                                            cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
-                                            width: paramButtonSize.container,
-                                            height: paramButtonSize.container,
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            borderBottom: '1px solid rgba(10,10,10,1)',
-                                        }}>
-                                        <SvgRepo
-                                            svg={scale.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
-                                            containerSize={{
-                                                width: paramButtonSize.svg,
-                                                height: paramButtonSize.svg
-                                            }}
-                                            scale={1} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {/* main control */}
-                        <div style={{ padding: topLevelPadding }}>
-                            <div style={{
-                                width: '100%',
-                                padding: scaleTrackPadding,
-                                display: 'flex',
-                                alignItems: 'start',
-                                border: 'solid rgba(10,10,10,1) 1px',
-                                backgroundColor: "rgba(20, 20, 20, 0.2)",
-                                borderRadius: 0,
-                                justifyContent: 'center'
-                            }}>
-                                <ScaleSlider
-                                    label={"zoom"}
-                                    hash={`${scale.scale_id}|p2`}
-                                    capSize={scaleCapSize}
-                                    trackSize={scaleTrackSize}
-                                    trackRef={scaleTrackRef}
-                                    cursor={scaleCursor}
-                                    onCursorMove={(newCursor) => {
-                                        if (!scaleTrackRef.current || !scaleRef.current) return;
-                                        const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
-                                        scaleRef.current.value = newScaleValue >= 1 ?
-                                            (newScaleValue).toFixed(2) :
-                                            (newScaleValue).toFixed(3);
-
-                                    }}
+                                <ParameterSliderY
+                                    label={"speed"}
+                                    hash={`${scale.scale_id}|p1`}
+                                    size={dynamicSizes.paramSlider}
+                                    trackRef={timeTrackRef}
+                                    cursor={timeCursor}
                                     onNewCursor={(newCursor) => {
-                                        setScaleCursor({ ...newCursor, y: 0 });
+                                        setTimeCursor({ ...newCursor, x: 0 });
 
-                                        if (!scaleTrackRef.current) return;
-                                        const newScaleValue = getScaleValue(newCursor.x, scaleTrackRef.current.clientWidth);
-
+                                        if (!timeTrackRef.current) return;
+                                        const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
                                         const activeKey = getCarouselEntryKey();
                                         if (activeKey) {
-                                            const snapshot: LaurusScaleResult = { ...scale };
+                                            const snapshot: LaurusScaleResult = { ...scale }
                                             const activeEquation = snapshot.math.get(activeKey);
+                                            const newServerTime = newTime * 1000;
                                             const newEquation = activeEquation ?
-                                                { ...activeEquation, scale: newScaleValue } :
+                                                { ...activeEquation, time: newServerTime } :
                                                 {
                                                     input_id: activeKey,
-                                                    time: appState.timelineMaxValue * 1000,
-                                                    scale: newScaleValue,
+                                                    time: newServerTime,
+                                                    scale_x: 1,
+                                                    scale_y: 1,
                                                     loop: false,
                                                     solution: []
                                                 };
@@ -493,195 +352,335 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef }: Sca
                                     }}
                                     disabled={scale.locked} />
                             </div>
+                            <div
+                                style={{
+                                    padding: 0,
+                                    display: 'grid',
+                                    gap: 11,
+                                    placeContent: 'center',
+                                    width: '100%'
+                                }}>
+                                <div style={{ display: 'flex', marginLeft: 0 }}>
+                                    <div style={{
+                                        height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                        display: 'grid',
+                                        alignContent: 'end',
+                                        color: "rgba(255, 255, 255, 0.75)",
+                                        fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize
+                                    }}>
+                                        {'width'}
+                                    </div>
+                                    <input
+                                        className={dellaRespira.className}
+                                        id={`scale-x-input-${scale.scale_id}`}
+                                        disabled
+                                        ref={scaleXRef}
+                                        type="text"
+                                        placeholder="0.00"
+                                        style={{
+                                            textAlign: "right",
+                                            background: 'none',
+                                            color: "rgba(255, 255, 255, 0.7)",
+                                            border: 'none',
+                                            outline: 'none',
+                                            display: 'inline-block',
+                                            overflowX: 'scroll',
+                                            letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
+                                            fontSize: dynamicSizes.scaleParamDisplay.fontSize,
+                                            height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                            width: '7ch',
+                                            textShadow: '2px 2px 3px rgba(10,10,10,1)',
+                                        }} />
+                                    <div style={{
+                                        height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                        display: 'grid',
+                                        alignContent: 'end',
+                                        color: "rgba(255, 255, 255, 0.5)",
+                                        fontSize: dynamicSizes.scaleParamDisplay.unitFontSize
+                                    }}>
+                                        <i>{'x'}</i>
+                                    </div>
+                                </div>
+                                <ParameterSliderX
+                                    label={"zoom"}
+                                    hash={`${scale.scale_id}|p2`}
+                                    size={dynamicSizes.scaleParam}
+                                    containerRef={scaleXTrackRef}
+                                    cursor={scaleXCursor}
+                                    onCursorMove={(newCursor) => {
+                                        if (!scaleXTrackRef.current || !scaleXRef.current || !scaleYRef.current) return;
+                                        const newScaleValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth);
+                                        scaleXRef.current.value = newScaleValue >= 1 ?
+                                            (newScaleValue).toFixed(2) :
+                                            (newScaleValue).toFixed(3);
+
+                                        if (!unlockAspectRatio) {
+                                            scaleYRef.current.value = newScaleValue >= 1 ?
+                                                (newScaleValue).toFixed(2) :
+                                                (newScaleValue).toFixed(3);
+                                        }
+                                    }}
+                                    onNewCursor={(newCursor) => {
+                                        setScaleXCursor({ ...newCursor, y: 0 });
+                                        if (!scaleXTrackRef.current) return;
+                                        const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth);
+                                        let newScaleYValue: number | undefined = undefined;
+                                        if (!unlockAspectRatio) {
+                                            const d = getActiveScale();
+                                            const r = d[0] / d[1];
+                                            const newYCursor = newCursor.x / r;
+                                            setScaleYCursor({ x: newYCursor, y: 0 });
+                                            newScaleYValue = newScaleXValue / r;
+                                        }
+                                        const activeKey = getCarouselEntryKey();
+                                        if (activeKey) {
+                                            const snapshot: LaurusScaleResult = { ...scale };
+                                            const activeEquation = snapshot.math.get(activeKey);
+                                            if (activeEquation) {
+                                                const newEquation =
+                                                {
+                                                    ...activeEquation,
+                                                    scale_x: newScaleXValue,
+                                                    ...(newScaleYValue != undefined && { scale_y: newScaleYValue })
+                                                };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                            else {
+                                                const newEquation = {
+                                                    input_id: activeKey,
+                                                    time: appState.timelineMaxValue * 1000,
+                                                    scale_x: newScaleXValue,
+                                                    scale_y: newScaleYValue != undefined ? newScaleYValue : 1,
+                                                    loop: false,
+                                                    solution: []
+                                                };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                        }
+                                    }}
+                                    disabled={scale.locked} />
+                                <div style={{ display: 'flex', marginTop: 20 }}>
+                                    <div style={{
+                                        height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                        display: 'grid',
+                                        alignContent: 'end',
+                                        color: "rgba(255, 255, 255, 0.75)",
+                                        fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize
+                                    }}>
+                                        {'height'}
+                                    </div>
+                                    <input
+                                        className={dellaRespira.className}
+                                        id={`scale-y-input-${scale.scale_id}`}
+                                        disabled
+                                        ref={scaleYRef}
+                                        type="text"
+                                        placeholder="0.00"
+                                        style={{
+                                            textAlign: "right",
+                                            background: 'none',
+                                            color: "rgba(255, 255, 255, 0.7)",
+                                            border: 'none',
+                                            outline: 'none',
+                                            display: 'inline-block',
+                                            overflowX: 'scroll',
+                                            letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
+                                            fontSize: dynamicSizes.scaleParamDisplay.fontSize,
+                                            height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                            width: '7ch',
+                                            textShadow: '2px 2px 3px rgba(10,10,10,1)',
+                                        }} />
+                                    <div style={{
+                                        height: dynamicSizes.scaleParamDisplay.inputHeight,
+                                        display: 'grid',
+                                        alignContent: 'end',
+                                        color: "rgba(255, 255, 255, 0.5)",
+                                        fontSize: dynamicSizes.scaleParamDisplay.unitFontSize
+                                    }}>
+                                        <i>{'x'}</i>
+                                    </div>
+                                </div>
+                                <ParameterSliderX
+                                    label={"zoom"}
+                                    hash={`${scale.scale_id}|p2`}
+                                    size={dynamicSizes.scaleParam}
+                                    containerRef={scaleYTrackRef}
+                                    cursor={scaleYCursor}
+                                    onCursorMove={(newCursor) => {
+                                        if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
+                                        const newScaleValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth);
+                                        scaleYRef.current.value = newScaleValue >= 1 ?
+                                            (newScaleValue).toFixed(2) :
+                                            (newScaleValue).toFixed(3);
+
+                                        if (!unlockAspectRatio) {
+                                            scaleXRef.current.value = newScaleValue >= 1 ?
+                                                (newScaleValue).toFixed(2) :
+                                                (newScaleValue).toFixed(3);
+                                        }
+                                    }}
+                                    onNewCursor={(newCursor) => {
+                                        setScaleYCursor({ ...newCursor, y: 0 });
+                                        if (!scaleYTrackRef.current) return;
+                                        const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth);
+                                        let newScaleXValue: number | undefined = undefined;
+                                        if (!unlockAspectRatio) {
+                                            const d = getActiveScale();
+                                            const r = d[0] / d[1];
+                                            const newXCursor = newCursor.x * r;
+                                            setScaleXCursor({ x: newXCursor, y: 0 });
+                                            newScaleXValue = newScaleYValue / r;
+                                        }
+                                        const activeKey = getCarouselEntryKey();
+                                        if (activeKey) {
+                                            const snapshot: LaurusScaleResult = { ...scale };
+                                            const activeEquation = snapshot.math.get(activeKey);
+                                            if (activeEquation) {
+                                                const newEquation =
+                                                {
+                                                    ...activeEquation,
+                                                    scale_y: newScaleYValue,
+                                                    ...(newScaleXValue != undefined && { scale_x: newScaleXValue })
+                                                };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                            else {
+                                                const newEquation = {
+                                                    input_id: activeKey,
+                                                    time: appState.timelineMaxValue * 1000,
+                                                    scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
+                                                    scale_y: newScaleYValue,
+                                                    loop: false,
+                                                    solution: []
+                                                };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                        }
+                                    }}
+                                    disabled={scale.locked} />
+                            </div>
+                            {/* toolbar */}
+                            <div style={{
+                                marginLeft: 'auto',
+                                background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
+                                padding: 0,
+                                display: 'grid',
+                                alignContent: 'start',
+                            }}>
+                                <div
+                                    onClick={() => {
+                                        if (scale.locked) return;
+                                        const activeKey = getCarouselEntryKey();
+                                        if (activeKey) {
+                                            const snapshot: LaurusScaleResult = { ...scale };
+                                            const activeEquation = snapshot.math.get(activeKey);
+                                            const newEquation = activeEquation ?
+                                                { ...activeEquation, loop: !activeEquation.loop } :
+                                                {
+                                                    input_id: activeKey,
+                                                    time: appState.timelineMaxValue * 1000,
+                                                    scale_x: 1,
+                                                    scale_y: 1,
+                                                    loop: true,
+                                                    solution: []
+                                                };
+                                            saveNewEquation(snapshot, newEquation);
+                                        }
+                                    }}
+                                    style={{
+                                        cursor: scale.locked ? '' : scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        display: 'grid',
+                                        placeContent: 'center',
+                                        background: scale.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                        ...dynamicSizes.paramButtonContainer
+                                    }}>
+                                    <SvgRepo
+                                        svg={scale.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                                        containerSize={{ ...dynamicSizes.paramButton }}
+                                        scale={0.9} />
+                                </div>
+                                <div
+                                    onClick={async () => {
+                                        const newAnimations = await getPreviewAnimations(true);
+                                        Promise.all(newAnimations.map(animation => animation.finished))
+                                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                            .then((_animations: Animation[]) => {
+                                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                            })
+                                            .catch(err => {
+                                                if (err instanceof Error && err.name !== 'AbortError') {
+                                                    console.log('unknown error from waapi:', err);
+                                                }
+                                            });
+                                        newAnimations.forEach(a => {
+                                            a.play();
+                                        });
+                                    }}
+                                    style={{
+                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        display: 'grid',
+                                        placeContent: 'center',
+                                        ...dynamicSizes.paramButtonContainer
+                                    }}>
+                                    <SvgRepo
+                                        svg={scale.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                                        containerSize={{ ...dynamicSizes.paramButton }}
+                                        scale={0.9} />
+                                </div>
+                                <div
+                                    onClick={async () => {
+                                        const newAnimations = await getPreviewAnimations(false);
+                                        Promise.all(newAnimations.map(animation => animation.finished))
+                                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                                            .then((_animations: Animation[]) => {
+                                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                                            })
+                                            .catch(err => {
+                                                if (err instanceof Error && err.name !== 'AbortError') {
+                                                    console.log('unknown error from waapi:', err);
+                                                }
+                                            });
+                                        newAnimations.forEach(a => {
+                                            a.play();
+                                        });
+                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                                    }}
+                                    style={{
+                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        display: 'grid',
+                                        placeContent: 'center',
+                                        ...dynamicSizes.paramButtonContainer
+                                    }}>
+                                    <SvgRepo
+                                        svg={scale.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                                        containerSize={{ ...dynamicSizes.paramButton }}
+                                        scale={1} />
+                                </div>
+                                <div
+                                    onClick={() => {
+                                        setUnlockAspectRatio(v => !v);
+                                    }}
+                                    style={{
+                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        display: 'grid',
+                                        placeContent: 'center',
+                                        ...dynamicSizes.paramButtonContainer
+                                    }}>
+                                    <SvgRepo
+                                        svg={scale.math.has(getCarouselEntryKey()) ? (unlockAspectRatio ? linkOff() : link()) : (unlockAspectRatio ? linkOff("rgb(62, 62, 62)") : link("rgb(62, 62, 62)"))}
+                                        containerSize={{ ...dynamicSizes.paramButton }}
+                                        scale={1} />
+                                </div>
+
+                            </div>
                         </div>
                     </div>
                 </> :
                 <>
                     {/* deep controls */}
-                    <div
-                        style={{
-                            gridColumn: 'span 2',
-                            padding: topLevelPadding,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            fontSize: 16,
-                        }}>
-                        <div
-                            style={{
-                                display: 'grid',
-                                height: `${displaySize.height}px`,
-                                alignContent: 'center',
-                                gap: 4,
-                            }}>
-                            <div>{'You are about to part ways with this effect forever...'}</div>
-                            <div style={{ marginLeft: 'auto' }}>{'Click'}
-                                <span
-                                    onClick={async () => {
-                                        const scaleId = scale.scale_id;
-                                        const deleted = await deleteScale(appState.apiOrigin, appState.accessToken, scaleId);
-                                        if (deleted) {
-                                            dispatch({
-                                                type: WorkspaceActionType.SetEffects,
-                                                value: appState.effects.filter(e => {
-                                                    switch (e.type) {
-                                                        case "scale": {
-                                                            return e.value.scale_id != scaleId;
-                                                        }
-                                                        case "move": {
-                                                            return true;
-                                                        }
-                                                    }
-                                                })
-                                            });
-                                        }
-                                    }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
-                                    style={{ color: 'rgb(243, 115, 120)' }}>
-                                    {' delete '}
-                                </span>
-                                {'to proceed.'}
-                            </div>
-                        </div>
-                    </div>
+                    <DeepControls />
                 </>
             }
         </div >
     )
-}
-
-interface ScaleSlider {
-    label: string,
-    hash: string,
-    capSize: { width: number | string, height: number | string }
-    trackSize: { width: number | string, height: number | string }
-    trackRef: RefObject<HTMLDivElement | null>,
-    cursor: { x: number, y: number },
-    onNewCursor: (newCursor: { x: number, y: number }) => void,
-    onCursorMove?: (newCursor: { x: number, y: number }) => void,
-    disabled?: boolean,
-}
-function ScaleSlider({
-    hash,
-    capSize,
-    trackSize,
-    trackRef,
-    cursor,
-    onNewCursor,
-    onCursorMove,
-    disabled,
-}: ScaleSlider) {
-    const { appState } = useContext(WorkspaceContext);
-    const [svgSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return 20;
-            case "midhigh": return Math.round(20 * 0.7);
-            case "midlow": return Math.round(20 * 0.5);
-            case "low": return Math.round(20 * 0.25);
-        }
-    });
-    const [labelHeight] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return 12;
-            case "midhigh": return Math.round(12 * 0.7);
-            case "midlow": return Math.round(12 * 0.5);
-            case "low": return Math.round(12 * 0.25);
-        }
-    });
-    return (<>
-        <div
-            className={dellaRespira.className}
-            style={{
-                position: "relative",
-                ...trackSize,
-            }}>
-
-            <div style={{ position: 'absolute', width: '100%', top: 0, }}>
-                <Trackpad
-                    ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
-                    width={'100%'}
-                    height={capSize.height}
-                    coarsePointer={{
-                        ...capSize,
-                        pointerStyle: PointerStyle.Blurry,
-                        zIndex: 2
-                    }}
-                    value={cursor}
-                    onNewValue={onNewCursor}
-                    onMove={onCursorMove}
-                    disabled={disabled} />
-            </div>
-            {/* label */}
-            <div
-                style={{
-                    zIndex: 1,
-                    top: 0,
-                    width: trackSize.width,
-                    height: 8,
-                    position: "absolute",
-                    display: 'flex',
-                    gap: 1,
-                    justifyContent: 'space-between'
-                }}
-            >
-                <div style={{
-                    height: labelHeight,
-                    width: '50%',
-                    background: "linear-gradient(45deg, rgb(11, 11, 11), rgb(18, 18, 18))",
-                    border: '1px solid rgb(27, 27, 27)',
-                }} />
-                <div style={{
-                    height: labelHeight,
-                    width: '50%',
-                    background: "linear-gradient(45deg, rgb(18, 18, 18), rgb(25, 25, 25))",
-                    border: '1px solid rgb(27, 27, 27)',
-                }} />
-            </div>
-            <div
-                ref={trackRef}
-                onMouseDown={(e) => {
-                    if (disabled) return;
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = Math.round(e.clientX - rect.left);
-                    const y = Math.round(e.clientY - rect.top);
-                    onNewCursor({ x, y });
-                }}
-                style={{
-                    zIndex: 0,
-                    top: 0,
-                    cursor: disabled ? '' : 'crosshair',
-                    position: "absolute",
-                    ...trackSize,
-                    background: "linear-gradient(45deg, rgb(22, 22, 22), rgba(40, 40, 40, 1))",
-                    border: '1px solid rgb(27, 27, 27)',
-                    borderBottomLeftRadius: 2,
-                    borderBottomRightRadius: 2,
-                    boxShadow: "rgba(0, 0, 0, 0.7) -10px -10px 40px inset",
-                }}
-            >
-                <div style={{
-                    padding: '0px 10px',
-                    display: 'flex',
-                    height: '100%',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                }}>
-                    <SvgRepo
-                        svg={remove('rgb(227, 227, 227)')}
-                        containerSize={{
-                            width: svgSize,
-                            height: svgSize
-                        }} scale={1} />
-
-                    <SvgRepo
-                        svg={add2('rgb(227, 227, 227)')}
-                        containerSize={{
-                            width: svgSize,
-                            height: svgSize
-                        }} scale={0.75} />
-                </div>
-            </div>
-        </div>
-    </>)
 }

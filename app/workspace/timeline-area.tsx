@@ -1,17 +1,16 @@
 import { CSSProperties, RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, moreVert, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
+import { addCircle, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
 import {
     LaurusEffect,
     LaurusScale,
     convertTime,
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
-    LaurusProjectResult,
-    LaurusLayer,
     LaurusRotate,
-    toKeyframes
+    toKeyframes,
+    Bumper
 } from "./workspace.client";
 import { createMove, createRotate, createScale, getFrames } from "./workspace.server";
 import { v4 } from "uuid";
@@ -19,6 +18,7 @@ import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
 import { WorkspaceResolution } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
+import { LaurusProjectResult, LaurusProjectLayer } from "../projects/projects.client";
 
 interface TimelineArea {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
@@ -147,7 +147,7 @@ export default function TimelineArea({
             fill,
         };
 
-        const imgArray = Array.from(appState.project.imgs.entries().filter(e => !e[1].pending));
+        const imgArray = Array.from(appState.project.imgs.entries());
         for (let i = 0; i < imgArray.length; i++) {
             const [key] = imgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
@@ -165,7 +165,7 @@ export default function TimelineArea({
             }
         };
 
-        const svgArray = Array.from(appState.project.svgs.entries().filter(e => !e[1].pending));
+        const svgArray = Array.from(appState.project.svgs.entries());
         for (let i = 0; i < svgArray.length; i++) {
             const [key] = svgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
@@ -323,7 +323,7 @@ export default function TimelineArea({
             </div>
             {/* content area */}
             <div
-                className={styles["noisy-background"] + " " + dellaRespira.className}
+                className={styles["noisy-background-lite"] + " " + dellaRespira.className}
                 style={{
                     overflowY: 'auto',
                     gridRow: '2',
@@ -337,24 +337,10 @@ export default function TimelineArea({
                     svgElementsRef={svgElementsRef}
                     imgElementsRef={imgElementsRef} />
             </div>
-            <div
-                className={dellaRespira.className}
-                style={{
-                    border: '1px solid rgb(24, 24, 24)',
-                    background: 'rgba(20, 20, 20, 1)',
-                    width: 20,
-                    display: 'grid',
-                    placeContent: 'center',
-                }}>
-                <SvgRepo
-                    svg={moreVert('rgba(255, 255, 255, 0.5)')}
-                    containerSize={{
-                        width: 20,
-                        height: 38
-                    }}
-                    scale={1}
-                    onContainerClick={onRightPanelClick} />
-            </div>
+            <Bumper
+                onBumperClick={onRightPanelClick}
+                borderLeft={'1px solid rgba(255, 255, 255, 0.05)'}
+                borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
             {/* control area */}
             <div
                 className={styles["noisy-background"] + " " + dellaRespira.className}
@@ -366,9 +352,9 @@ export default function TimelineArea({
                 }}>
                 <div
                     style={{
-                        borderTop: '1px solid rgba(10, 10, 10, 1)',
-                        borderLeft: '1px solid rgba(10, 10, 10, 1)',
-                        borderRight: '1px solid rgba(10, 10, 10, 1)',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderRight: '1px solid rgba(255, 255, 255, 0.05)',
                         borderTopRightRadius: 10,
                         borderTopLeftRadius: 10,
                         background: 'rgb(20, 20, 20)',
@@ -429,6 +415,17 @@ export default function TimelineArea({
                             onContainerClick={async () => {
                                 if (!skipPreviousEnabled) return;
                                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
+
+                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                                inactiveSvgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
+                                inactiveImgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
+
+
                                 const newAnimations = await getNewAnimations('forwards', true);
                                 if (newAnimations) {
                                     Promise.all(newAnimations.map(animation => animation.finished))
@@ -459,6 +456,16 @@ export default function TimelineArea({
                             onContainerClick={async () => {
                                 if (!playEnabled) return;
                                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
+
+                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                                inactiveSvgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
+                                inactiveImgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
+
                                 const newAnimations = await getNewAnimations('none', false);
                                 Promise.all(newAnimations.map(animation => animation.finished))
                                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -486,6 +493,15 @@ export default function TimelineArea({
                             onContainerClick={async () => {
                                 if (!skipNextEnabled) return;
                                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
+
+                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                                inactiveSvgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
+                                inactiveImgs.forEach(i => {
+                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                                });
                                 const newAnimations = await getNewAnimations('forwards', false);
                                 Promise.all(newAnimations.map(animation => animation.finished))
                                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -547,44 +563,34 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                 case "low": return 20
             }
         })(),
-        borderTop: '1px solid rgba(10, 10, 10, 1)',
-        borderLeft: '1px solid rgba(10, 10, 10, 1)',
-        borderRight: '1px solid rgba(10, 10, 10, 1)',
-        borderBottom: '1px solid rgb(18, 18, 18)',
-        borderTopLeftRadius: 10,
-        borderTopRightRadius: 10,
-        background: 'rgba(30,30,30,1)',
-        padding: 6,
+        paddingLeft: 10,
     };
     const layerBodyStyle: CSSProperties = {
         display: 'grid',
         alignContent: 'start',
         minHeight: 46,
-        borderLeft: '1px solid rgba(10,10,10,1)',
-        borderRight: '1px solid rgba(10,10,10,1)',
-        borderBottomLeftRadius: 10,
-        borderBottomRightRadius: 10,
     };
     const [timelineAreaContentSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
                 height: 46,
-                padding: 10,
+                padding: '0px 10px',
                 svg: 20
             }
             case "midhigh": return {
                 height: 36,
-                padding: 8,
+                padding: '0px 8px',
                 svg: 16
             }
             case "midlow":
             case "low": return {
                 height: 32,
-                padding: 8,
+                padding: '0px 8px',
                 svg: 14
             }
         }
     });
+
 
     return (<>
         {appState.project.layers.size == 0 && (
@@ -596,7 +602,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     gridTemplateRows: 'min-content auto',
                 }}>
                 {/* layer header */}
-                <div style={layerHeaderStyle}>
+                <div style={{ ...layerHeaderStyle, background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(31, 31, 31))", }}>
                     <LayerTitle
                         layerId={""}
                         layerNameInit={"untitled"}
@@ -608,18 +614,18 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             width: '100%',
                             height: timelineAreaContentSize.height,
                             padding: timelineAreaContentSize.padding,
-                            borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(10,10,10,1)',
-                            background: 'rgb(20, 20, 20)',
+                            background: "rgb(35, 35, 35)",
                             borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                             borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
                         }}>
                         <SvgRepo
+                            title="add effect"
                             svg={showEffectsBrowser ?
                                 addCircle('rgba(204, 204, 204, 0.2)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
                                 width: timelineAreaContentSize.svg,
-                                height: timelineAreaContentSize.svg
+                                height: timelineAreaContentSize.height
                             }}
                             scale={1}
                             onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -643,7 +649,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         gridTemplateRows: 'min-content auto',
                     }}>
                     {/* layer header */}
-                    <div style={layerHeaderStyle}>
+                    <div style={{ ...layerHeaderStyle, background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(23, 23, 23))", }}>
                         <LayerTitle
                             layerId={layerEntry[0]}
                             layerNameInit={layerEntry[1].name}
@@ -651,16 +657,33 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     </div>
                     {/* effects */}
                     <div style={layerBodyStyle}>
-                        {appState.effects.sort((a, b) => a.value.order - b.value.order).map((s, i) => {
+                        {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
                             return <div
-                                style={{
-                                    borderBottom: 'solid rgba(10, 10, 10, 1) 1px',
-                                    padding: "0px 6px",
-                                    background: 'rgba(23, 23, 23, 0.5)'
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                                    e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.05)';
                                 }}
-                                key={i}>
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.0275)';
+                                    e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0)';
+                                }}
+                                style={{
+                                    border: '1px solid rgba(0, 0, 0, 0)',
+                                    background: 'rgba(255, 255, 255, 0.0275)',
+                                    display: 'flex',
+                                    borderRadius: 0,
+                                }}
+                                key={effect.key}>
+                                <div style={{
+                                    width: '4ch',
+                                    height: '100%',
+                                    background: 'rgba(22, 22, 22, 0.9)',
+                                    fontSize: 9,
+                                    display: 'grid',
+                                    placeContent: 'center'
+                                }}>{(i + 1).toFixed()}</div>
                                 <EffectUnit
-                                    effect={s}
+                                    effect={effect}
                                     svgElementsRef={svgElementsRef}
                                     imgElementsRef={imgElementsRef} />
                             </div>
@@ -670,18 +693,20 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 width: '100%',
                                 height: timelineAreaContentSize.height,
                                 padding: timelineAreaContentSize.padding,
-                                borderBottom: showEffectsBrowser ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(10,10,10,1)',
-                                background: 'rgb(20, 20, 20)',
+                                background: "rgb(35, 35, 35)",
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                                 borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
+                                display: 'flex',
+                                justifyContent: 'left'
                             }}>
                             <SvgRepo
+                                title="add effect"
                                 svg={showEffectsBrowser ?
                                     addCircle('rgba(204, 204, 204, 0.2)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
                                 containerSize={{
                                     width: timelineAreaContentSize.svg,
-                                    height: timelineAreaContentSize.svg
+                                    height: timelineAreaContentSize.height
                                 }}
                                 scale={1}
                                 onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -721,7 +746,6 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
     useEffect(() => {
         const renameProjectOnSever = (async () => {
             if (!projectRef.current) return;
-
             const newLayers = new Map(projectRef.current.layers);
             if (layerIdRef && layerIdRef.current && newLayers.has(layerIdRef.current)) {
                 const newLayer = newLayers.get(layerIdRef.current)!;
@@ -731,16 +755,15 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
                 const newLayerId = v4();
                 newLayers.set(newLayerId, { name: layerNameHook, order: 0 });
             }
-
             if (layerIdRef.current && projectRef.current.project_id && layerNameHook) {
+                const newProject = { ...projectRef.current, layers: newLayers };
                 const updated = await updateProject(
                     appState.apiOrigin,
                     appState.accessToken,
                     projectRef.current.project_id,
-                    { ...projectRef.current, layers: newLayers });
+                    newProject);
                 if (updated) {
-                    const newProject: LaurusProjectResult = { ...updated }
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
                 }
                 else {
                     if (layerNameRef.current) {
@@ -769,7 +792,6 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
     }, [appState.apiOrigin, layerNameHook, dispatch, appState.accessToken, layerNameSnapshot, layerNameRef]);
 
     const onLayerNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-
         const newLayers = new Map(appState.project.layers);
         if (layerId && newLayers.has(layerId)) {
             layerIdRef.current = layerId;
@@ -781,7 +803,6 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
             layerIdRef.current = newLayerId;
             newLayers.set(newLayerId, { name: e.target.value, order: 0 });
         }
-
         projectRef.current = { ...appState.project, layers: newLayers };
         setLayerName(e.target.value);
     };
@@ -854,7 +875,9 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
         <div
             style={{
                 width: '100%',
-                borderBottom: '1px solid rgba(10,10,10,1)',
+                borderBottom: '1px solid rgb(10, 10, 10)',
+                borderLeft: '1px solid rgb(10, 10, 10)',
+                borderRight: '1px solid rgb(10, 10, 10)',
                 height: effectBrowserSize.height,
                 overflowY: 'auto',
                 borderBottomLeftRadius: 10,
@@ -886,9 +909,9 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                             }}
                             scale={1}
                             onContainerClick={async () => {
-                                const newLayers: Map<string, LaurusLayer> = new Map(appState.project.layers);
+                                const newLayers: Map<string, LaurusProjectLayer> = new Map(appState.project.layers);
+                                const newLayerId = v4();
                                 if (!layer_id) {
-                                    const newLayerId = v4();
                                     const newLayerName = layerNameRef.current?.value ?? "untitled";
                                     newLayers.set(newLayerId, { name: newLayerName, order: 0 });
                                 }
@@ -906,7 +929,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                     const newProject: LaurusProjectResult = { ...appState.project, layers: newLayers }
                                     const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
                                     if (projectUpdated) {
-                                        newProjectIdAck = projectUpdated.project_id;
+                                        newProjectIdAck = newProject.project_id;
                                         dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                                     }
                                 }
@@ -922,10 +945,11 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             start: 0,
                                             end: 0,
                                             project_id: newProjectIdAck,
-                                            layer_id,
+                                            layer_id: layer_id ? layer_id : newLayerId,
                                             fps: appState.fps,
                                             locked: false,
                                             order: newOrder,
+                                            description: ""
                                         };
                                         const created = await createScale(appState.apiOrigin, appState.accessToken, newScale);
                                         if (created) {
@@ -948,10 +972,11 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             start: 0,
                                             end: 0,
                                             project_id: newProjectIdAck,
-                                            layer_id,
+                                            layer_id: layer_id ? layer_id : newLayerId,
                                             fps: appState.fps,
                                             locked: false,
                                             order: newOrder,
+                                            description: ""
                                         };
                                         const created = await createMove(appState.apiOrigin, appState.accessToken, newMove);
                                         if (created) {
@@ -974,10 +999,11 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                             start: 0,
                                             end: 0,
                                             project_id: newProjectIdAck,
-                                            layer_id,
+                                            layer_id: layer_id ? layer_id : newLayerId,
                                             fps: appState.fps,
                                             locked: false,
                                             order: newOrder,
+                                            description: ""
                                         };
                                         const created = await createRotate(appState.apiOrigin, appState.accessToken, newRotate);
                                         if (created) {
