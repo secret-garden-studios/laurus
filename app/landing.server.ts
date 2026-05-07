@@ -3,7 +3,7 @@
 export const LANDING_ERROR = "try again later";
 export const EMAIL_ERROR = "try another email";
 export const USERNAME_ERROR = "try another username";
-export const UNAUTHORIZED_ERROR = "unauthorized";
+export const UNAUTHORIZED_ERROR = "Unauthorized";
 export const UNAUTHORIZED_EDIT = "You need to be logged in to do that!";
 export const FORBIDDEN_ACTION = "You don't have permission to do that!";
 
