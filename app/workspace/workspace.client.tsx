@@ -77,7 +77,7 @@ export type LaurusTool =
     | { type: 'scale' }
     | { type: 'rotate' }
 export type LaurusBrowserElement = LaurusThumbnail
-export type LaurusActiveElement = { key: string, type: 'svg' | 'img', lowPriority?: boolean }
+export type LaurusActiveElement = { key: string, type: 'svg' | 'img' }
 export enum AbsolutePosition {
     topRight = 'topRight',
     topLeft = 'topLeft',

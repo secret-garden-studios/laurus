@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement } from "./workspace.client";
 import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -25,7 +25,10 @@ interface MoveUnit {
 }
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [carouselIndex, setCarouselIndex] = useState(carouselIndexInit);
+    const carouselIndex = useMemo(() => {
+        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
+        return index > -1 ? index : carouselIndexInit
+    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
         amplitude: 0,
@@ -65,7 +68,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1000);
+            500);
 
     // param 2
     const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
@@ -73,7 +76,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            100);
+            20);
 
     // param 3
     const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
@@ -260,7 +263,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         }}>
             {mainControls ?
                 <>
-                    <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
+                    <UnitDisplay carouselIndex={carouselIndex} />
                     {/* controls */}
                     <div style={{ display: 'grid' }}>
                         {/* parameters */}

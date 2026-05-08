@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, } from "../svg-repo";
@@ -18,7 +18,10 @@ interface ScaleUnit {
 }
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [carouselIndex, setCarouselIndex] = useState(carouselIndexInit);
+    const carouselIndex = useMemo(() => {
+        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
+        return index > -1 ? index : carouselIndexInit
+    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
     const [mainControls] = useState(true);
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
@@ -304,7 +307,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             {mainControls ?
                 <>
                     {/* display */}
-                    <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
+                    <UnitDisplay carouselIndex={carouselIndex} />
                     {/* controls */}
                     {/* parameters */}
                     <div style={{ ...dynamicSizes.param }}>

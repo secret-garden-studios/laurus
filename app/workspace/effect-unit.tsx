@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
-import { CarouselEntry, convertTime, LaurusActiveElement, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { allOut, cancelCircle, earthquake, lock, lockOpenRight, SvgRepo, toysFan, tune } from "../svg-repo";
 import { deleteMove, deleteRotate, deleteScale, updateMove, updateRotate, updateScale } from "./workspace.server";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -59,7 +59,10 @@ interface EffectUnit {
 export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [showUnitControls, setShowUnitControls] = useState(false);
-    const [carouselIndexInit, setCarouselIndexInit] = useState(0);
+    const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
+    const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
+    const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
+
     const [trackSidePadding] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return 15
@@ -279,73 +282,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         }
     });
 
-    const setActiveElement = useCallback((newCarouselIndex: number) => {
-        if (newCarouselIndex > appState.carouselEntries.length - 1) return;
-        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
-        switch (entry.type) {
-            case "svg": {
-                const projectSvg = appState.project.svgs.get(entry.key);
-                if (!projectSvg) break;
-                const canvasSvg = appState.canvasSvgs.get(entry.key);
-                if (!canvasSvg) break;
-                const newActiveElement: LaurusActiveElement = {
-                    key: entry.key,
-                    type: 'svg',
-                }
-                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                break;
-            }
-            case "img": {
-                const projectImg = appState.project.imgs.get(entry.key);
-                if (!projectImg) break;
-                const canvasImg = appState.canvasImgs.get(entry.key);
-
-                if (!canvasImg) break;
-                const newActiveElement: LaurusActiveElement = {
-                    key: entry.key,
-                    type: 'img',
-                }
-                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                break;
-            }
-        }
-    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
-
-    const setShowContextMenu = useCallback((newCarouselIndex: number) => {
-        if (newCarouselIndex > appState.carouselEntries.length - 1) return;
-        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
-        switch (entry.type) {
-            case "svg": {
-                const projectSvg = appState.project.svgs.get(entry.key);
-                if (!projectSvg) break;
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
-                const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != entry.key);
-                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                inactiveSvgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
-                inactiveImgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
-                break;
-            }
-            case "img": {
-                const projectImg = appState.project.imgs.get(entry.key);
-                if (!projectImg) break;
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
-                const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != entry.key);
-                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                inactiveImgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
-                inactiveSvgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
-                break;
-            }
-        }
-    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
-
     const deleteEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
             case "move": {
@@ -371,7 +307,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             }
         }
     }, [appState.accessToken, appState.apiOrigin, dispatch]);
-
 
     return (
         <div style={{ display: 'flex', width: '100%', }}>
@@ -504,21 +439,21 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 scale={effect.value}
                                 svgElementsRef={svgElementsRef}
                                 imgElementsRef={imgElementsRef}
-                                carouselIndexInit={carouselIndexInit} />
+                                carouselIndexInit={scaleCarouselIndex} />
                         }
                         case "move": {
                             return <MoveUnit
                                 move={effect.value}
                                 svgElementsRef={svgElementsRef}
                                 imgElementsRef={imgElementsRef}
-                                carouselIndexInit={carouselIndexInit} />
+                                carouselIndexInit={moveCarouselIndex} />
                         }
                         case "rotate": {
                             return <RotateUnit
                                 rotate={effect.value}
                                 svgElementsRef={svgElementsRef}
                                 imgElementsRef={imgElementsRef}
-                                carouselIndexInit={carouselIndexInit} />
+                                carouselIndexInit={rotateCarouselIndex} />
                         }
                     }
                 })()}
@@ -547,16 +482,41 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         const closed = !showUnitControls;
                         if (closed) {
                             if (!appState.activeElement) {
-                                setActiveElement(0);
-                                setCarouselIndexInit(0);
-                                setShowContextMenu(0);
+                                let newIndex = 0;
+                                switch (effect.type) {
+                                    case "move": {
+                                        const moveEqautionKeys = Array.from(effect.value.math.keys())
+                                        const keys = appState.carouselEntries;
+                                        const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                                        newIndex = k > -1 ? k : 0;
+                                        setMoveCarouselIndex(newIndex);
+                                        break;
+                                    }
+                                    case "rotate": {
+                                        const eqKeys = Array.from(effect.value.math.keys())
+                                        const carouselKeys = appState.carouselEntries;
+                                        const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
+                                        newIndex = k > -1 ? k : 0;
+                                        setRotateCarouselIndex(newIndex);
+                                        break;
+                                    }
+                                    case "scale": {
+                                        const moveEqautionKeys = Array.from(effect.value.math.keys())
+                                        const keys = appState.carouselEntries;
+                                        const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                                        newIndex = k > -1 ? k : 0;
+                                        setScaleCarouselIndex(newIndex);
+                                        break;
+                                    }
+                                }
                             }
                             else {
                                 const activeKey = appState.activeElement.key;
                                 const initialIndex = appState.carouselEntries.findIndex(c => c.key == activeKey);
                                 if (initialIndex > -1) {
-                                    setCarouselIndexInit(initialIndex);
-                                    setShowContextMenu(initialIndex);
+                                    setScaleCarouselIndex(initialIndex);
+                                    setMoveCarouselIndex(initialIndex);
+                                    setRotateCarouselIndex(initialIndex);
                                 }
                             }
                             setShowUnitControls(true);

@@ -1,4 +1,4 @@
-import { useContext, useState, useEffect, useCallback } from "react";
+import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../svg-repo";
 import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import styles from "../app.module.css";
@@ -6,25 +6,11 @@ import NextImage from "next/image";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 
 interface UnitDisplay {
-    carouselIndex: number,
-    onNewCarouselIndex: (newIndex: number) => void,
+    carouselIndex: number
 }
-export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitDisplay) {
+export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
-
-    useEffect(() => {
-        (async () => {
-            const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
-            const lowPriority: boolean = appState.activeElement?.lowPriority ?? false;
-            if (index > -1 && !lowPriority) {
-                onNewCarouselIndex(index);
-            }
-            else if (!lowPriority) {
-                onNewCarouselIndex(0);
-            }
-        })()
-    }, [appState.activeElement?.key, appState.activeElement?.lowPriority, appState.carouselEntries, onNewCarouselIndex]);
 
     const setActiveElement = useCallback((newCarouselIndex: number) => {
         const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
@@ -37,7 +23,6 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'svg',
-                    lowPriority: true,
                 }
                 dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
@@ -51,7 +36,6 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'img',
-                    lowPriority: true,
                 }
                 dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                 dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
@@ -99,7 +83,6 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                         onContainerClick={() => {
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             if (appState.carouselEntries.length > newIndex) {
-                                onNewCarouselIndex(newIndex);
                                 setActiveElement(newIndex);
                             }
                             const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
@@ -171,7 +154,6 @@ export default function UnitDisplay({ carouselIndex, onNewCarouselIndex }: UnitD
                         onContainerClick={() => {
                             const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             if (appState.carouselEntries.length > newIndex) {
-                                onNewCarouselIndex(newIndex);
                                 setActiveElement(newIndex);
                             }
                             const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);

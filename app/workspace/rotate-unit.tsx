@@ -32,7 +32,10 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         time: 0.000001,
         angle: 0,
     });
-    const [carouselIndex, setCarouselIndex] = useState(carouselIndexInit);
+    const carouselIndex = useMemo(() => {
+        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
+        return index > -1 ? index : carouselIndexInit
+    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
 
     const [dynamicSizes] = useState(() => {
         return {
@@ -237,7 +240,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         }}>
             {mainControls ?
                 <>
-                    <UnitDisplay carouselIndex={carouselIndex} onNewCarouselIndex={setCarouselIndex} />
+                    <UnitDisplay carouselIndex={carouselIndex} />
                     {/* controls */}
                     <div style={{ display: 'grid' }}>
                         {/* parameters */}
