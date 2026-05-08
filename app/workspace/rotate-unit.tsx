@@ -262,6 +262,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={xTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={xCursor}
                                         onNewCursor={(newCursor) => {
                                             setXCursor({ ...newCursor, x: 0 });
@@ -295,6 +296,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={yTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={yCursor}
                                         onNewCursor={(newCursor) => {
                                             setYCursor({ ...newCursor, x: 0 });
@@ -328,6 +330,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={zTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={zCursor}
                                         onNewCursor={(newCursor) => {
                                             setZCursor({ ...newCursor, x: 0 });
@@ -361,6 +364,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={timeCursor}
                                         onNewCursor={(newCursor) => {
                                             setTimeCursor({ ...newCursor, x: 0 });

@@ -3,12 +3,14 @@
 import Menubar from "../menubar";
 import styles from "../app.module.css";
 import YoutubePlayer from './youtube-player';
-import { deleteVideo, getVideoDiscoveryPage, updateVideo, VideoMedia_V1_0, VideoMediaResult_V1_0 } from "./screens.server";
-import { RefObject, use, useCallback, useRef, useState } from "react";
+import { createVideo, deleteVideo, getVideoDiscoveryPage, getYouTubeEmbed, updateVideo, VideoMedia_V1_0, VideoMediaResult_V1_0 } from "./screens.server";
+import { RefObject, use, useCallback, useEffect, useRef, useState } from "react";
 import Statusbar from "./statusbar";
 import RemoteControl from "./remote-control";
 import { ScreensResolution } from "./screens-resolution";
 import { MeDependencies } from "../page";
+import { VideoOrigin, VideoOriginType, YouTubeVideoOrigin } from "./video-origin";
+import { dellaRespira } from "../fonts";
 
 export interface VideoMediaResult extends VideoMediaResult_V1_0 {
     filter: string
@@ -27,8 +29,10 @@ export type YouTubePlayerControl =
     | { type: 'fastForward', key: string }
     | { type: 'rewind', key: string }
     | { type: 'setVolume', key: string, value: number }
-    | { type: 'reload', key: string, value: { newStart: number, newEnd: number } }
+    | { type: 'reload', key: string, value: { newStart: number, newEnd: number, videoId: string } }
     | { type: 'getCurrentTime', key: string }
+    | { type: 'startPollingCurrentTime', key: string }
+    | { type: 'stopPollingCurrentTime', key: string }
 
 interface Screens {
     apiOrigin: string | undefined,
@@ -65,8 +69,23 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
     });
     const [defaultMuted] = useState<boolean>(true);
     const [defaultPlaying] = useState<boolean>(false);
-    const [userPlacerholder, setUserPlaceholder] = useState("");
+    const containerRef = useRef<HTMLDivElement>(null);
+    const lastScrollTop = useRef<number>(0);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const playerRefs = useRef<Map<string, any>>(new Map());
+    const intervalRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
+    const timeDisplayRefs = useRef<Map<string, HTMLDivElement | null>>(null);
+    const playerDataRefs = useRef<Map<string, VideoMediaResult>>(
+        new Map<string, VideoMediaResult>(videoMediaInit.map(v => {
+            const newVideoMedia: VideoMediaResult = {
+                ...v,
+                ...defaultStyle,
+                muted: defaultMuted,
+                playing: defaultPlaying,
+            }
+            return [newVideoMedia.video_media_id, newVideoMedia];
+        })));
     const [videoMedia, setVideoMedia] = useState<Map<string, VideoMediaResult>>(
         () => new Map<string, VideoMediaResult>(videoMediaInit.map(v => {
             const newVideoMedia: VideoMediaResult = {
@@ -78,101 +97,113 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
             return [newVideoMedia.video_media_id, newVideoMedia];
         })));
 
-    const containerRef = useRef<HTMLDivElement>(null);
-    const lastScrollTop = useRef<number>(0);
-    const playerDataRefs = useRef<Map<string, VideoMediaResult>>(
-        new Map<string, VideoMediaResult>(videoMediaInit.map(v => {
-            const newVideoMedia: VideoMediaResult = {
-                ...v,
-                ...defaultStyle,
-                muted: defaultMuted,
-                playing: defaultPlaying,
-            }
-            return [newVideoMedia.video_media_id, newVideoMedia];
-        })));
+    const lazyLoadTimeDisplayRef = () => {
+        if (!timeDisplayRefs.current) {
+            timeDisplayRefs.current = new Map();
+        }
+        return timeDisplayRefs.current;
+    };
 
-    const [alertMsg] = useState("You need an account to do that! Send an email over to laurusim@gmail.com if you are interested in getting early access to the platform.");
+    const onTimeDisplayRef = (element: HTMLDivElement | null, refKey: string) => {
+        const m = lazyLoadTimeDisplayRef();
+        if (element) {
+            m.set(refKey, element);
+        }
+        else {
+            m.delete(refKey);
+        }
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const playerRefs = useRef<Map<string, any>>(new Map());
+    const startPolling = (key: string, player: any) => {
+        if (intervalRefs.current.has(key) || !timeDisplayRefs.current) return;
+        const timeDisplayRef = timeDisplayRefs.current.get(key);
+        const pollingRate = 30;
+        const interval = setInterval(() => {
+            if (player && typeof player.getCurrentTime === 'function' && timeDisplayRef) {
+                const t = player.getCurrentTime();
+                const time: number = Number(t) || 0;
+                timeDisplayRef.innerHTML = time.toFixed(3);
+            }
+        }, pollingRate);
+        intervalRefs.current.set(key, interval);
+    };
+
+    const stopPolling = (key: string) => {
+        const interval = intervalRefs.current.get(key);
+        if (interval) {
+            clearInterval(interval);
+            intervalRefs.current.delete(key);
+        }
+    };
+
+    useEffect(() => {
+        const activeIntervals = intervalRefs.current;
+        return () => {
+            activeIntervals.forEach((intervalId) => {
+                clearInterval(intervalId);
+            });
+            activeIntervals.clear();
+        };
+    }, []);
+
     const youtubeController = (control: YouTubePlayerControl): number | undefined => {
         const playerRef = playerRefs.current.get(control.key);
         if (playerRef) {
             switch (control.type) {
-                case 'unmute': {
-                    if (typeof playerRef.unMute === 'function') {
-                        playerRef.unMute();
-                    }
+                case 'unmute':
+                    playerRef.unMute?.();
                     break;
-                }
-                case 'mute': {
-                    if (typeof playerRef.mute === 'function') {
-                        playerRef.mute();
-                    }
+                case 'mute':
+                    playerRef.mute?.();
                     break;
-                }
-                case "seekTo": {
-                    if (typeof playerRef.seekTo === 'function') {
-                        playerRef.seekTo(control.value);
-                    }
+                case "seekTo":
+                    playerRef.seekTo?.(control.value);
                     break;
-                }
-                case "play": {
-                    if (typeof playerRef.playVideo === 'function') {
-                        playerRef.playVideo();
-                    }
+                case "play":
+                    playerRef.playVideo?.();
+                    startPolling(control.key, playerRef);
                     break;
-                }
-                case "playPause": {
-                    if (typeof playerRef.getPlayerState === 'function' &&
-                        typeof playerRef.pauseVideo === 'function' &&
-                        typeof playerRef.playVideo === 'function'
-                    ) {
+                case "playPause":
+                    if (typeof playerRef.getPlayerState === 'function') {
                         const state = playerRef.getPlayerState();
                         if (state === 1) {
-                            playerRef.pauseVideo();
-                        } else if (state === 2) {
-                            playerRef.playVideo();
+                            playerRef.pauseVideo?.();
+                            stopPolling(control.key);
+                        } else {
+                            playerRef.playVideo?.();
+                            startPolling(control.key, playerRef);
                         }
                     }
                     break;
-                }
-                case "fastForward": {
-                    if (typeof playerRef.seekTo === 'function' &&
-                        typeof playerRef.getCurrentTime === 'function') {
-                        const currentTime = playerRef.getCurrentTime();
-                        playerRef.seekTo(currentTime + 10);
-                    }
-                    break;
-                }
-                case "rewind": {
-                    if (typeof playerRef.seekTo === 'function' &&
-                        typeof playerRef.getCurrentTime === 'function') {
-                        const currentTime = playerRef.getCurrentTime();
-                        playerRef.seekTo(currentTime - 10);
-                    }
-                    break;
-                }
-                case "setVolume": {
-                    if (typeof playerRef.setVolume === 'function') {
-                        playerRef.setVolume(control.value);
-                    }
-                    break;
-                }
-                case "reload": {
-                    if (typeof playerRef.loadVideoById === 'function') {
-                        playerRef.loadVideoById({
-                            videoId: control.key,
-                            startSeconds: control.value.newStart,
-                            endSeconds: control.value.newEnd
-                        });
-                    }
-                    break;
-                }
-                case "getCurrentTime": {
+                case "fastForward":
                     if (typeof playerRef.getCurrentTime === 'function') {
-                        return playerRef.getCurrentTime();
+                        playerRef.seekTo?.(playerRef.getCurrentTime() + 10);
                     }
+                    break;
+                case "rewind":
+                    if (typeof playerRef.getCurrentTime === 'function') {
+                        playerRef.seekTo?.(playerRef.getCurrentTime() - 10);
+                    }
+                    break;
+                case "setVolume":
+                    playerRef.setVolume?.(control.value);
+                    break;
+                case "reload":
+                    playerRef.loadVideoById?.({
+                        videoId: control.value.videoId,
+                        startSeconds: control.value.newStart,
+                        endSeconds: control.value.newEnd
+                    });
+                    break;
+                case "getCurrentTime":
+                    return playerRef.getCurrentTime?.();
+                case "startPollingCurrentTime": {
+                    startPolling(control.key, playerRef);
+                    break;
+                }
+                case "stopPollingCurrentTime": {
+                    stopPolling(control.key);
                     break;
                 }
             }
@@ -213,6 +244,56 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
         }
     }, [fetchVideoPage]);
 
+    const handleVideoDrop = useCallback(async (event: React.ClipboardEvent<HTMLInputElement>) => {
+        const pastedText = event.clipboardData.getData('text/plain');
+        const videoOrigins = VideoOrigin.parse(pastedText);
+        if (videoOrigins) {
+            for (let i = 0; i < videoOrigins.length; i++) {
+                const videoOrigin = videoOrigins[i];
+                switch (videoOrigin.type) {
+                    case (VideoOriginType.YouTube): {
+                        const [videoId, start] = (videoOrigin as YouTubeVideoOrigin).parseParams();
+                        const ytMeta = await getYouTubeEmbed(videoOrigin.rawData)
+                        if (videoId && ytMeta) {
+                            const newVideoMedia: VideoMedia = {
+                                media_key: videoId,
+                                origin: videoOrigin.type,
+                                title: ytMeta.title,
+                                start: start,
+                                end: -1,
+                                duration: -1,
+                                notes: "",
+                                categories: [],
+                            };
+                            const created = await createVideo(apiOrigin, me.accessToken, newVideoMedia);
+                            if (created) {
+                                const newVideoResult: VideoMediaResult = {
+                                    ...created,
+                                    ...defaultStyle,
+                                    muted: defaultMuted,
+                                    playing: defaultPlaying,
+                                }
+                                const playerDataRefValues = Array.from(playerDataRefs.current.values());
+                                const newVideoMediaArray = [newVideoResult, ...playerDataRefValues];
+                                const newVideoMediaResults = new Map<string, VideoMediaResult>(newVideoMediaArray.map(v => [v.video_media_id, v]));
+                                setVideoMedia(newVideoMediaResults)
+                                playerDataRefs.current.set(newVideoResult.video_media_id, { ...newVideoResult });
+                            }
+                            else {
+                                alert('You do not have permission to do that.');
+                            }
+                        }
+                        break;
+                    }
+                    case (VideoOriginType.YouTubeMusic):
+                    case (VideoOriginType.Unknown): {
+                        break;
+                    }
+                }
+            }
+        }
+    }, [apiOrigin, me.accessToken, defaultStyle, defaultMuted, defaultPlaying]);
+
     return (<>
         <div
             className={styles["noisy-background"]}
@@ -241,6 +322,29 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                     alignContent: 'start',
                     height: '100vh',
                 }}>
+                    <div style={{
+                        justifySelf: 'start',
+                        display: 'flex',
+                        width: '100%',
+                        height: 40,
+                    }}>
+                        <input
+                            id={`laurus-screens-statusbar-secret-input`}
+                            className={dellaRespira.className}
+                            placeholder="paste a video link here..."
+                            style={{
+                                textAlign: 'center',
+                                width: '100%',
+                                height: '100%',
+                                background: 'linear-gradient(10deg, rgb(16, 16, 16), rgb(23, 23, 23))',
+                                color: "rgb(227, 227, 227)",
+                                fontSize: 14,
+                                borderRadius: 10,
+                                border: 'none',
+                            }}
+                            type="text"
+                            onPaste={handleVideoDrop} />
+                    </div>
                     {Array.from(videoMedia.entries())
                         .sort((a, b) => new Date(b[1].timestamp).getTime() - new Date(a[1].timestamp).getTime())
                         .map((e, i) => {
@@ -264,10 +368,10 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                         const newVideoMedia = new Map(playerDataRefs.current);
                                         newVideoMedia.set(key, { ...newMedia });
                                         setVideoMedia(newVideoMedia);
-
                                         playerDataRefs.current.set(key, { ...newMedia });
                                     }}
-                                    onRemoteControl={youtubeController} />
+                                    onRemoteControl={youtubeController}
+                                    me={me} />
                                 <div
                                     style={{
                                         paddingLeft: 10,
@@ -277,21 +381,23 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                         i={i}
                                         videoMedia={media}
                                         resolution={resolution}
-                                        onNewClip={function (newStart: number, newEnd: number): void {
+                                        onTimeDisplayRef={onTimeDisplayRef}
+                                        onNewClip={async function (newStart: number, newEnd: number) {
                                             const newMedia: VideoMediaResult = { ...media, start: newStart, end: newEnd };
-
-                                            const newVideoMedia = new Map(playerDataRefs.current);
-                                            newVideoMedia.set(key, { ...newMedia });
-                                            setVideoMedia(newVideoMedia);
-
-                                            playerDataRefs.current.set(key, { ...newMedia });
-
-                                            updateVideo(apiOrigin, key, { ...newMedia });
+                                            const updated = await updateVideo(apiOrigin, me.accessToken, key, { ...newMedia });
+                                            if (updated) {
+                                                const newVideoMedia = new Map(playerDataRefs.current);
+                                                newVideoMedia.set(key, { ...newMedia });
+                                                setVideoMedia(newVideoMedia);
+                                                playerDataRefs.current.set(key, { ...newMedia });
+                                                youtubeController({ type: 'reload', key: newMedia.video_media_id, value: { newStart, newEnd, videoId: newMedia.media_key } });
+                                                youtubeController({ type: 'startPollingCurrentTime', key: newMedia.video_media_id });
+                                            }
                                         }}
                                         onNewControl={youtubeController}
                                         onNewMute={(newMute) => {
                                             if (newMute) {
-                                                youtubeController({ type: 'mute', key: media.media_key });
+                                                youtubeController({ type: 'mute', key: media.video_media_id });
                                                 const newMedia: VideoMediaResult = {
                                                     ...media,
                                                     filter: ''
@@ -299,11 +405,10 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                                 const newVideoMedia = new Map(playerDataRefs.current);
                                                 newVideoMedia.set(key, { ...newMedia });
                                                 setVideoMedia(newVideoMedia);
-
                                                 playerDataRefs.current.set(key, { ...newMedia });
                                             }
                                             else {
-                                                youtubeController({ type: 'unmute', key: media.media_key });
+                                                youtubeController({ type: 'unmute', key: media.video_media_id });
                                                 const newMedia: VideoMediaResult = {
                                                     ...media,
                                                     filter: `none`
@@ -311,32 +416,26 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                                                 const newVideoMedia = new Map(playerDataRefs.current);
                                                 newVideoMedia.set(key, { ...newMedia });
                                                 setVideoMedia(newVideoMedia);
-
                                                 playerDataRefs.current.set(key, { ...newMedia });
                                             }
                                         }}
                                         onRemoteControl={youtubeController}
-                                        onNewNote={(newNote) => {
-                                            if (!userPlacerholder) {
-                                                alert(alertMsg);
-                                            }
-                                            else {
-                                                const newMedia: VideoMediaResult = { ...media, notes: newNote };
-                                                updateVideo(apiOrigin, key, { ...newMedia });
+                                        onNewNote={async (newNote) => {
+                                            const snapshot: VideoMediaResult = { ...media }
+                                            const newMedia: VideoMediaResult = { ...snapshot, notes: newNote };
+                                            const updated = await updateVideo(apiOrigin, me.accessToken, key, { ...newMedia });
+                                            if (!updated) {
+                                                alert('Your note was not saved on the server because you do not have permission to edit it.');
                                             }
                                         }}
                                         onDeleteVideoMedia={async () => {
-                                            if (!userPlacerholder) {
-                                                alert(alertMsg);
-                                            }
-                                            else {
-                                                const response = await deleteVideo(apiOrigin, key);
-                                                if (response) {
-                                                    const newVideoMedia = new Map(playerDataRefs.current);
-                                                    newVideoMedia.delete(key);
-                                                    setVideoMedia(newVideoMedia);
-                                                    playerDataRefs.current.delete(key);
-                                                }
+                                            const deleted = await deleteVideo(apiOrigin, me.accessToken, key);
+                                            if (deleted) {
+                                                const newVideoMedia = new Map(playerDataRefs.current);
+                                                newVideoMedia.delete(key);
+                                                setVideoMedia(newVideoMedia);
+                                                playerDataRefs.current.delete(key);
+                                                youtubeController({ type: 'stopPollingCurrentTime', key: media.video_media_id });
                                             }
                                         }} />
                                 </div>
@@ -347,19 +446,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
             <div style={{ gridRow: 3 }}>
                 <Statusbar
                     action={"laurus screens"}
-                    onNewVideo={async (newVideo) => {
-                        const videoMediaArray = Array.from(playerDataRefs.current.values());
-                        const newVideoMediaArray = [newVideo, ...videoMediaArray];
-                        const newVideoMedia = new Map<string, VideoMediaResult>(newVideoMediaArray.map(v => [v.video_media_id, v]));
-                        setVideoMedia(newVideoMedia)
-                        playerDataRefs.current.set(newVideo.video_media_id, { ...newVideo });
-                    }}
-                    apiOrigin={apiOrigin}
-                    resolution={resolution}
-                    defaultStyle={defaultStyle}
-                    defaultMuted={defaultMuted}
-                    defaultPlaying={defaultPlaying}
-                    onNewAdmin={setUserPlaceholder} />
+                    resolution={resolution} />
             </div>
         </div>
     </>)
@@ -373,6 +460,7 @@ interface Screen {
     videoMedia: VideoMediaResult,
     onNewMedia: (newMedia: VideoMediaResult) => void,
     onRemoteControl: (control: YouTubePlayerControl) => number | undefined,
+    me: MeDependencies,
 }
 function Screen({
     apiOrigin,
@@ -380,11 +468,13 @@ function Screen({
     playerDataRefs,
     videoMedia,
     onNewMedia,
-    onRemoteControl }: Screen) {
+    onRemoteControl,
+    me }: Screen) {
     return (<>
         <YoutubePlayer
             playerRefs={playerRefs}
             videoId={videoMedia.media_key}
+            videoMediaId={videoMedia.video_media_id}
             start={videoMedia.start}
             end={videoMedia.end}
             width={videoMedia.width}
@@ -392,21 +482,24 @@ function Screen({
             filter={videoMedia.filter}
             autoplay={true}
             muted={videoMedia.muted}
-            onVideoEnded={(mediaPath) => {
-                const vid = playerDataRefs.current.get(videoMedia.video_media_id);
-                if (!vid) return;
-                onRemoteControl({ type: 'seekTo', key: mediaPath, value: vid.start });
-                onRemoteControl({ type: 'play', key: mediaPath });
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            onVideoEnded={(_videoId) => {
+                const playerDataRef = playerDataRefs.current.get(videoMedia.video_media_id);
+                if (!playerDataRef) return;
+                onRemoteControl({ type: 'seekTo', key: videoMedia.video_media_id, value: playerDataRef.start });
+                onRemoteControl({ type: 'play', key: videoMedia.video_media_id });
             }}
-            onReady={(newDuration) => {
-                const vid = playerDataRefs.current.get(videoMedia.video_media_id);
-                if (!vid) return;
+            onReady={async (newDuration) => {
+                const playerDataRef = playerDataRefs.current.get(videoMedia.video_media_id);
+                if (!playerDataRef) return;
                 const newMedia: VideoMediaResult = {
-                    ...vid,
+                    ...playerDataRef,
                     duration: newDuration
                 }
                 onNewMedia(newMedia);
-                updateVideo(apiOrigin, newMedia.video_media_id, { ...newMedia });
+                onRemoteControl({ type: 'startPollingCurrentTime', key: videoMedia.video_media_id });
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                const updated = await updateVideo(apiOrigin, me.accessToken, newMedia.video_media_id, { ...newMedia });
             }}
             onNewPlaying={(newPlaying) => {
                 const vid = playerDataRefs.current.get(videoMedia.video_media_id);

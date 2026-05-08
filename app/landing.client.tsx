@@ -14,7 +14,8 @@ import {
     UNAUTHORIZED_ERROR,
     LANDING_ERROR,
     LaurusUserResult,
-    refreshAccessToken
+    refreshAccessToken,
+    LaurusResetPassword
 } from "./landing.server";
 import { useRouter } from 'next/navigation'
 import { MeDependencies } from "./page";
@@ -48,7 +49,6 @@ interface Landing {
     me: MeDependencies,
 }
 export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit, me }: Landing) {
-    const router = useRouter();
     const [formType, setFormType] = useState<LandingFormType>(formInit);
     const [newUsername, setNewUsername] = useState("");
 
@@ -121,10 +121,10 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                     display: 'grid',
                     placeContent: 'center',
                 }}>
-                {resolution.type == 'low' ?
+                {resolution.type != 'low' && formType == LandingFormType.login ?
                     <div
                         onClick={async () => {
-                            router.push('/screens');
+                            setFormType(LandingFormType.passwordReset);
                         }}
                         style={{
                             cursor: 'pointer',
@@ -134,24 +134,9 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                             textUnderlineOffset: 2,
                             textDecorationColor: 'rgba(255,255,255,0.4)',
                         }}>
-                        {'tap here to enter'}
+                        {'reset your password'}
                     </div> :
-                    formType == LandingFormType.login ?
-                        <div
-                            onClick={async () => {
-                                setFormType(LandingFormType.passwordReset);
-                            }}
-                            style={{
-                                cursor: 'pointer',
-                                fontSize: 12,
-                                letterSpacing: "3px",
-                                textDecoration: 'underline',
-                                textUnderlineOffset: 2,
-                                textDecorationColor: 'rgba(255,255,255,0.4)',
-                            }}>
-                            {'reset your password'}
-                        </div> :
-                        <></>
+                    <></>
                 }
             </div >
         </div>
@@ -1165,7 +1150,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                             setButtonBorder(ButtonBorderColor.red);
                             return;
                         }
-                        const laurusUser: LaurusUserResult = {
+                        const laurusUser: LaurusResetPassword = {
                             username: "",
                             email
                         }

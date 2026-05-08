@@ -448,6 +448,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         hash={`${effect.key}|t1`}
                         size={timelineTrackSize}
                         trackRef={timelineTrackRef}
+                        trackBackground={'rgb(60, 60, 60)'}
                         cursor={startCursor}
                         onNewCursor={async (c) => {
                             const newStart = cursorToTime(c.x);

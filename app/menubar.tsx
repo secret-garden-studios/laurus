@@ -137,7 +137,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                     boxShadow: pathname == '/workspace' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
                 }} />
             </div>
-            <div
+            {(me?.role.toLowerCase() ?? "") == 'admin' && <div
                 className={styles['animated-nav-dark']}
                 style={linkGridStyle}>
                 <div
@@ -160,7 +160,7 @@ export default function Menubar({ resolution, me }: Menubar) {
                     background: pathname == '/screens' ? 'rgba(255, 255, 255, 0.64)' : 'rgba(0,0,0,0)',
                     boxShadow: pathname == '/screens' ? '0 0 5px rgba(255, 255, 255, 0.79)' : 'none'
                 }} />
-            </div>
+            </div>}
             {resolution.type != 'low' ? me ?
                 <div
                     className={styles['animated-nav-dark']}

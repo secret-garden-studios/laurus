@@ -6,6 +6,7 @@ export const USERNAME_ERROR = "try another username";
 export const UNAUTHORIZED_ERROR = "Unauthorized";
 export const UNAUTHORIZED_EDIT = "You need to be logged in to do that!";
 export const FORBIDDEN_ACTION = "You don't have permission to do that!";
+export const FORBIDDEN_NAV = "You shouldn't be on this page!";
 
 export interface AuthResponse {
     response: Response,
@@ -63,7 +64,9 @@ export type LaurusUserResult = UserResult_V1_0;
 export interface UserResult_V1_0 {
     username: string
     email: string
+    role: string
 }
+export type LaurusResetPassword = ResetPassword_V1_0;
 export interface ResetPassword_V1_0 {
     username: string
     email: string

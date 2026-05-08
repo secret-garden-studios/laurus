@@ -21,6 +21,7 @@ interface RemoteControl {
     i: number,
     videoMedia: VideoMediaResult,
     resolution: ScreensResolution,
+    onTimeDisplayRef: (element: HTMLDivElement | null, refKey: string) => void,
     onNewClip: (newStart: number, newEnd: number) => void,
     onNewControl: (newControl: YouTubePlayerControl) => void,
     onNewMute: (newMute: boolean) => void,
@@ -32,6 +33,7 @@ export default function RemoteControl({
     i,
     videoMedia,
     resolution,
+    onTimeDisplayRef,
     onNewClip,
     onNewControl,
     onNewMute,
@@ -47,7 +49,7 @@ export default function RemoteControl({
     const [notepad, setNotepad] = useState<string>(videoMedia.notes);
     const [gapSize] = useState({ outer: Math.round(10 * resolution.factor), inner: Math.round(5 * resolution.factor) });
     const [controlPanelSize] = useState({
-        padding: Math.round(20 * resolution.factor),
+        padding: Math.round(16 * resolution.factor),
         playContainer: Math.round(96 * resolution.factor),
         playSvg: Math.round(60 * resolution.factor),
         clipSvg: Math.round(22 * resolution.factor)
@@ -55,9 +57,9 @@ export default function RemoteControl({
     const [notesPanelSize] = useState(() => {
         switch (resolution.type) {
             case "high": return {
-                padding: Math.round(10 * resolution.factor),
+                padding: Math.round(16 * resolution.factor),
                 notesPaddingTop: Math.round(10 * resolution.factor),
-                textareaPaddingTop: 2,
+                textareaPaddingTop: 10,
                 svg: Math.round(20 * resolution.factor),
                 titleFont: 14,
                 timestampFont: 11,
@@ -65,9 +67,9 @@ export default function RemoteControl({
                 textareaFont: 12,
             }
             case "midhigh": return {
-                padding: Math.round(10 * resolution.factor),
+                padding: Math.round(16 * resolution.factor),
                 notesPaddingTop: Math.round(10 * resolution.factor),
-                textareaPaddingTop: 2,
+                textareaPaddingTop: Math.round(10 * resolution.factor),
                 svg: Math.round(20 * resolution.factor),
                 titleFont: 12,
                 timestampFont: 10,
@@ -75,9 +77,9 @@ export default function RemoteControl({
                 textareaFont: 11,
             }
             case "midlow": return {
-                padding: Math.round(10 * resolution.factor),
+                padding: Math.round(16 * resolution.factor),
                 notesPaddingTop: Math.round(10 * resolution.factor),
-                textareaPaddingTop: 2,
+                textareaPaddingTop: Math.round(10 * resolution.factor),
                 svg: Math.round(20 * resolution.factor),
                 titleFont: 11,
                 timestampFont: 9,
@@ -85,9 +87,9 @@ export default function RemoteControl({
                 textareaFont: 10,
             }
             case "low": return {
-                padding: Math.round(10 * resolution.factor),
+                padding: Math.round(16 * resolution.factor),
                 notesPaddingTop: Math.round(10 * resolution.factor),
-                textareaPaddingTop: 2,
+                textareaPaddingTop: Math.round(10 * resolution.factor),
                 svg: Math.round(20 * resolution.factor),
                 titleFont: 11,
                 timestampFont: 9,
@@ -142,7 +144,6 @@ export default function RemoteControl({
     });
     const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
     const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
-
     const [volumeSize] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -175,7 +176,7 @@ export default function RemoteControl({
         return {
             containerHeight: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor),
             containerWidth: '100%',
-            trackHeight: 1,
+            trackHeight: 3,
             capWidth: 18,
             capHeight: 18,
         }
@@ -184,7 +185,7 @@ export default function RemoteControl({
         return {
             containerHeight: '100%',
             containerWidth: Math.round(45 * resolution.factor),
-            trackWidth: 1,
+            trackWidth: 3,
             capWidth: 18,
             capHeight: 18,
             capBorderOffset: 0,
@@ -229,7 +230,7 @@ export default function RemoteControl({
 
     const { getInverseTrackValue: getVolumeValue, getTrackCursor: getVolumeCursor } =
         useTrackpadState(
-            paramSize.capHeight - 2,
+            paramSize.capHeight,
             volumeLimit);
 
     useLayoutEffect(() => {
@@ -306,6 +307,7 @@ export default function RemoteControl({
                         hash={`${videoMedia.video_media_id}|p1`}
                         size={paramSize}
                         trackRef={volumeTrackRef}
+                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(18, 18, 18), rgb(30, 30, 30))' : 'linear-gradient(1deg, rgb(40, 40, 40), rgb(62, 62, 62))'}
                         cursor={volumeCursor}
                         onNewCursor={(newCursor) => {
                             if (!volumeTrackRef.current) return;
@@ -318,7 +320,7 @@ export default function RemoteControl({
                             const newVolume = getVolumeValue(newCursor.y, volumeTrackRef.current.clientHeight, 0);
                             const newControl: YouTubePlayerControl = {
                                 type: 'setVolume',
-                                key: videoMedia.media_key,
+                                key: videoMedia.video_media_id,
                                 value: Math.round(newVolume)
                             }
                             onNewControl(newControl);
@@ -348,9 +350,24 @@ export default function RemoteControl({
                     height: "100%",
                     padding: controlPanelSize.padding,
                     display: 'grid',
-                    placeContent: "center",
+                    gridTemplateRows: 'min-content auto'
                 }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div
+                    ref={(r) => {
+                        if (onTimeDisplayRef && videoMedia.video_media_id) {
+                            onTimeDisplayRef(r, videoMedia.video_media_id);
+                        }
+                    }}
+                    style={{
+                        display: 'grid',
+                        alignSelf: 'start',
+                        fontSize: 20,
+                        height: 24,
+                        alignContent: 'center',
+                        letterSpacing: 2,
+                        color: 'rgba(255,255,255,0.75)'
+                    }} />
+                <div style={{ display: 'flex', justifySelf: 'center', alignSelf: 'center', alignItems: 'center', marginTop: -24 }}>
                     <SvgRepo
                         svg={threeSixtyLeft()}
                         containerSize={{
@@ -359,7 +376,7 @@ export default function RemoteControl({
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_key });
+                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.video_media_id });
                             if (!currentPlayTime) return;
                             const newCursor = timeToCursor(currentPlayTime);
                             setStartCursor({ x: newCursor, y: 0 });
@@ -368,15 +385,16 @@ export default function RemoteControl({
                                 startRef.current.value = formatTime(newStart);
                             }
                             onNewClip(currentPlayTime, videoMedia.end);
-                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: currentPlayTime, newEnd: videoMedia.end } });
+                            onNewControl({ type: 'reload', key: videoMedia.video_media_id, value: { newStart: currentPlayTime, newEnd: videoMedia.end, videoId: videoMedia.media_key } });
                         }}
                     />
-                    <div style={{
-                        display: 'grid',
-                        placeContent: 'center',
-                        width: controlPanelSize.playContainer,
-                        height: controlPanelSize.playContainer
-                    }}>
+                    <div
+                        style={{
+                            display: 'grid',
+                            placeContent: 'center',
+                            width: controlPanelSize.playContainer,
+                            height: controlPanelSize.playContainer
+                        }}>
                         <SvgRepo
                             svg={videoMedia.playing ? pauseNoFill() : playArrowNoFill()}
                             containerSize={{
@@ -387,7 +405,7 @@ export default function RemoteControl({
                             onContainerClick={() => {
                                 const newControl: YouTubePlayerControl = {
                                     type: 'playPause',
-                                    key: videoMedia.media_key,
+                                    key: videoMedia.video_media_id,
                                 }
                                 onNewControl(newControl);
                             }} />
@@ -400,7 +418,7 @@ export default function RemoteControl({
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.media_key });
+                            const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.video_media_id });
                             if (!currentPlayTime) return;
                             const newCursor = timeToCursor(currentPlayTime);
                             setEndCursor({ x: newCursor, y: 0 });
@@ -409,11 +427,10 @@ export default function RemoteControl({
                                 endRef.current.value = formatTime(newEnd);
                             }
                             onNewClip(videoMedia.start, currentPlayTime);
-                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: videoMedia.start, newEnd: currentPlayTime } });
+                            onNewControl({ type: 'reload', key: videoMedia.video_media_id, value: { newStart: videoMedia.start, newEnd: currentPlayTime, videoId: videoMedia.media_key } });
                         }} />
                 </div>
             </div>
-
             <div
                 className={dellaRespira.className}
                 style={{
@@ -424,7 +441,7 @@ export default function RemoteControl({
                     background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
                     padding: notesPanelSize.padding,
                     display: 'grid',
-                    gridTemplateRows: 'min-content min-content min-content auto',
+                    gridTemplateRows: 'min-content min-content auto',
                     gridTemplateColumns: 'auto min-content'
                 }}>
                 <div
@@ -447,12 +464,8 @@ export default function RemoteControl({
                     }}>
                     <i>{videoMedia.timestamp}</i>
                 </div>
-                <div style={{
-                    gridColumn: 1,
-                    paddingTop: notesPanelSize.notesPaddingTop,
-                    fontSize: notesPanelSize.notesFont,
-                }}><i>{'notes:'}</i></div>
                 <textarea
+                    placeholder="write something..."
                     value={notepad}
                     onChange={(e) => {
                         setNotepad(e.currentTarget.value);
@@ -490,7 +503,7 @@ export default function RemoteControl({
                         }} />
                     <div />
                     <SvgRepo
-                        svg={cancelCircle()}
+                        svg={cancelCircle('rgb(220, 112, 112)')}
                         containerSize={{
                             width: notesPanelSize.svg,
                             height: notesPanelSize.svg
@@ -517,10 +530,10 @@ export default function RemoteControl({
                 }}>
                 <div style={{ padding: 5, display: 'flex', justifyContent: 'space-between', }}>
                     <div style={{ display: 'flex', gap: gapSize.inner }}>
-                        <div ref={startRef}>{formatTime(videoMedia.start)}</div>
+                        <div>{'start'}</div><div ref={startRef}>{formatTime(videoMedia.start)}</div>
                     </div>
                     <div style={{ display: 'flex', gap: gapSize.inner }}>
-                        <div ref={endRef}>{videoMedia.duration >= videoMedia.start ? formatTime(videoMedia.duration) : ""}</div>
+                        <div>{'end'}</div> <div ref={endRef}>{videoMedia.end > -1 ? formatTime(videoMedia.end) : videoMedia.duration >= videoMedia.start ? formatTime(videoMedia.duration) : ""}</div>
                     </div>
                 </div>
                 <div
@@ -535,13 +548,14 @@ export default function RemoteControl({
                         size={timelineTrackSize}
                         hash={`${videoMedia.video_media_id}|t1`}
                         trackRef={timelineTrackRef}
+                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(18, 18, 18), rgb(30, 30, 30))' : 'linear-gradient(1deg, rgb(40, 40, 40), rgb(62, 62, 62))'}
                         cursor={startCursor}
                         onNewCursor={async (c) => {
                             setStartCursor({ ...c });
                             const adjustedEnd = adjustEndCursor(c.x);
                             const newStart: number = cursorToTime(c.x);
                             onNewClip(newStart, adjustedEnd);
-                            onNewControl({ type: 'seekTo', key: videoMedia.media_key, value: newStart });
+                            onNewControl({ type: 'seekTo', key: videoMedia.video_media_id, value: newStart });
                         }}
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
@@ -549,7 +563,6 @@ export default function RemoteControl({
                             const adjustedStart = adjustStartCursor(c.x);
                             const newEnd: number = cursorToTime(c.x);
                             onNewClip(adjustedStart, newEnd);
-                            onNewControl({ type: 'reload', key: videoMedia.media_key, value: { newStart: adjustedStart, newEnd } });
                         }}
                         onCursorMove={(c) => {
                             if (!startRef.current) return;

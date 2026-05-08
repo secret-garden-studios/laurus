@@ -12,6 +12,7 @@ interface TimelineSlider {
         capHeight: number | string,
     },
     trackRef: RefObject<HTMLDivElement | null>,
+    trackBackground: string,
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
@@ -24,6 +25,7 @@ export default function TimelineSlider({
     size,
     hash,
     trackRef,
+    trackBackground,
     cursor,
     onNewCursor,
     onCursorMove,
@@ -130,7 +132,7 @@ export default function TimelineSlider({
                         margin: 'auto',
                         width: size.containerWidth,
                         height: size.trackHeight,
-                        background: 'rgb(60, 60, 60)',
+                        background: trackBackground,
                         borderRadius: 8,
                     }}
                 >

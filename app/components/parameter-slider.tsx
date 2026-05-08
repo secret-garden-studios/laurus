@@ -17,6 +17,7 @@ interface ParameterSliderY {
         capBorderOffset: number,
     },
     trackRef: RefObject<HTMLDivElement | null>,
+    trackBackground: string,
     cursor: { x: number, y: number },
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
@@ -27,6 +28,7 @@ export default function ParameterSliderY({
     hash,
     size,
     trackRef,
+    trackBackground,
     cursor,
     onNewCursor,
     onCursorMove,
@@ -121,7 +123,7 @@ export default function ParameterSliderY({
                         position: "absolute",
                         height: size.containerHeight,
                         width: size.trackWidth,
-                        background: 'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))',
+                        background: trackBackground,
                         borderRadius: 8,
                     }}
                 >

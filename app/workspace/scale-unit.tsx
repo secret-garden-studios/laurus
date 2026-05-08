@@ -326,10 +326,10 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     hash={`${scale.scale_id}|p1`}
                                     size={dynamicSizes.paramSlider}
                                     trackRef={timeTrackRef}
+                                    trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                     cursor={timeCursor}
                                     onNewCursor={(newCursor) => {
                                         setTimeCursor({ ...newCursor, x: 0 });
-
                                         if (!timeTrackRef.current) return;
                                         const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
                                         const activeKey = getCarouselEntryKey();

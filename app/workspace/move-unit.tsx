@@ -284,6 +284,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={amplitudeTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={amplitudeCursor}
                                         onNewCursor={(newCursor) => {
                                             setAmplitudeCursor({ ...newCursor, x: 0 });
@@ -316,6 +317,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={frequencyTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={frequencyCursor}
                                         onNewCursor={(newCursor) => {
                                             setFrequencyCursor({ ...newCursor, x: 0 });
@@ -348,6 +350,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={wavelengthTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={wavelengthCursor}
                                         onNewCursor={(newCursor) => {
                                             setWavelengthCursor({ ...newCursor, x: 0 });
@@ -380,6 +383,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={distanceTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={distanceCursor}
                                         onNewCursor={(newCursor) => {
                                             setDistanceCursor({ ...newCursor, x: 0 });
@@ -412,6 +416,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
+                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
                                         cursor={timeCursor}
                                         onNewCursor={(newCursor) => {
                                             setTimeCursor({ ...newCursor, x: 0 });

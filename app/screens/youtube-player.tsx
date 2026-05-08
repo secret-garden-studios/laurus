@@ -13,6 +13,7 @@ interface YouTubePlayer {
     muted: boolean,
     autoplay: boolean,
     videoId: string;
+    videoMediaId: string,
     width: number;
     height: number;
     start: number;
@@ -28,6 +29,7 @@ export default function YouTubePlayer(
         muted,
         autoplay,
         videoId,
+        videoMediaId,
         width,
         height,
         start,
@@ -85,7 +87,7 @@ export default function YouTubePlayer(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function onYTPlayerReady(e: any) {
-        playerRefs.current.set(videoId, e.target);
+        playerRefs.current.set(videoMediaId, e.target);
         if (typeof e.target.getDuration === 'function') {
             const newDuration: number = parseFloat(e.target.getDuration() || -1) || -1;
             onReady(newDuration);
@@ -99,8 +101,8 @@ export default function YouTubePlayer(
 
     useEffect(() => {
         if (!iframeRef.current) return;
-        if (!playerRefs.current.has(videoId)) {
-            playerRefs.current.set(videoId, new window.YT.Player(iframeRef.current, {
+        if (!playerRefs.current.has(videoMediaId)) {
+            playerRefs.current.set(videoMediaId, new window.YT.Player(iframeRef.current, {
                 events: {
                     onReady: onYTPlayerReady,
                     onStateChange: onYTPlayerStateChange,

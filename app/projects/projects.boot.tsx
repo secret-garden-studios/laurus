@@ -61,22 +61,16 @@ function Forbidden({ resolution }: Forbidden) {
                 placeContent: 'center',
                 letterSpacing: '1px',
             }} >
-            <div style={{ display: 'grid', width: '100%', padding: '24px 30px' }}>
+            <div style={{ display: 'grid', width: '100%', padding: 24 }}>
                 <div className={`${italiana.className}`}
-                    style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', padding: "10px 0px" }}>
+                    style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', padding: "10px 0px", textAlign: 'center' }}>
                     <p style={{ fontSize: 54 }}>{resolution.value.width > 0 ? resolution.value.width : '[undefined]'}</p>
                     <p style={{ fontSize: 38, padding: '0px 10px' }}>{'x'}</p>
                     <p style={{ fontSize: 54 }}>{resolution.value.height > 0 ? resolution.value.height : '[undefined]'}</p>
                     <p style={{ fontSize: 32, padding: '0px 16px' }}>{':('}</p>
                 </div>
-                <div style={{ fontSize: 18, justifySelf: 'center', padding: 4 }}>
-                    <div >{`Your screen is not wide enough to browse projects.`}</div>
-                </div>
-                <div style={{ fontSize: 12, justifySelf: 'center', padding: 4, marginTop: 20 }}>
-                    <div >{`To use this page effectively your screen width must be greater than 1280 pixels.`}</div>
-                </div>
-                <div style={{ fontSize: 12, justifySelf: 'center', padding: 4, marginTop: 6 }}>
-                    <div >{`If this is not a mobile device try adjusting your display scaling settings.`}</div>
+                <div style={{ fontSize: 18, justifySelf: 'center', padding: 4, marginTop: 10, textAlign: 'center' }}>
+                    <div >{`Laurus is not designed for small screens.`}</div>
                 </div>
             </div>
         </div>
