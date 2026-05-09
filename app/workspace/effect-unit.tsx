@@ -482,13 +482,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         const closed = !showUnitControls;
                         if (closed) {
                             if (!appState.activeElement) {
-                                let newIndex = 0;
                                 switch (effect.type) {
                                     case "move": {
                                         const moveEqautionKeys = Array.from(effect.value.math.keys())
                                         const keys = appState.carouselEntries;
                                         const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                                        newIndex = k > -1 ? k : 0;
+                                        const newIndex = k > -1 ? k : 0;
                                         setMoveCarouselIndex(newIndex);
                                         break;
                                     }
@@ -496,7 +495,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                         const eqKeys = Array.from(effect.value.math.keys())
                                         const carouselKeys = appState.carouselEntries;
                                         const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
-                                        newIndex = k > -1 ? k : 0;
+                                        const newIndex = k > -1 ? k : 0;
                                         setRotateCarouselIndex(newIndex);
                                         break;
                                     }
@@ -504,13 +503,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                         const moveEqautionKeys = Array.from(effect.value.math.keys())
                                         const keys = appState.carouselEntries;
                                         const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                                        newIndex = k > -1 ? k : 0;
+                                        const newIndex = k > -1 ? k : 0;
                                         setScaleCarouselIndex(newIndex);
                                         break;
                                     }
                                 }
                             }
-                            else {
+                            else if (appState.activeElement.locallyActivatedEffectKey == undefined) {
                                 const activeKey = appState.activeElement.key;
                                 const initialIndex = appState.carouselEntries.findIndex(c => c.key == activeKey);
                                 if (initialIndex > -1) {
