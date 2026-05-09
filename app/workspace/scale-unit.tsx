@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
 import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, } from "../svg-repo";
@@ -9,6 +9,7 @@ import ParameterSliderY, { ParameterSliderX } from "../components/parameter-slid
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { LaurusProjectResult } from "../projects/projects.client";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 
 interface ScaleUnit {
     scale: LaurusScaleResult
@@ -18,10 +19,8 @@ interface ScaleUnit {
 }
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const carouselIndex = useMemo(() => {
-        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
-        return index > -1 ? index : carouselIndexInit
-    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
+    const { carouselIndex, localIndex, setLocalIndex } =
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, scale.scale_id);
     const [mainControls] = useState(true);
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
@@ -307,7 +306,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             {mainControls ?
                 <>
                     {/* display */}
-                    <UnitDisplay carouselIndex={carouselIndex} />
+                    <UnitDisplay
+                        carouselIndex={carouselIndex}
+                        effectKey={scale.scale_id}
+                        localIndex={localIndex}
+                        onNewLocalIndex={setLocalIndex} />
                     {/* controls */}
                     {/* parameters */}
                     <div style={{ ...dynamicSizes.param }}>

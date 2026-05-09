@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement } from "./workspace.client";
 import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -7,6 +7,7 @@ import Dial from "../components/dial";
 import ParameterSliderY from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "./workspace-resolution";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 
 interface MoveUnitControls {
     amplitude: number,
@@ -25,10 +26,8 @@ interface MoveUnit {
 }
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const carouselIndex = useMemo(() => {
-        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
-        return index > -1 ? index : carouselIndexInit
-    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
+    const { carouselIndex, localIndex, setLocalIndex } =
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, move.move_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
         amplitude: 0,
@@ -38,7 +37,6 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         time: 0,
         angle: 0,
     });
-
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
         switch (appState.resolution.type) {
@@ -263,7 +261,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         }}>
             {mainControls ?
                 <>
-                    <UnitDisplay carouselIndex={carouselIndex} />
+                    <UnitDisplay
+                        carouselIndex={carouselIndex}
+                        effectKey={move.move_id}
+                        localIndex={localIndex}
+                        onNewLocalIndex={setLocalIndex} />
                     {/* controls */}
                     <div style={{ display: 'grid' }}>
                         {/* parameters */}

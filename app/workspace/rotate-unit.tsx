@@ -7,6 +7,7 @@ import ParameterSliderY from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getRotate, updateRotate } from "./workspace.server";
 import { getDynamicUnitSizes } from "./workspace-resolution";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 
 interface RotateUnitControls {
     x: number,
@@ -24,6 +25,8 @@ interface RotateUnit {
 }
 export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, carouselIndexInit }: RotateUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { carouselIndex, localIndex, setLocalIndex } =
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, rotate.rotate_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
         x: 0,
@@ -32,11 +35,6 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         time: 0.000001,
         angle: 0,
     });
-    const carouselIndex = useMemo(() => {
-        const index = appState.carouselEntries.findIndex(c => c.key == appState.activeElement?.key);
-        return index > -1 ? index : carouselIndexInit
-    }, [appState.activeElement?.key, appState.carouselEntries, carouselIndexInit]);
-
     const [dynamicSizes] = useState(() => {
         return {
             ...getDynamicUnitSizes(appState.resolution),
@@ -240,7 +238,11 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         }}>
             {mainControls ?
                 <>
-                    <UnitDisplay carouselIndex={carouselIndex} />
+                    <UnitDisplay
+                        carouselIndex={carouselIndex}
+                        effectKey={rotate.rotate_id}
+                        localIndex={localIndex}
+                        onNewLocalIndex={setLocalIndex} />
                     {/* controls */}
                     <div style={{ display: 'grid' }}>
                         {/* parameters */}

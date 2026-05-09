@@ -6,13 +6,18 @@ import NextImage from "next/image";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 
 interface UnitDisplay {
-    carouselIndex: number
+    carouselIndex: number,
+    effectKey: string,
+    localIndex: number,
+    onNewLocalIndex: (v: number) => void,
 }
-export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
+export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex}: UnitDisplay) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
 
     const setActiveElement = useCallback((newCarouselIndex: number) => {
+        if (appState.carouselEntries.length <= newCarouselIndex) return;
+        if (newCarouselIndex < 0) return;
         const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
         switch (entry.type) {
             case "svg": {
@@ -23,6 +28,7 @@ export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'svg',
+                    locallyActivatedEffectKey: effectKey,
                 }
                 dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                 dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
@@ -36,13 +42,14 @@ export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'img',
+                    locallyActivatedEffectKey: effectKey,
                 }
                 dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                 dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
                 break;
             }
         }
-    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch]);
+    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch, effectKey]);
 
     const hideContextMenu = useCallback((entry: CarouselEntry) => {
         switch (entry.type) {
@@ -82,9 +89,9 @@ export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
                         scale={0.7}
                         onContainerClick={() => {
                             const newIndex = Math.max(carouselIndex - 1, 0);
-                            if (appState.carouselEntries.length > newIndex) {
-                                setActiveElement(newIndex);
-                            }
+                            const newLocalIndex = Math.max(localIndex - 1, 0);
+                            onNewLocalIndex(newLocalIndex);
+                            setActiveElement(newIndex);
                             const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
                             inactives.forEach(ce => {
                                 hideContextMenu(ce);
@@ -153,9 +160,9 @@ export default function UnitDisplay({ carouselIndex }: UnitDisplay) {
                         scale={0.7}
                         onContainerClick={() => {
                             const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
-                            if (appState.carouselEntries.length > newIndex) {
-                                setActiveElement(newIndex);
-                            }
+                            const newLocalIndex = Math.min(localIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
+                            onNewLocalIndex(newLocalIndex);
+                            setActiveElement(newIndex);
                             const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
                             inactives.forEach(ce => {
                                 hideContextMenu(ce);
