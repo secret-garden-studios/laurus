@@ -176,7 +176,7 @@ export default function RemoteControl({
         return {
             containerHeight: Math.round(resolution.type == 'high' ? 56 : 50 * resolution.factor),
             containerWidth: '100%',
-            trackHeight: 3,
+            trackHeight: 2,
             capWidth: 18,
             capHeight: 18,
         }
@@ -280,7 +280,7 @@ export default function RemoteControl({
             <div style={{
                 gridColumn: 1,
                 gridRow: '1 / span 2',
-                background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                background: i % 2 == 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.01)',
                 width: volumeSize.width,
                 padding: volumeSize.padding,
                 justifyContent: 'center',
@@ -307,7 +307,7 @@ export default function RemoteControl({
                         hash={`${videoMedia.video_media_id}|p1`}
                         size={paramSize}
                         trackRef={volumeTrackRef}
-                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(18, 18, 18), rgb(30, 30, 30))' : 'linear-gradient(1deg, rgb(40, 40, 40), rgb(62, 62, 62))'}
+                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(16, 16, 16), rgb(22, 22, 22))' : 'linear-gradient(1deg, rgb(53, 53, 53), rgb(59, 59, 59))'}
                         cursor={volumeCursor}
                         onNewCursor={(newCursor) => {
                             if (!volumeTrackRef.current) return;
@@ -345,7 +345,7 @@ export default function RemoteControl({
                     gridRow: '1',
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.01)',
                     width: videoMedia.height * (3 / 4),
                     height: "100%",
                     padding: controlPanelSize.padding,
@@ -438,7 +438,7 @@ export default function RemoteControl({
                     gridRow: 1,
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.01)',
                     padding: notesPanelSize.padding,
                     display: 'grid',
                     gridTemplateRows: 'min-content min-content auto',
@@ -522,7 +522,7 @@ export default function RemoteControl({
                     padding: timelineSize.padding,
                     border: '1px solid rgba(255,255,255, 0.1)',
                     borderRadius: 10,
-                    background: i % 2 == 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.01)',
+                    background: i % 2 == 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.01)',
                     fontSize: timelineSize.font,
                     width: timelineSize.width,
                     height: videoMedia.height * (1 / 4),
@@ -548,7 +548,7 @@ export default function RemoteControl({
                         size={timelineTrackSize}
                         hash={`${videoMedia.video_media_id}|t1`}
                         trackRef={timelineTrackRef}
-                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(18, 18, 18), rgb(30, 30, 30))' : 'linear-gradient(1deg, rgb(40, 40, 40), rgb(62, 62, 62))'}
+                        trackBackground={i % 2 == 0 ? 'linear-gradient(1deg, rgb(16, 16, 16), rgb(22, 22, 22))' : 'linear-gradient(1deg, rgb(53, 53, 53), rgb(59, 59, 59))'}
                         cursor={startCursor}
                         onNewCursor={async (c) => {
                             setStartCursor({ ...c });
