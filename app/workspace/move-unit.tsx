@@ -98,7 +98,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            appState.timelineMaxValue * 0.15);
+            appState.timelineMaxValue * 0.5);
 
     // main param
     const [angle, setAngle] = useState(0);
