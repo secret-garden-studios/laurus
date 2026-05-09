@@ -1,8 +1,8 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste } from "../svg-repo";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, refresh, LaurusClientSvg } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { getMove, updateMove } from "./workspace.server";
+import { getMove, updateMove, LaurusLoopType } from "./workspace.server";
 import Dial from "../components/dial";
 import ParameterSliderY from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
@@ -98,7 +98,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            appState.timelineMaxValue);
+            appState.timelineMaxValue * 0.15);
 
     // main param
     const [angle, setAngle] = useState(0);
@@ -110,7 +110,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "svg"
+                        type: "svg",
+                        locallyActivatedEffectKey: move.move_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
@@ -118,14 +119,15 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 case "img": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "img"
+                        type: "img",
+                        locallyActivatedEffectKey: move.move_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch]);
+    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, move.move_id]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => {
         const newMath: Map<string, LaurusMoveEquation> = new Map(rollback.math);
@@ -169,7 +171,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         }
     }, [getAmplitudeCursor, getDistanceCursor, getFrequencyCursor, getTimeCursor, getWavelengthCursor]);
 
-    const getCarouselEntryKey = useCallback(() => {
+    const carouselEntryKey = useMemo(() => {
         if (carouselIndex < appState.carouselEntries.length) {
             const carouselEntry = appState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
@@ -188,7 +190,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
 
     useLayoutEffect(() => {
         (async () => {
-            const activeKey = getCarouselEntryKey();
+            const activeKey = carouselEntryKey;
             const activeEquation = move.math.get(activeKey);
             const initControls: MoveUnitControls = { ...currentControls }
             if (activeEquation) {
@@ -209,10 +211,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
             }
             updateTrackpads(initControls);
         })();
-    }, [currentControls, getCarouselEntryKey, move.math, updateTrackpads]);
+    }, [currentControls, carouselEntryKey, move.math, updateTrackpads]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = getCarouselEntryKey();
+        const activeKey = carouselEntryKey;
         if (!activeKey) return [];
         const newAnimations: Animation[] = [];
         const response: LaurusMoveResult | undefined =
@@ -250,7 +252,43 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
             }
         }
         return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, getCarouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
+    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
+
+    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+        const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        const enabled = move.math.has(carouselEntryKey) ? true : false;
+        const selected = loopType != LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none:
+            case LaurusLoopType.loop: {
+                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            }
+            case LaurusLoopType.loop_reverse: {
+                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+            }
+            default: {
+                return [false, autorenew('rgb(62,62,62)')]
+            }
+        }
+    }, [carouselEntryKey, move.math]);
+
+    const getNextLoopType = useCallback((): LaurusLoopType => {
+        const currentLoop = move.math.get(carouselEntryKey)?.loop;
+        switch (currentLoop) {
+            case LaurusLoopType.none: {
+                return LaurusLoopType.loop;
+            }
+            case LaurusLoopType.loop: {
+                return LaurusLoopType.loop_reverse;
+            }
+            case LaurusLoopType.loop_reverse: {
+                return LaurusLoopType.none;
+            }
+            default: {
+                return LaurusLoopType.none;
+            }
+        }
+    }, [carouselEntryKey, move.math]);
 
     return (
         <div style={{
@@ -296,7 +334,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             if (!amplitudeTrackRef.current) return;
                                             const newAmplitude = getAmplitudeValue(newCursor.y, amplitudeTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, amplitude: newAmplitude } });
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
@@ -305,7 +343,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                     {
                                                         input_id: activeKey,
                                                         time: 0,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: newAmplitude,
@@ -329,7 +367,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             if (!frequencyTrackRef.current) return;
                                             const newFrequency = getFrequencyValue(newCursor.y, frequencyTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, frequency: newFrequency } });
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
@@ -338,7 +376,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                     {
                                                         input_id: activeKey,
                                                         time: 0,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: 0,
@@ -362,7 +400,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             if (!wavelengthTrackRef.current) return;
                                             const newWavelength = getWavelengthValue(newCursor.y, wavelengthTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, wavelength: newWavelength } });
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
@@ -371,7 +409,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                     {
                                                         input_id: activeKey,
                                                         time: 0,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: 0,
@@ -395,7 +433,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             if (!distanceTrackRef.current) return;
                                             const newDistance = getDistanceValue(newCursor.y, distanceTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, distance: newDistance } });
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
@@ -404,7 +442,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                     {
                                                         input_id: activeKey,
                                                         time: 0,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: 0,
@@ -428,7 +466,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, time: newTime } });
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
@@ -438,7 +476,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                     {
                                                         input_id: activeKey,
                                                         time: newServerTime,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: 0,
@@ -462,16 +500,16 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                     <div
                                         onClick={() => {
                                             if (move.locked) return;
-                                            const activeKey = getCarouselEntryKey();
+                                            const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusMoveResult = { ...move };
                                                 const activeEquation = snapshot.math.get(activeKey);
                                                 const newEquation = activeEquation ?
-                                                    { ...activeEquation, loop: !activeEquation.loop } :
+                                                    { ...activeEquation, loop: getNextLoopType() } :
                                                     {
                                                         input_id: activeKey,
                                                         time: 0,
-                                                        loop: true,
+                                                        loop: getNextLoopType(),
                                                         solution: [],
                                                         angle: 0,
                                                         amplitude: 0,
@@ -483,14 +521,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         style={{
-                                            cursor: move.locked ? '' : move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
-                                            background: move.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                            background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                             ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
-                                            svg={move.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                                            svg={loopSvg[1]}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
@@ -512,13 +550,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             });
                                         }}
                                         style={{
-                                            cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
                                             ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
-                                            svg={move.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                                            svg={move.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
@@ -541,13 +579,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                         }}
                                         style={{
-                                            cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
                                             ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
-                                            svg={move.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                                            svg={move.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={1} />
                                     </div>
@@ -555,14 +593,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         onClick={() => {
                                             if (!wavelengthTrackRef.current) return;
                                             let clipboardData: MoveUnitControls = { ...currentControls };
-                                            const activeEquation = move.math.get(getCarouselEntryKey());
+                                            const activeEquation = move.math.get(carouselEntryKey);
                                             if (activeEquation) {
                                                 clipboardData = { ...activeEquation };
                                             }
                                             const currentMoveEq: LaurusMoveEquation = {
                                                 ...clipboardData,
                                                 input_id: "clipboard",
-                                                loop: false,
+                                                loop: LaurusLoopType.none,
                                                 solution: []
                                             }
                                             const newMath: Map<string, LaurusMoveEquation> = new Map();
@@ -576,13 +614,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
                                         }}
                                         style={{
-                                            cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
                                             ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
-                                            svg={move.math.has(getCarouselEntryKey()) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
+                                            svg={move.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.8} />
                                     </div>
@@ -592,7 +630,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
                                                 if (!clipboardEquation) return;
                                                 const snapshot: LaurusMoveResult = { ...move };
-                                                const activeKey = getCarouselEntryKey();
+                                                const activeKey = carouselEntryKey;
                                                 const newEquation: LaurusMoveEquation = { ...clipboardEquation };
                                                 const newControls: MoveUnitControls = { ...newEquation };
                                                 setCurrentControls(newControls);
@@ -607,7 +645,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         style={{
-                                            cursor: move.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
                                             ...dynamicSizes.paramButtonContainer
@@ -641,7 +679,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                     onNewValue={function (v: number): void {
                                         const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
                                         setCurrentControls(v => { return { ...v, angle: newAngle }; });
-                                        const activeKey = getCarouselEntryKey();
+                                        const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusMoveResult = { ...move };
                                             const activeEquation = snapshot.math.get(activeKey);
@@ -650,7 +688,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 {
                                                     input_id: activeKey,
                                                     time: 0,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: [],
                                                     angle: newAngle,
                                                     amplitude: 0,

@@ -414,6 +414,38 @@ export function autorenew(
     }
 }
 
+export function refresh(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/refresh_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/>`)
+    }
+}
+
+export function updateCounterClockwise(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/update_counter_clockwise_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 480,-120 Q 555,-120 620.5,-148.5 686,-177 734.5,-225.5 783,-274 811.5,-339.5 840,-405 840,-480 840,-555 811.5,-620.5 783,-686 734.5,-734.5 686,-783 620.5,-811.5 555,-840 480,-840 398,-840 324.5,-805 251,-770 200,-706 V -800 H 120 V -560 H 360 V -640 H 250 Q 291,-696 351,-728 411,-760 480,-760 597,-760 678.5,-678.5 760,-597 760,-480 760,-363 678.5,-281.5 597,-200 480,-200 375,-200 296.5,-268 218,-336 204,-440 H 122 Q 137,-303 239.5,-211.5 342,-120 480,-120 Z M 368,-312 520,-464 V -680 H 440 V -496 L 312,-368 Z" />`)
+    }
+}
+
 export function fastRewind(
     fill: string = 'rgba(227, 227, 227, 1)',
     width: number = 24,

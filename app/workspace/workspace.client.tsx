@@ -142,10 +142,10 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
     }
 }
 
-export function toKeyframes(firstFrame: boolean, frames: LaurusFrame[]): Keyframe[] {
-    const framesToMap = firstFrame ? [frames[0]] : frames;
+export function toKeyframes(firstFrame: boolean, laurusFrames: LaurusFrame[]): Keyframe[] {
+    const framesToMap = firstFrame ? [laurusFrames[0]] : laurusFrames;
     const keyframes: Keyframe[] = framesToMap.map((f, i) => {
-        return i < frames.length - 1 ?
+        return i < laurusFrames.length - 1 ?
             {
                 translate: `${f.x}px ${f.y}px 0px`,
                 scale: `${f.sx} ${f.sy}`,

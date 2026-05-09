@@ -1,11 +1,11 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, rotateLeft } from "../svg-repo";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, refresh, LaurusClientSvg } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import Dial from "../components/dial";
 import ParameterSliderY from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getRotate, updateRotate } from "./workspace.server";
+import { getRotate, LaurusLoopType, updateRotate } from "./workspace.server";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 
@@ -72,7 +72,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            appState.timelineMaxValue);
+            appState.timelineMaxValue * 0.1);
 
     // main param
     const [angle, setAngle] = useState(0);
@@ -105,7 +105,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "svg"
+                        type: "svg",
+                        locallyActivatedEffectKey: rotate.rotate_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
@@ -113,14 +114,15 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 case "img": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "img"
+                        type: "img",
+                        locallyActivatedEffectKey: rotate.rotate_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch]);
+    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, rotate.rotate_id]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusRotateResult, newEquation: LaurusRotateEquation) => {
         const newMath: Map<string, LaurusRotateEquation> = new Map(rollback.math);
@@ -199,8 +201,17 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
             const activeMath = response.math
                 .get(activeKey);
             if (!activeMath) return [];
-            const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-                .map(s => { return { rotate: `${s.x} ${s.y} ${s.z} ${s.angle}deg` } }) ?? [];
+            const framesToMap = firstFrame ? [activeMath.solution[0]] : activeMath.solution;
+            console.log({ framesToMap })
+            const keyframes: Keyframe[] = framesToMap
+                .map((f, i) => {
+                    return i < activeMath.solution.length - 1 ? {
+                        rotate: `${f.x} ${f.y} ${f.z} ${f.angle}deg`,
+                        easing: 'step-end'
+                    } : {
+                        rotate: `${f.x} ${f.y} ${f.z} ${f.angle}deg`
+                    }
+                }) ?? [];
             const options: KeyframeAnimationOptions = {
                 duration: firstFrame ? 2 / response.fps : response.end * 1000,
             }
@@ -227,7 +238,43 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
             }
         }
         return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, rotate.rotate_id, svgElementsRef]);
+    }, [carouselEntryKey, appState.apiOrigin, appState.tool.type, appState.carouselEntries, rotate.rotate_id, carouselIndex, svgElementsRef, imgElementsRef]);
+
+    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+        const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        const enabled = rotate.math.has(carouselEntryKey) ? true : false;
+        const selected = loopType != LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none:
+            case LaurusLoopType.loop: {
+                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            }
+            case LaurusLoopType.loop_reverse: {
+                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+            }
+            default: {
+                return [false, autorenew('rgb(62,62,62)')]
+            }
+        }
+    }, [carouselEntryKey, rotate.math]);
+
+    const getNextLoopType = useCallback((): LaurusLoopType => {
+        const currentLoop = rotate.math.get(carouselEntryKey)?.loop;
+        switch (currentLoop) {
+            case LaurusLoopType.none: {
+                return LaurusLoopType.loop;
+            }
+            case LaurusLoopType.loop: {
+                return LaurusLoopType.loop_reverse;
+            }
+            case LaurusLoopType.loop_reverse: {
+                return LaurusLoopType.none;
+            }
+            default: {
+                return LaurusLoopType.none;
+            }
+        }
+    }, [carouselEntryKey, rotate.math]);
 
     return (
         <div style={{
@@ -285,7 +332,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                     {
                                                         input_id: activeKey,
                                                         time: 0.000001,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         x: newX,
@@ -319,7 +366,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                     {
                                                         input_id: activeKey,
                                                         time: 0.000001,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         x: 0,
@@ -353,7 +400,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                     {
                                                         input_id: activeKey,
                                                         time: 0.000001,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         x: 0,
@@ -388,7 +435,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                     {
                                                         input_id: activeKey,
                                                         time: newServerTime,
-                                                        loop: false,
+                                                        loop: LaurusLoopType.none,
                                                         solution: [],
                                                         angle: 0,
                                                         x: 0,
@@ -416,11 +463,14 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const snapshot: LaurusRotateResult = { ...rotate };
                                                 const activeEquation = snapshot.math.get(activeKey);
                                                 const newEquation = activeEquation ?
-                                                    { ...activeEquation, loop: !activeEquation.loop } :
+                                                    {
+                                                        ...activeEquation,
+                                                        loop: getNextLoopType(),
+                                                    } :
                                                     {
                                                         input_id: activeKey,
                                                         time: 0.000001,
-                                                        loop: true,
+                                                        loop: getNextLoopType(),
                                                         solution: [],
                                                         angle: 0,
                                                         x: 0,
@@ -434,11 +484,11 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             cursor: rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
-                                            background: rotate.math.get(carouselEntryKey)?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                            background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
-                                            svg={rotate.math.has(carouselEntryKey) ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                                            svg={loopSvg[1]}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
@@ -461,7 +511,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const newEquation: LaurusRotateEquation = {
                                                     input_id: activeKey,
                                                     time: 0.000001,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: [],
                                                     angle: 0,
                                                     x: 0,
@@ -480,7 +530,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
-                                            svg={rotate.math.has(carouselEntryKey) ? rotateLeft() : rotateLeft("rgb(62, 62, 62)")}
+                                            svg={rotate.math.has(carouselEntryKey) ? updateCounterClockwise() : updateCounterClockwise("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
@@ -552,7 +602,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const currentEq: LaurusRotateEquation = {
                                                 ...clipboardData,
                                                 input_id: "clipboard",
-                                                loop: false,
+                                                loop: LaurusLoopType.none,
                                                 solution: []
                                             }
                                             const newMath: Map<string, LaurusRotateEquation> = new Map();
@@ -643,7 +693,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 {
                                                     input_id: activeKey,
                                                     time: 0.000001,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: [],
                                                     angle: newAngle,
                                                     x: 0,

@@ -378,6 +378,12 @@ export async function getEffects(baseUrl: string | undefined) {
     }
 }
 
+export enum LaurusLoopType {
+    none = 'none',
+    loop = 'loop',
+    loop_reverse = 'loop_reverse'
+}
+
 /* /scales */
 
 export interface ScaleSolution_V1_0 {
@@ -392,7 +398,7 @@ export interface ScaleEquation_V1_0 {
     time: number
     scale_x: number
     scale_y: number
-    loop: boolean
+    loop: LaurusLoopType
     solution: ScaleSolution_V1_0[]
 }
 export interface Scale_V1_0 {
@@ -591,7 +597,7 @@ export interface MoveEquation_V1_0 {
     wavelength: number
     distance: number
     time: number
-    loop: boolean
+    loop: LaurusLoopType
     solution: { x: number, y: number }[]
 }
 export interface Move_V1_0 {
@@ -778,7 +784,7 @@ export interface RotateEquation_V1_0 {
     z: number
     angle: number
     time: number
-    loop: boolean
+    loop: LaurusLoopType
     solution: { x: number, y: number, z: number, angle: number }[]
 }
 export interface Rotate_V1_0 {

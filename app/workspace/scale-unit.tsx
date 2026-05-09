@@ -1,8 +1,8 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira } from "../fonts";
-import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, } from "../svg-repo";
-import { getScale, updateScale } from "./workspace.server";
+import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, refresh, LaurusClientSvg } from "../svg-repo";
+import { getScale, updateScale, LaurusLoopType } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import ParameterSliderY, { ParameterSliderX } from "../components/parameter-slider";
@@ -140,7 +140,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "svg"
+                        type: "svg",
+                        locallyActivatedEffectKey: scale.scale_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
@@ -148,14 +149,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 case "img": {
                     const newActiveElement: LaurusActiveElement = {
                         key: carouselEntry.key,
-                        type: "img"
+                        type: "img",
+                        locallyActivatedEffectKey: scale.scale_id
                     }
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch]);
+    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, scale.scale_id]);
 
     const getActiveScale = useCallback((): [number, number] => {
         if (!appState.activeElement) return [1, 1];
@@ -194,7 +196,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         }
     }, [setActiveElementIfNull, dispatch, appState.apiOrigin, appState.accessToken]);
 
-    const getCarouselEntryKey = useCallback(() => {
+    const carouselEntryKey = useMemo(() => {
         if (carouselIndex < appState.carouselEntries.length) {
             const carouselEntry = appState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
@@ -213,7 +215,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
 
     useLayoutEffect(() => {
         (async () => {
-            const activeKey = getCarouselEntryKey();
+            const activeKey = carouselEntryKey;
             const activeEquation = scale.math.get(activeKey);
             let scaleXInit = 1;
             let scaleYInit = 1;
@@ -254,10 +256,10 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 }
             }
         })();
-    }, [appState.timelineMaxValue, getCarouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
+    }, [appState.timelineMaxValue, carouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = getCarouselEntryKey();
+        const activeKey = carouselEntryKey;
         if (!activeKey) return [];
         const newAnimations: Animation[] = [];
         const response: LaurusScaleResult | undefined =
@@ -294,7 +296,43 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             }
         }
         return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, getCarouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
+    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
+
+    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+        const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        const enabled = scale.math.has(carouselEntryKey) ? true : false;
+        const selected = loopType != LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none:
+            case LaurusLoopType.loop: {
+                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            }
+            case LaurusLoopType.loop_reverse: {
+                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+            }
+            default: {
+                return [false, autorenew('rgb(62,62,62)')]
+            }
+        }
+    }, [carouselEntryKey, scale.math]);
+
+    const getNextLoopType = useCallback((): LaurusLoopType => {
+        const currentLoop = scale.math.get(carouselEntryKey)?.loop;
+        switch (currentLoop) {
+            case LaurusLoopType.none: {
+                return LaurusLoopType.loop;
+            }
+            case LaurusLoopType.loop: {
+                return LaurusLoopType.loop_reverse;
+            }
+            case LaurusLoopType.loop_reverse: {
+                return LaurusLoopType.none;
+            }
+            default: {
+                return LaurusLoopType.none;
+            }
+        }
+    }, [carouselEntryKey, scale.math]);
 
     return (
         <div style={{
@@ -338,7 +376,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         setTimeCursor({ ...newCursor, x: 0 });
                                         if (!timeTrackRef.current) return;
                                         const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
-                                        const activeKey = getCarouselEntryKey();
+                                        const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale }
                                             const activeEquation = snapshot.math.get(activeKey);
@@ -350,7 +388,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                                     time: newServerTime,
                                                     scale_x: 1,
                                                     scale_y: 1,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: []
                                                 };
                                             saveNewEquation(snapshot, newEquation);
@@ -438,7 +476,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             setScaleYCursor({ x: newYCursor, y: 0 });
                                             newScaleYValue = newScaleXValue / r;
                                         }
-                                        const activeKey = getCarouselEntryKey();
+                                        const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
                                             const activeEquation = snapshot.math.get(activeKey);
@@ -457,7 +495,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                                     time: appState.timelineMaxValue * 1000,
                                                     scale_x: newScaleXValue,
                                                     scale_y: newScaleYValue != undefined ? newScaleYValue : 1,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: []
                                                 };
                                                 saveNewEquation(snapshot, newEquation);
@@ -537,7 +575,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             setScaleXCursor({ x: newXCursor, y: 0 });
                                             newScaleXValue = newScaleYValue / r;
                                         }
-                                        const activeKey = getCarouselEntryKey();
+                                        const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
                                             const activeEquation = snapshot.math.get(activeKey);
@@ -556,7 +594,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                                     time: appState.timelineMaxValue * 1000,
                                                     scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
                                                     scale_y: newScaleYValue,
-                                                    loop: false,
+                                                    loop: LaurusLoopType.none,
                                                     solution: []
                                                 };
                                                 saveNewEquation(snapshot, newEquation);
@@ -576,32 +614,32 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 <div
                                     onClick={() => {
                                         if (scale.locked) return;
-                                        const activeKey = getCarouselEntryKey();
+                                        const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
                                             const activeEquation = snapshot.math.get(activeKey);
                                             const newEquation = activeEquation ?
-                                                { ...activeEquation, loop: !activeEquation.loop } :
+                                                { ...activeEquation, loop: getNextLoopType() } :
                                                 {
                                                     input_id: activeKey,
                                                     time: appState.timelineMaxValue * 1000,
                                                     scale_x: 1,
                                                     scale_y: 1,
-                                                    loop: true,
+                                                    loop: getNextLoopType(),
                                                     solution: []
                                                 };
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
                                     style={{
-                                        cursor: scale.locked ? '' : scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        cursor: scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : '',
                                         display: 'grid',
                                         placeContent: 'center',
-                                        background: scale.math.get(getCarouselEntryKey())?.loop ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                        background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         ...dynamicSizes.paramButtonContainer
                                     }}>
                                     <SvgRepo
-                                        svg={scale.math.has(getCarouselEntryKey()) ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                                        svg={loopSvg[1]}
                                         containerSize={{ ...dynamicSizes.paramButton }}
                                         scale={0.9} />
                                 </div>
@@ -623,13 +661,13 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         });
                                     }}
                                     style={{
-                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
                                         display: 'grid',
                                         placeContent: 'center',
                                         ...dynamicSizes.paramButtonContainer
                                     }}>
                                     <SvgRepo
-                                        svg={scale.math.has(getCarouselEntryKey()) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                                        svg={scale.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                         containerSize={{ ...dynamicSizes.paramButton }}
                                         scale={0.9} />
                                 </div>
@@ -652,13 +690,13 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                                     }}
                                     style={{
-                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
                                         display: 'grid',
                                         placeContent: 'center',
                                         ...dynamicSizes.paramButtonContainer
                                     }}>
                                     <SvgRepo
-                                        svg={scale.math.has(getCarouselEntryKey()) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                                        svg={scale.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
                                         containerSize={{ ...dynamicSizes.paramButton }}
                                         scale={1} />
                                 </div>
@@ -667,13 +705,13 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         setUnlockAspectRatio(v => !v);
                                     }}
                                     style={{
-                                        cursor: scale.math.has(getCarouselEntryKey()) ? 'pointer' : '',
+                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
                                         display: 'grid',
                                         placeContent: 'center',
                                         ...dynamicSizes.paramButtonContainer
                                     }}>
                                     <SvgRepo
-                                        svg={scale.math.has(getCarouselEntryKey()) ? (unlockAspectRatio ? linkOff() : link()) : (unlockAspectRatio ? linkOff("rgb(62, 62, 62)") : link("rgb(62, 62, 62)"))}
+                                        svg={scale.math.has(carouselEntryKey) ? (unlockAspectRatio ? linkOff() : link()) : (unlockAspectRatio ? linkOff("rgb(62, 62, 62)") : link("rgb(62, 62, 62)"))}
                                         containerSize={{ ...dynamicSizes.paramButton }}
                                         scale={1} />
                                 </div>
