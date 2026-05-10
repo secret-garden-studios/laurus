@@ -1,5 +1,5 @@
 'use client'
-import { createContext, CSSProperties, use, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { createContext, CSSProperties, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
     ScaleEquation_V1_0,
@@ -698,7 +698,7 @@ export default function Workspace({
     const [mediaBrowserWidth] = useState(() => {
         switch (resolutionInit.type) {
             case "high": return 400
-            case "midhigh": return 280
+            case "midhigh": return 300
             case "low":
             case "midlow": return 240
         }
@@ -979,7 +979,7 @@ export default function Workspace({
                         height: '100%',
                     }}>
                     <div
-                        className={styles["noisy-background-20-3"]}
+                        className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
                         style={{
                             position: 'absolute',
                             top: 0,
@@ -1193,29 +1193,53 @@ interface Bumper {
     onBumperClick: () => void,
 }
 export function Bumper({ borderLeft, borderRight, onBumperClick }: Bumper) {
+    const { appState } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                svg: {
+                    width: 18,
+                    height: 38,
+                }
+            }
+            case "midhigh": return {
+                svg: {
+                    width: 13,
+                    height: 33,
+                }
+            }
+            case "midlow":
+            case "low": return {
+                svg: {
+                    width: 13,
+                    height: 33,
+                }
+            }
+        }
+    })
     return (<>
         <div
             style={{
-                width: 18,
+                width: dynamicSizes.svg.width,
                 height: '100%',
                 gridTemplateRows: '1fr',
                 display: 'grid',
                 placeContent: 'start',
             }} >
             <div
-                className={styles['noisy-background']}
+                className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}
                 style={{
                     borderLeft,
                     borderRight,
-                    width: 18,
+                    width: dynamicSizes.svg.width,
                     display: 'grid',
                     placeContent: 'center',
                 }} >
                 <SvgRepo
                     svg={moreVert('rgba(255, 255, 255, 0.6)')}
                     containerSize={{
-                        width: 18,
-                        height: 38
+                        width: dynamicSizes.svg.width,
+                        height: dynamicSizes.svg.height,
                     }}
                     scale={1}
                     onContainerClick={onBumperClick} />

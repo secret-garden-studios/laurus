@@ -1,4 +1,4 @@
-import { CSSProperties, RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import { addCircle, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
@@ -42,13 +42,11 @@ export default function TimelineArea({
                 return 1000;
             }
             case "midhigh": {
-                return 1000 * 0.7;
+                return 740;
             }
-            case "midlow": {
-                return 1000 * 0.5;
-            }
+            case "midlow":
             case "low": {
-                return 1000 * 0.25;
+                return 500;
             }
         }
     });
@@ -194,6 +192,7 @@ export default function TimelineArea({
 
     return (<>
         <div
+            className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
             style={{
                 width: "100%",
                 height: '100%',
@@ -203,7 +202,6 @@ export default function TimelineArea({
             }}>
             {/* wide ruler (time) */}
             <div
-                className={dellaRespira.className}
                 style={{
                     gridRow: '1',
                     gridColumn: 'span 2',
@@ -255,7 +253,6 @@ export default function TimelineArea({
                     })}
                 </div>
                 <div
-                    className={dellaRespira.className}
                     onDoubleClick={() => {
                         const currentUnit = appState.timelineUnit;
                         const currentUnits = [...appState.timelineUnits];
@@ -323,7 +320,6 @@ export default function TimelineArea({
             </div>
             {/* content area */}
             <div
-                className={styles["noisy-background-lite"] + " " + dellaRespira.className}
                 style={{
                     overflowY: 'auto',
                     gridRow: '2',
@@ -343,7 +339,6 @@ export default function TimelineArea({
                 borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
             {/* control area */}
             <div
-                className={styles["noisy-background"] + " " + dellaRespira.className}
                 style={{
                     gridRow: '3',
                     gridColumn: 'span 2',
@@ -551,46 +546,56 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
     const { appState } = useContext(WorkspaceContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
-    const layerHeaderStyle: CSSProperties = {
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        height: (() => {
-            switch (appState.resolution.type) {
-                case "high": return 32
-                case "midhigh": return 24
-                case "midlow":
-                case "low": return 20
-            }
-        })(),
-        paddingLeft: 10,
-    };
-    const layerBodyStyle: CSSProperties = {
-        display: 'grid',
-        alignContent: 'start',
-        minHeight: 46,
-    };
-    const [timelineAreaContentSize] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                height: 46,
-                padding: '0px 10px',
-                svg: 20
+                layerHeaderStyle: {
+                    height: 32,
+                    paddingLeft: 10,
+                },
+                timelineAreaContent: {
+                    height: 46,
+                    padding: '0px 10px',
+                    svg: 20
+                },
+                indexColumn: {
+                    width: '4ch',
+                    fontSize: 9,
+                }
             }
             case "midhigh": return {
-                height: 36,
-                padding: '0px 8px',
-                svg: 16
+                layerHeaderStyle: {
+                    height: 24,
+                    paddingLeft: 10,
+                },
+                timelineAreaContent: {
+                    height: 36,
+                    padding: '0px 8px',
+                    svg: 16
+                },
+                indexColumn: {
+                    width: '4ch',
+                    fontSize: 7,
+                }
             }
             case "midlow":
             case "low": return {
-                height: 32,
-                padding: '0px 8px',
-                svg: 14
+                layerHeaderStyle: {
+                    height: 20,
+                    paddingLeft: 10,
+                },
+                timelineAreaContent: {
+                    height: 32,
+                    padding: '0px 8px',
+                    svg: 14
+                },
+                indexColumn: {
+                    width: '4ch',
+                    fontSize: 7,
+                }
             }
         }
     });
-
 
     return (<>
         {appState.project.layers.size == 0 && (
@@ -602,18 +607,28 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     gridTemplateRows: 'min-content auto',
                 }}>
                 {/* layer header */}
-                <div style={{ ...layerHeaderStyle, background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(31, 31, 31))", }}>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(31, 31, 31))",
+                    ...dynamicSizes.layerHeaderStyle,
+                }}>
                     <LayerTitle
                         layerId={""}
                         layerNameInit={"untitled"}
                         layerNameRef={layerNameRef} />
                 </div>
-                <div style={layerBodyStyle}>
+                <div style={{
+                    display: 'grid',
+                    alignContent: 'start',
+                    minHeight: 46,
+                }}>
                     <div
                         style={{
                             width: '100%',
-                            height: timelineAreaContentSize.height,
-                            padding: timelineAreaContentSize.padding,
+                            height: dynamicSizes.timelineAreaContent.height,
+                            padding: dynamicSizes.timelineAreaContent.padding,
                             background: "rgb(35, 35, 35)",
                             borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                             borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
@@ -624,8 +639,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 addCircle('rgba(204, 204, 204, 0.2)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
-                                width: timelineAreaContentSize.svg,
-                                height: timelineAreaContentSize.height
+                                width: dynamicSizes.timelineAreaContent.svg,
+                                height: dynamicSizes.timelineAreaContent.height
                             }}
                             scale={1}
                             onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -649,14 +664,24 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         gridTemplateRows: 'min-content auto',
                     }}>
                     {/* layer header */}
-                    <div style={{ ...layerHeaderStyle, background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(23, 23, 23))", }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: '100%',
+                        background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(23, 23, 23))",
+                        ...dynamicSizes.layerHeaderStyle,
+                    }}>
                         <LayerTitle
                             layerId={layerEntry[0]}
                             layerNameInit={layerEntry[1].name}
                             layerNameRef={layerNameRef} />
                     </div>
                     {/* effects */}
-                    <div style={layerBodyStyle}>
+                    <div style={{
+                        display: 'grid',
+                        alignContent: 'start',
+                        minHeight: 46,
+                    }}>
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
                             return <div
                                 onMouseEnter={(e) => {
@@ -675,12 +700,11 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 }}
                                 key={effect.key}>
                                 <div style={{
-                                    width: '4ch',
                                     height: '100%',
                                     background: 'rgba(22, 22, 22, 0.9)',
-                                    fontSize: 9,
                                     display: 'grid',
-                                    placeContent: 'center'
+                                    placeContent: 'center',
+                                    ...dynamicSizes.indexColumn,
                                 }}>{(i + 1).toFixed()}</div>
                                 <EffectUnit
                                     effect={effect}
@@ -691,8 +715,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         <div
                             style={{
                                 width: '100%',
-                                height: timelineAreaContentSize.height,
-                                padding: timelineAreaContentSize.padding,
+                                height: dynamicSizes.timelineAreaContent.height,
+                                padding: dynamicSizes.timelineAreaContent.padding,
                                 background: "rgb(35, 35, 35)",
                                 borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
                                 borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
@@ -705,8 +729,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                     addCircle('rgba(204, 204, 204, 0.2)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
                                 containerSize={{
-                                    width: timelineAreaContentSize.svg,
-                                    height: timelineAreaContentSize.height
+                                    width: dynamicSizes.timelineAreaContent.svg,
+                                    height: dynamicSizes.timelineAreaContent.height
                                 }}
                                 scale={1}
                                 onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -737,7 +761,7 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
     const [fontSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return 10
-            case "midhigh": return 9
+            case "midhigh": return 8
             case "midlow":
             case "low": return 8
         }

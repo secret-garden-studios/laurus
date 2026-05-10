@@ -5,14 +5,24 @@
   background-color: rgb(24, 24, 24);
 }
 
-.noisy-background {
+.noisy-background-16-2 {
   background-image: url('/noise2_16_2.png');
   background-size: auto;
 }
 
-.noisy-background-lite {
+.noisy-background-16-2-low-res {
+  background-image: url('/noise2_16_2.png');
+  background-size: 15%;
+}
+
+.noisy-background-20-2 {
   background-image: url('/noise2_20_2.png');
   background-size: auto;
+}
+
+.noisy-background-20-2-low-res {
+  background-image: url('/noise2_20_2.png');
+  background-size: 15%;
 }
 
 .noisy-background-20-3 {
@@ -20,14 +30,29 @@
   background-size: auto;
 }
 
+.noisy-background-20-3-low-res {
+  background-image: url('/noise2_20_3.png');
+  background-size: 15%;
+}
+
 .noisy-background-7-3 {
   background-image: url('/noise2_7_3.png');
   background-size: auto;
 }
 
+.noisy-background-7-3-low-res {
+  background-image: url('/noise2_7_3.png');
+  background-size: 15%;
+}
+
 .noisy-background-32-3 {
   background-image: url('/noise2_32_3.png');
   background-size: auto;
+}
+
+.noisy-background-32-3-low-res {
+  background-image: url('/noise2_32_3.png');
+  background-size: 15%;
 }
 
 .animated-font {

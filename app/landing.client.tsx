@@ -54,7 +54,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
 
     return <>
         <div
-            className={styles["noisy-background-20-3"] + ' ' + dellaRespira.className}
+            className={styles[`${resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
             style={{
                 display: 'grid',
                 height: '100vh',

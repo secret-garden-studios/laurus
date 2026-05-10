@@ -3,7 +3,7 @@ import { WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusRotateResult
 import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, refresh, LaurusClientSvg } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import Dial from "../components/dial";
-import ParameterSliderY from "../components/parameter-slider";
+import { ParameterSliderY } from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getRotate, LaurusLoopType, updateRotate } from "./workspace.server";
 import { getDynamicUnitSizes } from "./workspace-resolution";

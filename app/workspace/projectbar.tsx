@@ -13,23 +13,29 @@ export default function Projectbar() {
     const projectNameHook = useDebounce<string>(projectName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
     const projectTitleRef = useRef<HTMLInputElement>(null);
-    const [projectbarSize] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                height: '',
-                font: 14,
-                inputPadding: '4px 20px'
+                input: {
+                    fontSize: 14,
+                    padding: 4,
+                    letterSpacing: 1,
+                }
             }
             case "midhigh": return {
-                height: 32,
-                font: 11,
-                inputPadding: '0px 20px'
+                input: {
+                    fontSize: 11,
+                    padding: 4,
+                    letterSpacing: 1,
+                }
             }
             case "low":
             case "midlow": return {
-                height: 30,
-                font: 11,
-                inputPadding: '0px 20px'
+                input: {
+                    fontSize: 11,
+                    padding: 4,
+                    letterSpacing: 1,
+                }
             }
         }
     });
@@ -81,9 +87,8 @@ export default function Projectbar() {
 
     return (<>
         <div
-            className={styles["noisy-background"]}
+            className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}
             style={{
-                height: projectbarSize.height,
                 width: "100%",
                 display: "grid",
                 gridTemplateRows: 'min-content',
@@ -94,7 +99,6 @@ export default function Projectbar() {
                 borderBottom: '1px solid rgb(33, 33, 33)',
                 padding: 6,
             }}>
-
             <div
                 style={{
                     width: '100%',
@@ -118,12 +122,10 @@ export default function Projectbar() {
                             boxSizing: 'border-box',
                             background: 'none',
                             color: "rgb(242, 242, 242)",
-                            fontSize: projectbarSize.font,
-                            letterSpacing: 1,
                             textAlign: 'center',
                             border: 'none',
                             outline: 'none',
-                            padding: 4,
+                            ...dynamicSizes.input
                         }}
                         type="text"
                         value={projectName}

@@ -4,7 +4,7 @@ import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, re
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { getMove, updateMove, LaurusLoopType } from "./workspace.server";
 import Dial from "../components/dial";
-import ParameterSliderY from "../components/parameter-slider";
+import { ParameterSliderY } from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";

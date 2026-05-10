@@ -62,25 +62,103 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
-
-    const [trackSidePadding] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
-            case "high": return 15
-            case "midhigh": return 14
+            case "high": return {
+                timelineSliderContainer: {
+                    padding: '0px 15px 0px 15px',
+                },
+                timelineTrackSize: {
+                    containerHeight: 44,
+                    containerWidth: '100%',
+                    trackHeight: 1,
+                    capWidth: 16,
+                    capHeight: 16,
+                },
+                headerFlex: {
+                    height: 36,
+                    padding: "0px 0px 0px 8px",
+                    fontSize: 12,
+                },
+                inputFlex: {
+                    gap: 4
+                },
+                input: {
+                    fontSize: 10,
+                    width: 30
+                },
+                footer: {
+                    height: 20
+                },
+                toolbar: {
+                    width: 24
+                }
+            }
+            case "midhigh": return {
+                timelineSliderContainer: {
+                    padding: '0px 14px 0px 14px',
+                },
+                timelineTrackSize: {
+                    containerHeight: 40,
+                    containerWidth: '100%',
+                    trackHeight: 1,
+                    capWidth: 12,
+                    capHeight: 12,
+                },
+                headerFlex: {
+                    height: 26,
+                    padding: "0px 0px 0px 8px",
+                    fontSize: 10,
+                },
+                inputFlex: {
+                    gap: 4
+                },
+                input: {
+                    fontSize: 9,
+                    width: '6ch'
+                },
+                footer: {
+                    height: 22
+                },
+                toolbar: {
+                    width: 19
+                }
+            }
             case "midlow":
-            case "low": return 14
+            case "low": return {
+                timelineSliderContainer: {
+                    padding: '0px 14px 0px 14px',
+                },
+                timelineTrackSize: {
+                    containerHeight: 40,
+                    containerWidth: '100%',
+                    trackHeight: 1,
+                    capWidth: 12,
+                    capHeight: 12,
+                },
+                headerFlex: {
+                    height: 26,
+                    padding: "0px 0px 0px 8px",
+                    fontSize: 10,
+                },
+                inputFlex: {
+                    gap: 4
+                },
+                input: {
+                    fontSize: 9,
+                    width: '6ch'
+                },
+                footer: {
+                    height: 20
+                },
+                toolbar: {
+                    width: 19
+                }
+            }
         }
     });
+
     const timelineTrackRef = useRef<HTMLDivElement | null>(null);
-    const [timelineTrackSize] = useState(() => {
-        return {
-            containerHeight: 44,
-            containerWidth: '100%',
-            trackHeight: 1,
-            capWidth: 16,
-            capHeight: 16,
-        }
-    });
     const [startCursor, setStartCursor] = useState({ x: 0, y: 0 });
     const startRef = useRef<HTMLInputElement | null>(null);
     const [endCursor, setEndCursor] = useState({ x: 0, y: 0 });
@@ -91,13 +169,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     const cursorToTime = useCallback((cursorX: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth), 0);
-    }, [getTimeValue, timelineTrackSize.capWidth]);
+        return getTimeValue(cursorX, (timelineTrackRef.current.clientWidth - dynamicSizes.timelineTrackSize.capWidth), 0);
+    }, [getTimeValue, dynamicSizes.timelineTrackSize.capWidth]);
 
     const timeToCursor = useCallback((time: number): number => {
         if (!timelineTrackRef.current) return 0;
-        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - timelineTrackSize.capWidth));
-    }, [getTimeCursor, timelineTrackSize.capWidth]);
+        return getTimeCursor(time, (timelineTrackRef.current.clientWidth - dynamicSizes.timelineTrackSize.capWidth));
+    }, [getTimeCursor, dynamicSizes.timelineTrackSize.capWidth]);
 
     const getNewEndTime = useCallback((newStartCursorX: number): [number, boolean] => {
         return (endCursor.x < newStartCursorX) ?
@@ -235,53 +313,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     }, [appState.timelineMaxValue, cursorToTime, effect.value, timeToCursor]);
 
-    const [timelineUnitsSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return {
-                height: 36,
-                fontSize: 12,
-                gap: 4,
-                inputFontSize: 10,
-                inputWidth: 30,
-            }
-            case "midhigh": return {
-                height: 26,
-                fontSize: 11,
-                gap: 3,
-                inputFontSize: 10,
-                inputWidth: 26,
-            }
-            case "midlow":
-            case "low": return {
-                height: 26,
-                fontSize: 11,
-                gap: 4,
-                inputFontSize: 9,
-                inputWidth: 28,
-            }
-        }
-    });
-    const [timelineDropDownSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return {
-                height: 20,
-                padding: '0px 4px',
-                svg: 17
-            }
-            case "midhigh": return {
-                height: 22,
-                padding: '0px 2px',
-                svg: 16
-            }
-            case "midlow":
-            case "low": return {
-                height: 20,
-                padding: '0px 1px',
-                svg: 16
-            }
-        }
-    });
-
     const deleteEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
             case "move": {
@@ -314,16 +345,14 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 <div
                     style={{
                         width: '100%',
-                        height: timelineUnitsSize.height,
-                        padding: "0px 0px 0px 8px",
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        fontSize: timelineUnitsSize.fontSize,
                         color: 'rgb(227, 227, 227)',
+                        ...dynamicSizes.headerFlex
                     }}>
-                    <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'start'}</div>
+                    <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', fontSize: dynamicSizes.input.fontSize }}>{'start'}</div>
                         <input
                             id={`start-input-${effect.key}`}
                             disabled
@@ -340,8 +369,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
-                                fontSize: timelineUnitsSize.inputFontSize,
-                                width: timelineUnitsSize.inputWidth,
+                                ...dynamicSizes.input
                             }}
                         />
                     </div>
@@ -350,8 +378,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             effectKey={effect.key}
                             effectDescriptionInit={effect.value.description} />
                     </div>
-                    <div style={{ display: 'flex', height: '100%', gap: timelineUnitsSize.gap, alignItems: 'center' }}>
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center' }}>{'end'}</div>
+                    <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
+                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', fontSize: dynamicSizes.input.fontSize }}>{'end'}</div>
                         <input
                             id={`end-input-${effect.key}`}
                             disabled
@@ -368,8 +396,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
-                                fontSize: timelineUnitsSize.inputFontSize,
-                                width: timelineUnitsSize.inputWidth,
+                                ...dynamicSizes.input
                             }}
                         />
                     </div>
@@ -377,11 +404,11 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 <div style={{
                     width: '100%',
                     height: '100%',
-                    padding: `0px ${trackSidePadding}px 0px ${trackSidePadding}px`,
+                    ...dynamicSizes.timelineSliderContainer,
                 }}>
                     <TimelineSlider
                         hash={`${effect.key}|t1`}
-                        size={timelineTrackSize}
+                        size={dynamicSizes.timelineTrackSize}
                         trackRef={timelineTrackRef}
                         trackBackground={'rgb(60, 60, 60)'}
                         cursor={startCursor}
@@ -430,7 +457,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 <div
                     style={{
                         width: '100%',
-                        height: timelineDropDownSize.height
+                        ...dynamicSizes.footer
                     }} />
                 {showUnitControls && (() => {
                     switch (effect.type) {
@@ -459,14 +486,14 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 })()}
             </div>
             <div style={{
-                width: 24,
                 height: '100%',
                 background: 'rgba(22, 22, 22, 0.9)',
                 display: 'flex',
                 flexDirection: 'column',
+                ...dynamicSizes.toolbar
             }}>
                 <div
-                    style={{ width: 24, height: 24, }}>
+                    style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
                     <SvgRepo svg={(() => {
                         switch (effect.type) {
                             case "scale": return allOut();
@@ -474,7 +501,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             case "rotate": return toysFan();
                         }
                     })()}
-                        containerSize={{ width: 24, height: 24 }}
+                        containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.6} />
                 </div>
                 <div
@@ -526,14 +553,14 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     }}
                     style={{
                         cursor: 'pointer',
-                        width: 24,
-                        height: 24,
+                        width: dynamicSizes.toolbar.width,
+                        height: dynamicSizes.toolbar.width,
                         background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
                         border: '1px solid rgba(0,0,0,0)',
                         transition: 'border-left 0.25s ease-out'
                     }}>
                     <SvgRepo svg={tune()}
-                        containerSize={{ width: 24, height: 24 }}
+                        containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.65} />
                 </div>
                 <div
@@ -546,7 +573,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         await saveEffect(newEffect, rollback);
                     }}
                     style={{
-                        cursor: 'pointer', width: 24, height: 24,
+                        cursor: 'pointer', width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width,
                         background: 'none',
                         border: '1px solid rgba(0,0,0,0)',
                         transition: 'border-left 0.25s ease-out'
@@ -555,8 +582,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         title={effect.locked ? "locked" : "unlocked"}
                         svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
                         containerSize={{
-                            width: 24,
-                            height: 24
+                            width: dynamicSizes.toolbar.width,
+                            height: dynamicSizes.toolbar.width
                         }}
                         scale={0.6} />
                 </div>
@@ -568,7 +595,9 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         }
                     }}
                     style={{
-                        cursor: 'pointer', width: 24, height: 24,
+                        cursor: 'pointer',
+                        width: dynamicSizes.toolbar.width,
+                        height: dynamicSizes.toolbar.width,
                         background: 'none',
                         border: '1px solid rgba(0,0,0,0)',
                         transition: 'border-left 0.25s ease-out'
@@ -577,8 +606,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         title={"delete effect"}
                         svg={cancelCircle('rgb(220, 112, 112)')}
                         containerSize={{
-                            width: 24,
-                            height: 24
+                            width: dynamicSizes.toolbar.width,
+                            height: dynamicSizes.toolbar.width
                         }}
                         scale={0.6} />
                 </div>}
@@ -600,9 +629,9 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return { fontSize: 12, padding: 6 }
-            case "midhigh": return { fontSize: 12, padding: 6 }
+            case "midhigh": return { fontSize: 10, padding: 6 }
             case "midlow":
-            case "low": return { fontSize: 12, padding: 6 }
+            case "low": return { fontSize: 10, padding: 6 }
         }
     });
     const effectDescriptionInputRef = useRef<HTMLInputElement | null>(null);

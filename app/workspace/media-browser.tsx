@@ -92,10 +92,25 @@ export default function MediaBrowser({
             }
         }
     });
-    const [mediaItemSize] = useState({
-        container: Math.round(300 * appState.resolution.factor),
-        svg: Math.round(100 * appState.resolution.factor),
-        padding: `0px 0px ${Math.round(20 * appState.resolution.factor)}px 0px`,
+    const [mediaItemSize] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                container: 300,
+                svg: 100,
+                padding: '0px 0px 20px 0px',
+            }
+            case "midhigh": return {
+                container: 230,
+                svg: 72,
+                padding: '0px 0px 14px 0px',
+            }
+            case "midlow":
+            case "low": return {
+                container: 150,
+                svg: 50,
+                padding: '0px 0px 10px 0px',
+            }
+        }
     });
     const [mediaSortSize] = useState({
         container: Math.round(36 * appState.resolution.factor),
@@ -241,7 +256,7 @@ export default function MediaBrowser({
                     selected={(filter == 'frame')} />
             </div>
             <div
-                className={styles["noisy-background-lite"]}
+                className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
                 onScroll={handleScroll}
                 style={{
                     gridRow: 2,
@@ -553,7 +568,7 @@ export default function MediaBrowser({
                             height: mediaSortSize.svg
                         }} scale={1} />
                 </div>
-                <div style={{height: '100%', width: 1, background: 'rgba(255, 255, 255, 0.05)'}}/>
+                <div style={{ height: '100%', width: 1, background: 'rgba(255, 255, 255, 0.05)' }} />
                 <div
                     onClick={() => { setSortStrategy('timestamp') }}
                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}

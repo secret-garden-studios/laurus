@@ -16,30 +16,26 @@ export default function Toolbar({ resolution }: Toolbar) {
             case "high": return {
                 svg: 50,
                 width: 50,
-                tooltipMarginBottom: 12,
-                tooltipMarginBottom2: 10,
+                tooltipMarginBottom: 6,
                 tooltipFont: 16,
                 tooltipFont2: 14
             }
             case "midhigh": return {
                 svg: 40,
                 width: 40,
-                tooltipMarginBottom: 12,
-                tooltipMarginBottom2: 10,
-                tooltipFont: 16,
-                tooltipFont2: 14
+                tooltipMarginBottom: 6,
+                tooltipFont: 14,
+                tooltipFont2: 12
             }
             case "low":
             case "midlow": return {
                 svg: 38,
                 width: 38,
-                tooltipMarginBottom: 12,
-                tooltipMarginBottom2: 10,
-                tooltipFont: 16,
-                tooltipFont2: 14
+                tooltipMarginBottom: 6,
+                tooltipFont: 14,
+                tooltipFont2: 12
             }
         }
-
     });
 
     const setShowActiveContextMenu = useCallback((newShowContextMenu: boolean): void => {
@@ -119,7 +115,7 @@ export default function Toolbar({ resolution }: Toolbar) {
                 render={() => (
                     <div style={{ padding: 4, width: '100%' }}>
                         <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Drop Tool</h4>
-                        <p style={{ marginBottom: rightPanelSize.tooltipMarginBottom2 }}>
+                        <p>
                             Select this tool then click and drag anywhere on the canvas to drop the <strong>browser element</strong> in that area.
                         </p>
                     </div>
@@ -164,7 +160,7 @@ export default function Toolbar({ resolution }: Toolbar) {
                 render={() => (
                     <div style={{ padding: 4, width: '100%' }}>
                         <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Context Menu Tool</h4>
-                        <p style={{ marginBottom: rightPanelSize.tooltipMarginBottom2 }}>
+                        <p>
                             Select this tool then click an image or svg on the canvas to view its <strong>context menu</strong>.
                         </p>
                     </div>

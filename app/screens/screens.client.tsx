@@ -296,7 +296,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
 
     return (<>
         <div
-            className={styles["noisy-background"]}
+            className={styles[`${resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}
             style={{
                 width: "100vw",
                 height: '100vh',

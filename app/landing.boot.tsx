@@ -71,7 +71,7 @@ export default function LandingBoot({ laurusApi, mePromise, resetPassword }: Lan
 function Skeleton() {
     return (<>
         <div
-            className={`${styles["noisy-background"]}`}
+            className={`${styles["noisy-background-16-2-low-res"]}`}
             style={{ cursor: 'progress', width: '100vw', height: '100vh' }} />
     </>)
 }

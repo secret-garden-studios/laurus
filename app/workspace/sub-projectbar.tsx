@@ -2,7 +2,7 @@ import { useContext, useState, useRef, useEffect, useCallback } from "react";
 import { WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { allOut, link, linkOff, SvgRepo, toysFan } from "../svg-repo";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
-import { ParameterSliderX } from "../components/parameter-slider";
+import { ParameterSliderX, ParameterSliderXPlusMinus } from "../components/parameter-slider";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import Dial from "../components/dial";
 import { updateProject } from "../projects/projects.server";
@@ -67,16 +67,87 @@ export default function SubProjectbar() {
 function Scalebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
-    const [scaleParamSize] = useState(() => {
-        return {
-            containerHeight: 38,
-            containerWidth: 250,
-            capWidth: 17,
-            capHeight: 17,
-            capBorderOffset: 2,
-            trackHeight: 1,
-            tickHeight: 22,
-            tickLeft: 2
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                paramSize: {
+                    containerHeight: 38,
+                    containerWidth: 250,
+                    capWidth: 17,
+                    capHeight: 17,
+                    capBorderOffset: 2,
+                    trackHeight: 1,
+                    tickHeight: 22,
+                    tickLeft: 2,
+                    svgSize: { width: 24, height: 24 }
+                },
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                unitFontSize: 11,
+                input: {
+                    fontSize: 13,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
+            case "midhigh": return {
+                paramSize: {
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
+                    trackHeight: 1,
+                    tickHeight: 20,
+                    tickLeft: 1,
+                    svgSize: { width: 20, height: 20 }
+                },
+                svgSize: {
+                    width: 18,
+                    height: 18
+                },
+                unitFontSize: 10,
+                input: {
+                    fontSize: 11,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
+            case "midlow":
+            case "low": return {
+                paramSize: {
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
+                    trackHeight: 1,
+                    tickHeight: 20,
+                    tickLeft: 1,
+                    svgSize: { width: 20, height: 20 }
+                },
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                unitFontSize: 11,
+                input: {
+                    fontSize: 13,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
         }
     });
     const [maxScale, setMaxScale] = useState(1);
@@ -84,13 +155,13 @@ function Scalebar() {
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
         useComplexTrackpadState(
-            scaleParamSize.capWidth - scaleParamSize.capBorderOffset,
+            dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
             maxScale);
     const scaleYTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleYCursor, setScaleYCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleYValue, getComplexTrackCursor: getScaleYCursor } =
         useComplexTrackpadState(
-            scaleParamSize.capWidth - scaleParamSize.capBorderOffset,
+            dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
             maxScale);
     const widthRef = useRef<HTMLInputElement>(null);
     const heightRef = useRef<HTMLInputElement>(null);
@@ -226,19 +297,20 @@ function Scalebar() {
                 gridTemplateColumns: 'min-content min-content min-content min-content min-content auto',
                 alignItems: 'center',
                 height: '100%',
-                gap: 10
+                overflowX: 'auto',
+                ...dynamicSizes.grid,
             }}>
             <SvgRepo
                 svg={allOut()}
                 containerSize={{
-                    width: 20,
-                    height: 20
+                    width: dynamicSizes.svgSize.width,
+                    height: dynamicSizes.svgSize.height
                 }}
                 scale={1} />
-            <ParameterSliderX
+            <ParameterSliderXPlusMinus
                 label={"zoom"}
                 hash={`${appState.activeElement?.key ?? 'scalebar'}|scalex`}
-                size={scaleParamSize}
+                size={dynamicSizes.paramSize}
                 containerRef={scaleXTrackRef}
                 cursor={scaleXCursor}
                 onCursorMove={(newCursor) => {
@@ -271,17 +343,17 @@ function Scalebar() {
             <SvgRepo
                 svg={unlockAspectRatio ? linkOff() : link()}
                 containerSize={{
-                    width: 20,
-                    height: 20
+                    width: dynamicSizes.svgSize.width,
+                    height: dynamicSizes.svgSize.height
                 }}
                 scale={0.75}
                 onContainerClick={() => {
                     setUnlockAspectRatio(v => !v);
                 }} />
-            <ParameterSliderX
+            <ParameterSliderXPlusMinus
                 label={"zoom"}
                 hash={`${appState.activeElement?.key ?? 'scalebar'}|scaley`}
-                size={scaleParamSize}
+                size={dynamicSizes.paramSize}
                 containerRef={scaleYTrackRef}
                 cursor={scaleYCursor}
                 onCursorMove={(newCursor) => {
@@ -313,12 +385,12 @@ function Scalebar() {
             <div style={{
                 display: 'grid',
                 height: '100%',
-                gap: 10,
                 gridTemplateRows: 'min-content',
                 gridTemplateColumns: 'min-content auto min-content auto',
                 alignContent: 'center',
+                ...dynamicSizes.grid
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, letterSpacing: 0 }}>{'w'}</div>
+                <div style={{ display: 'flex', alignItems: 'center', fontSize: dynamicSizes.unitFontSize, letterSpacing: 0 }}>{'w'}</div>
                 <input
                     id={`${appState.activeElement?.key ?? 'scalebar'}|input|scalex`}
                     disabled
@@ -333,9 +405,7 @@ function Scalebar() {
                         outline: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',
-                        fontSize: 13,
-                        width: '4ch',
-                        padding: 0
+                        ...dynamicSizes.input
                     }}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, letterSpacing: 0 }}>{'h'}</div>
@@ -352,9 +422,7 @@ function Scalebar() {
                         border: 'none',
                         outline: 'none',
                         display: 'inline-block',
-                        overflowX: 'scroll',
-                        fontSize: 13,
-                        width: '4ch',
+                        ...dynamicSizes.input
                     }}
                 />
             </div>
@@ -366,16 +434,87 @@ function Scalebar() {
 function Rotatebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [angle, setAngle] = useState<number>(0);
-    const [paramSliderSize] = useState(() => {
-        return {
-            containerHeight: 38,
-            containerWidth: 190,
-            capWidth: 17,
-            capHeight: 17,
-            capBorderOffset: 2,
-            trackHeight: 1,
-            tickHeight: 0,
-            tickLeft: 2
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                paramSize: {
+                    containerHeight: 38,
+                    containerWidth: 190,
+                    capWidth: 17,
+                    capHeight: 17,
+                    capBorderOffset: 0,
+                    trackHeight: 1,
+                    tickHeight: 0,
+                    tickLeft: 2,
+                    svgSize: { width: 24, height: 24 }
+                },
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                unitFontSize: 11,
+                input: {
+                    fontSize: 13,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
+            case "midhigh": return {
+                paramSize: {
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
+                    trackHeight: 1,
+                    tickHeight: 20,
+                    tickLeft: 1,
+                    svgSize: { width: 20, height: 20 }
+                },
+                svgSize: {
+                    width: 18,
+                    height: 18
+                },
+                unitFontSize: 10,
+                input: {
+                    fontSize: 11,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
+            case "midlow":
+            case "low": return {
+                paramSize: {
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
+                    trackHeight: 1,
+                    tickHeight: 20,
+                    tickLeft: 1,
+                    svgSize: { width: 20, height: 20 }
+                },
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                unitFontSize: 11,
+                input: {
+                    fontSize: 13,
+                    width: '4ch',
+                    padding: 0
+                },
+                grid: {
+                    gap: 10
+                }
+            }
         }
     });
 
@@ -384,16 +523,15 @@ function Rotatebar() {
     const [xCursor, setXCursor] = useState({ x: 0, y: 0 });
     const { getTrackValue: getXValue, getTrackCursor: getXCursor } =
         useTrackpadState(
-            paramSliderSize.capWidth - 2,
+            dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
             1);
-
 
     // param 2
     const yTrackRef = useRef<HTMLDivElement | null>(null);
     const [yCursor, setYCursor] = useState({ x: 0, y: 0 });
     const { getTrackValue: getYValue, getTrackCursor: getYCursor } =
         useTrackpadState(
-            paramSliderSize.capWidth - 2,
+            dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
             1);
 
     // param 3
@@ -401,7 +539,7 @@ function Rotatebar() {
     const [zCursor, setZCursor] = useState({ x: 0, y: 0 });
     const { getTrackValue: getZValue, getTrackCursor: getZCursor } =
         useTrackpadState(
-            paramSliderSize.capWidth - 2,
+            dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
             1);
 
     const angleRef = useRef<HTMLInputElement>(null);
@@ -514,19 +652,20 @@ function Rotatebar() {
                 gridTemplateColumns: 'min-content min-content min-content min-content min-content min-content min-content min-content min-content auto',
                 alignItems: 'center',
                 height: '100%',
-                gap: 10
+                overflowX: 'auto',
+                ...dynamicSizes.grid
             }}>
             <SvgRepo
                 svg={toysFan()}
                 containerSize={{
-                    width: 20,
-                    height: 20
+                    width: dynamicSizes.svgSize.width,
+                    height: dynamicSizes.svgSize.height
                 }}
                 scale={1} />
             <div style={{ paddingLeft: 4 }}>{'x'}</div>
             <ParameterSliderX
                 hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatex`}
-                size={paramSliderSize}
+                size={dynamicSizes.paramSize}
                 containerRef={xTrackRef}
                 cursor={xCursor}
                 onNewCursor={(newCursor) => {
@@ -538,7 +677,7 @@ function Rotatebar() {
             <div>{'y'}</div>
             <ParameterSliderX
                 hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatey`}
-                size={paramSliderSize}
+                size={dynamicSizes.paramSize}
                 containerRef={yTrackRef}
                 cursor={yCursor}
                 onNewCursor={(newCursor) => {
@@ -550,7 +689,7 @@ function Rotatebar() {
             <div>{'z'}</div>
             <ParameterSliderX
                 hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatez`}
-                size={paramSliderSize}
+                size={dynamicSizes.paramSize}
                 containerRef={zTrackRef}
                 cursor={zCursor}
                 onNewCursor={(newCursor) => {
@@ -601,8 +740,7 @@ function Rotatebar() {
                         outline: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',
-                        fontSize: 12,
-                        width: '4ch',
+                        ...dynamicSizes.input
                     }}
                 />
             </div>

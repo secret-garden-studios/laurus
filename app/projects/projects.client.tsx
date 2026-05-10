@@ -223,7 +223,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
 
     return <>
         <div
-            className={`${dellaRespira.className} ${styles['noisy-background']}`}
+            className={`${dellaRespira.className} ${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}`}
             style={{
                 width: "100vw",
                 height: '100vh',
@@ -389,7 +389,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         resolution={resolutionInit} />
                 </div>
                 <div
-                    className={`${styles['noisy-background']} ${dellaRespira}`}
+                    className={`${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]} ${dellaRespira}`}
                     style={{
                         gridColumn: 2,
                         gridRow: 4,

@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useLayoutEffect } from "react";
-import ParameterSliderY from "../components/parameter-slider";
+import { ParameterSliderY } from "../components/parameter-slider";
 import TimelineSlider from "../components/timeline-slider";
 import { dellaRespira } from "../fonts";
 import { useTrackpadState } from "../hooks/useTrackpadState";

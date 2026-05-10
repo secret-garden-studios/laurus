@@ -81,7 +81,7 @@ export default function DraggableCamera({
         >
             <div style={{ position: 'relative' }}>
                 <div
-                    className={styles["noisy-background-lite"]}
+                    className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
                     style={{
                         position: 'absolute',
                         top: appState.project.frame_top,

@@ -64,70 +64,94 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
     {
         switch (resolution.type) {
             case "high": return {
-                param: { padding: `0 ${20}px ${20}px ${20}px` },
-                paramFlex: { gap: 38, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                param: {
+                    padding: '0 20px 20px 20px'
+                },
+                paramFlex: {
+                    gap: 38,
+                    padding: '20px 15px'
+                },
                 paramSlider: {
-                    containerHeight: Math.round(200 * resolution.factor),
-                    containerWidth: Math.round(45 * resolution.factor),
+                    containerHeight: 200,
+                    containerWidth: 45,
                     trackWidth: 1,
-                    capWidth: 18,
-                    capHeight: 18,
+                    capWidth: 16,
+                    capHeight: 16,
                     capBorderOffset: 0
                 },
-                paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },
-                paramButton: { width: Math.round(20 * resolution.factor), height: Math.round(20 * resolution.factor) },
+                paramButtonContainer: {
+                    width: 36,
+                    height: 36
+                },
+                paramButton: {
+                    width: 20,
+                    height: 20
+                },
                 display: {
-                    width: Math.round(400 * resolution.factor),
-                    height: Math.round(450 * resolution.factor),
+                    width: 400,
+                    height: 450,
                     padding: 0,
                 },
                 displayImg: {
-                    width: Math.round(280 * resolution.factor),
-                    height: Math.round(280 * resolution.factor),
+                    width: 280,
+                    height: 280,
                 },
                 displaySvg: {
-                    width: Math.round(200 * resolution.factor),
-                    height: Math.round(200 * resolution.factor)
+                    width: 200,
+                    height: 200
                 }
-
             }
             case "midhigh": return {
-                param: { padding: `0 ${14}px ${14}px ${14}px` },
-                paramFlex: { gap: 28, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                param: {
+                    padding: '0 14px 14px 14px'
+                },
+                paramFlex: {
+                    gap: 26,
+                    padding: '14px 10px'
+                },
                 paramSlider: {
-                    containerHeight: Math.round(200 * resolution.factor),
-                    containerWidth: Math.round(45 * resolution.factor),
+                    containerHeight: 130,
+                    containerWidth: 40,
                     trackWidth: 1,
-                    capWidth: 18,
-                    capHeight: 18,
+                    capWidth: 12,
+                    capHeight: 12,
                     capBorderOffset: 0
                 },
-                paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },
-                paramButton: { width: Math.round(20 * resolution.factor), height: Math.round(20 * resolution.factor) },
+                paramButtonContainer: {
+                    width: 24,
+                    height: 24
+                },
+                paramButton: {
+                    width: 14,
+                    height: 14
+                },
                 display: {
-                    width: Math.round(400 * resolution.factor),
-                    height: Math.round(450 * resolution.factor),
+                    width: 280,
+                    height: 315,
                     padding: 0,
                 },
                 displayImg: {
-                    width: Math.round(280 * resolution.factor),
-                    height: Math.round(280 * resolution.factor),
+                    width: 196,
+                    height: 196,
                 },
                 displaySvg: {
-                    width: Math.round(200 * resolution.factor),
-                    height: Math.round(200 * resolution.factor)
+                    width: 140,
+                    height: 140
                 }
             }
             case "midlow":
             case "low": return {
-                param: { padding: `0 ${10}px ${10}px ${10}px` },
-                paramFlex: { gap: 30, padding: `${Math.round(20 * resolution.factor)}px ${Math.round(15 * resolution.factor)}px` },
+                param: { padding: '0 14px 14px 14px' },
+                paramFlex: {
+                    gap: 26,
+                    padding: '14px 10px'
+                },
                 paramSlider: {
                     containerHeight: Math.round(200 * resolution.factor),
                     containerWidth: Math.round(45 * resolution.factor),
                     trackWidth: 1,
-                    capWidth: 18,
-                    capHeight: 18,
+                    capWidth: 12,
+                    capHeight: 13,
                     capBorderOffset: 0
                 },
                 paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },

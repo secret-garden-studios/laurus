@@ -5,7 +5,7 @@ import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, refresh, La
 import { getScale, updateScale, LaurusLoopType } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import ParameterSliderY, { ParameterSliderX } from "../components/parameter-slider";
+import { ParameterSliderY, ParameterSliderXPlusMinus } from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { LaurusProjectResult } from "../projects/projects.client";
@@ -30,79 +30,72 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 scaleParam: {
                     capWidth: 21,
                     capHeight: 21,
-                    capBorderOffset: 1,
+                    capBorderOffset: 0,
                     containerWidth: 280,
                     containerHeight: 38,
                     trackHeight: 1,
                     tickHeight: 28,
-                    tickLeft: 2
+                    tickLeft: 1,
+                    svgSize: { width: 24, height: 24 }
                 },
                 scaleParamDisplay: {
-                    fontSize: Math.round(28 * appState.resolution.factor),
-                    inputHeight: Math.round(30 * appState.resolution.factor),
-                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
-                    unitFontSize: Math.round(20 * appState.resolution.factor),
-                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                    fontSize: 28,
+                    inputHeight: '100%',
+                    unitLabelFontSize: 15,
+                    unitFontSize: 20,
+                    letterSpacing: 3,
+                    gridGap: 11,
+                    marginTop: 20,
+                    flexGap: 4,
                 }
             }
             case "midhigh": return {
                 ...ds,
                 scaleParam: {
-                    capWidth: 17,
-                    capHeight: 17,
-                    capBorderOffset: 2,
-                    containerWidth: Math.round(230 * appState.resolution.factor),
-                    containerHeight: 38,
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
                     trackHeight: 1,
-                    tickHeight: 28,
-                    tickLeft: 2
+                    tickHeight: 20,
+                    tickLeft: 1,
+                    svgSize: { width: 20, height: 20 }
                 },
                 scaleParamDisplay: {
-                    fontSize: Math.round(28 * appState.resolution.factor),
-                    inputHeight: Math.round(30 * appState.resolution.factor),
-                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
-                    unitFontSize: Math.round(20 * appState.resolution.factor),
-                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                    fontSize: 18,
+                    inputHeight: '100%',
+                    unitLabelFontSize: 11,
+                    unitFontSize: 13,
+                    letterSpacing: 3,
+                    gridGap: 0,
+                    marginTop: 16,
+                    flexGap: 4,
                 }
             }
-            case "midlow": return {
-                ...ds,
-                scaleParam: {
-                    capWidth: 17,
-                    capHeight: 17,
-                    capBorderOffset: 2,
-                    containerWidth: Math.round(230 * appState.resolution.factor),
-                    containerHeight: 38,
-                    trackHeight: 1,
-                    tickHeight: 28,
-                    tickLeft: 2
-                },
-                scaleParamDisplay: {
-                    fontSize: Math.round(28 * appState.resolution.factor),
-                    inputHeight: Math.round(30 * appState.resolution.factor),
-                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
-                    unitFontSize: Math.round(20 * appState.resolution.factor),
-                    letterSpacing: Math.round(5 * appState.resolution.factor)
-                }
-            }
+            case "midlow":
             case "low": return {
                 ...ds,
                 scaleParam: {
                     capWidth: 17,
                     capHeight: 17,
                     capBorderOffset: 2,
-                    containerWidth: Math.round(230 * appState.resolution.factor),
+                    containerWidth: 160,
                     containerHeight: 38,
                     trackHeight: 1,
                     tickHeight: 28,
-                    tickLeft: 2
+                    tickLeft: 2,
+                    svgSize: { width: 20, height: 20 }
                 },
                 scaleParamDisplay: {
-                    fontSize: Math.round(28 * appState.resolution.factor),
-                    inputHeight: Math.round(30 * appState.resolution.factor),
-                    unitLabelFontSize: Math.round(16 * appState.resolution.factor),
-                    unitFontSize: Math.round(20 * appState.resolution.factor),
-                    letterSpacing: Math.round(5 * appState.resolution.factor)
+                    fontSize: 18,
+                    inputHeight: '100%',
+                    unitLabelFontSize: 12,
+                    unitFontSize: 16,
+                    letterSpacing: 3,
+                    gridGap: 0,
+                    marginTop: 20,
+                    flexGap: 4,
                 }
             }
         }
@@ -240,19 +233,19 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             if (scaleXRef.current) {
                 const activeMath = scale.math.get(activeKey);
                 if (activeMath) {
-                    scaleXRef.current.value = activeMath.scale_x >= 1 ? activeMath.scale_x.toFixed(2) : activeMath.scale_x.toFixed(3);
+                    scaleXRef.current.value = activeMath.scale_x >= 10 ? activeMath.scale_x.toFixed(2) : activeMath.scale_x.toFixed(3);
                 }
                 else {
-                    scaleXRef.current.value = '1.00'
+                    scaleXRef.current.value = '1.000'
                 }
             }
             if (scaleYRef.current) {
                 const activeMath = scale.math.get(activeKey);
                 if (activeMath) {
-                    scaleYRef.current.value = activeMath.scale_y >= 1 ? activeMath.scale_y.toFixed(2) : activeMath.scale_y.toFixed(3);
+                    scaleYRef.current.value = activeMath.scale_y >= 10 ? activeMath.scale_y.toFixed(2) : activeMath.scale_y.toFixed(3);
                 }
                 else {
-                    scaleYRef.current.value = '1.00'
+                    scaleYRef.current.value = '1.000'
                 }
             }
         })();
@@ -400,15 +393,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 style={{
                                     padding: 0,
                                     display: 'grid',
-                                    gap: 11,
+                                    gap: dynamicSizes.scaleParamDisplay.gridGap,
                                     placeContent: 'center',
                                     width: '100%'
                                 }}>
-                                <div style={{ display: 'flex', marginLeft: 0 }}>
+                                <div style={{ display: 'flex', marginLeft: 0, gap: dynamicSizes.scaleParamDisplay.flexGap }}>
                                     <div style={{
                                         height: dynamicSizes.scaleParamDisplay.inputHeight,
                                         display: 'grid',
-                                        alignContent: 'end',
+                                        alignContent: 'center',
                                         color: "rgba(255, 255, 255, 0.75)",
                                         fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize
                                     }}>
@@ -432,20 +425,20 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
                                             fontSize: dynamicSizes.scaleParamDisplay.fontSize,
                                             height: dynamicSizes.scaleParamDisplay.inputHeight,
-                                            width: '7ch',
+                                            width: '6ch',
                                             textShadow: '2px 2px 3px rgba(10,10,10,1)',
                                         }} />
                                     <div style={{
                                         height: dynamicSizes.scaleParamDisplay.inputHeight,
                                         display: 'grid',
-                                        alignContent: 'end',
+                                        alignContent: 'center',
                                         color: "rgba(255, 255, 255, 0.5)",
                                         fontSize: dynamicSizes.scaleParamDisplay.unitFontSize
                                     }}>
                                         <i>{'x'}</i>
                                     </div>
                                 </div>
-                                <ParameterSliderX
+                                <ParameterSliderXPlusMinus
                                     label={"zoom"}
                                     hash={`${scale.scale_id}|p2`}
                                     size={dynamicSizes.scaleParam}
@@ -454,12 +447,12 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     onCursorMove={(newCursor) => {
                                         if (!scaleXTrackRef.current || !scaleXRef.current || !scaleYRef.current) return;
                                         const newScaleValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth);
-                                        scaleXRef.current.value = newScaleValue >= 1 ?
+                                        scaleXRef.current.value = newScaleValue >= 10 ?
                                             (newScaleValue).toFixed(2) :
                                             (newScaleValue).toFixed(3);
 
                                         if (!unlockAspectRatio) {
-                                            scaleYRef.current.value = newScaleValue >= 1 ?
+                                            scaleYRef.current.value = newScaleValue >= 10 ?
                                                 (newScaleValue).toFixed(2) :
                                                 (newScaleValue).toFixed(3);
                                         }
@@ -503,11 +496,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         }
                                     }}
                                     disabled={scale.locked} />
-                                <div style={{ display: 'flex', marginTop: 20 }}>
+                                <div style={{ display: 'flex', marginTop: dynamicSizes.scaleParamDisplay.marginTop, gap: dynamicSizes.scaleParamDisplay.flexGap }}>
                                     <div style={{
                                         height: dynamicSizes.scaleParamDisplay.inputHeight,
                                         display: 'grid',
-                                        alignContent: 'end',
+                                        alignContent: 'center',
                                         color: "rgba(255, 255, 255, 0.75)",
                                         fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize
                                     }}>
@@ -531,20 +524,20 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
                                             fontSize: dynamicSizes.scaleParamDisplay.fontSize,
                                             height: dynamicSizes.scaleParamDisplay.inputHeight,
-                                            width: '7ch',
+                                            width: '6ch',
                                             textShadow: '2px 2px 3px rgba(10,10,10,1)',
                                         }} />
                                     <div style={{
                                         height: dynamicSizes.scaleParamDisplay.inputHeight,
                                         display: 'grid',
-                                        alignContent: 'end',
+                                        alignContent: 'center',
                                         color: "rgba(255, 255, 255, 0.5)",
                                         fontSize: dynamicSizes.scaleParamDisplay.unitFontSize
                                     }}>
                                         <i>{'x'}</i>
                                     </div>
                                 </div>
-                                <ParameterSliderX
+                                <ParameterSliderXPlusMinus
                                     label={"zoom"}
                                     hash={`${scale.scale_id}|p2`}
                                     size={dynamicSizes.scaleParam}
@@ -553,12 +546,12 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     onCursorMove={(newCursor) => {
                                         if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
                                         const newScaleValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth);
-                                        scaleYRef.current.value = newScaleValue >= 1 ?
+                                        scaleYRef.current.value = newScaleValue >= 10 ?
                                             (newScaleValue).toFixed(2) :
                                             (newScaleValue).toFixed(3);
 
                                         if (!unlockAspectRatio) {
-                                            scaleXRef.current.value = newScaleValue >= 1 ?
+                                            scaleXRef.current.value = newScaleValue >= 10 ?
                                                 (newScaleValue).toFixed(2) :
                                                 (newScaleValue).toFixed(3);
                                         }

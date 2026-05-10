@@ -67,7 +67,7 @@ export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMed
 function Skeleton() {
     return (<>
         <div
-            className={`${styles["noisy-background"]} ${italiana.className}`}
+            className={`${styles["noisy-background-16-2-low-res"]} ${italiana.className}`}
             style={{ cursor: 'progress', width: '100vw', height: '100vh' }} />
     </>)
 }
@@ -76,7 +76,7 @@ interface Forbidden { resolution: ScreensResolution }
 function Forbidden({ resolution }: Forbidden) {
     return (<>
         <div
-            className={`${styles["noisy-background"]} ${dellaRespira.className}`}
+            className={`${styles[`${resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]} ${dellaRespira.className}`}
             style={{
                 width: '100vw',
                 height: '100vh',
