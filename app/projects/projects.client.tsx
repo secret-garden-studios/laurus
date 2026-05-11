@@ -222,8 +222,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
     };
 
     return <>
-        <div
-            className={`${dellaRespira.className} ${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}`}
+        <div className={`${dellaRespira.className} ${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}`}
             style={{
                 width: "100vw",
                 height: '100vh',
@@ -231,18 +230,15 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                 gridTemplateRows: `min-content ${dynamicSizes.gridMargins.top}px min-content auto ${dynamicSizes.gridMargins.bottom}px min-content min-content`,
                 gridTemplateColumns: `${dynamicSizes.gridMargins.leftRight}px auto ${dynamicSizes.gridMargins.leftRight}px`,
             }}>
-            <div
-                style={{ gridColumn: '1 / -1' }}>
+            <div style={{ gridColumn: '1 / -1' }}>
                 <Menubar resolution={resolutionInit} me={me.me} />
             </div>
             {/* top panel */}
-            <div
-                style={{
-                    gridColumn: '1 / span 2',
-                    gridRow: 2,
-                    padding: 0
-                }}
-            >
+            <div style={{
+                gridColumn: '1 / span 2',
+                gridRow: 2,
+                padding: 0
+            }} >
                 {projects.length > 0 && <div style={{
                     position: "relative",
                     display: "grid",
@@ -250,8 +246,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     alignItems: 'center',
                     justifyContent: 'end'
                 }}>
-                    <input
-                        className={dellaRespira.className}
+                    <input className={dellaRespira.className}
                         type="text"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
@@ -260,20 +255,19 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             ...dynamicSizes.searchBar,
                             padding: "8px 35px 8px 12px",
                             borderRadius: 10,
-                            border: "1px solid rgba(255, 255, 255, 0.05)",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
                             background: 'rgb(25, 25, 25)',
                             boxSizing: "border-box",
                             outline: "none",
                         }} />
-                    <div
-                        style={{
-                            position: "absolute",
-                            right: dynamicSizes.searchBarSvg.right,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            color: 'rgba(227,227,227,1)',
-                            pointerEvents: "none",
-                        }}>
+                    <div style={{
+                        position: "absolute",
+                        right: dynamicSizes.searchBarSvg.right,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: 'rgba(227,227,227,1)',
+                        pointerEvents: "none",
+                    }}>
                         <SvgRepo
                             svg={search()}
                             containerSize={{
@@ -285,28 +279,25 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                 </div>}
             </div>
             {/* left panel */}
-            <div
-                style={{
-                    gridColumn: 1,
-                    gridRow: '3 / -1',
-                }}
-            />
+            <div style={{
+                gridColumn: 1,
+                gridRow: '3 / -1',
+            }} />
             {projects.length > 0 ? <>
-                <div
-                    style={{
-                        gridColumn: 2,
-                        gridRow: 3,
-                        display: 'grid',
-                        gridTemplateColumns: '4.5fr 2.5fr 3fr 2.5fr 3fr 2fr 2fr 2fr 2fr',
-                        fontWeight: 'bolder',
-                        letterSpacing: "1px",
-                        borderTopLeftRadius: 10,
-                        borderTopRightRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        background: "linear-gradient(34deg, rgba(20, 20, 20, 1) 34%, rgba(16, 16, 16, 1))",
-                        color: 'rgb(227,227,227)',
-                        zIndex: 1,
-                    }}>
+                <div style={{
+                    gridColumn: 2,
+                    gridRow: 3,
+                    display: 'grid',
+                    gridTemplateColumns: '4.5fr 2.5fr 3fr 2.5fr 3fr 2fr 2fr 2fr 2fr',
+                    fontStyle: 'italic',
+                    letterSpacing: 1,
+                    borderTopLeftRadius: 10,
+                    borderTopRightRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: "linear-gradient(34deg, rgba(20, 20, 20, 1) 34%, rgba(16, 16, 16, 1))",
+                    color: 'rgb(227,227,227)',
+                    zIndex: 1,
+                }}>
                     <HeaderCell
                         label={"Title"}
                         row={1}
@@ -388,8 +379,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         column={9}
                         resolution={resolutionInit} />
                 </div>
-                <div
-                    className={`${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]} ${dellaRespira}`}
+                <div className={`${styles[`${resolutionInit.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]} ${dellaRespira}`}
                     style={{
                         gridColumn: 2,
                         gridRow: 4,
@@ -398,8 +388,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         height: '100%',
                         boxShadow: !isOverflowing ? 'none' : "rgba(255, 255, 255, 0.04) 0px 0px 30px 1px",
                     }}>
-                    <div
-                        ref={scrollRef}
+                    <div ref={scrollRef}
                         style={{
                             position: 'absolute',
                             overflowY: 'auto',
@@ -436,12 +425,18 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                                             router.push(`/workspace?project_id=${project.project_id}`)
                                         }}
                                         onMouseEnter={(e) => {
-                                            if (selectedProject?.project_id == project.project_id) e.currentTarget.style.cursor = '';
-                                            else e.currentTarget.style.cursor = 'pointer';
+                                            if (selectedProject?.project_id == project.project_id) {
+                                                e.currentTarget.style.cursor = '';
+                                            }
+                                            else {
+                                                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                                                e.currentTarget.style.cursor = 'pointer';
+                                            }
                                         }}
                                         onMouseLeave={(e) => {
                                             if (selectedProject?.project_id == project.project_id) return;
                                             e.currentTarget.style.cursor = '';
+                                            e.currentTarget.style.background = selectedProject?.project_id == project.project_id ? "rgba(255,255,255,0.15)" : i % 2 != 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.025)';
                                         }}
                                         style={{
                                             display: 'grid',
@@ -454,48 +449,46 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                                             boxShadow: selectedProject?.project_id == project.project_id ? "rgba(255, 255, 255, 0.1) 0px 0px 30px 1px" : "none",
                                         }}
                                         key={project.project_id}>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 1,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 1,
+                                        }}>
                                             <div style={{
                                                 ...contentCellStyle,
                                             }}>{project.name}</div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 2,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 2,
+                                        }}>
                                             <div style={{ ...contentCellStyle }}>{project.creator}</div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 3,
-                                            }}>
-                                            <div style={{ ...contentCellStyle }}>{new Date(project.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 3,
+                                        }}>
+                                            <div style={{ ...contentCellStyle }}>
+                                                {new Date(project.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                                            </div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 4,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 4,
+                                        }}>
                                             <div style={{ ...contentCellStyle }}>{project.last_editor}</div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 5,
-                                            }}>
-                                            <div style={{ ...contentCellStyle }}>{new Date(project.last_active).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 5,
+                                        }}>
+                                            <div style={{ ...contentCellStyle }}>
+                                                {new Date(project.last_active).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                                            </div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 6,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 6,
+                                        }}>
                                             <div style={{ ...contentCellStyle }}>{project.frame_width}x{project.frame_height}</div>
                                         </div>
                                         <div
@@ -505,61 +498,52 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                                             }}>
                                             <div style={{ ...contentCellStyle }}>{project.canvas_width}x{project.canvas_height}</div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 8,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 8,
+                                        }}>
                                             <div style={{ ...contentCellStyle }}>{project.imgs.size}</div>
                                         </div>
-                                        <div
-                                            style={{
-                                                ...contentCellWrapperStyle,
-                                                gridColumn: 9,
-                                            }}>
+                                        <div style={{
+                                            ...contentCellWrapperStyle,
+                                            gridColumn: 9,
+                                        }}>
                                             <div style={{ ...contentCellStyle }}>{project.svgs.size}</div>
                                         </div>
                                     </div>
                                 );
                             })}
                     </div>
-                    <div
-                        style={{
-                            borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
-                            borderRight: '1px solid rgba(255, 255, 255, 0.05)',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                            height: isOverflowing ? '100%' : (projects.length) * (dynamicSizes.contentsWrapper.height + 2),
-                            width: '100%',
-                            position: 'absolute',
-                            pointerEvents: 'none'
-                        }} />
+                    <div style={{
+                        borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                        height: isOverflowing ? '100%' : (projects.length) * (dynamicSizes.contentsWrapper.height + 2),
+                        width: '100%',
+                        position: 'absolute',
+                        pointerEvents: 'none'
+                    }} />
                 </div>
             </> : <>
-                <div
-                    style={{
-                        gridColumn: 2,
-                        gridRow: 4,
-                        display: 'grid',
-                    }}>
+                <div style={{
+                    gridColumn: 2,
+                    gridRow: 4,
+                    display: 'grid',
+                }}>
                     <TablePlaceholder resolution={resolutionInit} />
                 </div>
             </>}
             {/* right panel */}
-            <div
-                style={{
-                    gridColumn: 3,
-                    gridRow: '2 / -1',
-                }}
-            />
+            <div style={{
+                gridColumn: 3,
+                gridRow: '2 / -1',
+            }} />
             {/* bottom panel */}
-            <div
-                style={{
-                    gridColumn: '2',
-                    gridRow: 5,
-                }}
-            />
-            <div
-                className={dellaRespira.className}
+            <div style={{
+                gridColumn: '2',
+                gridRow: 5,
+            }} />
+            <div className={dellaRespira.className}
                 style={{
                     ...dynamicSizes.footerParent,
                     gridColumn: '1 / -1',
@@ -571,8 +555,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     alignItems: 'center',
                     background: "linear-gradient(34deg, rgba(29, 29, 29, 1) 34%, rgba(25, 25, 25, 1))",
                 }}>
-                <div
-                    className={`${styles['hoverable-button']} ${styles['is-active']}`}
+                <div className={`${styles['hoverable-button']} ${styles['is-active']}`}
                     title="create new project"
                     onClick={async () => {
                         const newProject: LaurusProject = {
@@ -615,8 +598,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         }}
                         scale={1} />
                 </div>
-                <div
-                    className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
+                <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="open selected project"
                     onClick={async () => {
                         if (selectedProject) {
@@ -640,8 +622,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         }}
                         scale={1} />
                 </div>
-                <div
-                    className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
+                <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="duplicate selected project"
                     onClick={async () => {
                         if (!selectedProject) return
@@ -678,8 +659,7 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                         }}
                         scale={0.8} />
                 </div>
-                <div
-                    className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
+                <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="delete selected project"
                     onClick={async () => {
                         if (selectedProject) {
@@ -770,6 +750,9 @@ function HeaderCell({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        textAlign: 'center',
+        overflowX: 'auto',
+        whiteSpace: 'nowrap',
     };
 
     return <>
@@ -790,12 +773,11 @@ function HeaderCell({
                 ...headerCellStyle,
                 gridRow: row,
                 gridColumn: column,
-            }}>
-            <div
-                style={{
-                    width: dynamicSizes.svgSize,
-                    height: '100%'
-                }} />
+            }} >
+            <div style={{
+                width: dynamicSizes.svgSize,
+                height: '100%'
+            }} />
             <div className={(label != 'Images' && label != 'Svgs') ? styles['animated-nav-dark'] : ''}>
                 {label}
             </div>
@@ -873,21 +855,18 @@ function TablePlaceholder({ resolution }: TablePlaceholder) {
         }
     })
     return (<>
-        <div
-            className={`${dellaRespira.className}`}
+        <div className={`${dellaRespira.className}`}
             style={{
                 width: '100%',
                 display: 'grid',
                 placeContent: 'center',
                 letterSpacing: '1px',
             }} >
-            <div
-                style={{
-                    display: 'grid',
-                    width: '100%',
-                }}>
-                <div
-                    className={`${italiana.className}`}
+            <div style={{
+                display: 'grid',
+                width: '100%',
+            }}>
+                <div className={`${italiana.className}`}
                     style={{
                         ...dynamicSizes.h1,
                         justifySelf: 'center',
@@ -897,11 +876,10 @@ function TablePlaceholder({ resolution }: TablePlaceholder) {
                     <p style={{ ...dynamicSizes.title }}>{'no projects'}</p>
                     <p style={{ ...dynamicSizes.sadFace }}>{':('}</p>
                 </div>
-                <div
-                    style={{
-                        ...dynamicSizes.h2,
-                        justifySelf: 'center',
-                    }}>
+                <div style={{
+                    ...dynamicSizes.h2,
+                    justifySelf: 'center',
+                }}>
                     <div style={{ display: 'flex', alignItems: "center" }}>
                         <p>Click</p>
                         <div style={{ padding: dynamicSizes.svg.padding }}>

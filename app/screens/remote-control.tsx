@@ -462,7 +462,7 @@ export default function RemoteControl({
                         fontSize: notesPanelSize.timestampFont,
                         letterSpacing: '1px',
                     }}>
-                    <i>{videoMedia.timestamp}</i>
+                    <i>{new Date(videoMedia.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</i>
                 </div>
                 <textarea
                     placeholder="write something..."
