@@ -1,7 +1,7 @@
 import { RefObject, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, playArrow, skipNext, skipPrevious, SvgRepo } from "../svg-repo";
+import { addCircle, allOut, circle, closeIcon, earthquake, playArrow, skipNext, skipPrevious, SvgRepo, toysFan } from "../svg-repo";
 import {
     LaurusEffect,
     LaurusScale,
@@ -554,9 +554,9 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     paddingLeft: 10,
                 },
                 timelineAreaContent: {
-                    height: 46,
-                    padding: '0px 10px',
-                    svg: 20
+                    height: 40,
+                    padding: '0px 8px',
+                    svg: { width: 20, height: 40 }
                 },
                 indexColumn: {
                     width: '4ch',
@@ -569,9 +569,9 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     paddingLeft: 10,
                 },
                 timelineAreaContent: {
-                    height: 36,
-                    padding: '0px 8px',
-                    svg: 16
+                    height: 32,
+                    padding: '0px 6px',
+                    svg: { width: 16, height: 32 }
                 },
                 indexColumn: {
                     width: '4ch',
@@ -586,8 +586,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                 },
                 timelineAreaContent: {
                     height: 32,
-                    padding: '0px 8px',
-                    svg: 14
+                    padding: '0px 6px',
+                    svg: { width: 16, height: 32 }
                 },
                 indexColumn: {
                     width: '4ch',
@@ -598,6 +598,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
     });
 
     return (<>
+        {/* empty timeline area */}
         {appState.project.layers.size == 0 && (
             <div
                 style={{
@@ -606,19 +607,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     width: '100%',
                     gridTemplateRows: 'min-content auto',
                 }}>
-                {/* layer header */}
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    width: '100%',
-                    background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(31, 31, 31))",
-                    ...dynamicSizes.layerHeaderStyle,
-                }}>
-                    <LayerTitle
-                        layerId={""}
-                        layerNameInit={"untitled"}
-                        layerNameRef={layerNameRef} />
-                </div>
                 <div style={{
                     display: 'grid',
                     alignContent: 'start',
@@ -627,20 +615,20 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     <div
                         style={{
                             width: '100%',
-                            height: dynamicSizes.timelineAreaContent.height,
                             padding: dynamicSizes.timelineAreaContent.padding,
-                            background: "rgb(35, 35, 35)",
-                            borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
-                            borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
+                            background: showEffectsBrowser ? 'rgba(255,255,255, 0.01)' : 'none',
+                            border: showEffectsBrowser ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0)',
+                            display: 'flex',
+                            justifyContent: showEffectsBrowser ? 'start' : 'end'
                         }}>
                         <SvgRepo
-                            title="add effect"
+                            title={`${showEffectsBrowser ? 'close effects browser' : 'open effects browser'}`}
                             svg={showEffectsBrowser ?
-                                addCircle('rgba(204, 204, 204, 0.2)') :
+                                closeIcon('rgba(204, 204, 204, 0.8)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{
-                                width: dynamicSizes.timelineAreaContent.svg,
-                                height: dynamicSizes.timelineAreaContent.height
+                                width: dynamicSizes.timelineAreaContent.svg.width,
+                                height: dynamicSizes.timelineAreaContent.svg.height
                             }}
                             scale={1}
                             onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -653,6 +641,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     )}
                 </div>
             </div>)}
+        {/* effect units */}
         {Array.from(appState.project.layers.entries()).map((layerEntry) => {
             return (
                 <div
@@ -680,7 +669,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     <div style={{
                         display: 'grid',
                         alignContent: 'start',
-                        minHeight: 46,
+                        minHeight: dynamicSizes.timelineAreaContent.height,
                     }}>
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
                             return <div
@@ -715,22 +704,20 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         <div
                             style={{
                                 width: '100%',
-                                height: dynamicSizes.timelineAreaContent.height,
                                 padding: dynamicSizes.timelineAreaContent.padding,
-                                background: "rgb(35, 35, 35)",
-                                borderBottomLeftRadius: showEffectsBrowser ? 0 : 10,
-                                borderBottomRightRadius: showEffectsBrowser ? 0 : 10,
+                                background: showEffectsBrowser ? 'rgba(255,255,255, 0.01)' : 'none',
+                                border: showEffectsBrowser ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0)',
                                 display: 'flex',
-                                justifyContent: 'left'
+                                justifyContent: showEffectsBrowser ? 'start' : 'end'
                             }}>
                             <SvgRepo
-                                title="add effect"
+                                title={`${showEffectsBrowser ? 'close effects browser' : 'open effects browser'}`}
                                 svg={showEffectsBrowser ?
-                                    addCircle('rgba(204, 204, 204, 0.2)') :
+                                    closeIcon('rgba(204, 204, 204, 0.8)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
                                 containerSize={{
-                                    width: dynamicSizes.timelineAreaContent.svg,
-                                    height: dynamicSizes.timelineAreaContent.height
+                                    width: dynamicSizes.timelineAreaContent.svg.width,
+                                    height: dynamicSizes.timelineAreaContent.svg.height
                                 }}
                                 scale={1}
                                 onContainerClick={() => setShowEffectsBrowser(v => !v)} />
@@ -899,24 +886,32 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
         <div
             style={{
                 width: '100%',
-                borderBottom: '1px solid rgb(10, 10, 10)',
-                borderLeft: '1px solid rgb(10, 10, 10)',
-                borderRight: '1px solid rgb(10, 10, 10)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRight: '1px solid rgba(255, 255, 255, 0.05)',
                 height: effectBrowserSize.height,
                 overflowY: 'auto',
                 borderBottomLeftRadius: 10,
+                borderBottomRightRadius: 10,
             }}>
             {appState.effectNames.map((effectName, i) => {
                 return (
                     <div
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                            e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)';
+                            e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0)';
+                        }}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between',
                             fontSize: effectBrowserSize.itemFontSize,
                             letterSpacing: "3px",
                             height: effectBrowserSize.itemHeight,
-                            borderRadius: 4,
+                            border: '1px solid rgba(0, 0, 0, 0)',
                             padding: effectBrowserSize.itemPadding,
                             background: i % 2 == 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.01)',
                             color: effectName == 'skew' ? 'rgba(255, 255, 255, 0.3)' : 'rgb(227,227,227)'
@@ -925,6 +920,20 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                         <div>
                             {`${effectName}${effectName == 'skew' ? " · coming soon" : ""}`}
                         </div>
+                        {(effectName != 'skew') && <SvgRepo svg={(() => {
+                            switch (effectName) {
+                                case "scale": return allOut();
+                                case "move": return earthquake();
+                                case "rotate": return toysFan();
+                                default: return circle('rgba(0,0,0,0)')
+                            }
+                        })()}
+                            containerSize={{
+                                width: effectBrowserSize.svg,
+                                height: effectBrowserSize.svg
+                            }}
+                            scale={0.7} />}
+                        <div style={{ marginLeft: 'auto' }} />
                         {(effectName != 'skew') && <SvgRepo
                             svg={addCircle('rgba(204, 204, 204, 0.8)')}
                             containerSize={{

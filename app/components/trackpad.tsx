@@ -117,7 +117,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
             }
             case PointerStyle.Solid:{
                 return {
-                    background: 'radial-gradient(circle at 30% 30%, rgb(250, 250, 250) 0%, rgb(190, 190, 190) 45%, rgb(135, 135, 135) 100%)',
+                    background: 'radial-gradient(circle at 30% 30%, rgb(230, 230, 230) 0%, rgb(170, 170, 170) 45%, rgb(115, 115, 115) 100%)',
                     borderRadius: '50%',
                     boxShadow: "1px 1px 6px rgba(0, 0, 0, 0.9)",
                 }
