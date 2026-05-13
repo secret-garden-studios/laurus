@@ -1,11 +1,126 @@
-import { useContext, useMemo, useCallback, CSSProperties } from "react";
+import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch } from "react";
 import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult, projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
 import { updateProject } from "../projects/projects.server";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType, LaurusScaleResult, LaurusMoveResult, LaurusRotateResult, LaurusActiveElement, LaurusTransform, LaurusBrowserElement } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType, LaurusScaleResult, LaurusMoveResult, LaurusRotateResult, LaurusActiveElement, LaurusTransform, LaurusBrowserElement, WorkspaceAction, LaurusEffect, defaultWorkspace, LaurusThumbnail } from "./workspace.client";
 import { updateScale, updateMove, updateRotate } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import { allOut, browse, earthquake, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
+
+
+async function deleteEffects(
+    mediaKey: string,
+    apiOrigin: string | undefined,
+    accessToken: string | undefined,
+    effects: LaurusEffect[],
+    dispatch: Dispatch<WorkspaceAction>) {
+    for (let i = 0; i < effects.length; i++) {
+        const effect = effects[i];
+        if (!effect.value.math.has(mediaKey)) continue;
+        switch (effect.type) {
+            case "scale": {
+                const newMath = new Map(effect.value.math);
+                newMath.delete(mediaKey);
+                const newScale: LaurusScaleResult = { ...effect.value, math: newMath };
+                const updated = await updateScale(apiOrigin, accessToken, effect.key, newScale);
+                if (updated) {
+                    dispatch({
+                        type: WorkspaceActionType.SetEffect,
+                        value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
+                    });
+                }
+                break;
+            }
+            case "move": {
+                const newMath = new Map(effect.value.math);
+                newMath.delete(mediaKey);
+                const newMove: LaurusMoveResult = { ...effect.value, math: newMath };
+                const updated = await updateMove(apiOrigin, accessToken, effect.key, { ...newMove });
+                if (updated) {
+                    dispatch({
+                        type: WorkspaceActionType.SetEffect,
+                        value: { type: 'move', key: effect.key, locked: effect.locked, value: { ...newMove } }
+                    });
+                }
+                break;
+            }
+            case "rotate": {
+                const newMath = new Map(effect.value.math);
+                newMath.delete(mediaKey);
+                const newRotate: LaurusRotateResult = { ...effect.value, math: newMath };
+                const updated = await updateRotate(apiOrigin, accessToken, effect.key, { ...newRotate });
+                if (updated) {
+                    dispatch({
+                        type: WorkspaceActionType.SetEffect,
+                        value: { type: 'rotate', key: effect.key, locked: effect.locked, value: { ...newRotate } }
+                    });
+                }
+                break;
+            }
+        }
+    }
+}
+
+function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch: Dispatch<WorkspaceAction>) {
+    switch (mediaType) {
+        case "img": {
+            dispatch({ type: WorkspaceActionType.DeleteCanvasImg, key: mediaKey });
+            break;
+        }
+        case "svg": {
+            dispatch({ type: WorkspaceActionType.DeleteCanvasSvg, key: mediaKey });
+            break;
+        }
+    }
+}
+
+function cleanUpMediaBrowser(
+    mediaType: "img" | "svg",
+    mediaId: string,
+    browsePublicImgs: boolean,
+    browsePublicSvgs: boolean,
+    dispatch: Dispatch<WorkspaceAction>) {
+    switch (mediaType) {
+        case "img": {
+            if (!browsePublicImgs) {
+                dispatch({ type: WorkspaceActionType.DeleteBrowserImg, value: mediaId })
+            }
+            break;
+        }
+        case "svg": {
+            if (!browsePublicSvgs) {
+                dispatch({ type: WorkspaceActionType.DeleteBrowserSvg, value: mediaId })
+            }
+            break;
+        }
+    }
+}
+
+function cleanUpBrowserElement(
+    mediaId: string,
+    browserElement: LaurusThumbnail,
+    dispatch: Dispatch<WorkspaceAction>) {
+    switch (browserElement.type) {
+        case "img": {
+            if (browserElement.value.img_media_id == mediaId) {
+                dispatch({
+                    type: WorkspaceActionType.SetBrowserElement,
+                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                });
+            }
+            break;
+        }
+        case "svg": {
+            if (browserElement.value.svg_media_id == mediaId) {
+                dispatch({
+                    type: WorkspaceActionType.SetBrowserElement,
+                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                });
+            }
+            break;
+        }
+    }
+}
 
 export type ContextMenuMedia =
     | { type: 'img', key: string, meta: LaurusProjectImg, data: LaurusImgResult }
@@ -20,6 +135,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
 
     const deleteProjectMedia = useCallback(async (
         snapshot: LaurusProjectResult,
+        mediaId: string,
         newSvgs: Map<string, LaurusProjectSvg> | undefined,
         newImgs: Map<string, LaurusProjectImg> | undefined) => {
         const newProject: LaurusProjectResult = {
@@ -38,66 +154,15 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                     dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
                 }
                 dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
-                // clean up effects
-                for (let i = 0; i < appState.effects.length; i++) {
-                    const effect = appState.effects[i];
-                    if (!effect.value.math.has(media.key)) continue;
-                    switch (effect.type) {
-                        case "scale": {
-                            const newMath = new Map(effect.value.math);
-                            newMath.delete(media.key);
-                            const newScale: LaurusScaleResult = { ...effect.value, math: newMath };
-                            const updated = await updateScale(appState.apiOrigin, appState.accessToken, effect.key, newScale);
-                            if (updated) {
-                                dispatch({
-                                    type: WorkspaceActionType.SetEffect,
-                                    value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
-                                });
-                            }
-                            break;
-                        }
-                        case "move": {
-                            const newMath = new Map(effect.value.math);
-                            newMath.delete(media.key);
-                            const newMove: LaurusMoveResult = { ...effect.value, math: newMath };
-                            const updated = await updateMove(appState.apiOrigin, appState.accessToken, effect.key, { ...newMove });
-                            if (updated) {
-                                dispatch({
-                                    type: WorkspaceActionType.SetEffect,
-                                    value: { type: 'move', key: effect.key, locked: effect.locked, value: { ...newMove } }
-                                });
-                            }
-                            break;
-                        }
-                        case "rotate": {
-                            const newMath = new Map(effect.value.math);
-                            newMath.delete(media.key);
-                            const newRotate: LaurusRotateResult = { ...effect.value, math: newMath };
-                            const updated = await updateRotate(appState.apiOrigin, appState.accessToken, effect.key, { ...newRotate });
-                            if (updated) {
-                                dispatch({
-                                    type: WorkspaceActionType.SetEffect,
-                                    value: { type: 'rotate', key: effect.key, locked: effect.locked, value: { ...newRotate } }
-                                });
-                            }
-                            break;
-                        }
-                    }
-                }
-                // clean up canvas media
-                switch (media.type) {
-                    case "img": {
-                        dispatch({ type: WorkspaceActionType.DeleteCanvasImg, key: media.key });
-                        break;
-                    }
-                    case "svg": {
-                        dispatch({ type: WorkspaceActionType.DeleteCanvasSvg, key: media.key });
-                        break;
-                    }
+                await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
+                cleanUpCanvasMedia(media.type, media.key, dispatch);
+                cleanUpMediaBrowser(media.type, mediaId, newProject.browse_public_imgs, newProject.browse_public_svgs, dispatch);
+                if (appState.browserElement) {
+                    cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
                 }
             }
         }
-    }, [appState.accessToken, appState.activeElement?.key, appState.apiOrigin, appState.effects, dispatch, media.key, media.type]);
+    }, [appState.accessToken, appState.activeElement?.key, appState.apiOrigin, appState.browserElement, appState.effects, dispatch, media.key, media.type]);
 
     const leftSide = useMemo(() => {
         if (media.meta.contextMenuConfig.position.toLowerCase().endsWith('left')) {
@@ -420,7 +485,20 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 <span style={{ opacity: selected ? 1 : 1 }}>
                                     {'selected'}
                                 </span>
-                                <div
+                                <div style={{
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    width: 34,
+                                    height: 18,
+                                    background: selected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                                    borderRadius: 20,
+                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '2px',
+                                    border: selected ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: selected ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                }}
                                     onClick={() => {
                                         if (selected) {
                                             dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
@@ -444,21 +522,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                                 break;
                                             }
                                         }
-                                    }}
-                                    style={{
-                                        cursor: 'pointer',
-                                        position: 'relative',
-                                        width: 34,
-                                        height: 18,
-                                        background: selected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                        borderRadius: 20,
-                                        transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        padding: '2px',
-                                        border: selected ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
-                                        boxShadow: selected ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
-                                    }}>
+                                    }} >
                                     <div style={{
                                         width: 14,
                                         height: 14,
@@ -470,16 +534,14 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                     }} />
                                 </div>
                             </div>
-                            <div
-                                style={{ ...cellStyle }}
+                            <div style={{ ...cellStyle }}
                                 className={styles['animated-nav-dark']}
                                 onClick={swapMedia}>
                                 {'swap'}
                             </div>
                             <div style={{ ...cellStyle }} className={styles['animated-nav-dark']} onClick={() => { updateMediaOrder('increment') }}>{'move up'}</div>
                             <div style={{ ...cellStyle }} className={styles['animated-nav-dark']} onClick={() => { updateMediaOrder('decrement') }}>{'move down'}</div>
-                            <div
-                                className={revertEnabled ? styles['animated-nav-dark'] : ''}
+                            <div className={revertEnabled ? styles['animated-nav-dark'] : ''}
                                 style={{
                                     color: revertEnabled ? 'inherit' : 'rgba(127,127,127, 1)',
                                     ...cellStyle
@@ -490,8 +552,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 }}>
                                 {'revert'}
                             </div>
-                            <div
-                                style={{ color: 'rgb(242, 83, 83)', ...cellStyle }}
+                            <div style={{ color: 'rgb(242, 83, 83)', ...cellStyle }}
                                 className={styles['animated-nav-dark']}
                                 onClick={async () => {
                                     const snapshot: LaurusProjectResult = { ...appState.project };
@@ -499,17 +560,16 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                         case "img": {
                                             const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
                                             newImgs.delete(media.key);
-                                            deleteProjectMedia(snapshot, undefined, newImgs);
+                                            deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs);
                                             break;
                                         }
                                         case "svg": {
                                             const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
                                             newSvgs.delete(media.key);
-                                            deleteProjectMedia(snapshot, newSvgs, undefined);
+                                            deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined);
                                             break;
                                         }
                                     }
-
                                 }}>
                                 {'delete'}
                             </div>
@@ -552,3 +612,206 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
     </>
 }
 
+export type BrorwserContextMenuMedia =
+    | { type: 'img', key: string, data: LaurusImgResult }
+    | { type: 'svg', key: string, data: LaurusSvgResult }
+interface BrowserContextMenu {
+    media: BrorwserContextMenuMedia,
+    position: CSSProperties,
+}
+export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
+    const { appState, dispatch } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                container: {
+                    gridTemplateRows: `min-content auto`,
+                    gap: 12,
+                    borderRadius: 10,
+                    fontSize: 12,
+                    letterSpacing: 2,
+                    padding: '10px 26px 10px 14px',
+                },
+                headerGrid: {
+                    gap: 4
+                },
+                h1: {
+                    fontSize: 14
+                },
+                footer: {
+                    padding: '20px 0px'
+                }
+            }
+            case "midhigh": return {
+                container: {
+                    gridTemplateRows: `min-content auto`,
+                    gap: 12,
+                    borderRadius: 10,
+                    fontSize: 10,
+                    letterSpacing: 2,
+                    padding: '8px 24px 8px 12px',
+                },
+                headerGrid: {
+                    gap: 4
+                },
+                h1: {
+                    fontSize: 14
+                },
+                footer: {
+                    padding: '14px 0px'
+                }
+            }
+            case "midlow":
+            case "low": return {
+                container: {
+                    gridTemplateRows: `min-content auto`,
+                    gap: 12,
+                    borderRadius: 10,
+                    fontSize: 8,
+                    letterSpacing: 2,
+                    padding: '6px 22px 6px 10px',
+                },
+                headerGrid: {
+                    gap: 4
+                },
+                h1: {
+                    fontSize: 12
+                },
+                footer: {
+                    padding: '10px 0px'
+                }
+            }
+        }
+    });
+
+    const showDeleteButton = useMemo(() => {
+        switch (media.type) {
+            case "img": return !appState.project.browse_public_imgs
+            case "svg": return !appState.project.browse_public_svgs
+        }
+    }, [appState.project.browse_public_imgs, appState.project.browse_public_svgs, media.type]);
+
+    const deleteProjectMedia = useCallback(async (
+        snapshot: LaurusProjectResult,
+        mediaId: string,
+        newSvgs: Map<string, LaurusProjectSvg> | undefined,
+        newImgs: Map<string, LaurusProjectImg> | undefined) => {
+        const newProject: LaurusProjectResult = {
+            ...snapshot,
+            ...(newSvgs !== undefined && { svgs: newSvgs }),
+            ...(newImgs !== undefined && { imgs: newImgs })
+        };
+        if (newProject.project_id) {
+            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (!updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+            }
+            else {
+                if (appState.activeElement?.key == media.key) {
+                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                }
+                dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
+                await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
+                cleanUpCanvasMedia(media.type, media.key, dispatch);
+                cleanUpMediaBrowser(media.type, mediaId, newProject.browse_public_imgs, newProject.browse_public_svgs, dispatch);
+                if (appState.browserElement) {
+                    cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
+                }
+            }
+        }
+    }, [appState.accessToken, appState.activeElement?.key, appState.apiOrigin, appState.browserElement, appState.effects, dispatch, media.key, media.type]);
+
+    return <>
+        <div
+            style={{
+                background: 'rgba(17, 17, 17, 0.6)',
+                backdropFilter: 'blur(15px)',
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                ...position,
+                ...dynamicSizes.container
+            }} >
+            <div style={{
+                gridRow: 1,
+                gridColumn: 1,
+                display: 'grid',
+                ...dynamicSizes.headerGrid
+            }}>
+                <div style={{
+                    overflowX: 'auto',
+                    fontWeight: 'bold',
+                    whiteSpace: 'nowrap',
+                    ...dynamicSizes.h1
+                }}>
+                    {media.data.media_key}
+                </div>
+                <div title="width and height" style={{ overflowX: 'auto', display: 'flex', whiteSpace: 'nowrap', }}>
+                    <div>
+                        {media.data.width.toFixed()}
+                        {' | '}
+                        {media.data.height.toFixed()}
+                    </div>
+                </div>
+                <div style={{
+                    overflowX: 'auto',
+                    whiteSpace: 'nowrap',
+                }}>
+                    {new Date(media.data.timestamp).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                </div>
+            </div>
+            <div style={{
+                gridRow: 2,
+                gridColumn: 1,
+                display: 'grid',
+                gridTemplateRows: showDeleteButton ? '1fr auto' : '1fr',
+                overflow: 'hidden'
+            }}>
+                {/* Categories Container */}
+                <div style={{
+                    display: 'flex',
+                    height: '100%',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    overflowY: 'auto',
+                    maxHeight: '100%',
+                    borderTop: '1px solid rgba(0,0,0,0)',
+                }} >
+                    {media.data.categories.map((cat, i) => (
+                        <div key={i} style={{ padding: '2px 0' }}>{cat}</div>
+                    ))}
+                </div>
+                {showDeleteButton ? <div style={{
+                    color: 'rgba(242, 83, 83, 1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    height: 'min-content',
+                    ...dynamicSizes.footer
+                }}>
+                    <div className={styles['animated-nav-dark']} onClick={() => {
+                        const confirmed = confirm('are you sure you want to delete this media?');
+                        if (confirmed) {
+                            const snapshot: LaurusProjectResult = { ...appState.project };
+                            switch (media.type) {
+                                case "img": {
+                                    const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
+                                    newImgs.delete(media.key);
+                                    deleteProjectMedia(snapshot, media.data.img_media_id, undefined, newImgs);
+                                    break;
+                                }
+                                case "svg": {
+                                    const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
+                                    newSvgs.delete(media.key);
+                                    deleteProjectMedia(snapshot, media.data.svg_media_id, newSvgs, undefined);
+                                    break;
+                                }
+                            }
+                        }
+                    }}>
+                        {'delete'}
+                    </div>
+                </div> : <></>}
+            </div>
+        </div>
+    </>
+}

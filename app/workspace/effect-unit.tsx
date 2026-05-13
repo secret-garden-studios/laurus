@@ -58,10 +58,40 @@ interface EffectUnit {
 }
 export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [showUnitControls, setShowUnitControls] = useState(false);
-    const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
+    const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
+    const [showUnitControls, setShowUnitControls] = useState(() => {
+        if (!appState.activeElement) {
+            switch (effect.type) {
+                case "move": {
+                    const moveEqautionKeys = Array.from(effect.value.math.keys())
+                    const keys = appState.carouselEntries;
+                    const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                    const newIndex = k > -1 ? k : 0;
+                    setMoveCarouselIndex(newIndex);
+                    break;
+                }
+                case "rotate": {
+                    const eqKeys = Array.from(effect.value.math.keys())
+                    const carouselKeys = appState.carouselEntries;
+                    const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
+                    const newIndex = k > -1 ? k : 0;
+                    setRotateCarouselIndex(newIndex);
+                    break;
+                }
+                case "scale": {
+                    const moveEqautionKeys = Array.from(effect.value.math.keys())
+                    const keys = appState.carouselEntries;
+                    const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                    const newIndex = k > -1 ? k : 0;
+                    setScaleCarouselIndex(newIndex);
+                    break;
+                }
+            }
+        }
+        return true;
+    });
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -133,8 +163,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     containerHeight: 40,
                     containerWidth: '100%',
                     trackHeight: 1,
-                    capWidth: 12,
-                    capHeight: 12,
+                    capWidth: 10,
+                    capHeight: 10,
                 },
                 headerFlex: {
                     height: 26,

@@ -39,19 +39,18 @@ export default function Statusbar({ action, body }: Statusbar) {
 
     return (
         <>
-            <div
-                style={{
-                    height: statusbarSize.height,
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    left: "0",
-                    bottom: "0",
-                    backgroundColor: "rgb(18, 18, 18)",
-                    whiteSpace: "nowrap",
-                    padding: statusbarSize.padding,
-                    gap: 6,
-                }}>
+            <div style={{
+                height: statusbarSize.height,
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                left: "0",
+                bottom: "0",
+                backgroundColor: "rgb(18, 18, 18)",
+                whiteSpace: "nowrap",
+                padding: statusbarSize.padding,
+                gap: 6,
+            }}>
                 <div
                     title="page"
                     className={dellaRespira.className}
@@ -169,20 +168,46 @@ export default function Statusbar({ action, body }: Statusbar) {
                             scale={0.5} />
                     }
                 </div>
-                <div
-                    title="media source"
+                <div title="media source"
+                    data-tooltip-id="media-source-tooltip-id"
                     style={{
                         fontSize: statusbarSize.actionFont,
                     }}>
                     <SvgRepo
                         title="media source"
-                        svg={folder("rgb(62, 62, 62)")}
+                        svg={appState.project.browse_public_imgs || appState.project.browse_public_svgs ? folder() : folder("rgb(62, 62, 62)")}
                         containerSize={{
                             width: 30,
                             height: 30
                         }}
                         scale={0.5} />
                 </div>
+                <Tooltip
+                    className={dellaRespira.className}
+                    id="media-source-tooltip-id"
+                    data-tooltip-place="top-start"
+                    style={{
+                        backgroundColor: 'rgb(40, 40, 40)',
+                        color: 'rgb(227, 227, 227)',
+                        fontSize: 14,
+                        borderRadius: "8px",
+                        boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+                        maxWidth: "300px",
+                    }}
+                    render={() => {
+                        return <div style={{ padding: 4, width: '100%' }}>
+                            <div style={{ overflowWrap: 'break-word', whiteSpace: 'pre-wrap', maxWidth: '100%', padding: 10 }}>
+                                <div>
+                                    {JSON.stringify(
+                                        { discoverImgs: appState.project.browse_public_imgs, discoverSvgs: appState.project.browse_public_svgs },
+                                        (key, value) => {
+                                            return value;
+                                        },
+                                        2)}
+                                </div>
+                            </div>
+                        </div>
+                    }} />
                 <div
                     title="screen resolution"
                     className={dellaRespira.className}

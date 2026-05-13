@@ -124,7 +124,6 @@ export default function Canvas() {
             dropArea.cx,
             dropArea.cy,
             dropArea.radius);
-        const newKey = v4();
         const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_key);
         if (svgMediaResult) {
             const projectSvg: LaurusProjectSvg = {
@@ -149,9 +148,9 @@ export default function Canvas() {
                 contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
             }
             const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+            const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgMediaResult.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
             newSvgs.set(newKey, projectSvg);
-            const rollback: LaurusProjectResult = { ...appState.project }
-            const newProject: LaurusProjectResult = { ...rollback, svgs: newSvgs }
+            const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
             if (appState.project.project_id) {
                 dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                 const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
@@ -161,9 +160,6 @@ export default function Canvas() {
                         dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
                         dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                     }
-                }
-                else {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
                 }
             }
             else {
@@ -188,7 +184,6 @@ export default function Canvas() {
             dropArea.cx,
             dropArea.cy,
             dropArea.radius);
-        const newKey = v4();
         const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_key);
         if (imgMediaResult) {
             const projectImg: LaurusProjectImg = {
@@ -209,21 +204,18 @@ export default function Canvas() {
                 contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
             };
             const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
+            const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgMediaResult.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
             newImgs.set(newKey, projectImg);
-            const rollback: LaurusProjectResult = { ...appState.project }
-            const newProject: LaurusProjectResult = { ...rollback, imgs: newImgs }
+            const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
             if (appState.project.project_id) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                 const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
                 if (projectUpdated) {
+                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
                     const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
                     if (encodedImg) {
                         dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
                         dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                     }
-                }
-                else {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
                 }
             }
             else {

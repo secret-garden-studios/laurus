@@ -147,11 +147,11 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
                     padding: '14px 10px'
                 },
                 paramSlider: {
-                    containerHeight: Math.round(200 * resolution.factor),
-                    containerWidth: Math.round(45 * resolution.factor),
+                    containerHeight: Math.round(210 * resolution.factor),
+                    containerWidth: Math.round(40 * resolution.factor),
                     trackWidth: 1,
-                    capWidth: 12,
-                    capHeight: 13,
+                    capWidth: 10,
+                    capHeight: 10,
                     capBorderOffset: 0
                 },
                 paramButtonContainer: { width: Math.round(36 * resolution.factor), height: Math.round(36 * resolution.factor) },

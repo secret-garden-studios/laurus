@@ -77,25 +77,25 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             case "low": return {
                 ...ds,
                 scaleParam: {
-                    capWidth: 17,
-                    capHeight: 17,
-                    capBorderOffset: 2,
-                    containerWidth: 160,
-                    containerHeight: 38,
+                    capWidth: 13,
+                    capHeight: 13,
+                    capBorderOffset: 0,
+                    containerWidth: 170,
+                    containerHeight: 36,
                     trackHeight: 1,
-                    tickHeight: 28,
-                    tickLeft: 2,
+                    tickHeight: 20,
+                    tickLeft: 1,
                     svgSize: { width: 20, height: 20 }
                 },
                 scaleParamDisplay: {
-                    fontSize: 18,
+                    fontSize: 14,
                     inputHeight: '100%',
-                    unitLabelFontSize: 12,
-                    unitFontSize: 16,
-                    letterSpacing: 3,
+                    unitLabelFontSize: 10,
+                    unitFontSize: 12,
+                    letterSpacing: 2,
                     gridGap: 0,
-                    marginTop: 20,
-                    flexGap: 4,
+                    marginTop: 10,
+                    flexGap: 3,
                 }
             }
         }

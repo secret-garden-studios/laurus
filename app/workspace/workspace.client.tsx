@@ -212,6 +212,8 @@ export const defaultWorkspace: WorkspaceState = {
         imgs: new Map(),
         svgs: new Map(),
         layers: new Map(),
+        browse_public_imgs: false,
+        browse_public_svgs: false,
         creator: "",
         last_editor: ""
     },
@@ -230,7 +232,18 @@ export const defaultWorkspace: WorkspaceState = {
     timelineMaxValue: 0,
     timelineUnits: [],
     timelineValues: [],
-    browserElement: undefined,
+    browserElement: {
+        value: {
+            ...photo("rgb(62,62,62)"),
+            timestamp: "",
+            last_active: "",
+            svg_media_id: "",
+            categories: [],
+            order: 0,
+            media_uri: ""
+        },
+        type: 'svg'
+    },
     activeElement: undefined,
     recordingLight: false,
     fps: 60,
@@ -242,8 +255,12 @@ export enum WorkspaceActionType {
     SetProject,
     AddBrowserImg,
     UpdateBrowserImgs,
+    SetBrowserImgs,
+    DeleteBrowserImg,
     AddBrowserSvg,
     UpdateBrowserSvgs,
+    SetBrowserSvgs,
+    DeleteBrowserSvg,
     SetCanvasImg,
     DeleteCanvasImg,
     SetCanvasImgs,
@@ -275,8 +292,12 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetProject, value: LaurusProjectResult }
     | { type: WorkspaceActionType.AddBrowserImg, value: LaurusImgResult, first: boolean }
     | { type: WorkspaceActionType.UpdateBrowserImgs, value: LaurusImgResult[] }
+    | { type: WorkspaceActionType.SetBrowserImgs, value: LaurusImgResult[] }
+    | { type: WorkspaceActionType.DeleteBrowserImg, value: string }
     | { type: WorkspaceActionType.AddBrowserSvg, value: LaurusSvgResult, first: boolean }
     | { type: WorkspaceActionType.UpdateBrowserSvgs, value: LaurusSvgResult[] }
+    | { type: WorkspaceActionType.SetBrowserSvgs, value: LaurusSvgResult[] }
+    | { type: WorkspaceActionType.DeleteBrowserSvg, value: string }
     | { type: WorkspaceActionType.SetCanvasImg, key: string, value: LaurusImgResult }
     | { type: WorkspaceActionType.DeleteCanvasImg, key: string }
     | { type: WorkspaceActionType.SetCanvasImgs, value: Map<string, LaurusImgResult> }
@@ -312,7 +333,7 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.AddBrowserImg: {
             const currentBrowserImgs = [...state.browserImgs];
-            const i = currentBrowserImgs.findIndex(i => i.media_key == action.value.media_key);
+            const i = currentBrowserImgs.findIndex(i => i.img_media_id == action.value.img_media_id);
             if (i < 0) {
                 return action.first ?
                     { ...state, browserImgs: [action.value, ...currentBrowserImgs] } :
@@ -326,16 +347,23 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newBrowserImgs = [...state.browserImgs];
             for (let i = 0; i < action.value.length; i++) {
                 const newBrowserImg = action.value[i];
-                const index = newBrowserImgs.findIndex(img => img.media_key == newBrowserImg.media_key);
+                const index = newBrowserImgs.findIndex(img => img.img_media_id == newBrowserImg.img_media_id);
                 if (index > -1) {
                     newBrowserImgs[index] = { ...newBrowserImg }
                 }
             }
             return { ...state, browserImgs: newBrowserImgs }
         }
+        case WorkspaceActionType.SetBrowserImgs: {
+            return { ...state, browserImgs: [...action.value] }
+        }
+        case WorkspaceActionType.DeleteBrowserImg: {
+            const newBrowserImgs = state.browserImgs.filter(b => b.img_media_id != action.value);
+            return { ...state, browserImgs: newBrowserImgs }
+        }
         case WorkspaceActionType.AddBrowserSvg: {
             const currentBrowserSvgs = [...state.browserSvgs];
-            const i = currentBrowserSvgs.findIndex(i => i.media_key == action.value.media_key);
+            const i = currentBrowserSvgs.findIndex(i => i.svg_media_id == action.value.svg_media_id);
             if (i < 0) {
                 return action.first ?
                     { ...state, browserSvgs: [action.value, ...currentBrowserSvgs] } :
@@ -349,11 +377,18 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             const newBrowserSvgs = [...state.browserSvgs];
             for (let i = 0; i < action.value.length; i++) {
                 const newBrowserSvg = action.value[i];
-                const index = newBrowserSvgs.findIndex(svg => svg.media_key == newBrowserSvg.media_key);
+                const index = newBrowserSvgs.findIndex(svg => svg.svg_media_id == newBrowserSvg.svg_media_id);
                 if (index > -1) {
                     newBrowserSvgs[index] = { ...newBrowserSvg }
                 }
             }
+            return { ...state, browserSvgs: newBrowserSvgs }
+        }
+        case WorkspaceActionType.SetBrowserSvgs: {
+            return { ...state, browserSvgs: [...action.value] }
+        }
+        case WorkspaceActionType.DeleteBrowserSvg: {
+            const newBrowserSvgs = state.browserSvgs.filter(b => b.svg_media_id != action.value);
             return { ...state, browserSvgs: newBrowserSvgs }
         }
         case WorkspaceActionType.SetCanvasImg: {
@@ -506,6 +541,7 @@ function initCarouselEntries(
 ): CarouselEntry[] {
     const temp: { entry: CarouselEntry, distance: number }[] = [];
     project.imgs.entries().forEach((projectImg) => {
+        if (projectImg[1].left < 0 || projectImg[1].top < 0) return;
         const distance = Math.sqrt(projectImg[1].top ** 2 + projectImg[1].left ** 2);
         temp.push({
             entry: {
@@ -516,6 +552,7 @@ function initCarouselEntries(
         });
     });
     project.svgs.entries().forEach((projectSvg) => {
+        if (projectSvg[1].left < 0 || projectSvg[1].top < 0) return;
         const distance = Math.sqrt(projectSvg[1].top ** 2 + projectSvg[1].left ** 2);
         temp.push({
             entry: {
@@ -554,73 +591,75 @@ function initReducer({
     const newEffects: LaurusEffect[] = [];
     if (projectDependencies) {
         projectDependencies.scales.forEach(e => {
-            newEffects.push({
-                type: 'scale',
-                key: e.scale_id,
-                locked: e.locked,
-                value: {
-                    ...e,
-                }
-            })
+            newEffects.push({ type: 'scale', key: e.scale_id, locked: e.locked, value: { ...e } })
         });
         projectDependencies?.moves.forEach(e => {
-            newEffects.push({
-                type: 'move',
-                key: e.move_id,
-                locked: e.locked,
-                value: {
-                    ...e,
-                }
-            })
+            newEffects.push({ type: 'move', key: e.move_id, locked: e.locked, value: { ...e } })
         });
         projectDependencies?.rotates.forEach(e => {
-            newEffects.push({
-                type: 'rotate',
-                key: e.rotate_id,
-                locked: e.locked,
-                value: {
-                    ...e,
-                }
-            })
+            newEffects.push({ type: 'rotate', key: e.rotate_id, locked: e.locked, value: { ...e } })
         });
     }
-    const newCanvasSvgs: Map<string, LaurusSvgResult> = projectDependencies ?
-        new Map(projectDependencies.project.svgs.entries().map(e => [e[0],
-        {
-            ...projectDependencies.canvasSvgs.find(i => i.svg_media_id == e[1].svg_media_id)
-        }])) : new Map();
-    const newCanvasImgs: Map<string, LaurusImgResult> = projectDependencies ?
-        new Map(projectDependencies.project.imgs.entries().map(e => [e[0],
-        {
-            ...projectDependencies.canvasImgs.find(i => i.img_media_id == e[1].img_media_id)
-        }])) : new Map();
-    const newBrowserImgs: LaurusImgResult[] =
-        browserDependencies.browserImgs.map(v => { return { ...v } });
-    const newBrowserSvgs: LaurusSvgResult[] =
-        browserDependencies.browserSvgs.map(v => { return { ...v } });
-    const newBrowserFrames: LaurusCropSvg[] = getCrops('rgba(200, 200, 200, 1)');
-    const newBrowserElement: LaurusThumbnail | undefined = newBrowserImgs.length > 0 ?
-        { value: { ...newBrowserImgs[0] }, type: 'img' } :
-        {
-            value: {
-                ...photo(),
-                timestamp: "",
-                last_active: "",
-                svg_media_id: "",
-                categories: [],
-                order: 0,
-                media_uri: ""
-            }, type: 'svg'
-        };
+
     const defaultProject: LaurusProjectResult = {
         ...defaultWorkspace.project,
         frame_width: Math.round(FRAME_WIDTH_5_7 * resolution.factor),
         frame_height: Math.round(FRAME_HEIGHT_5_7 * resolution.factor)
     };
-    const newProject = projectDependencies ?
-        initProject(projectDependencies.project) :
-        defaultProject
+
+    const newProject = projectDependencies ? initProject(projectDependencies.project) : defaultProject;
+
+    const newCanvasSvgs: Map<string, LaurusSvgResult> = projectDependencies ? new Map(
+        projectDependencies.project.svgs.entries().map(e => [
+            e[0],
+            { ...projectDependencies.canvasSvgs.find(i => i.svg_media_id == e[1].svg_media_id) }
+        ])
+    ) : new Map();
+
+    const newCanvasImgs: Map<string, LaurusImgResult> = projectDependencies ? new Map(
+        projectDependencies.project.imgs.entries().map(e => [
+            e[0],
+            { ...projectDependencies.canvasImgs.find(i => i.img_media_id == e[1].img_media_id) }
+        ])
+    ) : new Map();
+
+    const browserImgIds = new Set(browserDependencies.browserImgs.map(i => i.img_media_id));
+    const browserSvgIds = new Set(browserDependencies.browserSvgs.map(s => s.svg_media_id));
+
+    const missingImgs = Array.from(newCanvasImgs.values()).filter(i => !browserImgIds.has(i.img_media_id));
+    const missingSvgs = Array.from(newCanvasSvgs.values()).filter(s => !browserSvgIds.has(s.svg_media_id));
+
+    const projectImgIds = new Set(projectDependencies?.project.imgs.values().map(i => i.img_media_id) || []);
+    const projectSvgIds = new Set(projectDependencies?.project.svgs.values().map(s => s.svg_media_id) || []);
+
+    const combinedImgs = [...browserDependencies.browserImgs, ...missingImgs];
+    const newBrowserImgs: LaurusImgResult[] = newProject.browse_public_imgs
+        ? combinedImgs.sort((a, b) => {
+            const aExists = projectImgIds.has(a.img_media_id);
+            const bExists = projectImgIds.has(b.img_media_id);
+            if (aExists && !bExists) return -1;
+            if (!aExists && bExists) return 1;
+            return a.order - b.order;
+        }).map(v => ({ ...v }))
+        : Array.from(newCanvasImgs.values()).sort((a, b) => a.order - b.order);
+
+    const combinedSvgs = [...browserDependencies.browserSvgs, ...missingSvgs];
+    const newBrowserSvgs: LaurusSvgResult[] = newProject.browse_public_svgs
+        ? combinedSvgs.sort((a, b) => {
+            const aExists = projectSvgIds.has(a.svg_media_id);
+            const bExists = projectSvgIds.has(b.svg_media_id);
+            if (aExists && !bExists) return -1;
+            if (!aExists && bExists) return 1;
+            return a.order - b.order;
+        }).map(v => ({ ...v }))
+        : Array.from(newCanvasSvgs.values()).sort((a, b) => a.order - b.order);
+
+    const newBrowserFrames: LaurusCropSvg[] = getCrops('rgba(200, 200, 200, 1)');
+    const newBrowserElement: LaurusBrowserElement | undefined =
+        defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+
     const newCarouselEntries = initCarouselEntries(newProject);
+
     return {
         ...defaultWorkspace,
         project: newProject,
@@ -777,6 +816,10 @@ export default function Workspace({
                     dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                 }
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                dispatch({
+                    type: WorkspaceActionType.SetBrowserElement,
+                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                });
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -827,6 +870,7 @@ export default function Workspace({
 
         const imgArray = Array.from(appState.project.imgs.entries());
         for (let i = 0; i < imgArray.length; i++) {
+            if (imgArray[i][1].left < 0 || imgArray[i][1].top < 0) continue;
             const [key] = imgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
@@ -845,6 +889,7 @@ export default function Workspace({
 
         const svgArray = Array.from(appState.project.svgs.entries());
         for (let i = 0; i < svgArray.length; i++) {
+            if (svgArray[i][1].left < 0 || svgArray[i][1].top < 0) continue;
             const [key] = svgArray[i];
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
@@ -862,7 +907,7 @@ export default function Workspace({
         };
 
         return newAnimations;
-    }, [appState.apiOrigin, appState.effects, appState.fps, appState.project.imgs, appState.project.project_id, appState.project.svgs]);
+    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
 
     return (<>
         <div
@@ -883,6 +928,7 @@ export default function Workspace({
                             svgElementsRef={svgElementsRef}
                             imgElementsRef={imgElementsRef}
                             onRightPanelClick={() => setShowTimeline(false)}
+                            getNewAnimations={getNewAnimations}
                         /> :
                         <>
                             <Bumper onBumperClick={() => {
@@ -896,7 +942,7 @@ export default function Workspace({
                                 width: minifiedControlsSize.playContainer,
                                 height: minifiedControlsSize.playContainer,
                                 borderRadius: '50%',
-                                border: '1px solid rgba(0, 0, 0, 0.4)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
                                 background: 'rgb(32, 32, 32)',
                                 boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                             }}>
@@ -1035,6 +1081,7 @@ export default function Workspace({
                         <>
                             {Array.from(appState.project.imgs.entries()).map((e) => {
                                 const [key, meta] = e;
+                                if (meta.top < 0 || meta.left < 0) return;
                                 const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const imgData = appState.canvasImgs.get(key);
                                 if (imgData) {
@@ -1057,6 +1104,7 @@ export default function Workspace({
                             })}
                             {Array.from(appState.project.svgs.entries()).map((e) => {
                                 const [key, meta] = e;
+                                if (meta.top < 0 || meta.left < 0) return;
                                 const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const svgData = appState.canvasSvgs.get(key);
                                 if (svgData) {
@@ -1103,11 +1151,15 @@ export default function Workspace({
                             onNextPage={async () => {
                                 switch (mediaBrowserFilter) {
                                     case "img": {
-                                        await handleImgPageRequest();
+                                        if (appState.project.browse_public_imgs) {
+                                            await handleImgPageRequest();
+                                        }
                                         break;
                                     }
                                     case "svg": {
-                                        await handleSvgPageRequest();
+                                        if (appState.project.browse_public_svgs) {
+                                            await handleSvgPageRequest();
+                                        }
                                         break;
                                     }
                                 }
@@ -1144,7 +1196,7 @@ export default function Workspace({
                                 borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
                                 position: 'relative'
                             }}>
-                            {appState.browserElement && (() => {
+                            {appState.browserElement ? (() => {
                                 switch (appState.browserElement.type) {
                                     case "svg": {
                                         return (
@@ -1177,7 +1229,7 @@ export default function Workspace({
                                         </>
                                     }
                                 }
-                            })()}
+                            })() : <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />}
                         </div>
                     </div>
                     <Statusbar action={statusAction} body={statusBody} />

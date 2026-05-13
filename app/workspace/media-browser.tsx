@@ -1,13 +1,15 @@
-import { useContext, useRef, useState, DragEvent, useCallback } from "react";
+import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, SvgRepo, timerArrowDown } from "../svg-repo";
-import { createImg, createSvg, getImg, getSvg } from "./workspace.server";
+import { createImg, createSvg } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectResult } from "../projects/projects.client";
+import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
+import { v4 as getUuidV4 } from "uuid";
+import { BrowserContextMenu } from "./context-menu";
 
 export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
@@ -72,58 +74,256 @@ export default function MediaBrowser({
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
-    const [mediaFilterSize] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                container: 50,
-                letterSpacing: "3px",
-                fontSize: 14
+                mediaFilterSize: {
+                    container: 50,
+                    letterSpacing: "3px",
+                    fontSize: 14
+                },
+                mediaItemSize: {
+                    container: 300,
+                    svg: 100,
+                    padding: '0px 0px 20px 0px',
+                    marginTop: 28
+                },
+                mediaSortSize: {
+                    container: 36,
+                    svg: 20,
+                },
+                frameScales: {
+                    high: 1.6,
+                    midhigh: 1.1,
+                    midlow: 0.6
+                },
+                switch: {
+                    container: {
+                        left: 10,
+                        gap: 10,
+                        fontSize: 13,
+                        letterSpacing: 1,
+                    },
+                    track: {
+                        width: 30,
+                        height: 16,
+                        borderRadius: 20,
+                    },
+                    button: {
+                        width: 10,
+                        height: 10,
+                    }
+                },
+                uploadingLight: {
+                    container: {
+                        top: 10,
+                        left: 0
+                    },
+                    dot: {
+                        top: 0,
+                        right: 6,
+                        width: 10,
+                        height: 10,
+                    }
+                }
             }
             case "midhigh": return {
-                container: 40,
-                letterSpacing: "2px",
-                fontSize: 11
-            }
-            case "low":
-            case "midlow": return {
-                container: 38,
-                letterSpacing: "2px",
-                fontSize: 11
-            }
-        }
-    });
-    const [mediaItemSize] = useState(() => {
-        switch (appState.resolution.type) {
-            case "high": return {
-                container: 300,
-                svg: 100,
-                padding: '0px 0px 20px 0px',
-            }
-            case "midhigh": return {
-                container: 230,
-                svg: 72,
-                padding: '0px 0px 14px 0px',
+                mediaFilterSize: {
+                    container: 40,
+                    letterSpacing: "2px",
+                    fontSize: 11
+                },
+                mediaItemSize: {
+                    container: 230,
+                    svg: 72,
+                    padding: '0px 0px 14px 0px',
+                    marginTop: 28
+                },
+                mediaSortSize: {
+                    container: 25,
+                    svg: 14,
+                },
+                frameScales: {
+                    high: 1.12,
+                    midhigh: 0.77,
+                    midlow: 0.42
+                },
+                switch: {
+                    container: {
+                        left: 10,
+                        gap: 10,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                    },
+                    track: {
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                    },
+                    button: {
+                        width: 8,
+                        height: 8,
+                    }
+                },
+                uploadingLight: {
+                    container: {
+                        top: 10,
+                        left: 0
+                    },
+                    dot: {
+                        top: 0,
+                        right: 8,
+                        width: 10,
+                        height: 10,
+                    }
+                }
             }
             case "midlow":
             case "low": return {
-                container: 150,
-                svg: 50,
-                padding: '0px 0px 10px 0px',
+                mediaFilterSize: {
+                    container: 38,
+                    letterSpacing: "2px",
+                    fontSize: 11
+                },
+                mediaItemSize: {
+                    container: 180,
+                    svg: 50,
+                    padding: '0px 0px 10px 0px',
+                    marginTop: 28
+                },
+                mediaSortSize: {
+                    container: 18,
+                    svg: 10,
+                },
+                frameScales: {
+                    high: 0.8,
+                    midhigh: 0.55,
+                    midlow: 0.3
+                },
+                switch: {
+                    container: {
+                        left: 10,
+                        gap: 10,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                    },
+                    track: {
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                    },
+                    button: {
+                        width: 8,
+                        height: 8,
+                    }
+                },
+                uploadingLight: {
+                    container: {
+                        top: 10,
+                        left: 0
+                    },
+                    dot: {
+                        top: 0,
+                        right: 8,
+                        width: 10,
+                        height: 10,
+                    }
+                }
             }
         }
     });
-    const [mediaSortSize] = useState({
-        container: Math.round(36 * appState.resolution.factor),
-        svg: Math.round(20 * appState.resolution.factor),
-    });
-    const [frameScales] = useState(() => {
-        return {
-            high: 1.6 * appState.resolution.factor,
-            midhigh: 1.1 * appState.resolution.factor,
-            midlow: 0.6 * appState.resolution.factor
-        }
-    })
+
     const lastScrollTop = useRef<number>(0);
+
+    const handleImgDrop = useCallback(async (imgMediaResult: LaurusImgResult) => {
+        const newKey = getUuidV4();
+        const projectImg: LaurusProjectImg = {
+            width: imgMediaResult.width,
+            height: imgMediaResult.height,
+            media_key: imgMediaResult.media_key,
+            showContextMenu: false,
+            img_media_id: imgMediaResult.img_media_id,
+            top: -1,
+            left: -1,
+            order: 0,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+            scale_x: 1,
+            scale_y: 1,
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+        };
+        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
+        newImgs.set(newKey, projectImg);
+        const rollback: LaurusProjectResult = { ...appState.project }
+        const newProject: LaurusProjectResult = { ...rollback, imgs: newImgs }
+        if (appState.project.project_id) {
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...imgMediaResult } } });
+            }
+            else {
+                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+            }
+        }
+        else {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...imgMediaResult } } });
+            }
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
+
+    const handleSvgDrop = useCallback(async (imgMediaResult: LaurusSvgResult) => {
+        const newKey = getUuidV4();
+        const projectSvg: LaurusProjectSvg = {
+            width: imgMediaResult.width,
+            height: imgMediaResult.height,
+            media_key: imgMediaResult.media_key,
+            showContextMenu: false,
+            svg_media_id: imgMediaResult.svg_media_id,
+            top: -1,
+            left: -1,
+            order: 0,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+            scale_x: 1,
+            scale_y: 1,
+            viewbox: imgMediaResult.viewbox,
+            stroke: imgMediaResult.stroke,
+            stroke_width: imgMediaResult.stroke_width,
+            fill: imgMediaResult.fill,
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+        };
+        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+        newSvgs.set(newKey, projectSvg);
+        const rollback: LaurusProjectResult = { ...appState.project }
+        const newProject: LaurusProjectResult = { ...rollback, svgs: newSvgs }
+        if (appState.project.project_id) {
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...imgMediaResult } } });
+            }
+            else {
+                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+            }
+        }
+        else {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...imgMediaResult } } });
+            }
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
 
     const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -141,7 +341,7 @@ export default function MediaBrowser({
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const svgString = e.target?.result;
-                    if (typeof svgString !== "string" || !svgString.startsWith("<svg")) return;
+                    if (typeof svgString !== "string") { setUploading(false); return };
                     try {
                         const parser = new DOMParser();
                         const svgDoc = parser.parseFromString(svgString, "image/svg+xml");
@@ -157,9 +357,12 @@ export default function MediaBrowser({
                         }
                         const pngDataUrl = await rasterizeSvg(svgString, width, height);
                         const svgFile: File = dataUrlToFile(pngDataUrl, `${file.name.split('.')[0]}.png`);
-                        const response = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
-                        if (response) {
-                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: response, first: true });
+                        const created = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
+                        if (created) {
+                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: created, first: true });
+                            if (appState.browserSvgs.findIndex(v => v.svg_media_id == created.svg_media_id) < 0) {
+                                await handleSvgDrop(created);
+                            }
                             if (++actualSvgUploads == expectedSvgUploads) {
                                 setUploading(false);
                             }
@@ -172,9 +375,12 @@ export default function MediaBrowser({
                 reader.readAsText(file);
             } else if (file.type.startsWith("image/")) {
                 try {
-                    const response = await createImg(appState.apiOrigin, file);
-                    if (response) {
-                        dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...response }, first: true });
+                    const created = await createImg(appState.apiOrigin, file);
+                    if (created) {
+                        dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...created }, first: true });
+                        if (appState.browserImgs.findIndex(v => v.img_media_id == created.img_media_id) < 0) {
+                            await handleImgDrop(created);
+                        }
                         if (++actualImgUploads == expectedImgUploads) {
                             setUploading(false);
                         }
@@ -186,7 +392,7 @@ export default function MediaBrowser({
                 }
             }
         }
-    }, [appState.apiOrigin, dispatch]);
+    }, [appState.apiOrigin, appState.browserImgs, appState.browserSvgs, dispatch, handleImgDrop, handleSvgDrop]);
 
     function sortByTimestamp(
         a: LaurusImgResult | LaurusSvgResult | LaurusCropSvg,
@@ -216,124 +422,283 @@ export default function MediaBrowser({
         dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
     }, [dispatch]);
 
+    const onImgDiscoverToggle = useCallback(async () => {
+        let newProjectIdAck = "";
+        const newBrowsePublicImgs = !appState.project.browse_public_imgs;
+        const newProject: LaurusProjectResult = { ...appState.project, browse_public_imgs: newBrowsePublicImgs }
+        if (!appState.project.project_id) {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                newProjectIdAck = projectCreated.project_id;
+                const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+            }
+        }
+        else {
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                newProjectIdAck = newProject.project_id;
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            }
+        }
+        if (!newBrowsePublicImgs && newProjectIdAck) {
+            const newBrowserImgs = appState.browserImgs
+                .filter(b => Array.from(newProject.imgs.values())
+                    .flatMap(v => v.img_media_id)
+                    .includes(b.img_media_id));
+            dispatch({ type: WorkspaceActionType.SetBrowserImgs, value: newBrowserImgs });
+            dispatch({
+                type: WorkspaceActionType.SetBrowserElement,
+                value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+            });
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.browserImgs, appState.project, dispatch]);
+
+    const onSvgDiscoverToggle = useCallback(async () => {
+        let newProjectIdAck = "";
+        const newBrowsePublicSvgs = !appState.project.browse_public_svgs;
+        const newProject: LaurusProjectResult = { ...appState.project, browse_public_svgs: newBrowsePublicSvgs }
+        if (!appState.project.project_id) {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                newProjectIdAck = projectCreated.project_id;
+                const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+            }
+        }
+        else {
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                newProjectIdAck = newProject.project_id;
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            }
+        }
+        if (!newBrowsePublicSvgs && newProjectIdAck) {
+            const newBrowserSvgs = appState.browserSvgs
+                .filter(b => Array.from(newProject.svgs.values())
+                    .flatMap(v => v.svg_media_id)
+                    .includes(b.svg_media_id));
+            dispatch({ type: WorkspaceActionType.SetBrowserSvgs, value: newBrowserSvgs });
+            dispatch({
+                type: WorkspaceActionType.SetBrowserElement,
+                value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+            });
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.browserSvgs, appState.project, dispatch]);
+
+    const browserElementMediaId = useMemo(() => {
+        if (!appState.browserElement) return "";
+        switch (appState.browserElement.type) {
+            case "img": {
+                return appState.browserElement.value.img_media_id;
+            }
+            case "svg": {
+                return appState.browserElement.value.svg_media_id;
+            }
+        }
+    }, [appState.browserElement]);
+
+    const [showContextMenu, setShowContextMenu] = useState(false);
+
+    const calculateSquareDisplay = useCallback((width: number, height: number) => {
+        const containerSize = dynamicSizes.mediaItemSize.container;
+        const aspectRatio = width / height;
+        const isSquareish = aspectRatio >= 0.9 && aspectRatio <= 1.1;
+        let displayWidth, displayHeight;
+        if (isSquareish) {
+            displayWidth = containerSize;
+            displayHeight = containerSize;
+        } else {
+            const targetSize = containerSize * 1.33;
+            const scale = Math.max(targetSize / width, targetSize / height);
+            displayWidth = Math.round(width * scale);
+            displayHeight = Math.round(height * scale);
+        }
+        return { isSquareish, displayWidth, displayHeight }
+    }, [dynamicSizes.mediaItemSize.container])
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setShowContextMenu(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
     return (<>
-        <div
+        <div style={{ display: 'grid', gridTemplateRows: 'min-content auto min-content', height: '100%' }}
             onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
             }}
-            onDrop={handleDrop}
-            style={{
-                display: 'grid',
-                gridTemplateRows: 'min-content auto min-content',
-                height: '100%',
-            }}>
+            onDrop={handleDrop} >
             <div style={{
                 gridRow: 1,
                 display: 'flex',
                 alignItems: 'center',
-                height: mediaFilterSize.container,
+                height: dynamicSizes.mediaFilterSize.container,
                 borderBottom: '1px solid rgb(33, 33, 33)',
                 background: "rgb(15, 15, 15)",
             }}>
                 <MediaBrowserTab
                     label={'img'}
-                    letterSpacing={mediaFilterSize.letterSpacing}
-                    fontSize={mediaFilterSize.fontSize}
+                    letterSpacing={dynamicSizes.mediaFilterSize.letterSpacing}
+                    fontSize={dynamicSizes.mediaFilterSize.fontSize}
                     onClick={() => onFilterSelect('img')}
                     selected={(filter == 'img')} />
                 <MediaBrowserTab
                     label={'svg'}
-                    letterSpacing={mediaFilterSize.letterSpacing}
-                    fontSize={mediaFilterSize.fontSize}
+                    letterSpacing={dynamicSizes.mediaFilterSize.letterSpacing}
+                    fontSize={dynamicSizes.mediaFilterSize.fontSize}
                     onClick={() => onFilterSelect('svg')}
                     selected={(filter == 'svg')} />
                 <MediaBrowserTab
                     label={'frame'}
-                    letterSpacing={mediaFilterSize.letterSpacing}
-                    fontSize={mediaFilterSize.fontSize}
+                    letterSpacing={dynamicSizes.mediaFilterSize.letterSpacing}
+                    fontSize={dynamicSizes.mediaFilterSize.fontSize}
                     onClick={() => onFilterSelect('frame')}
                     selected={(filter == 'frame')} />
             </div>
-            <div
-                className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
+            <div className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-23-2' : 'noisy-background-23-2-low-res'}`]}
                 onScroll={handleScroll}
                 style={{
                     gridRow: 2,
                     position: 'relative',
                     overflowY: 'auto',
-                }}
-            >
+                }} >
                 {/* content area */}
-                <div
-                    style={{
+                <div style={{
+                    position: 'absolute',
+                    display: 'grid',
+                    alignContent: 'start',
+                    gridTemplateColumns: 'min-content auto',
+                    width: '100%',
+                    color: 'rgba(220, 220, 220, 1)',
+                    height: '100%',
+                    paddingTop: Math.round(10 * appState.resolution.factor),
+                    ...dynamicSizes.uploadingLight.container
+                }} >
+                    <div style={{
                         position: 'absolute',
-                        top: 10,
-                        left: 0,
-                        display: 'grid',
-                        alignContent: 'start',
-                        gridTemplateColumns: 'min-content auto',
-                        width: '100%',
-                        color: 'rgba(220, 220, 220, 1)',
-                        height: '100%',
-                        paddingTop: Math.round(10 * appState.resolution.factor),
-                    }} >
-                    <div
-                        style={{
+                        borderRadius: '50%',
+                        border: uploading ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
+                        background: uploading ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
+                        boxShadow: uploading ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none',
+                        ...dynamicSizes.uploadingLight.dot
+                    }} />
+                    {/* switches */}
+                    {filter == 'img' && <>
+                        <div style={{
                             position: 'absolute',
                             top: 0,
-                            right: 6,
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            border: uploading ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
-                            background: uploading ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
-                            boxShadow: uploading ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
-                        }} />
+                            display: 'flex',
+                            alignItems: 'center',
+                            ...dynamicSizes.switch.container
+                        }}>
+                            <span style={{ opacity: appState.project.browse_public_imgs ? 1 : 1 }}>
+                                <i>{'discover images'}</i>
+                            </span>
+                            <div onClick={onImgDiscoverToggle}
+                                style={{
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    background: appState.project.browse_public_imgs ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '2px',
+                                    border: appState.project.browse_public_imgs ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: appState.project.browse_public_imgs ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                    ...dynamicSizes.switch.track
+                                }}>
+                                <div style={{
+                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
+                                    borderRadius: '50%',
+                                    transition: 'transform 0.2s',
+                                    transform: appState.project.browse_public_imgs ? 'translateX(15px)' : 'translateX(0px)',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                    ...dynamicSizes.switch.button
+                                }} />
+                            </div>
+                        </div>
+                    </>}
+                    {filter == 'svg' && <>
+                        <div style={{
+                            position: 'absolute',
+                            top: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            ...dynamicSizes.switch.container
+                        }}>
+                            <span style={{ opacity: appState.project.browse_public_svgs ? 1 : 1 }}>
+                                <i>{'discover svgs'}</i>
+                            </span>
+                            <div onClick={onSvgDiscoverToggle}
+                                style={{
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    background: appState.project.browse_public_svgs ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: '2px',
+                                    border: appState.project.browse_public_svgs ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: appState.project.browse_public_svgs ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                    ...dynamicSizes.switch.track
+                                }}>
+                                <div style={{
+                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
+                                    borderRadius: '50%',
+                                    transition: 'transform 0.2s',
+                                    transform: appState.project.browse_public_svgs ? 'translateX(15px)' : 'translateX(0px)',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                    ...dynamicSizes.switch.button
+                                }} />
+                            </div>
+                        </div>
+                    </>}
                     {filter == 'frame' && <>
                         <div style={{
                             position: 'absolute',
                             top: 0,
-                            left: 10,
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 12,
-                            fontSize: 12,
-                            letterSpacing: 1,
+                            ...dynamicSizes.switch.container
                         }}>
                             <span style={{ opacity: appState.lightFrameBackground ? 1 : 1 }}>
                                 <i>{'light background'}</i>
                             </span>
-                            <div
-                                onClick={() => {
-                                    dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
-                                }}
+                            <div onClick={() => {
+                                dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
+                            }}
                                 style={{
                                     cursor: 'pointer',
                                     position: 'relative',
-                                    width: 30,
-                                    height: 16,
                                     background: appState.lightFrameBackground ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    borderRadius: 20,
                                     transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
                                     display: 'flex',
                                     alignItems: 'center',
                                     padding: '2px',
                                     border: appState.lightFrameBackground ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
                                     boxShadow: appState.lightFrameBackground ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                    ...dynamicSizes.switch.track
                                 }}>
                                 <div style={{
-                                    width: 10,
-                                    height: 10,
                                     background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
                                     borderRadius: '50%',
                                     transition: 'transform 0.2s',
                                     transform: appState.lightFrameBackground ? 'translateX(15px)' : 'translateX(0px)',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                    ...dynamicSizes.switch.button
                                 }} />
                             </div>
                         </div>
                     </>}
+                    {/* media thumbnails */}
                     {filter == 'img' && appState.browserImgs
                         .sort((a, b) => {
                             switch (sortStrategy) {
@@ -348,40 +713,71 @@ export default function MediaBrowser({
                                 }
                             }
                         })
-                        .map((img) => {
+                        .map((img, i) => {
+                            const display = calculateSquareDisplay(img.width, img.height);
                             return (
-                                <div
-                                    key={img.media_key}
+                                <div key={img.img_media_id}
                                     style={{
                                         gridColumn: 2,
-                                        padding: mediaItemSize.padding,
-                                        display: 'grid',
-                                        alignItems: 'start',
+                                        padding: dynamicSizes.mediaItemSize.padding,
+                                        display: 'flex',
                                         justifyContent: 'center',
+                                        marginTop: i == 0 ? dynamicSizes.mediaItemSize.marginTop : 0,
                                     }}>
-                                    <div
-                                        onClick={() => {
-                                            onMediaClick({ value: { ...img }, type: 'img' });
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
-                                        style={{
-                                            width: mediaItemSize.container,
-                                            height: mediaItemSize.container,
-                                            position: 'relative',
-                                        }}>
-                                        {img.src && <NextImage
-                                            draggable={false}
-                                            alt={img.media_key}
-                                            src={img.src}
-                                            fill
-                                            style={{
-                                                objectFit: 'cover',
-                                                border: 'none',
-                                                boxShadow: "5px 5px 12px rgba(0, 0, 0, 0.5)",
-                                                borderRadius: 2,
-                                            }} />}
-                                    </div>
+                                    <div style={{
+                                        width: dynamicSizes.mediaItemSize.container,
+                                        height: dynamicSizes.mediaItemSize.container,
+                                        position: 'relative',
+                                    }} >
+                                        {img.src &&
+                                            <ScrollableImageContainer
+                                                squarish={display.isSquareish}
+                                                displayWidth={display.displayWidth}
+                                                displayHeight={display.displayHeight}>
+                                                <NextImage
+                                                    onClick={(e) => {
+                                                        if (e.metaKey) {
+                                                            let newShowContextMenu = false;
+                                                            const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != img.img_media_id);
+                                                            if (thisIsNotSelected && showContextMenu) {
+                                                                newShowContextMenu = true;
+                                                            }
+                                                            else {
+                                                                newShowContextMenu = !showContextMenu;
+                                                            }
+                                                            setShowContextMenu(newShowContextMenu);
+                                                            onMediaClick({ value: { ...img }, type: 'img' });
+                                                        }
+                                                        else {
+                                                            if (showContextMenu) setShowContextMenu(false);
+                                                            onMediaClick({ value: { ...img }, type: 'img' });
+                                                        }
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                                                    draggable={false}
+                                                    alt={img.media_key}
+                                                    src={img.src}
+                                                    width={display.displayWidth}
+                                                    height={display.displayHeight}
+                                                    style={{
+                                                        display: 'block',
+                                                        objectFit: display.isSquareish ? 'cover' : 'unset',
+                                                        borderRadius: 10,
+                                                    }} />
+                                            </ScrollableImageContainer>}
+                                        {(showContextMenu && browserElementMediaId == img.img_media_id) &&
+                                            <BrowserContextMenu
+                                                media={{ type: 'img', key: appState.project.imgs.entries().find(e => e[1].img_media_id == img.img_media_id)?.[0] ?? "", data: img }}
+                                                position={{
+                                                    position: 'absolute',
+                                                    right: 0,
+                                                    bottom: 0,
+                                                    top: 0,
+                                                    left: 0,
+                                                }} />
+                                        }
+                                    </ div>
                                 </div>)
                         })}
                     {filter == 'svg' && appState.browserSvgs
@@ -398,7 +794,7 @@ export default function MediaBrowser({
                                 }
                             }
                         })
-                        .map((svg) => {
+                        .map((svg, i) => {
                             const decodedString = decodeURIComponent(
                                 atob(svg.markup)
                                     .split('')
@@ -406,37 +802,72 @@ export default function MediaBrowser({
                                     .join('')
                             );
                             return (
-                                <div
-                                    key={svg.media_key}
+                                <div key={svg.svg_media_id}
                                     style={{
                                         gridColumn: 2,
-                                        padding: mediaItemSize.padding,
+                                        padding: dynamicSizes.mediaItemSize.padding,
                                         display: 'grid',
                                         alignItems: 'start',
                                         justifyContent: 'center',
+                                        marginTop: i == 0 ? dynamicSizes.mediaItemSize.marginTop : 0,
                                     }}>
-                                    <div
-                                        onClick={() => {
-                                            onMediaClick({ value: { ...svg }, type: 'svg' });
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
-                                        style={{
-                                            width: mediaItemSize.container,
-                                            height: mediaItemSize.container,
-                                            position: 'relative',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                        }}>
-                                        {decodedString && <svg
-                                            version="1.1"
-                                            width={mediaItemSize.svg}
-                                            height={mediaItemSize.svg}
-                                            fill={svg.fill}
-                                            stroke={svg.stroke}
-                                            strokeWidth={svg.stroke_width}
-                                            viewBox={svg.viewbox}
-                                            dangerouslySetInnerHTML={{ __html: decodedString }} />}
+                                    <div style={{
+                                        width: dynamicSizes.mediaItemSize.container,
+                                        height: dynamicSizes.mediaItemSize.container,
+                                        position: 'relative',
+                                    }} >
+                                        <div className={styles['transparent-checkerboard-background']}
+                                            onClick={(e) => {
+                                                if (e.metaKey) {
+                                                    let newShowContextMenu = false;
+                                                    const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != svg.svg_media_id);
+                                                    if (thisIsNotSelected && showContextMenu) {
+                                                        newShowContextMenu = true;
+                                                    }
+                                                    else {
+                                                        newShowContextMenu = !showContextMenu;
+                                                    }
+                                                    setShowContextMenu(newShowContextMenu);
+                                                    onMediaClick({ value: { ...svg }, type: 'svg' });
+                                                }
+                                                else {
+                                                    if (showContextMenu) setShowContextMenu(false);
+                                                    onMediaClick({ value: { ...svg }, type: 'svg' });
+                                                }
+                                            }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
+                                            style={{
+                                                width: dynamicSizes.mediaItemSize.container,
+                                                height: dynamicSizes.mediaItemSize.container,
+                                                position: 'relative',
+                                                display: 'grid',
+                                                placeContent: 'center',
+                                                borderRadius: 10,
+                                                boxShadow: '5px 5px 12px rgba(11, 11, 11, 0.6)',
+                                                border: '1px solid rgba(255,255,255,0.05)'
+                                            }}>
+                                            {decodedString && <svg
+                                                version="1.1"
+                                                width={dynamicSizes.mediaItemSize.svg}
+                                                height={dynamicSizes.mediaItemSize.svg}
+                                                fill={svg.fill}
+                                                stroke={svg.stroke}
+                                                strokeWidth={svg.stroke_width}
+                                                viewBox={svg.viewbox}
+                                                dangerouslySetInnerHTML={{ __html: decodedString }} />}
+                                        </div>
+                                        {(showContextMenu && browserElementMediaId == svg.svg_media_id) &&
+                                            <BrowserContextMenu
+                                                media={{ type: 'svg', key: appState.project.svgs.entries().find(e => e[1].svg_media_id == svg.svg_media_id)?.[0] ?? "", data: svg }}
+                                                position={{
+                                                    position: 'absolute',
+                                                    right: 0,
+                                                    bottom: 0,
+                                                    top: 0,
+                                                    left: 0,
+                                                }} />
+                                        }
                                     </div>
                                 </div>
                             )
@@ -463,45 +894,44 @@ export default function MediaBrowser({
                                     .join('')
                             );
                             return (
-                                <div
-                                    key={frameSvg.svg.media_key}
+                                <div key={frameSvg.svg.media_key}
                                     style={{
                                         gridColumn: 2,
-                                        padding: mediaItemSize.padding,
+                                        padding: dynamicSizes.mediaItemSize.padding,
                                         display: 'grid',
                                         alignItems: 'start',
                                         justifyContent: 'center',
-                                        marginTop: i == 0 ? 28 : 0,
+                                        marginTop: i == 0 ? dynamicSizes.mediaItemSize.marginTop : 0,
                                     }}>
                                     <FrameSvg
-                                        scale={frameScales.high}
+                                        scale={dynamicSizes.frameScales.high}
                                         footer="3x"
                                         crop={frameSvg}
                                         cropFactor={HIGH_FACTOR}
                                         decodedString={decodedString}
-                                        containerSize={mediaItemSize.container}
-                                        svgSize={mediaItemSize.svg} />
+                                        containerSize={dynamicSizes.mediaItemSize.container}
+                                        svgSize={dynamicSizes.mediaItemSize.svg} />
                                     <div style={{
                                         paddingTop: Math.round(20 * appState.resolution.factor),
                                         paddingBottom: Math.round(20 * appState.resolution.factor),
                                     }}>
                                         <FrameSvg
-                                            scale={frameScales.midhigh}
+                                            scale={dynamicSizes.frameScales.midhigh}
                                             footer="2x"
                                             crop={frameSvg}
                                             cropFactor={MIDHIGH_FACTOR}
                                             decodedString={decodedString}
-                                            containerSize={mediaItemSize.container}
-                                            svgSize={mediaItemSize.svg} />
+                                            containerSize={dynamicSizes.mediaItemSize.container}
+                                            svgSize={dynamicSizes.mediaItemSize.svg} />
                                     </div>
                                     <FrameSvg
-                                        scale={frameScales.midlow}
+                                        scale={dynamicSizes.frameScales.midlow}
                                         footer="1x"
                                         crop={frameSvg}
                                         cropFactor={MIDLOW_FACTOR}
                                         decodedString={decodedString}
-                                        containerSize={mediaItemSize.container}
-                                        svgSize={mediaItemSize.svg} />
+                                        containerSize={dynamicSizes.mediaItemSize.container}
+                                        svgSize={dynamicSizes.mediaItemSize.svg} />
                                 </div>
                             )
                         })}
@@ -512,45 +942,12 @@ export default function MediaBrowser({
                 gridColumn: 1,
                 display: 'flex',
                 alignItems: 'center',
-                height: mediaSortSize.container,
+                height: dynamicSizes.mediaSortSize.container,
                 borderTop: '1px solid rgba(255, 255, 255, 0.05)',
                 background: 'rgba(20,20,20,1)'
             }}>
                 <div
-                    onClick={async () => {
-                        switch (filter) {
-                            case "img": {
-                                const currentImgs = [...appState.browserImgs];
-                                const newImgs: LaurusImgResult[] = [];
-                                for (let i = 0; i < currentImgs.length; i++) {
-                                    const currentImg = currentImgs[i];
-                                    const latestImg = await getImg(appState.apiOrigin, currentImgs[i].img_media_id);
-                                    if (!latestImg) continue;
-                                    newImgs.push({ ...currentImg, order: latestImg.order });
-                                }
-                                dispatch({ type: WorkspaceActionType.UpdateBrowserImgs, value: newImgs })
-                                setSortStrategy('order');
-                                break;
-                            }
-                            case "svg": {
-                                const currentSvgs = [...appState.browserSvgs];
-                                const newSvgs: LaurusSvgResult[] = [];
-                                for (let i = 0; i < currentSvgs.length; i++) {
-                                    const currentSvg = currentSvgs[i];
-                                    const latestSvg = await getSvg(appState.apiOrigin, currentSvgs[i].svg_media_id);
-                                    if (!latestSvg) continue;
-                                    newSvgs.push({ ...currentSvg, order: latestSvg.order });
-                                }
-                                dispatch({ type: WorkspaceActionType.UpdateBrowserSvgs, value: newSvgs })
-                                setSortStrategy('order');
-                                break;
-                            }
-                            case "frame": {
-                                setSortStrategy('order');
-                                break;
-                            }
-                        }
-                    }}
+                    onClick={() => { setSortStrategy('order') }}
                     onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
                     onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     style={{
@@ -564,8 +961,8 @@ export default function MediaBrowser({
                     <SvgRepo
                         svg={bookmarkStacks('rgb(220, 220, 220)')}
                         containerSize={{
-                            width: mediaSortSize.svg,
-                            height: mediaSortSize.svg
+                            width: dynamicSizes.mediaSortSize.svg,
+                            height: dynamicSizes.mediaSortSize.svg
                         }} scale={1} />
                 </div>
                 <div style={{ height: '100%', width: 1, background: 'rgba(255, 255, 255, 0.05)' }} />
@@ -582,14 +979,58 @@ export default function MediaBrowser({
                         border: sortStrategy == 'timestamp' ? '1px solid rgba(255,255,255,0.05)' : 'none'
                     }}>
                     <SvgRepo svg={timerArrowDown('rgb(220, 220, 220)')} containerSize={{
-                        width: mediaSortSize.svg,
-                        height: mediaSortSize.svg
+                        width: dynamicSizes.mediaSortSize.svg,
+                        height: dynamicSizes.mediaSortSize.svg
                     }} scale={1} />
                 </div>
             </div>
         </div>
     </>)
 }
+
+interface ScrollableImageContainer {
+    squarish: boolean,
+    displayWidth: number;
+    displayHeight: number;
+    children: React.ReactNode;
+}
+
+const ScrollableImageContainer = ({
+    squarish,
+    displayWidth,
+    displayHeight,
+    children
+}: ScrollableImageContainer) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (container) {
+            const scrollLeft = (displayWidth - container.clientWidth) / 2;
+            const scrollTop = (displayHeight - container.clientHeight) / 2;
+            container.scrollTo({
+                left: scrollLeft,
+                top: scrollTop,
+                behavior: 'instant',
+            });
+        }
+    }, [displayWidth, displayHeight]);
+
+    return (
+        <div className={styles['transparent-checkerboard-background']}
+            ref={containerRef}
+            style={{
+                width: '100%',
+                height: '100%',
+                overflow: squarish ? 'none' : 'auto',
+                borderRadius: 10,
+                boxShadow: '5px 5px 12px rgba(11, 11, 11, 0.6)',
+            }}
+        >
+            {children}
+        </div>
+    );
+};
 
 interface FrameSvg {
     scale: number,

@@ -9,10 +9,9 @@ import {
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
     LaurusRotate,
-    toKeyframes,
     Bumper
 } from "./workspace.client";
-import { createMove, createRotate, createScale, getFrames } from "./workspace.server";
+import { createMove, createRotate, createScale } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./effect-unit";
@@ -24,11 +23,13 @@ interface TimelineArea {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     onRightPanelClick: () => void,
+    getNewAnimations: (fill: FillMode, firstFrame: boolean) => Promise<Animation[]>,
 }
 export default function TimelineArea({
     svgElementsRef,
     imgElementsRef,
-    onRightPanelClick
+    onRightPanelClick,
+    getNewAnimations
 }: TimelineArea) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
@@ -46,7 +47,7 @@ export default function TimelineArea({
             }
             case "midlow":
             case "low": {
-                return 500;
+                return 580;
             }
         }
     });
@@ -134,55 +135,6 @@ export default function TimelineArea({
     const [rulerParams, setRulerParams] = useState(
         calculateRuler(appState.timelineMaxValue, appState.resolution)
     );
-
-    const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
-        const newAnimations: Animation[] = [];
-        const globalLimit: number = Math.max(...appState.effects
-            .map(e => e.value.end));
-        const options: KeyframeAnimationOptions = {
-            duration: firstFrame ? 2 / appState.fps : globalLimit * 1000,
-            iterations: 1,
-            fill,
-        };
-
-        const imgArray = Array.from(appState.project.imgs.entries());
-        for (let i = 0; i < imgArray.length; i++) {
-            const [key] = imgArray[i];
-            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
-            if (frames) {
-                const keyframes = toKeyframes(firstFrame, frames);
-                const imgRef = imgElementsRef.current?.get(key);
-                if (!imgRef) return [];
-                const animations = imgRef.getAnimations();
-                for (let j = 0; j < animations.length; j++) {
-                    animations[j].cancel();
-                }
-                const keyframeEffect =
-                    new KeyframeEffect(imgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-            }
-        };
-
-        const svgArray = Array.from(appState.project.svgs.entries());
-        for (let i = 0; i < svgArray.length; i++) {
-            const [key] = svgArray[i];
-            const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
-            if (frames) {
-                const keyframes = toKeyframes(firstFrame, frames);
-                const svgRef = svgElementsRef.current?.get(key);
-                if (!svgRef) return [];
-                const animations = svgRef.getAnimations();
-                for (let j = 0; j < animations.length; j++) {
-                    animations[j].cancel();
-                }
-                const keyframeEffect =
-                    new KeyframeEffect(svgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-            }
-        };
-
-        return newAnimations;
-    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
 
     const enableAllControls = useCallback(() => {
         setPlayEnabled(true);

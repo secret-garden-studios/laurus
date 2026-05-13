@@ -574,7 +574,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             frame_rotate_z: 0,
                             frame_rotate_angle: 0,
                             frame_scale_x: 1,
-                            frame_scale_y: 1
+                            frame_scale_y: 1,
+                            browse_public_imgs: false,
+                            browse_public_svgs: false,
                         }
                         const response = await createProject(apiOriginInit, me.accessToken, newProject);
                         if (response) {

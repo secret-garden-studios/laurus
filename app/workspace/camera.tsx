@@ -91,13 +91,14 @@ export default function DraggableCamera({
                         overflow: 'hidden',
                         boxShadow: "0px 0px 30px rgba(0, 0, 0, 0.65)",
                         borderRadius: 3,
-                        outline: appState.lightFrameBackground ? '1px solid rgb(10, 10, 10)' : '1px solid rgba(255,255,255,0.2)',
-                        background: appState.lightFrameBackground ? 'rgb(200, 200, 200)' : 'none'
+                        outline: appState.lightFrameBackground ? '1px solid rgba(0, 0, 0, 0)' : '1px solid rgba(255,255,255,0.2)',
+                        background: appState.lightFrameBackground ? 'rgb(227, 227, 227)' : 'none'
                     }} >
                     {appState.tool.type == 'viewport' &&
                         <>
                             {Array.from(appState.project.imgs.entries()).map((e) => {
                                 const [key, meta] = e;
+                                if (meta.top < 0 || meta.left < 0) return;
                                 const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const imgData = appState.canvasImgs.get(key);
                                 if (imgData) {
@@ -120,6 +121,7 @@ export default function DraggableCamera({
                             })}
                             {Array.from(appState.project.svgs.entries()).map((e) => {
                                 const [key, meta] = e;
+                                if (meta.top < 0 || meta.left < 0) return;
                                 const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const svgData = appState.canvasSvgs.get(key);
                                 if (svgData) {

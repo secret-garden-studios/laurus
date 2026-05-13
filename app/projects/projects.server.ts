@@ -63,6 +63,8 @@ export interface Project_V1_0 {
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
     layers: Map<string, ProjectLayer_V1_0>
+    browse_public_imgs: boolean
+    browse_public_svgs: boolean
 }
 export interface ProjectResult_V1_0 {
     name: string
@@ -84,6 +86,8 @@ export interface ProjectResult_V1_0 {
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
     layers: Map<string, ProjectLayer_V1_0>
+    browse_public_imgs: boolean
+    browse_public_svgs: boolean
     creator: string
     last_editor: string
 }
