@@ -161,9 +161,6 @@ export function toKeyframes(firstFrame: boolean, laurusFrames: LaurusFrame[]): K
     return keyframes;
 }
 
-/**
- * if state is used across a depth of three or more components, it belongs in here.
- */
 export interface WorkspaceState {
     apiOrigin: string | undefined,
     accessToken: string | undefined,
