@@ -935,7 +935,7 @@ export default function Workspace({
                                 setShowTimeline(true);
                             }} borderLeft={'1px solid rgba(255, 255, 255, 0.05)'} borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
                             <div style={{
-                                zIndex: 1,
+                                zIndex: 99,
                                 position: 'fixed',
                                 bottom: minifiedControlsSize.playBottom,
                                 left: minifiedControlsSize.playLeft,
@@ -982,7 +982,7 @@ export default function Workspace({
                                     }} />
                             </div>
                             <div style={{
-                                zIndex: 1,
+                                zIndex: 99,
                                 position: 'fixed',
                                 bottom: minifiedControlsSize.recordingBottom,
                                 right: showMediaBrowser ? minifiedControlsSize.recordingRight1 : minifiedControlsSize.recordingRight2,
