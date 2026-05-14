@@ -132,6 +132,234 @@ interface ContextMenu {
 export default function ContextMenu({ media, transform }: ContextMenu) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const selected = useMemo<boolean>(() => { return (appState.activeElement?.key ?? "") == media.key }, [appState.activeElement?.key, media.key]);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                contextMenu: {
+                    widthFactor: 1,
+                    heightFactor: 1,
+                },
+                gridIsLeftPadding: '0px 8px 0px 0px',
+                gridPadding: '0px 0px 0px 8px',
+                innerClipPath: {
+                    width: 8,
+                    height: 6,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 10,
+                    caretHeight: 24,
+                },
+                clipPath: {
+                    width: 0,
+                    height: 0,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 12,
+                    caretHeight: 30,
+                },
+                clipPathDiv: {
+                    top: 3,
+                    fontSize: 12,
+                    gap: 12,
+                    letterSpacing: 2,
+                },
+                clipPathDivSizeOffset: {
+                    width: 4,
+                    height: 4
+                },
+                clipPathDivIsLeftPadding: "10px 26px 10px 14px",
+                clipPathDivPadding: "10px 14px 10px 20px",
+                clipPathDivIsLeftLeft: 3,
+                clipPathDivLeft: 5,
+                hDiv: {
+                    gap: 4,
+                },
+                h1: {
+                    fontSize: 14
+                },
+                h2: {
+                    fontSize: 12
+                },
+                selected: {
+                    div: {
+                        padding: '0px 6px 12px 6px',
+                        gap: 12,
+                        fontSize: 13,
+                    },
+                    track: {
+                        borderRadius: 20,
+                        width: 34,
+                        height: 18,
+                        padding: '2px',
+                    },
+                    button: {
+                        width: 14,
+                        height: 14,
+                    }
+                },
+                cell: {
+                    padding: '0px 6px',
+                    fontSize: 12
+                },
+                footer: {
+                    div: {
+                        paddingTop: 12
+                    },
+                    svgSize: 20
+                }
+
+            }
+            case "midhigh": return {
+                contextMenu: {
+                    widthFactor: 0.8,
+                    heightFactor: 0.8,
+                },
+                gridIsLeftPadding: '0px 8px 0px 0px',
+                gridPadding: '0px 0px 0px 8px',
+                innerClipPath: {
+                    width: 8,
+                    height: 6,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 10,
+                    caretHeight: 24,
+                },
+                clipPath: {
+                    width: 0,
+                    height: 0,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 12,
+                    caretHeight: 30,
+                },
+                clipPathDiv: {
+                    top: 3,
+                    fontSize: 12,
+                    gap: 6,
+                    letterSpacing: 2,
+                },
+                clipPathDivSizeOffset: {
+                    width: 4,
+                    height: 4
+                },
+                clipPathDivIsLeftPadding: "8px 24px 8px 12px",
+                clipPathDivPadding: "8px 12px 8px 18px",
+                clipPathDivIsLeftLeft: 3,
+                clipPathDivLeft: 5,
+                hDiv: {
+                    gap: 4,
+                },
+                h1: {
+                    fontSize: 12
+                },
+                h2: {
+                    fontSize: 10
+                },
+                selected: {
+                    div: {
+                        padding: '0px 4px 8px 4px',
+                        gap: 12,
+                        fontSize: 11,
+                    },
+                    track: {
+                        borderRadius: 18,
+                        width: 32,
+                        height: 16,
+                        padding: '2px',
+                    },
+                    button: {
+                        width: 12,
+                        height: 12,
+                    }
+                },
+                cell: {
+                    padding: '0px 6px',
+                    fontSize: 10,
+                },
+                footer: {
+                    div: {
+                        paddingTop: 6
+                    },
+                    svgSize: 18
+                }
+            }
+            case "midlow":
+            case "low": return {
+                contextMenu: {
+                    widthFactor: 0.7,
+                    heightFactor: 0.7,
+                },
+                gridIsLeftPadding: '0px 8px 0px 0px',
+                gridPadding: '0px 0px 0px 8px',
+                innerClipPath: {
+                    width: 8,
+                    height: 6,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 10,
+                    caretHeight: 24,
+                },
+                clipPath: {
+                    width: 0,
+                    height: 0,
+                    radius: 8,
+                    triangleRadius: 0,
+                    caretS: 12,
+                    caretHeight: 30,
+                },
+                clipPathDiv: {
+                    top: 3,
+                    fontSize: 12,
+                    gap: 6,
+                    letterSpacing: 2,
+                },
+                clipPathDivSizeOffset: {
+                    width: 4,
+                    height: 4
+                },
+                clipPathDivIsLeftPadding: "8px 24px 8px 12px",
+                clipPathDivPadding: "8px 12px 8px 18px",
+                clipPathDivIsLeftLeft: 3,
+                clipPathDivLeft: 5,
+                hDiv: {
+                    gap: 4,
+                },
+                h1: {
+                    fontSize: 12
+                },
+                h2: {
+                    fontSize: 10
+                },
+                selected: {
+                    div: {
+                        padding: '0px 4px 8px 4px',
+                        gap: 12,
+                        fontSize: 11,
+                    },
+                    track: {
+                        borderRadius: 18,
+                        width: 32,
+                        height: 16,
+                        padding: '2px',
+                    },
+                    button: {
+                        width: 12,
+                        height: 12,
+                    }
+                },
+                cell: {
+                    padding: '0px 6px',
+                    fontSize: 10,
+                },
+                footer: {
+                    div: {
+                        paddingTop: 6
+                    },
+                    svgSize: 18
+                }
+            }
+        }
+    });
 
     const deleteProjectMedia = useCallback(async (
         snapshot: LaurusProjectResult,
@@ -182,17 +410,26 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
         }
     }, [media.meta.contextMenuConfig.position]);
 
+    const contextMenuWidth = useMemo(() => {
+        return (media.meta.contextMenuConfig.width * dynamicSizes.contextMenu.widthFactor);
+    }, [dynamicSizes.contextMenu.widthFactor, media.meta.contextMenuConfig.width]);
+
+    const contextMenuHeight = useMemo(() => {
+        return (media.meta.contextMenuConfig.height * dynamicSizes.contextMenu.heightFactor);
+    }, [dynamicSizes.contextMenu.heightFactor, media.meta.contextMenuConfig.height]);
+
     const dynamicClipPath = useMemo(() => {
         const getPath = (isInner: boolean) => {
-            const w = isInner ? media.meta.contextMenuConfig.width - 8 : media.meta.contextMenuConfig.width;
-            const h = isInner ? media.meta.contextMenuConfig.height - 6 : media.meta.contextMenuConfig.height;
-            // radius
-            const r = isInner ? 8 : 8;
-            // triangle radius
-            const tr = isInner ? 0 : 0;
-            // caret dimensions
-            const cs = isInner ? 10 : 12;
-            const ch = isInner ? 24 : 30;
+            const w = isInner ?
+                contextMenuWidth - dynamicSizes.innerClipPath.width :
+                contextMenuWidth - dynamicSizes.clipPath.width;
+            const h = isInner ?
+                contextMenuHeight - dynamicSizes.innerClipPath.height :
+                contextMenuHeight - dynamicSizes.clipPath.height;
+            const r = isInner ? dynamicSizes.innerClipPath.radius : dynamicSizes.clipPath.radius;
+            const tr = isInner ? dynamicSizes.innerClipPath.triangleRadius : dynamicSizes.clipPath.triangleRadius;
+            const cs = isInner ? dynamicSizes.innerClipPath.caretS : dynamicSizes.clipPath.caretS;
+            const ch = isInner ? dynamicSizes.innerClipPath.caretHeight : dynamicSizes.clipPath.caretHeight;
             if (leftSide) {
                 if (bottomSide) {
                     return `path('M ${r} 0 H ${w - cs - r} A ${r} ${r} 0 0 1 ${w - cs} ${r} V ${h - ch + tr} A ${tr} ${tr} 0 0 1 ${w - cs + tr / 2} ${h - ch + tr / 2} L ${w - tr} ${h - ch / 2 + tr / 2} A ${tr} ${tr} 0 0 1 ${w - tr} ${h - ch / 2 - tr / 2} L ${w - cs + tr / 2} ${h - tr / 2} A ${tr} ${tr} 0 0 1 ${w - cs} ${h} H ${r} A ${r} ${r} 0 0 1 0 ${h - r} V ${r} A ${r} ${r} 0 0 1 ${r} 0 Z')`;
@@ -210,7 +447,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
             outer: getPath(false),
             inner: getPath(true)
         };
-    }, [bottomSide, leftSide, media.meta.contextMenuConfig.width, media.meta.contextMenuConfig.height]);
+    }, [contextMenuWidth, dynamicSizes.innerClipPath.width, dynamicSizes.innerClipPath.height, dynamicSizes.innerClipPath.radius, dynamicSizes.innerClipPath.triangleRadius, dynamicSizes.innerClipPath.caretS, dynamicSizes.innerClipPath.caretHeight, dynamicSizes.clipPath.width, dynamicSizes.clipPath.height, dynamicSizes.clipPath.radius, dynamicSizes.clipPath.triangleRadius, dynamicSizes.clipPath.caretS, dynamicSizes.clipPath.caretHeight, contextMenuHeight, leftSide, bottomSide]);
 
     const swapMedia = useCallback(async () => {
         if (!appState.browserElement) return;
@@ -404,9 +641,9 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
     const cellStyle: CSSProperties = {
         display: 'flex',
         alignItems: 'center',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
-        padding: '0px 6px',
+        borderTop: '1px solid rgba(255,255,255,0.05)',
         height: '100%',
+        ...dynamicSizes.cell
     }
 
     return <>
@@ -418,7 +655,6 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 left: transform?.bounds.deltas.left ?? 0,
                 width: transform?.bounds.width ?? 0,
                 height: transform?.bounds.height ?? 0,
-
             }}>
             <div style={{
                 position: 'absolute',
@@ -426,11 +662,10 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 ...(leftSide && { right: '100%' }),
                 ...(bottomSide && { bottom: '0%' }),
                 display: 'grid',
-                height: (transform?.bounds.height ?? 0) < media.meta.contextMenuConfig.height ? media.meta.contextMenuConfig.height : '100%',
-                gridTemplateColumns: `${media.meta.contextMenuConfig.width}px`,
+                height: (transform?.bounds.height ?? 0) < contextMenuHeight ? contextMenuHeight : '100%',
+                gridTemplateColumns: `${contextMenuWidth}px`,
                 gridTemplateRows: 'auto',
-                padding: leftSide ? '0px 8px 0px 0px' : '0px 0px 0px 8px',
-
+                padding: leftSide ? dynamicSizes.gridIsLeftPadding : dynamicSizes.gridPadding,
             }}>
                 <div style={{
                     gridColumn: 1,
@@ -439,48 +674,43 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 }}>
                     <div style={{
                         position: 'absolute',
-                        width: media.meta.contextMenuConfig.width,
-                        height: media.meta.contextMenuConfig.height,
+                        width: contextMenuWidth,
+                        height: contextMenuHeight,
                         backdropFilter: 'blur(10px)',
                         background: 'rgba(255, 255, 255, 0.06)',
                         clipPath: dynamicClipPath.outer,
                         overflow: 'hidden',
                         display: 'grid',
-                        fontSize: 12,
                     }} />
                     <div style={{
+                        clipPath: dynamicClipPath.inner,
                         position: 'absolute',
-                        left: leftSide ? 3 : 5,
-                        top: 3,
-                        width: media.meta.contextMenuConfig.width - 4,
-                        height: media.meta.contextMenuConfig.height - 4,
                         background: 'rgba(0, 0, 0, 0.37)',
                         display: 'grid',
                         gridTemplateColumns: '1fr',
                         gridTemplateRows: 'min-content auto',
-                        fontSize: 12,
-                        gap: 12,
-                        letterSpacing: '2px',
                         textAlign: 'left',
                         overflowX: 'hidden',
                         whiteSpace: 'nowrap',
                         textWrap: 'nowrap',
-                        padding: leftSide ? '10px 26px 10px 14px' : '10px 14px 10px 20px',
-                        clipPath: dynamicClipPath.inner,
+                        padding: leftSide ? dynamicSizes.clipPathDivIsLeftPadding : dynamicSizes.clipPathDivPadding,
+                        left: leftSide ? dynamicSizes.clipPathDivIsLeftLeft : dynamicSizes.clipPathDivLeft,
+                        width: contextMenuWidth - dynamicSizes.clipPathDivSizeOffset.width,
+                        height: contextMenuHeight - dynamicSizes.clipPathDivSizeOffset.height,
+                        ...dynamicSizes.clipPathDiv
                     }}>
-                        <div style={{ gridRow: 1, gridColumn: 1, display: 'grid', gap: 4 }}>
-                            <div style={{ overflowX: 'auto', fontWeight: 'bold', fontSize: 14 }}>{media.meta.media_key}</div>
-                            <div title='top left corner' style={{ display: 'flex' }}>
+                        <div style={{ gridRow: 1, gridColumn: 1, display: 'grid', ...dynamicSizes.hDiv }}>
+                            <div style={{ overflowX: 'auto', fontWeight: 'bold', ...dynamicSizes.h1 }}>{media.meta.media_key}</div>
+                            <div title='top left corner' style={{ display: 'flex', ...dynamicSizes.h2 }}>
                                 <div>{media.meta.top.toFixed()}{' | '}{media.meta.left.toFixed()}</div>
                             </div>
                         </div>
-                        <div style={{ gridRow: 2, gridColumn: 1, display: 'grid', gap: 0, }}>
+                        <div style={{ gridRow: 2, gridColumn: 1, display: 'grid', }}>
                             <div style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: 12,
                                 height: '100%',
-                                padding: '0px 6px 12px 6px'
+                                ...dynamicSizes.selected.div
                             }}>
                                 <span style={{ opacity: selected ? 1 : 1 }}>
                                     {'selected'}
@@ -488,16 +718,13 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 <div style={{
                                     cursor: 'pointer',
                                     position: 'relative',
-                                    width: 34,
-                                    height: 18,
                                     background: selected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    borderRadius: 20,
                                     transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    padding: '2px',
                                     border: selected ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
                                     boxShadow: selected ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
+                                    ...dynamicSizes.selected.track
                                 }}
                                     onClick={() => {
                                         if (selected) {
@@ -524,13 +751,12 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                         }
                                     }} >
                                     <div style={{
-                                        width: 14,
-                                        height: 14,
                                         background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
                                         borderRadius: '50%',
                                         transition: 'transform 0.2s',
                                         transform: selected ? 'translateX(15px)' : 'translateX(0px)',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                        ...dynamicSizes.selected.button
                                     }} />
                                 </div>
                             </div>
@@ -579,11 +805,17 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 justifyContent: 'end',
                                 borderTop: '1px solid rgba(255,255,255,0.1)',
                                 height: '100%',
-                                paddingTop: 12
+                                ...dynamicSizes.footer.div
                             }}>
                                 {appState.tool.type == 'none' ?
-                                    <div title="active tool" style={{ width: 20, height: 20, display: 'grid', placeContent: 'center' }}>
-                                        <RiToolsLine size={20} color="rgb(62, 62, 62)" />
+                                    <div title="active tool"
+                                        style={{
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            width: dynamicSizes.footer.svgSize,
+                                            height: dynamicSizes.footer.svgSize,
+                                        }}>
+                                        <RiToolsLine size={dynamicSizes.footer.svgSize} color="rgb(62, 62, 62)" />
                                     </div> :
                                     <SvgRepo
                                         title="active tool"
@@ -598,8 +830,8 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                             }
                                         })()}
                                         containerSize={{
-                                            width: 20,
-                                            height: 20
+                                            width: dynamicSizes.footer.svgSize,
+                                            height: dynamicSizes.footer.svgSize
                                         }}
                                         scale={1} />
                                 }
