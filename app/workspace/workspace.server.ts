@@ -400,6 +400,7 @@ export interface ScaleEquation_V1_0 {
     scale_y: number
     loop: LaurusLoopType
     solution: ScaleSolution_V1_0[]
+    limit_factor: number
 }
 export interface Scale_V1_0 {
     /**
@@ -599,6 +600,7 @@ export interface MoveEquation_V1_0 {
     time: number
     loop: LaurusLoopType
     solution: { x: number, y: number }[]
+    limit_factor: number
 }
 export interface Move_V1_0 {
     start: number
@@ -786,6 +788,7 @@ export interface RotateEquation_V1_0 {
     time: number
     loop: LaurusLoopType
     solution: { x: number, y: number, z: number, angle: number }[]
+    limit_factor: number
 }
 export interface Rotate_V1_0 {
     start: number

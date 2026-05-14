@@ -23,7 +23,8 @@ interface TrackpadProps {
     onNewValue: (v: { x: number, y: number }) => void,
     onMove?: (v: { x: number, y: number }) => void
     zIndex?: number,
-    disabled?: boolean
+    disabled?: boolean,
+    title?: string,
 }
 
 export function Trackpad({
@@ -35,7 +36,8 @@ export function Trackpad({
     onNewValue,
     onMove,
     zIndex,
-    disabled }: TrackpadProps) {
+    disabled,
+    title }: TrackpadProps) {
 
     const sensors = useSensors(
         useSensor(PointerSensor)
@@ -77,6 +79,7 @@ export function Trackpad({
                     zIndex={coarsePointer.zIndex}
                     borderColor={coarsePointer.borderColor}
                     disabled={disabled}
+                    title={title}
                 />
             </DndContext>
         </div>
@@ -91,10 +94,11 @@ interface CoarsePointerProps {
     pointerStyle: PointerStyle,
     zIndex?: number,
     borderColor?: string,
-    disabled?: boolean
+    disabled?: boolean,
+    title?: string,
 }
 
-function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled }: CoarsePointerProps) {
+function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title }: CoarsePointerProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
 
     const dndCss = {
@@ -115,7 +119,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     boxShadow: "1px 1px 6px rgba(0,0,0,0.4)",
                 }
             }
-            case PointerStyle.Solid:{
+            case PointerStyle.Solid: {
                 return {
                     background: 'radial-gradient(circle at 30% 30%, rgb(230, 230, 230) 0%, rgb(170, 170, 170) 45%, rgb(115, 115, 115) 100%)',
                     borderRadius: '50%',
@@ -127,6 +131,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
 
     return (<>
         <div
+            title={title}
             ref={setNodeRef}
             {...listeners}
             {...attributes}

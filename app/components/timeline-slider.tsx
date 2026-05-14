@@ -20,6 +20,8 @@ interface TimelineSlider {
     onNewRangeCursor: (newCursor: { x: number, y: number }) => void,
     onRangeMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
+    startTitle?: string,
+    endTitle?: string
 }
 export default function TimelineSlider({
     size,
@@ -33,6 +35,8 @@ export default function TimelineSlider({
     onNewRangeCursor,
     onRangeMove,
     disabled,
+    startTitle,
+    endTitle
 }: TimelineSlider) {
     const { getTrackValue } = useTrackpadState(0, 100);
 
@@ -88,7 +92,8 @@ export default function TimelineSlider({
                             setStartValue(newStartValue);
                             if (onCursorMove) { onCursorMove(c) }
                         }}
-                        disabled={disabled} />
+                        disabled={disabled}
+                        title={startTitle} />
                 </div>
                 <div style={{
                     position: 'absolute',
@@ -117,7 +122,8 @@ export default function TimelineSlider({
                             setRangeValue(newRangeValue);
                             if (onRangeMove) { onRangeMove(c) }
                         }}
-                        disabled={disabled} />
+                        disabled={disabled}
+                        title={endTitle} />
                 </div>
                 {/* Track */}
                 <div
@@ -144,7 +150,7 @@ export default function TimelineSlider({
                             width: `${Math.abs(rangeValue - startValue)}%`,
                             height: '100%',
                             zIndex: 1,
-                            background: 'linear-gradient(1deg, rgb(219, 219, 219), rgb(141, 141, 141))',
+                            background: 'linear-gradient(1deg, rgb(141, 141, 141), rgb(211, 211, 211))',
                             boxShadow: '0 0 8px 1px rgba(255, 255, 255, 0.275)',
                         }}
                     />

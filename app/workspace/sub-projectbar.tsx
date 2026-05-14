@@ -623,22 +623,22 @@ function Rotatebar() {
 
     useEffect(() => {
         (async () => {
-            const scaleInit = getActiveRotate();
+            const rotateInit = getActiveRotate();
             if (xTrackRef.current) {
-                const newScaleCursor = getXCursor(scaleInit[0], xTrackRef.current.clientWidth);
+                const newScaleCursor = getXCursor(rotateInit[0], xTrackRef.current.clientWidth);
                 setXCursor({ x: newScaleCursor, y: 0 });
             }
             if (yTrackRef.current) {
-                const newScaleYCursor = getYCursor(scaleInit[1], yTrackRef.current.clientWidth);
+                const newScaleYCursor = getYCursor(rotateInit[1], yTrackRef.current.clientWidth);
                 setYCursor({ x: newScaleYCursor, y: 0 });
             }
             if (zTrackRef.current) {
-                const newScaleZCursor = getZCursor(scaleInit[2], zTrackRef.current.clientWidth);
+                const newScaleZCursor = getZCursor(rotateInit[2], zTrackRef.current.clientWidth);
                 setZCursor({ x: newScaleZCursor, y: 0 });
             }
             if (angleRef.current) {
-                angleRef.current.value = scaleInit[3].toFixed() + "\xB0";
-                setAngle(scaleInit[3]);
+                angleRef.current.value = rotateInit[3].toFixed() + "\xB0";
+                setAngle(rotateInit[3]);
             }
         })();
     }, [getActiveRotate, getXCursor, getYCursor, getZCursor]);
@@ -726,8 +726,7 @@ function Rotatebar() {
                     }} />
             </div>
             <div style={{}}>
-                <input
-                    id={`${appState.activeElement?.key ?? 'rotatebar'}|rotateangle`}
+                <input id={`${appState.activeElement?.key ?? 'rotatebar'}|rotateangle`}
                     disabled
                     ref={angleRef}
                     type="text"

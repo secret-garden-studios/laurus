@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, refresh, LaurusClientSvg } from "../svg-repo";
+import { WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime } from "./workspace.client";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, refresh, LaurusClientSvg, add2, remove } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import Dial from "../components/dial";
 import { ParameterSliderY } from "../components/parameter-slider";
@@ -15,6 +15,18 @@ interface RotateUnitControls {
     z: number,
     time: number,
     angle: number,
+}
+
+const defaultRotateEquation: LaurusRotateEquation = {
+    input_id: "",
+    time: 0.000001,
+    loop: LaurusLoopType.none,
+    solution: [],
+    angle: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    limit_factor: 1.0
 }
 
 interface RotateUnit {
@@ -41,6 +53,22 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
             angleParam: { padding: Math.round(15 * appState.resolution.factor) }
         };
     });
+    const carouselEntryKey = useMemo(() => {
+        if (carouselIndex < appState.carouselEntries.length) {
+            const carouselEntry = appState.carouselEntries[carouselIndex];
+            switch (carouselEntry.type) {
+                case "svg": {
+                    return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
+                }
+                case "img": {
+                    return appState.project.imgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
+                }
+            }
+        }
+        else {
+            return "";
+        }
+    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
 
     // param 1
     const xTrackRef = useRef<HTMLDivElement | null>(null);
@@ -67,32 +95,21 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
             1);
 
     // param 4
+    const timeUpperLimit = useMemo(() => {
+        return convertTime(appState.timelineMaxValue, appState.timelineUnit, 'sec')
+    }, [appState.timelineMaxValue, appState.timelineUnit]);
     const timeTrackRef = useRef<HTMLDivElement | null>(null);
     const [timeCursor, setTimeCursor] = useState({ x: 0, y: 0 });
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            appState.timelineMaxValue * 0.1);
+            timeUpperLimit * (rotate.math.get(carouselEntryKey)?.limit_factor ?? 1));
+    const timeTitle = useMemo(() => {
+        return rotate.math.has(carouselEntryKey) ? ((rotate.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
+    }, [carouselEntryKey, rotate.math]);
 
     // main param
     const [angle, setAngle] = useState(0);
-
-    const carouselEntryKey = useMemo(() => {
-        if (carouselIndex < appState.carouselEntries.length) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
-            switch (carouselEntry.type) {
-                case "svg": {
-                    return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
-                }
-                case "img": {
-                    return appState.project.imgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
-                }
-            }
-        }
-        else {
-            return "";
-        }
-    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
 
     const [counterClockwise, setCounterClockwise] = useState<boolean>(() => {
         return (rotate.math.get(carouselEntryKey)?.angle ?? 0) < 0 ? true : false
@@ -189,7 +206,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
             }
             updateTrackpads(initControls);
         })();
-    }, [currentControls, carouselEntryKey, rotate.math, updateTrackpads]);
+    }, [currentControls, carouselEntryKey, rotate.math, updateTrackpads, appState.timelineUnit]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         const activeKey = carouselEntryKey;
@@ -202,7 +219,6 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 .get(activeKey);
             if (!activeMath) return [];
             const framesToMap = firstFrame ? [activeMath.solution[0]] : activeMath.solution;
-            console.log({ framesToMap })
             const keyframes: Keyframe[] = framesToMap
                 .map((f, i) => {
                     return i < activeMath.solution.length - 1 ? {
@@ -276,6 +292,18 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         }
     }, [carouselEntryKey, rotate.math]);
 
+    const decrementLimitFactor = useCallback((): number => {
+        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor;
+        if (!currentFactor) return 1;
+        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
+    }, [carouselEntryKey, rotate.math]);
+
+    const incrementLimitFactor = useCallback((): number => {
+        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor;
+        if (!currentFactor) return 1;
+        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
+    }, [carouselEntryKey, rotate.math]);
+
     return (
         <div style={{
             gridTemplateRows: 'auto',
@@ -295,18 +323,19 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                         {/* parameters */}
                         <div style={{ ...dynamicSizes.param }}>
                             <div style={{
-                                border: '1px solid rgb(20, 20, 20)',
+                                border: '1px solid rgba(255, 255, 255, 0.025)',
                                 backgroundColor: "rgba(20, 20, 20, 0.25)",
+                                boxShadow: '4px 4px 12px rgba(11, 11, 11, 0.5)',
+                                borderRadius: 6,
                                 display: 'grid',
                                 gridTemplateColumns: 'auto min-content auto min-content',
                                 gridTemplateRows: 'auto',
+                                height: dynamicSizes.paramButtonContainer.height * 7
                             }}>
                                 <div />
                                 <div style={{
-                                    height: 'min-content',
+                                    height: '100%',
                                     display: 'flex',
-                                    borderLeft: '1px solid rgb(20, 20, 20)',
-                                    borderRight: '1px solid rgb(20, 20, 20)',
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
@@ -314,15 +343,13 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={xTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
+                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
                                         cursor={xCursor}
                                         onNewCursor={(newCursor) => {
                                             setXCursor({ ...newCursor, x: 0 });
-
                                             if (!xTrackRef.current) return;
                                             const newX = getXValue(newCursor.y, xTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, x: newX } });
-
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusRotateResult = { ...rotate };
@@ -330,33 +357,27 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const newEquation: LaurusRotateEquation = activeEquation ?
                                                     { ...activeEquation, x: newX } :
                                                     {
+                                                        ...defaultRotateEquation,
                                                         input_id: activeKey,
-                                                        time: 0.000001,
-                                                        loop: LaurusLoopType.none,
-                                                        solution: [],
-                                                        angle: 0,
                                                         x: newX,
-                                                        y: 0,
-                                                        z: 0,
                                                     };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        disabled={rotate.locked} />
+                                        disabled={rotate.locked}
+                                        title={(rotate.math.get(carouselEntryKey)?.x.toFixed(2))} />
                                     <ParameterSliderY
                                         label={"y"}
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={yTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
+                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
                                         cursor={yCursor}
                                         onNewCursor={(newCursor) => {
                                             setYCursor({ ...newCursor, x: 0 });
-
                                             if (!yTrackRef.current) return;
                                             const newY = getYValue(newCursor.y, yTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, y: newY } });
-
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusRotateResult = { ...rotate };
@@ -364,33 +385,27 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const newEquation: LaurusRotateEquation = activeEquation ?
                                                     { ...activeEquation, y: newY } :
                                                     {
+                                                        ...defaultRotateEquation,
                                                         input_id: activeKey,
-                                                        time: 0.000001,
-                                                        loop: LaurusLoopType.none,
-                                                        solution: [],
-                                                        angle: 0,
-                                                        x: 0,
                                                         y: newY,
-                                                        z: 0,
                                                     };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        disabled={rotate.locked} />
+                                        disabled={rotate.locked}
+                                        title={(rotate.math.get(carouselEntryKey)?.y.toFixed(2))} />
                                     <ParameterSliderY
                                         label={"z"}
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={zTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
+                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
                                         cursor={zCursor}
                                         onNewCursor={(newCursor) => {
                                             setZCursor({ ...newCursor, x: 0 });
-
                                             if (!zTrackRef.current) return;
                                             const newZ = getZValue(newCursor.y, zTrackRef.current.clientHeight, 0);
                                             setCurrentControls(v => { return { ...v, z: newZ } });
-
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusRotateResult = { ...rotate };
@@ -398,33 +413,27 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const newEquation: LaurusRotateEquation = activeEquation ?
                                                     { ...activeEquation, z: newZ } :
                                                     {
+                                                        ...defaultRotateEquation,
                                                         input_id: activeKey,
-                                                        time: 0.000001,
-                                                        loop: LaurusLoopType.none,
-                                                        solution: [],
-                                                        angle: 0,
-                                                        x: 0,
-                                                        y: 0,
                                                         z: newZ,
                                                     };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        disabled={rotate.locked} />
+                                        disabled={rotate.locked}
+                                        title={(rotate.math.get(carouselEntryKey)?.z.toFixed(2))} />
                                     <ParameterSliderY
                                         label={"time"}
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(53, 53, 53), rgb(56, 56, 56))'}
+                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
                                         cursor={timeCursor}
                                         onNewCursor={(newCursor) => {
                                             setTimeCursor({ ...newCursor, x: 0 });
-
                                             if (!timeTrackRef.current) return;
                                             const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight);
                                             setCurrentControls(v => { return { ...v, time: newTime } });
-
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
                                                 const snapshot: LaurusRotateResult = { ...rotate };
@@ -433,29 +442,29 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 const newEquation: LaurusRotateEquation = activeEquation ?
                                                     { ...activeEquation, time: newServerTime } :
                                                     {
+                                                        ...defaultRotateEquation,
                                                         input_id: activeKey,
                                                         time: newServerTime,
-                                                        loop: LaurusLoopType.none,
-                                                        solution: [],
-                                                        angle: 0,
-                                                        x: 0,
-                                                        y: 0,
-                                                        z: 0,
                                                     };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
-                                        disabled={rotate.locked} />
+                                        disabled={rotate.locked}
+                                        title={timeTitle} />
                                 </div>
                                 <div />
                                 {/* toolbar */}
                                 <div style={{
                                     background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
+                                    borderLeft: '1px solid rgba(255, 255, 255, 0.025)',
                                     padding: 0,
                                     display: 'grid',
                                     alignContent: 'start',
+                                    overflowY: 'auto',
+                                    borderTopRightRadius: 6,
+                                    borderBottomRightRadius: 6,
                                 }}>
-                                    <div
+                                    <div title="loop"
                                         onClick={() => {
                                             if (rotate.locked) return;
                                             const activeKey = carouselEntryKey;
@@ -468,14 +477,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                         loop: getNextLoopType(),
                                                     } :
                                                     {
+                                                        ...defaultRotateEquation,
                                                         input_id: activeKey,
-                                                        time: 0.000001,
                                                         loop: getNextLoopType(),
-                                                        solution: [],
-                                                        angle: 0,
-                                                        x: 0,
-                                                        y: 0,
-                                                        z: 0,
                                                     };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
@@ -485,14 +489,16 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             display: 'grid',
                                             placeContent: 'center',
                                             background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                                            borderTopRightRadius: 6,
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="loop"
                                             svg={loopSvg[1]}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
-                                    <div
+                                    <div title="rotate counter-clockwise"
                                         onClick={() => {
                                             const newCounterClockwise: boolean = !counterClockwise;
                                             const activeKey = carouselEntryKey;
@@ -509,14 +515,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             }
                                             else {
                                                 const newEquation: LaurusRotateEquation = {
+                                                    ...defaultRotateEquation,
                                                     input_id: activeKey,
-                                                    time: 0.000001,
-                                                    loop: LaurusLoopType.none,
-                                                    solution: [],
-                                                    angle: 0,
-                                                    x: 0,
-                                                    y: 0,
-                                                    z: 0,
                                                 };
                                                 saveNewEquation(snapshot, newEquation);
                                             }
@@ -530,11 +530,12 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="rotate counter-clockwise"
                                             svg={rotate.math.has(carouselEntryKey) ? updateCounterClockwise() : updateCounterClockwise("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
-                                    <div
+                                    <div title="rewind"
                                         onClick={async () => {
                                             const newAnimations = await getPreviewAnimations(true);
                                             Promise.all(newAnimations.map(animation => animation.finished))
@@ -558,11 +559,12 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="rewind"
                                             svg={rotate.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
-                                    <div
+                                    <div title="play"
                                         onClick={async () => {
                                             const newAnimations = await getPreviewAnimations(false);
                                             Promise.all(newAnimations.map(animation => animation.finished))
@@ -587,11 +589,74 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="play"
                                             svg={rotate.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={1} />
                                     </div>
-                                    <div
+                                    <div title="increase limits"
+                                        onClick={() => {
+                                            if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == 1)) return;
+                                            const activeKey = carouselEntryKey;
+                                            if (activeKey) {
+                                                const snapshot: LaurusRotateResult = { ...rotate };
+                                                const activeEquation = snapshot.math.get(activeKey);
+                                                const newEquation = activeEquation ?
+                                                    {
+                                                        ...activeEquation,
+                                                        limit_factor: incrementLimitFactor(),
+                                                    } :
+                                                    {
+                                                        ...defaultRotateEquation,
+                                                        input_id: activeKey,
+                                                    };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                        }}
+                                        style={{
+                                            cursor: rotate.math.has(carouselEntryKey) ? 'pointer' : '',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            ...dynamicSizes.paramButtonContainer,
+                                        }}>
+                                        <SvgRepo
+                                            title="increase limits"
+                                            svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
+                                            scale={0.88} />
+                                    </div>
+                                    <div title="decrease limits"
+                                        onClick={() => {
+                                            if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
+                                            const activeKey = carouselEntryKey;
+                                            if (activeKey) {
+                                                const snapshot: LaurusRotateResult = { ...rotate };
+                                                const activeEquation = snapshot.math.get(activeKey);
+                                                const newEquation = activeEquation ?
+                                                    {
+                                                        ...activeEquation,
+                                                        limit_factor: decrementLimitFactor(),
+                                                    } :
+                                                    {
+                                                        ...defaultRotateEquation,
+                                                        input_id: activeKey,
+                                                    };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                        }}
+                                        style={{
+                                            cursor: rotate.math.has(carouselEntryKey) ? 'pointer' : '',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            ...dynamicSizes.paramButtonContainer,
+                                        }}>
+                                        <SvgRepo
+                                            title="decrease limits"
+                                            svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
+                                            scale={0.88} />
+                                    </div>
+                                    <div title="copy"
                                         onClick={() => {
                                             if (!zTrackRef.current) return;
                                             let clipboardData: RotateUnitControls = { ...currentControls };
@@ -602,8 +667,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const currentEq: LaurusRotateEquation = {
                                                 ...clipboardData,
                                                 input_id: "clipboard",
-                                                loop: LaurusLoopType.none,
-                                                solution: []
+                                                loop: defaultRotateEquation.loop,
+                                                solution: defaultRotateEquation.solution,
+                                                limit_factor: defaultRotateEquation.limit_factor
                                             }
                                             const newMath: Map<string, LaurusRotateEquation> = new Map();
                                             newMath.set("clipboard", currentEq);
@@ -622,11 +688,12 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="copy"
                                             svg={rotate.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.8} />
                                     </div>
-                                    <div
+                                    <div title="paste"
                                         onClick={() => {
                                             if (appState.effectClipboard && appState.effectClipboard.type == 'rotate') {
                                                 const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
@@ -653,6 +720,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
+                                            title="paste"
                                             svg={appState.effectClipboard?.type == 'rotate' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.88} />
@@ -664,8 +732,10 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                         <div style={{ ...dynamicSizes.param }}>
                             <div style={{
                                 width: '100%',
-                                border: '1px solid rgb(20, 20, 20)',
+                                border: '1px solid rgba(255, 255, 255, 0.025)',
                                 backgroundColor: "rgba(20, 20, 20, 0.25)",
+                                boxShadow: '4px 4px 12px rgba(11, 11, 11, 0.5)',
+                                borderRadius: 6,
                                 display: 'flex',
                                 alignItems: 'start',
                                 justifyContent: 'center',
@@ -691,14 +761,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const newEquation: LaurusRotateEquation = activeEquation ?
                                                 { ...activeEquation, angle: newAngle } :
                                                 {
+                                                    ...defaultRotateEquation,
                                                     input_id: activeKey,
-                                                    time: 0.000001,
-                                                    loop: LaurusLoopType.none,
-                                                    solution: [],
                                                     angle: newAngle,
-                                                    x: 0,
-                                                    y: 0,
-                                                    z: 0,
                                                 };
                                             saveNewEquation(snapshot, newEquation);
                                         }
@@ -710,7 +775,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         gaugeTick: 7,
                                         dial: 80,
                                         dialTick: 11
-                                    }} />
+                                    }}
+                                    title={rotate.math.get(carouselEntryKey)?.angle.toFixed(0) + '°'} />
                             </div>
                         </div>
                     </div>

@@ -22,6 +22,7 @@ interface ParameterSliderY {
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
+    title?: string,
 }
 export function ParameterSliderY({
     label,
@@ -33,17 +34,32 @@ export function ParameterSliderY({
     onNewCursor,
     onCursorMove,
     disabled,
+    title,
 }: ParameterSliderY) {
     const { appState } = useContext(WorkspaceContext);
-    const [labelFontSize] = useState(() => {
+    const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
-            case "high": return 11
-            case "midhigh": return 8
+            case "high": return {
+                label: {
+                    fontSize: 11,
+                    paddingTop: 10,
+                }
+            }
+            case "midhigh": return {
+                label: {
+                    fontSize: 8,
+                    paddingTop: 7,
+                }
+            }
             case "midlow":
-            case "low": return 7
+            case "low": return {
+                label: {
+                    fontSize: 7,
+                    paddingTop: 5,
+                }
+            }
         }
-    });
-    const [labelPaddingTop] = useState(Math.round(10 * appState.resolution.factor));
+    })
     const { getInverseTrackValue } = useTrackpadState(0, 100);
 
     const cursorToValue = useCallback((cursorY: number): number => {
@@ -66,7 +82,8 @@ export function ParameterSliderY({
             height: '100%',
             width: 'min-content',
             display: 'grid',
-            justifyItems: 'center'
+            justifyItems: 'center',
+            gridTemplateRows: label ? 'auto min-content' : 'auto'
         }}>
             <div style={{
                 position: "relative",
@@ -100,7 +117,8 @@ export function ParameterSliderY({
                             setStartValue(newStartValue);
                             if (onCursorMove) { onCursorMove(c) }
                         }}
-                        disabled={disabled} />
+                        disabled={disabled}
+                        title={title} />
                 </div>
                 <div
                     ref={trackRef}
@@ -142,9 +160,8 @@ export function ParameterSliderY({
                 </div>
             </div>
             {label &&
-                <div
-                    className={dmSans.className}
-                    style={{ fontSize: labelFontSize, paddingTop: labelPaddingTop }}>
+                <div className={dmSans.className}
+                    style={{ fontWeight: 'bold', color: 'rgb(220,220,220)', ...dynamicSizes.label }}>
                     {label}
                 </div>}
         </div>
@@ -170,6 +187,7 @@ interface ParameterSliderXPlusMinus {
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
+    title?: string,
 }
 export function ParameterSliderXPlusMinus({
     hash,
@@ -179,6 +197,7 @@ export function ParameterSliderXPlusMinus({
     onNewCursor,
     onCursorMove,
     disabled,
+    title
 }: ParameterSliderXPlusMinus) {
     return (<>
         <div style={{
@@ -186,11 +205,11 @@ export function ParameterSliderXPlusMinus({
             alignItems: 'center',
         }}>
             <SvgRepo
-                svg={remove('rgb(227, 227, 227)')}
+                svg={remove('rgb(200, 200, 200)')}
                 containerSize={{
                     width: size.svgSize.width,
                     height: size.svgSize.height
-                }} scale={0.75} />
+                }} scale={0.7} />
             <div
                 style={{
                     position: "relative",
@@ -222,7 +241,8 @@ export function ParameterSliderXPlusMinus({
                         value={cursor}
                         onNewValue={onNewCursor}
                         onMove={onCursorMove}
-                        disabled={disabled} />
+                        disabled={disabled}
+                        title={title} />
                 </div>
                 {/* label*/}
                 <div
@@ -259,13 +279,13 @@ export function ParameterSliderXPlusMinus({
                         margin: 'auto',
                         width: size.containerWidth,
                         height: size.trackHeight,
-                        background: 'linear-gradient(1deg, rgb(63, 63, 63), rgb(66, 66, 66))',
+                        background: 'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))',
                         borderRadius: 8,
                     }}
                 />
             </div>
             <SvgRepo
-                svg={add2('rgb(227, 227, 227)')}
+                svg={add2('rgb(200, 200, 200)')}
                 containerSize={{
                     width: size.svgSize.width,
                     height: size.svgSize.height
@@ -293,6 +313,7 @@ interface ParameterSliderX {
     onNewCursor: (newCursor: { x: number, y: number }) => void,
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
+    title?: string,
 }
 export function ParameterSliderX({
     hash,
@@ -302,6 +323,7 @@ export function ParameterSliderX({
     onNewCursor,
     onCursorMove,
     disabled,
+    title
 }: ParameterSliderX) {
     return (<>
         <div
@@ -335,7 +357,8 @@ export function ParameterSliderX({
                     value={cursor}
                     onNewValue={onNewCursor}
                     onMove={onCursorMove}
-                    disabled={disabled} />
+                    disabled={disabled}
+                    title={title} />
             </div>
             {/* label*/}
             <div

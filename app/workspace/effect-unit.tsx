@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ScaleUnit from "./scale-unit";
 import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { allOut, cancelCircle, earthquake, lock, lockOpenRight, SvgRepo, toysFan, tune } from "../svg-repo";
@@ -9,47 +9,6 @@ import TimelineSlider from "../components/timeline-slider";
 import RotateUnit from "./rotate-unit";
 import { dellaRespira } from "../fonts";
 import useDebounce from "../hooks/useDebounce";
-
-function injectTime(
-    e: LaurusEffect,
-    newOffset: number,
-    newDuration: number): LaurusEffect {
-    switch (e.type) {
-        case "scale": {
-            const newEffect: LaurusEffect = {
-                ...e,
-                value: {
-                    ...e.value,
-                    start: newOffset,
-                    end: newDuration,
-                }
-            };
-            return newEffect;
-        }
-        case "move": {
-            const newEffect: LaurusEffect = {
-                ...e,
-                value: {
-                    ...e.value,
-                    start: newOffset,
-                    end: newDuration,
-                }
-            };
-            return newEffect;
-        }
-        case "rotate": {
-            const newEffect: LaurusEffect = {
-                ...e,
-                value: {
-                    ...e.value,
-                    start: newOffset,
-                    end: newDuration,
-                }
-            };
-            return newEffect;
-        }
-    }
-}
 
 interface EffectUnit {
     effect: LaurusEffect,
@@ -111,11 +70,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     fontSize: 12,
                 },
                 inputFlex: {
-                    gap: 4
+                    gap: 0,
+                    fontSize: 10,
                 },
                 input: {
                     fontSize: 10,
-                    width: 30
+                    width: '7ch',
+                    letterSpacing: 1,
                 },
                 footer: {
                     height: 20
@@ -141,11 +102,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     fontSize: 10,
                 },
                 inputFlex: {
-                    gap: 4
+                    gap: 0,
+                    fontSize: 8,
                 },
                 input: {
-                    fontSize: 9,
-                    width: '6ch'
+                    fontSize: 8,
+                    width: '7ch',
+                    letterSpacing: 1,
                 },
                 footer: {
                     height: 22
@@ -172,11 +135,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     fontSize: 10,
                 },
                 inputFlex: {
-                    gap: 4
+                    gap: 4,
+                    fontSize: 12,
                 },
                 input: {
                     fontSize: 9,
-                    width: '6ch'
+                    width: '6ch',
+                    letterSpacing: 1,
                 },
                 footer: {
                     height: 20
@@ -219,10 +184,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             [cursorToTime(startCursor.x), false];
     }, [cursorToTime, startCursor.x]);
 
-    const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect) => {
+    const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect, newStart?: number, newEnd?: number) => {
         switch (effect.type) {
             case "scale": {
-                const newScale: LaurusScaleResult = { ...effect.value, locked: effect.locked }
+                const newScale: LaurusScaleResult = {
+                    ...effect.value,
+                    locked: effect.locked,
+                    ...(newStart != undefined && { start: newStart }),
+                    ...(newEnd != undefined && { end: newEnd })
+                }
                 const updated = await updateScale(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -233,11 +203,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         type: 'scale',
                         key: effect.key,
                         locked: newScale.locked,
-                        value: {
-                            ...newScale,
-                            start: convertTime(newScale.start, 'sec', appState.timelineUnit),
-                            end: convertTime(newScale.end, 'sec', appState.timelineUnit)
-                        }
+                        value: { ...newScale }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 }
@@ -254,7 +220,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
             case "move": {
-                const newMove: LaurusMoveResult = { ...effect.value, locked: effect.locked }
+                const newMove: LaurusMoveResult = {
+                    ...effect.value,
+                    locked: effect.locked,
+                    ...(newStart != undefined && { start: newStart }),
+                    ...(newEnd != undefined && { end: newEnd })
+                }
                 const updated = await updateMove(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -265,11 +236,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         type: 'move',
                         key: effect.key,
                         locked: newMove.locked,
-                        value: {
-                            ...newMove,
-                            start: convertTime(newMove.start, 'sec', appState.timelineUnit),
-                            end: convertTime(newMove.end, 'sec', appState.timelineUnit)
-                        }
+                        value: { ...newMove }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 }
@@ -286,7 +253,12 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
             case "rotate": {
-                const newRotate: LaurusRotateResult = { ...effect.value, locked: effect.locked }
+                const newRotate: LaurusRotateResult = {
+                    ...effect.value, locked: effect.locked,
+                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
+                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
+                }
+
                 const updated = await updateRotate(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -297,11 +269,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         type: 'rotate',
                         key: effect.key,
                         locked: newRotate.locked,
-                        value: {
-                            ...newRotate,
-                            start: convertTime(newRotate.start, 'sec', appState.timelineUnit),
-                            end: convertTime(newRotate.end, 'sec', appState.timelineUnit)
-                        }
+                        value: { ...newRotate }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
                 }
@@ -322,26 +290,23 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
 
     useLayoutEffect(() => {
         (async () => {
-            const startInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.start));
-            const endInit = Math.min(appState.timelineMaxValue, Math.max(0, effect.value.end));
-
-            const newStartCursor = timeToCursor(startInit);
-            const newEndCursor = timeToCursor(endInit);
+            const convertedStart = convertTime(effect.value.start, 'sec', appState.timelineUnit);
+            const convertedEnd = convertTime(effect.value.end, 'sec', appState.timelineUnit);
+            const clampedStart = Math.min(appState.timelineMaxValue, Math.max(0, convertedStart));
+            const clampedEnd = Math.min(appState.timelineMaxValue, Math.max(0, convertedEnd));
+            const newStartCursor = timeToCursor(clampedStart);
+            const newEndCursor = timeToCursor(clampedEnd);
             setStartCursor({ x: newStartCursor, y: 0 });
             setEndCursor({ x: newEndCursor, y: 0 });
-
             if (startRef.current) {
-                const newStart = cursorToTime(newStartCursor);
-                startRef.current.value = newStart.toFixed(2);
+                startRef.current.value = clampedStart.toFixed(2);
             }
-
             if (endRef.current) {
-                const newEnd = cursorToTime(newEndCursor);
-                endRef.current.value = newEnd.toFixed(2);
+                endRef.current.value = clampedEnd.toFixed(2);
             }
         })();
 
-    }, [appState.timelineMaxValue, cursorToTime, effect.value, timeToCursor]);
+    }, [appState.timelineMaxValue, appState.timelineUnit, cursorToTime, effect.value, timeToCursor]);
 
     const deleteEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
@@ -369,21 +334,27 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         }
     }, [appState.accessToken, appState.apiOrigin, dispatch]);
 
+    const startTitle = useMemo(() => {
+        return convertTime(effect.value.start, "sec", appState.timelineUnit).toPrecision(7);
+    }, [appState.timelineUnit, effect.value.start]);
+
+    const endTitle = useMemo(() => {
+        return convertTime(effect.value.end, "sec", appState.timelineUnit).toPrecision(7);
+    }, [appState.timelineUnit, effect.value.end]);
+
     return (
         <div style={{ display: 'flex', width: '100%', }}>
             <div style={{ display: 'grid', width: '100%', }}>
-                <div
-                    style={{
-                        width: '100%',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        color: 'rgb(227, 227, 227)',
-                        ...dynamicSizes.headerFlex
-                    }}>
+                <div style={{
+                    width: '100%',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    color: 'rgb(227, 227, 227)',
+                    ...dynamicSizes.headerFlex
+                }}>
                     <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', fontSize: dynamicSizes.input.fontSize }}>{'start'}</div>
-                        <input
+                        <input className={dellaRespira.className}
                             id={`start-input-${effect.key}`}
                             disabled
                             ref={startRef}
@@ -392,16 +363,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             style={{
                                 textAlign: "left",
                                 background: 'none',
-                                color: "rgba(255, 255, 255, 0.8)",
-                                borderRadius: "2px",
+                                color: "rgb(220, 220, 220)",
+                                fontWeight: 'bold',
                                 border: 'none',
                                 outline: 'none',
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
                                 ...dynamicSizes.input
-                            }}
-                        />
+                            }} />
                     </div>
                     <div style={{ display: 'flex', height: '100%', width: '60%', marginTop: 4, alignItems: 'center' }}>
                         <EffectDescription
@@ -409,8 +379,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             effectDescriptionInit={effect.value.description} />
                     </div>
                     <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', fontSize: dynamicSizes.input.fontSize }}>{'end'}</div>
-                        <input
+                        <input className={dellaRespira.className}
                             id={`end-input-${effect.key}`}
                             disabled
                             ref={endRef}
@@ -419,16 +388,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             style={{
                                 textAlign: "left",
                                 background: 'none',
-                                color: "rgba(255, 255, 255, 0.8)",
-                                borderRadius: "2px",
+                                color: "rgb(220, 220, 220)",
+                                fontWeight: 'bold',
                                 border: 'none',
                                 outline: 'none',
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
                                 ...dynamicSizes.input
-                            }}
-                        />
+                            }} />
                     </div>
                 </div>
                 <div style={{
@@ -450,11 +418,9 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 setEndCursor({ ...endCursor, x: c.x });
                                 endRef.current.value = newStart.toFixed(2);
                             }
-                            const newServerStart = convertTime(newStart, appState.timelineUnit, 'sec');
-                            const newServerEnd = convertTime(newEnd[0], appState.timelineUnit, 'sec');
                             const rollback: LaurusEffect = { ...effect };
-                            const newEffect = injectTime(effect, newServerStart, newServerEnd);
-                            await saveEffect(newEffect, rollback);
+                            const newEffect: LaurusEffect = { ...rollback }
+                            await saveEffect(newEffect, rollback, newStart, newEnd[0]);
                         }}
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
@@ -465,11 +431,9 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 setStartCursor({ ...startCursor, x: c.x });
                                 startRef.current.value = newEnd.toFixed(2);
                             }
-                            const newServerStart = convertTime(newStart[0], appState.timelineUnit, 'sec');
-                            const newServerEnd = convertTime(newEnd, appState.timelineUnit, 'sec');
                             const rollback: LaurusEffect = { ...effect };
-                            const newEffect = injectTime(effect, newServerStart, newServerEnd);
-                            await saveEffect(newEffect, rollback);
+                            const newEffect: LaurusEffect = { ...rollback };
+                            await saveEffect(newEffect, rollback, newStart[0], newEnd);
                         }}
                         onCursorMove={(c) => {
                             if (!startRef.current || effect.locked) return;
@@ -482,13 +446,13 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             endRef.current.value = newValue.toFixed(2);
                         }}
                         disabled={effect.locked}
-                    />
+                        startTitle={startTitle}
+                        endTitle={endTitle} />
                 </div>
-                <div
-                    style={{
-                        width: '100%',
-                        ...dynamicSizes.footer
-                    }} />
+                <div style={{
+                    width: '100%',
+                    ...dynamicSizes.footer
+                }} />
                 {showUnitControls && (() => {
                     switch (effect.type) {
                         case "scale": {
@@ -522,8 +486,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 flexDirection: 'column',
                 ...dynamicSizes.toolbar
             }}>
-                <div
-                    style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
+                <div style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
                     <SvgRepo svg={(() => {
                         switch (effect.type) {
                             case "scale": return allOut();
@@ -534,7 +497,14 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.6} />
                 </div>
-                <div
+                <div style={{
+                    cursor: 'pointer',
+                    width: dynamicSizes.toolbar.width,
+                    height: dynamicSizes.toolbar.width,
+                    background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
+                    border: '1px solid rgba(0,0,0,0)',
+                    transition: 'border-left 0.25s ease-out'
+                }}
                     onClick={() => {
                         const closed = !showUnitControls;
                         if (closed) {
@@ -580,20 +550,17 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         else {
                             setShowUnitControls(false);
                         }
-                    }}
-                    style={{
-                        cursor: 'pointer',
-                        width: dynamicSizes.toolbar.width,
-                        height: dynamicSizes.toolbar.width,
-                        background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
-                        border: '1px solid rgba(0,0,0,0)',
-                        transition: 'border-left 0.25s ease-out'
                     }}>
                     <SvgRepo svg={tune()}
                         containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.65} />
                 </div>
-                <div
+                <div style={{
+                    cursor: 'pointer', width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width,
+                    background: 'none',
+                    border: '1px solid rgba(0,0,0,0)',
+                    transition: 'border-left 0.25s ease-out'
+                }}
                     onClick={async () => {
                         const rollback: LaurusEffect = { ...effect };
                         const newEffect: LaurusEffect = {
@@ -601,12 +568,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             locked: !effect.locked,
                         }
                         await saveEffect(newEffect, rollback);
-                    }}
-                    style={{
-                        cursor: 'pointer', width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width,
-                        background: 'none',
-                        border: '1px solid rgba(0,0,0,0)',
-                        transition: 'border-left 0.25s ease-out'
                     }}>
                     <SvgRepo
                         title={effect.locked ? "locked" : "unlocked"}
@@ -617,30 +578,31 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         }}
                         scale={0.6} />
                 </div>
-                {showUnitControls && <div
-                    onClick={() => {
-                        const confirmed = confirm('are you sure you want to delete this effect?');
-                        if (confirmed) {
-                            deleteEffect(effect);
-                        }
-                    }}
-                    style={{
+                {showUnitControls && <>
+                    <div style={{
                         cursor: 'pointer',
                         width: dynamicSizes.toolbar.width,
                         height: dynamicSizes.toolbar.width,
                         background: 'none',
                         border: '1px solid rgba(0,0,0,0)',
                         transition: 'border-left 0.25s ease-out'
-                    }}>
-                    <SvgRepo
-                        title={"delete effect"}
-                        svg={cancelCircle('rgb(220, 112, 112)')}
-                        containerSize={{
-                            width: dynamicSizes.toolbar.width,
-                            height: dynamicSizes.toolbar.width
-                        }}
-                        scale={0.6} />
-                </div>}
+                    }}
+                        onClick={() => {
+                            const confirmed = confirm('are you sure you want to delete this effect?');
+                            if (confirmed) {
+                                deleteEffect(effect);
+                            }
+                        }}>
+                        <SvgRepo
+                            title={"delete effect"}
+                            svg={cancelCircle('rgb(220, 112, 112)')}
+                            containerSize={{
+                                width: dynamicSizes.toolbar.width,
+                                height: dynamicSizes.toolbar.width
+                            }}
+                            scale={0.6} />
+                    </div>
+                </>}
             </div>
         </div>
     );
@@ -658,8 +620,8 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
     const dependenciesRef = useRef<LaurusEffect | undefined>(undefined);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
-            case "high": return { fontSize: 12, padding: 6 }
-            case "midhigh": return { fontSize: 10, padding: 6 }
+            case "high": return { fontSize: 13, padding: 6 }
+            case "midhigh": return { fontSize: 12, padding: 6 }
             case "midlow":
             case "low": return { fontSize: 10, padding: 6 }
         }
@@ -766,18 +728,16 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
         }
     }, [appState.effects, effectKey]);
 
-    return (<>
-        <input
+    return <>
+        <input id={`effect-description-input-${effectKey}`}
             ref={effectDescriptionInputRef}
             className={dellaRespira.className}
-            id={`effect-description-input-${effectKey}`}
             type="text"
             placeholder="describe me..."
             style={{
                 textAlign: "center",
                 background: 'none',
-                color: "rgba(255, 255, 255, 0.8)",
-                borderRadius: "2px",
+                color: "rgb(220, 220, 220)",
                 border: 'none',
                 outline: 'none',
                 height: '100%',
@@ -787,7 +747,6 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                 ...dynamicSizes
             }}
             value={effectDescription}
-            onChange={onEffectDescriptionChange}
-        />
-    </>)
+            onChange={onEffectDescriptionChange} />
+    </>
 }

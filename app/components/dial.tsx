@@ -16,9 +16,10 @@ interface DialProps {
     }
     onMove?: (v: number) => void,
     disabled?: boolean,
+    title?: string,
 }
 
-export default function Dial({ ids, value, size, onMove, onNewValue, disabled }: DialProps) {
+export default function Dial({ ids, value, size, onMove, onNewValue, disabled, title }: DialProps) {
     const rotationRef = useRef(value);
     const [rotation, setRotation] = useState(value);
     const sensors = useSensors(useSensor(PointerSensor));
@@ -62,7 +63,8 @@ export default function Dial({ ids, value, size, onMove, onNewValue, disabled }:
                 id={ids.draggableId}
                 size={size}
                 rotation={rotation}
-                disabled={disabled} />
+                disabled={disabled}
+                title={title} />
         </DndContext>
     </>)
 }
@@ -78,9 +80,10 @@ interface BlurryCapProps {
         dialTick: number,
     },
     disabled?: boolean,
+    title?: string,
 }
 
-function BlurryCap({ id, rotation, size, disabled }: BlurryCapProps) {
+function BlurryCap({ id, rotation, size, disabled, title }: BlurryCapProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
     const { appState } = useContext(WorkspaceContext);
     const dndCss = { touchAction: 'none', };
@@ -96,7 +99,7 @@ function BlurryCap({ id, rotation, size, disabled }: BlurryCapProps) {
     const [gaugeTicks] = useState(Array.from({ length: gaugeTickCount }, (_, i) => i));
 
     return (
-        <div style={{
+        <div title={title} style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

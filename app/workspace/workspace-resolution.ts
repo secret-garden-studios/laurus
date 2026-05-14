@@ -72,7 +72,7 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
                     padding: '20px 15px'
                 },
                 paramSlider: {
-                    containerHeight: 200,
+                    containerHeight: '100%',
                     containerWidth: 45,
                     trackWidth: 1,
                     capWidth: 16,
@@ -103,14 +103,14 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
             }
             case "midhigh": return {
                 param: {
-                    padding: '0 14px 14px 14px'
+                    padding: '0 22px 14px 14px'
                 },
                 paramFlex: {
                     gap: 26,
                     padding: '14px 10px'
                 },
                 paramSlider: {
-                    containerHeight: 130,
+                    containerHeight: '100%',
                     containerWidth: 40,
                     trackWidth: 1,
                     capWidth: 12,
@@ -141,14 +141,14 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
             }
             case "midlow":
             case "low": return {
-                param: { padding: '0 14px 14px 14px' },
+                param: { padding: '0 18px 10px 10px' },
                 paramFlex: {
                     gap: 26,
                     padding: '14px 10px'
                 },
                 paramSlider: {
-                    containerHeight: Math.round(210 * resolution.factor),
-                    containerWidth: Math.round(40 * resolution.factor),
+                    containerHeight: '100%',
+                    containerWidth: 20,
                     trackWidth: 1,
                     capWidth: 10,
                     capHeight: 10,
