@@ -40,7 +40,7 @@ interface MoveUnit {
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, move.move_id);
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
         amplitude: 0,

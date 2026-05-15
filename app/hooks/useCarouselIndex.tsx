@@ -1,33 +1,42 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CarouselEntry, LaurusActiveElement } from '../workspace/workspace.client';
 
 export const useCarouselIndex = (
     activeElement: LaurusActiveElement | undefined,
     carouselEntries: CarouselEntry[],
     carouselIndexInit: number,
-    effectKey: string) => {
-    const [localIndex, setLocalIndex] = useState(carouselIndexInit);
-    const [prevKey, setPrevKey] = useState(activeElement?.key);
+) => {
     const activeKey = activeElement?.key;
-    const locallyActivedKey = activeElement?.locallyActivatedEffectKey;
-    const activeIndex = carouselEntries.findIndex(
-        (c: CarouselEntry) => c.key === activeKey
-    );
+    const locallyActivatedKey = activeElement?.locallyActivatedEffectKey;
+    const totalEntries = carouselEntries.length;
+    const clampIndex = (index: number) => {
+        if (totalEntries === 0) return 0;
+        return Math.max(0, Math.min(index, totalEntries - 1));
+    };
+    const activeIndex = carouselEntries.findIndex((c) => c.key === activeKey);
+    const baseIndex = clampIndex(activeIndex > -1 ? activeIndex : carouselIndexInit);
+    const [localIndex, setLocalIndex] = useState(() => clampIndex(carouselIndexInit));
+    const [prevKey, setPrevKey] = useState(activeKey);
 
+    // Handle dynamic item deletions (Force reset to 0 if out of bounds)
+    if (totalEntries > 0 && localIndex >= totalEntries) {
+        setLocalIndex(0);
+    }
+
+    // Sync local carousels on selection from the canvas area
     if (activeKey !== prevKey) {
         setPrevKey(activeKey);
-        if (locallyActivedKey === undefined) {
-            setLocalIndex(activeIndex);
+        if (locallyActivatedKey === undefined) {
+            setLocalIndex(baseIndex);
         }
     }
-    
-    const carouselIndex = useMemo(() => {
-        const baseIndex = activeIndex > -1 ? activeIndex : carouselIndexInit;
-        if (locallyActivedKey !== undefined) {
-            return locallyActivedKey !== effectKey ? localIndex : baseIndex;
-        }
-        return baseIndex;
-    }, [activeIndex, locallyActivedKey, effectKey, localIndex, carouselIndexInit]);
 
-    return { carouselIndex, localIndex, setLocalIndex };
+    const safeLocalIndex = totalEntries > 0 && localIndex >= totalEntries ? 0 : localIndex;
+    const carouselIndex = locallyActivatedKey === undefined ? baseIndex : safeLocalIndex;
+
+    return {
+        carouselIndex,
+        localIndex: safeLocalIndex,
+        setLocalIndex
+    };
 };

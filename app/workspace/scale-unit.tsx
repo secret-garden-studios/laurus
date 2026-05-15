@@ -30,7 +30,7 @@ interface ScaleUnit {
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, scale.scale_id);
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit);
     const [mainControls] = useState(true);
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
