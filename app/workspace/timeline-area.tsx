@@ -267,11 +267,12 @@ export default function TimelineArea({
                         justifyContent: 'center',
                         alignItems: 'center',
                     }}>
-                        <div style={{
-                            left: 6,
-                            display: 'flex',
-                            position: 'absolute'
-                        }}>
+                        <div title={"frame rate"}
+                            style={{
+                                left: 6,
+                                display: 'flex',
+                                position: 'absolute'
+                            }}>
                             <input className={dellaRespira.className}
                                 id={`fps-input`}
                                 type="text"
@@ -303,6 +304,7 @@ export default function TimelineArea({
                             </div>
                         </div>
                         <SvgRepo
+                            title={"rewind all"}
                             svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: controlAreaSize.secondarySvg,
@@ -342,6 +344,7 @@ export default function TimelineArea({
                                 }
                             }} />
                         <SvgRepo
+                            title={"play all"}
                             svg={playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: controlAreaSize.mainSvg,
@@ -379,6 +382,7 @@ export default function TimelineArea({
                                 dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
                             }} />
                         <SvgRepo
+                            title={"fast-forward all"}
                             svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                             containerSize={{
                                 width: controlAreaSize.secondarySvg,
@@ -415,11 +419,12 @@ export default function TimelineArea({
                                     a.play();
                                 });
                             }} />
-                        <div style={{
-                            right: 6,
-                            display: 'flex',
-                            position: 'absolute'
-                        }}>
+                        <div title={"light"}
+                            style={{
+                                right: 6,
+                                display: 'flex',
+                                position: 'absolute'
+                            }}>
                             <div style={{
                                 width: controlAreaSize.recordingLightSize,
                                 height: controlAreaSize.recordingLightSize,

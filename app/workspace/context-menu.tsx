@@ -6,6 +6,7 @@ import { updateScale, updateMove, updateRotate } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import { allOut, browse, earthquake, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
+import Toggle from "../components/toggle";
 
 
 async function deleteEffects(
@@ -187,14 +188,14 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                         fontSize: 13,
                     },
                     track: {
+                        width: 30,
+                        height: 16,
                         borderRadius: 20,
-                        width: 34,
-                        height: 18,
-                        padding: '2px',
+                        padding: 2,
                     },
                     button: {
-                        width: 14,
-                        height: 14,
+                        width: 10,
+                        height: 10,
                     }
                 },
                 cell: {
@@ -262,14 +263,14 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                         fontSize: 11,
                     },
                     track: {
-                        borderRadius: 18,
-                        width: 32,
-                        height: 16,
-                        padding: '2px',
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                        padding: 2,
                     },
                     button: {
-                        width: 12,
-                        height: 12,
+                        width: 8,
+                        height: 8,
                     }
                 },
                 cell: {
@@ -337,14 +338,14 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                         fontSize: 11,
                     },
                     track: {
-                        borderRadius: 18,
-                        width: 32,
-                        height: 16,
-                        padding: '2px',
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                        padding: 2,
                     },
                     button: {
-                        width: 12,
-                        height: 12,
+                        width: 8,
+                        height: 8,
                     }
                 },
                 cell: {
@@ -712,20 +713,11 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 height: '100%',
                                 ...dynamicSizes.selected.div
                             }}>
-                                <span style={{ opacity: selected ? 1 : 1 }}>
+                                <span style={{ textShadow: selected ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                                     {'selected'}
                                 </span>
-                                <div style={{
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    background: selected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    border: selected ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
-                                    boxShadow: selected ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
-                                    ...dynamicSizes.selected.track
-                                }}
+                                <Toggle
+                                    value={selected}
                                     onClick={() => {
                                         if (selected) {
                                             dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
@@ -749,16 +741,9 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                                 break;
                                             }
                                         }
-                                    }} >
-                                    <div style={{
-                                        background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
-                                        borderRadius: '50%',
-                                        transition: 'transform 0.2s',
-                                        transform: selected ? 'translateX(15px)' : 'translateX(0px)',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                                        ...dynamicSizes.selected.button
-                                    }} />
-                                </div>
+                                    }}
+                                    trackStyles={{ ...dynamicSizes.selected.track }}
+                                    buttonStyles={{ ...dynamicSizes.selected.button }} />
                             </div>
                             <div style={{ ...cellStyle }}
                                 className={styles['animated-nav-dark']}

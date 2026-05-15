@@ -51,9 +51,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                 padding: statusbarSize.padding,
                 gap: 6,
             }}>
-                <div
-                    title="page"
-                    className={dellaRespira.className}
+                <div className={dellaRespira.className}
                     style={{
                         fontWeight: "bolder",
                         fontSize: statusbarSize.actionFont,

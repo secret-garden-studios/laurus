@@ -3,13 +3,14 @@ import { dellaRespira } from "../fonts";
 import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
-import { bookmarkStacks, LaurusCropSvg, SvgRepo, timerArrowDown } from "../svg-repo";
+import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
 import { createImg, createSvg } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 import { v4 as getUuidV4 } from "uuid";
 import { BrowserContextMenu } from "./context-menu";
+import Toggle from "../components/toggle";
 
 export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
@@ -108,6 +109,7 @@ export default function MediaBrowser({
                         width: 30,
                         height: 16,
                         borderRadius: 20,
+                        padding: 2,
                     },
                     button: {
                         width: 10,
@@ -159,6 +161,7 @@ export default function MediaBrowser({
                         width: 28,
                         height: 14,
                         borderRadius: 20,
+                        padding: 2,
                     },
                     button: {
                         width: 8,
@@ -211,6 +214,7 @@ export default function MediaBrowser({
                         width: 28,
                         height: 14,
                         borderRadius: 20,
+                        padding: 2,
                     },
                     button: {
                         width: 8,
@@ -582,14 +586,15 @@ export default function MediaBrowser({
                     paddingTop: Math.round(10 * appState.resolution.factor),
                     ...dynamicSizes.uploadingLight.container
                 }} >
-                    <div style={{
-                        position: 'absolute',
-                        borderRadius: '50%',
-                        border: uploading ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
-                        background: uploading ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
-                        boxShadow: uploading ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none',
-                        ...dynamicSizes.uploadingLight.dot
-                    }} />
+                    <div title={"light"}
+                        style={{
+                            position: 'absolute',
+                            borderRadius: '50%',
+                            border: uploading ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
+                            background: uploading ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
+                            boxShadow: uploading ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none',
+                            ...dynamicSizes.uploadingLight.dot
+                        }} />
                     {/* switches */}
                     {filter == 'img' && <>
                         <div style={{
@@ -599,31 +604,19 @@ export default function MediaBrowser({
                             alignItems: 'center',
                             ...dynamicSizes.switch.container
                         }}>
-                            <span style={{ opacity: appState.project.browse_public_imgs ? 1 : 1 }}>
-                                <i>{'discover images'}</i>
-                            </span>
-                            <div onClick={onImgDiscoverToggle}
-                                style={{
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    background: appState.project.browse_public_imgs ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '2px',
-                                    border: appState.project.browse_public_imgs ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
-                                    boxShadow: appState.project.browse_public_imgs ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
-                                    ...dynamicSizes.switch.track
-                                }}>
-                                <div style={{
-                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
-                                    borderRadius: '50%',
-                                    transition: 'transform 0.2s',
-                                    transform: appState.project.browse_public_imgs ? 'translateX(15px)' : 'translateX(0px)',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                                    ...dynamicSizes.switch.button
-                                }} />
-                            </div>
+                            <SvgRepo
+                                title={"discover images"}
+                                svg={appState.project.browse_public_imgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
+                                containerSize={{
+                                    width: dynamicSizes.switch.track.height * 1.33,
+                                    height: dynamicSizes.switch.track.height * 1.33
+                                }}
+                                scale={1} />
+                            <Toggle
+                                value={appState.project.browse_public_imgs}
+                                onClick={onImgDiscoverToggle}
+                                trackStyles={{ ...dynamicSizes.switch.track }}
+                                buttonStyles={{ ...dynamicSizes.switch.button }} />
                         </div>
                     </>}
                     {filter == 'svg' && <>
@@ -634,31 +627,19 @@ export default function MediaBrowser({
                             alignItems: 'center',
                             ...dynamicSizes.switch.container
                         }}>
-                            <span style={{ opacity: appState.project.browse_public_svgs ? 1 : 1 }}>
-                                <i>{'discover svgs'}</i>
-                            </span>
-                            <div onClick={onSvgDiscoverToggle}
-                                style={{
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    background: appState.project.browse_public_svgs ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '2px',
-                                    border: appState.project.browse_public_svgs ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
-                                    boxShadow: appState.project.browse_public_svgs ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
-                                    ...dynamicSizes.switch.track
-                                }}>
-                                <div style={{
-                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
-                                    borderRadius: '50%',
-                                    transition: 'transform 0.2s',
-                                    transform: appState.project.browse_public_svgs ? 'translateX(15px)' : 'translateX(0px)',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                                    ...dynamicSizes.switch.button
-                                }} />
-                            </div>
+                            <SvgRepo
+                                title={"discover svgs"}
+                                svg={appState.project.browse_public_svgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
+                                containerSize={{
+                                    width: dynamicSizes.switch.track.height * 1.33,
+                                    height: dynamicSizes.switch.track.height * 1.33
+                                }}
+                                scale={1} />
+                            <Toggle
+                                value={appState.project.browse_public_svgs}
+                                onClick={onSvgDiscoverToggle}
+                                trackStyles={{ ...dynamicSizes.switch.track }}
+                                buttonStyles={{ ...dynamicSizes.switch.button }} />
                         </div>
                     </>}
                     {filter == 'frame' && <>
@@ -669,33 +650,26 @@ export default function MediaBrowser({
                             alignItems: 'center',
                             ...dynamicSizes.switch.container
                         }}>
-                            <span style={{ opacity: appState.lightFrameBackground ? 1 : 1 }}>
-                                <i>{'light background'}</i>
-                            </span>
-                            <div onClick={() => {
-                                dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
-                            }}
-                                style={{
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    background: appState.lightFrameBackground ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)',
-                                    transition: 'background 0.2s, border 0.2s, box-shadow 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '2px',
-                                    border: appState.lightFrameBackground ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.2)',
-                                    boxShadow: appState.lightFrameBackground ? '0 0 6px 0px rgba(255, 255, 255, 0.2)' : 'none',
-                                    ...dynamicSizes.switch.track
-                                }}>
-                                <div style={{
-                                    background: 'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
-                                    borderRadius: '50%',
-                                    transition: 'transform 0.2s',
-                                    transform: appState.lightFrameBackground ? 'translateX(15px)' : 'translateX(0px)',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                                    ...dynamicSizes.switch.button
-                                }} />
+                            <div style={{
+                                width: dynamicSizes.switch.track.height * 1.33,
+                                height: dynamicSizes.switch.track.height * 1.33,
+                                display: 'grid',
+                                placeContent: 'center'
+                            }}>
+                                <div title={"light frame background"}
+                                    style={{
+                                        width: dynamicSizes.switch.track.height,
+                                        height: dynamicSizes.switch.track.height,
+                                        background: 'rgb(227,227,227)'
+                                    }} />
                             </div>
+                            <Toggle
+                                value={appState.lightFrameBackground}
+                                onClick={() => {
+                                    dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
+                                }}
+                                trackStyles={{ ...dynamicSizes.switch.track }}
+                                buttonStyles={{ ...dynamicSizes.switch.button }} />
                         </div>
                     </>}
                     {/* media thumbnails */}

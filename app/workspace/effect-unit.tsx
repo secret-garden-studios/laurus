@@ -355,6 +355,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 }}>
                     <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
                         <input className={dellaRespira.className}
+                            title={"start time"}
                             id={`start-input-${effect.key}`}
                             disabled
                             ref={startRef}
@@ -380,6 +381,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     </div>
                     <div style={{ display: 'flex', height: '100%', alignItems: 'center', ...dynamicSizes.inputFlex }}>
                         <input className={dellaRespira.className}
+                            title={"end time"}
                             id={`end-input-${effect.key}`}
                             disabled
                             ref={endRef}
@@ -487,13 +489,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 ...dynamicSizes.toolbar
             }}>
                 <div style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
-                    <SvgRepo svg={(() => {
-                        switch (effect.type) {
-                            case "scale": return allOut();
-                            case "move": return earthquake();
-                            case "rotate": return toysFan();
-                        }
-                    })()}
+                    <SvgRepo
+                        title={effect.type}
+                        svg={(() => {
+                            switch (effect.type) {
+                                case "scale": return allOut();
+                                case "move": return earthquake();
+                                case "rotate": return toysFan();
+                            }
+                        })()}
                         containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.6} />
                 </div>
@@ -551,7 +555,9 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             setShowUnitControls(false);
                         }
                     }}>
-                    <SvgRepo svg={tune()}
+                    <SvgRepo
+                        title={"show/hide parameters"}
+                        svg={tune()}
                         containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.65} />
                 </div>
@@ -570,7 +576,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         await saveEffect(newEffect, rollback);
                     }}>
                     <SvgRepo
-                        title={effect.locked ? "locked" : "unlocked"}
+                        title={"lock"}
                         svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
                         containerSize={{
                             width: dynamicSizes.toolbar.width,
@@ -594,7 +600,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             }
                         }}>
                         <SvgRepo
-                            title={"delete effect"}
+                            title={"delete"}
                             svg={cancelCircle('rgb(220, 112, 112)')}
                             containerSize={{
                                 width: dynamicSizes.toolbar.width,

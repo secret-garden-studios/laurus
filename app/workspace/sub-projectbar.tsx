@@ -381,7 +381,8 @@ function Scalebar() {
                         const newYValue = getScaleYValue(newCursor.x, scaleXTrackRef.current.clientWidth, 0.000001);
                         saveActiveScale(undefined, newYValue);
                     }
-                }} />
+                }}
+                disabled={appState.activeElement == undefined} />
             <div style={{
                 display: 'grid',
                 height: '100%',
@@ -673,7 +674,8 @@ function Rotatebar() {
                     if (!xTrackRef.current) return;
                     const newX = getXValue(newCursor.x, xTrackRef.current.clientWidth, 0);
                     saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", newX, undefined, undefined, undefined);
-                }} />
+                }}
+                disabled={appState.activeElement == undefined} />
             <div>{'y'}</div>
             <ParameterSliderX
                 hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatey`}
@@ -685,7 +687,8 @@ function Rotatebar() {
                     if (!yTrackRef.current) return;
                     const newY = getYValue(newCursor.x, yTrackRef.current.clientWidth, 0);
                     saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", undefined, newY, undefined, undefined);
-                }} />
+                }}
+                disabled={appState.activeElement == undefined} />
             <div>{'z'}</div>
             <ParameterSliderX
                 hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatez`}
@@ -697,7 +700,8 @@ function Rotatebar() {
                     if (!zTrackRef.current) return;
                     const newZ = getZValue(newCursor.x, zTrackRef.current.clientWidth, 0);
                     saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", undefined, undefined, newZ, undefined);
-                }} />
+                }}
+                disabled={appState.activeElement == undefined} />
             <div style={{}}>
                 {/* todo: the main tick mark on this mini dial is not rendered properly */}
                 <Dial
@@ -723,7 +727,8 @@ function Rotatebar() {
                         gaugeTick: 7 * 0.45,
                         dial: 80 * 0.45,
                         dialTick: 11 * 0.45
-                    }} />
+                    }}
+                    disabled={appState.activeElement == undefined} />
             </div>
             <div style={{}}>
                 <input id={`${appState.activeElement?.key ?? 'rotatebar'}|rotateangle`}

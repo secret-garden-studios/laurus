@@ -498,7 +498,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
                                     </div>
-                                    <div title="rotate counter-clockwise"
+                                    <div title="counterclockwise"
                                         onClick={() => {
                                             const newCounterClockwise: boolean = !counterClockwise;
                                             const activeKey = carouselEntryKey;

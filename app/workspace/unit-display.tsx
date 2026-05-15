@@ -11,7 +11,7 @@ interface UnitDisplay {
     localIndex: number,
     onNewLocalIndex: (v: number) => void,
 }
-export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex}: UnitDisplay) {
+export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
 
@@ -81,6 +81,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 }}>
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
+                        title={"select previous"}
                         svg={appState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
                         containerSize={{
                             width: 30,
@@ -152,6 +153,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 </div>
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
+                        title={"select next"}
                         svg={appState.carouselEntries.length == 0 || carouselIndex >= appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
                         containerSize={{
                             width: 30,
