@@ -530,7 +530,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
-                                            title="rotate counter-clockwise"
+                                            title="counterclockwise"
                                             svg={rotate.math.has(carouselEntryKey) ? updateCounterClockwise() : updateCounterClockwise("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
                                             scale={0.9} />
