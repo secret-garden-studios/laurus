@@ -144,6 +144,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     // main params
     const [maxScale] = useState(30);
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
+
     const scaleXRef = useRef<HTMLInputElement | null>(null);
     const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
@@ -151,6 +152,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         useComplexTrackpadState(
             dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
             maxScale);
+    const scaleXTitle = useMemo(() => {
+        return scale.math.has(carouselEntryKey) ? (scale.math.get(carouselEntryKey)!.scale_x.toFixed(3)) : undefined;
+    }, [carouselEntryKey, scale.math]);
 
     const scaleYRef = useRef<HTMLInputElement | null>(null);
     const scaleYTrackRef = useRef<HTMLDivElement | null>(null);
@@ -159,6 +163,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         useComplexTrackpadState(
             dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
             maxScale);
+    const scaleYTitle = useMemo(() => {
+        return scale.math.has(carouselEntryKey) ? (scale.math.get(carouselEntryKey)!.scale_y.toFixed(3)) : undefined;
+    }, [carouselEntryKey, scale.math]);
 
     const setActiveElementIfNull = useCallback(() => {
         if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
@@ -227,9 +234,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         (async () => {
             const activeKey = carouselEntryKey;
             const activeEquation = scale.math.get(activeKey);
-            let scaleXInit = 1;
-            let scaleYInit = 1;
-            let timeInit = appState.timelineMaxValue
+            let scaleXInit = defaultScaleEquation.scale_x;
+            let scaleYInit = defaultScaleEquation.scale_y;
+            let timeInit = defaultScaleEquation.time;
             if (activeEquation) {
                 timeInit = activeEquation.time / 1000;
                 scaleXInit = activeEquation.scale_x;
@@ -266,7 +273,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 }
             }
         })();
-    }, [appState.timelineMaxValue, carouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
+    }, [carouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
 
     const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
         const activeKey = carouselEntryKey;
@@ -523,7 +530,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         }
                                     }}
                                     disabled={scale.locked}
-                                    title={(scale.math.get(carouselEntryKey)?.scale_x.toFixed(3))} />
+                                    title={scaleXTitle} />
                                 <div style={{ display: 'flex', marginTop: dynamicSizes.scaleParamDisplay.marginTop, gap: dynamicSizes.scaleParamDisplay.flexGap }}>
                                     <div className={dmSans.className}
                                         style={{
@@ -569,7 +576,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 </div>
                                 <ParameterSliderXPlusMinus
                                     label={"zoom"}
-                                    hash={`${scale.scale_id}|p2`}
+                                    hash={`${scale.scale_id}|p3`}
                                     size={dynamicSizes.scaleParam}
                                     containerRef={scaleYTrackRef}
                                     cursor={scaleYCursor}
@@ -623,7 +630,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         }
                                     }}
                                     disabled={scale.locked}
-                                    title={(scale.math.get(carouselEntryKey)?.scale_y.toFixed(3))} />
+                                    title={scaleYTitle} />
                             </div>
                             {/* toolbar */}
                             <div style={{

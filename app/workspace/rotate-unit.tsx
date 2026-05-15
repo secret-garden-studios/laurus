@@ -77,6 +77,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1);
+    const xTitle = useMemo(() => {
+        return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.x.toFixed(2)) : undefined;
+    }, [carouselEntryKey, rotate.math]);
 
     // param 2
     const yTrackRef = useRef<HTMLDivElement | null>(null);
@@ -85,6 +88,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1);
+    const yTitle = useMemo(() => {
+        return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.y.toFixed(2)) : undefined;
+    }, [carouselEntryKey, rotate.math]);
 
     // param 3
     const zTrackRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +99,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1);
+    const zTitle = useMemo(() => {
+        return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.z.toFixed(2)) : undefined;
+    }, [carouselEntryKey, rotate.math]);
 
     // param 4
     const timeUpperLimit = useMemo(() => {
@@ -110,6 +119,9 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
 
     // main param
     const [angle, setAngle] = useState(0);
+    const angleTitle = useMemo(() => {
+        return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.angle.toFixed(0)) + '°' : undefined;
+    }, [carouselEntryKey, rotate.math]);
 
     const [counterClockwise, setCounterClockwise] = useState<boolean>(() => {
         return (rotate.math.get(carouselEntryKey)?.angle ?? 0) < 0 ? true : false
@@ -198,11 +210,11 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 initControls.angle = activeEquation.angle;
             }
             else if (activeKey) {
-                initControls.x = 0;
-                initControls.y = 0;
-                initControls.z = 0;
-                initControls.time = 0.000001;
-                initControls.angle = 0;
+                initControls.x = defaultRotateEquation.x;
+                initControls.y = defaultRotateEquation.y;
+                initControls.z = defaultRotateEquation.z;
+                initControls.time = defaultRotateEquation.time;
+                initControls.angle = defaultRotateEquation.angle;
             }
             updateTrackpads(initControls);
         })();
@@ -365,10 +377,10 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             }
                                         }}
                                         disabled={rotate.locked}
-                                        title={(rotate.math.get(carouselEntryKey)?.x.toFixed(2))} />
+                                        title={xTitle} />
                                     <ParameterSliderY
                                         label={"y"}
-                                        hash={`${rotate.rotate_id}|p1`}
+                                        hash={`${rotate.rotate_id}|p2`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={yTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -393,10 +405,10 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             }
                                         }}
                                         disabled={rotate.locked}
-                                        title={(rotate.math.get(carouselEntryKey)?.y.toFixed(2))} />
+                                        title={yTitle} />
                                     <ParameterSliderY
                                         label={"z"}
-                                        hash={`${rotate.rotate_id}|p1`}
+                                        hash={`${rotate.rotate_id}|p3`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={zTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -421,10 +433,10 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             }
                                         }}
                                         disabled={rotate.locked}
-                                        title={(rotate.math.get(carouselEntryKey)?.z.toFixed(2))} />
+                                        title={zTitle} />
                                     <ParameterSliderY
                                         label={"time"}
-                                        hash={`${rotate.rotate_id}|p1`}
+                                        hash={`${rotate.rotate_id}|p4`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -776,7 +788,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={rotate.math.get(carouselEntryKey)?.angle.toFixed(0) + '°'} />
+                                    title={angleTitle} />
                             </div>
                         </div>
                     </div>

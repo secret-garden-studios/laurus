@@ -96,6 +96,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             500 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+    const amplitudeTitle = useMemo(() => {
+        return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.amplitude.toFixed(2)) + 'px' : undefined;
+    }, [carouselEntryKey, move.math]);
 
     // param 2
     const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
@@ -104,6 +107,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             20 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+    const frequencyTitle = useMemo(() => {
+        return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.frequency.toFixed(2)) + 'hz' : undefined;
+    }, [carouselEntryKey, move.math]);
 
     // param 3
     const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
@@ -112,6 +118,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             1000 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+    const wavelengthTitle = useMemo(() => {
+        return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.wavelength.toFixed(2)) + 'px' : undefined;
+    }, [carouselEntryKey, move.math]);
 
     // param 4
     const distanceTrackRef = useRef<HTMLDivElement | null>(null);
@@ -120,6 +129,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
             3000 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+    const distanceTitle = useMemo(() => {
+        return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.distance.toFixed(2)) + 'px' : undefined;
+    }, [carouselEntryKey, move.math]);
 
     // param 5
     const timeUpperLimit = useMemo(() => {
@@ -137,6 +149,9 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
 
     // main param
     const [angle, setAngle] = useState(0);
+    const angleTitle = useMemo(() => {
+        return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.angle.toFixed(0)) + '°' : undefined;
+    }, [carouselEntryKey, move.math]);
 
     const setActiveElementIfNull = useCallback(() => {
         if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
@@ -220,12 +235,12 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 initControls.angle = activeEquation.angle;
             }
             else if (activeKey) {
-                initControls.amplitude = 0;
-                initControls.frequency = 0;
-                initControls.wavelength = 0;
-                initControls.distance = 0;
+                initControls.amplitude = defaultMoveEquation.amplitude;
+                initControls.frequency = defaultMoveEquation.frequency;
+                initControls.wavelength = defaultMoveEquation.wavelength;
+                initControls.distance = defaultMoveEquation.distance;
                 initControls.time = 0;
-                initControls.angle = 0;
+                initControls.angle = defaultMoveEquation.angle;
             }
             updateTrackpads(initControls);
         })();
@@ -381,10 +396,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         disabled={move.locked}
-                                        title={(move.math.get(carouselEntryKey)?.amplitude.toFixed(2)) + 'px'} />
+                                        title={amplitudeTitle} />
                                     <ParameterSliderY
                                         label={"frequency"}
-                                        hash={`${move.move_id}|p1`}
+                                        hash={`${move.move_id}|p2`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={frequencyTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -409,10 +424,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         disabled={move.locked}
-                                        title={(move.math.get(carouselEntryKey)?.frequency.toFixed(2)) + 'hz'} />
+                                        title={frequencyTitle} />
                                     <ParameterSliderY
                                         label={"wavelength"}
-                                        hash={`${move.move_id}|p1`}
+                                        hash={`${move.move_id}|p3`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={wavelengthTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -437,10 +452,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         disabled={move.locked}
-                                        title={(move.math.get(carouselEntryKey)?.wavelength.toFixed(2)) + 'px'} />
+                                        title={wavelengthTitle} />
                                     <ParameterSliderY
                                         label={"distance"}
-                                        hash={`${move.move_id}|p1`}
+                                        hash={`${move.move_id}|p4`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={distanceTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -465,10 +480,10 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         disabled={move.locked}
-                                        title={(move.math.get(carouselEntryKey)?.distance.toFixed(2)) + 'px'} />
+                                        title={distanceTitle} />
                                     <ParameterSliderY
                                         label={"time"}
-                                        hash={`${move.move_id}|p1`}
+                                        hash={`${move.move_id}|p5`}
                                         size={dynamicSizes.paramSlider}
                                         trackRef={timeTrackRef}
                                         trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
@@ -774,7 +789,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={move.math.get(carouselEntryKey)?.angle.toFixed(0) + '°'} />
+                                    title={angleTitle} />
                             </div>
                         </div>
                     </div>
