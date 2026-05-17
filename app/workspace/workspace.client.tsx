@@ -921,7 +921,7 @@ export default function Workspace({
             if (frames) {
                 const keyframes = toKeyframes(firstFrame, frames);
                 const imgRef = imgElementsRef.current?.get(key);
-                if (!imgRef) return [];
+                if (!imgRef) continue;
                 const animations = imgRef.getAnimations();
                 for (let j = 0; j < animations.length; j++) {
                     animations[j].cancel();
@@ -940,7 +940,7 @@ export default function Workspace({
             if (frames) {
                 const keyframes = toKeyframes(firstFrame, frames);
                 const svgRef = svgElementsRef.current?.get(key);
-                if (!svgRef) return [];
+                if (!svgRef) continue;
                 const animations = svgRef.getAnimations();
                 for (let j = 0; j < animations.length; j++) {
                     animations[j].cancel();
