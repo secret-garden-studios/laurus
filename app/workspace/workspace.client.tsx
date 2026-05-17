@@ -799,14 +799,19 @@ export default function Workspace({
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+                return;
+            }
+
             if (event.key === 'Escape') {
-                const pendingSvgs = Array.from(appState.project.svgs.entries().filter(m => m[1].showContextMenu));
+                const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
                     const [key, svgMeta] = pendingSvgs[i];
                     const newSvg: LaurusProjectSvg = { ...svgMeta, showContextMenu: false }
                     dispatch({ type: WorkspaceActionType.SetProjectSvg, key, value: newSvg });
                 }
-                const pendingImgs = Array.from(appState.project.imgs.entries().filter(m => m[1].showContextMenu));
+                const pendingImgs = Array.from(appState.project.imgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingImgs.length; i++) {
                     const [key, imgMeta] = pendingImgs[i];
                     const newImg: LaurusProjectImg = { ...imgMeta, showContextMenu: false }
@@ -816,6 +821,16 @@ export default function Workspace({
                 dispatch({
                     type: WorkspaceActionType.SetBrowserElement,
                     value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                });
+            } else if (event.key.toLowerCase() === 'm') {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'move' } });
+                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                inactiveImgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                inactiveSvgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                 });
             }
         };
