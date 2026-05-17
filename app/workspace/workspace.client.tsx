@@ -804,6 +804,17 @@ export default function Workspace({
                 return;
             }
 
+            const clearAllContextMenus = () => {
+                const inactiveImgs = Array.from(appState.project.imgs.entries());
+                const inactiveSvgs = Array.from(appState.project.svgs.entries());
+                inactiveImgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+                inactiveSvgs.forEach(i => {
+                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                });
+            };
+
             if (event.key === 'Escape') {
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
@@ -824,21 +835,27 @@ export default function Workspace({
                 });
             } else if (event.key.toLowerCase() === 'm') {
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'move' } });
-                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                inactiveImgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
-                inactiveSvgs.forEach(i => {
-                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                });
+                clearAllContextMenus();
+            } else if (event.key.toLowerCase() === 'r') {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
+                clearAllContextMenus();
+            } else if (event.key.toLowerCase() === 's') {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
+                clearAllContextMenus();
+            } else if (event.key.toLowerCase() === 'v') {
+                const newToolType = appState.tool.type === 'viewport' ? 'none' : 'viewport';
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: newToolType } });
+                clearAllContextMenus();
+            } else if (event.key.toLowerCase() === 'd') {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } });
+                clearAllContextMenus();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [appState.project.imgs, appState.project.svgs]);
+    }, [appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch]);
 
     const handleImgPageRequest = useCallback(async () => {
         const mediaArray = Array.from(appState.browserImgs.values());
