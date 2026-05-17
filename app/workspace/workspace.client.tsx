@@ -1053,7 +1053,7 @@ export default function Workspace({
                             left: 0,
                             width: 'min-content',
                             height: 'min-content',
-                            zIndex: 2
+                            zIndex: 1000
                         }}>
                         <Canvas />
                     </div>}
