@@ -819,6 +819,10 @@ export default function Workspace({
             if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
                 return;
             }
+            if (event.metaKey) {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                return;
+            }
 
             const clearAllContextMenus = () => {
                 const inactiveImgs = Array.from(appState.project.imgs.entries());
@@ -845,10 +849,6 @@ export default function Workspace({
                     dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                 }
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                dispatch({
-                    type: WorkspaceActionType.SetBrowserElement,
-                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
-                });
             } else if (event.key.toLowerCase() === 'm') {
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'move' } });
                 clearAllContextMenus();
