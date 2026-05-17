@@ -769,12 +769,18 @@ export default function MediaBrowser({
                             }
                         })
                         .map((svg, i) => {
-                            const decodedString = decodeURIComponent(
-                                atob(svg.markup)
-                                    .split('')
-                                    .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                                    .join('')
-                            );
+                            let decodedString = "";
+                            try {
+                                decodedString = decodeURIComponent(
+                                    atob(svg.markup)
+                                        .split('')
+                                        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                                        .join(''));
+                            }
+                            catch (error) {
+                                console.log("Failed to decodeURIComponent from svg markup", { error });
+                            }
+                            if (!decodedString) return;
                             return (
                                 <div key={i}
                                     style={{
@@ -821,7 +827,7 @@ export default function MediaBrowser({
                                                 boxShadow: '5px 5px 12px rgba(11, 11, 11, 0.6)',
                                                 border: '1px solid rgba(255,255,255,0.05)'
                                             }}>
-                                            {decodedString && <svg
+                                            <svg
                                                 version="1.1"
                                                 width={dynamicSizes.mediaItemSize.svg}
                                                 height={dynamicSizes.mediaItemSize.svg}
@@ -829,7 +835,7 @@ export default function MediaBrowser({
                                                 stroke={svg.stroke}
                                                 strokeWidth={svg.stroke_width}
                                                 viewBox={svg.viewbox}
-                                                dangerouslySetInnerHTML={{ __html: decodedString }} />}
+                                                dangerouslySetInnerHTML={{ __html: decodedString }} />
                                         </div>
                                         {(showContextMenu && browserElementMediaId == svg.svg_media_id) &&
                                             <BrowserContextMenu

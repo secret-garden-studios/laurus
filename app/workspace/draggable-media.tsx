@@ -2,7 +2,7 @@
 import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform } from "./workspace.client";
+import { LaurusImgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform } from "./workspace.client";
 import { RefObject, useCallback, useContext, useMemo } from "react";
 import { updateProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
@@ -204,7 +204,6 @@ function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                             key: mediaKey,
                             type: 'img',
                             meta: meta,
-                            data: data,
                         }}
                         transform={transform} />
                 }
@@ -220,7 +219,7 @@ interface ProjectSvg {
     maxZIndex: number,
     mediaKey: string,
     meta: LaurusProjectSvg,
-    data: LaurusSvgResult,
+    decodedString: string,
     onClick: (metaKey: boolean) => void,
     onMouseEnter?: () => void,
     onMouseLeave?: () => void,
@@ -230,7 +229,7 @@ interface ProjectSvg {
     transform?: LaurusTransform,
     disabled?: { value: boolean, cursor: string },
 }
-function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, data, onClick, onMouseEnter, onMouseLeave, onSvgRef, refKey, title, transform, disabled }: ProjectSvg) {
+function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, decodedString, onClick, onMouseEnter, onMouseLeave, onSvgRef, refKey, title, transform, disabled }: ProjectSvg) {
     const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } = useDraggable({ id: dndId, disabled: disabled?.value ?? false });
     const dndCss = {
         left: dndPosition.x,
@@ -238,12 +237,6 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
         transform: CSS.Translate.toString(dndTransform),
         touchAction: 'none',
     };
-    const decodedString = decodeURIComponent(
-        atob(data.markup)
-            .split('')
-            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-            .join('')
-    );
     const containerSize = useMemo(() => {
         return {
             width: meta.width * meta.scale_x,
@@ -299,10 +292,10 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                             version="1.1"
                             width={containerSize.width}
                             height={containerSize.height}
-                            fill={data.fill}
-                            stroke={data.stroke}
-                            strokeWidth={data.stroke_width}
-                            viewBox={data.viewbox}
+                            fill={meta.fill}
+                            stroke={meta.stroke}
+                            strokeWidth={meta.stroke_width}
+                            viewBox={meta.viewbox}
                             dangerouslySetInnerHTML={{ __html: decodedString }} />
                     }
                 </div>
@@ -313,7 +306,6 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                         key: mediaKey,
                         type: 'svg',
                         meta: meta,
-                        data: data,
                     }}
                     transform={transform} />
             }
@@ -545,7 +537,7 @@ export function DraggableProjectImg({
 
 interface DraggableProjectSvg {
     mediaKey: string
-    data: LaurusSvgResult,
+    decodedString: string,
     meta: LaurusProjectSvg,
     zIndex: number,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
@@ -554,7 +546,7 @@ interface DraggableProjectSvg {
 }
 export function DraggableProjectSvg({
     mediaKey,
-    data,
+    decodedString,
     meta,
     zIndex,
     svgElementsRef,
@@ -759,7 +751,7 @@ export function DraggableProjectSvg({
                 maxZIndex={highestOrder}
                 mediaKey={mediaKey}
                 meta={meta}
-                data={data}
+                decodedString={decodedString}
                 onClick={onSvgClick}
                 onSvgRef={onSvgRef}
                 refKey={refKey}

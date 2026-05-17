@@ -124,8 +124,8 @@ function cleanUpBrowserElement(
 }
 
 export type ContextMenuMedia =
-    | { type: 'img', key: string, meta: LaurusProjectImg, data: LaurusImgResult }
-    | { type: 'svg', key: string, meta: LaurusProjectSvg, data: LaurusSvgResult }
+    | { type: 'img', key: string, meta: LaurusProjectImg }
+    | { type: 'svg', key: string, meta: LaurusProjectSvg }
 interface ContextMenu {
     media: ContextMenuMedia,
     transform?: LaurusTransform,

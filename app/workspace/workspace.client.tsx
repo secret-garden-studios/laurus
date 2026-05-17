@@ -1152,12 +1152,24 @@ export default function Workspace({
                                 if (meta.top < 0 || meta.left < 0) return;
                                 const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const svgData = appState.canvasSvgs.get(key);
-                                if (svgData) {
+                                if (!svgData) return;
+                                let decodedString = "";
+                                try {
+                                    decodedString = decodeURIComponent(
+                                        atob(svgData.markup)
+                                            .split('')
+                                            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                                            .join(''));
+                                }
+                                catch (error) {
+                                    console.log("Failed to decodeURIComponent from svg markup", { error })
+                                }
+                                if (decodedString) {
                                     return (
                                         <div key={key}>
                                             <DraggableProjectSvg
                                                 mediaKey={key}
-                                                data={svgData}
+                                                decodedString={decodedString}
                                                 meta={meta}
                                                 zIndex={meta.order + 3}
                                                 svgElementsRef={svgElementsRef}
