@@ -690,7 +690,7 @@ export default function MediaBrowser({
                         .map((img, i) => {
                             const display = calculateSquareDisplay(img.width, img.height);
                             return (
-                                <div key={img.img_media_id}
+                                <div key={i}
                                     style={{
                                         gridColumn: 2,
                                         padding: dynamicSizes.mediaItemSize.padding,
@@ -776,7 +776,7 @@ export default function MediaBrowser({
                                     .join('')
                             );
                             return (
-                                <div key={svg.svg_media_id}
+                                <div key={i}
                                     style={{
                                         gridColumn: 2,
                                         padding: dynamicSizes.mediaItemSize.padding,

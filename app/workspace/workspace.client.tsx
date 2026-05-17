@@ -630,7 +630,7 @@ function initReducer({
     const projectSvgIds = new Set(projectDependencies?.project.svgs.values().map(s => s.svg_media_id) || []);
 
     const combinedImgs = [...browserDependencies.browserImgs, ...missingImgs];
-    const newBrowserImgs: LaurusImgResult[] = newProject.browse_public_imgs
+    const rawBrowserImgs: LaurusImgResult[] = newProject.browse_public_imgs
         ? combinedImgs.sort((a, b) => {
             const aExists = projectImgIds.has(a.img_media_id);
             const bExists = projectImgIds.has(b.img_media_id);
@@ -639,9 +639,17 @@ function initReducer({
             return a.order - b.order;
         }).map(v => ({ ...v }))
         : Array.from(newCanvasImgs.values()).sort((a, b) => a.order - b.order);
+    const newBrowserImgs: LaurusImgResult[] = [];
+    const seenImgIds = new Set<string>();
+    for (const img of rawBrowserImgs) {
+        if (!seenImgIds.has(img.img_media_id)) {
+            newBrowserImgs.push(img);
+            seenImgIds.add(img.img_media_id);
+        }
+    }
 
     const combinedSvgs = [...browserDependencies.browserSvgs, ...missingSvgs];
-    const newBrowserSvgs: LaurusSvgResult[] = newProject.browse_public_svgs
+    const rawBrowserSvgs: LaurusSvgResult[] = newProject.browse_public_svgs
         ? combinedSvgs.sort((a, b) => {
             const aExists = projectSvgIds.has(a.svg_media_id);
             const bExists = projectSvgIds.has(b.svg_media_id);
@@ -650,6 +658,14 @@ function initReducer({
             return a.order - b.order;
         }).map(v => ({ ...v }))
         : Array.from(newCanvasSvgs.values()).sort((a, b) => a.order - b.order);
+    const newBrowserSvgs: LaurusSvgResult[] = [];
+    const seenSvgIds = new Set<string>();
+    for (const svg of rawBrowserSvgs) {
+        if (!seenSvgIds.has(svg.svg_media_id)) {
+            newBrowserSvgs.push(svg);
+            seenSvgIds.add(svg.svg_media_id);
+        }
+    }
 
     const newBrowserFrames: LaurusCropSvg[] = getCrops('rgba(200, 200, 200, 1)');
     const newBrowserElement: LaurusBrowserElement | undefined =
