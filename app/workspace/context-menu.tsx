@@ -1,4 +1,4 @@
-import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch } from "react";
+import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect } from "react";
 import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult, projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
 import { updateProject } from "../projects/projects.server";
 import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType, LaurusScaleResult, LaurusMoveResult, LaurusRotateResult, LaurusActiveElement, LaurusTransform, LaurusBrowserElement, WorkspaceAction, LaurusEffect, defaultWorkspace, LaurusThumbnail } from "./workspace.client";
@@ -134,6 +134,21 @@ interface ContextMenu {
 export default function ContextMenu({ media, transform }: ContextMenu) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const selected = useMemo<boolean>(() => { return (appState.activeElement?.key ?? "") == media.key }, [appState.activeElement?.key, media.key]);
+    const [isAltPressed, setIsAltPressed] = useState(false);
+
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => setIsAltPressed(e.altKey);
+        const handleBlur = () => setIsAltPressed(false);
+        window.addEventListener('keydown', handleKey);
+        window.addEventListener('keyup', handleKey);
+        window.addEventListener('blur', handleBlur);
+        return () => {
+            window.removeEventListener('keydown', handleKey);
+            window.removeEventListener('keyup', handleKey);
+            window.removeEventListener('blur', handleBlur);
+        };
+    }, []);
+
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -565,23 +580,29 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
         }
     }, [appState.accessToken, appState.apiOrigin, appState.browserElement, appState.canvasImgs, appState.canvasSvgs, appState.project, dispatch, media.key, media.meta, media.type]);
 
-    const updateMediaOrder = useCallback(async (direction: 'increment' | 'decrement') => {
+    const updateMediaOrder = useCallback(async (direction: 'increment' | 'decrement' | 'top' | 'bottom') => {
         const snapshot = { ...appState.project }
         const newImgs = new Map(Array.from(snapshot.imgs, ([k, v]) => [k, { ...v }]));
         const newSvgs = new Map(Array.from(snapshot.svgs, ([k, v]) => [k, { ...v }]));
         const targetItem = newImgs.get(media.key) || newSvgs.get(media.key);
         if (!targetItem) return;
         const allItems = [...newImgs.values(), ...newSvgs.values()];
+        const maxOrder = allItems.length - 1;
+
         if (direction === 'decrement') {
             targetItem.order = Math.max(0, targetItem.order - 1);
-        } else {
-            const maxOrder = allItems.length - 1;
+        } else if (direction === 'increment') {
             targetItem.order = Math.min(maxOrder, targetItem.order + 1);
+        } else if (direction === 'top') {
+            targetItem.order = maxOrder + 1;
+        } else if (direction === 'bottom') {
+            targetItem.order = -1;
         }
+
         allItems.sort((a, b) => {
             if (a.order !== b.order) return a.order - b.order;
-            if (a === targetItem) return direction === 'decrement' ? -1 : 1;
-            if (b === targetItem) return direction === 'decrement' ? 1 : -1;
+            if (a === targetItem) return (direction === 'decrement' || direction === 'bottom') ? -1 : 1;
+            if (b === targetItem) return (direction === 'decrement' || direction === 'bottom') ? 1 : -1;
             return 0;
         });
         allItems.forEach((item, index) => {
@@ -751,8 +772,20 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 onClick={swapMedia}>
                                 {'swap'}
                             </div>
-                            <div style={{ ...cellStyle }} className={styles['animated-nav-dark']} onClick={() => { updateMediaOrder('increment') }}>{'move up'}</div>
-                            <div style={{ ...cellStyle }} className={styles['animated-nav-dark']} onClick={() => { updateMediaOrder('decrement') }}>{'move down'}</div>
+                            <div style={{ ...cellStyle }}
+                                className={styles['animated-nav-dark']}
+                                onClick={() => {
+                                    updateMediaOrder(isAltPressed ? 'top' : 'increment')
+                                }}>
+                                {isAltPressed ? 'move to top' : 'move up'}
+                            </div>
+                            <div style={{ ...cellStyle }}
+                                className={styles['animated-nav-dark']}
+                                onClick={() => {
+                                    updateMediaOrder(isAltPressed ? 'bottom' : 'decrement')
+                                }}>
+                                {isAltPressed ? 'move to bottom' : 'move down'}
+                            </div>
                             <div className={revertEnabled ? styles['animated-nav-dark'] : ''}
                                 style={{
                                     color: revertEnabled ? 'inherit' : 'rgba(127,127,127, 1)',
