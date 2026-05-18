@@ -682,7 +682,7 @@ function initReducer({
         effectNames: effectNames ?? [],
         apiOrigin: apiOrigin,
         timelineUnit: timelineUnits[0],
-        timelineMaxValue: timelineValues[0],
+        timelineMaxValue: timelineValues[1],
         timelineUnits: [...timelineUnits],
         timelineValues: [...timelineValues],
         browserImgs: newBrowserImgs,

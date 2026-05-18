@@ -87,6 +87,9 @@ export default function TimelineArea({
         switch (resolution.type) {
             case "high": {
                 switch (timelineMaxValue) {
+                    case 15: {
+                        return { modulo: 10, factor: 0.25, ticks: 61 };
+                    }
                     default:
                     case 30: {
                         return { modulo: 10, factor: 0.5, ticks: 61 };
@@ -101,6 +104,9 @@ export default function TimelineArea({
             }
             case "midhigh": {
                 switch (timelineMaxValue) {
+                    case 15: {
+                        return { modulo: 5, factor: 0.5, ticks: 31 };
+                    }
                     default:
                     case 30: {
                         return { modulo: 5, factor: 1, ticks: 31 };
@@ -116,6 +122,9 @@ export default function TimelineArea({
             case "midlow":
             case "low": {
                 switch (timelineMaxValue) {
+                    case 15: {
+                        return { modulo: 1, factor: 2.5, ticks: 7 };
+                    }
                     default:
                     case 30: {
                         return { modulo: 1, factor: 5, ticks: 7 };
@@ -161,7 +170,14 @@ export default function TimelineArea({
                 height: rulerSize,
             }}>
                 <div style={{
-                    padding: '0px 10px 0px 22px',
+                    padding: (() => {
+                        switch (appState.resolution.type) {
+                            case "high": return '0px 20px 0px 28px'
+                            case "midhigh": return '0px 12px 0px 28px'
+                            case "midlow":
+                            case "low": return '0px 10px 0px 26px'
+                        }
+                    })(),
                     fontSize: 10,
                     display: 'flex',
                     width: '100%',

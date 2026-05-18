@@ -59,7 +59,7 @@ export default function WorkspaceBoot({
     browserDependencies,
     mePromise }: WorkspaceBoot) {
     const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
-    const timelineValues = [30, 60, 90];
+    const timelineValues = [15, 30, 60, 90];
     const timelineUnits = ['sec', 'min'];
     const me = use(mePromise);
 
