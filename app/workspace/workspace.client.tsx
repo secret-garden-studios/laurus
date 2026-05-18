@@ -904,6 +904,16 @@ export default function Workspace({
     }, [appState.apiOrigin, appState.browserSvgs, mediaPageSize]);
 
     const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
+
+        const mathFound = ((key: string): boolean => {
+            let mathFound = false;
+            appState.effects.forEach(e => {
+                if (Array.from(e.value.math.keys()).includes(key)) {
+                    mathFound = true;
+                }
+            })
+            return mathFound;
+        });
         const newAnimations: Animation[] = [];
         const globalLimit: number = Math.max(...appState.effects
             .map(e => e.value.end));
@@ -915,8 +925,8 @@ export default function Workspace({
 
         const imgArray = Array.from(appState.project.imgs.entries());
         for (let i = 0; i < imgArray.length; i++) {
-            if (imgArray[i][1].left < 0 || imgArray[i][1].top < 0) continue;
             const [key] = imgArray[i];
+            if (imgArray[i][1].left < 0 || imgArray[i][1].top < 0 || !mathFound(key)) continue;
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
                 const keyframes = toKeyframes(firstFrame, frames);
@@ -934,8 +944,8 @@ export default function Workspace({
 
         const svgArray = Array.from(appState.project.svgs.entries());
         for (let i = 0; i < svgArray.length; i++) {
-            if (svgArray[i][1].left < 0 || svgArray[i][1].top < 0) continue;
             const [key] = svgArray[i];
+            if (svgArray[i][1].left < 0 || svgArray[i][1].top < 0 || !mathFound(key)) continue;
             const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
             if (frames) {
                 const keyframes = toKeyframes(firstFrame, frames);
