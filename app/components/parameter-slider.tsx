@@ -239,7 +239,6 @@ export function ParameterSliderXPlusMinus({
                             pointerStyle: PointerStyle.Blurry,
                             zIndex: 2,
                             borderColor: 'rgba(255,255,255,0.3)'
-
                         }}
                         value={cursor}
                         onNewValue={onNewCursor}
