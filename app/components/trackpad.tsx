@@ -147,7 +147,7 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
     })(pointerStyle);
 
     return (<>
-        <div ref={setNodeRef}
+        {liveTitleRef ? <div ref={setNodeRef}
             {...listeners}
             {...attributes}
             onMouseEnter={() => setIsHovered(true)}
@@ -173,6 +173,20 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     {title}
                 </div>
             )}
-        </div>
+        </div> : <div title={title}
+            {...listeners}
+            {...attributes}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            style={{
+                ...dndCss,
+                ...css,
+                cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
+                position: 'absolute',
+                width,
+                height,
+                zIndex
+            }} >
+        </div>}
     </>)
 }
