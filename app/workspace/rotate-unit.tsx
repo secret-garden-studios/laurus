@@ -80,6 +80,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const xTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.x.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);
+    const xRef = useRef<HTMLDivElement | null>(null);
 
     // param 2
     const yTrackRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +92,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const yTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.y.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);
+    const yRef = useRef<HTMLDivElement | null>(null);
 
     // param 3
     const zTrackRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +104,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const zTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.z.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);
+    const zRef = useRef<HTMLDivElement | null>(null);
 
     // param 4
     const timeUpperLimit = useMemo(() => {
@@ -116,6 +119,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const timeTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? ((rotate.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, rotate.math]);
+    const timeRef = useRef<HTMLDivElement | null>(null);
 
     // main param
     const [angle, setAngle] = useState(0);
@@ -348,6 +352,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                 <div style={{
                                     height: '100%',
                                     display: 'flex',
+                                    position: 'relative',
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
@@ -376,8 +381,14 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!xTrackRef.current || !xRef.current) return;
+                                            const val = getXValue(c.y, xTrackRef.current.clientHeight, 0);
+                                            xRef.current.innerHTML = val.toFixed(2);
+                                        }}
                                         disabled={rotate.locked}
-                                        title={xTitle} />
+                                        title={xTitle}
+                                        liveTitleRef={xRef} />
                                     <ParameterSliderY
                                         label={"y"}
                                         hash={`${rotate.rotate_id}|p2`}
@@ -404,8 +415,14 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!yTrackRef.current || !yRef.current) return;
+                                            const val = getYValue(c.y, yTrackRef.current.clientHeight, 0);
+                                            yRef.current.innerHTML = val.toFixed(2);
+                                        }}
                                         disabled={rotate.locked}
-                                        title={yTitle} />
+                                        title={yTitle}
+                                        liveTitleRef={yRef} />
                                     <ParameterSliderY
                                         label={"z"}
                                         hash={`${rotate.rotate_id}|p3`}
@@ -432,8 +449,14 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!zTrackRef.current || !zRef.current) return;
+                                            const val = getZValue(c.y, zTrackRef.current.clientHeight, 0);
+                                            zRef.current.innerHTML = val.toFixed(2);
+                                        }}
                                         disabled={rotate.locked}
-                                        title={zTitle} />
+                                        title={zTitle}
+                                        liveTitleRef={zRef} />
                                     <ParameterSliderY
                                         label={"time"}
                                         hash={`${rotate.rotate_id}|p4`}
@@ -461,8 +484,14 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!timeTrackRef.current || !timeRef.current) return;
+                                            const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
+                                            timeRef.current.innerHTML = val.toFixed(2) + 's';
+                                        }}
                                         disabled={rotate.locked}
-                                        title={timeTitle} />
+                                        title={timeTitle}
+                                        liveTitleRef={timeRef} />
                                 </div>
                                 <div />
                                 {/* toolbar */}

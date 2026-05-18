@@ -1,7 +1,7 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToParentElement } from "@dnd-kit/modifiers";
-import { CSSProperties } from "react";
+import { CSSProperties, RefObject, useState } from "react";
 
 export enum PointerStyle {
     Blurry,
@@ -25,6 +25,7 @@ interface TrackpadProps {
     zIndex?: number,
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
 export function Trackpad({
@@ -37,7 +38,8 @@ export function Trackpad({
     onMove,
     zIndex,
     disabled,
-    title }: TrackpadProps) {
+    title,
+    liveTitleRef }: TrackpadProps) {
 
     const sensors = useSensors(
         useSensor(PointerSensor)
@@ -80,6 +82,7 @@ export function Trackpad({
                     borderColor={coarsePointer.borderColor}
                     disabled={disabled}
                     title={title}
+                    liveTitleRef={liveTitleRef}
                 />
             </DndContext>
         </div>
@@ -96,18 +99,32 @@ interface CoarsePointerProps {
     borderColor?: string,
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title }: CoarsePointerProps) {
+function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title, liveTitleRef }: CoarsePointerProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
-
+    const [isHovered, setIsHovered] = useState(false);
     const dndCss = {
         left: coords.x,
         top: coords.y,
         transform: CSS.Translate.toString(transform),
         touchAction: 'none',
     };
-
+    const tooltipStyle: CSSProperties = {
+        position: 'absolute',
+        top: '50%',
+        left: 'calc(100% + 6px)',
+        transform: 'translateY(-50%)',
+        color: 'rgb(227,227,227)',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        zIndex: 1000,
+        letterSpacing: 1,
+        fontSize: 11,
+    };
     const css: CSSProperties = ((p) => {
         switch (p) {
             case PointerStyle.Blurry: {
@@ -130,11 +147,11 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
     })(pointerStyle);
 
     return (<>
-        <div
-            title={title}
-            ref={setNodeRef}
+        <div ref={setNodeRef}
             {...listeners}
             {...attributes}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
             style={{
                 ...dndCss,
                 ...css,
@@ -144,6 +161,18 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                 height,
                 zIndex
             }} >
+            {(isDragging && (title || liveTitleRef)) && (
+                <div
+                    ref={liveTitleRef}
+                    style={tooltipStyle} >
+                    {title}
+                </div>
+            )}
+            {(!isDragging && isHovered && title) && (
+                <div style={tooltipStyle}>
+                    {title}
+                </div>
+            )}
         </div>
     </>)
 }

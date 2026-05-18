@@ -23,6 +23,7 @@ interface ParameterSliderY {
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 export function ParameterSliderY({
     label,
@@ -35,6 +36,7 @@ export function ParameterSliderY({
     onCursorMove,
     disabled,
     title,
+    liveTitleRef
 }: ParameterSliderY) {
     const { appState } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => {
@@ -118,7 +120,8 @@ export function ParameterSliderY({
                             if (onCursorMove) { onCursorMove(c) }
                         }}
                         disabled={disabled}
-                        title={title} />
+                        title={title}
+                        liveTitleRef={liveTitleRef} />
                 </div>
                 <div
                     ref={trackRef}
