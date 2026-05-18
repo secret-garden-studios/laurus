@@ -173,7 +173,8 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     {title}
                 </div>
             )}
-        </div> : <div title={title}
+        </div> : <div ref={setNodeRef}
+            title={title}
             {...listeners}
             {...attributes}
             onMouseEnter={() => setIsHovered(true)}
