@@ -78,18 +78,19 @@ function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch
 function cleanUpMediaBrowser(
     mediaType: "img" | "svg",
     mediaId: string,
-    browsePublicImgs: boolean,
-    browsePublicSvgs: boolean,
+    project: LaurusProjectResult,
     dispatch: Dispatch<WorkspaceAction>) {
     switch (mediaType) {
         case "img": {
-            if (!browsePublicImgs) {
+            const stillExists = Array.from(project.imgs.values()).some(i => i.img_media_id === mediaId);
+            if (!project.browse_public_imgs && !stillExists) {
                 dispatch({ type: WorkspaceActionType.DeleteBrowserImg, value: mediaId })
             }
             break;
         }
         case "svg": {
-            if (!browsePublicSvgs) {
+            const stillExists = Array.from(project.svgs.values()).some(s => s.svg_media_id === mediaId);
+            if (!project.browse_public_svgs && !stillExists) {
                 dispatch({ type: WorkspaceActionType.DeleteBrowserSvg, value: mediaId })
             }
             break;
@@ -385,7 +386,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
                 await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
-                cleanUpMediaBrowser(media.type, mediaId, newProject.browse_public_imgs, newProject.browse_public_svgs, dispatch);
+                cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
                 if (appState.browserElement) {
                     cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
                 }
@@ -931,7 +932,7 @@ export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
                 dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
                 await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
-                cleanUpMediaBrowser(media.type, mediaId, newProject.browse_public_imgs, newProject.browse_public_svgs, dispatch);
+                cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
                 if (appState.browserElement) {
                     cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
                 }
