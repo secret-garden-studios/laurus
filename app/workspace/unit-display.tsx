@@ -117,8 +117,16 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                     return (
                                         <div
                                             key={c.key}
+                                            onClick={() => {
+                                                setActiveElement(i);
+                                                const inactives = appState.carouselEntries.filter((_, index) => index !== i);
+                                                inactives.forEach(ce => {
+                                                    hideContextMenu(ce);
+                                                });
+                                            }}
                                             style={{
                                                 position: 'relative',
+                                                cursor: 'pointer',
                                                 ...dynamicSizes.displayImg
                                             }}>
                                             <NextImage
@@ -143,6 +151,13 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                             key={c.key}
                                             svg={canvasSvg}
                                             containerSize={{ ...dynamicSizes.displaySvg }}
+                                            onContainerClick={() => {
+                                                setActiveElement(i);
+                                                const inactives = appState.carouselEntries.filter((_, index) => index !== i);
+                                                inactives.forEach(ce => {
+                                                    hideContextMenu(ce);
+                                                });
+                                            }}
                                             scale={1}
                                         />
                                     )
