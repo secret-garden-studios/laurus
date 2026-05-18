@@ -187,7 +187,6 @@ function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                         style={{
                             objectFit: 'cover',
                             outline: meta.showContextMenu ? '1px solid rgba(255, 255, 255, 0.175)' : 'none',
-                            borderRadius: meta.showContextMenu ? 6 : 0,
                             backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                             background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
@@ -270,7 +269,6 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dec
                         display: 'grid',
                         placeContent: 'center',
                         outline: meta.showContextMenu ? '1px solid rgba(255, 255, 255, 0.175)' : 'none',
-                        borderRadius: meta.showContextMenu ? 6 : 0,
                         backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                         background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
