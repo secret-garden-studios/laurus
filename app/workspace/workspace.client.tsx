@@ -904,7 +904,6 @@ export default function Workspace({
     }, [appState.apiOrigin, appState.browserSvgs, mediaPageSize]);
 
     const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
-
         const mathFound = ((key: string): boolean => {
             let mathFound = false;
             appState.effects.forEach(e => {
