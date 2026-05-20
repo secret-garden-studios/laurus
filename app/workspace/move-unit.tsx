@@ -1,13 +1,14 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement, convertTime } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, refresh, LaurusClientSvg, add2, remove } from "../svg-repo";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, LaurusClientSvg, add2, remove, earthquake, circleFillZero, ellipseFillZero, updateDisabled, syncAlt } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
-import { getMove, updateMove, LaurusLoopType } from "./workspace.server";
+import { getMove, updateMove, LaurusLoopType, LaurusShapeType } from "./workspace.server";
 import Dial from "../components/dial";
 import { ParameterSliderY } from "../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { dmSans } from "../fonts";
 
 interface MoveUnitControls {
     amplitude: number,
@@ -16,12 +17,14 @@ interface MoveUnitControls {
     distance: number,
     time: number,
     angle: number,
+    shape: LaurusShapeType,
 }
 
 const defaultMoveEquation: LaurusMoveEquation = {
     input_id: "",
     time: 0.000001,
     loop: LaurusLoopType.none,
+    shape: LaurusShapeType.wave,
     solution: [],
     angle: 0,
     amplitude: 0,
@@ -43,12 +46,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
-        amplitude: 0,
-        frequency: 0,
-        wavelength: 0,
-        distance: 0,
+        ...defaultMoveEquation,
         time: 0,
-        angle: 0,
     });
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
@@ -99,6 +98,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const amplitudeTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.amplitude.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
+    const amplitudeRef = useRef<HTMLDivElement | null>(null);
 
     // param 2
     const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +110,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const frequencyTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.frequency.toFixed(2)) + 'hz' : undefined;
     }, [carouselEntryKey, move.math]);
+    const frequencyRef = useRef<HTMLDivElement | null>(null);
 
     // param 3
     const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
@@ -121,6 +122,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const wavelengthTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.wavelength.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
+    const wavelengthRef = useRef<HTMLDivElement | null>(null);
 
     // param 4
     const distanceTrackRef = useRef<HTMLDivElement | null>(null);
@@ -132,6 +134,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const distanceTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.distance.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
+    const distanceRef = useRef<HTMLDivElement | null>(null);
 
     // param 5
     const timeUpperLimit = useMemo(() => {
@@ -146,6 +149,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const timeTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? ((move.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, move.math]);
+    const timeRef = useRef<HTMLDivElement | null>(null);
 
     // main param
     const [angle, setAngle] = useState(0);
@@ -287,37 +291,54 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         return newAnimations;
     }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
 
-    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+    const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
         const enabled = move.math.has(carouselEntryKey) ? true : false;
-        const selected = loopType != LaurusLoopType.none;
         switch (loopType) {
-            case LaurusLoopType.none:
-            case LaurusLoopType.loop: {
-                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            default:
+            case LaurusLoopType.none: {
+                return enabled ? updateDisabled() : updateDisabled('rgb(62,62,62)');
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
             case LaurusLoopType.loop_reverse: {
-                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
-            default: {
-                return [false, autorenew('rgb(62,62,62)')]
+            case LaurusLoopType.loop_infinite: {
+                return enabled ? autorenew() : autorenew('rgb(62,62,62)');
             }
+
         }
+    }, [carouselEntryKey, move.math]);
+
+    const loopSvgScale = useMemo((): number => {
+        const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none: return 0.85;
+            default: return 0.9;
+        }
+    }, [carouselEntryKey, move.math]);
+
+    const loopType = useMemo((): LaurusLoopType => {
+        return move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
     }, [carouselEntryKey, move.math]);
 
     const getNextLoopType = useCallback((): LaurusLoopType => {
         const currentLoop = move.math.get(carouselEntryKey)?.loop;
         switch (currentLoop) {
+            case LaurusLoopType.loop:
             case LaurusLoopType.none: {
-                return LaurusLoopType.loop;
+                return LaurusLoopType.loop_infinite;
             }
-            case LaurusLoopType.loop: {
+            case LaurusLoopType.loop_infinite: {
+                return LaurusLoopType.loop_reverse_infinite;
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
                 return LaurusLoopType.loop_reverse;
             }
+            default:
             case LaurusLoopType.loop_reverse: {
-                return LaurusLoopType.none;
-            }
-            default: {
                 return LaurusLoopType.none;
             }
         }
@@ -333,6 +354,42 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         const currentFactor = move.math.get(carouselEntryKey)?.limit_factor;
         if (!currentFactor) return 1;
         return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
+    }, [carouselEntryKey, move.math]);
+
+    const shapeSvg = useMemo((): LaurusClientSvg => {
+        const shapeType = move.math.get(carouselEntryKey)?.shape ?? LaurusShapeType.wave;
+        const enabled = move.math.has(carouselEntryKey) ? true : false;
+        switch (shapeType) {
+            default:
+            case LaurusShapeType.wave:
+                return enabled ? earthquake() : earthquake('rgb(62,62,62)');
+            case LaurusShapeType.circle: {
+                return enabled ? circleFillZero() : circleFillZero('rgb(62,62,62)');
+            }
+            case LaurusShapeType.ellipse: {
+                return enabled ? ellipseFillZero() : ellipseFillZero('rgb(62,62,62)');
+            }
+        }
+    }, [carouselEntryKey, move.math]);
+
+    const shapeType = useMemo((): LaurusShapeType => {
+        return move.math.get(carouselEntryKey)?.shape ?? LaurusShapeType.wave;
+    }, [carouselEntryKey, move.math]);
+
+    const getNextShapeType = useCallback((): LaurusShapeType => {
+        const currentLoop = move.math.get(carouselEntryKey)?.shape;
+        switch (currentLoop) {
+            case LaurusShapeType.wave: {
+                return LaurusShapeType.circle;
+            }
+            case LaurusShapeType.circle: {
+                return LaurusShapeType.ellipse;
+            }
+            default:
+            case LaurusShapeType.ellipse: {
+                return LaurusShapeType.wave;
+            }
+        }
     }, [carouselEntryKey, move.math]);
 
     return (
@@ -359,14 +416,15 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                 boxShadow: '4px 4px 12px rgba(11, 11, 11, 0.5)',
                                 borderRadius: 6,
                                 padding: 0,
-                                display: 'flex',
-                                height: dynamicSizes.paramButtonContainer.height * 7
+                                display: 'grid',
+                                gridTemplateColumns: 'auto min-content auto min-content',
+                                gridTemplateRows: 'auto',
+                                height: dynamicSizes.paramButtonContainer.height * 7,
                             }}>
+                                <div />
                                 <div style={{
                                     height: '100%',
                                     display: 'flex',
-                                    justifyContent: 'space-between',
-                                    width: '100%',
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
@@ -395,8 +453,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!amplitudeTrackRef.current || !amplitudeRef.current) return;
+                                            const val = getAmplitudeValue(c.y, amplitudeTrackRef.current.clientHeight, 0);
+                                            amplitudeRef.current.innerHTML = val.toFixed(2) + 'px';
+                                        }}
                                         disabled={move.locked}
-                                        title={amplitudeTitle} />
+                                        title={amplitudeTitle}
+                                        liveTitleRef={amplitudeRef} />
                                     <ParameterSliderY
                                         label={"frequency"}
                                         hash={`${move.move_id}|p2`}
@@ -423,9 +487,15 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!frequencyTrackRef.current || !frequencyRef.current) return;
+                                            const val = getFrequencyValue(c.y, frequencyTrackRef.current.clientHeight);
+                                            frequencyRef.current.innerHTML = val.toFixed(2) + 'hz';
+                                        }}
                                         disabled={move.locked}
-                                        title={frequencyTitle} />
-                                    <ParameterSliderY
+                                        title={frequencyTitle}
+                                        liveTitleRef={frequencyRef} />
+                                    {(shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse) && <ParameterSliderY
                                         label={"wavelength"}
                                         hash={`${move.move_id}|p3`}
                                         size={dynamicSizes.paramSlider}
@@ -451,9 +521,15 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!wavelengthTrackRef.current || !wavelengthRef.current) return;
+                                            const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
+                                            wavelengthRef.current.innerHTML = val.toFixed(2) + 'px';
+                                        }}
                                         disabled={move.locked}
-                                        title={wavelengthTitle} />
-                                    <ParameterSliderY
+                                        title={wavelengthTitle}
+                                        liveTitleRef={wavelengthRef} />}
+                                    {shapeType != LaurusShapeType.circle && <ParameterSliderY
                                         label={"distance"}
                                         hash={`${move.move_id}|p4`}
                                         size={dynamicSizes.paramSlider}
@@ -479,8 +555,14 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!distanceTrackRef.current || !distanceRef.current) return;
+                                            const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
+                                            distanceRef.current.innerHTML = val.toFixed(2) + 'px';
+                                        }}
                                         disabled={move.locked}
-                                        title={distanceTitle} />
+                                        title={distanceTitle}
+                                        liveTitleRef={distanceRef} />}
                                     <ParameterSliderY
                                         label={"time"}
                                         hash={`${move.move_id}|p5`}
@@ -508,21 +590,59 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                                 saveNewEquation(snapshot, newEquation);
                                             }
                                         }}
+                                        onCursorMove={(c) => {
+                                            if (!timeTrackRef.current || !timeRef.current) return;
+                                            const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
+                                            timeRef.current.innerHTML = val.toFixed(2) + 's';
+                                        }}
                                         disabled={move.locked}
-                                        title={timeTitle} />
+                                        title={timeTitle}
+                                        liveTitleRef={timeRef} />
                                 </div>
+                                <div />
                                 {/* toolbar */}
                                 <div style={{
-                                    borderLeft: '1px solid rgba(255, 255, 255, 0.025)',
                                     background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
-                                    borderTopRightRadius: 6,
-                                    borderBottomRightRadius: 6,
+                                    borderLeft: '1px solid rgba(255, 255, 255, 0.025)',
                                     padding: 0,
                                     display: 'grid',
                                     alignContent: 'start',
+                                    overflowY: 'auto',
+                                    borderTopRightRadius: 6,
+                                    borderBottomRightRadius: 6,
                                 }}>
+                                    <div title={"shape"}
+                                        onDoubleClick={() => {
+                                            if (move.locked) return;
+                                            const activeKey = carouselEntryKey;
+                                            if (activeKey) {
+                                                const snapshot: LaurusMoveResult = { ...move };
+                                                const activeEquation = snapshot.math.get(activeKey);
+                                                const newEquation = activeEquation ?
+                                                    { ...activeEquation, shape: getNextShapeType() } :
+                                                    {
+                                                        ...defaultMoveEquation,
+                                                        input_id: activeKey,
+                                                        shape: getNextShapeType(),
+                                                    };
+                                                saveNewEquation(snapshot, newEquation);
+                                            }
+                                        }}
+                                        style={{
+                                            cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            borderTopRightRadius: 6,
+                                            ...dynamicSizes.paramButtonContainer
+                                        }}>
+                                        <SvgRepo
+                                            title={"shape"}
+                                            svg={shapeSvg}
+                                            containerSize={{ ...dynamicSizes.paramButton }}
+                                            scale={0.85} />
+                                    </div>
                                     <div title={"loop"}
-                                        onClick={() => {
+                                        onDoubleClick={() => {
                                             if (move.locked) return;
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
@@ -539,18 +659,38 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             }
                                         }}
                                         style={{
+                                            position: 'relative',
                                             cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
-                                            background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
-                                            borderTopRightRadius: 6,
                                             ...dynamicSizes.paramButtonContainer
                                         }}>
                                         <SvgRepo
                                             title={"loop"}
-                                            svg={loopSvg[1]}
+                                            svg={loopSvg}
                                             containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.9} />
+                                            scale={loopSvgScale} />
+                                        {loopType === LaurusLoopType.loop_reverse && (
+                                            <div className={dmSans.className} style={{
+                                                position: 'absolute',
+                                                top: 1,
+                                                right: 1,
+                                                width: '2ch',
+                                                height: '2ch',
+                                                backgroundColor: 'rgb(220, 112, 112)',
+                                                borderRadius: '50%',
+                                                color: 'rgb(15, 15, 15)',
+                                                fontSize: 11,
+                                                fontWeight: 'bolder',
+                                                display: 'grid',
+                                                placeContent: 'center',
+                                                textAlign: 'center',
+                                                pointerEvents: 'none',
+                                                userSelect: 'none'
+                                            }}>
+                                                {'1'}
+                                            </div>
+                                        )}
                                     </div>
                                     <div title={"rewind"}
                                         onClick={async () => {
@@ -579,7 +719,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             title={"rewind"}
                                             svg={move.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                                             containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.9} />
+                                            scale={0.92} />
                                     </div>
                                     <div title={"play"}
                                         onClick={async () => {
@@ -746,7 +886,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                             </div>
                         </div>
                         {/* main control */}
-                        <div style={{ ...dynamicSizes.param }}>
+                        {shapeType != LaurusShapeType.circle && <div style={{ ...dynamicSizes.param }}>
                             <div style={{
                                 width: '100%',
                                 border: '1px solid rgba(255, 255, 255, 0.025)',
@@ -791,7 +931,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                     }}
                                     title={angleTitle} />
                             </div>
-                        </div>
+                        </div>}
                     </div>
                 </> :
                 <>

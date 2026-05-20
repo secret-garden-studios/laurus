@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, refresh, LaurusClientSvg, add2, remove } from "../svg-repo";
+import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, updateCounterClockwise, LaurusClientSvg, add2, remove, updateDisabled, syncAlt } from "../svg-repo";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import Dial from "../components/dial";
 import { ParameterSliderY } from "../components/parameter-slider";
@@ -8,6 +8,7 @@ import UnitDisplay, { DeepControls } from "./unit-display";
 import { getRotate, LaurusLoopType, updateRotate } from "./workspace.server";
 import { getDynamicUnitSizes } from "./workspace-resolution";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { dmSans } from "../fonts";
 
 interface RotateUnitControls {
     x: number,
@@ -272,37 +273,54 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         return newAnimations;
     }, [carouselEntryKey, appState.apiOrigin, appState.tool.type, appState.carouselEntries, rotate.rotate_id, carouselIndex, svgElementsRef, imgElementsRef]);
 
-    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+    const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
         const enabled = rotate.math.has(carouselEntryKey) ? true : false;
-        const selected = loopType != LaurusLoopType.none;
         switch (loopType) {
-            case LaurusLoopType.none:
-            case LaurusLoopType.loop: {
-                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            default:
+            case LaurusLoopType.none: {
+                return enabled ? updateDisabled() : updateDisabled('rgb(62,62,62)');
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
             case LaurusLoopType.loop_reverse: {
-                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
-            default: {
-                return [false, autorenew('rgb(62,62,62)')]
+            case LaurusLoopType.loop_infinite: {
+                return enabled ? autorenew() : autorenew('rgb(62,62,62)');
             }
+
         }
+    }, [carouselEntryKey, rotate.math]);
+
+    const loopSvgScale = useMemo((): number => {
+        const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none: return 0.85;
+            default: return 0.9;
+        }
+    }, [carouselEntryKey, rotate.math]);
+
+    const loopType = useMemo((): LaurusLoopType => {
+        return rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
     }, [carouselEntryKey, rotate.math]);
 
     const getNextLoopType = useCallback((): LaurusLoopType => {
         const currentLoop = rotate.math.get(carouselEntryKey)?.loop;
         switch (currentLoop) {
+            case LaurusLoopType.loop:
             case LaurusLoopType.none: {
-                return LaurusLoopType.loop;
+                return LaurusLoopType.loop_infinite;
             }
-            case LaurusLoopType.loop: {
+            case LaurusLoopType.loop_infinite: {
+                return LaurusLoopType.loop_reverse_infinite;
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
                 return LaurusLoopType.loop_reverse;
             }
+            default:
             case LaurusLoopType.loop_reverse: {
-                return LaurusLoopType.none;
-            }
-            default: {
                 return LaurusLoopType.none;
             }
         }
@@ -352,7 +370,6 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                 <div style={{
                                     height: '100%',
                                     display: 'flex',
-                                    position: 'relative',
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
@@ -506,7 +523,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                     borderBottomRightRadius: 6,
                                 }}>
                                     <div title="loop"
-                                        onClick={() => {
+                                        onDoubleClick={() => {
                                             if (rotate.locked) return;
                                             const activeKey = carouselEntryKey;
                                             if (activeKey) {
@@ -526,18 +543,39 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             }
                                         }}
                                         style={{
+                                            position: 'relative',
                                             cursor: rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                                             display: 'grid',
                                             placeContent: 'center',
-                                            background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                             borderTopRightRadius: 6,
                                             ...dynamicSizes.paramButtonContainer,
                                         }}>
                                         <SvgRepo
                                             title="loop"
-                                            svg={loopSvg[1]}
+                                            svg={loopSvg}
                                             containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.9} />
+                                            scale={loopSvgScale} />
+                                        {loopType === LaurusLoopType.loop_reverse && (
+                                            <div className={dmSans.className} style={{
+                                                position: 'absolute',
+                                                top: 1,
+                                                right: 1,
+                                                width: '2ch',
+                                                height: '2ch',
+                                                backgroundColor: 'rgb(220, 112, 112)',
+                                                borderRadius: '50%',
+                                                color: 'rgb(15, 15, 15)',
+                                                fontSize: 11,
+                                                fontWeight: 'bolder',
+                                                display: 'grid',
+                                                placeContent: 'center',
+                                                textAlign: 'center',
+                                                pointerEvents: 'none',
+                                                userSelect: 'none'
+                                            }}>
+                                                {'1'}
+                                            </div>
+                                        )}
                                     </div>
                                     <div title="counterclockwise"
                                         onClick={() => {

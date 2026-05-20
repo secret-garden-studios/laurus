@@ -490,7 +490,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             }}>
                 <div style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
                     <SvgRepo
-                        title={effect.type}
                         svg={(() => {
                             switch (effect.type) {
                                 case "scale": return allOut();
@@ -556,7 +555,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         }
                     }}>
                     <SvgRepo
-                        title={"show/hide parameters"}
+                        title={"parameters"}
                         svg={tune()}
                         containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
                         scale={0.65} />

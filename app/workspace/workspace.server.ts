@@ -381,7 +381,15 @@ export async function getEffects(baseUrl: string | undefined) {
 export enum LaurusLoopType {
     none = 'none',
     loop = 'loop',
+    loop_infinite = 'loop_infinite',
+    loop_reverse_infinite = 'loop_reverse_infinite',
     loop_reverse = 'loop_reverse'
+}
+
+export enum LaurusShapeType {
+    wave = 'wave',
+    circle = 'circle',
+    ellipse = 'ellipse',
 }
 
 /* /scales */
@@ -599,6 +607,7 @@ export interface MoveEquation_V1_0 {
     distance: number
     time: number
     loop: LaurusLoopType
+    shape: LaurusShapeType
     solution: { x: number, y: number }[]
     limit_factor: number
 }

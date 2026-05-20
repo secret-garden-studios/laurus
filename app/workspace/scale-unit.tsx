@@ -1,7 +1,7 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import { dellaRespira, dmSans } from "../fonts";
-import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, refresh, LaurusClientSvg, add2, remove } from "../svg-repo";
+import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, LaurusClientSvg, add2, remove, syncAlt, updateDisabled } from "../svg-repo";
 import { getScale, updateScale, LaurusLoopType } from "./workspace.server";
 import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../hooks/useTrackpadState";
@@ -140,6 +140,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const timeTitle = useMemo(() => {
         return scale.math.has(carouselEntryKey) ? ((scale.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, scale.math]);
+    const timeRef = useRef<HTMLDivElement | null>(null);
 
     // main params
     const [maxScale] = useState(30);
@@ -315,37 +316,54 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         return newAnimations;
     }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
 
-    const loopSvg = useMemo((): [boolean, LaurusClientSvg] => {
+    const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
         const enabled = scale.math.has(carouselEntryKey) ? true : false;
-        const selected = loopType != LaurusLoopType.none;
         switch (loopType) {
-            case LaurusLoopType.none:
-            case LaurusLoopType.loop: {
-                return enabled ? [selected, refresh()] : [selected, refresh('rgb(62,62,62)')];
+            default:
+            case LaurusLoopType.none: {
+                return enabled ? updateDisabled() : updateDisabled('rgb(62,62,62)');
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
             case LaurusLoopType.loop_reverse: {
-                return enabled ? [selected, autorenew()] : [selected, autorenew('rgb(62,62,62)')];
+                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
             }
-            default: {
-                return [false, autorenew('rgb(62,62,62)')]
+            case LaurusLoopType.loop_infinite: {
+                return enabled ? autorenew() : autorenew('rgb(62,62,62)');
             }
+
         }
+    }, [carouselEntryKey, scale.math]);
+
+    const loopSvgScale = useMemo((): number => {
+        const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+        switch (loopType) {
+            case LaurusLoopType.none: return 0.85;
+            default: return 0.9;
+        }
+    }, [carouselEntryKey, scale.math]);
+
+    const loopType = useMemo((): LaurusLoopType => {
+        return scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
     }, [carouselEntryKey, scale.math]);
 
     const getNextLoopType = useCallback((): LaurusLoopType => {
         const currentLoop = scale.math.get(carouselEntryKey)?.loop;
         switch (currentLoop) {
+            case LaurusLoopType.loop:
             case LaurusLoopType.none: {
-                return LaurusLoopType.loop;
+                return LaurusLoopType.loop_infinite;
             }
-            case LaurusLoopType.loop: {
+            case LaurusLoopType.loop_infinite: {
+                return LaurusLoopType.loop_reverse_infinite;
+            }
+            case LaurusLoopType.loop_reverse_infinite: {
                 return LaurusLoopType.loop_reverse;
             }
+            default:
             case LaurusLoopType.loop_reverse: {
-                return LaurusLoopType.none;
-            }
-            default: {
                 return LaurusLoopType.none;
             }
         }
@@ -393,7 +411,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                             <div style={{
                                 height: '100%',
                                 display: 'flex',
-                                borderRight: '1px solid rgba(255,255,255,0.025)',
                                 ...dynamicSizes.paramFlex
                             }}>
                                 <ParameterSliderY
@@ -422,8 +439,14 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
+                                    onCursorMove={(c) => {
+                                        if (!timeTrackRef.current || !timeRef.current) return;
+                                        const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
+                                        timeRef.current.innerHTML = val.toFixed(2) + 's';
+                                    }}
                                     disabled={scale.locked}
-                                    title={timeTitle} />
+                                    title={timeTitle}
+                                    liveTitleRef={timeRef} />
                             </div>
                             <div
                                 style={{
@@ -644,7 +667,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 alignContent: 'start',
                             }}>
                                 <div title={"loop"}
-                                    onClick={() => {
+                                    onDoubleClick={() => {
                                         if (scale.locked) return;
                                         const activeKey = carouselEntryKey;
                                         if (activeKey) {
@@ -661,18 +684,39 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         }
                                     }}
                                     style={{
+                                        position: 'relative',
                                         cursor: scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : '',
                                         display: 'grid',
                                         placeContent: 'center',
-                                        background: loopSvg[0] ? 'rgba(255, 255, 255, 0.1)' : 'none',
                                         borderTopRightRadius: 6,
                                         ...dynamicSizes.paramButtonContainer
                                     }}>
                                     <SvgRepo
                                         title={"loop"}
-                                        svg={loopSvg[1]}
+                                        svg={loopSvg}
                                         containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={0.9} />
+                                        scale={loopSvgScale} />
+                                    {loopType === LaurusLoopType.loop_reverse && (
+                                        <div className={dmSans.className} style={{
+                                            position: 'absolute',
+                                            top: 1,
+                                            right: 1,
+                                            width: '2ch',
+                                            height: '2ch',
+                                            backgroundColor: 'rgb(220, 112, 112)',
+                                            borderRadius: '50%',
+                                            color: 'rgb(15, 15, 15)',
+                                            fontSize: 11,
+                                            fontWeight: 'bolder',
+                                            display: 'grid',
+                                            placeContent: 'center',
+                                            textAlign: 'center',
+                                            pointerEvents: 'none',
+                                            userSelect: 'none'
+                                        }}>
+                                            {'1'}
+                                        </div>
+                                    )}
                                 </div>
                                 <div title={"rewind"}
                                     onClick={async () => {
