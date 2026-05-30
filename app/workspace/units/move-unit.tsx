@@ -1,16 +1,15 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusEffect, LaurusActiveElement, convertTime } from "./workspace.client";
-import { autorenew, playArrow, skipPrevious, SvgRepo, fileCopy, contentPaste, LaurusClientSvg, add2, remove, earthquake, circleFillZero, ellipseFillZero, updateDisabled, syncAlt } from "../svg-repo";
-import { useTrackpadState } from "../hooks/useTrackpadState";
-import { getMove, updateMove, LaurusLoopType, LaurusShapeType } from "./workspace.server";
-import Dial from "../components/dial";
-import { ParameterSliderY } from "../components/parameter-slider";
+import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusActiveElement, convertTime } from "../workspace.client";
+import { useTrackpadState } from "../../hooks/useTrackpadState";
+import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server";
+import Dial from "../../components/dial";
+import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "./workspace-resolution";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
-import { dmSans } from "../fonts";
+import { getDynamicUnitSizes } from "../workspace-resolution";
+import { useCarouselIndex } from "../../hooks/useCarouselIndex";
+import MoveUnitbar from "./bars/move-unitbar";
 
-interface MoveUnitControls {
+export interface MoveUnitControls {
     amplitude: number,
     frequency: number,
     wavelength: number,
@@ -20,7 +19,7 @@ interface MoveUnitControls {
     shape: LaurusShapeType,
 }
 
-const defaultMoveEquation: LaurusMoveEquation = {
+export const defaultMoveEquation: LaurusMoveEquation = {
     input_id: "",
     time: 0.000001,
     loop: LaurusLoopType.none,
@@ -190,13 +189,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         setActiveElementIfNull();
         dispatch({
             type: WorkspaceActionType.SetEffect,
-            value: { type: 'move', value: { ...newMove }, key: newMove.move_id, locked: newMove.locked },
+            value: { type: 'move', value: { ...newMove }, key: newMove.move_id },
         });
         const updated = await updateMove(appState.apiOrigin, appState.accessToken, rollback.move_id, { ...newMove });
         if (!updated) {
             dispatch({
                 type: WorkspaceActionType.SetEffect,
-                value: { type: 'move', value: { ...rollback }, key: rollback.move_id, locked: rollback.locked },
+                value: { type: 'move', value: { ...rollback }, key: rollback.move_id },
             });
         }
     }, [appState.accessToken, appState.apiOrigin, dispatch, setActiveElementIfNull]);
@@ -250,147 +249,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         })();
     }, [currentControls, carouselEntryKey, move.math, updateTrackpads]);
 
-    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = carouselEntryKey;
-        if (!activeKey) return [];
-        const newAnimations: Animation[] = [];
-        const response: LaurusMoveResult | undefined =
-            await getMove(appState.apiOrigin, move.move_id, activeKey);
-        if (response) {
-            const activeMath = response.math
-                .get(activeKey);
-            if (!activeMath) return [];
-            const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-                .map(s => { return { translate: `${s.x}px ${s.y}px 0px`, } }) ?? [];
-            const options: KeyframeAnimationOptions = {
-                duration: firstFrame ? 2 / response.fps : response.end * 1000,
-            }
-            const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-            switch (appState.carouselEntries[carouselIndex].type) {
-                case "svg": {
-                    const svgRef = svgElementsRef.current?.get(previewKey);
-                    if (!svgRef) return [];
-                    svgRef.getAnimations().forEach((a) => a.cancel());
-
-                    const keyframeEffect =
-                        new KeyframeEffect(svgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                    break;
-                }
-                case "img": {
-                    const imgRef = imgElementsRef.current?.get(previewKey);
-                    if (!imgRef) return [];
-                    imgRef.getAnimations().forEach((a) => a.cancel());
-                    const keyframeEffect =
-                        new KeyframeEffect(imgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                    break;
-                }
-            }
-        }
-        return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
-
-    const loopSvg = useMemo((): LaurusClientSvg => {
-        const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-        const enabled = move.math.has(carouselEntryKey) ? true : false;
-        switch (loopType) {
-            default:
-            case LaurusLoopType.none: {
-                return enabled ? updateDisabled() : updateDisabled('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_reverse_infinite: {
-                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_reverse: {
-                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_infinite: {
-                return enabled ? autorenew() : autorenew('rgb(62,62,62)');
-            }
-
-        }
-    }, [carouselEntryKey, move.math]);
-
-    const loopSvgScale = useMemo((): number => {
-        const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-        switch (loopType) {
-            case LaurusLoopType.none: return 0.85;
-            default: return 0.9;
-        }
-    }, [carouselEntryKey, move.math]);
-
-    const loopType = useMemo((): LaurusLoopType => {
-        return move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-    }, [carouselEntryKey, move.math]);
-
-    const getNextLoopType = useCallback((): LaurusLoopType => {
-        const currentLoop = move.math.get(carouselEntryKey)?.loop;
-        switch (currentLoop) {
-            case LaurusLoopType.loop:
-            case LaurusLoopType.none: {
-                return LaurusLoopType.loop_infinite;
-            }
-            case LaurusLoopType.loop_infinite: {
-                return LaurusLoopType.loop_reverse_infinite;
-            }
-            case LaurusLoopType.loop_reverse_infinite: {
-                return LaurusLoopType.loop_reverse;
-            }
-            default:
-            case LaurusLoopType.loop_reverse: {
-                return LaurusLoopType.none;
-            }
-        }
-    }, [carouselEntryKey, move.math]);
-
-    const decrementLimitFactor = useCallback((): number => {
-        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
-    }, [carouselEntryKey, move.math]);
-
-    const incrementLimitFactor = useCallback((): number => {
-        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
-    }, [carouselEntryKey, move.math]);
-
-    const shapeSvg = useMemo((): LaurusClientSvg => {
-        const shapeType = move.math.get(carouselEntryKey)?.shape ?? LaurusShapeType.wave;
-        const enabled = move.math.has(carouselEntryKey) ? true : false;
-        switch (shapeType) {
-            default:
-            case LaurusShapeType.wave:
-                return enabled ? earthquake() : earthquake('rgb(62,62,62)');
-            case LaurusShapeType.circle: {
-                return enabled ? circleFillZero() : circleFillZero('rgb(62,62,62)');
-            }
-            case LaurusShapeType.ellipse: {
-                return enabled ? ellipseFillZero() : ellipseFillZero('rgb(62,62,62)');
-            }
-        }
-    }, [carouselEntryKey, move.math]);
 
     const shapeType = useMemo((): LaurusShapeType => {
         return move.math.get(carouselEntryKey)?.shape ?? LaurusShapeType.wave;
     }, [carouselEntryKey, move.math]);
 
-    const getNextShapeType = useCallback((): LaurusShapeType => {
-        const currentLoop = move.math.get(carouselEntryKey)?.shape;
-        switch (currentLoop) {
-            case LaurusShapeType.wave: {
-                return LaurusShapeType.circle;
-            }
-            case LaurusShapeType.circle: {
-                return LaurusShapeType.ellipse;
-            }
-            default:
-            case LaurusShapeType.ellipse: {
-                return LaurusShapeType.wave;
-            }
-        }
-    }, [carouselEntryKey, move.math]);
 
     return (
         <div style={{
@@ -601,288 +464,17 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                 </div>
                                 <div />
                                 {/* toolbar */}
-                                <div style={{
-                                    background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
-                                    borderLeft: '1px solid rgba(255, 255, 255, 0.025)',
-                                    padding: 0,
-                                    display: 'grid',
-                                    alignContent: 'start',
-                                    overflowY: 'auto',
-                                    borderTopRightRadius: 6,
-                                    borderBottomRightRadius: 6,
-                                }}>
-                                    <div title={"shape"}
-                                        onDoubleClick={() => {
-                                            if (move.locked) return;
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation = activeEquation ?
-                                                    { ...activeEquation, shape: getNextShapeType() } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                        shape: getNextShapeType(),
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            borderTopRightRadius: 6,
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"shape"}
-                                            svg={shapeSvg}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.85} />
-                                    </div>
-                                    <div title={"loop"}
-                                        onDoubleClick={() => {
-                                            if (move.locked) return;
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation = activeEquation ?
-                                                    { ...activeEquation, loop: getNextLoopType() } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                        loop: getNextLoopType(),
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        style={{
-                                            position: 'relative',
-                                            cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"loop"}
-                                            svg={loopSvg}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={loopSvgScale} />
-                                        {loopType === LaurusLoopType.loop_reverse && (
-                                            <div className={dmSans.className} style={{
-                                                position: 'absolute',
-                                                top: 1,
-                                                right: 1,
-                                                width: '2ch',
-                                                height: '2ch',
-                                                backgroundColor: 'rgb(220, 112, 112)',
-                                                borderRadius: '50%',
-                                                color: 'rgb(15, 15, 15)',
-                                                fontSize: 11,
-                                                fontWeight: 'bolder',
-                                                display: 'grid',
-                                                placeContent: 'center',
-                                                textAlign: 'center',
-                                                pointerEvents: 'none',
-                                                userSelect: 'none'
-                                            }}>
-                                                {'1'}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div title={"rewind"}
-                                        onClick={async () => {
-                                            const newAnimations = await getPreviewAnimations(true);
-                                            Promise.all(newAnimations.map(animation => animation.finished))
-                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                                .then((_animations: Animation[]) => {
-                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                                })
-                                                .catch(err => {
-                                                    if (err instanceof Error && err.name !== 'AbortError') {
-                                                        console.log('unknown error from waapi:', err);
-                                                    }
-                                                });
-                                            newAnimations.forEach(a => {
-                                                a.play();
-                                            });
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"rewind"}
-                                            svg={move.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.92} />
-                                    </div>
-                                    <div title={"play"}
-                                        onClick={async () => {
-                                            const newAnimations = await getPreviewAnimations(false);
-                                            Promise.all(newAnimations.map(animation => animation.finished))
-                                                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                                .then((_animations: Animation[]) => {
-                                                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                                })
-                                                .catch(err => {
-                                                    if (err instanceof Error && err.name !== 'AbortError') {
-                                                        console.log('unknown error from waapi:', err);
-                                                    }
-                                                });
-                                            newAnimations.forEach(a => {
-                                                a.play();
-                                            });
-                                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"play"}
-                                            svg={move.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={1} />
-                                    </div>
-                                    <div title={"increase limits"}
-                                        onClick={() => {
-                                            if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == 1)) return;
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation = activeEquation ?
-                                                    {
-                                                        ...activeEquation,
-                                                        limit_factor: incrementLimitFactor(),
-                                                    } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer,
-                                        }}>
-                                        <SvgRepo
-                                            title={"increase limits"}
-                                            svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.88} />
-                                    </div>
-                                    <div title={"decrease limits"}
-                                        onClick={() => {
-                                            if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation = activeEquation ?
-                                                    {
-                                                        ...activeEquation,
-                                                        limit_factor: decrementLimitFactor(),
-                                                    } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer,
-                                        }}>
-                                        <SvgRepo
-                                            title={"decrease limits"}
-                                            svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.88} />
-                                    </div>
-                                    <div title={"copy"}
-                                        onClick={() => {
-                                            if (!wavelengthTrackRef.current) return;
-                                            let clipboardData: MoveUnitControls = { ...currentControls };
-                                            const activeEquation = move.math.get(carouselEntryKey);
-                                            if (activeEquation) {
-                                                clipboardData = { ...activeEquation };
-                                            }
-                                            const currentMoveEq: LaurusMoveEquation = {
-                                                ...clipboardData,
-                                                input_id: "clipboard",
-                                                loop: defaultMoveEquation.loop,
-                                                solution: defaultMoveEquation.solution,
-                                                limit_factor: defaultMoveEquation.limit_factor
-                                            }
-                                            const newMath: Map<string, LaurusMoveEquation> = new Map();
-                                            newMath.set("clipboard", currentMoveEq);
-                                            const newClipboardEffect: LaurusEffect = {
-                                                type: 'move',
-                                                key: move.move_id,
-                                                locked: move.locked,
-                                                value: { ...move, math: newMath }
-                                            };
-                                            dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"copy"}
-                                            svg={move.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.8} />
-                                    </div>
-                                    <div title={"paste"}
-                                        onClick={() => {
-                                            if (appState.effectClipboard && appState.effectClipboard.type == 'move') {
-                                                const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
-                                                if (!clipboardEquation) return;
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeKey = carouselEntryKey;
-                                                const newEquation: LaurusMoveEquation = { ...clipboardEquation };
-                                                const newControls: MoveUnitControls = { ...newEquation };
-                                                setCurrentControls(newControls);
-                                                updateTrackpads(newControls);
-                                                if (activeKey) {
-                                                    const newMath: LaurusMoveEquation = {
-                                                        ...newEquation,
-                                                        input_id: activeKey
-                                                    }
-                                                    saveNewEquation(snapshot, newMath);
-                                                }
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            ...dynamicSizes.paramButtonContainer
-                                        }}>
-                                        <SvgRepo
-                                            title={"paste"}
-                                            svg={appState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
-                                            containerSize={{ ...dynamicSizes.paramButton }}
-                                            scale={0.88} />
-                                    </div>
-                                </div>
+                                <MoveUnitbar
+                                    move={move}
+                                    imgElementsRef={imgElementsRef}
+                                    svgElementsRef={svgElementsRef}
+                                    carouselEntryKey={carouselEntryKey}
+                                    carouselIndex={carouselIndex}
+                                    currentControls={currentControls}
+                                    setCurrentControls={setCurrentControls}
+                                    updateTrackpads={updateTrackpads}
+                                    saveNewEquation={saveNewEquation}
+                                />
                             </div>
                         </div>
                         {/* main control */}

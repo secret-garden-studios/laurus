@@ -1,9 +1,9 @@
 import { useContext, useState, useCallback } from "react";
-import { SvgRepo, chevronLeft, chevronRight } from "../svg-repo";
-import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import styles from "../app.module.css";
+import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
+import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
 import NextImage from "next/image";
-import { getDynamicUnitSizes } from "./workspace-resolution";
+import { getDynamicUnitSizes } from "../workspace-resolution";
+import styles from "@/app/app.module.css";
 
 interface UnitDisplay {
     carouselIndex: number,
@@ -83,11 +83,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     <SvgRepo
                         title={"select previous"}
                         svg={appState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
-                        containerSize={{
+                        containerStyle={{
                             width: 30,
                             height: 30
                         }}
-                        scale={0.7}
+                        scale={1}
                         onContainerClick={() => {
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             const newLocalIndex = Math.max(localIndex - 1, 0);
@@ -150,7 +150,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                         <SvgRepo
                                             key={c.key}
                                             svg={canvasSvg}
-                                            containerSize={{ ...dynamicSizes.displaySvg }}
+                                            containerStyle={{ ...dynamicSizes.displaySvg }}
                                             onContainerClick={() => {
                                                 setActiveElement(i);
                                                 const inactives = appState.carouselEntries.filter((_, index) => index !== i);
@@ -159,6 +159,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                                 });
                                             }}
                                             scale={1}
+                                            scaleToContaier={true}
                                         />
                                     )
                                 }
@@ -170,11 +171,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     <SvgRepo
                         title={"select next"}
                         svg={appState.carouselEntries.length == 0 || carouselIndex >= appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
-                        containerSize={{
+                        containerStyle={{
                             width: 30,
                             height: 30
                         }}
-                        scale={0.7}
+                        scale={1}
                         onContainerClick={() => {
                             const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             const newLocalIndex = Math.min(localIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));

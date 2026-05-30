@@ -260,22 +260,20 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             boxSizing: "border-box",
                             outline: "none",
                         }} />
-                    <div style={{
-                        position: "absolute",
-                        right: dynamicSizes.searchBarSvg.right,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        color: 'rgba(227,227,227,1)',
-                        pointerEvents: "none",
-                    }}>
-                        <SvgRepo
-                            svg={search()}
-                            containerSize={{
-                                width: dynamicSizes.searchBarSvg.size,
-                                height: dynamicSizes.searchBarSvg.size
-                            }}
-                            scale={dynamicSizes.searchBarSvg.scale} />
-                    </div>
+                    <SvgRepo
+                        svg={search()}
+                        containerStyle={{
+                            width: dynamicSizes.searchBarSvg.size,
+                            height: dynamicSizes.searchBarSvg.size,
+                            position: "absolute",
+                            right: dynamicSizes.searchBarSvg.right,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            color: 'rgba(227,227,227,1)',
+                            pointerEvents: "none",
+                        }}
+                        scale={dynamicSizes.searchBarSvg.scale}
+                        scaleToContaier={true} />
                 </div>}
             </div>
             {/* left panel */}
@@ -594,11 +592,12 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     <SvgRepo
                         title="create new project"
                         svg={addCircle()}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.footerSvg.size,
                             height: dynamicSizes.footerSvg.size
                         }}
-                        scale={1} />
+                        scale={1}
+                        scaleToContaier={true} />
                 </div>
                 <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="open selected project"
@@ -618,11 +617,12 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     <SvgRepo
                         title="open selected project"
                         svg={selectedProject ? outbound() : outbound('rgba(255, 255, 255, 0.25)')}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.footerSvg.size,
                             height: dynamicSizes.footerSvg.size
                         }}
-                        scale={1} />
+                        scale={1}
+                        scaleToContaier={true} />
                 </div>
                 <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="duplicate selected project"
@@ -655,11 +655,12 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     <SvgRepo
                         title="duplicate selected project"
                         svg={selectedProject ? fileCopy() : fileCopy('rgba(255, 255, 255, 0.25)')}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.footerSvg.size,
                             height: dynamicSizes.footerSvg.size
                         }}
-                        scale={0.8} />
+                        scale={0.8}
+                        scaleToContaier={true} />
                 </div>
                 <div className={`${styles['hoverable-button']} ${styles[`${selectedProject ? 'is-active' : ''}`]}`}
                     title="delete selected project"
@@ -687,11 +688,12 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     <SvgRepo
                         title="delete selected project"
                         svg={selectedProject ? cancelCircle() : cancelCircle('rgba(255, 255, 255, 0.25)')}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.footerSvg.size,
                             height: dynamicSizes.footerSvg.size
                         }}
-                        scale={1} />
+                        scale={1}
+                        scaleToContaier={true} />
                 </div>
             </div>
             <div style={{ gridRow: 7, gridColumn: '1 / -1', }}>
@@ -791,31 +793,34 @@ function HeaderCell({
                 switch (sortStrategy) {
                     case sortStrategyKeys.ascending: return <SvgRepo
                         svg={arrowDropDown()}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.svgSize,
                             height: dynamicSizes.svgSize
                         }}
                         scale={dynamicSizes.svgScale}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             if (onSortDescedingClick) onSortDescedingClick();
                         }} />
                     case sortStrategyKeys.descending: return <SvgRepo
                         svg={arrowDropUp()}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.svgSize,
                             height: dynamicSizes.svgSize
                         }}
                         scale={dynamicSizes.svgScale}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             if (onSortAscendingClick) onSortAscendingClick();
                         }} />
                     default: return <SvgRepo
                         svg={arrowDropUp("rgba(0,0,0,0)")}
-                        containerSize={{
+                        containerStyle={{
                             width: dynamicSizes.svgSize,
                             height: dynamicSizes.svgSize
                         }}
-                        scale={dynamicSizes.svgScale} />
+                        scale={dynamicSizes.svgScale}
+                        scaleToContaier={true} />
                 }
             })()}
         </div>
@@ -884,15 +889,15 @@ function TablePlaceholder({ resolution }: TablePlaceholder) {
                 }}>
                     <div style={{ display: 'flex', alignItems: "center" }}>
                         <p>Click</p>
-                        <div style={{ padding: dynamicSizes.svg.padding }}>
-                            <SvgRepo
-                                svg={addCircle()}
-                                containerSize={{
-                                    width: dynamicSizes.svg.size,
-                                    height: dynamicSizes.svg.size
-                                }}
-                                scale={0.9} />
-                        </div>
+                        <SvgRepo
+                            svg={addCircle()}
+                            containerStyle={{
+                                width: dynamicSizes.svg.size,
+                                height: dynamicSizes.svg.size,
+                                padding: dynamicSizes.svg.padding
+                            }}
+                            scale={0.9}
+                            scaleToContaier={true} />
                         <p>to create a new project.</p></div>
                 </div>
                 <div

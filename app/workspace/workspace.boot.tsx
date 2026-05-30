@@ -61,6 +61,7 @@ export default function WorkspaceBoot({
     const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
     const timelineValues = [15, 30, 60, 90];
     const timelineUnits = ['sec', 'min'];
+    const mixableEffects = ['move'];
     const me = use(mePromise);
 
     useEffect(() => {
@@ -82,6 +83,7 @@ export default function WorkspaceBoot({
                         effectNamesInitPromise={effectsEnum}
                         timelineValuesInit={timelineValues}
                         timelineUnitsInit={timelineUnits}
+                        mixableEffectsInit={mixableEffects}
                         projectInitPromise={projectDependencies}
                         browserInitPromise={browserDependencies}
                         resolutionInit={resolution}

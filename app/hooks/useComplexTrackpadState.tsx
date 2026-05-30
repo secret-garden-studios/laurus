@@ -1,63 +1,84 @@
 import { useCallback, useMemo } from 'react';
 
+export interface ComplexTrackpadOptions {
+    minValue?: number;
+    fineTuningLimit?: number;
+    fineTuningSegmentRatio?: number;
+}
+
 export interface ComplexTrackpadState {
-    getComplexTrackValue: (cursor: number, trackWidth: number, minValue?: number) => number;
-    getComplexTrackCursor: (value: number, trackWidth: number) => number;
+    getComplexTrackValue: (cursor: number, trackWidth: number, options?: ComplexTrackpadOptions) => number;
+    getComplexTrackCursor: (value: number, trackWidth: number, options?: ComplexTrackpadOptions) => number;
 }
 
 export function useComplexTrackpadState(offset: number, maxValue: number): ComplexTrackpadState {
 
     const getContext = useCallback((trackWidth: number) => {
-        const maxCursor = Math.max(0, trackWidth - (offset));
+        const maxCursor = Math.max(0, trackWidth - offset);
         const medianCursor = Math.ceil(maxCursor / 2);
         const leftSector = Math.max(1, medianCursor);
         const rightSector = Math.max(1, maxCursor - medianCursor);
-        let rightReBase = 0;
-        for (let coordinate = 0; coordinate < rightSector; coordinate++) {
-            if ((coordinate / rightSector) * maxValue <= 1) {
-                rightReBase = coordinate;
-            } else {
-                break;
-            }
-        }
-        const safeReBase = Math.max(1, rightReBase);
-        const maxRebasedScale = ((rightReBase / rightSector) * maxValue) / 10;
-        return { medianCursor, maxCursor, rightSector, leftSector, rightReBase, safeReBase, maxRebasedScale };
-    }, [offset, maxValue]);
+        return { medianCursor, maxCursor, rightSector, leftSector };
+    }, [offset]);
 
     return useMemo(() => ({
-        getComplexTrackValue: (cursor: number, trackWidth: number, minValue: number = 0): number => {
+        getComplexTrackValue: (cursor: number, trackWidth: number, options: ComplexTrackpadOptions = {}): number => {
+            const { minValue = 0, fineTuningLimit, fineTuningSegmentRatio = 0.5 } = options;
             const ctx = getContext(trackWidth);
             const clampedCursor = Math.max(0, Math.min(cursor, ctx.maxCursor));
-            if (clampedCursor === ctx.medianCursor) return 1;
+
             let value: number;
-            if (clampedCursor > ctx.medianCursor) {
-                const cursorPercentage = (clampedCursor - ctx.medianCursor) / ctx.rightSector;
-                if (cursorPercentage * maxValue <= 1) {
-                    value = 1 + (((clampedCursor - ctx.medianCursor) / ctx.safeReBase) * ctx.maxRebasedScale);
-                } else {
-                    value = cursorPercentage * maxValue;
-                }
-            } else {
+            if (clampedCursor <= ctx.medianCursor) {
                 value = clampedCursor / ctx.leftSector;
+            } else {
+                if (fineTuningLimit !== undefined && fineTuningLimit > 1 && fineTuningLimit < maxValue) {
+                    const ratio = Math.max(0, Math.min(1, fineTuningSegmentRatio));
+                    const fineTuningWidth = Math.floor(ctx.rightSector * ratio);
+                    const fineTuningCursor = ctx.medianCursor + fineTuningWidth;
+
+                    if (clampedCursor <= fineTuningCursor) {
+                        const segmentPercentage = (clampedCursor - ctx.medianCursor) / Math.max(1, fineTuningWidth);
+                        value = 1 + segmentPercentage * (fineTuningLimit - 1);
+                    } else {
+                        const segmentPercentage = (clampedCursor - fineTuningCursor) / Math.max(1, ctx.rightSector - fineTuningWidth);
+                        value = fineTuningLimit + segmentPercentage * (maxValue - fineTuningLimit);
+                    }
+                } else {
+                    const sectorPercentage = (clampedCursor - ctx.medianCursor) / ctx.rightSector;
+                    value = 1 + sectorPercentage * (maxValue - 1);
+                }
             }
             return Math.max(minValue, value);
         },
 
-        getComplexTrackCursor: (value: number, trackWidth: number): number => {
+        getComplexTrackCursor: (value: number, trackWidth: number, options: ComplexTrackpadOptions = {}): number => {
+            const { fineTuningLimit, fineTuningSegmentRatio = 0.5 } = options;
             const ctx = getContext(trackWidth);
             const safeValue = Math.max(0, value);
+
             let cursor: number;
-            if (safeValue === 1) {
-                cursor = ctx.medianCursor;
-            } else if (safeValue > 1) {
-                if (safeValue <= 1 + ctx.maxRebasedScale && ctx.maxRebasedScale > 0) {
-                    cursor = ((safeValue - 1) / ctx.maxRebasedScale * ctx.rightReBase) + ctx.medianCursor;
-                } else {
-                    cursor = (safeValue / maxValue * ctx.rightSector) + ctx.medianCursor;
-                }
-            } else {
+            if (safeValue <= 1) {
                 cursor = safeValue * ctx.leftSector;
+            } else {
+                if (fineTuningLimit !== undefined && fineTuningLimit > 1 && fineTuningLimit < maxValue) {
+                    const ratio = Math.max(0, Math.min(1, fineTuningSegmentRatio));
+                    const fineTuningWidth = Math.floor(ctx.rightSector * ratio);
+                    const fineTuningCursor = ctx.medianCursor + fineTuningWidth;
+
+                    if (safeValue <= fineTuningLimit) {
+                        const denominator = fineTuningLimit - 1;
+                        const segmentPercentage = denominator > 0 ? (safeValue - 1) / denominator : 0;
+                        cursor = ctx.medianCursor + segmentPercentage * fineTuningWidth;
+                    } else {
+                        const denominator = maxValue - fineTuningLimit;
+                        const segmentPercentage = denominator > 0 ? (safeValue - fineTuningLimit) / denominator : 0;
+                        cursor = fineTuningCursor + segmentPercentage * (ctx.rightSector - fineTuningWidth);
+                    }
+                } else {
+                    const denominator = maxValue - 1;
+                    const sectorPercentage = denominator > 0 ? (safeValue - 1) / denominator : 0;
+                    cursor = ctx.medianCursor + (sectorPercentage * ctx.rightSector);
+                }
             }
             return Math.max(0, Math.min(Math.round(cursor), ctx.maxCursor));
         }

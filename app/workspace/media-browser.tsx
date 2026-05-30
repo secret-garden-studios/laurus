@@ -545,7 +545,7 @@ export default function MediaBrowser({
                 display: 'flex',
                 alignItems: 'center',
                 height: dynamicSizes.mediaFilterSize.container,
-                borderBottom: '1px solid rgb(33, 33, 33)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
                 background: "rgb(15, 15, 15)",
             }}>
                 <MediaBrowserTab
@@ -607,11 +607,12 @@ export default function MediaBrowser({
                             <SvgRepo
                                 title={"discover images"}
                                 svg={appState.project.browse_public_imgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: dynamicSizes.switch.track.height * 1.33,
                                     height: dynamicSizes.switch.track.height * 1.33
                                 }}
-                                scale={1} />
+                                scale={1}
+                                scaleToContaier={true} />
                             <Toggle
                                 value={appState.project.browse_public_imgs}
                                 onClick={onImgDiscoverToggle}
@@ -630,11 +631,12 @@ export default function MediaBrowser({
                             <SvgRepo
                                 title={"discover svgs"}
                                 svg={appState.project.browse_public_svgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: dynamicSizes.switch.track.height * 1.33,
                                     height: dynamicSizes.switch.track.height * 1.33
                                 }}
-                                scale={1} />
+                                scale={1}
+                                scaleToContaier={true} />
                             <Toggle
                                 value={appState.project.browse_public_svgs}
                                 onClick={onSvgDiscoverToggle}
@@ -928,9 +930,8 @@ export default function MediaBrowser({
             }}>
                 <div
                     onClick={() => { setSortStrategy('order') }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     style={{
+                        cursor: 'pointer',
                         display: 'grid',
                         placeContent: 'center',
                         width: '100%',
@@ -940,17 +941,19 @@ export default function MediaBrowser({
                     }}>
                     <SvgRepo
                         svg={bookmarkStacks('rgb(220, 220, 220)')}
-                        containerSize={{
+                        containerStyle={{
+                            cursor: 'pointer',
                             width: dynamicSizes.mediaSortSize.svg,
                             height: dynamicSizes.mediaSortSize.svg
-                        }} scale={1} />
+                        }}
+                        scale={1}
+                        scaleToContaier={true} />
                 </div>
                 <div style={{ height: '100%', width: 1, background: 'rgba(255, 255, 255, 0.05)' }} />
                 <div
                     onClick={() => { setSortStrategy('timestamp') }}
-                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                     style={{
+                        cursor: 'pointer',
                         display: 'grid',
                         placeContent: 'center',
                         width: '100%',
@@ -958,10 +961,15 @@ export default function MediaBrowser({
                         background: sortStrategy == 'timestamp' ? 'rgba(255,255,255,0.05)' : 'none',
                         border: sortStrategy == 'timestamp' ? '1px solid rgba(255,255,255,0.05)' : 'none'
                     }}>
-                    <SvgRepo svg={timerArrowDown('rgb(220, 220, 220)')} containerSize={{
-                        width: dynamicSizes.mediaSortSize.svg,
-                        height: dynamicSizes.mediaSortSize.svg
-                    }} scale={1} />
+                    <SvgRepo
+                        svg={timerArrowDown('rgb(220, 220, 220)')}
+                        containerStyle={{
+                            cursor: 'pointer',
+                            width: dynamicSizes.mediaSortSize.svg,
+                            height: dynamicSizes.mediaSortSize.svg
+                        }}
+                        scale={1}
+                        scaleToContaier={true} />
                 </div>
             </div>
         </div>

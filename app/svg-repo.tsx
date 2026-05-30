@@ -1,4 +1,4 @@
-import { CSSProperties } from "react";
+import { CSSProperties, useMemo } from "react";
 
 function base64Encode(markup: string) {
     const cleaned = markup.replace(/>\s+</g, '><').trim();
@@ -44,32 +44,44 @@ export function getCrops(fill?: string): LaurusCropSvg[] {
 
 interface SvgRepo {
     svg: LaurusClientSvg,
-    containerSize: { width: number, height: number }
     scale: number | undefined,
+    scaleToContaier?: boolean,
     onContainerClick?: () => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     inputId?: string,
     title?: string,
     style?: CSSProperties,
+    containerStyle?: CSSProperties,
 }
-export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef, inputId, title, style }: SvgRepo) {
+export function SvgRepo({ svg, scale, scaleToContaier, onContainerClick, onSvgRef, inputId, title, style, containerStyle }: SvgRepo) {
     const decodedString = decodeURIComponent(
         atob(svg.markup)
             .split('')
             .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
             .join('')
     );
+
+    const width = useMemo(() => {
+        if (!scale) return svg.width;
+        const containerWidth: number = scaleToContaier ? parseFloat(containerStyle?.width?.toString() ?? '1') : 1;
+        return scaleToContaier ? scale * containerWidth : scale * svg.width;
+    }, [containerStyle?.width, scale, scaleToContaier, svg.width]);
+
+    const height = useMemo(() => {
+        if (!scale) return svg.height
+        const containerHeight: number = scaleToContaier ? parseFloat(containerStyle?.height?.toString() ?? '1') : 1;
+        return scaleToContaier ? scale * containerHeight : scale * svg.height;
+    }, [containerStyle?.height, scale, scaleToContaier, svg.height]);
+
     return (
         <div
             title={title ?? ""}
-            onMouseEnter={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'pointer' }}
-            onMouseLeave={(e) => { if (onContainerClick) e.currentTarget.style.cursor = 'default' }}
             onClick={() => { if (onContainerClick) onContainerClick() }}
             style={{
-                width: containerSize.width,
-                height: containerSize.height,
                 display: 'grid',
                 placeContent: 'center',
+                cursor: onContainerClick ? 'pointer' : 'default',
+                ...containerStyle,
             }}>
             {decodedString && <svg
                 ref={(r) => {
@@ -79,8 +91,8 @@ export function SvgRepo({ svg, containerSize, scale, onContainerClick, onSvgRef,
                 }}
                 style={style}
                 version="1.1"
-                width={scale ? scale * containerSize.width : svg.width}
-                height={scale ? scale * containerSize.height : svg.height}
+                width={width}
+                height={height}
                 fill={svg.fill}
                 stroke={svg.stroke}
                 strokeWidth={svg.stroke_width}
@@ -1372,5 +1384,37 @@ export function publicIcon(
         stroke: "none",
         stroke_width: 0,
         markup: base64Encode(`<path d="M324-111.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM440-162v-78q-33 0-56.5-23.5T360-320v-40L168-552q-3 18-5.5 36t-2.5 36q0 121 79.5 212T440-162Zm276-102q41-45 62.5-100.5T800-480q0-98-54.5-179T600-776v16q0 33-23.5 56.5T520-680h-80v80q0 17-11.5 28.5T400-560h-80v80h240q17 0 28.5 11.5T600-440v120h40q26 0 47 15.5t29 40.5Z"/>`)
+    }
+}
+
+export function experiment(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/experiment_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M200-120q-51 0-72.5-45.5T138-250l222-270v-240h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v240l222 270q32 39 10.5 84.5T760-120H200Zm80-120h400L544-400H416L280-240Zm-80 40h560L520-492v-268h-80v268L200-200Zm280-280Z"/>`)
+    }
+}
+
+export function scienceOff(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/science_off_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="m600-473-80-80v-207h-80v127l-80-80v-47h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v287ZM200-200h448L402-446 200-200ZM764-84l-36-36H200q-51 0-72.5-45.5T138-250l208-252L84-764q-11-11-11-28t11-28q11-11 28-11t28 11l680 680q11 11 11 28t-11 28q-11 11-28 11t-28-11ZM402-446Zm78-147Z"/>`)
     }
 }

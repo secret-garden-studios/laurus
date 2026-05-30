@@ -1,16 +1,18 @@
 import { useCallback, useContext, useState } from "react"
-import { WorkspaceActionType, WorkspaceContext } from "./workspace.client"
+import { WorkspaceActionType, WorkspaceContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
-import { dellaRespira } from "../fonts";
-import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake } from "../svg-repo";
-import { WorkspaceResolution } from "./workspace-resolution";
-import { LaurusProjectResult } from "../projects/projects.client";
+import { dellaRespira } from "../../fonts";
+import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
+import { WorkspaceResolution } from "../workspace-resolution";
+import { LaurusProjectResult } from "../../projects/projects.client";
 
 interface Toolbar {
     resolution: WorkspaceResolution,
+    handleMixRestoration: () => void,
 }
-export default function Toolbar({ resolution }: Toolbar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
+    const { appState, dispatch, handleRewindAll } = useContext(WorkspaceContext);
+    const [tooltipDelay] = useState(1000);
     const [rightPanelSize] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -61,7 +63,7 @@ export default function Toolbar({ resolution }: Toolbar) {
         <div
             style={{
                 display: "grid",
-                gridTemplateRows: 'min-content min-content min-content min-content min-content auto',
+                gridTemplateRows: 'min-content min-content min-content min-content min-content min-content auto',
                 borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
                 background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
                 width: 'min-content',
@@ -77,12 +79,13 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={lassoSelect()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'drop') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
@@ -97,11 +100,21 @@ export default function Toolbar({ resolution }: Toolbar) {
                         inactiveSvgs.forEach(i => {
                             dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="drop-tool-tooltip"
+                delayShow={tooltipDelay}
                 content="drop"
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
@@ -130,24 +143,35 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={keyboardCommandKey()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'contextmenu') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'contextmenu' } })
                         }
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="contextmenu-tool-tooltip"
                 content="contextmenu"
+                delayShow={tooltipDelay}
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -175,12 +199,13 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={browse()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'viewport') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
@@ -195,11 +220,21 @@ export default function Toolbar({ resolution }: Toolbar) {
                         inactiveSvgs.forEach(i => {
                             dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="viewport-tool-tooltip"
+                delayShow={tooltipDelay}
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -227,12 +262,13 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={earthquake()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'move') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
@@ -247,11 +283,21 @@ export default function Toolbar({ resolution }: Toolbar) {
                         inactiveSvgs.forEach(i => {
                             dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="move-tool-tooltip"
+                delayShow={tooltipDelay}
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -279,12 +325,13 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={allOut()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'scale') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                             setShowActiveContextMenu(false);
@@ -293,11 +340,21 @@ export default function Toolbar({ resolution }: Toolbar) {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
                             setShowActiveContextMenu(true);
                         }
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="scale-tool-tooltip"
+                delayShow={tooltipDelay}
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -325,12 +382,13 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}>
                 <SvgRepo
                     svg={toysFan()}
-                    containerSize={{
-                        width: rightPanelSize.svg,
-                        height: rightPanelSize.svg
-                    }}
                     scale={0.5}
-                    onContainerClick={() => {
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
                         if (appState.tool.type == 'rotate') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                             setShowActiveContextMenu(false);
@@ -339,11 +397,21 @@ export default function Toolbar({ resolution }: Toolbar) {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
                             setShowActiveContextMenu(true);
                         }
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
                     }} />
             </div>
             <Tooltip
                 className={dellaRespira.className}
                 id="rotate-tool-tooltip"
+                delayShow={tooltipDelay}
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -355,9 +423,64 @@ export default function Toolbar({ resolution }: Toolbar) {
                 }}
                 render={() => (
                     <div style={{ padding: 4, width: '100%' }}>
-                        <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Rotate Tool</h4>
+                        <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>{'Rotate Tool'}</h4>
                         <p>
                             Select this tool then click an image or svg on the canvas to rotate it via the <strong>project toolbar</strong>.
+                        </p>
+                    </div>
+                )}
+            />
+            <div
+                data-tooltip-id="mix-tool-tooltip"
+                style={{
+                    width: 'min-content',
+                    height: 'min-content',
+                    background: appState.tool.type == 'mix' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                }}>
+                <SvgRepo
+                    svg={experiment()}
+                    scale={0.5}
+                    scaleToContaier={true}
+                    onContainerClick={async () => {
+                        if (!appState.playEnabled) {
+                            await handleRewindAll();
+                        }
+                        handleMixRestoration();
+                        if (appState.tool.type == 'mix') {
+                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        }
+                        else {
+                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'mix' } });
+                        }
+                    }}
+                    containerStyle={!appState.skipPreviousEnabled ? {
+                        cursor: 'progress',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    } : {
+                        cursor: 'pointer',
+                        width: rightPanelSize.svg,
+                        height: rightPanelSize.svg
+                    }} />
+            </div>
+            <Tooltip
+                className={dellaRespira.className}
+                id="mix-tool-tooltip"
+                delayShow={tooltipDelay}
+                style={{
+                    backgroundColor: 'rgb(40, 40, 40)',
+                    color: 'rgb(227, 227, 227)',
+                    fontSize: rightPanelSize.tooltipFont2,
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+                    maxWidth: "300px",
+                    zIndex: 99
+                }}
+                render={() => (
+                    <div style={{ padding: 4, width: '100%' }}>
+                        <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Mix Tool</h4>
+                        <p>
+                            Select this tool to mix eligible effects using the <strong>project toolbar</strong>.
                         </p>
                     </div>
                 )}

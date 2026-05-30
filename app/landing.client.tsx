@@ -538,13 +538,13 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                         >
                             {showPassword ? <SvgRepo
                                 svg={visibility('rgba(67,67,67,1)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: 20,
                                     height: 20
                                 }}
                                 scale={1} /> : <SvgRepo
                                 svg={visibilityOff('rgba(67,67,67,1)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: 20,
                                     height: 20
                                 }}
@@ -912,13 +912,13 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                         >
                             {showPassword ? <SvgRepo
                                 svg={visibility('rgba(67,67,67,1)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: 20,
                                     height: 20
                                 }}
                                 scale={1} /> : <SvgRepo
                                 svg={visibilityOff('rgba(67,67,67,1)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: 20,
                                     height: 20
                                 }}

@@ -283,24 +283,20 @@ export default function RemoteControl({
                 background: i % 2 == 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.01)',
                 width: volumeSize.width,
                 padding: volumeSize.padding,
-                justifyContent: 'center',
+                justifyItems: 'center',
                 display: 'grid',
                 gridTemplateRows: 'min-content auto min-content',
                 border: '1px solid rgba(255,255,255, 0.1)',
                 borderRadius: 10,
             }}>
-                <div style={{
-                    display: 'grid',
-                    placeContent: 'center'
-                }}>
-                    <SvgRepo
-                        svg={volumeUp()}
-                        containerSize={{
-                            width: volumeSize.svg,
-                            height: volumeSize.svg
-                        }}
-                        scale={1} />
-                </div>
+                <SvgRepo
+                    svg={volumeUp()}
+                    containerStyle={{
+                        width: volumeSize.svg,
+                        height: volumeSize.svg,
+                    }}
+                    scale={1}
+                    scaleToContaier={true} />
                 <div style={{ padding: volumeSize.innerPadding }}>
                     <ParameterSliderY
                         label={""}
@@ -326,18 +322,14 @@ export default function RemoteControl({
                             onNewControl(newControl);
                         }} />
                 </div>
-                <div style={{
-                    display: 'grid',
-                    placeContent: 'center'
-                }}>
-                    <SvgRepo
-                        svg={noSound()}
-                        containerSize={{
-                            width: volumeSize.svg,
-                            height: volumeSize.svg
-                        }}
-                        scale={1} />
-                </div>
+                <SvgRepo
+                    svg={noSound()}
+                    containerStyle={{
+                        width: volumeSize.svg,
+                        height: volumeSize.svg
+                    }}
+                    scale={1}
+                    scaleToContaier={true} />
             </div>
             <div
                 style={{
@@ -370,11 +362,12 @@ export default function RemoteControl({
                 <div style={{ display: 'flex', justifySelf: 'center', alignSelf: 'center', alignItems: 'center', marginTop: -24 }}>
                     <SvgRepo
                         svg={threeSixtyLeft()}
-                        containerSize={{
+                        containerStyle={{
                             width: controlPanelSize.clipSvg,
                             height: controlPanelSize.clipSvg
                         }}
                         scale={1}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.video_media_id });
                             if (!currentPlayTime) return;
@@ -397,11 +390,12 @@ export default function RemoteControl({
                         }}>
                         <SvgRepo
                             svg={videoMedia.playing ? pauseNoFill() : playArrowNoFill()}
-                            containerSize={{
+                            containerStyle={{
                                 width: controlPanelSize.playSvg,
                                 height: controlPanelSize.playSvg
                             }}
                             scale={videoMedia.playing ? 1 : 1.5}
+                            scaleToContaier={true}
                             onContainerClick={() => {
                                 const newControl: YouTubePlayerControl = {
                                     type: 'playPause',
@@ -412,11 +406,12 @@ export default function RemoteControl({
                     </div>
                     <SvgRepo
                         svg={threeSixtyRight()}
-                        containerSize={{
+                        containerStyle={{
                             width: controlPanelSize.clipSvg,
                             height: controlPanelSize.clipSvg
                         }}
                         scale={1}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             const currentPlayTime = onRemoteControl({ type: 'getCurrentTime', key: videoMedia.video_media_id });
                             if (!currentPlayTime) return;
@@ -493,22 +488,24 @@ export default function RemoteControl({
                 }}>
                     <SvgRepo
                         svg={upload()}
-                        containerSize={{
+                        containerStyle={{
                             width: notesPanelSize.svg,
                             height: notesPanelSize.svg
                         }}
                         scale={1}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             onNewNote(notepad);
                         }} />
                     <div />
                     <SvgRepo
                         svg={cancelCircle('rgb(220, 112, 112)')}
-                        containerSize={{
+                        containerStyle={{
                             width: notesPanelSize.svg,
                             height: notesPanelSize.svg
                         }}
                         scale={0.9}
+                        scaleToContaier={true}
                         onContainerClick={() => {
                             onDeleteVideoMedia();
                         }} />

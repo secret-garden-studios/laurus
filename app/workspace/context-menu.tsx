@@ -5,7 +5,7 @@ import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType
 import { updateScale, updateMove, updateRotate } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
-import { allOut, browse, earthquake, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
+import { allOut, browse, earthquake, experiment, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
 import Toggle from "../components/toggle";
 
 
@@ -27,7 +27,7 @@ async function deleteEffects(
                 if (updated) {
                     dispatch({
                         type: WorkspaceActionType.SetEffect,
-                        value: { type: 'scale', key: effect.key, locked: effect.locked, value: { ...newScale } }
+                        value: { type: 'scale', key: effect.key, value: { ...newScale } }
                     });
                 }
                 break;
@@ -40,7 +40,7 @@ async function deleteEffects(
                 if (updated) {
                     dispatch({
                         type: WorkspaceActionType.SetEffect,
-                        value: { type: 'move', key: effect.key, locked: effect.locked, value: { ...newMove } }
+                        value: { type: 'move', key: effect.key, value: { ...newMove } }
                     });
                 }
                 break;
@@ -53,7 +53,7 @@ async function deleteEffects(
                 if (updated) {
                     dispatch({
                         type: WorkspaceActionType.SetEffect,
-                        value: { type: 'rotate', key: effect.key, locked: effect.locked, value: { ...newRotate } }
+                        value: { type: 'rotate', key: effect.key, value: { ...newRotate } }
                     });
                 }
                 break;
@@ -846,9 +846,10 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                                 case "move": return earthquake();
                                                 case "scale": return allOut();
                                                 case "rotate": return toysFan();
+                                                case "mix": return experiment();
                                             }
                                         })()}
-                                        containerSize={{
+                                        containerStyle={{
                                             width: dynamicSizes.footer.svgSize,
                                             height: dynamicSizes.footer.svgSize
                                         }}

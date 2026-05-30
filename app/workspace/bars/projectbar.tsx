@@ -1,10 +1,13 @@
 import { useContext, useState, useRef, useEffect } from "react";
-import styles from "../app.module.css";
-import { dellaRespira } from "../fonts";
-import useDebounce from "../hooks/useDebounce";
-import { WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectResult } from "../projects/projects.client";
+import styles from "../../app.module.css";
+import { dellaRespira } from "../../fonts";
+import useDebounce from "../../hooks/useDebounce";
+import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { updateProject, createProject } from "../../projects/projects.server";
+import { LaurusProjectResult } from "../../projects/projects.client";
+import Mixbar from "./mixbar";
+import Rotatebar from "./rotatebar";
+import Scalebar from "./scalebar";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -96,7 +99,7 @@ export default function Projectbar() {
                 placeContent: 'start',
                 overflowX: 'auto',
                 overflowY: 'hidden',
-                borderBottom: '1px solid rgb(33, 33, 33)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
                 padding: 6,
             }}>
             <div
@@ -133,6 +136,63 @@ export default function Projectbar() {
                     />
                 </div>
             </div>
+        </div>
+    </>)
+}
+
+export function ProjectbarLevel2() {
+    const { appState } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                container: {
+                    height: 50,
+                    fontSize: 14,
+                    padding: '0px 0px 0px 10px',
+                    letterSpacing: 0,
+                },
+            }
+            case "midhigh": return {
+                container: {
+                    height: 40,
+                    fontSize: 11,
+                    padding: '0px 0px 0px 10px',
+                    letterSpacing: 0,
+                },
+            }
+            case "low":
+            case "midlow": return {
+                container: {
+                    height: 38,
+                    fontSize: 11,
+                    padding: '0px 0px 0px 10px',
+                    letterSpacing: 0,
+                },
+            }
+        }
+    });
+    return (<>
+        <div
+            style={{
+                background: "linear-gradient(10deg, rgb(23, 23, 23), rgb(15,15,15))",
+                display: "flex",
+                alignItems: "center",
+                color: 'rgb(227, 227, 227)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                ...dynamicSizes.container
+            }}>
+            {(() => {
+                switch (appState.tool.type) {
+                    case "drop":
+                    case "none":
+                    case "contextmenu":
+                    case "viewport":
+                    case "move": return <></>
+                    case "scale": return <Scalebar />
+                    case "rotate": return <Rotatebar />
+                    case "mix": return <Mixbar />
+                }
+            })()}
         </div>
     </>)
 }

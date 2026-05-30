@@ -8,12 +8,13 @@ import {
     WorkspaceActionType, WorkspaceContext,
     LaurusMove,
     LaurusRotate,
-    Bumper
+    Bumper,
+    LaurusMixState
 } from "./workspace.client";
 import { createMove, createRotate, createScale } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
-import EffectUnit from "./effect-unit";
+import EffectUnit from "./units/effect-unit";
 import { WorkspaceResolution } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectResult, LaurusProjectLayer } from "../projects/projects.client";
@@ -22,20 +23,15 @@ interface TimelineArea {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     onRightPanelClick: () => void,
-    getNewAnimations: (fill: FillMode, firstFrame: boolean) => Promise<Animation[]>,
 }
 export default function TimelineArea({
     svgElementsRef,
     imgElementsRef,
     onRightPanelClick,
-    getNewAnimations
 }: TimelineArea) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(WorkspaceContext);
     const [rulerSize] = useState(20);
     const [fastRate] = useState(25);
-    const [playEnabled, setPlayEnabled] = useState(true);
-    const [skipPreviousEnabled, setSkipPreviousEnabled] = useState<boolean>(true);
-    const [skipNextEnabled, setSkipNextEnabled] = useState<boolean>(true);
     const [width] = useState<number>(() => {
         switch (appState.resolution.type) {
             case "high": {
@@ -143,12 +139,6 @@ export default function TimelineArea({
     const [rulerParams, setRulerParams] = useState(
         calculateRuler(appState.timelineMaxValue, appState.resolution)
     );
-
-    const enableAllControls = useCallback(() => {
-        setPlayEnabled(true);
-        setSkipPreviousEnabled(true);
-        setSkipNextEnabled(true);
-    }, []);
 
     return (<>
         <div className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
@@ -321,119 +311,45 @@ export default function TimelineArea({
                         </div>
                         <SvgRepo
                             title={"rewind all"}
-                            svg={skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
-                            containerSize={{
+                            svg={appState.skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
+                            scale={1}
+                            scaleToContaier={true}
+                            onContainerClick={handleRewindAll}
+                            containerStyle={appState.skipPreviousEnabled ? {
                                 width: controlAreaSize.secondarySvg,
                                 height: controlAreaSize.secondarySvg
-                            }}
-                            scale={1}
-                            onContainerClick={async () => {
-                                if (!skipPreviousEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
-                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                                inactiveSvgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-                                inactiveImgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-                                const newAnimations = await getNewAnimations('forwards', true);
-                                if (newAnimations) {
-                                    Promise.all(newAnimations.map(animation => animation.finished))
-                                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                        .then((_animations: Animation[]) => {
-                                            enableAllControls();
-                                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                                        })
-                                        .catch(err => {
-                                            if (err instanceof Error && err.name !== 'AbortError') {
-                                                console.log('unknown error from waapi:', err);
-                                            }
-                                        });
-                                    setSkipPreviousEnabled(false);
-                                    newAnimations.forEach(a => {
-                                        a.updatePlaybackRate(fastRate);
-                                        a.play()
-                                    });
-                                }
+                            } : {
+                                cursor: 'progress',
+                                width: controlAreaSize.secondarySvg,
+                                height: controlAreaSize.secondarySvg
                             }} />
                         <SvgRepo
                             title={"play all"}
-                            svg={playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
-                            containerSize={{
+                            svg={appState.playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
+                            scale={1}
+                            scaleToContaier={true}
+                            onContainerClick={handlePlayAll}
+                            containerStyle={appState.playEnabled ? {
                                 width: controlAreaSize.mainSvg,
                                 height: controlAreaSize.mainSvg
-                            }}
-                            scale={1}
-                            onContainerClick={async () => {
-                                if (!playEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
-
-                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                                inactiveSvgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-                                inactiveImgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-
-                                const newAnimations = await getNewAnimations('none', false);
-                                Promise.all(newAnimations.map(animation => animation.finished))
-                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                    .then((_animations: Animation[]) => {
-                                        enableAllControls();
-                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                                    })
-                                    .catch(err => {
-                                        if (err instanceof Error && err.name !== 'AbortError') {
-                                            console.log('unknown error from waapi:', err);
-                                        }
-                                    });
-                                setPlayEnabled(false);
-                                newAnimations.forEach(a => a.play());
-                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                            } : {
+                                cursor: 'progress',
+                                width: controlAreaSize.mainSvg,
+                                height: controlAreaSize.mainSvg
                             }} />
                         <SvgRepo
                             title={"fast-forward all"}
-                            svg={skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
-                            containerSize={{
+                            svg={appState.skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
+                            scale={1}
+                            scaleToContaier={true}
+                            onContainerClick={async () => await handleFastForwardAll(fastRate)}
+                            containerStyle={appState.skipNextEnabled ? {
                                 width: controlAreaSize.secondarySvg,
                                 height: controlAreaSize.secondarySvg
-                            }}
-                            scale={1}
-                            onContainerClick={async () => {
-                                if (!skipNextEnabled) return;
-                                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } });
-
-                                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                                inactiveSvgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-                                inactiveImgs.forEach(i => {
-                                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                                });
-                                const newAnimations = await getNewAnimations('forwards', false);
-                                Promise.all(newAnimations.map(animation => animation.finished))
-                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                    .then((_animations: Animation[]) => {
-                                        enableAllControls();
-                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                    })
-                                    .catch(err => {
-                                        if (err instanceof Error && err.name !== 'AbortError') {
-                                            console.log('unknown error from waapi:', err);
-                                        }
-                                    });
-                                setSkipNextEnabled(false);
-                                newAnimations.forEach(a => {
-                                    a.updatePlaybackRate(fastRate);
-                                    a.play();
-                                });
+                            } : {
+                                cursor: 'progress',
+                                width: controlAreaSize.secondarySvg,
+                                height: controlAreaSize.secondarySvg
                             }} />
                         <div title={"light"}
                             style={{
@@ -544,11 +460,12 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                             svg={showEffectsBrowser ?
                                 closeIcon('rgba(204, 204, 204, 0.8)') :
                                 addCircle('rgba(204, 204, 204, 0.8)')}
-                            containerSize={{
+                            containerStyle={{
                                 width: dynamicSizes.timelineAreaContent.svg.width,
                                 height: dynamicSizes.timelineAreaContent.svg.height
                             }}
                             scale={1}
+                            scaleToContaier={true}
                             onContainerClick={() => setShowEffectsBrowser(v => !v)} />
                     </div>
                     {showEffectsBrowser && (
@@ -630,11 +547,12 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 svg={showEffectsBrowser ?
                                     closeIcon('rgba(204, 204, 204, 0.8)') :
                                     addCircle('rgba(204, 204, 204, 0.8)')}
-                                containerSize={{
+                                containerStyle={{
                                     width: dynamicSizes.timelineAreaContent.svg.width,
                                     height: dynamicSizes.timelineAreaContent.svg.height
                                 }}
                                 scale={1}
+                                scaleToContaier={true}
                                 onContainerClick={() => setShowEffectsBrowser(v => !v)} />
                         </div>
                         {showEffectsBrowser && (
@@ -836,6 +754,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
+                    mix: false,
                     description: ""
                 };
                 const created = await createScale(appState.apiOrigin, appState.accessToken, newScale);
@@ -843,8 +762,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     const newEffect: LaurusEffect = {
                         type: 'scale',
                         key: created.scale_id,
-                        locked: created.locked,
-                        value: { ...created }
+                        value: { ...created, mixState: LaurusMixState.None }
                     }
                     dispatch({
                         type: WorkspaceActionType.SetEffects,
@@ -863,6 +781,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
+                    mix: false,
                     description: ""
                 };
                 const created = await createMove(appState.apiOrigin, appState.accessToken, newMove);
@@ -870,8 +789,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     const newEffect: LaurusEffect = {
                         type: 'move',
                         key: created.move_id,
-                        locked: created.locked,
-                        value: { ...created }
+                        value: { ...created, mixState: LaurusMixState.None }
                     }
                     dispatch({
                         type: WorkspaceActionType.SetEffects,
@@ -890,6 +808,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
+                    mix: false,
                     description: ""
                 };
                 const created = await createRotate(appState.apiOrigin, appState.accessToken, newRotate);
@@ -897,8 +816,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     const newEffect: LaurusEffect = {
                         type: 'rotate',
                         key: created.rotate_id,
-                        locked: created.locked,
-                        value: { ...created }
+                        value: { ...created, mixState: LaurusMixState.None }
                     }
                     dispatch({
                         type: WorkspaceActionType.SetEffects,
@@ -954,19 +872,21 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                                 default: return circle('rgba(0,0,0,0)')
                             }
                         })()}
-                            containerSize={{
+                            containerStyle={{
                                 width: effectBrowserSize.svg,
                                 height: effectBrowserSize.svg
                             }}
-                            scale={0.7} />}
+                            scale={0.7}
+                            scaleToContaier={true} />}
                         <div style={{ marginLeft: 'auto' }} />
                         {(effectName != 'skew') && <SvgRepo
                             svg={addCircle('rgba(204, 204, 204, 0.8)')}
-                            containerSize={{
+                            containerStyle={{
                                 width: effectBrowserSize.svg,
                                 height: effectBrowserSize.svg
                             }}
                             scale={1}
+                            scaleToContaier={true}
                             onContainerClick={async () => {
                                 await createEffect(effectName);
                                 onAddClick();

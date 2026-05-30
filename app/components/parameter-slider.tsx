@@ -209,10 +209,12 @@ export function ParameterSliderXPlusMinus({
         }}>
             <SvgRepo
                 svg={remove('rgb(200, 200, 200)')}
-                containerSize={{
+                containerStyle={{
                     width: size.svgSize.width,
                     height: size.svgSize.height
-                }} scale={0.7} />
+                }}
+                scale={0.7}
+                scaleToContaier={true} />
             <div
                 style={{
                     position: "relative",
@@ -288,10 +290,12 @@ export function ParameterSliderXPlusMinus({
             </div>
             <SvgRepo
                 svg={add2('rgb(200, 200, 200)')}
-                containerSize={{
+                containerStyle={{
                     width: size.svgSize.width,
                     height: size.svgSize.height
-                }} scale={0.5} />
+                }}
+                scale={0.6}
+                scaleToContaier={true} />
         </div>
     </>)
 }

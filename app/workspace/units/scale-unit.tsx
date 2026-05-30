@@ -1,17 +1,17 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { dellaRespira, dmSans } from "../fonts";
-import { autorenew, playArrow, skipPrevious, SvgRepo, link, linkOff, LaurusClientSvg, add2, remove, syncAlt, updateDisabled } from "../svg-repo";
-import { getScale, updateScale, LaurusLoopType } from "./workspace.server";
-import { useComplexTrackpadState } from "../hooks/useComplexTrackpadState";
-import { useTrackpadState } from "../hooks/useTrackpadState";
-import { ParameterSliderY, ParameterSliderXPlusMinus } from "../components/parameter-slider";
+import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { dellaRespira, dmSans } from "../../fonts";
+import { updateScale, LaurusLoopType } from "../workspace.server";
+import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
+import { useTrackpadState } from "../../hooks/useTrackpadState";
+import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "./workspace-resolution";
-import { LaurusProjectResult } from "../projects/projects.client";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { getDynamicUnitSizes } from "../workspace-resolution";
+import { LaurusProjectResult } from "../../projects/projects.client";
+import { useCarouselIndex } from "../../hooks/useCarouselIndex";
+import ScaleUnitbar from "./bars/scale-unitbar";
 
-const defaultScaleEquation: LaurusScaleEquation = {
+export const defaultScaleEquation: LaurusScaleEquation = {
     input_id: "",
     time: 0.000001,
     scale_x: 1,
@@ -143,7 +143,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const timeRef = useRef<HTMLDivElement | null>(null);
 
     // main params
-    const [maxScale] = useState(30);
+    const [maxScale] = useState(20);
+    const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({ fineTuningLimit: 2 });
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
 
     const scaleXRef = useRef<HTMLInputElement | null>(null);
@@ -220,13 +221,13 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         setActiveElementIfNull();
         dispatch({
             type: WorkspaceActionType.SetEffect,
-            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id, locked: newScale.locked },
+            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
         });
         const updated = await updateScale(appState.apiOrigin, appState.accessToken, rollback.scale_id, { ...newScale });
         if (!updated) {
             dispatch({
                 type: WorkspaceActionType.SetEffect,
-                value: { type: 'scale', value: { ...rollback }, key: rollback.scale_id, locked: rollback.locked },
+                value: { type: 'scale', value: { ...rollback }, key: rollback.scale_id },
             });
         }
     }, [setActiveElementIfNull, dispatch, appState.apiOrigin, appState.accessToken]);
@@ -244,11 +245,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 scaleYInit = activeEquation.scale_y;
             }
             if (scaleXTrackRef.current) {
-                const newScaleXCursor = getScaleXCursor(scaleXInit, scaleXTrackRef.current.clientWidth);
+                const newScaleXCursor = getScaleXCursor(scaleXInit, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                 setScaleXCursor({ x: newScaleXCursor, y: 0 });
             }
             if (scaleYTrackRef.current) {
-                const newScaleYCursor = getScaleYCursor(scaleYInit, scaleYTrackRef.current.clientWidth);
+                const newScaleYCursor = getScaleYCursor(scaleYInit, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                 setScaleYCursor({ x: newScaleYCursor, y: 0 });
             }
             if (timeTrackRef.current) {
@@ -274,112 +275,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 }
             }
         })();
-    }, [carouselEntryKey, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
-
-    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = carouselEntryKey;
-        if (!activeKey) return [];
-        const newAnimations: Animation[] = [];
-        const response: LaurusScaleResult | undefined =
-            await getScale(appState.apiOrigin, scale.scale_id, activeKey);
-        if (response) {
-            const activeMath = response.math
-                .get(activeKey);
-            if (!activeMath) return [];
-            const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-                .map(s => { return { "scale": `${s.x} ${s.y}` } }) ?? [];
-            const options: KeyframeAnimationOptions = {
-                duration: firstFrame ? 2 / response.fps : response.end * 1000,
-            }
-            const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-            switch (appState.carouselEntries[carouselIndex].type) {
-                case "svg": {
-                    const svgRef = svgElementsRef.current?.get(previewKey);
-                    if (!svgRef) return [];
-                    svgRef.getAnimations().forEach((a) => a.cancel());
-                    const keyframeEffect =
-                        new KeyframeEffect(svgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                    break;
-                }
-                case "img": {
-                    const imgRef = imgElementsRef.current?.get(previewKey);
-                    if (!imgRef) return [];
-                    imgRef.getAnimations().forEach((a) => a.cancel());
-                    const keyframeEffect =
-                        new KeyframeEffect(imgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                    break;
-                }
-            }
-        }
-        return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
-
-    const loopSvg = useMemo((): LaurusClientSvg => {
-        const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-        const enabled = scale.math.has(carouselEntryKey) ? true : false;
-        switch (loopType) {
-            default:
-            case LaurusLoopType.none: {
-                return enabled ? updateDisabled() : updateDisabled('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_reverse_infinite: {
-                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_reverse: {
-                return enabled ? syncAlt() : syncAlt('rgb(62,62,62)');
-            }
-            case LaurusLoopType.loop_infinite: {
-                return enabled ? autorenew() : autorenew('rgb(62,62,62)');
-            }
-
-        }
-    }, [carouselEntryKey, scale.math]);
-
-    const loopSvgScale = useMemo((): number => {
-        const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-        switch (loopType) {
-            case LaurusLoopType.none: return 0.85;
-            default: return 0.9;
-        }
-    }, [carouselEntryKey, scale.math]);
-
-    const loopType = useMemo((): LaurusLoopType => {
-        return scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-    }, [carouselEntryKey, scale.math]);
-
-    const getNextLoopType = useCallback((): LaurusLoopType => {
-        const currentLoop = scale.math.get(carouselEntryKey)?.loop;
-        switch (currentLoop) {
-            case LaurusLoopType.loop:
-            case LaurusLoopType.none: {
-                return LaurusLoopType.loop_infinite;
-            }
-            case LaurusLoopType.loop_infinite: {
-                return LaurusLoopType.loop_reverse_infinite;
-            }
-            case LaurusLoopType.loop_reverse_infinite: {
-                return LaurusLoopType.loop_reverse;
-            }
-            default:
-            case LaurusLoopType.loop_reverse: {
-                return LaurusLoopType.none;
-            }
-        }
-    }, [carouselEntryKey, scale.math]);
-
-    const decrementLimitFactor = useCallback((): number => {
-        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
-    }, [carouselEntryKey, scale.math]);
-
-    const incrementLimitFactor = useCallback((): number => {
-        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
-    }, [carouselEntryKey, scale.math]);
+    }, [carouselEntryKey, complexTrackpadOptions, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
 
     return (
         <div style={{
@@ -505,7 +401,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     cursor={scaleXCursor}
                                     onCursorMove={(newCursor) => {
                                         if (!scaleXTrackRef.current || !scaleXRef.current || !scaleYRef.current) return;
-                                        const newScaleValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth);
+                                        const newScaleValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                                         scaleXRef.current.value = newScaleValue >= 10 ?
                                             (newScaleValue).toFixed(2) :
                                             (newScaleValue).toFixed(3);
@@ -519,7 +415,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     onNewCursor={(newCursor) => {
                                         setScaleXCursor({ ...newCursor, y: 0 });
                                         if (!scaleXTrackRef.current) return;
-                                        const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth);
+                                        const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                                         let newScaleYValue: number | undefined = undefined;
                                         if (!unlockAspectRatio) {
                                             const d = getActiveScale();
@@ -605,7 +501,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     cursor={scaleYCursor}
                                     onCursorMove={(newCursor) => {
                                         if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
-                                        const newScaleValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth);
+                                        const newScaleValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                                         scaleYRef.current.value = newScaleValue >= 10 ?
                                             (newScaleValue).toFixed(2) :
                                             (newScaleValue).toFixed(3);
@@ -619,7 +515,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     onNewCursor={(newCursor) => {
                                         setScaleYCursor({ ...newCursor, y: 0 });
                                         if (!scaleYTrackRef.current) return;
-                                        const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth);
+                                        const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                                         let newScaleXValue: number | undefined = undefined;
                                         if (!unlockAspectRatio) {
                                             const d = getActiveScale();
@@ -656,206 +552,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     title={scaleYTitle} />
                             </div>
                             {/* toolbar */}
-                            <div style={{
-                                marginLeft: 'auto',
-                                background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
-                                borderLeft: '1px solid rgba(255,255,255,0.025)',
-                                borderTopRightRadius: 6,
-                                borderBottomRightRadius: 6,
-                                padding: 0,
-                                display: 'grid',
-                                alignContent: 'start',
-                            }}>
-                                <div title={"loop"}
-                                    onDoubleClick={() => {
-                                        if (scale.locked) return;
-                                        const activeKey = carouselEntryKey;
-                                        if (activeKey) {
-                                            const snapshot: LaurusScaleResult = { ...scale };
-                                            const activeEquation = snapshot.math.get(activeKey);
-                                            const newEquation = activeEquation ?
-                                                { ...activeEquation, loop: getNextLoopType() } :
-                                                {
-                                                    ...defaultScaleEquation,
-                                                    input_id: activeKey,
-                                                    loop: getNextLoopType(),
-                                                };
-                                            saveNewEquation(snapshot, newEquation);
-                                        }
-                                    }}
-                                    style={{
-                                        position: 'relative',
-                                        cursor: scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        borderTopRightRadius: 6,
-                                        ...dynamicSizes.paramButtonContainer
-                                    }}>
-                                    <SvgRepo
-                                        title={"loop"}
-                                        svg={loopSvg}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={loopSvgScale} />
-                                    {loopType === LaurusLoopType.loop_reverse && (
-                                        <div className={dmSans.className} style={{
-                                            position: 'absolute',
-                                            top: 1,
-                                            right: 1,
-                                            width: '2ch',
-                                            height: '2ch',
-                                            backgroundColor: 'rgb(220, 112, 112)',
-                                            borderRadius: '50%',
-                                            color: 'rgb(15, 15, 15)',
-                                            fontSize: 11,
-                                            fontWeight: 'bolder',
-                                            display: 'grid',
-                                            placeContent: 'center',
-                                            textAlign: 'center',
-                                            pointerEvents: 'none',
-                                            userSelect: 'none'
-                                        }}>
-                                            {'1'}
-                                        </div>
-                                    )}
-                                </div>
-                                <div title={"rewind"}
-                                    onClick={async () => {
-                                        const newAnimations = await getPreviewAnimations(true);
-                                        Promise.all(newAnimations.map(animation => animation.finished))
-                                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                            .then((_animations: Animation[]) => {
-                                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                            })
-                                            .catch(err => {
-                                                if (err instanceof Error && err.name !== 'AbortError') {
-                                                    console.log('unknown error from waapi:', err);
-                                                }
-                                            });
-                                        newAnimations.forEach(a => {
-                                            a.play();
-                                        });
-                                    }}
-                                    style={{
-                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        ...dynamicSizes.paramButtonContainer
-                                    }}>
-                                    <SvgRepo
-                                        title={"rewind"}
-                                        svg={scale.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={0.9} />
-                                </div>
-                                <div title={"play"}
-                                    onClick={async () => {
-                                        const newAnimations = await getPreviewAnimations(false);
-                                        Promise.all(newAnimations.map(animation => animation.finished))
-                                            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                            .then((_animations: Animation[]) => {
-                                                dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
-                                            })
-                                            .catch(err => {
-                                                if (err instanceof Error && err.name !== 'AbortError') {
-                                                    console.log('unknown error from waapi:', err);
-                                                }
-                                            });
-                                        newAnimations.forEach(a => {
-                                            a.play();
-                                        });
-                                        dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
-                                    }}
-                                    style={{
-                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        ...dynamicSizes.paramButtonContainer
-                                    }}>
-                                    <SvgRepo
-                                        title={"play"}
-                                        svg={scale.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={1} />
-                                </div>
-                                <div title={"increase limits"}
-                                    onClick={() => {
-                                        if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == 1)) return;
-                                        const activeKey = carouselEntryKey;
-                                        if (activeKey) {
-                                            const snapshot: LaurusScaleResult = { ...scale };
-                                            const activeEquation = snapshot.math.get(activeKey);
-                                            const newEquation = activeEquation ?
-                                                {
-                                                    ...activeEquation,
-                                                    limit_factor: incrementLimitFactor(),
-                                                } :
-                                                {
-                                                    ...defaultScaleEquation,
-                                                    input_id: activeKey,
-                                                };
-                                            saveNewEquation(snapshot, newEquation);
-                                        }
-                                    }}
-                                    style={{
-                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        ...dynamicSizes.paramButtonContainer,
-                                    }}>
-                                    <SvgRepo
-                                        title={"increase limits"}
-                                        svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={0.88} />
-                                </div>
-                                <div title={"decrease limits"}
-                                    onClick={() => {
-                                        if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
-                                        const activeKey = carouselEntryKey;
-                                        if (activeKey) {
-                                            const snapshot: LaurusScaleResult = { ...scale };
-                                            const activeEquation = snapshot.math.get(activeKey);
-                                            const newEquation = activeEquation ?
-                                                {
-                                                    ...activeEquation,
-                                                    limit_factor: decrementLimitFactor(),
-                                                } :
-                                                {
-                                                    ...defaultScaleEquation,
-                                                    input_id: activeKey,
-                                                };
-                                            saveNewEquation(snapshot, newEquation);
-                                        }
-                                    }}
-                                    style={{
-                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        ...dynamicSizes.paramButtonContainer,
-                                    }}>
-                                    <SvgRepo
-                                        title={"decrease limits"}
-                                        svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={0.88} />
-                                </div>
-                                <div title={"link width and height"}
-                                    onClick={() => {
-                                        setUnlockAspectRatio(v => !v);
-                                    }}
-                                    style={{
-                                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
-                                        display: 'grid',
-                                        placeContent: 'center',
-                                        ...dynamicSizes.paramButtonContainer
-                                    }}>
-                                    <SvgRepo
-                                        title={"link width and height"}
-                                        svg={scale.math.has(carouselEntryKey) ? (unlockAspectRatio ? linkOff() : link()) : (unlockAspectRatio ? linkOff("rgb(62, 62, 62)") : link("rgb(62, 62, 62)"))}
-                                        containerSize={{ ...dynamicSizes.paramButton }}
-                                        scale={1} />
-                                </div>
-                            </div>
+                            <ScaleUnitbar
+                                scale={scale}
+                                carouselEntryKey={carouselEntryKey}
+                                svgElementsRef={svgElementsRef}
+                                imgElementsRef={imgElementsRef}
+                                carouselIndex={carouselIndex}
+                                unlockAspectRatio={unlockAspectRatio}
+                                setUnlockAspectRatio={setUnlockAspectRatio}
+                                saveNewEquation={saveNewEquation} />
                         </div>
                     </div>
                 </> :

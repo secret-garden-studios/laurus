@@ -1,9 +1,9 @@
 'use client'
 
 import { useContext, useState } from "react";
-import { WorkspaceContext } from "./workspace.client";
-import { dellaRespira, ubuntuMono } from "../fonts";
-import { allOut, browse, contentPaste, earthquake, folder, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
+import { WorkspaceContext } from "../workspace.client";
+import { dellaRespira, ubuntuMono } from "../../fonts";
+import { allOut, browse, contentPaste, earthquake, experiment, folder, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -83,7 +83,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                     <SvgRepo
                         title={appState.effectClipboard ? "" : "clipboard"}
                         svg={appState.effectClipboard ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
-                        containerSize={{
+                        containerStyle={{
                             width: 30,
                             height: 30
                         }}
@@ -106,23 +106,19 @@ export default function Statusbar({ action, body }: Statusbar) {
                             render={() => {
                                 const clipboardData = appState.effectClipboard?.value.math.get("clipboard") ?? undefined;
                                 return <div style={{ padding: 4, width: '100%' }}>
-                                    <div
-                                        className={dellaRespira.className}
-                                        style={{ display: 'grid', placeContent: 'center' }}>
-                                        <SvgRepo
-                                            svg={(() => {
-                                                switch (appState.effectClipboard!.type) {
-                                                    case "scale": return allOut();
-                                                    case "move": return earthquake();
-                                                    case "rotate": return toysFan();
-                                                }
-                                            })()}
-                                            containerSize={{
-                                                width: 30,
-                                                height: 30
-                                            }}
-                                            scale={1} />
-                                    </div>
+                                    <SvgRepo
+                                        svg={(() => {
+                                            switch (appState.effectClipboard!.type) {
+                                                case "scale": return allOut();
+                                                case "move": return earthquake();
+                                                case "rotate": return toysFan();
+                                            }
+                                        })()}
+                                        containerStyle={{
+                                            width: 30,
+                                            height: 30
+                                        }}
+                                        scale={1} />
                                     {clipboardData && <div style={{ margin: '0 0 8px 0', overflowWrap: 'break-word', whiteSpace: 'pre-wrap', maxWidth: '100%', padding: 10 }}>
                                         <div>
                                             {JSON.stringify(
@@ -157,9 +153,10 @@ export default function Statusbar({ action, body }: Statusbar) {
                                     case "move": return earthquake();
                                     case "scale": return allOut();
                                     case "rotate": return toysFan();
+                                    case "mix": return experiment();
                                 }
                             })()}
-                            containerSize={{
+                            containerStyle={{
                                 width: 30,
                                 height: 30
                             }}
@@ -174,7 +171,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                     <SvgRepo
                         title="media source"
                         svg={appState.project.browse_public_imgs || appState.project.browse_public_svgs ? folder() : folder("rgb(62, 62, 62)")}
-                        containerSize={{
+                        containerStyle={{
                             width: 30,
                             height: 30
                         }}

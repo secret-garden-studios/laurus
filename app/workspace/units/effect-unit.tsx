@@ -1,14 +1,14 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import ScaleUnit from "./scale-unit";
-import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import { allOut, cancelCircle, earthquake, lock, lockOpenRight, SvgRepo, toysFan, tune } from "../svg-repo";
-import { deleteMove, deleteRotate, deleteScale, updateMove, updateRotate, updateScale } from "./workspace.server";
-import { useTrackpadState } from "../hooks/useTrackpadState";
-import MoveUnit from "./move-unit";
-import TimelineSlider from "../components/timeline-slider";
-import RotateUnit from "./rotate-unit";
-import { dellaRespira } from "../fonts";
-import useDebounce from "../hooks/useDebounce";
+import ScaleUnit from "../units/scale-unit";
+import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { updateMove, updateRotate, updateScale } from "../workspace.server";
+import { useTrackpadState } from "../../hooks/useTrackpadState";
+import MoveUnit from "../units/move-unit";
+import TimelineSlider from "../../components/timeline-slider";
+import RotateUnit from "../units/rotate-unit";
+import { dellaRespira } from "../../fonts";
+import useDebounce from "../../hooks/useDebounce";
+import EffectUnitbar from "./bars/effect-unitbar";
 
 interface EffectUnit {
     effect: LaurusEffect,
@@ -80,9 +80,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 },
                 footer: {
                     height: 20
-                },
-                toolbar: {
-                    width: 24
                 }
             }
             case "midhigh": return {
@@ -112,9 +109,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 },
                 footer: {
                     height: 22
-                },
-                toolbar: {
-                    width: 19
                 }
             }
             case "midlow":
@@ -145,9 +139,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 },
                 footer: {
                     height: 20
-                },
-                toolbar: {
-                    width: 19
                 }
             }
         }
@@ -189,7 +180,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "scale": {
                 const newScale: LaurusScaleResult = {
                     ...effect.value,
-                    locked: effect.locked,
                     ...(newStart != undefined && { start: newStart }),
                     ...(newEnd != undefined && { end: newEnd })
                 }
@@ -202,7 +192,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'scale',
                         key: effect.key,
-                        locked: newScale.locked,
                         value: { ...newScale }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -212,7 +201,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'scale',
                         key: rollback.key,
-                        locked: rollback.locked,
                         value: { ...rollbackScaleResult }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -222,10 +210,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "move": {
                 const newMove: LaurusMoveResult = {
                     ...effect.value,
-                    locked: effect.locked,
                     ...(newStart != undefined && { start: newStart }),
                     ...(newEnd != undefined && { end: newEnd })
                 }
+                console.log(effect, newMove);
                 const updated = await updateMove(
                     appState.apiOrigin,
                     appState.accessToken,
@@ -235,7 +223,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'move',
                         key: effect.key,
-                        locked: newMove.locked,
                         value: { ...newMove }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -245,7 +232,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'move',
                         key: rollback.key,
-                        locked: rollback.locked,
                         value: { ...rollbackMoveResult }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -254,7 +240,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             }
             case "rotate": {
                 const newRotate: LaurusRotateResult = {
-                    ...effect.value, locked: effect.locked,
+                    ...effect.value,
                     ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
                     ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
                 }
@@ -268,7 +254,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'rotate',
                         key: effect.key,
-                        locked: newRotate.locked,
                         value: { ...newRotate }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -278,7 +263,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     const newEffect: LaurusEffect = {
                         type: 'rotate',
                         key: rollback.key,
-                        locked: rollback.locked,
                         value: { ...rollbackRotateResult }
                     };
                     dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
@@ -307,32 +291,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
         })();
 
     }, [appState.timelineMaxValue, appState.timelineUnit, cursorToTime, effect.value, timeToCursor]);
-
-    const deleteEffect = useCallback(async (effect: LaurusEffect) => {
-        switch (effect.type) {
-            case "move": {
-                const deleted = await deleteMove(appState.apiOrigin, appState.accessToken, effect.value.move_id);
-                if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
-                }
-                break;
-            }
-            case "rotate": {
-                const deleted = await deleteRotate(appState.apiOrigin, appState.accessToken, effect.value.rotate_id);
-                if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
-                }
-                break;
-            }
-            case "scale": {
-                const deleted = await deleteScale(appState.apiOrigin, appState.accessToken, effect.value.scale_id);
-                if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
-                }
-                break;
-            }
-        }
-    }, [appState.accessToken, appState.apiOrigin, dispatch]);
 
     const startTitle = useMemo(() => {
         return convertTime(effect.value.start, "sec", appState.timelineUnit).toPrecision(7);
@@ -438,16 +396,16 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             await saveEffect(newEffect, rollback, newStart[0], newEnd);
                         }}
                         onCursorMove={(c) => {
-                            if (!startRef.current || effect.locked) return;
+                            if (!startRef.current || effect.value.locked) return;
                             const newValue = cursorToTime(c.x);
                             startRef.current.value = newValue.toFixed(2);
                         }}
                         onRangeMove={(c) => {
-                            if (!endRef.current || effect.locked) return;
+                            if (!endRef.current || effect.value.locked) return;
                             const newValue = cursorToTime(c.x);
                             endRef.current.value = newValue.toFixed(2);
                         }}
-                        disabled={effect.locked}
+                        disabled={effect.value.locked}
                         startTitle={startTitle}
                         endTitle={endTitle} />
                 </div>
@@ -481,137 +439,18 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     }
                 })()}
             </div>
-            <div style={{
-                height: '100%',
-                background: 'rgba(22, 22, 22, 0.9)',
-                display: 'flex',
-                flexDirection: 'column',
-                ...dynamicSizes.toolbar
-            }}>
-                <div style={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width, }}>
-                    <SvgRepo
-                        svg={(() => {
-                            switch (effect.type) {
-                                case "scale": return allOut();
-                                case "move": return earthquake();
-                                case "rotate": return toysFan();
-                            }
-                        })()}
-                        containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
-                        scale={0.6} />
-                </div>
-                <div style={{
-                    cursor: 'pointer',
-                    width: dynamicSizes.toolbar.width,
-                    height: dynamicSizes.toolbar.width,
-                    background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
-                    border: '1px solid rgba(0,0,0,0)',
-                    transition: 'border-left 0.25s ease-out'
-                }}
-                    onClick={() => {
-                        const closed = !showUnitControls;
-                        if (closed) {
-                            if (!appState.activeElement) {
-                                switch (effect.type) {
-                                    case "move": {
-                                        const moveEqautionKeys = Array.from(effect.value.math.keys())
-                                        const keys = appState.carouselEntries;
-                                        const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                                        const newIndex = k > -1 ? k : 0;
-                                        setMoveCarouselIndex(newIndex);
-                                        break;
-                                    }
-                                    case "rotate": {
-                                        const eqKeys = Array.from(effect.value.math.keys())
-                                        const carouselKeys = appState.carouselEntries;
-                                        const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
-                                        const newIndex = k > -1 ? k : 0;
-                                        setRotateCarouselIndex(newIndex);
-                                        break;
-                                    }
-                                    case "scale": {
-                                        const moveEqautionKeys = Array.from(effect.value.math.keys())
-                                        const keys = appState.carouselEntries;
-                                        const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                                        const newIndex = k > -1 ? k : 0;
-                                        setScaleCarouselIndex(newIndex);
-                                        break;
-                                    }
-                                }
-                            }
-                            else if (appState.activeElement.locallyActivatedEffectKey == undefined) {
-                                const activeKey = appState.activeElement.key;
-                                const initialIndex = appState.carouselEntries.findIndex(c => c.key == activeKey);
-                                if (initialIndex > -1) {
-                                    setScaleCarouselIndex(initialIndex);
-                                    setMoveCarouselIndex(initialIndex);
-                                    setRotateCarouselIndex(initialIndex);
-                                }
-                            }
-                            setShowUnitControls(true);
-                        }
-                        else {
-                            setShowUnitControls(false);
-                        }
-                    }}>
-                    <SvgRepo
-                        title={"parameters"}
-                        svg={tune()}
-                        containerSize={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }}
-                        scale={0.65} />
-                </div>
-                <div style={{
-                    cursor: 'pointer', width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width,
-                    background: 'none',
-                    border: '1px solid rgba(0,0,0,0)',
-                    transition: 'border-left 0.25s ease-out'
-                }}
-                    onClick={async () => {
-                        const rollback: LaurusEffect = { ...effect };
-                        const newEffect: LaurusEffect = {
-                            ...effect,
-                            locked: !effect.locked,
-                        }
-                        await saveEffect(newEffect, rollback);
-                    }}>
-                    <SvgRepo
-                        title={"lock"}
-                        svg={effect.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
-                        containerSize={{
-                            width: dynamicSizes.toolbar.width,
-                            height: dynamicSizes.toolbar.width
-                        }}
-                        scale={0.6} />
-                </div>
-                {showUnitControls && <>
-                    <div style={{
-                        cursor: 'pointer',
-                        width: dynamicSizes.toolbar.width,
-                        height: dynamicSizes.toolbar.width,
-                        background: 'none',
-                        border: '1px solid rgba(0,0,0,0)',
-                        transition: 'border-left 0.25s ease-out'
-                    }}
-                        onClick={() => {
-                            const confirmed = confirm('are you sure you want to delete this effect?');
-                            if (confirmed) {
-                                deleteEffect(effect);
-                            }
-                        }}>
-                        <SvgRepo
-                            title={"delete"}
-                            svg={cancelCircle('rgb(220, 112, 112)')}
-                            containerSize={{
-                                width: dynamicSizes.toolbar.width,
-                                height: dynamicSizes.toolbar.width
-                            }}
-                            scale={0.6} />
-                    </div>
-                </>}
-            </div>
+            <EffectUnitbar
+                effect={effect}
+                showUnitControls={showUnitControls}
+                saveEffect={saveEffect}
+                setShowUnitControls={setShowUnitControls}
+                setMoveCarouselIndex={setMoveCarouselIndex}
+                setRotateCarouselIndex={setRotateCarouselIndex}
+                setScaleCarouselIndex={setScaleCarouselIndex} />
         </div>
     );
 }
+
 
 interface EffectDescription {
     effectKey: string,
