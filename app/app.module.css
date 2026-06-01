@@ -220,6 +220,17 @@ input:-webkit-autofill::first-line {
   font-family: var(--font-della-respira), serif !important;
 }
 
+input:-webkit-autofill::first-line {
+  font-family: var(--font-della-respira), serif !important;
+}
+
+.numberInput {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
 .animated-nav-dark {
   cursor: pointer;
   transition: text-shadow 0.2s ease-in-out;

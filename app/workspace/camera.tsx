@@ -110,11 +110,7 @@ export default function DraggableCamera({
                                                 meta={meta}
                                                 zIndex={meta.order + zIndex + 1}
                                                 imgElementsRef={imgElementsRef}
-                                                refKey={refKey}
-                                                disbaled={{
-                                                    value: appState.tool.type != 'move',
-                                                    cursor: ""
-                                                }} />
+                                                refKey={refKey} />
                                         </div>
                                     );
                                 }
@@ -145,11 +141,7 @@ export default function DraggableCamera({
                                                 meta={meta}
                                                 zIndex={meta.order + zIndex + 1}
                                                 svgElementsRef={svgElementsRef}
-                                                refKey={refKey}
-                                                disabled={{
-                                                    value: appState.tool.type != 'move',
-                                                    cursor: ""
-                                                }} />
+                                                refKey={refKey} />
                                         </div>
                                     );
                                 }

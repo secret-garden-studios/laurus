@@ -8,6 +8,7 @@ import { LaurusProjectResult } from "../../projects/projects.client";
 import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
 import Scalebar from "./scalebar";
+import Dropbar from "./dropbar";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -183,7 +184,7 @@ export function ProjectbarLevel2() {
             }}>
             {(() => {
                 switch (appState.tool.type) {
-                    case "drop":
+                    case "drop": return <Dropbar />
                     case "none":
                     case "contextmenu":
                     case "viewport":

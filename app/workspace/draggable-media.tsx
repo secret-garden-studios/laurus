@@ -2,11 +2,12 @@
 import Image from "next/image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform } from "./workspace.client";
-import { RefObject, useCallback, useContext, useMemo } from "react";
+import { LaurusImgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform, DEFAULT_CONTEXT_MENU_CONFIG } from "./workspace.client";
+import { RefObject, useCallback, useContext, useMemo, useState } from "react";
 import { updateProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 import ContextMenu from "./context-menu";
+import { v4 } from "uuid";
 
 interface Point2D {
     x: number;
@@ -134,15 +135,37 @@ interface ProjectImg {
     meta: LaurusProjectImg,
     data: LaurusImgResult,
     onClick: (metaKey: boolean) => void,
-    onMouseEnter?: () => void,
-    onMouseLeave?: () => void,
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     refKey?: string,
+    title?: string,
     transform?: LaurusTransform,
-    disabled?: { value: boolean, cursor: string },
 }
-function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, data, onClick, onMouseEnter, onMouseLeave, onImgRef, refKey, transform, disabled }: ProjectImg) {
-    const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } = useDraggable({ id: dndId, disabled: disabled?.value ?? false });
+function ProjectImg({
+    dndId,
+    dndPosition,
+    zIndex,
+    maxZIndex,
+    mediaKey,
+    meta,
+    data,
+    onClick,
+    onImgRef,
+    refKey,
+    title,
+    transform }: ProjectImg) {
+    const { appState, isMetaKeyPressed } = useContext(WorkspaceContext);
+    const [isHovered, setIsHovered] = useState(false);
+    const dragDisabled = useMemo(() => {
+        return appState.tool.type != 'move';
+    }, [appState.tool.type]);
+    const isStackable = useMemo(() => {
+        return appState.tool.type === 'drop' && appState.tool.stack
+    }, [appState.tool]);
+    const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
+        useDraggable({
+            id: dndId,
+            disabled: dragDisabled ?? false
+        });
     const dndCss = {
         left: dndPosition.x,
         top: dndPosition.y,
@@ -155,7 +178,6 @@ function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
             ref={setNodeRef}
             style={{
                 ...dndCss,
-                cursor: disabled?.value ? disabled.cursor : '',
                 position: 'absolute',
                 width: meta.width * meta.scale_x,
                 height: meta.height * meta.scale_y,
@@ -166,15 +188,19 @@ function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                     {...listeners}
                     {...attributes}
                     style={{
-                        cursor: disabled?.value ? disabled.cursor : isDragging ? 'grabbing' : 'grab',
                         ...(transform && { ...transform.cssProps }),
                         position: 'relative',
                         zIndex: 1,
                     }} >
                     <Image
+                        title={title ?? ""}
                         onClick={(e) => onClick(e.metaKey)}
-                        onMouseEnter={onMouseEnter}
-                        onMouseLeave={onMouseLeave}
+                        onMouseEnter={() => {
+                            setIsHovered(true);
+                        }}
+                        onMouseLeave={() => {
+                            setIsHovered(false);
+                        }}
                         ref={(r) => {
                             if (onImgRef && refKey) {
                                 onImgRef(r, `${refKey}`);
@@ -186,7 +212,12 @@ function ProjectImg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dat
                         fill
                         style={{
                             objectFit: 'cover',
-                            outline: meta.showContextMenu ? '1px solid rgba(255, 255, 255, 0.175)' : 'none',
+                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                            outline: (isStackable && isHovered)
+                                ? '2px solid rgba(255, 255, 255, 0.9)'
+                                : meta.showContextMenu
+                                    ? '1px solid rgba(255, 255, 255, 0.175)'
+                                    : 'none',
                             backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                             background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
@@ -220,35 +251,55 @@ interface ProjectSvg {
     meta: LaurusProjectSvg,
     decodedString: string,
     onClick: (metaKey: boolean) => void,
-    onMouseEnter?: () => void,
-    onMouseLeave?: () => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     refKey?: string,
     title?: string,
     transform?: LaurusTransform,
-    disabled?: { value: boolean, cursor: string },
 }
-function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, decodedString, onClick, onMouseEnter, onMouseLeave, onSvgRef, refKey, title, transform, disabled }: ProjectSvg) {
-    const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } = useDraggable({ id: dndId, disabled: disabled?.value ?? false });
-    const dndCss = {
-        left: dndPosition.x,
-        top: dndPosition.y,
-        transform: CSS.Translate.toString(dndTransform),
-        touchAction: 'none',
-    };
+function ProjectSvg({
+    dndId,
+    dndPosition,
+    zIndex,
+    maxZIndex,
+    mediaKey,
+    meta,
+    decodedString,
+    onClick,
+    onSvgRef,
+    refKey,
+    title,
+    transform }: ProjectSvg) {
+    const { appState, isMetaKeyPressed } = useContext(WorkspaceContext);
+    const dragDisabled = useMemo(() => {
+        return appState.tool.type != 'move';
+    }, [appState.tool.type]);
+    const isStackable = useMemo(() => {
+        return appState.tool.type === 'drop' && appState.tool.stack
+    }, [appState.tool]);
+    const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
+        useDraggable({
+            id: dndId,
+            disabled: dragDisabled ?? false
+        });
+    const [isHovered, setIsHovered] = useState(false);
     const containerSize = useMemo(() => {
         return {
             width: meta.width * meta.scale_x,
             height: meta.height * meta.scale_y
         }
     }, [meta.height, meta.scale_x, meta.scale_y, meta.width]);
+    const dndCss = {
+        left: dndPosition.x,
+        top: dndPosition.y,
+        transform: CSS.Translate.toString(dndTransform),
+        touchAction: 'none',
+    };
 
     return <>
         <div
             ref={setNodeRef}
             style={{
                 ...dndCss,
-                cursor: disabled?.value ? disabled.cursor : '',
                 position: 'absolute',
                 ...containerSize,
                 zIndex: meta.showContextMenu ? maxZIndex + zIndex + 1 : zIndex,
@@ -257,7 +308,6 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dec
                 {...listeners}
                 {...attributes}
                 style={{
-                    cursor: disabled?.value ? disabled.cursor : isDragging ? 'grabbing' : 'grab',
                     ...(transform && { ...transform.cssProps }),
                     position: 'relative',
                     zIndex: 1
@@ -268,7 +318,12 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dec
                         ...containerSize,
                         display: 'grid',
                         placeContent: 'center',
-                        outline: meta.showContextMenu ? '1px solid rgba(255, 255, 255, 0.175)' : 'none',
+                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                        outline: (isStackable && isHovered)
+                            ? '2px solid rgba(255, 255, 255, 0.9)'
+                            : meta.showContextMenu
+                                ? '1px solid rgba(255, 255, 255, 0.175)'
+                                : 'none',
                         backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                         background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
@@ -280,8 +335,12 @@ function ProjectSvg({ dndId, dndPosition, zIndex, maxZIndex, mediaKey, meta, dec
                     {decodedString &&
                         <svg
                             onClick={(e) => onClick(e.metaKey)}
-                            onMouseEnter={onMouseEnter}
-                            onMouseLeave={onMouseLeave}
+                            onMouseEnter={() => {
+                                setIsHovered(true);
+                            }}
+                            onMouseLeave={() => {
+                                setIsHovered(false);
+                            }}
                             ref={(r) => {
                                 if (onSvgRef && refKey) {
                                     onSvgRef(r, `${refKey}`);
@@ -318,7 +377,6 @@ interface DraggableProjectImg {
     zIndex: number,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     refKey?: string,
-    disbaled?: { value: boolean, cursor: string },
 }
 export function DraggableProjectImg({
     mediaKey,
@@ -326,8 +384,7 @@ export function DraggableProjectImg({
     meta,
     zIndex,
     imgElementsRef,
-    refKey,
-    disbaled }: DraggableProjectImg) {
+    refKey }: DraggableProjectImg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
@@ -435,11 +492,68 @@ export function DraggableProjectImg({
         }
     }, [appState.accessToken, appState.apiOrigin, appState.project, transformedBounds.deltas, dispatch, mediaKey, meta]);
 
+    const onImgStackDrop = useCallback(async () => {
+        if (!appState.browserElement) return;
+        const browserElement = { ...appState.browserElement };
+        const snapshot = { ...appState.project };
+        const newKey = v4();
+        const maxOrder = Math.max(
+            ...Array.from(snapshot.imgs.values()).map(i => i.order),
+            ...Array.from(snapshot.svgs.values()).map(s => s.order),
+            -1
+        );
+
+        if (browserElement.type === 'img') {
+            const newProjectImg: LaurusProjectImg = {
+                ...meta,
+                media_key: browserElement.value.media_key,
+                img_media_id: browserElement.value.img_media_id,
+                order: maxOrder + 1,
+                showContextMenu: false,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            } as LaurusProjectImg;
+            const newImgs = new Map(snapshot.imgs);
+            newImgs.set(newKey, newProjectImg);
+            const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const encodedImg = appState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
+                if (encodedImg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                }
+            }
+        } else if (browserElement.type === 'svg') {
+            const newProjectSvg: LaurusProjectSvg = {
+                ...meta,
+                media_key: browserElement.value.media_key,
+                svg_media_id: browserElement.value.svg_media_id,
+                viewbox: browserElement.value.viewbox,
+                fill: browserElement.value.fill,
+                stroke: browserElement.value.stroke,
+                stroke_width: browserElement.value.stroke_width,
+                order: maxOrder + 1,
+                showContextMenu: false,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            } as LaurusProjectSvg;
+            const newSvgs = new Map(snapshot.svgs);
+            newSvgs.set(newKey, newProjectSvg);
+            const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs };
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const encodedSvg = appState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
+                if (encodedSvg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                }
+            }
+        }
+    }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
+
     const onImgClick = useCallback((metaKey: boolean) => {
-        if (metaKey) {
-            if (appState.tool.type == 'viewport') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-            };
+        if (metaKey && appState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },
@@ -458,6 +572,10 @@ export function DraggableProjectImg({
             });
         }
         else {
+            if (appState.tool.type === 'drop' && appState.tool.stack) {
+                onImgStackDrop();
+                return;
+            }
             switch (appState.tool.type) {
                 case "drop": { break; }
                 case "none": { break; }
@@ -502,7 +620,7 @@ export function DraggableProjectImg({
                 }
             }
         }
-    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch, mediaKey, meta]);
+    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool, onImgStackDrop, dispatch, mediaKey, meta]);
 
     return (<>
         <DndContext
@@ -527,7 +645,7 @@ export function DraggableProjectImg({
                 onClick={onImgClick}
                 onImgRef={onImgRef}
                 refKey={refKey}
-                disabled={disbaled}
+                title={meta.media_key}
                 transform={laurusTransform} />
         </DndContext>
     </>)
@@ -540,7 +658,6 @@ interface DraggableProjectSvg {
     zIndex: number,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     refKey?: string,
-    disabled?: { value: boolean, cursor: string }
 }
 export function DraggableProjectSvg({
     mediaKey,
@@ -548,8 +665,7 @@ export function DraggableProjectSvg({
     meta,
     zIndex,
     svgElementsRef,
-    refKey,
-    disabled, }: DraggableProjectSvg) {
+    refKey }: DraggableProjectSvg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
@@ -661,11 +777,68 @@ export function DraggableProjectSvg({
         }
     }, [appState.accessToken, appState.apiOrigin, appState.project, transformedBounds.deltas, dispatch, mediaKey, meta]);
 
+    const onSvgStackDrop = useCallback(async () => {
+        if (!appState.browserElement) return;
+        const browserElement = { ...appState.browserElement };
+        const snapshot = { ...appState.project };
+        const newKey = v4();
+        const maxOrder = Math.max(
+            ...Array.from(snapshot.imgs.values()).map(i => i.order),
+            ...Array.from(snapshot.svgs.values()).map(s => s.order),
+            -1
+        );
+
+        if (browserElement.type === 'img') {
+            const newProjectImg: LaurusProjectImg = {
+                ...meta,
+                media_key: browserElement.value.media_key,
+                img_media_id: browserElement.value.img_media_id,
+                order: maxOrder + 1,
+                showContextMenu: false,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            } as LaurusProjectImg;
+            const newImgs = new Map(snapshot.imgs);
+            newImgs.set(newKey, newProjectImg);
+            const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const encodedImg = appState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
+                if (encodedImg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                }
+            }
+        } else if (browserElement.type === 'svg') {
+            const newProjectSvg: LaurusProjectSvg = {
+                ...meta,
+                media_key: browserElement.value.media_key,
+                svg_media_id: browserElement.value.svg_media_id,
+                viewbox: browserElement.value.viewbox,
+                fill: browserElement.value.fill,
+                stroke: browserElement.value.stroke,
+                stroke_width: browserElement.value.stroke_width,
+                order: maxOrder + 1,
+                showContextMenu: false,
+                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            } as LaurusProjectSvg;
+            const newSvgs = new Map(snapshot.svgs);
+            newSvgs.set(newKey, newProjectSvg);
+            const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs };
+            const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (updated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const encodedSvg = appState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
+                if (encodedSvg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                }
+            }
+        }
+    }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
+
     const onSvgClick = useCallback((metaKey: boolean) => {
-        if (metaKey) {
-            if (appState.tool.type == 'viewport') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-            };
+        if (metaKey && appState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },
@@ -684,6 +857,10 @@ export function DraggableProjectSvg({
             });
         }
         else {
+            if (appState.tool.type === 'drop' && appState.tool.stack) {
+                onSvgStackDrop();
+                return;
+            }
             switch (appState.tool.type) {
                 case "drop": { break; }
                 case "none": { break; }
@@ -728,7 +905,7 @@ export function DraggableProjectSvg({
                 }
             }
         }
-    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch, mediaKey, meta]);
+    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool, onSvgStackDrop, dispatch, mediaKey, meta]);
 
     return (<>
         <DndContext
@@ -743,6 +920,7 @@ export function DraggableProjectSvg({
                 onNewSvgPosition(delta.x, delta.y);
             }}>
             <ProjectSvg
+                title={meta.media_key}
                 dndId={`dnd-node-${mediaKey}`}
                 dndPosition={dndPosition}
                 zIndex={zIndex}
@@ -753,7 +931,6 @@ export function DraggableProjectSvg({
                 onClick={onSvgClick}
                 onSvgRef={onSvgRef}
                 refKey={refKey}
-                disabled={disabled}
                 transform={laurusTransform} />
         </DndContext>
     </>)

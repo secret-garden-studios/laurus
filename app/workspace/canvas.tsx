@@ -1,5 +1,5 @@
-import { useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG } from "./workspace.client";
+import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool } from "./workspace.client";
 import { v4 } from "uuid";
 import { findImg, findSvg } from "./workspace.server";
 import { updateProject, createProject } from "../projects/projects.server";
@@ -8,7 +8,6 @@ import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../proj
 function calcMousePosition(
     canvas: HTMLCanvasElement,
     event: React.MouseEvent<HTMLElement>) {
-
     const rect = canvas.getBoundingClientRect();
     const p = {
         x: event.clientX - rect.left,
@@ -23,16 +22,13 @@ function caclRadius(
     canvas: HTMLCanvasElement,
     event: React.MouseEvent<HTMLCanvasElement>,
     lineWidth: number) {
-
     const p = calcMousePosition(canvas, event);
     const padding = 2;
     const minRadius = lineWidth * 2 + padding;
     let radius = Math.sqrt(Math.pow(p.x - x, 2) + Math.pow(p.y - y, 2));
-
     if (radius < minRadius) {
         radius = minRadius;
     }
-
     return radius;
 }
 
@@ -63,6 +59,71 @@ interface ProjectCircle {
     radius: number,
 }
 
+function calculateDropFrame(
+    width: number,
+    height: number,
+    dropArea: ProjectCircle,
+    tool: LaurusTool
+) {
+    const frame = getCenteredRectInCircle(
+        width,
+        height,
+        dropArea.cx,
+        dropArea.cy,
+        dropArea.radius
+    );
+    if (tool.type != 'drop') return frame;
+    if (tool.size.value) {
+        const mediaAspectRatio = width / height;
+        if (tool.size.width !== undefined && tool.size.height !== undefined) {
+            if (mediaAspectRatio > tool.size.width / tool.size.height) {
+                frame.width = tool.size.width;
+                frame.height = frame.width / mediaAspectRatio;
+            } else {
+                frame.height = tool.size.height;
+                frame.width = frame.height * mediaAspectRatio;
+            }
+        } else if (tool.size.width !== undefined) {
+            frame.width = tool.size.width;
+            frame.height = frame.width / mediaAspectRatio;
+        } else if (tool.size.height !== undefined) {
+            frame.height = tool.size.height;
+            frame.width = frame.height * mediaAspectRatio;
+        }
+        frame.x = dropArea.cx - frame.width / 2;
+        frame.y = dropArea.cy - frame.height / 2;
+    }
+    if (tool.position.value) {
+        if (tool.position.x !== undefined) {
+            frame.x = tool.position.x;
+        }
+        if (tool.position.y !== undefined) {
+            frame.y = tool.position.y;
+        }
+    }
+    return frame;
+}
+
+function isBadFrame(
+    newFrame: { x: number; y: number; width: number; height: number; },
+    canvas_width: number,
+    canvas_height: number): boolean {
+    if (newFrame.width < 0 || newFrame.height < 0) {
+        alert("drop area is too small!");
+        return true;
+    }
+    if (newFrame.width > canvas_width || newFrame.height > canvas_height) {
+        alert("drop area is too big!");
+        return true;
+    }
+
+    if (newFrame.x < 0 || newFrame.y < 0 || newFrame.x + newFrame.width > canvas_width || newFrame.y + newFrame.height > canvas_height) {
+        alert("drop area is out of bounds!");
+        return true;
+    }
+    return false;
+}
+
 export default function Canvas() {
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -83,11 +144,10 @@ export default function Canvas() {
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
             ctx.lineWidth = 1;
-
         }
     }, []);
 
-    const click = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         switch (appState.tool.type) {
             case 'drop': {
                 const canvas = drawingCanvasRef.current;
@@ -97,9 +157,9 @@ export default function Canvas() {
                 break;
             }
         }
-    }
+    }, [appState.tool.type]);
 
-    const mouseDrag = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!anchor) return;
         const canvas = drawingCanvasRef.current;
         if (!canvas) return;
@@ -115,125 +175,129 @@ export default function Canvas() {
                 break;
             }
         }
-    }
+    }, [anchor, appState.tool.type]);
 
-    async function handleSvgDrop(svgData: LaurusSvgResult, dropArea: ProjectCircle) {
-        const newFrame = getCenteredRectInCircle(
+    const handleSvgDrop = useCallback(async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
+        const newFrame = calculateDropFrame(
             svgData.width,
             svgData.height,
-            dropArea.cx,
-            dropArea.cy,
-            dropArea.radius);
+            dropArea,
+            appState.tool
+        );
+        if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
+            return;
+        }
         const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_key);
-        if (svgMediaResult) {
-            const projectSvg: LaurusProjectSvg = {
-                svg_media_id: svgMediaResult.svg_media_id,
-                width: newFrame.width,
-                height: newFrame.height,
-                top: newFrame.y,
-                left: newFrame.x,
-                order: Array.from(appState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
-                media_key: svgData.media_key,
-                viewbox: svgData.viewbox,
-                fill: svgData.fill,
-                stroke: svgData.stroke,
-                stroke_width: svgData.stroke_width,
-                showContextMenu: false,
-                rotate_x: 0,
-                rotate_y: 0,
-                rotate_z: 0,
-                rotate_angle: 0,
-                scale_x: 1,
-                scale_y: 1,
-                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
-            }
-            const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-            const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgMediaResult.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
-            newSvgs.set(newKey, projectSvg);
-            const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
-            if (appState.project.project_id) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-                if (projectUpdated) {
-                    const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
-                    if (encodedSvg) {
-                        dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
-                    }
-                }
-            }
-            else {
-                const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-                if (projectCreated) {
-                    const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                    const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
-                    if (encodedSvg) {
-                        dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
-                    }
+        if (!svgMediaResult) return;
+        const projectSvg: LaurusProjectSvg = {
+            svg_media_id: svgMediaResult.svg_media_id,
+            width: newFrame.width,
+            height: newFrame.height,
+            top: newFrame.y,
+            left: newFrame.x,
+            order: Array.from(appState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
+            media_key: svgData.media_key,
+            viewbox: svgData.viewbox,
+            fill: svgData.fill,
+            stroke: svgData.stroke,
+            stroke_width: svgData.stroke_width,
+            showContextMenu: false,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+            scale_x: 1,
+            scale_y: 1,
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+        }
+        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
+        const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgMediaResult.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        newSvgs.set(newKey, projectSvg);
+        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
+        if (appState.project.project_id) {
+            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                if (encodedSvg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                 }
             }
         }
-    }
+        else {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                if (encodedSvg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                }
+            }
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.browserSvgs, appState.project, appState.tool, dispatch]);
 
-    async function handleImgDrop(imgData: LaurusImgResult, dropArea: ProjectCircle) {
-        const newFrame = getCenteredRectInCircle(
+    const handleImgDrop = useCallback(async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
+        const newFrame = calculateDropFrame(
             imgData.width,
             imgData.height,
-            dropArea.cx,
-            dropArea.cy,
-            dropArea.radius);
+            dropArea,
+            appState.tool
+        );
+        if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
+            return;
+        }
         const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_key);
-        if (imgMediaResult) {
-            const projectImg: LaurusProjectImg = {
-                width: newFrame.width,
-                height: newFrame.height,
-                media_key: imgData.media_key,
-                showContextMenu: false,
-                img_media_id: imgMediaResult.img_media_id,
-                top: newFrame.y,
-                left: newFrame.x,
-                order: Array.from(appState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
-                rotate_x: 0,
-                rotate_y: 0,
-                rotate_z: 0,
-                rotate_angle: 0,
-                scale_x: 1,
-                scale_y: 1,
-                contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
-            };
-            const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-            const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgMediaResult.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
-            newImgs.set(newKey, projectImg);
-            const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
-            if (appState.project.project_id) {
-                const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-                if (projectUpdated) {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                    const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
-                    if (encodedImg) {
-                        dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
-                    }
-                }
-            }
-            else {
-                const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-                if (projectCreated) {
-                    const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                    const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
-                    if (encodedImg) {
-                        dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                        dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
-                    }
+        if (!imgMediaResult) return;
+        const projectImg: LaurusProjectImg = {
+            width: newFrame.width,
+            height: newFrame.height,
+            media_key: imgData.media_key,
+            showContextMenu: false,
+            img_media_id: imgMediaResult.img_media_id,
+            top: newFrame.y,
+            left: newFrame.x,
+            order: Array.from(appState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+            scale_x: 1,
+            scale_y: 1,
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+        };
+        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
+        const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgMediaResult.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        newImgs.set(newKey, projectImg);
+        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
+        if (appState.project.project_id) {
+            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+            if (projectUpdated) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                if (encodedImg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                 }
             }
         }
-    }
+        else {
+            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+            if (projectCreated) {
+                const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
+                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                if (encodedImg) {
+                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                }
+            }
+        }
+    }, [appState.accessToken, appState.apiOrigin, appState.browserImgs, appState.project, appState.tool, dispatch]);
 
-    const mouseRelease = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseUp = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!anchor) return;
         const canvas = drawingCanvasRef.current;
         if (!canvas) return;
@@ -272,7 +336,7 @@ export default function Canvas() {
         }
         setAnchor(undefined);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
+    }, [anchor, appState.browserElement, appState.browserImgs, appState.browserSvgs, appState.tool.type, handleImgDrop, handleSvgDrop, minRadius]);
 
     return (<>
         <div style={{
@@ -283,10 +347,10 @@ export default function Canvas() {
                 ref={drawingCanvasRef}
                 width={appState.project.canvas_width}
                 height={appState.project.canvas_height}
-                onMouseMove={mouseDrag}
-                onMouseUp={mouseRelease}
-                onMouseLeave={mouseRelease}
-                onMouseDown={click}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onMouseDown={handleMouseDown}
             />
         </div>
     </>)

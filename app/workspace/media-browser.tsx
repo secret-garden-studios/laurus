@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import NextImage from "next/image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
@@ -72,7 +72,7 @@ export default function MediaBrowser({
     onNextPage,
     onFilterSelect,
 }: MediaBrowser) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch, isMetaKeyPressed } = useContext(WorkspaceContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
     const [dynamicSizes] = useState(() => {
@@ -423,8 +423,18 @@ export default function MediaBrowser({
 
     const onMediaClick = useCallback((selectedMedia: LaurusThumbnail) => {
         dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...selectedMedia } });
-        dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
-    }, [dispatch]);
+        const currentTool = { ...appState.tool };
+        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
+            type: 'drop',
+            stack: false,
+            size: { value: false, width: undefined, height: undefined },
+            position: { value: false, x: undefined, y: undefined }
+        };
+        dispatch({
+            type: WorkspaceActionType.SetTool,
+            value: newTool,
+        })
+    }, [appState.tool, dispatch]);
 
     const onImgDiscoverToggle = useCallback(async () => {
         let newProjectIdAck = "";
@@ -712,7 +722,7 @@ export default function MediaBrowser({
                                                 displayHeight={display.displayHeight}>
                                                 <NextImage
                                                     onClick={(e) => {
-                                                        if (e.metaKey) {
+                                                        if (e.metaKey && appState.tool.type !== 'viewport') {
                                                             let newShowContextMenu = false;
                                                             const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != img.img_media_id);
                                                             if (thisIsNotSelected && showContextMenu) {
@@ -729,8 +739,6 @@ export default function MediaBrowser({
                                                             onMediaClick({ value: { ...img }, type: 'img' });
                                                         }
                                                     }}
-                                                    onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                                    onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                                                     draggable={false}
                                                     alt={img.media_key}
                                                     src={img.src}
@@ -740,6 +748,7 @@ export default function MediaBrowser({
                                                         display: 'block',
                                                         objectFit: display.isSquareish ? 'cover' : 'unset',
                                                         borderRadius: 10,
+                                                    cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
                                                     }} />
                                             </ScrollableImageContainer>}
                                         {(showContextMenu && browserElementMediaId == img.img_media_id) &&
@@ -800,7 +809,7 @@ export default function MediaBrowser({
                                     }} >
                                         <div className={styles['transparent-checkerboard-background']}
                                             onClick={(e) => {
-                                                if (e.metaKey) {
+                                                if (e.metaKey && appState.tool.type !== 'viewport') {
                                                     let newShowContextMenu = false;
                                                     const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != svg.svg_media_id);
                                                     if (thisIsNotSelected && showContextMenu) {
@@ -817,8 +826,6 @@ export default function MediaBrowser({
                                                     onMediaClick({ value: { ...svg }, type: 'svg' });
                                                 }
                                             }}
-                                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                                             style={{
                                                 width: dynamicSizes.mediaItemSize.container,
                                                 height: dynamicSizes.mediaItemSize.container,
@@ -827,7 +834,8 @@ export default function MediaBrowser({
                                                 placeContent: 'center',
                                                 borderRadius: 10,
                                                 boxShadow: '5px 5px 12px rgba(11, 11, 11, 0.6)',
-                                                border: '1px solid rgba(255,255,255,0.05)'
+                                                border: '1px solid rgba(255,255,255,0.05)',
+                                                cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
                                             }}>
                                             <svg
                                                 version="1.1"

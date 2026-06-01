@@ -23,7 +23,7 @@ import Menubar from "../menubar";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser, { MediaBrowserFilter } from "./media-browser";
-import { moreVert, playArrow, SvgRepo, photo, getCrops, LaurusCropSvg } from "../svg-repo";
+import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import Projectbar, { ProjectbarLevel2 } from "./bars/projectbar";
 import TimelineArea from "./timeline-area";
@@ -80,7 +80,12 @@ export type LaurusThumbnail =
     | { type: 'svg', value: LaurusSvgResult }
     | { type: 'img', value: LaurusImgResult }
 export type LaurusTool =
-    | { type: 'drop' }
+    | {
+        type: 'drop',
+        stack: boolean,
+        size: { value: boolean, width: number | undefined, height: number | undefined },
+        position: { value: boolean, x: number | undefined, y: number | undefined }
+    }
     | { type: 'none' }
     | { type: 'contextmenu' }
     | { type: 'viewport' }
@@ -245,18 +250,7 @@ export const defaultWorkspace: WorkspaceState = {
     timelineMaxValue: 0,
     timelineUnits: [],
     timelineValues: [],
-    browserElement: {
-        value: {
-            ...photo("rgb(62,62,62)"),
-            timestamp: "",
-            last_active: "",
-            svg_media_id: "",
-            categories: [],
-            order: 0,
-            media_uri: ""
-        },
-        type: 'svg'
-    },
+    browserElement: undefined,
     activeElement: undefined,
     recordingLight: false,
     fps: 60,
@@ -529,6 +523,7 @@ export interface WorkspaceContextProps {
     handleRewindAll: () => Promise<void>;
     handlePlayAll: () => Promise<void>;
     handleFastForwardAll: (fastRate: number) => Promise<void>;
+    isMetaKeyPressed: boolean;
 }
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
@@ -539,6 +534,7 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
         handleRewindAll: async () => { },
         handlePlayAll: async () => { },
         handleFastForwardAll: async () => { },
+        isMetaKeyPressed: false,
     }
 )
 
@@ -783,6 +779,7 @@ export default function Workspace({
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
+    const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
@@ -878,14 +875,7 @@ export default function Workspace({
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement;
-            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-                return;
-            }
-            if (event.metaKey) {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                return;
-            }
-
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || event.metaKey) return;
             const clearAllContextMenus = () => {
                 const inactiveImgs = Array.from(appState.project.imgs.entries());
                 const inactiveSvgs = Array.from(appState.project.svgs.entries());
@@ -896,7 +886,6 @@ export default function Workspace({
                     dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                 });
             };
-
             if (event.key === 'Escape') {
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
@@ -924,7 +913,7 @@ export default function Workspace({
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: newToolType } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'd') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } });
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', stack: false, size: { value: false, width: undefined, height: undefined }, position: { value: false, x: undefined, y: undefined } } });
                 clearAllContextMenus();
             }
         };
@@ -933,6 +922,23 @@ export default function Workspace({
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, [appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch]);
+
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            setIsMetaKeyPressed(e.metaKey);
+        };
+        const handleBlur = () => {
+            setIsMetaKeyPressed(false);
+        };
+        window.addEventListener('keydown', handleKey);
+        window.addEventListener('keyup', handleKey);
+        window.addEventListener('blur', handleBlur);
+        return () => {
+            window.removeEventListener('keydown', handleKey);
+            window.removeEventListener('keyup', handleKey);
+            window.removeEventListener('blur', handleBlur);
+        };
+    }, []);
 
     const handleImgPageRequest = useCallback(async () => {
         const mediaArray = Array.from(appState.browserImgs.values());
@@ -1160,6 +1166,7 @@ export default function Workspace({
                 handleRewindAll,
                 handlePlayAll,
                 handleFastForwardAll,
+                isMetaKeyPressed,
             }}>
                 <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
                     <Menubar
@@ -1245,6 +1252,7 @@ export default function Workspace({
                         position: 'relative',
                         width: "100%",
                         height: '100%',
+                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'default',
                     }}>
                     <div
                         className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
@@ -1256,14 +1264,15 @@ export default function Workspace({
                             height: appState.project.canvas_height,
                             zIndex: 0,
                         }} />
-                    {appState.tool.type == 'drop' && <div
+                    {appState.tool.type === 'drop' && <div
                         style={{
                             position: 'absolute',
                             top: 0,
                             left: 0,
                             width: 'min-content',
                             height: 'min-content',
-                            zIndex: 1000
+                            zIndex: (isMetaKeyPressed) ? 2 : 1000,
+                            pointerEvents: (isMetaKeyPressed) ? 'none' : 'auto'
                         }}>
                         <Canvas />
                     </div>}
@@ -1313,13 +1322,9 @@ export default function Workspace({
                                                 mediaKey={key}
                                                 data={imgData}
                                                 meta={meta}
-                                                zIndex={meta.order + 3}
+                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? 1001 + meta.order : meta.order + 3}
                                                 imgElementsRef={imgElementsRef}
-                                                refKey={refKey}
-                                                disbaled={{
-                                                    value: appState.tool.type != 'move',
-                                                    cursor: ""
-                                                }} />
+                                                refKey={refKey} />
                                         </div>
                                     );
                                 }
@@ -1339,7 +1344,7 @@ export default function Workspace({
                                             .join(''));
                                 }
                                 catch (error) {
-                                    console.log("Failed to decodeURIComponent from svg markup", { error })
+                                    console.log("Failed to decode svg markup", { media_key: meta.media_key, error });
                                 }
                                 if (decodedString) {
                                     return (
@@ -1348,13 +1353,9 @@ export default function Workspace({
                                                 mediaKey={key}
                                                 decodedString={decodedString}
                                                 meta={meta}
-                                                zIndex={meta.order + 3}
+                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? 1001 + meta.order : meta.order + 3}
                                                 svgElementsRef={svgElementsRef}
-                                                refKey={refKey}
-                                                disabled={{
-                                                    value: appState.tool.type != 'move',
-                                                    cursor: ""
-                                                }} />
+                                                refKey={refKey} />
                                         </div>
                                     );
                                 }

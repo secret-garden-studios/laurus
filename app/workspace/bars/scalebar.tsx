@@ -353,7 +353,7 @@ export default function Scalebar() {
                         ...dynamicSizes.input
                     }}
                 />
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, letterSpacing: 0 }}>{'h'}</div>
+                <div style={{ display: 'flex', alignItems: 'center', fontSize: dynamicSizes.unitFontSize, letterSpacing: 0 }}>{'h'}</div>
                 <input
                     id={`${appState.activeElement?.key ?? 'scalebar'}|input|scaley`}
                     disabled
@@ -367,6 +367,7 @@ export default function Scalebar() {
                         border: 'none',
                         outline: 'none',
                         display: 'inline-block',
+                        overflowX: 'scroll',
                         ...dynamicSizes.input
                     }}
                 />

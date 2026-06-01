@@ -213,7 +213,6 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                     ...(newStart != undefined && { start: newStart }),
                     ...(newEnd != undefined && { end: newEnd })
                 }
-                console.log(effect, newMove);
                 const updated = await updateMove(
                     appState.apiOrigin,
                     appState.accessToken,

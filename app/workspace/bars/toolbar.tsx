@@ -90,7 +90,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop' } })
+                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', stack: false, size: { value: false, width: undefined, height: undefined }, position: { value: false, x: undefined, y: undefined } } })
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
