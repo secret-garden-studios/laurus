@@ -34,7 +34,7 @@ import Toolbar from "./bars/toolbar";
 import { ProjectResult_V1_0, updateProject, createProject } from "../projects/projects.server";
 import { MeDependencies } from "../page";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
-import NextImage from "next/image";
+import LaurusImage from "../components/laurus-image";
 
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export type LaurusSvgResult = SvgMediaResult_V1_0;
@@ -1457,7 +1457,7 @@ export default function Workspace({
                                                     position: 'relative',
                                                 }}
                                             >
-                                                <NextImage
+                                                <LaurusImage
                                                     draggable={false}
                                                     alt={appState.browserElement.value.media_key}
                                                     src={appState.browserElement.value.src}

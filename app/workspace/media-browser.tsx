@@ -1,7 +1,7 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
 import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
-import NextImage from "next/image";
+import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
 import { createImg, createSvg } from "./workspace.server";
@@ -720,7 +720,7 @@ export default function MediaBrowser({
                                                 squarish={display.isSquareish}
                                                 displayWidth={display.displayWidth}
                                                 displayHeight={display.displayHeight}>
-                                                <NextImage
+                                                <LaurusImage
                                                     onClick={(e) => {
                                                         if (e.metaKey && appState.tool.type !== 'viewport') {
                                                             let newShowContextMenu = false;

@@ -95,28 +95,6 @@ export interface ImgMediaResult_V1_0 {
     categories: string[]
     src: string
 }
-export async function findImg(
-    baseUrl: string | undefined,
-    filename: string) {
-    try {
-        const url = `${baseUrl}/media/img?filename=${filename}`;
-        const raw_response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: ImgMediaResult_V1_0 = await raw_response.json();
-        return response;
-    }
-    catch (error) {
-        console.log({ error });
-        return undefined;
-    }
-}
 export async function getImg(
     baseUrl: string | undefined,
     imgMediaId: string,
@@ -237,28 +215,6 @@ export interface SvgMediaResult_V1_0 {
     order: number
     categories: string[]
     markup: string
-}
-export async function findSvg(
-    baseUrl: string | undefined,
-    filename: string) {
-    try {
-        const url = `${baseUrl}/media/svg?filename=${filename}`;
-        const raw_response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: SvgMediaResult_V1_0 = await raw_response.json();
-        return response;
-    }
-    catch (error) {
-        console.log({ error });
-        return undefined;
-    }
 }
 export async function getSvg(
     baseUrl: string | undefined,

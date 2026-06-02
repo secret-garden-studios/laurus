@@ -1,7 +1,6 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool } from "./workspace.client";
 import { v4 } from "uuid";
-import { findImg, findSvg } from "./workspace.server";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 
@@ -187,10 +186,8 @@ export default function Canvas() {
         if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
             return;
         }
-        const svgMediaResult = await findSvg(appState.apiOrigin, svgData.media_key);
-        if (!svgMediaResult) return;
         const projectSvg: LaurusProjectSvg = {
-            svg_media_id: svgMediaResult.svg_media_id,
+            svg_media_id: svgData.svg_media_id,
             width: newFrame.width,
             height: newFrame.height,
             top: newFrame.y,
@@ -211,7 +208,7 @@ export default function Canvas() {
             contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
         }
         const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgMediaResult.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgData.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
         newSvgs.set(newKey, projectSvg);
         const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
         if (appState.project.project_id) {
@@ -249,14 +246,12 @@ export default function Canvas() {
         if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
             return;
         }
-        const imgMediaResult = await findImg(appState.apiOrigin, imgData.media_key);
-        if (!imgMediaResult) return;
         const projectImg: LaurusProjectImg = {
             width: newFrame.width,
             height: newFrame.height,
             media_key: imgData.media_key,
             showContextMenu: false,
-            img_media_id: imgMediaResult.img_media_id,
+            img_media_id: imgData.img_media_id,
             top: newFrame.y,
             left: newFrame.x,
             order: Array.from(appState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
@@ -269,7 +264,7 @@ export default function Canvas() {
             contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
         };
         const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgMediaResult.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgData.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
         newImgs.set(newKey, projectImg);
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
         if (appState.project.project_id) {

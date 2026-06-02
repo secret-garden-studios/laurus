@@ -1,5 +1,5 @@
 'use client'
-import Image from "next/image";
+import LaurusImage from "../components/laurus-image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
 import { LaurusImgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform, DEFAULT_CONTEXT_MENU_CONFIG } from "./workspace.client";
@@ -192,7 +192,7 @@ function ProjectImg({
                         position: 'relative',
                         zIndex: 1,
                     }} >
-                    <Image
+                    <LaurusImage
                         title={title ?? ""}
                         onClick={(e) => onClick(e.metaKey)}
                         onMouseEnter={() => {
@@ -201,7 +201,7 @@ function ProjectImg({
                         onMouseLeave={() => {
                             setIsHovered(false);
                         }}
-                        ref={(r) => {
+                        imgRef={(r) => {
                             if (onImgRef && refKey) {
                                 onImgRef(r, `${refKey}`);
                             }

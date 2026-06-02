@@ -1,7 +1,7 @@
 import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
 import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
-import NextImage from "next/image";
+import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace-resolution";
 import styles from "@/app/app.module.css";
 
@@ -129,7 +129,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                                 cursor: 'pointer',
                                                 ...dynamicSizes.displayImg
                                             }}>
-                                            <NextImage
+                                            <LaurusImage
                                                 draggable={false}
                                                 alt={c.key}
                                                 src={canvasImg.src}
