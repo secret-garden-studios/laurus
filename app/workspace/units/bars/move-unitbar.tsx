@@ -1,8 +1,8 @@
 import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, add2, autorenew, circleFillZero, contentPaste, earthquake, ellipseFillZero, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
+import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, circleFillZero, contentPaste, earthquake, ellipseFillZero, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
-import { getMove, LaurusLoopType, LaurusShapeType } from "../../workspace.server";
+import { getMove, LaurusLoopType, LaurusShapeType, updateMove } from "../../workspace.server";
 import { getDynamicUnitSizes } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
 
@@ -495,6 +495,48 @@ export default function MoveUnitbar({
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
+                    scaleToContaier={true} />
+            </div>
+            <div title={"clear"}
+                onClick={async () => {
+                    if (move.locked) return;
+                    const activeKey = carouselEntryKey;
+                    if (activeKey && move.math.has(activeKey)) {
+                        const confirmed = confirm('are you sure you want to clear this equation?');
+                        if (!confirmed) return;
+                        const snapshot: LaurusMoveResult = { ...move };
+                        const newMath = new Map(snapshot.math);
+                        newMath.delete(activeKey);
+                        const newMove: LaurusMoveResult = { ...snapshot, math: newMath };
+                        const defaultControls: MoveUnitControls = { ...defaultMoveEquation, time: 0 };
+                        setCurrentControls(defaultControls);
+                        updateTrackpads(defaultControls);
+                        dispatch({
+                            type: WorkspaceActionType.SetEffect,
+                            value: { type: 'move', value: { ...newMove }, key: newMove.move_id },
+                        });
+                        const updated = await updateMove(appState.apiOrigin, appState.accessToken, snapshot.move_id, { ...newMove });
+                        if (!updated) {
+                            dispatch({
+                                type: WorkspaceActionType.SetEffect,
+                                value: { type: 'move', value: { ...snapshot }, key: snapshot.move_id },
+                            });
+                        }
+                    }
+                }}
+                style={{
+                    display: 'grid',
+                    placeContent: 'center',
+                    ...dynamicSizes.paramButtonContainer
+                }}>
+                <SvgRepo
+                    title={"clear"}
+                    svg={move.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
+                    containerStyle={{
+                        cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
+                        ...dynamicSizes.paramButton
+                    }}
+                    scale={0.75}
                     scaleToContaier={true} />
             </div>
         </div>

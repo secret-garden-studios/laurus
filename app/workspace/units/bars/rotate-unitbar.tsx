@@ -1,9 +1,9 @@
 import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, add2, autorenew, contentPaste, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
+import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
 import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
-import { getRotate, LaurusLoopType } from "../../workspace.server";
+import { getRotate, LaurusLoopType, updateRotate } from "../../workspace.server";
 import { getDynamicUnitSizes } from "../../workspace.config";
 
 interface RotateUnitbar {
@@ -485,6 +485,48 @@ export default function RotateUnitbar({
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
+                    scaleToContaier={true} />
+            </div>
+            <div title="clear"
+                onClick={async () => {
+                    if (rotate.locked) return;
+                    const activeKey = carouselEntryKey;
+                    if (activeKey && rotate.math.has(activeKey)) {
+                        const confirmed = confirm('are you sure you want to clear this equation?');
+                        if (!confirmed) return;
+                        const snapshot: LaurusRotateResult = { ...rotate };
+                        const newMath = new Map(snapshot.math);
+                        newMath.delete(activeKey);
+                        const newRotate: LaurusRotateResult = { ...snapshot, math: newMath };
+                        const defaultControls: RotateUnitControls = { ...defaultRotateEquation, time: 0 };
+                        setCurrentControls(defaultControls);
+                        updateTrackpads(defaultControls);
+                        dispatch({
+                            type: WorkspaceActionType.SetEffect,
+                            value: { type: 'rotate', value: { ...newRotate }, key: newRotate.rotate_id },
+                        });
+                        const updated = await updateRotate(appState.apiOrigin, appState.accessToken, snapshot.rotate_id, { ...newRotate });
+                        if (!updated) {
+                            dispatch({
+                                type: WorkspaceActionType.SetEffect,
+                                value: { type: 'rotate', value: { ...snapshot }, key: snapshot.rotate_id },
+                            });
+                        }
+                    }
+                }}
+                style={{
+                    display: 'grid',
+                    placeContent: 'center',
+                    ...dynamicSizes.paramButtonContainer,
+                }}>
+                <SvgRepo
+                    title="clear"
+                    svg={rotate.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
+                    containerStyle={{
+                        cursor: rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : '',
+                        ...dynamicSizes.paramButton
+                    }}
+                    scale={0.75}
                     scaleToContaier={true} />
             </div>
         </div>

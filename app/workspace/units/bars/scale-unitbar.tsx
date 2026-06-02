@@ -1,8 +1,8 @@
 import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, add2, autorenew, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
+import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
-import { getScale, LaurusLoopType } from "../../workspace.server";
+import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
 import { defaultScaleEquation } from "../scale-unit";
 import { getDynamicUnitSizes } from "../../workspace.config";
 
@@ -372,6 +372,45 @@ export default function ScaleUnitbar({
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
+                    scaleToContaier={true} />
+            </div>
+            <div title={"clear"}
+                onClick={async () => {
+                    if (scale.locked) return;
+                    const activeKey = carouselEntryKey;
+                    if (activeKey && scale.math.has(activeKey)) {
+                        const confirmed = confirm('are you sure you want to clear this equation?');
+                        if (!confirmed) return;
+                        const snapshot: LaurusScaleResult = { ...scale };
+                        const newMath = new Map(snapshot.math);
+                        newMath.delete(activeKey);
+                        const newScale: LaurusScaleResult = { ...snapshot, math: newMath };
+                        dispatch({
+                            type: WorkspaceActionType.SetEffect,
+                            value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
+                        });
+                        const updated = await updateScale(appState.apiOrigin, appState.accessToken, snapshot.scale_id, { ...newScale });
+                        if (!updated) {
+                            dispatch({
+                                type: WorkspaceActionType.SetEffect,
+                                value: { type: 'scale', value: { ...snapshot }, key: snapshot.scale_id },
+                            });
+                        }
+                    }
+                }}
+                style={{
+                    display: 'grid',
+                    placeContent: 'center',
+                    ...dynamicSizes.paramButtonContainer
+                }}>
+                <SvgRepo
+                    title={"clear"}
+                    svg={scale.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
+                    containerStyle={{
+                        cursor: scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : '',
+                        ...dynamicSizes.paramButton
+                    }}
+                    scale={0.75}
                     scaleToContaier={true} />
             </div>
         </div>
