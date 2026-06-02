@@ -6,7 +6,7 @@ import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/use
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "../workspace-resolution";
+import { getDynamicUnitSizes } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.client";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";

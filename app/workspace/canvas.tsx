@@ -205,7 +205,8 @@ export default function Canvas() {
             rotate_angle: 0,
             scale_x: 1,
             scale_y: 1,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            description: ""
         }
         const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
         const newKey = newUUID();
@@ -261,7 +262,8 @@ export default function Canvas() {
             rotate_angle: 0,
             scale_x: 1,
             scale_y: 1,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
+            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            description: "",
         };
         const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
         const newKey = newUUID();

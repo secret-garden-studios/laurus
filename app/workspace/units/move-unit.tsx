@@ -5,7 +5,7 @@ import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "../workspace-resolution";
+import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
 

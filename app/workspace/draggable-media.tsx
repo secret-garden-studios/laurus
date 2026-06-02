@@ -2,12 +2,21 @@
 import LaurusImage from "../components/laurus-image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
-import { LaurusImgResult, WorkspaceContext, WorkspaceActionType, getNewContextMenuConfig, LaurusActiveElement, LaurusTransform, DEFAULT_CONTEXT_MENU_CONFIG } from "./workspace.client";
+import {
+    LaurusImgResult,
+    WorkspaceContext,
+    WorkspaceActionType,
+    getNewContextMenuConfig,
+    LaurusActiveElement,
+    LaurusTransform,
+    DEFAULT_CONTEXT_MENU_CONFIG,
+} from "./workspace.client";
 import { RefObject, useCallback, useContext, useMemo, useState } from "react";
 import { updateProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 import ContextMenu from "./context-menu";
 import { v4 } from "uuid";
+import { Z_INDEX } from "./workspace.config";
 
 interface Point2D {
     x: number;
@@ -181,19 +190,19 @@ function ProjectImg({
                 position: 'absolute',
                 width: meta.width * meta.scale_x,
                 height: meta.height * meta.scale_y,
-                zIndex: meta.showContextMenu ? maxZIndex + zIndex + 1 : zIndex,
+                zIndex: meta.showContextMenu ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
             }} >
             <div>
                 <div
                     {...listeners}
                     {...attributes}
+                    title={title}
                     style={{
                         ...(transform && { ...transform.cssProps }),
                         position: 'relative',
-                        zIndex: 1,
+                        zIndex: Z_INDEX.ITEM_CONTENT,
                     }} >
                     <LaurusImage
-                        title={title ?? ""}
                         onClick={(e) => onClick(e.metaKey)}
                         onMouseEnter={() => {
                             setIsHovered(true);
@@ -302,18 +311,25 @@ function ProjectSvg({
                 ...dndCss,
                 position: 'absolute',
                 ...containerSize,
-                zIndex: meta.showContextMenu ? maxZIndex + zIndex + 1 : zIndex,
+                zIndex: meta.showContextMenu ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
             }} >
             <div
                 {...listeners}
                 {...attributes}
+                title={title}
+                onClick={(e) => onClick(e.metaKey)}
+                onMouseEnter={() => {
+                    setIsHovered(true);
+                }}
+                onMouseLeave={() => {
+                    setIsHovered(false);
+                }}
                 style={{
                     ...(transform && { ...transform.cssProps }),
                     position: 'relative',
-                    zIndex: 1
+                    zIndex: Z_INDEX.ITEM_CONTENT
                 }}>
                 <div
-                    title={title ?? ""}
                     style={{
                         ...containerSize,
                         display: 'grid',
@@ -334,13 +350,6 @@ function ProjectSvg({
                     }}>
                     {decodedString &&
                         <svg
-                            onClick={(e) => onClick(e.metaKey)}
-                            onMouseEnter={() => {
-                                setIsHovered(true);
-                            }}
-                            onMouseLeave={() => {
-                                setIsHovered(false);
-                            }}
                             ref={(r) => {
                                 if (onSvgRef && refKey) {
                                     onSvgRef(r, `${refKey}`);

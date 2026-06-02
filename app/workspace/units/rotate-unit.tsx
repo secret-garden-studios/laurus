@@ -5,7 +5,7 @@ import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, updateRotate } from "../workspace.server";
-import { getDynamicUnitSizes } from "../workspace-resolution";
+import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
 

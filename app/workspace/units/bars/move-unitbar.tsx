@@ -3,7 +3,7 @@ import { LaurusClientSvg, SvgRepo, add2, autorenew, circleFillZero, contentPaste
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getMove, LaurusLoopType, LaurusShapeType } from "../../workspace.server";
-import { getDynamicUnitSizes } from "../../workspace-resolution";
+import { getDynamicUnitSizes } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
 
 interface MoveUnitbar {

@@ -4,6 +4,7 @@ import { WorkspaceContext } from "./workspace.client";
 import { CSS as DndCss } from '@dnd-kit/utilities';
 import styles from "../app.module.css";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
+import { Z_INDEX } from "./workspace.config";
 
 interface CameraDragOverlay {
     id: string
@@ -108,7 +109,7 @@ export default function DraggableCamera({
                                                 mediaKey={key}
                                                 data={imgData}
                                                 meta={meta}
-                                                zIndex={meta.order + zIndex + 1}
+                                                zIndex={meta.order + zIndex + Z_INDEX.CAMERA_ITEMS_OFFSET}
                                                 imgElementsRef={imgElementsRef}
                                                 refKey={refKey} />
                                         </div>
@@ -139,7 +140,7 @@ export default function DraggableCamera({
                                                 mediaKey={key}
                                                 decodedString={decodedString}
                                                 meta={meta}
-                                                zIndex={meta.order + zIndex + 1}
+                                                zIndex={meta.order + zIndex + Z_INDEX.CAMERA_ITEMS_OFFSET}
                                                 svgElementsRef={svgElementsRef}
                                                 refKey={refKey} />
                                         </div>

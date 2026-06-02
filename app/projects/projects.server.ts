@@ -22,6 +22,7 @@ export interface ProjectImg_V1_0 {
     rotate_y: number
     rotate_z: number
     rotate_angle: number
+    description: string
 }
 export interface ProjectSvg_V1_0 {
     svg_media_id: string
@@ -41,6 +42,7 @@ export interface ProjectSvg_V1_0 {
     fill: string
     stroke: string
     stroke_width: number
+    description: string
 }
 export interface ProjectLayer_V1_0 {
     name: string,

@@ -3,7 +3,7 @@ import { WorkspaceActionType, WorkspaceContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
-import { WorkspaceResolution } from "../workspace-resolution";
+import { WorkspaceResolution } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.client";
 
 interface Toolbar {

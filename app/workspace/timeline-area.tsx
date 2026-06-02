@@ -15,7 +15,7 @@ import { createMove, createRotate, createScale } from "./workspace.server";
 import { v4 } from "uuid";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./units/effect-unit";
-import { WorkspaceResolution } from "./workspace-resolution";
+import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectResult, LaurusProjectLayer } from "../projects/projects.client";
 

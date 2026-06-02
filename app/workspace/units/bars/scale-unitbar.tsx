@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getScale, LaurusLoopType } from "../../workspace.server";
 import { defaultScaleEquation } from "../scale-unit";
-import { getDynamicUnitSizes } from "../../workspace-resolution";
+import { getDynamicUnitSizes } from "../../workspace.config";
 
 interface ScaleUnitbar {
     scale: LaurusScaleResult,

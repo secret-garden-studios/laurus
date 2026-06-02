@@ -724,9 +724,10 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                     }}>
                         <div style={{ gridRow: 1, gridColumn: 1, display: 'grid', ...dynamicSizes.hDiv }}>
                             <div style={{ overflowX: 'auto', fontWeight: 'bold', ...dynamicSizes.h1 }}>{media.meta.media_key}</div>
-                            <div title='top left corner' style={{ display: 'flex', ...dynamicSizes.h2 }}>
-                                <div>{media.meta.top.toFixed()}{' | '}{media.meta.left.toFixed()}</div>
+                            <div title='position & size' style={{ display: 'flex', ...dynamicSizes.h2 }}>
+                                <div>{'x'}{media.meta.left.toFixed()}{' | '}{'y'}{media.meta.top.toFixed()}{' | '}{'w'}{media.meta.width.toFixed()}{' | '}{'h'}{media.meta.height.toFixed()}</div>
                             </div>
+                            <div title='description' style={{ overflowX: 'auto', display: 'flex', ...dynamicSizes.h2 }}>{media.meta.description}</div>
                         </div>
                         <div style={{ gridRow: 2, gridColumn: 1, display: 'grid', }}>
                             <div style={{

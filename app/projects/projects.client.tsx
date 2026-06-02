@@ -5,7 +5,7 @@ import { addCircle, arrowDropDown, arrowDropUp, fileCopy, outbound, search, SvgR
 import Menubar from "../menubar";
 import { dellaRespira, italiana } from "../fonts";
 import styles from "../app.module.css";
-import { FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, NEW_PROJECT_CANVAS_SIZE } from "../workspace/workspace-resolution";
+import { FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, NEW_PROJECT_CANVAS_SIZE } from "../workspace/workspace.config";
 import Statusbar from "./statusbar";
 import { useRouter } from 'next/navigation'
 import useDebounce from "../hooks/useDebounce";

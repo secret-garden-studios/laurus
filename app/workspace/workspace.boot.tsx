@@ -1,6 +1,6 @@
 'use client'
 import { useState, Suspense, useEffect, use } from "react";
-import { WorkspaceResolution, getScreenResolution } from "./workspace-resolution";
+import { WorkspaceResolution, getScreenResolution } from "./workspace.config";
 import Workspace from "./workspace.client";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";

@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
 import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getRotate, LaurusLoopType } from "../../workspace.server";
-import { getDynamicUnitSizes } from "../../workspace-resolution";
+import { getDynamicUnitSizes } from "../../workspace.config";
 
 interface RotateUnitbar {
     rotate: LaurusRotateResult,

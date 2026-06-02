@@ -5,7 +5,7 @@ import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
 import { createImg, createSvg } from "./workspace.server";
-import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
+import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace.config";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectResult } from "../projects/projects.client";
 import { BrowserContextMenu } from "./context-menu";

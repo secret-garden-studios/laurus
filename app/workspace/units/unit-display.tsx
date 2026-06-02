@@ -2,7 +2,7 @@ import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
 import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
-import { getDynamicUnitSizes } from "../workspace-resolution";
+import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 
 interface UnitDisplay {

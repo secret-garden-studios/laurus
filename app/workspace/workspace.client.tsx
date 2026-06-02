@@ -28,7 +28,13 @@ import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import Projectbar, { ProjectbarLevel2 } from "./bars/projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
-import { NEW_PROJECT_CANVAS_SIZE, FRAME_HEIGHT_5_7, FRAME_WIDTH_5_7, WorkspaceResolution } from "./workspace-resolution";
+import {
+    NEW_PROJECT_CANVAS_SIZE,
+    FRAME_HEIGHT_5_7,
+    FRAME_WIDTH_5_7,
+    WorkspaceResolution,
+    Z_INDEX
+} from "./workspace.config";
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { ProjectResult_V1_0, updateProject, createProject } from "../projects/projects.server";
@@ -1196,7 +1202,7 @@ export default function Workspace({
                                 borderLeft={'1px solid rgba(255, 255, 255, 0.05)'}
                                 borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
                             <div style={{
-                                zIndex: 99,
+                                zIndex: Z_INDEX.FLOATING_CONTROLS,
                                 position: 'fixed',
                                 bottom: minifiedControlsSize.playBottom,
                                 left: minifiedControlsSize.playLeft,
@@ -1219,7 +1225,7 @@ export default function Workspace({
                                     onContainerClick={handlePlayAll} />
                             </div>
                             <div style={{
-                                zIndex: 99,
+                                zIndex: Z_INDEX.FLOATING_CONTROLS,
                                 position: 'fixed',
                                 bottom: minifiedControlsSize.recordingBottom,
                                 right: showMediaBrowser ? minifiedControlsSize.recordingRight1 : minifiedControlsSize.recordingRight2,
@@ -1270,7 +1276,7 @@ export default function Workspace({
                             left: 0,
                             width: appState.project.canvas_width,
                             height: appState.project.canvas_height,
-                            zIndex: 0,
+                            zIndex: Z_INDEX.CANVAS_BG,
                         }} />
                     {appState.tool.type === 'drop' && <div
                         style={{
@@ -1279,7 +1285,7 @@ export default function Workspace({
                             left: 0,
                             width: 'min-content',
                             height: 'min-content',
-                            zIndex: (isMetaKeyPressed) ? 2 : 1000,
+                            zIndex: (isMetaKeyPressed) ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
                             pointerEvents: (isMetaKeyPressed) ? 'none' : 'auto'
                         }}>
                         <Canvas />
@@ -1290,7 +1296,7 @@ export default function Workspace({
                         nodeId={"draggable-camera-node-id"}
                         svgElementsRef={svgElementsRef}
                         imgElementsRef={imgElementsRef}
-                        zIndex={1}
+                        zIndex={Z_INDEX.CAMERA_FRAME}
                         onNewPosition={async function (newPosition: { x: number; y: number; }) {
                             const rollback: LaurusProjectResult = { ...appState.project };
                             const newProject: LaurusProjectResult = {
@@ -1330,7 +1336,7 @@ export default function Workspace({
                                                 mediaKey={key}
                                                 data={imgData}
                                                 meta={meta}
-                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? 1001 + meta.order : meta.order + 3}
+                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                 imgElementsRef={imgElementsRef}
                                                 refKey={refKey} />
                                         </div>
@@ -1361,7 +1367,7 @@ export default function Workspace({
                                                 mediaKey={key}
                                                 decodedString={decodedString}
                                                 meta={meta}
-                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? 1001 + meta.order : meta.order + 3}
+                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                 svgElementsRef={svgElementsRef}
                                                 refKey={refKey} />
                                         </div>

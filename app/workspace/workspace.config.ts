@@ -24,6 +24,19 @@ export const FRAME_HEIGHT_16_9 = FRAME_WIDTH_9_16;
 export const FRAME_WIDTH_1_1 = 719;
 export const FRAME_HEIGHT_1_1 = FRAME_WIDTH_1_1;
 
+export const Z_INDEX = {
+    CANVAS_BG: 0,
+    CAMERA_FRAME: 1,
+    CAMERA_ITEMS_OFFSET: 1,
+    ITEM_CONTENT: 1,
+    META_KEY_CANVAS: 2,
+    ITEMS_NORMAL_OFFSET: 3,
+    FLOATING_CONTROLS: 99,
+    INTERACTION_CANVAS: 1000,
+    ITEMS_STACKING_OFFSET: 1001,
+    CONTEXT_MENU_OFFSET: 2000,
+} as const;
+
 export type WorkspaceResolution =
     | { type: 'high', factor: number, value: { width: number, height: number } }
     | { type: 'midhigh', factor: number, value: { width: number, height: number } }
