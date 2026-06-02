@@ -889,15 +889,16 @@ function TablePlaceholder({ resolution }: TablePlaceholder) {
                 }}>
                     <div style={{ display: 'flex', alignItems: "center" }}>
                         <p>Click</p>
-                        <SvgRepo
-                            svg={addCircle()}
-                            containerStyle={{
-                                width: dynamicSizes.svg.size,
-                                height: dynamicSizes.svg.size,
-                                padding: dynamicSizes.svg.padding
-                            }}
-                            scale={0.9}
-                            scaleToContaier={true} />
+                        <div style={{ padding: dynamicSizes.svg.padding }}>
+                            <SvgRepo
+                                svg={addCircle()}
+                                containerStyle={{
+                                    width: dynamicSizes.svg.size,
+                                    height: dynamicSizes.svg.size,
+                                }}
+                                scale={0.9}
+                                scaleToContaier={true} />
+                        </div>
                         <p>to create a new project.</p></div>
                 </div>
                 <div
