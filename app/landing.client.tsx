@@ -13,12 +13,9 @@ import {
     USERNAME_ERROR,
     UNAUTHORIZED_ERROR,
     LANDING_ERROR,
-    LaurusUserResult,
-    refreshAccessToken,
     LaurusResetPassword
 } from "./landing.server";
-import { useRouter } from 'next/navigation'
-import { MeDependencies } from "./page";
+import { useRouter } from 'next/navigation';
 
 export enum LandingFormType {
     login,
@@ -45,10 +42,9 @@ interface Landing {
     laurusApi: string | undefined,
     resolution: LaurusResolution,
     resetPasswordToken: string | undefined,
-    formInit: LandingFormType,
-    me: MeDependencies,
+    formInit: LandingFormType
 }
-export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit, me }: Landing) {
+export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit }: Landing) {
     const [formType, setFormType] = useState<LandingFormType>(formInit);
     const [newUsername, setNewUsername] = useState("");
 
@@ -65,25 +61,13 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
             <div />
             {resolution.type == 'low' ? <LowResBody /> : (() => {
                 switch (formType) {
-                    case LandingFormType.login: return <>
+                    case LandingFormType.login:
+                    case LandingFormType.loggedIn: return <>
                         <LoginBody
                             laurusApi={laurusApi}
                             resolution={resolution}
                             onNewFormType={(form) => { setNewUsername(""); setFormType(form); }}
                             newUsername={newUsername} />
-                    </>
-                    case LandingFormType.loggedIn: return <>
-                        {me.me ?
-                            <LoggedInBody
-                                me={me.me}
-                                laurusApi={laurusApi}
-                                resolution={resolution}
-                                onNewFormType={setFormType} /> :
-                            <LoginBody
-                                laurusApi={laurusApi}
-                                resolution={resolution}
-                                onNewFormType={(form) => { setNewUsername(""); setFormType(form); }}
-                                newUsername={newUsername} />}
                     </>
                     case LandingFormType.registration: return <>
                         <RegistrationBody
@@ -661,106 +645,6 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                         placeContent: 'center',
                     }}>
                     {'continue as a guest'}
-                </div>
-            </div>
-        </div>
-    </>
-}
-
-interface LoggedInBody {
-    me: LaurusUserResult,
-    laurusApi: string | undefined,
-    resolution: LaurusResolution,
-    onNewFormType: (newFormType: LandingFormType) => void,
-}
-function LoggedInBody({ me, laurusApi, resolution, onNewFormType }: LoggedInBody) {
-    const router = useRouter();
-    const [msg] = useState<string>("");
-    const [buttonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.purple);
-
-    return <>
-        <div
-            style={{
-                display: 'grid',
-                alignContent: 'start',
-                justifyContent: 'center',
-                position: 'relative',
-                letterSpacing: '2px',
-                gap: 10,
-            }}>
-            <div style={{ display: 'grid', width: '100%', padding: 24 }}>
-                <div style={{ padding: "10px 0px" }}>
-                    <LaurusText
-                        scale={1}
-                        color={{
-                            a: "rgb(255, 255, 255)",
-                            b: "rgb(190, 190, 190)",
-                            c: "rgb(163, 163, 163)",
-                            d: "rgb(255, 255, 255)",
-                            e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
-                        }} />
-                </div>
-                <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
-                    <div >{'beta version'}</div>
-                </div>
-            </div>
-            <div style={{ display: 'grid', gap: 12, }}>
-                <div
-                    className={dellaRespira.className + ' ' + styles['glowing-border'] + ' ' + styles['animated-button-dark']}
-                    onClick={async () => {
-                        const refreshResult = await refreshAccessToken(laurusApi);
-                        if (refreshResult.success) {
-                            if (resolution.type == 'low') {
-                                router.push('/screens');
-                            }
-                            else {
-                                router.push('/workspace');
-                            }
-                        }
-                        else {
-                            onNewFormType(LandingFormType.login);
-                        }
-                    }}
-                    style={{
-                        display: 'grid',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: 10,
-                        height: 50,
-                        padding: 10,
-                        width: '100%',
-                        fontSize: 13,
-                        placeContent: 'center',
-                        cursor: 'pointer',
-                        '--color-primary': buttonBorderRecord[buttonBorder].p,
-                        '--color-secondary': buttonBorderRecord[buttonBorder].s,
-                        '--color-tertiary': buttonBorderRecord[buttonBorder].t,
-                    } as React.CSSProperties}>
-                    {msg ? msg : `continue as ${me.username}`}
-                </div>
-                <div style={{
-                    fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                    <div style={{ height: '1px', width: '100%', background: 'rgba(255,255,255,0.05)' }} />
-                    <div style={{ padding: '0 8px', display: 'grid', placeContent: 'center' }}>{'or'}</div>
-                    <div style={{ height: '1px', width: '100%', background: 'rgba(255,255,255,0.05)' }} />
-                </div>
-                <div
-                    className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
-                    onClick={() => {
-                        onNewFormType(LandingFormType.login);
-                    }}
-                    style={{
-                        display: 'grid',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: 10,
-                        height: 50,
-                        padding: 10,
-                        width: '100%',
-                        fontSize: 13,
-                        placeContent: 'center',
-                    }}>
-                    {'switch accounts'}
                 </div>
             </div>
         </div>

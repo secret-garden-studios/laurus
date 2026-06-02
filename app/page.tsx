@@ -27,15 +27,13 @@ export async function fetchMe(
   }
 }
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ guest?: string, reset_password?: string }> }) {
-  const { guest, reset_password } = await searchParams;
+export default async function Home({ searchParams }: { searchParams: Promise<{ reset_password?: string }> }) {
+  const { reset_password } = await searchParams;
   const laurusApi = process.env.LAURUS_API;
-  const mePromise = fetchMe(laurusApi, Boolean(guest));
   return <>
     <LandingBoot
       laurusApi={laurusApi}
-      mePromise={mePromise}
       resetPassword={reset_password}
     />
   </>
-};
+}

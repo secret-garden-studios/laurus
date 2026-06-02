@@ -1,8 +1,7 @@
 'use client'
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Landing, { LandingFormType } from "./landing.client";
 import styles from "./app.module.css";
-import { MeDependencies } from "./page";
 
 export type LaurusResolution =
     | { type: 'high' }
@@ -28,11 +27,9 @@ function getScreenResolution(): LaurusResolution {
 
 interface LandingBoot {
     laurusApi: string | undefined,
-    mePromise: Promise<MeDependencies>
     resetPassword: string | undefined,
 }
-export default function LandingBoot({ laurusApi, mePromise, resetPassword }: LandingBoot) {
-    const me = use(mePromise);
+export default function LandingBoot({ laurusApi, resetPassword }: LandingBoot) {
     const [resolution, setResolution] = useState<LaurusResolution | undefined>(undefined);
     const [formType, setFormType] = useState<LandingFormType | undefined>(undefined);
 
@@ -45,9 +42,6 @@ export default function LandingBoot({ laurusApi, mePromise, resetPassword }: Lan
                 if (resetPassword) {
                     setFormType(LandingFormType.passwordConfirmation);
                 }
-                else if (me.me) {
-                    setFormType(LandingFormType.loggedIn);
-                }
                 else {
                     setFormType(LandingFormType.login);
                 }
@@ -56,15 +50,14 @@ export default function LandingBoot({ laurusApi, mePromise, resetPassword }: Lan
                 setFormType(LandingFormType.login);
             }
         })();
-    }, [me.me, resetPassword, resolution])
+    }, [resetPassword, resolution])
 
     return (resolution !== undefined && formType !== undefined) ?
         <Landing
             laurusApi={laurusApi}
             resolution={resolution}
             resetPasswordToken={resetPassword}
-            formInit={formType}
-            me={me} />
+            formInit={formType} />
         : <Skeleton />
 }
 
