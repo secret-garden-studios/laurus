@@ -1,14 +1,13 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { DEFAULT_CONTEXT_MENU_CONFIG, defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
 import { createImg, createSvg } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace-resolution";
 import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
-import { v4 as getUuidV4 } from "uuid";
+import { LaurusProjectResult } from "../projects/projects.client";
 import { BrowserContextMenu } from "./context-menu";
 import Toggle from "../components/toggle";
 
@@ -239,97 +238,7 @@ export default function MediaBrowser({
 
     const lastScrollTop = useRef<number>(0);
 
-    const handleImgDrop = useCallback(async (imgMediaResult: LaurusImgResult) => {
-        const newKey = getUuidV4();
-        const projectImg: LaurusProjectImg = {
-            width: imgMediaResult.width,
-            height: imgMediaResult.height,
-            media_key: imgMediaResult.media_key,
-            showContextMenu: false,
-            img_media_id: imgMediaResult.img_media_id,
-            top: -1,
-            left: -1,
-            order: Array.from(appState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
-            rotate_x: 0,
-            rotate_y: 0,
-            rotate_z: 0,
-            rotate_angle: 0,
-            scale_x: 1,
-            scale_y: 1,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
-        };
-        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        newImgs.set(newKey, projectImg);
-        const rollback: LaurusProjectResult = { ...appState.project }
-        const newProject: LaurusProjectResult = { ...rollback, imgs: newImgs }
-        if (appState.project.project_id) {
-            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (projectUpdated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...imgMediaResult } } });
-            }
-            else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
-            }
-        }
-        else {
-            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-            if (projectCreated) {
-                const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...imgMediaResult } } });
-            }
-        }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
-
-    const handleSvgDrop = useCallback(async (imgMediaResult: LaurusSvgResult) => {
-        const newKey = getUuidV4();
-        const projectSvg: LaurusProjectSvg = {
-            width: imgMediaResult.width,
-            height: imgMediaResult.height,
-            media_key: imgMediaResult.media_key,
-            showContextMenu: false,
-            svg_media_id: imgMediaResult.svg_media_id,
-            top: -1,
-            left: -1,
-            order: Array.from(appState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
-            rotate_x: 0,
-            rotate_y: 0,
-            rotate_z: 0,
-            rotate_angle: 0,
-            scale_x: 1,
-            scale_y: 1,
-            viewbox: imgMediaResult.viewbox,
-            stroke: imgMediaResult.stroke,
-            stroke_width: imgMediaResult.stroke_width,
-            fill: imgMediaResult.fill,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
-        };
-        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        newSvgs.set(newKey, projectSvg);
-        const rollback: LaurusProjectResult = { ...appState.project }
-        const newProject: LaurusProjectResult = { ...rollback, svgs: newSvgs }
-        if (appState.project.project_id) {
-            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (projectUpdated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...imgMediaResult } } });
-            }
-            else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
-            }
-        }
-        else {
-            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-            if (projectCreated) {
-                const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...imgMediaResult } } });
-            }
-        }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch]);
-
-    const handleDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
+    const handleUpload = useCallback(async (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
         const MAX_DIMENSION = 4096;
@@ -363,10 +272,20 @@ export default function MediaBrowser({
                         const svgFile: File = dataUrlToFile(pngDataUrl, `${file.name.split('.')[0]}.png`);
                         const created = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
                         if (created) {
-                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: created, first: true });
-                            if (appState.browserSvgs.findIndex(v => v.svg_media_id == created.svg_media_id) < 0) {
-                                await handleSvgDrop(created);
+                            const existingSvg = appState.browserSvgs.find(v => v.media_key === created.media_key);
+                            if (existingSvg && existingSvg.svg_media_id !== created.svg_media_id) {
+                                dispatch({ type: WorkspaceActionType.DeleteBrowserSvg, value: existingSvg.svg_media_id });
                             }
+                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: created, first: true });
+                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...created } } });
+                            const currentTool = { ...appState.tool };
+                            const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
+                                type: 'drop',
+                                stack: false,
+                                size: { value: false, width: undefined, height: undefined },
+                                position: { value: false, x: undefined, y: undefined }
+                            };
+                            dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
                             if (++actualSvgUploads == expectedSvgUploads) {
                                 setUploading(false);
                             }
@@ -381,10 +300,20 @@ export default function MediaBrowser({
                 try {
                     const created = await createImg(appState.apiOrigin, file);
                     if (created) {
-                        dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...created }, first: true });
-                        if (appState.browserImgs.findIndex(v => v.img_media_id == created.img_media_id) < 0) {
-                            await handleImgDrop(created);
+                        const existingImg = appState.browserImgs.find(v => v.media_key === created.media_key);
+                        if (existingImg && existingImg.img_media_id !== created.img_media_id) {
+                            dispatch({ type: WorkspaceActionType.DeleteBrowserImg, value: existingImg.img_media_id });
                         }
+                        dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...created }, first: true });
+                        dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...created } } });
+                        const currentTool = { ...appState.tool };
+                        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
+                            type: 'drop',
+                            stack: false,
+                            size: { value: false, width: undefined, height: undefined },
+                            position: { value: false, x: undefined, y: undefined }
+                        };
+                        dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
                         if (++actualImgUploads == expectedImgUploads) {
                             setUploading(false);
                         }
@@ -396,7 +325,7 @@ export default function MediaBrowser({
                 }
             }
         }
-    }, [appState.apiOrigin, appState.browserImgs, appState.browserSvgs, dispatch, handleImgDrop, handleSvgDrop]);
+    }, [appState.apiOrigin, appState.browserImgs, appState.browserSvgs, appState.tool, dispatch]);
 
     function sortByTimestamp(
         a: LaurusImgResult | LaurusSvgResult | LaurusCropSvg,
@@ -549,7 +478,7 @@ export default function MediaBrowser({
                 e.preventDefault();
                 e.stopPropagation();
             }}
-            onDrop={handleDrop} >
+            onDrop={handleUpload} >
             <div style={{
                 gridRow: 1,
                 display: 'flex',
@@ -748,7 +677,7 @@ export default function MediaBrowser({
                                                         display: 'block',
                                                         objectFit: display.isSquareish ? 'cover' : 'unset',
                                                         borderRadius: 10,
-                                                    cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
+                                                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
                                                     }} />
                                             </ScrollableImageContainer>}
                                         {(showContextMenu && browserElementMediaId == img.img_media_id) &&

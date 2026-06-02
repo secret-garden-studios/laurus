@@ -358,7 +358,11 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
                     { ...state, browserImgs: [...currentBrowserImgs, action.value] }
             }
             else {
-                return state
+                const newBrowserImgs = [...currentBrowserImgs];
+                newBrowserImgs.splice(i, 1);
+                return action.first ?
+                    { ...state, browserImgs: [action.value, ...newBrowserImgs] } :
+                    { ...state, browserImgs: [...newBrowserImgs, action.value] }
             }
         }
         case WorkspaceActionType.UpdateBrowserImgs: {
@@ -388,7 +392,11 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
                     { ...state, browserSvgs: [...currentBrowserSvgs, action.value] }
             }
             else {
-                return state
+                const newBrowserSvgs = [...currentBrowserSvgs];
+                newBrowserSvgs.splice(i, 1);
+                return action.first ?
+                    { ...state, browserSvgs: [action.value, ...newBrowserSvgs] } :
+                    { ...state, browserSvgs: [...newBrowserSvgs, action.value] }
             }
         }
         case WorkspaceActionType.UpdateBrowserSvgs: {

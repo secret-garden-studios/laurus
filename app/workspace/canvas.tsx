@@ -1,6 +1,6 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool } from "./workspace.client";
-import { v4 } from "uuid";
+import { v4 as newUUID } from "uuid";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 
@@ -208,7 +208,7 @@ export default function Canvas() {
             contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
         }
         const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        const newKey = Array.from(newSvgs.entries()).find(i => i[1].svg_media_id == svgData.svg_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        const newKey = newUUID();
         newSvgs.set(newKey, projectSvg);
         const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
         if (appState.project.project_id) {
@@ -264,7 +264,7 @@ export default function Canvas() {
             contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG }
         };
         const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        const newKey = Array.from(newImgs.entries()).find(i => i[1].img_media_id == imgData.img_media_id && (i[1].left < 0 || i[1].top < 0))?.[0] ?? v4();
+        const newKey = newUUID();
         newImgs.set(newKey, projectImg);
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
         if (appState.project.project_id) {
