@@ -101,10 +101,12 @@ function cleanUpMediaBrowser(
 function cleanUpBrowserElement(
     mediaId: string,
     browserElement: LaurusThumbnail,
+    project: LaurusProjectResult,
     dispatch: Dispatch<WorkspaceAction>) {
     switch (browserElement.type) {
         case "img": {
-            if (browserElement.value.img_media_id == mediaId) {
+            const stillExists = Array.from(project.imgs.values()).some(i => i.img_media_id === mediaId);
+            if (browserElement.value.img_media_id == mediaId && !project.browse_public_imgs && !stillExists) {
                 dispatch({
                     type: WorkspaceActionType.SetBrowserElement,
                     value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
@@ -113,7 +115,8 @@ function cleanUpBrowserElement(
             break;
         }
         case "svg": {
-            if (browserElement.value.svg_media_id == mediaId) {
+            const stillExists = Array.from(project.svgs.values()).some(s => s.svg_media_id === mediaId);
+            if (browserElement.value.svg_media_id == mediaId && !project.browse_public_svgs && !stillExists) {
                 dispatch({
                     type: WorkspaceActionType.SetBrowserElement,
                     value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
@@ -403,7 +406,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
                 cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
                 if (appState.browserElement) {
-                    cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
+                    cleanUpBrowserElement(mediaId, appState.browserElement, newProject, dispatch)
                 }
             }
         }
@@ -969,7 +972,7 @@ export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
                 cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
                 if (appState.browserElement) {
-                    cleanUpBrowserElement(mediaId, appState.browserElement, dispatch)
+                    cleanUpBrowserElement(mediaId, appState.browserElement, newProject, dispatch)
                 }
             }
         }
