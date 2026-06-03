@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
     LaurusImgResult,
     WorkspaceContext,
+    HoverContext,
     WorkspaceActionType,
     getNewContextMenuConfig,
     LaurusActiveElement,
@@ -162,7 +163,8 @@ function ProjectImg({
     refKey,
     title,
     transform }: ProjectImg) {
-    const { appState, isMetaKeyPressed } = useContext(WorkspaceContext);
+    const { appState } = useContext(WorkspaceContext);
+    const { setMostRecentlyEnteredCanvasItemKey, isMetaKeyPressed } = useContext(HoverContext);
     const [isHovered, setIsHovered] = useState(false);
     const dragDisabled = useMemo(() => {
         return appState.tool.type != 'move';
@@ -206,9 +208,11 @@ function ProjectImg({
                         onClick={(e) => onClick(e.metaKey)}
                         onMouseEnter={() => {
                             setIsHovered(true);
+                            setMostRecentlyEnteredCanvasItemKey(mediaKey);
                         }}
                         onMouseLeave={() => {
                             setIsHovered(false);
+                            setMostRecentlyEnteredCanvasItemKey(undefined);
                         }}
                         imgRef={(r) => {
                             if (onImgRef && refKey) {
@@ -278,7 +282,8 @@ function ProjectSvg({
     refKey,
     title,
     transform }: ProjectSvg) {
-    const { appState, isMetaKeyPressed } = useContext(WorkspaceContext);
+    const { appState } = useContext(WorkspaceContext);
+    const { setMostRecentlyEnteredCanvasItemKey, isMetaKeyPressed } = useContext(HoverContext);
     const dragDisabled = useMemo(() => {
         return appState.tool.type != 'move';
     }, [appState.tool.type]);
@@ -320,9 +325,11 @@ function ProjectSvg({
                 onClick={(e) => onClick(e.metaKey)}
                 onMouseEnter={() => {
                     setIsHovered(true);
+                    setMostRecentlyEnteredCanvasItemKey(mediaKey);
                 }}
                 onMouseLeave={() => {
                     setIsHovered(false);
+                    setMostRecentlyEnteredCanvasItemKey(undefined);
                 }}
                 style={{
                     ...(transform && { ...transform.cssProps }),

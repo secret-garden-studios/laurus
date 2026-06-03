@@ -1,5 +1,5 @@
 'use client'
-import { createContext, CSSProperties, use, useCallback, useContext, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
+import { createContext, CSSProperties, use, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
     ScaleEquation_V1_0,
@@ -537,8 +537,23 @@ export interface WorkspaceContextProps {
     handleRewindAll: () => Promise<void>;
     handlePlayAll: () => Promise<void>;
     handleFastForwardAll: (fastRate: number) => Promise<void>;
+}
+
+export interface HoverContextProps {
+    mostRecentlyEnteredEffectUnitKey: string | undefined;
+    setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
+    mostRecentlyEnteredCanvasItemKey: string | undefined;
+    setMostRecentlyEnteredCanvasItemKey: (key: string | undefined) => void;
     isMetaKeyPressed: boolean;
 }
+
+export const HoverContext = createContext<HoverContextProps>({
+    mostRecentlyEnteredEffectUnitKey: undefined,
+    setMostRecentlyEnteredEffectUnitKey: () => { },
+    mostRecentlyEnteredCanvasItemKey: undefined,
+    setMostRecentlyEnteredCanvasItemKey: () => { },
+    isMetaKeyPressed: false,
+});
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
     {
@@ -548,7 +563,6 @@ export const WorkspaceContext = createContext<WorkspaceContextProps>(
         handleRewindAll: async () => { },
         handlePlayAll: async () => { },
         handleFastForwardAll: async () => { },
-        isMetaKeyPressed: false,
     }
 )
 
@@ -807,6 +821,8 @@ export default function Workspace({
             arg8: me.accessToken,
             arg9: mixableEffectsInit,
         }, initReducer);
+    const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
+    const [mostRecentlyEnteredCanvasItemKey, setMostRecentlyEnteredCanvasItemKey] = useState<string | undefined>(undefined);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [mediabarHeight] = useState(() => {
         switch (resolutionInit.type) {
@@ -1165,6 +1181,23 @@ export default function Workspace({
         }
     }, [appState.project.imgs, appState.project.svgs, appState.skipNextEnabled, getNewAnimations, handleMixRestoration]);
 
+    const hoverContextValue = useMemo(() => ({
+        mostRecentlyEnteredEffectUnitKey,
+        setMostRecentlyEnteredEffectUnitKey,
+        mostRecentlyEnteredCanvasItemKey,
+        setMostRecentlyEnteredCanvasItemKey,
+        isMetaKeyPressed,
+    }), [mostRecentlyEnteredEffectUnitKey, mostRecentlyEnteredCanvasItemKey, isMetaKeyPressed]);
+
+    const workspaceContextValue = useMemo(() => ({
+        appState,
+        dispatch,
+        getNewAnimations,
+        handleRewindAll,
+        handlePlayAll,
+        handleFastForwardAll,
+    }), [appState, getNewAnimations, handleRewindAll, handlePlayAll, handleFastForwardAll]);
+
     return (<>
         <div style={{
             width: "100vw",
@@ -1173,325 +1206,319 @@ export default function Workspace({
             gridTemplateColumns: 'min-content 1fr min-content min-content min-content',
             gridTemplateRows: `min-content min-content min-content 1fr min-content`,
         }}>
-            <WorkspaceContext value={{
-                appState,
-                dispatch,
-                getNewAnimations,
-                handleRewindAll,
-                handlePlayAll,
-                handleFastForwardAll,
-                isMetaKeyPressed,
-            }}>
-                <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
-                    <Menubar
-                        resolution={resolutionInit}
-                        me={me.me} />
-                </div>
-                <div style={{ gridRow: '2 / span 3', gridColumn: '1', overflowY: 'auto', }}>
-                    {showTimeline ?
-                        <TimelineArea
-                            svgElementsRef={svgElementsRef}
-                            imgElementsRef={imgElementsRef}
-                            onRightPanelClick={() => setShowTimeline(false)}
-                        /> :
-                        <>
-                            <Bumper
-                                onBumperClick={() => {
-                                    setShowTimeline(true);
-                                }}
-                                borderLeft={'1px solid rgba(255, 255, 255, 0.05)'}
-                                borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
-                            <div style={{
-                                zIndex: Z_INDEX.FLOATING_CONTROLS,
-                                position: 'fixed',
-                                bottom: minifiedControlsSize.playBottom,
-                                left: minifiedControlsSize.playLeft,
-                                width: minifiedControlsSize.playContainer,
-                                height: minifiedControlsSize.playContainer,
-                                borderRadius: '50%',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                background: 'rgb(32, 32, 32)',
-                                boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
-                            }}>
-                                <SvgRepo
-                                    svg={appState.playEnabled ? playArrow() : playArrow("rgb(67,67,67)")}
-                                    containerStyle={{
-                                        width: minifiedControlsSize.playSvg,
-                                        height: minifiedControlsSize.playSvg,
-                                        cursor: appState.playEnabled ? 'pointer' : 'progress',
+            <HoverContext value={hoverContextValue}>
+                <WorkspaceContext value={workspaceContextValue}>
+                    <div style={{ gridRow: '1', gridColumn: 'span 5', }}>
+                        <Menubar
+                            resolution={resolutionInit}
+                            me={me.me} />
+                    </div>
+                    <div style={{ gridRow: '2 / span 3', gridColumn: '1', overflowY: 'auto', }}>
+                        {showTimeline ?
+                            <TimelineArea
+                                svgElementsRef={svgElementsRef}
+                                imgElementsRef={imgElementsRef}
+                                onRightPanelClick={() => setShowTimeline(false)}
+                            /> :
+                            <>
+                                <Bumper
+                                    onBumperClick={() => {
+                                        setShowTimeline(true);
                                     }}
-                                    scale={0.5}
-                                    scaleToContaier={true}
-                                    onContainerClick={handlePlayAll} />
-                            </div>
-                            <div style={{
-                                zIndex: Z_INDEX.FLOATING_CONTROLS,
-                                position: 'fixed',
-                                bottom: minifiedControlsSize.recordingBottom,
-                                right: showMediaBrowser ? minifiedControlsSize.recordingRight1 : minifiedControlsSize.recordingRight2,
-                                width: minifiedControlsSize.recordingWidth,
-                                height: minifiedControlsSize.recordingHeight,
-                                borderRadius: '50%',
-                                border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
-                                background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
-                                boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
-                            }}>
-                            </div>
-                        </>
-                    }
-                </div>
-                <div
-                    style={{
-                        gridRow: '2',
-                        gridColumn: '2 / -1',
-                        width: '100%',
-                    }} >
-                    <Projectbar />
-                </div>
-                <div
-                    style={{
-                        gridRow: '3',
-                        gridColumn: '2 / span 2',
-                        width: '100%',
-                    }} >
-                    <ProjectbarLevel2 />
-                </div>
-                {/* canvas area */}
-                <div
-                    ref={canvasAreaRef}
-                    style={{
-                        gridRow: '4',
-                        gridColumn: '2',
-                        overflowY: 'auto',
-                        position: 'relative',
-                        width: "100%",
-                        height: '100%',
-                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'default',
-                    }}>
+                                    borderLeft={'1px solid rgba(255, 255, 255, 0.05)'}
+                                    borderRight={'1px solid rgba(255, 255, 255, 0.05)'} />
+                                <div style={{
+                                    zIndex: Z_INDEX.FLOATING_CONTROLS,
+                                    position: 'fixed',
+                                    bottom: minifiedControlsSize.playBottom,
+                                    left: minifiedControlsSize.playLeft,
+                                    width: minifiedControlsSize.playContainer,
+                                    height: minifiedControlsSize.playContainer,
+                                    borderRadius: '50%',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    background: 'rgb(32, 32, 32)',
+                                    boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
+                                }}>
+                                    <SvgRepo
+                                        svg={appState.playEnabled ? playArrow() : playArrow("rgb(67,67,67)")}
+                                        containerStyle={{
+                                            width: minifiedControlsSize.playSvg,
+                                            height: minifiedControlsSize.playSvg,
+                                            cursor: appState.playEnabled ? 'pointer' : 'progress',
+                                        }}
+                                        scale={0.5}
+                                        scaleToContaier={true}
+                                        onContainerClick={handlePlayAll} />
+                                </div>
+                                <div style={{
+                                    zIndex: Z_INDEX.FLOATING_CONTROLS,
+                                    position: 'fixed',
+                                    bottom: minifiedControlsSize.recordingBottom,
+                                    right: showMediaBrowser ? minifiedControlsSize.recordingRight1 : minifiedControlsSize.recordingRight2,
+                                    width: minifiedControlsSize.recordingWidth,
+                                    height: minifiedControlsSize.recordingHeight,
+                                    borderRadius: '50%',
+                                    border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : 'none',
+                                    background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'none',
+                                    boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
+                                }}>
+                                </div>
+                            </>
+                        }
+                    </div>
                     <div
-                        className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
                         style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: appState.project.canvas_width,
-                            height: appState.project.canvas_height,
-                            zIndex: Z_INDEX.CANVAS_BG,
-                        }} />
-                    {appState.tool.type === 'drop' && <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: 'min-content',
-                            height: 'min-content',
-                            zIndex: (isMetaKeyPressed) ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                            pointerEvents: (isMetaKeyPressed) ? 'none' : 'auto'
-                        }}>
-                        <Canvas />
-                    </div>}
-                    {/* camera frame */}
-                    <DraggableCamera
-                        contextId={"draggable-camera-context-id"}
-                        nodeId={"draggable-camera-node-id"}
-                        svgElementsRef={svgElementsRef}
-                        imgElementsRef={imgElementsRef}
-                        zIndex={Z_INDEX.CAMERA_FRAME}
-                        onNewPosition={async function (newPosition: { x: number; y: number; }) {
-                            const rollback: LaurusProjectResult = { ...appState.project };
-                            const newProject: LaurusProjectResult = {
-                                ...appState.project,
-                                frame_left: newPosition.x,
-                                frame_top: newPosition.y
-                            };
-                            if (appState.project.project_id) {
-                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                                const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-                                if (!updated) {
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
-                                }
-                            }
-                            else {
-                                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                                const created = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-                                if (created) {
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...created } });
-                                } else {
-                                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...rollback } });
-                                }
-                            }
-                        }}
-                        disabled={appState.tool.type != 'move'} />
-                    {appState.tool.type != 'viewport' &&
-                        <>
-                            {Array.from(appState.project.imgs.entries()).map((e) => {
-                                const [key, meta] = e;
-                                if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-                                const imgData = appState.canvasImgs.get(key);
-                                if (imgData) {
-                                    return (
-                                        <div key={key}>
-                                            <DraggableProjectImg
-                                                mediaKey={key}
-                                                data={imgData}
-                                                meta={meta}
-                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
-                                                imgElementsRef={imgElementsRef}
-                                                refKey={refKey} />
-                                        </div>
-                                    );
-                                }
-                            })}
-                            {Array.from(appState.project.svgs.entries()).map((e) => {
-                                const [key, meta] = e;
-                                if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
-                                const svgData = appState.canvasSvgs.get(key);
-                                if (!svgData) return;
-                                let decodedString = "";
-                                try {
-                                    decodedString = decodeURIComponent(
-                                        atob(svgData.markup)
-                                            .split('')
-                                            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                                            .join(''));
-                                }
-                                catch (error) {
-                                    console.log("Failed to decode svg markup", { media_key: meta.media_key, error });
-                                }
-                                if (decodedString) {
-                                    return (
-                                        <div key={key}>
-                                            <DraggableProjectSvg
-                                                mediaKey={key}
-                                                decodedString={decodedString}
-                                                meta={meta}
-                                                zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
-                                                svgElementsRef={svgElementsRef}
-                                                refKey={refKey} />
-                                        </div>
-                                    );
-                                }
-                            })}
-                        </>}
-                </div>
-                {showMediaBrowser &&
+                            gridRow: '2',
+                            gridColumn: '2 / -1',
+                            width: '100%',
+                        }} >
+                        <Projectbar />
+                    </div>
                     <div
+                        style={{
+                            gridRow: '3',
+                            gridColumn: '2 / span 2',
+                            width: '100%',
+                        }} >
+                        <ProjectbarLevel2 />
+                    </div>
+                    {/* canvas area */}
+                    <div
+                        ref={canvasAreaRef}
                         style={{
                             gridRow: '4',
-                            gridColumn: '3',
+                            gridColumn: '2',
+                            overflowY: 'auto',
+                            position: 'relative',
+                            width: "100%",
+                            height: '100%',
+                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'default',
                         }}>
-                        <Bumper
-                            onBumperClick={() => {
-                                setShowMediaBrowser(false);
+                        <div
+                            className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: appState.project.canvas_width,
+                                height: appState.project.canvas_height,
+                                zIndex: Z_INDEX.CANVAS_BG,
+                            }} />
+                        {appState.tool.type === 'drop' && <div
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: 'min-content',
+                                height: 'min-content',
+                                zIndex: (isMetaKeyPressed) ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
+                                pointerEvents: (isMetaKeyPressed) ? 'none' : 'auto'
+                            }}>
+                            <Canvas />
+                        </div>}
+                        {/* camera frame */}
+                        <DraggableCamera
+                            contextId={"draggable-camera-context-id"}
+                            nodeId={"draggable-camera-node-id"}
+                            svgElementsRef={svgElementsRef}
+                            imgElementsRef={imgElementsRef}
+                            zIndex={Z_INDEX.CAMERA_FRAME}
+                            onNewPosition={async function (newPosition: { x: number; y: number; }) {
+                                const rollback: LaurusProjectResult = { ...appState.project };
+                                const newProject: LaurusProjectResult = {
+                                    ...appState.project,
+                                    frame_left: newPosition.x,
+                                    frame_top: newPosition.y
+                                };
+                                if (appState.project.project_id) {
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                    const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
+                                    if (!updated) {
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                                    }
+                                }
+                                else {
+                                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                                    const created = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
+                                    if (created) {
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...created } });
+                                    } else {
+                                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...rollback } });
+                                    }
+                                }
                             }}
-                            borderLeft={'1px solid rgba(255,255,255,0.05)'}
-                            borderRight={'1px solid rgba(255,255,255,0.05)'} />
+                            disabled={appState.tool.type != 'move'} />
+                        {appState.tool.type != 'viewport' &&
+                            <>
+                                {Array.from(appState.project.imgs.entries()).map((e) => {
+                                    const [key, meta] = e;
+                                    if (meta.top < 0 || meta.left < 0) return;
+                                    const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                    const imgData = appState.canvasImgs.get(key);
+                                    if (imgData) {
+                                        return (
+                                            <div key={key}>
+                                                <DraggableProjectImg
+                                                    mediaKey={key}
+                                                    data={imgData}
+                                                    meta={meta}
+                                                    zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    imgElementsRef={imgElementsRef}
+                                                    refKey={refKey} />
+                                            </div>
+                                        );
+                                    }
+                                })}
+                                {Array.from(appState.project.svgs.entries()).map((e) => {
+                                    const [key, meta] = e;
+                                    if (meta.top < 0 || meta.left < 0) return;
+                                    const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                    const svgData = appState.canvasSvgs.get(key);
+                                    if (!svgData) return;
+                                    let decodedString = "";
+                                    try {
+                                        decodedString = decodeURIComponent(
+                                            atob(svgData.markup)
+                                                .split('')
+                                                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                                                .join(''));
+                                    }
+                                    catch (error) {
+                                        console.log("Failed to decode svg markup", { media_key: meta.media_key, error });
+                                    }
+                                    if (decodedString) {
+                                        return (
+                                            <div key={key}>
+                                                <DraggableProjectSvg
+                                                    mediaKey={key}
+                                                    decodedString={decodedString}
+                                                    meta={meta}
+                                                    zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    svgElementsRef={svgElementsRef}
+                                                    refKey={refKey} />
+                                            </div>
+                                        );
+                                    }
+                                })}
+                            </>}
                     </div>
-                }
-                {showMediaBrowser &&
+                    {showMediaBrowser &&
+                        <div
+                            style={{
+                                gridRow: '4',
+                                gridColumn: '3',
+                            }}>
+                            <Bumper
+                                onBumperClick={() => {
+                                    setShowMediaBrowser(false);
+                                }}
+                                borderLeft={'1px solid rgba(255,255,255,0.05)'}
+                                borderRight={'1px solid rgba(255,255,255,0.05)'} />
+                        </div>
+                    }
+                    {showMediaBrowser &&
+                        <div
+                            style={{
+                                gridRow: '3 / span 2',
+                                gridColumn: '4',
+                                width: mediaBrowserWidth,
+                                height: '100%',
+                            }} >
+                            <MediaBrowser
+                                filter={mediaBrowserFilter}
+                                onNextPage={async () => {
+                                    switch (mediaBrowserFilter) {
+                                        case "img": {
+                                            if (appState.project.browse_public_imgs) {
+                                                await handleImgPageRequest();
+                                            }
+                                            break;
+                                        }
+                                        case "svg": {
+                                            if (appState.project.browse_public_svgs) {
+                                                await handleSvgPageRequest();
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }}
+                                onFilterSelect={setMediaBrowserFilter}
+                            />
+                        </div>
+                    }
+                    {/* right panel */}
                     <div
                         style={{
                             gridRow: '3 / span 2',
-                            gridColumn: '4',
-                            width: mediaBrowserWidth,
-                            height: '100%',
-                        }} >
-                        <MediaBrowser
-                            filter={mediaBrowserFilter}
-                            onNextPage={async () => {
-                                switch (mediaBrowserFilter) {
-                                    case "img": {
-                                        if (appState.project.browse_public_imgs) {
-                                            await handleImgPageRequest();
-                                        }
-                                        break;
-                                    }
-                                    case "svg": {
-                                        if (appState.project.browse_public_svgs) {
-                                            await handleSvgPageRequest();
-                                        }
-                                        break;
-                                    }
-                                }
-                            }}
-                            onFilterSelect={setMediaBrowserFilter}
-                        />
+                            gridColumn: '5',
+                        }}>
+                        <Toolbar
+                            resolution={resolutionInit}
+                            handleMixRestoration={handleMixRestoration} />
                     </div>
-                }
-                {/* right panel */}
-                <div
-                    style={{
-                        gridRow: '3 / span 2',
-                        gridColumn: '5',
-                    }}>
-                    <Toolbar
-                        resolution={resolutionInit}
-                        handleMixRestoration={handleMixRestoration} />
-                </div>
-                {/* mediabar */}
-                <div style={{ gridRow: '5', gridColumn: 'span 5' }}>
-                    <div style={{
-                        height: mediabarHeight,
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: 'end',
-                        background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                    }}>
-                        <div
-                            title='browser element'
-                            onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                            onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
-                            onClick={() => setShowMediaBrowser(v => !v)}
-                            style={{
-                                borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
-                                position: 'relative'
-                            }}>
-                            {appState.browserElement ? (() => {
-                                switch (appState.browserElement.type) {
-                                    case "svg": {
-                                        return (
-                                            <SvgRepo
-                                                svg={appState.browserElement.value as LaurusSvgResult}
-                                                containerStyle={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
-                                                scale={0.5}
-                                                scaleToContaier={true}
-                                            />
-                                        )
-                                    }
-                                    case "img": {
-                                        return <>
-                                            <div
-                                                style={{
-                                                    width: mediabarHeight - 2,
-                                                    height: mediabarHeight - 2,
-                                                    position: 'relative',
-                                                }}
-                                            >
-                                                <LaurusImage
-                                                    draggable={false}
-                                                    alt={appState.browserElement.value.media_key}
-                                                    src={appState.browserElement.value.src}
-                                                    fill
-                                                    style={{
-                                                        objectFit: 'cover',
-                                                    }}
+                    {/* mediabar */}
+                    <div style={{ gridRow: '5', gridColumn: 'span 5' }}>
+                        <div style={{
+                            height: mediabarHeight,
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: 'end',
+                            background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
+                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                        }}>
+                            <div
+                                title='browser element'
+                                onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                onClick={() => setShowMediaBrowser(v => !v)}
+                                style={{
+                                    borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+                                    position: 'relative'
+                                }}>
+                                {appState.browserElement ? (() => {
+                                    switch (appState.browserElement.type) {
+                                        case "svg": {
+                                            return (
+                                                <SvgRepo
+                                                    svg={appState.browserElement.value as LaurusSvgResult}
+                                                    containerStyle={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
+                                                    scale={0.5}
+                                                    scaleToContaier={true}
                                                 />
-                                            </div>
-                                        </>
+                                            )
+                                        }
+                                        case "img": {
+                                            return <>
+                                                <div
+                                                    style={{
+                                                        width: mediabarHeight - 2,
+                                                        height: mediabarHeight - 2,
+                                                        position: 'relative',
+                                                    }}
+                                                >
+                                                    <LaurusImage
+                                                        draggable={false}
+                                                        alt={appState.browserElement.value.media_key}
+                                                        src={appState.browserElement.value.src}
+                                                        fill
+                                                        style={{
+                                                            objectFit: 'cover',
+                                                        }}
+                                                    />
+                                                </div>
+                                            </>
+                                        }
                                     }
-                                }
-                            })() : <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />}
+                                })() : <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />}
+                            </div>
                         </div>
+                        <Statusbar
+                            action={statusAction}
+                            body={statusBody} />
                     </div>
-                    <Statusbar
-                        action={statusAction}
-                        body={statusBody} />
-                </div>
-            </WorkspaceContext >
+                </WorkspaceContext >
+            </HoverContext>
         </div >
     </>)
 }

@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext } from "./workspace.client";
+import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext } from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
@@ -71,7 +71,8 @@ export default function MediaBrowser({
     onNextPage,
     onFilterSelect,
 }: MediaBrowser) {
-    const { appState, dispatch, isMetaKeyPressed } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
     const [dynamicSizes] = useState(() => {

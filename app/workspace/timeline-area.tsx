@@ -6,6 +6,7 @@ import {
     LaurusEffect,
     LaurusScale,
     WorkspaceActionType, WorkspaceContext,
+    HoverContext,
     LaurusMove,
     LaurusRotate,
     Bumper,
@@ -380,6 +381,7 @@ interface TimelineAreaContent {
 }
 function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: TimelineAreaContent) {
     const { appState } = useContext(WorkspaceContext);
+    const { setMostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
     const [dynamicSizes] = useState(() => {
@@ -510,10 +512,12 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 onMouseEnter={(e) => {
                                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                                     e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.05)';
+                                    setMostRecentlyEnteredEffectUnitKey(effect.key);
                                 }}
                                 onMouseLeave={(e) => {
                                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.0275)';
                                     e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0)';
+                                    setMostRecentlyEnteredEffectUnitKey(undefined);
                                 }}
                                 style={{
                                     border: '1px solid rgba(0, 0, 0, 0)',
