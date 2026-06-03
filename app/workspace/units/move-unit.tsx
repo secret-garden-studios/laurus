@@ -8,6 +8,7 @@ import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
+import { dmSans } from "@/app/fonts";
 
 export interface MoveUnitControls {
     amplitude: number,
@@ -53,20 +54,34 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         switch (appState.resolution.type) {
             case "high": return {
                 ...ds,
-                angleParam: { padding: 15 }
+                angleParam: { padding: 15 },
+                angleTitle: {
+                    top: 10,
+                    right: 10,
+                    letterSpacing: 0,
+                    fontSize: 11,
+                }
             }
             case "midhigh": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
-
+                angleParam: { padding: 11 },
+                angleTitle: {
+                    top: 8,
+                    right: 8,
+                    letterSpacing: 0,
+                    fontSize: 8,
+                }
             }
+            case "low":
             case "midlow": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
-            }
-            case "low": return {
-                ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: 8 },
+                angleTitle: {
+                    top: 8,
+                    right: 8,
+                    letterSpacing: 0,
+                    fontSize: 7,
+                }
             }
         }
     });
@@ -489,8 +504,22 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                 display: 'flex',
                                 alignItems: 'start',
                                 justifyContent: 'center',
+                                position: 'relative',
                                 ...dynamicSizes.angleParam
                             }}>
+                                {angleTitle && <div className={dmSans.className}
+                                    ref={angleRef}
+                                    style={{
+                                        position: 'absolute',
+                                        color: 'rgb(220,220,220)',
+                                        fontWeight: 'bold',
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        pointerEvents: 'none',
+                                        ...dynamicSizes.angleTitle
+                                    }}>
+                                    {angleTitle}
+                                </div>}
                                 <Dial
                                     ids={{
                                         contextId: `${move.move_id}|main|c1`,
@@ -522,13 +551,11 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={angleTitle}
                                     onMove={(v) => {
                                         if (!angleRef.current) return;
                                         const newAngle = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
                                         angleRef.current.innerHTML = newAngle.toFixed(0) + '°';
-                                    }}
-                                    liveTitleRef={angleRef} />
+                                    }} />
                             </div>
                         </div>}
                     </div>

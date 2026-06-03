@@ -8,6 +8,7 @@ import { LaurusLoopType, updateRotate } from "../workspace.server";
 import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
+import { dmSans } from "@/app/fonts";
 
 export interface RotateUnitControls {
     x: number,
@@ -48,10 +49,40 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         angle: 0,
     });
     const [dynamicSizes] = useState(() => {
-        return {
-            ...getDynamicUnitSizes(appState.resolution),
-            angleParam: { padding: Math.round(15 * appState.resolution.factor) }
-        };
+        const ds = getDynamicUnitSizes(appState.resolution);
+        switch (appState.resolution.type) {
+            case "high": return {
+                ...ds,
+                angleParam: { padding: 15 },
+                angleTitle: {
+                    top: 10,
+                    right: 10,
+                    letterSpacing: 0,
+                    fontSize: 11,
+                }
+            }
+            case "midhigh": return {
+                ...ds,
+                angleParam: { padding: 11 },
+                angleTitle: {
+                    top: 8,
+                    right: 8,
+                    letterSpacing: 0,
+                    fontSize: 8,
+                }
+            }
+            case "low":
+            case "midlow": return {
+                ...ds,
+                angleParam: { padding: 8 },
+                angleTitle: {
+                    top: 8,
+                    right: 8,
+                    letterSpacing: 0,
+                    fontSize: 7,
+                }
+            }
+        }
     });
     const carouselEntryKey = useMemo(() => {
         if (carouselIndex < appState.carouselEntries.length) {
@@ -424,8 +455,22 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                 display: 'flex',
                                 alignItems: 'start',
                                 justifyContent: 'center',
+                                position: 'relative',
                                 ...dynamicSizes.angleParam
                             }}>
+                                {angleTitle && <div className={dmSans.className}
+                                    ref={angleRef}
+                                    style={{
+                                        position: 'absolute',
+                                        color: 'rgb(220,220,220)',
+                                        fontWeight: 'bold',
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        pointerEvents: 'none',
+                                        ...dynamicSizes.angleTitle
+                                    }}>
+                                    {angleTitle}
+                                </div>}
                                 <Dial
                                     ids={{
                                         contextId: `${rotate.rotate_id}|main|c1`,
@@ -461,7 +506,6 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={angleTitle}
                                     onMove={(v) => {
                                         if (!angleRef.current) return;
                                         const newAngle: number = ((v) => {
@@ -470,8 +514,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             return counterClockwise ? x2 * -1 : x2;
                                         })(v);
                                         angleRef.current.innerHTML = newAngle.toFixed(0) + '°';
-                                    }}
-                                    liveTitleRef={angleRef} />
+                                    }} />
                             </div>
                         </div>
                     </div>
