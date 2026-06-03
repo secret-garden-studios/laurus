@@ -21,32 +21,29 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
     const [showUnitControls, setShowUnitControls] = useState(() => {
-        if (!appState.activeElement) {
-            switch (effect.type) {
-                case "move": {
-                    const moveEqautionKeys = Array.from(effect.value.math.keys())
-                    const keys = appState.carouselEntries;
-                    const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setMoveCarouselIndex(newIndex);
-                    break;
-                }
-                case "rotate": {
-                    const eqKeys = Array.from(effect.value.math.keys())
-                    const carouselKeys = appState.carouselEntries;
-                    const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setRotateCarouselIndex(newIndex);
-                    break;
-                }
-                case "scale": {
-                    const moveEqautionKeys = Array.from(effect.value.math.keys())
-                    const keys = appState.carouselEntries;
-                    const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setScaleCarouselIndex(newIndex);
-                    break;
-                }
+        const keys = appState.carouselEntries;
+        const activeElementIndex = appState.activeElement ? keys.findIndex(k => k.key === appState.activeElement?.key) : -1;
+        switch (effect.type) {
+            case "move": {
+                const moveEqautionKeys = Array.from(effect.value.math.keys())
+                const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                const newIndex = k > -1 ? k : (activeElementIndex > -1 ? activeElementIndex : 0);
+                setMoveCarouselIndex(newIndex);
+                break;
+            }
+            case "rotate": {
+                const eqKeys = Array.from(effect.value.math.keys())
+                const k = keys.findIndex(k => eqKeys.includes(k.key));
+                const newIndex = k > -1 ? k : (activeElementIndex > -1 ? activeElementIndex : 0);
+                setRotateCarouselIndex(newIndex);
+                break;
+            }
+            case "scale": {
+                const moveEqautionKeys = Array.from(effect.value.math.keys())
+                const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
+                const newIndex = k > -1 ? k : (activeElementIndex > -1 ? activeElementIndex : 0);
+                setScaleCarouselIndex(newIndex);
+                break;
             }
         }
         return true;
