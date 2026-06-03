@@ -11,6 +11,7 @@ import { ScreensResolution } from "./screens-resolution";
 import { MeDependencies } from "../page";
 import { VideoOrigin, VideoOriginType, YouTubeVideoOrigin } from "./video-origin";
 import { dellaRespira } from "../fonts";
+import { bookmarkStacks, pause, SvgRepo } from "../svg-repo";
 
 export interface VideoMediaResult extends VideoMediaResult_V1_0 {
     filter: string
@@ -210,6 +211,23 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
         }
     };
 
+    const pauseAll = () => {
+        playerRefs.current.forEach((player, key) => {
+            if (player && typeof player.pauseVideo === 'function') {
+                player.pauseVideo();
+                stopPolling(key);
+            }
+        });
+
+        setVideoMedia(prev => {
+            const next = new Map(prev);
+            next.forEach(value => {
+                value.playing = false;
+            });
+            return next;
+        });
+    };
+
     const fetchVideoPage = useCallback(async () => {
         const mediaArray = Array.from(videoMedia.values());
         const oldestObject = mediaArray.length > 0 ? mediaArray.reduce((oldest, current) => {
@@ -326,8 +344,23 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                         justifySelf: 'start',
                         display: 'flex',
                         width: '100%',
+                        gap: 10,
                         height: 40,
                     }}>
+                        <div
+                            className={dellaRespira.className}
+                            style={{
+                                width: 'min-content',
+                                padding: '0px 10px',
+                                height: '100%',
+                                display: 'grid',
+                                placeContent: 'center',
+                                cursor: 'pointer',
+                            }}>
+                            <SvgRepo
+                                svg={bookmarkStacks()}
+                                scale={1} />
+                        </div>
                         <input
                             id={`laurus-screens-statusbar-secret-input`}
                             className={dellaRespira.className}
@@ -344,6 +377,21 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                             }}
                             type="text"
                             onPaste={handleVideoDrop} />
+                        <div
+                            onClick={pauseAll}
+                            className={dellaRespira.className}
+                            style={{
+                                width: 'min-content',
+                                padding: '0px 10px',
+                                height: '100%',
+                                display: 'grid',
+                                placeContent: 'center',
+                                cursor: 'pointer',
+                            }}>
+                            <SvgRepo
+                                svg={pause()}
+                                scale={1} />
+                        </div>
                     </div>
                     {Array.from(videoMedia.entries())
                         .sort((a, b) => new Date(b[1].timestamp).getTime() - new Date(a[1].timestamp).getTime())
