@@ -8,7 +8,6 @@ import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
-import { dmSans } from "@/app/fonts";
 
 export interface MoveUnitControls {
     amplitude: number,
@@ -58,7 +57,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 angleTitle: {
                     top: 10,
                     right: 10,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 11,
                 }
             }
@@ -68,7 +67,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 angleTitle: {
                     top: 8,
                     right: 8,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 8,
                 }
             }
@@ -79,7 +78,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 angleTitle: {
                     top: 8,
                     right: 8,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 7,
                 }
             }
@@ -507,7 +506,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                 position: 'relative',
                                 ...dynamicSizes.angleParam
                             }}>
-                                {angleTitle && <div className={dmSans.className}
+                                {angleTitle && <div
                                     ref={angleRef}
                                     style={{
                                         position: 'absolute',

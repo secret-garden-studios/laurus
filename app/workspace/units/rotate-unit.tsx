@@ -8,7 +8,6 @@ import { LaurusLoopType, updateRotate } from "../workspace.server";
 import { getDynamicUnitSizes } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
-import { dmSans } from "@/app/fonts";
 
 export interface RotateUnitControls {
     x: number,
@@ -57,7 +56,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 angleTitle: {
                     top: 10,
                     right: 10,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 11,
                 }
             }
@@ -67,7 +66,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 angleTitle: {
                     top: 8,
                     right: 8,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 8,
                 }
             }
@@ -78,7 +77,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 angleTitle: {
                     top: 8,
                     right: 8,
-                    letterSpacing: 0,
+                    letterSpacing: 1,
                     fontSize: 7,
                 }
             }
@@ -458,7 +457,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                 position: 'relative',
                                 ...dynamicSizes.angleParam
                             }}>
-                                {angleTitle && <div className={dmSans.className}
+                                {angleTitle && <div
                                     ref={angleRef}
                                     style={{
                                         position: 'absolute',
