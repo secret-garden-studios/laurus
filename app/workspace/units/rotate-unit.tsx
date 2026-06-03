@@ -126,6 +126,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const angleTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.angle.toFixed(0)) + '°' : undefined;
     }, [carouselEntryKey, rotate.math]);
+    const angleRef = useRef<HTMLDivElement | null>(null);
 
     const [counterClockwise, setCounterClockwise] = useState<boolean>(() => {
         return (rotate.math.get(carouselEntryKey)?.angle ?? 0) < 0 ? true : false
@@ -460,7 +461,17 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={angleTitle} />
+                                    title={angleTitle}
+                                    onMove={(v) => {
+                                        if (!angleRef.current) return;
+                                        const newAngle: number = ((v) => {
+                                            const x = (Math.round(v) % 360);
+                                            const x2 = x < 0 ? x + 360 : x;
+                                            return counterClockwise ? x2 * -1 : x2;
+                                        })(v);
+                                        angleRef.current.innerHTML = newAngle.toFixed(0) + '°';
+                                    }}
+                                    liveTitleRef={angleRef} />
                             </div>
                         </div>
                     </div>

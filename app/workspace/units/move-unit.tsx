@@ -155,6 +155,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const angleTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.angle.toFixed(0)) + '°' : undefined;
     }, [carouselEntryKey, move.math]);
+    const angleRef = useRef<HTMLDivElement | null>(null);
 
     const setActiveElementIfNull = useCallback(() => {
         if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
@@ -521,7 +522,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         dial: 80,
                                         dialTick: 11
                                     }}
-                                    title={angleTitle} />
+                                    title={angleTitle}
+                                    onMove={(v) => {
+                                        if (!angleRef.current) return;
+                                        const newAngle = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
+                                        angleRef.current.innerHTML = newAngle.toFixed(0) + '°';
+                                    }}
+                                    liveTitleRef={angleRef} />
                             </div>
                         </div>}
                     </div>

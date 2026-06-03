@@ -1,6 +1,6 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { useContext, useEffect, useRef, useState } from "react";
+import { CSSProperties, RefObject, useContext, useEffect, useRef, useState } from "react";
 import { WorkspaceContext } from "../workspace/workspace.client";
 
 interface DialProps {
@@ -17,9 +17,10 @@ interface DialProps {
     onMove?: (v: number) => void,
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-export default function Dial({ ids, value, size, onMove, onNewValue, disabled, title }: DialProps) {
+export default function Dial({ ids, value, size, onMove, onNewValue, disabled, title, liveTitleRef }: DialProps) {
     const rotationRef = useRef(value);
     const [rotation, setRotation] = useState(value);
     const sensors = useSensors(useSensor(PointerSensor));
@@ -64,7 +65,8 @@ export default function Dial({ ids, value, size, onMove, onNewValue, disabled, t
                 size={size}
                 rotation={rotation}
                 disabled={disabled}
-                title={title} />
+                title={title}
+                liveTitleRef={liveTitleRef} />
         </DndContext>
     </>)
 }
@@ -81,11 +83,13 @@ interface BlurryCapProps {
     },
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-function BlurryCap({ id, rotation, size, disabled, title }: BlurryCapProps) {
+function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: BlurryCapProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
     const { appState } = useContext(WorkspaceContext);
+    const [isHovered, setIsHovered] = useState(false);
     const dndCss = { touchAction: 'none', };
     const [containerSize] = useState(Math.round(size.container * appState.resolution.factor));
     const [gaugeSize] = useState(Math.round(size.gauge * appState.resolution.factor));
@@ -98,8 +102,23 @@ function BlurryCap({ id, rotation, size, disabled, title }: BlurryCapProps) {
     const [gaugeTickCount] = useState(360 / gaugeFactor);
     const [gaugeTicks] = useState(Array.from({ length: gaugeTickCount }, (_, i) => i));
 
+    const tooltipStyle: CSSProperties = {
+        position: 'absolute',
+        top: '50%',
+        left: 'calc(100% + 10px)',
+        transform: 'translateY(-50%)',
+        color: 'rgb(227,227,227)',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        zIndex: 1000,
+        letterSpacing: 1,
+        fontSize: 11,
+    };
+
     return (
-        <div title={title} style={{
+        <div title={liveTitleRef ? undefined : title} style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -166,10 +185,11 @@ function BlurryCap({ id, rotation, size, disabled, title }: BlurryCapProps) {
                     backgroundImage: 'linear-gradient(to right, rgb(189, 189, 189) 15%,rgb(228, 228, 228))',
                 }} />
             </div>
-            <div
-                ref={setNodeRef}
-                {...attributes}
+            {liveTitleRef ? <div ref={setNodeRef}
                 {...listeners}
+                {...attributes}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
                 style={{
                     zIndex: 3,
                     ...dndCss,
@@ -178,7 +198,35 @@ function BlurryCap({ id, rotation, size, disabled, title }: BlurryCapProps) {
                     height: `${dialSize}px`,
                     cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
                     borderRadius: '50%',
-                }} />
+                }} >
+                {(isDragging && (title || liveTitleRef)) && (
+                    <div
+                        ref={liveTitleRef}
+                        style={tooltipStyle} >
+                        {title}
+                    </div>
+                )}
+                {(!isDragging && isHovered && title) && (
+                    <div style={tooltipStyle}>
+                        {title}
+                    </div>
+                )}
+            </div> : <div ref={setNodeRef}
+                title={title}
+                {...listeners}
+                {...attributes}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                style={{
+                    zIndex: 3,
+                    ...dndCss,
+                    position: 'absolute',
+                    width: `${dialSize}px`,
+                    height: `${dialSize}px`,
+                    cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
+                    borderRadius: '50%',
+                }} >
+            </div>}
         </div >
     );
 };
