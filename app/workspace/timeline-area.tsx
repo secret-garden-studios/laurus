@@ -517,7 +517,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                 onMouseLeave={(e) => {
                                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.0275)';
                                     e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0)';
-                                    setMostRecentlyEnteredEffectUnitKey(undefined);
                                 }}
                                 style={{
                                     border: '1px solid rgba(0, 0, 0, 0)',

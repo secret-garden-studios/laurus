@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { CarouselEntry, LaurusActiveElement } from '../workspace/workspace.client';
+import { useState, useContext } from 'react';
+import { CarouselEntry, LaurusActiveElement, HoverContext } from '../workspace/workspace.client';
 
 export const useCarouselIndex = (
     activeElement: LaurusActiveElement | undefined,
     carouselEntries: CarouselEntry[],
     carouselIndexInit: number,
+    effectKey: string,
 ) => {
+    const { mostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
     const activeKey = activeElement?.key;
     const locallyActivatedKey = activeElement?.locallyActivatedEffectKey;
     const totalEntries = carouselEntries.length;
@@ -23,16 +25,18 @@ export const useCarouselIndex = (
         setLocalIndex(0);
     }
 
+    const shouldSync = !mostRecentlyEnteredEffectUnitKey || mostRecentlyEnteredEffectUnitKey === effectKey;
+
     // Sync local carousels on selection from the canvas area
     if (activeKey !== prevKey) {
         setPrevKey(activeKey);
-        if (locallyActivatedKey === undefined) {
+        if (locallyActivatedKey === undefined && shouldSync) {
             setLocalIndex(baseIndex);
         }
     }
 
     const safeLocalIndex = totalEntries > 0 && localIndex >= totalEntries ? 0 : localIndex;
-    const carouselIndex = locallyActivatedKey === undefined ? baseIndex : safeLocalIndex;
+    const carouselIndex = locallyActivatedKey === effectKey ? baseIndex : safeLocalIndex;
 
     return {
         carouselIndex,

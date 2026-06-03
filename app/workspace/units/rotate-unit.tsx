@@ -38,7 +38,7 @@ interface RotateUnit {
 export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, carouselIndexInit }: RotateUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit);
+        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, rotate.rotate_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
         x: 0,
