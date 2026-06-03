@@ -3,7 +3,7 @@
 import { useContext, useState } from "react";
 import { WorkspaceContext } from "../workspace.client";
 import { dellaRespira, ubuntuMono } from "../../fonts";
-import { allOut, browse, contentPaste, earthquake, experiment, folder, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../../svg-repo";
+import { allOut, browse, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -170,12 +170,12 @@ export default function Statusbar({ action, body }: Statusbar) {
                     }}>
                     <SvgRepo
                         title="media source"
-                        svg={appState.project.browse_public_imgs || appState.project.browse_public_svgs ? folder() : folder("rgb(62, 62, 62)")}
+                        svg={appState.project.browse_public_imgs || appState.project.browse_public_svgs ? publicIcon() : publicIcon("rgb(62, 62, 62)")}
                         containerStyle={{
                             width: 30,
                             height: 30
                         }}
-                        scale={0.5} />
+                        scale={0.55} />
                 </div>
                 <Tooltip
                     className={dellaRespira.className}
