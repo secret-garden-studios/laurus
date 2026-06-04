@@ -27,13 +27,13 @@ export enum LandingFormType {
 }
 
 enum ButtonBorderColor {
-    purple,
+    primary,
     red,
     white,
 }
 
 const buttonBorderRecord: Record<ButtonBorderColor, { p: string, s: string, t: string }> = {
-    [ButtonBorderColor.purple]: { p: 'rgb(140, 121, 179)', s: 'rgb(21, 21, 21)', t: 'rgb(40, 40, 40)' },
+    [ButtonBorderColor.primary]: { p: 'rgb(227, 227, 227)', s: 'rgb(21, 21, 21)', t: 'rgb(40, 40, 40)' },
     [ButtonBorderColor.red]: { p: 'rgb(255, 95, 109)', s: 'rgb(21, 21, 21)', t: 'rgb(40, 40, 40)' },
     [ButtonBorderColor.white]: { p: 'rgb(227, 227, 227)', s: 'rgb(21, 21, 21)', t: 'rgb(40, 40, 40)' },
 }
@@ -74,7 +74,7 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
                             laurusApi={laurusApi}
                             resolution={resolution}
                             onNewUsername={(v) => {
-                                alert("We received your request to become a creator! Keep an eye out for an email from us.");
+                                alert("We received your account request! Keep an eye out for an email from us.");
                                 setNewUsername(v);
                             }}
                             onNewFormType={setFormType}
@@ -391,7 +391,7 @@ function LowResBody() {
                             c: "rgb(163, 163, 163)",
                             d: "rgb(255, 255, 255)",
                             e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
+                            f: "rgb(199, 199, 199)",
                         }} />
                 </div>
                 <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
@@ -414,8 +414,8 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
     const [password, setPassword] = useState<string>("");
     const [showPassword, setShowPassword] = useState<boolean>(false);
     const [msg, setMsg] = useState<string>("");
-    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.purple);
-    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.purple);
+    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
+    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
     const [dynamicSizes] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -450,7 +450,7 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                             c: "rgb(163, 163, 163)",
                             d: "rgb(255, 255, 255)",
                             e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
+                            f: "rgb(199, 199, 199)",
                         }} />
                 </div>
                 <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
@@ -465,10 +465,10 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                     autoComplete="username"
                     value={username}
                     onChange={(v) => {
-                        buttonBorderRef.current = ButtonBorderColor.purple;
+                        buttonBorderRef.current = ButtonBorderColor.primary;
                         setUsername(v.currentTarget.value);
                         setMsg("");
-                        setButtonBorder(ButtonBorderColor.purple);
+                        setButtonBorder(ButtonBorderColor.primary);
                     }}
                     style={{
                         ...dynamicSizes.input,
@@ -489,10 +489,10 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                             type={showPassword ? "text" : "password"}
                             value={password}
                             onChange={(e) => {
-                                buttonBorderRef.current = ButtonBorderColor.purple;
+                                buttonBorderRef.current = ButtonBorderColor.primary;
                                 setPassword(e.target.value);
                                 setMsg("");
-                                setButtonBorder(ButtonBorderColor.purple);
+                                setButtonBorder(ButtonBorderColor.primary);
                             }}
                             placeholder="password"
                             style={{
@@ -597,8 +597,8 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={() => {
                         setMsg("");
-                        buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                         onNewFormType(LandingFormType.registration);
                     }}
                     style={{
@@ -611,7 +611,7 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
                         fontSize: 13,
                         placeContent: 'center',
                     }}>
-                    {'become a creator'}
+                    {'create an account'}
                 </div>
                 <div style={{
                     fontSize: 11,
@@ -663,8 +663,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
     const [showPassword, setShowPassword] = useState<boolean>(false);
     const [email, setEmail] = useState<string>("");
     const [msg, setMsg] = useState<string>("");
-    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.purple);
-    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.purple);
+    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
+    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
     const [dynamicSizes] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -699,7 +699,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                             c: "rgb(163, 163, 163)",
                             d: "rgb(255, 255, 255)",
                             e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
+                            f: "rgb(199, 199, 199)",
                         }} />
                 </div>
                 <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
@@ -717,8 +717,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                     onChange={(v) => {
                         setUsername(v.currentTarget.value);
                         setMsg("");
-                        buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                     }}
                     style={{
                         ...dynamicSizes.input,
@@ -741,8 +741,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                     onChange={(v) => {
                         setEmail(v.currentTarget.value);
                         setMsg("");
-                        buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                     }}
                     style={{
                         ...dynamicSizes.input,
@@ -765,8 +765,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                             onChange={(e) => {
                                 setPassword(e.target.value);
                                 setMsg("");
-                                buttonBorderRef.current = ButtonBorderColor.purple;
-                                setButtonBorder(ButtonBorderColor.purple);
+                                buttonBorderRef.current = ButtonBorderColor.primary;
+                                setButtonBorder(ButtonBorderColor.primary);
                             }}
                             placeholder="new password"
                             style={{
@@ -832,7 +832,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                             setButtonBorder(ButtonBorderColor.red);
                             return;
                         }
-                        const confirmed = window.confirm('Becoming a creator this early in the project is subject to further approval. Are you sure you want to continue?');
+                        const confirmed = window.confirm('Gaining full access to Laurus this early in the project is subject to further approval. Your username will be claimed, but until we send you an email approving full access, you will not be able to make any animations. Are you sure you want to continue?');
                         if (confirmed) {
                             const register: Register_V1_0 = {
                                 username,
@@ -855,8 +855,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                             else {
                                 if (registerResult.success) {
                                     setMsg("");
-                                    buttonBorderRef.current = ButtonBorderColor.purple;
-                                    setButtonBorder(ButtonBorderColor.purple);
+                                    buttonBorderRef.current = ButtonBorderColor.primary;
+                                    setButtonBorder(ButtonBorderColor.primary);
                                     onNewUsername(username);
                                     onNewFormType(LandingFormType.login);
                                 }
@@ -882,7 +882,7 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                         '--color-secondary': buttonBorderRecord[buttonBorder].s,
                         '--color-tertiary': buttonBorderRecord[buttonBorder].t,
                     } as React.CSSProperties}>
-                    {msg ? msg : 'become a creator'}
+                    {msg ? msg : 'request account'}
                 </div>
                 <div style={{
                     fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -895,8 +895,8 @@ function RegistrationBody({ laurusApi, resolution, onNewFormType, onNewUsername 
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={() => {
                         setMsg("");
-                        buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                         onNewFormType(LandingFormType.login);
                     }}
                     style={{
@@ -925,8 +925,8 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
 
     const [email, setEmail] = useState<string>("");
     const [msg, setMsg] = useState<string>("");
-    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.purple);
-    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.purple);
+    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
+    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
     const [dynamicSizes] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -955,7 +955,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                     setIsRunning(false);
                     if (buttonBorderRef.current == ButtonBorderColor.white) {
                         setMsg("");
-                        setButtonBorder(ButtonBorderColor.purple);
+                        setButtonBorder(ButtonBorderColor.primary);
                     }
                     return 0;
                 }
@@ -990,7 +990,7 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                             c: "rgb(163, 163, 163)",
                             d: "rgb(255, 255, 255)",
                             e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
+                            f: "rgb(199, 199, 199)",
                         }} />
                 </div>
                 <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
@@ -1006,10 +1006,10 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                     autoComplete="email"
                     value={email}
                     onChange={(v) => {
-                        buttonBorderRef.current = ButtonBorderColor.purple;
+                        buttonBorderRef.current = ButtonBorderColor.primary;
                         setEmail(v.currentTarget.value);
                         setMsg("");
-                        setButtonBorder(ButtonBorderColor.purple);
+                        setButtonBorder(ButtonBorderColor.primary);
                         setTimeLeft(0);
                         setIsRunning(false);
                     }}
@@ -1084,8 +1084,8 @@ function PasswordResetBody({ laurusApi, resolution, onNewFormType }: PasswordRes
                     className={`${styles['animated-button-dark']} ${dellaRespira.className}`}
                     onClick={() => {
                         setMsg("");
-                        buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                         onNewFormType(LandingFormType.login);
                     }}
                     style={{
@@ -1115,8 +1115,8 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
     const router = useRouter();
     const [password, setPassword] = useState<string>("");
     const [msg, setMsg] = useState<string>("");
-    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.purple);
-    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.purple);
+    const buttonBorderRef = useRef<ButtonBorderColor>(ButtonBorderColor.primary);
+    const [buttonBorder, setButtonBorder] = useState<ButtonBorderColor>(ButtonBorderColor.primary);
     const [dynamicSizes] = useState(() => {
         switch (resolution.type) {
             case "high": return {
@@ -1151,7 +1151,7 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
                             c: "rgb(163, 163, 163)",
                             d: "rgb(255, 255, 255)",
                             e: "rgb(255, 255, 255)",
-                            f: "rgb(155, 114, 215)",
+                            f: "rgb(199, 199, 199)",
                         }} />
                 </div>
                 <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: 'center', padding: 4 }}>
@@ -1167,8 +1167,8 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
                     autoComplete="new-password"
                     value={password}
                     onChange={(v) => {
-                        setPassword(v.currentTarget.value); setMsg(""); buttonBorderRef.current = ButtonBorderColor.purple;
-                        setButtonBorder(ButtonBorderColor.purple);
+                        setPassword(v.currentTarget.value); setMsg(""); buttonBorderRef.current = ButtonBorderColor.primary;
+                        setButtonBorder(ButtonBorderColor.primary);
                     }}
                     style={{
                         ...dynamicSizes.input,
@@ -1204,8 +1204,8 @@ function PasswordConfirmationBody({ resetPasswordToken, laurusApi, resolution, o
                         const response = await resetPasswordConfirm(laurusApi, newPassword);
                         if (response) {
                             setMsg("login with new password");
-                            buttonBorderRef.current = ButtonBorderColor.purple;
-                            setButtonBorder(ButtonBorderColor.purple);
+                            buttonBorderRef.current = ButtonBorderColor.primary;
+                            setButtonBorder(ButtonBorderColor.primary);
                             onNewFormType(LandingFormType.login);
                         }
                         else {

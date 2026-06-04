@@ -156,7 +156,7 @@
 
 @property --color-primary {
   syntax: '<color>';
-  initial-value: rgb(140, 121, 179);
+  initial-value: rgb(227, 227, 227);
   inherits: false;
 }
 
@@ -178,12 +178,12 @@
   background:
     linear-gradient(rgb(25, 25, 25), rgb(23, 23, 23)) padding-box,
     conic-gradient(from var(--angle),
-      var(--color-primary, rgb(140, 121, 179)),
+      var(--color-primary, rgb(227, 227, 227)),
       var(--color-secondary, rgb(21, 21, 21)),
       var(--color-tertiary, rgb(40, 40, 40)),
       var(--color-tertiary, rgb(40, 40, 40)),
       var(--color-secondary, rgb(21, 21, 21)),
-      var(--color-primary, rgb(140, 121, 179))) border-box;
+      var(--color-primary, rgb(227, 227, 227))) border-box;
 
   appearance: none;
   animation: rotateGradient 8s linear infinite;
