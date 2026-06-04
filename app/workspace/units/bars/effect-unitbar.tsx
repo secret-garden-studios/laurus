@@ -1,4 +1,4 @@
-import { SvgRepo, allOut, cancelCircle, earthquake, experiment, lock, lockOpenRight, toysFan, tune } from "@/app/svg-repo";
+import { SvgRepo, allOut, circle, earthquake, experiment, lock, lockOpenRight, toysFan, tune } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { deleteMove, deleteRotate, deleteScale } from "../../workspace.server";
@@ -161,7 +161,7 @@ export default function EffectUnitbar({
                     }}>
                         <SvgRepo
                             title={"mix"}
-                            svg={experiment('rgba(255,255,255,0.7)')}
+                            svg={experiment()}
                             scale={0.65}
                             scaleToContaier={true}
                             containerStyle={{
@@ -206,7 +206,7 @@ export default function EffectUnitbar({
             })()}
             <SvgRepo
                 title={"lock"}
-                svg={effect.value.locked ? lock('rgba(255,255,255,0.7)') : lockOpenRight('rgba(255,255,255,0.7)')}
+                svg={effect.value.locked ? lock() : lockOpenRight()}
                 scale={0.6}
                 scaleToContaier={true}
                 onContainerClick={async () => {
@@ -232,11 +232,39 @@ export default function EffectUnitbar({
                     border: '1px solid rgba(0,0,0,0)',
                     transition: 'border-left 0.25s ease-out'
                 }} />
+            <SvgRepo
+                title={"disable"}
+                svg={effect.value.disabled ? circle('rgb(255, 255, 95)') : circle('rgba(255, 255, 255, 0.15)')}
+                scale={0.5}
+                scaleToContaier={true}
+                onContainerClick={async () => {
+                    const rollback: LaurusEffect = { ...effect };
+                    let newEffect: LaurusEffect;
+                    switch (effect.type) {
+                        case 'scale':
+                            newEffect = { ...effect, value: { ...effect.value, disabled: !effect.value.disabled } };
+                            break;
+                        case 'move':
+                            newEffect = { ...effect, value: { ...effect.value, disabled: !effect.value.disabled } };
+                            break;
+                        case 'rotate':
+                            newEffect = { ...effect, value: { ...effect.value, disabled: !effect.value.disabled } };
+                            break;
+                    }
+                    await saveEffect(newEffect, rollback);
+                }}
+                containerStyle={{
+                    width: dynamicSizes.toolbar.width,
+                    height: dynamicSizes.toolbar.width,
+                    background: 'none',
+                    border: '1px solid rgba(0,0,0,0)',
+                    transition: 'border-left 0.25s ease-out'
+                }} />
             {showUnitControls && <>
                 <SvgRepo
                     title={"delete"}
-                    svg={cancelCircle('rgb(220, 112, 112)')}
-                    scale={0.6}
+                    svg={circle('rgb(220, 112, 112)')}
+                    scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
                         const confirmed = confirm('are you sure you want to delete this effect?');

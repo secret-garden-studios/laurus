@@ -380,6 +380,7 @@ export interface Scale_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, ScaleEquation_V1_0>
@@ -401,6 +402,7 @@ export interface ScaleResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, ScaleEquation_V1_0>
@@ -577,6 +579,7 @@ export interface Move_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, MoveEquation_V1_0>
@@ -592,6 +595,7 @@ export interface MoveResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, MoveEquation_V1_0>
@@ -767,6 +771,7 @@ export interface Rotate_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, RotateEquation_V1_0>
@@ -782,6 +787,7 @@ export interface RotateResult_V1_0 {
     order: number
     fps: number
     locked: boolean
+    disabled: boolean
     description: string
     mix: boolean
     math: Map<string, RotateEquation_V1_0>

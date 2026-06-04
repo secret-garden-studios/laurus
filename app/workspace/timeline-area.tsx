@@ -758,7 +758,8 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     locked: false,
                     order: newOrder,
                     mix: false,
-                    description: ""
+                    description: "",
+                    disabled: false
                 };
                 const created = await createScale(appState.apiOrigin, appState.accessToken, newScale);
                 if (created) {
@@ -785,7 +786,8 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     locked: false,
                     order: newOrder,
                     mix: false,
-                    description: ""
+                    description: "",
+                    disabled: false
                 };
                 const created = await createMove(appState.apiOrigin, appState.accessToken, newMove);
                 if (created) {
@@ -812,7 +814,8 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     locked: false,
                     order: newOrder,
                     mix: false,
-                    description: ""
+                    description: "",
+                    disabled: false
                 };
                 const created = await createRotate(appState.apiOrigin, appState.accessToken, newRotate);
                 if (created) {
