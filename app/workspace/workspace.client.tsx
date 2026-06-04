@@ -1463,10 +1463,56 @@ export default function Workspace({
                             width: "100%",
                             display: "flex",
                             alignItems: "center",
-                            justifyContent: 'end',
+                            justifyContent: 'space-between',
                             background: "linear-gradient(34deg, rgba(25, 25, 25, 1) 34%, rgba(21, 21, 21, 1))",
                             border: '1px solid rgba(255, 255, 255, 0.05)',
                         }}>
+                            <div
+                                title='selected element'
+                                style={{
+                                    borderRight: appState.activeElement ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(255, 255, 255, 0)',
+                                    position: 'relative'
+                                }}>
+                                {appState.activeElement ? (() => {
+                                    switch (appState.activeElement.type) {
+                                        case "svg": {
+                                            const svg = appState.canvasSvgs.get(appState.activeElement.key);
+                                            if (!svg) return <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />;
+                                            return (
+                                                <SvgRepo
+                                                    title="selected element"
+                                                    svg={svg}
+                                                    containerStyle={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
+                                                    scale={0.5}
+                                                    scaleToContaier={true}
+                                                />
+                                            );
+                                        }
+                                        case "img": {
+                                            const img = appState.canvasImgs.get(appState.activeElement.key);
+                                            if (!img) return <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />;
+                                            return (
+                                                <div style={{
+                                                    width: mediabarHeight - 2,
+                                                    height: mediabarHeight - 2,
+                                                    position: 'relative',
+                                                }} >
+                                                    <LaurusImage
+                                                        title="selected element"
+                                                        draggable={false}
+                                                        alt={img.media_key}
+                                                        src={img.src}
+                                                        fill
+                                                        style={{
+                                                            objectFit: 'cover',
+                                                        }}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                    }
+                                })() : <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />}
+                            </div>
                             <div
                                 title='browser element'
                                 onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
@@ -1481,33 +1527,34 @@ export default function Workspace({
                                         case "svg": {
                                             return (
                                                 <SvgRepo
-                                                    svg={appState.browserElement.value as LaurusSvgResult}
-                                                    containerStyle={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }}
+                                                    title={"browser element"}
+                                                    svg={appState.browserElement.value}
+                                                    containerStyle={{ width: mediabarHeight - 2, height: mediabarHeight - 2, cursor: 'pointer' }}
                                                     scale={0.5}
                                                     scaleToContaier={true}
                                                 />
-                                            )
+                                            );
                                         }
                                         case "img": {
-                                            return <>
-                                                <div
-                                                    style={{
-                                                        width: mediabarHeight - 2,
-                                                        height: mediabarHeight - 2,
-                                                        position: 'relative',
-                                                    }}
-                                                >
+                                            return (
+                                                <div style={{
+                                                    width: mediabarHeight - 2,
+                                                    height: mediabarHeight - 2,
+                                                    position: 'relative',
+                                                }} >
                                                     <LaurusImage
+                                                        title={"browser element"}
                                                         draggable={false}
                                                         alt={appState.browserElement.value.media_key}
                                                         src={appState.browserElement.value.src}
                                                         fill
                                                         style={{
                                                             objectFit: 'cover',
+                                                            cursor: 'pointer',
                                                         }}
                                                     />
                                                 </div>
-                                            </>
+                                            );
                                         }
                                     }
                                 })() : <div style={{ width: mediabarHeight - 2, height: mediabarHeight - 2 }} />}
