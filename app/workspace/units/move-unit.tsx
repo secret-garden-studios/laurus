@@ -5,7 +5,7 @@ import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, MOVE_AMPLITUDE_MAX, MOVE_DISTANCE_MAX, MOVE_FREQUENCY_MAX, MOVE_WAVELENGTH_MAX } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
 
@@ -107,7 +107,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            500 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
+            MOVE_AMPLITUDE_MAX * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const amplitudeTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.amplitude.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -119,7 +119,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            20 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
+            MOVE_FREQUENCY_MAX * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const frequencyTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.frequency.toFixed(2)) + 'hz' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -131,7 +131,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1000 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
+            MOVE_WAVELENGTH_MAX * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const wavelengthTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.wavelength.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -143,7 +143,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            3000 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
+            MOVE_DISTANCE_MAX * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const distanceTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.distance.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);

@@ -3,7 +3,7 @@ import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, circleFillZero
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getMove, LaurusLoopType, LaurusShapeType, updateMove } from "../../workspace.server";
-import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
 
 interface MoveUnitbar {
@@ -156,7 +156,7 @@ export default function MoveUnitbar({
 
     const incrementLimitFactor = useCallback((): number => {
         const currentFactor = move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor;
-        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
+        return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, move.math]);
 
     const shapeSvg = useMemo((): LaurusClientSvg => {
@@ -356,7 +356,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"increase limits"}
                 onClick={() => {
-                    if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == 1)) return;
+                    if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
                         const snapshot: LaurusMoveResult = { ...move };
@@ -381,7 +381,7 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"increase limits"}
-                    svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
+                    svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
                         cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton

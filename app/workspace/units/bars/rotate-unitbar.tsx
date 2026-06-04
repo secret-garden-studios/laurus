@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
 import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getRotate, LaurusLoopType, updateRotate } from "../../workspace.server";
-import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 
 interface RotateUnitbar {
     rotate: LaurusRotateResult,
@@ -167,7 +167,7 @@ export default function RotateUnitbar({
 
     const incrementLimitFactor = useCallback((): number => {
         const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor ?? defaultRotateEquation.limit_factor;
-        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
+        return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, rotate.math]);
 
     return <>
@@ -346,7 +346,7 @@ export default function RotateUnitbar({
             </div>
             <div title="increase limits"
                 onClick={() => {
-                    if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == 1)) return;
+                    if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
                         const snapshot: LaurusRotateResult = { ...rotate };
@@ -371,7 +371,7 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="increase limits"
-                    svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
+                    svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
                         cursor: rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton

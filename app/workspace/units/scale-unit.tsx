@@ -6,7 +6,7 @@ import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/use
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.client";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
@@ -154,7 +154,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const timeRef = useRef<HTMLDivElement | null>(null);
 
     // main params
-    const [maxScale] = useState(20);
     const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({ fineTuningLimit: 2 });
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
 
@@ -164,7 +163,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
         useComplexTrackpadState(
             dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
-            maxScale);
+            SCALE_MAX);
     const scaleXTitle = useMemo(() => {
         return scale.math.has(carouselEntryKey) ? (scale.math.get(carouselEntryKey)!.scale_x.toFixed(3)) : undefined;
     }, [carouselEntryKey, scale.math]);
@@ -175,7 +174,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const { getComplexTrackValue: getScaleYValue, getComplexTrackCursor: getScaleYCursor } =
         useComplexTrackpadState(
             dynamicSizes.scaleParam.capWidth - dynamicSizes.scaleParam.capBorderOffset,
-            maxScale);
+            SCALE_MAX);
     const scaleYTitle = useMemo(() => {
         return scale.math.has(carouselEntryKey) ? (scale.math.get(carouselEntryKey)!.scale_y.toFixed(3)) : undefined;
     }, [carouselEntryKey, scale.math]);

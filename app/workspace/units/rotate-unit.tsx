@@ -5,7 +5,7 @@ import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, updateRotate } from "../workspace.server";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
 
@@ -106,7 +106,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const { getInverseTrackValue: getXValue, getInverseTrackCursor: getXCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1);
+            ROTATE_AXIS_MAX);
     const xTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.x.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);
@@ -118,7 +118,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const { getInverseTrackValue: getYValue, getInverseTrackCursor: getYCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1);
+            ROTATE_AXIS_MAX);
     const yTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.y.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);
@@ -130,7 +130,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const { getInverseTrackValue: getZValue, getInverseTrackCursor: getZCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1);
+            ROTATE_AXIS_MAX);
     const zTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? (rotate.math.get(carouselEntryKey)!.z.toFixed(2)) : undefined;
     }, [carouselEntryKey, rotate.math]);

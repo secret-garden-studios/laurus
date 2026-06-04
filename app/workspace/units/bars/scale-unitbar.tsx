@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
 import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
-import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 
 interface ScaleUnitbar {
     scale: LaurusScaleResult,
@@ -156,7 +156,7 @@ export default function ScaleUnitbar({
 
     const incrementLimitFactor = useCallback((): number => {
         const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
-        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
+        return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, scale.math]);
 
 
@@ -293,7 +293,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"increase limits"}
                 onClick={() => {
-                    if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == 1)) return;
+                    if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
                         const snapshot: LaurusScaleResult = { ...scale };
@@ -318,7 +318,7 @@ export default function ScaleUnitbar({
                 }}>
                 <SvgRepo
                     title={"increase limits"}
-                    svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != 1 ? add2() : add2("rgb(62, 62, 62)")}
+                    svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
                         cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
