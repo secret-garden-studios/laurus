@@ -3,7 +3,7 @@ import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, circleFillZero
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getMove, LaurusLoopType, LaurusShapeType, updateMove } from "../../workspace.server";
-import { getDynamicUnitSizes } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
 
 interface MoveUnitbar {
@@ -150,15 +150,13 @@ export default function MoveUnitbar({
     }, [carouselEntryKey, move.math]);
 
     const decrementLimitFactor = useCallback((): number => {
-        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
+        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor;
+        return Math.max(MIN_LIMIT_FACTOR, Math.round((currentFactor - LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, move.math]);
 
     const incrementLimitFactor = useCallback((): number => {
-        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
+        const currentFactor = move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor;
+        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, move.math]);
 
     const shapeSvg = useMemo((): LaurusClientSvg => {
@@ -360,7 +358,7 @@ export default function MoveUnitbar({
                 onClick={() => {
                     if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == 1)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && move.math.has(activeKey)) {
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -371,6 +369,7 @@ export default function MoveUnitbar({
                             {
                                 ...defaultMoveEquation,
                                 input_id: activeKey,
+                                limit_factor: incrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -392,9 +391,9 @@ export default function MoveUnitbar({
             </div>
             <div title={"decrease limits"}
                 onClick={() => {
-                    if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
+                    if (move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && move.math.has(activeKey)) {
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -405,6 +404,7 @@ export default function MoveUnitbar({
                             {
                                 ...defaultMoveEquation,
                                 input_id: activeKey,
+                                limit_factor: decrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -416,7 +416,7 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"decrease limits"}
-                    svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
+                    svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
                         cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton

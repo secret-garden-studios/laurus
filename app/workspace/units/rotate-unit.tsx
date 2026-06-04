@@ -5,7 +5,7 @@ import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, updateRotate } from "../workspace.server";
-import { getDynamicUnitSizes } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
 
@@ -26,7 +26,7 @@ export const defaultRotateEquation: LaurusRotateEquation = {
     x: 0,
     y: 0,
     z: 0,
-    limit_factor: 1.0
+    limit_factor: MIN_LIMIT_FACTOR
 }
 
 interface RotateUnit {
@@ -145,7 +145,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            timeUpperLimit * (rotate.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            timeUpperLimit * (rotate.math.get(carouselEntryKey)?.limit_factor ?? defaultRotateEquation.limit_factor));
     const timeTitle = useMemo(() => {
         return rotate.math.has(carouselEntryKey) ? ((rotate.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, rotate.math]);

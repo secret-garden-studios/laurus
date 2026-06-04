@@ -6,7 +6,7 @@ import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/use
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.client";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
@@ -24,7 +24,7 @@ export const defaultScaleEquation: LaurusScaleEquation = {
     scale_y: 1,
     loop: LaurusLoopType.none,
     solution: [],
-    limit_factor: 1.0
+    limit_factor: MIN_LIMIT_FACTOR
 }
 
 interface ScaleUnit {
@@ -147,7 +147,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            timeUpperLimit * (scale.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            timeUpperLimit * (scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor));
     const timeTitle = useMemo(() => {
         return scale.math.has(carouselEntryKey) ? ((scale.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, scale.math]);

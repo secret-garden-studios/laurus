@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
 import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getRotate, LaurusLoopType, updateRotate } from "../../workspace.server";
-import { getDynamicUnitSizes } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
 
 interface RotateUnitbar {
     rotate: LaurusRotateResult,
@@ -161,15 +161,13 @@ export default function RotateUnitbar({
     }, [carouselEntryKey, rotate.math]);
 
     const decrementLimitFactor = useCallback((): number => {
-        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
+        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor ?? defaultRotateEquation.limit_factor;
+        return Math.max(MIN_LIMIT_FACTOR, Math.round((currentFactor - LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, rotate.math]);
 
     const incrementLimitFactor = useCallback((): number => {
-        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
+        const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor ?? defaultRotateEquation.limit_factor;
+        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, rotate.math]);
 
     return <>
@@ -350,7 +348,7 @@ export default function RotateUnitbar({
                 onClick={() => {
                     if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == 1)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && rotate.math.has(activeKey)) {
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -361,6 +359,7 @@ export default function RotateUnitbar({
                             {
                                 ...defaultRotateEquation,
                                 input_id: activeKey,
+                                limit_factor: incrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -382,9 +381,9 @@ export default function RotateUnitbar({
             </div>
             <div title="decrease limits"
                 onClick={() => {
-                    if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
+                    if (rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && rotate.math.has(activeKey)) {
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -395,6 +394,7 @@ export default function RotateUnitbar({
                             {
                                 ...defaultRotateEquation,
                                 input_id: activeKey,
+                                limit_factor: decrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -406,7 +406,7 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="decrease limits"
-                    svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
+                    svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
                         cursor: rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton

@@ -4,7 +4,7 @@ import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, 
 import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
 import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
-import { getDynamicUnitSizes } from "../../workspace.config";
+import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MIN_LIMIT_FACTOR } from "../../workspace.config";
 
 interface ScaleUnitbar {
     scale: LaurusScaleResult,
@@ -150,15 +150,13 @@ export default function ScaleUnitbar({
     }, [carouselEntryKey, scale.math]);
 
     const decrementLimitFactor = useCallback((): number => {
-        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.max(0.1, Math.round((currentFactor - 0.1) * 100) / 100);
+        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
+        return Math.max(MIN_LIMIT_FACTOR, Math.round((currentFactor - LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, scale.math]);
 
     const incrementLimitFactor = useCallback((): number => {
-        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor;
-        if (!currentFactor) return 1;
-        return Math.min(1, Math.round((currentFactor + 0.1) * 100) / 100);
+        const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
+        return Math.min(1, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
     }, [carouselEntryKey, scale.math]);
 
 
@@ -297,7 +295,7 @@ export default function ScaleUnitbar({
                 onClick={() => {
                     if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == 1)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && scale.math.has(activeKey)) {
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -308,6 +306,7 @@ export default function ScaleUnitbar({
                             {
                                 ...defaultScaleEquation,
                                 input_id: activeKey,
+                                limit_factor: incrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -329,9 +328,9 @@ export default function ScaleUnitbar({
             </div>
             <div title={"decrease limits"}
                 onClick={() => {
-                    if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == 0.1)) return;
+                    if (scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
-                    if (activeKey) {
+                    if (activeKey && scale.math.has(activeKey)) {
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
@@ -342,6 +341,7 @@ export default function ScaleUnitbar({
                             {
                                 ...defaultScaleEquation,
                                 input_id: activeKey,
+                                limit_factor: decrementLimitFactor(),
                             };
                         saveNewEquation(snapshot, newEquation);
                     }
@@ -353,7 +353,7 @@ export default function ScaleUnitbar({
                 }}>
                 <SvgRepo
                     title={"decrease limits"}
-                    svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != 0.1 ? remove() : remove("rgb(62, 62, 62)")}
+                    svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
                         cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
@@ -363,7 +363,11 @@ export default function ScaleUnitbar({
             </div>
             <div title={"link width and height"}
                 onClick={() => {
-                    setUnlockAspectRatio(v => !v);
+                    if (scale.locked) return;
+                    const activeKey = carouselEntryKey;
+                    if (activeKey && scale.math.has(activeKey)) {
+                        setUnlockAspectRatio(v => !v);
+                    }
                 }}
                 style={{
                     display: 'grid',

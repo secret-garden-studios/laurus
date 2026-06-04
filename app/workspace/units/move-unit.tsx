@@ -5,7 +5,7 @@ import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes } from "../workspace.config";
+import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
 
@@ -30,7 +30,7 @@ export const defaultMoveEquation: LaurusMoveEquation = {
     frequency: 0,
     wavelength: 0,
     distance: 0,
-    limit_factor: 1.0
+    limit_factor: MIN_LIMIT_FACTOR
 }
 
 interface MoveUnit {
@@ -107,7 +107,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            500 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            500 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const amplitudeTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.amplitude.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -119,7 +119,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            20 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            20 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const frequencyTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.frequency.toFixed(2)) + 'hz' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -131,7 +131,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            1000 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            1000 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const wavelengthTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.wavelength.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -143,7 +143,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            3000 * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            3000 * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const distanceTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? (move.math.get(carouselEntryKey)!.distance.toFixed(2)) + 'px' : undefined;
     }, [carouselEntryKey, move.math]);
@@ -158,7 +158,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const { getInverseTrackValue: getTimeValue, getInverseTrackCursor: getTimeCursor } =
         useTrackpadState(
             dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-            timeUpperLimit * (move.math.get(carouselEntryKey)?.limit_factor ?? 1));
+            timeUpperLimit * (move.math.get(carouselEntryKey)?.limit_factor ?? defaultMoveEquation.limit_factor));
     const timeTitle = useMemo(() => {
         return move.math.has(carouselEntryKey) ? ((move.math.get(carouselEntryKey)!.time / 1000).toFixed(2) + 's') : undefined;
     }, [carouselEntryKey, move.math]);
