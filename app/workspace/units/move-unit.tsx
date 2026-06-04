@@ -515,6 +515,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         textAlign: 'center',
                                         whiteSpace: 'nowrap',
                                         pointerEvents: 'none',
+                                        userSelect: 'none',
                                         ...dynamicSizes.angleTitle
                                     }}>
                                     {angleTitle}

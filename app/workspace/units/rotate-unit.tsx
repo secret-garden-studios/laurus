@@ -466,6 +466,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         textAlign: 'center',
                                         whiteSpace: 'nowrap',
                                         pointerEvents: 'none',
+                                        userSelect: 'none',
                                         ...dynamicSizes.angleTitle
                                     }}>
                                     {angleTitle}
