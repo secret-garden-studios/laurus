@@ -58,7 +58,6 @@ export interface LaurusScale extends Scale_V1_0 {
 export interface LaurusScaleResult extends ScaleResult_V1_0 {
     math: Map<string, LaurusScaleEquation>,
     mixState: LaurusMixState,
-    locked: boolean,
 }
 export type LaurusMoveEquation = MoveEquation_V1_0;
 export interface LaurusMove extends Move_V1_0 {
@@ -67,7 +66,6 @@ export interface LaurusMove extends Move_V1_0 {
 export interface LaurusMoveResult extends MoveResult_V1_0 {
     math: Map<string, LaurusMoveEquation>,
     mixState: LaurusMixState,
-    locked: boolean,
 }
 export type LaurusRotateEquation = RotateEquation_V1_0;
 export interface LaurusRotate extends Rotate_V1_0 {
@@ -76,7 +74,6 @@ export interface LaurusRotate extends Rotate_V1_0 {
 export interface LaurusRotateResult extends RotateResult_V1_0 {
     math: Map<string, LaurusRotateEquation>,
     mixState: LaurusMixState,
-    locked: boolean,
 }
 export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }
