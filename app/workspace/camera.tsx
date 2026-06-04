@@ -59,9 +59,7 @@ export default function DraggableCamera({
     disabled }: DraggableCamera) {
     const { appState } = useContext(WorkspaceContext);
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: { distance: 1, },
-        })
+        useSensor(PointerSensor)
     );
     return (<>
         <DndContext

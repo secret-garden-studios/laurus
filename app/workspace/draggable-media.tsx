@@ -203,6 +203,7 @@ function ProjectImg({
                         ...(transform && { ...transform.cssProps }),
                         position: 'relative',
                         zIndex: Z_INDEX.ITEM_CONTENT,
+                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
                     }} >
                     <LaurusImage
                         onClick={(e) => onClick(e.metaKey)}
@@ -225,7 +226,7 @@ function ProjectImg({
                         fill
                         style={{
                             objectFit: 'cover',
-                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                            cursor: 'inherit',
                             outline: (isStackable && isHovered)
                                 ? '2px solid rgba(255, 255, 255, 0.9)'
                                 : meta.showContextMenu
@@ -334,14 +335,15 @@ function ProjectSvg({
                 style={{
                     ...(transform && { ...transform.cssProps }),
                     position: 'relative',
-                    zIndex: Z_INDEX.ITEM_CONTENT
+                    zIndex: Z_INDEX.ITEM_CONTENT,
+                    cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
                 }}>
                 <div
                     style={{
                         ...containerSize,
                         display: 'grid',
                         placeContent: 'center',
-                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                        cursor: 'inherit',
                         outline: (isStackable && isHovered)
                             ? '2px solid rgba(255, 255, 255, 0.9)'
                             : meta.showContextMenu
@@ -444,9 +446,7 @@ export function DraggableProjectImg({
     }, [appState.project.imgs, appState.project.svgs]);
 
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: { distance: 1, },
-        })
+        useSensor(PointerSensor)
     );
 
     const lazyLoadImgElementsRef = () => {
@@ -725,9 +725,7 @@ export function DraggableProjectSvg({
     }, [appState.project.imgs, appState.project.svgs]);
 
     const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: { distance: 1, },
-        })
+        useSensor(PointerSensor)
     );
 
     const lazyLoadSvgElementsRef = () => {
