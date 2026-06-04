@@ -1,9 +1,9 @@
 import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
+import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
+import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
 import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
-import { defaultScaleEquation } from "../scale-unit";
+import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
 import { getDynamicUnitSizes } from "../../workspace.config";
 
 interface ScaleUnitbar {
@@ -13,6 +13,9 @@ interface ScaleUnitbar {
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     carouselIndex: number,
     unlockAspectRatio: boolean,
+    updateTrackpads: (newControls: ScaleUnitControls) => void,
+    currentControls: ScaleUnitControls,
+    setCurrentControls: Dispatch<SetStateAction<ScaleUnitControls>>,
     saveNewEquation: (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => Promise<void>,
     setUnlockAspectRatio: Dispatch<SetStateAction<boolean>>
 }
@@ -23,6 +26,9 @@ export default function ScaleUnitbar({
     imgElementsRef,
     carouselIndex,
     unlockAspectRatio,
+    updateTrackpads,
+    currentControls,
+    setCurrentControls,
     saveNewEquation,
     setUnlockAspectRatio }: ScaleUnitbar) {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -158,14 +164,14 @@ export default function ScaleUnitbar({
 
     return <>
         <div style={{
-            marginLeft: 'auto',
             background: 'linear-gradient(45deg, rgb(18, 18, 18), rgb(22, 22, 22))',
-            borderLeft: '1px solid rgba(255,255,255,0.025)',
-            borderTopRightRadius: 6,
-            borderBottomRightRadius: 6,
+            borderLeft: '1px solid rgba(255, 255, 255, 0.025)',
             padding: 0,
             display: 'grid',
             alignContent: 'start',
+            overflowY: 'auto',
+            borderTopRightRadius: 6,
+            borderBottomRightRadius: 6,
         }}>
             <div title={"loop"}
                 onDoubleClick={() => {
@@ -374,6 +380,79 @@ export default function ScaleUnitbar({
                     scale={1}
                     scaleToContaier={true} />
             </div>
+            <div title={"copy"}
+                onClick={() => {
+                    let clipboardData: ScaleUnitControls = { ...currentControls };
+                    const activeEquation = scale.math.get(carouselEntryKey);
+                    if (activeEquation) {
+                        clipboardData = { ...activeEquation };
+                    }
+                    const currentEq: LaurusScaleEquation = {
+                        ...clipboardData,
+                        input_id: "clipboard",
+                        loop: defaultScaleEquation.loop,
+                        solution: defaultScaleEquation.solution,
+                        limit_factor: defaultScaleEquation.limit_factor
+                    }
+                    const newMath: Map<string, LaurusScaleEquation> = new Map();
+                    newMath.set("clipboard", currentEq);
+                    const newClipboardEffect: LaurusEffect = {
+                        type: 'scale',
+                        key: scale.scale_id,
+                        value: { ...scale, math: newMath }
+                    };
+                    dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
+                }}
+                style={{
+                    display: 'grid',
+                    placeContent: 'center',
+                    ...dynamicSizes.paramButtonContainer
+                }}>
+                <SvgRepo
+                    title={"copy"}
+                    svg={scale.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
+                    containerStyle={{
+                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
+                        ...dynamicSizes.paramButton
+                    }}
+                    scale={0.8}
+                    scaleToContaier={true} />
+            </div>
+            <div title={"paste"}
+                onClick={() => {
+                    if (appState.effectClipboard && appState.effectClipboard.type == 'scale') {
+                        const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
+                        if (!clipboardEquation) return;
+                        const snapshot: LaurusScaleResult = { ...scale };
+                        const activeKey = carouselEntryKey;
+                        const newEquation: LaurusScaleEquation = { ...clipboardEquation };
+                        const newControls: ScaleUnitControls = { ...newEquation };
+                        setCurrentControls(newControls);
+                        updateTrackpads(newControls);
+                        if (activeKey) {
+                            const newMath: LaurusScaleEquation = {
+                                ...newEquation,
+                                input_id: activeKey
+                            }
+                            saveNewEquation(snapshot, newMath);
+                        }
+                    }
+                }}
+                style={{
+                    display: 'grid',
+                    placeContent: 'center',
+                    ...dynamicSizes.paramButtonContainer
+                }}>
+                <SvgRepo
+                    title={"paste"}
+                    svg={appState.effectClipboard?.type == 'scale' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
+                    containerStyle={{
+                        cursor: scale.math.has(carouselEntryKey) ? 'pointer' : '',
+                        ...dynamicSizes.paramButton
+                    }}
+                    scale={0.9}
+                    scaleToContaier={true} />
+            </div>
             <div title={"clear"}
                 onClick={async () => {
                     if (scale.locked) return;
@@ -385,6 +464,9 @@ export default function ScaleUnitbar({
                         const newMath = new Map(snapshot.math);
                         newMath.delete(activeKey);
                         const newScale: LaurusScaleResult = { ...snapshot, math: newMath };
+                        const defaultControls: ScaleUnitControls = { scale_x: defaultScaleEquation.scale_x, scale_y: defaultScaleEquation.scale_y, time: 0 };
+                        setCurrentControls(defaultControls);
+                        updateTrackpads(defaultControls);
                         dispatch({
                             type: WorkspaceActionType.SetEffect,
                             value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
@@ -410,7 +492,7 @@ export default function ScaleUnitbar({
                         cursor: scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
                     }}
-                    scale={0.75}
+                    scale={0.8}
                     scaleToContaier={true} />
             </div>
         </div>

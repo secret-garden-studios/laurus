@@ -494,7 +494,7 @@ export default function MoveUnitbar({
                         cursor: move.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
                     }}
-                    scale={0.88}
+                    scale={0.9}
                     scaleToContaier={true} />
             </div>
             <div title={"clear"}
@@ -536,7 +536,7 @@ export default function MoveUnitbar({
                         cursor: move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
                     }}
-                    scale={0.75}
+                    scale={0.8}
                     scaleToContaier={true} />
             </div>
         </div>

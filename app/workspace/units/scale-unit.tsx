@@ -11,6 +11,12 @@ import { LaurusProjectResult } from "../../projects/projects.client";
 import { useCarouselIndex } from "../../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
 
+export interface ScaleUnitControls {
+    scale_x: number,
+    scale_y: number,
+    time: number,
+}
+
 export const defaultScaleEquation: LaurusScaleEquation = {
     input_id: "",
     time: 0.000001,
@@ -32,6 +38,11 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, scale.scale_id);
     const [mainControls] = useState(true);
+    const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
+        scale_x: defaultScaleEquation.scale_x,
+        scale_y: defaultScaleEquation.scale_y,
+        time: 0,
+    });
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
         switch (appState.resolution.type) {
@@ -232,50 +243,45 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         }
     }, [setActiveElementIfNull, dispatch, appState.apiOrigin, appState.accessToken]);
 
+    const updateTrackpads = useCallback((newControls: ScaleUnitControls) => {
+        if (scaleXTrackRef.current) {
+            const newScaleXCursor = getScaleXCursor(newControls.scale_x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+            setScaleXCursor({ x: newScaleXCursor, y: 0 });
+        }
+        if (scaleYTrackRef.current) {
+            const newScaleYCursor = getScaleYCursor(newControls.scale_y, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+            setScaleYCursor({ x: newScaleYCursor, y: 0 });
+        }
+        if (timeTrackRef.current) {
+            const newTimeCursor = getTimeCursor(newControls.time, (timeTrackRef.current.clientHeight));
+            setTimeCursor({ y: newTimeCursor, x: 0 });
+        }
+        if (scaleXRef.current) {
+            scaleXRef.current.value = newControls.scale_x >= 10 ? newControls.scale_x.toFixed(2) : newControls.scale_x.toFixed(3);
+        }
+        if (scaleYRef.current) {
+            scaleYRef.current.value = newControls.scale_y >= 10 ? newControls.scale_y.toFixed(2) : newControls.scale_y.toFixed(3);
+        }
+    }, [complexTrackpadOptions, getScaleXCursor, getScaleYCursor, getTimeCursor]);
+
     useLayoutEffect(() => {
         (async () => {
             const activeKey = carouselEntryKey;
             const activeEquation = scale.math.get(activeKey);
-            let scaleXInit = defaultScaleEquation.scale_x;
-            let scaleYInit = defaultScaleEquation.scale_y;
-            let timeInit = defaultScaleEquation.time;
+            const initControls: ScaleUnitControls = { ...currentControls }
             if (activeEquation) {
-                timeInit = activeEquation.time / 1000;
-                scaleXInit = activeEquation.scale_x;
-                scaleYInit = activeEquation.scale_y;
+                initControls.time = activeEquation.time / 1000;
+                initControls.scale_x = activeEquation.scale_x;
+                initControls.scale_y = activeEquation.scale_y;
             }
-            if (scaleXTrackRef.current) {
-                const newScaleXCursor = getScaleXCursor(scaleXInit, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
-                setScaleXCursor({ x: newScaleXCursor, y: 0 });
+            else if (activeKey) {
+                initControls.scale_x = defaultScaleEquation.scale_x;
+                initControls.scale_y = defaultScaleEquation.scale_y;
+                initControls.time = 0;
             }
-            if (scaleYTrackRef.current) {
-                const newScaleYCursor = getScaleYCursor(scaleYInit, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
-                setScaleYCursor({ x: newScaleYCursor, y: 0 });
-            }
-            if (timeTrackRef.current) {
-                const newTimeCursor = getTimeCursor(timeInit, (timeTrackRef.current.clientHeight));
-                setTimeCursor({ y: newTimeCursor, x: 0 });
-            }
-            if (scaleXRef.current) {
-                const activeMath = scale.math.get(activeKey);
-                if (activeMath) {
-                    scaleXRef.current.value = activeMath.scale_x >= 10 ? activeMath.scale_x.toFixed(2) : activeMath.scale_x.toFixed(3);
-                }
-                else {
-                    scaleXRef.current.value = '1.000'
-                }
-            }
-            if (scaleYRef.current) {
-                const activeMath = scale.math.get(activeKey);
-                if (activeMath) {
-                    scaleYRef.current.value = activeMath.scale_y >= 10 ? activeMath.scale_y.toFixed(2) : activeMath.scale_y.toFixed(3);
-                }
-                else {
-                    scaleYRef.current.value = '1.000'
-                }
-            }
+            updateTrackpads(initControls);
         })();
-    }, [carouselEntryKey, complexTrackpadOptions, getScaleXCursor, getScaleYCursor, getTimeCursor, scale.math]);
+    }, [carouselEntryKey, scale.math, updateTrackpads, currentControls]);
 
     return (
         <div style={{
@@ -296,13 +302,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                     {/* parameters */}
                     <div style={{ ...dynamicSizes.param }}>
                         <div style={{
-                            border: '1px solid rgba(255,255,255,0.025)',
+                            border: '1px solid rgba(255, 255, 255, 0.025)',
                             backgroundColor: "rgba(20, 20, 20, 0.25)",
                             boxShadow: '4px 4px 12px rgba(11, 11, 11, 0.5)',
                             borderRadius: 6,
                             padding: 0,
-                            display: 'flex',
-                            height: dynamicSizes.paramButtonContainer.height * 8
+                            display: 'grid',
+                            gridTemplateColumns: 'min-content auto min-content auto min-content',
+                            gridTemplateRows: 'auto',
+                            height: dynamicSizes.paramButtonContainer.height * 7,
                         }}>
                             <div style={{
                                 height: '100%',
@@ -320,6 +328,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         setTimeCursor({ ...newCursor, x: 0 });
                                         if (!timeTrackRef.current) return;
                                         const newTime = getTimeValue(newCursor.y, timeTrackRef.current.clientHeight, 0);
+                                        setCurrentControls(v => { return { ...v, time: newTime } });
                                         const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
@@ -344,6 +353,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     title={timeTitle}
                                     liveTitleRef={timeRef} />
                             </div>
+                            <div />
                             <div
                                 style={{
                                     padding: 0,
@@ -416,14 +426,18 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         setScaleXCursor({ ...newCursor, y: 0 });
                                         if (!scaleXTrackRef.current) return;
                                         const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+                                        const newControls: ScaleUnitControls = { ...currentControls, scale_x: newScaleXValue };
                                         let newScaleYValue: number | undefined = undefined;
                                         if (!unlockAspectRatio) {
                                             const d = getActiveScale();
                                             const r = d[0] / d[1];
                                             const newYCursor = newCursor.x / r;
+                                            const newYValue = newScaleXValue / r;
                                             setScaleYCursor({ x: newYCursor, y: 0 });
-                                            newScaleYValue = newScaleXValue / r;
+                                            newScaleYValue = newYValue;
+                                            newControls.scale_y = newYValue;
                                         }
+                                        setCurrentControls(newControls);
                                         const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
@@ -516,14 +530,18 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         setScaleYCursor({ ...newCursor, y: 0 });
                                         if (!scaleYTrackRef.current) return;
                                         const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+                                        const newControls: ScaleUnitControls = { ...currentControls, scale_y: newScaleYValue };
                                         let newScaleXValue: number | undefined = undefined;
                                         if (!unlockAspectRatio) {
                                             const d = getActiveScale();
                                             const r = d[0] / d[1];
                                             const newXCursor = newCursor.x * r;
+                                            const newXValue = newScaleYValue / r;
                                             setScaleXCursor({ x: newXCursor, y: 0 });
-                                            newScaleXValue = newScaleYValue / r;
+                                            newScaleXValue = newXValue;
+                                            newControls.scale_x = newXValue;
                                         }
+                                        setCurrentControls(newControls);
                                         const activeKey = carouselEntryKey;
                                         if (activeKey) {
                                             const snapshot: LaurusScaleResult = { ...scale };
@@ -551,6 +569,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     disabled={scale.locked}
                                     title={scaleYTitle} />
                             </div>
+                            <div />
                             {/* toolbar */}
                             <ScaleUnitbar
                                 scale={scale}
@@ -559,6 +578,9 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 imgElementsRef={imgElementsRef}
                                 carouselIndex={carouselIndex}
                                 unlockAspectRatio={unlockAspectRatio}
+                                updateTrackpads={updateTrackpads}
+                                currentControls={currentControls}
+                                setCurrentControls={setCurrentControls}
                                 setUnlockAspectRatio={setUnlockAspectRatio}
                                 saveNewEquation={saveNewEquation} />
                         </div>

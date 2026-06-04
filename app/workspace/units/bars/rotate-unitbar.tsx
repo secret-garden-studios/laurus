@@ -484,7 +484,7 @@ export default function RotateUnitbar({
                         cursor: rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
                     }}
-                    scale={0.88}
+                    scale={0.9}
                     scaleToContaier={true} />
             </div>
             <div title="clear"
@@ -526,7 +526,7 @@ export default function RotateUnitbar({
                         cursor: rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : '',
                         ...dynamicSizes.paramButton
                     }}
-                    scale={0.75}
+                    scale={0.8}
                     scaleToContaier={true} />
             </div>
         </div>
