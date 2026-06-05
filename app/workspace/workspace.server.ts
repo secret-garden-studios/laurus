@@ -1,11 +1,16 @@
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
 
-const onNotOk = (status: number) => {
+const onNotOk = (status: number, message?: string) => {
+    const suffix = message ? ` ${message}` : '';
     switch (status) {
-        case 401: { alert(UNAUTHORIZED_EDIT); return; }
-        case 403: { alert(FORBIDDEN_ACTION); return; }
+        case 401: { alert(`${UNAUTHORIZED_EDIT}${suffix}`); return; }
+        case 403: { alert(`${FORBIDDEN_ACTION}${suffix}`); return; }
     }
-}
+};
+
+const getOnNotOkMessage = (action: 'creating' | 'updating' | 'deleting', type: 'scale' | 'move' | 'rotate', description?: string) => {
+    return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
+};
 
 /* /discover */
 
@@ -144,50 +149,6 @@ export async function createImg(
         return undefined;
     }
 }
-export async function updateImg(
-    baseUrl: string | undefined,
-    imgMediaId: string,
-    imgMedia: ImgMedia_V1_0) {
-    try {
-        const body = JSON.stringify(imgMedia);
-        const url = `${baseUrl}/media/img/${imgMediaId}`;
-        const raw_response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body,
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: ImgMediaResult_V1_0 = await raw_response.json();
-        return response;
-    }
-    catch (error) {
-        console.log({ error });
-        return undefined;
-    }
-}
-export async function deleteImg(
-    baseUrl: string | undefined,
-    imgMediaId: string): Promise<boolean> {
-    try {
-        const url = `${baseUrl}/media/img/${imgMediaId}`;
-        const raw_response = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        return raw_response.ok;
-    }
-    catch (error) {
-        console.log({ error });
-        return false;
-    }
-}
 
 export interface SvgMedia_V1_0 {
     media_uri: string
@@ -264,50 +225,6 @@ export async function createSvg(
     } catch (error) {
         console.log({ error });
         return undefined;
-    }
-}
-export async function updateSvg(
-    baseUrl: string | undefined,
-    svgMediaId: string,
-    svgMedia: SvgMedia_V1_0) {
-    try {
-        const body = JSON.stringify(svgMedia);
-        const url = `${baseUrl}/media/svg/${svgMediaId}`;
-        const raw_response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body,
-        });
-        if (!raw_response.ok) {
-            return undefined;
-        }
-        const response: SvgMediaResult_V1_0 = await raw_response.json();
-        return response;
-    }
-    catch (error) {
-        console.log({ error });
-        return undefined;
-    }
-}
-export async function deleteSvg(
-    baseUrl: string | undefined,
-    svgMediaId: string): Promise<boolean> {
-    try {
-        const url = `${baseUrl}/media/svg/${svgMediaId}`;
-        const raw_response = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        return raw_response.ok;
-    }
-    catch (error) {
-        console.log({ error });
-        return false;
     }
 }
 
@@ -482,7 +399,7 @@ export async function createScale(
         }
 
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('creating', 'scale', scale.description));
             return undefined;
         }
 
@@ -518,7 +435,7 @@ export async function updateScale(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('updating', 'scale', scale.description));
             return false;
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -533,7 +450,8 @@ export async function updateScale(
 export async function deleteScale(
     baseUrl: string | undefined,
     accessToken: string | undefined,
-    scaleId: string): Promise<boolean> {
+    scaleId: string,
+    description?: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/scales/${scaleId}`;
         let response: Response | undefined = undefined;
@@ -546,7 +464,7 @@ export async function deleteScale(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('deleting', 'scale', description));
         }
         return response.ok;
     }
@@ -675,7 +593,7 @@ export async function createMove(
         }
 
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('creating', 'move', move.description));
             return undefined;
         }
 
@@ -711,7 +629,7 @@ export async function updateMove(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('updating', 'move', move.description));
             return false;
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -727,7 +645,8 @@ export async function updateMove(
 export async function deleteMove(
     baseUrl: string | undefined,
     accessToken: string | undefined,
-    moveId: string): Promise<boolean> {
+    moveId: string,
+    description?: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/moves/${moveId}`;
         let response: Response | undefined = undefined;
@@ -740,7 +659,7 @@ export async function deleteMove(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('deleting', 'move', description));
         }
         return response.ok;
     }
@@ -867,7 +786,7 @@ export async function createRotate(
         }
 
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('creating', 'rotate', rotate.description));
             return undefined;
         }
 
@@ -903,7 +822,7 @@ export async function updateRotate(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('updating', 'rotate', rotate.description));
             return false;
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -918,7 +837,8 @@ export async function updateRotate(
 export async function deleteRotate(
     baseUrl: string | undefined,
     accessToken: string | undefined,
-    rotateId: string): Promise<boolean> {
+    rotateId: string,
+    description?: string): Promise<boolean> {
     try {
         const url = `${baseUrl}/rotates/${rotateId}`;
         let response: Response | undefined = undefined;
@@ -931,7 +851,7 @@ export async function deleteRotate(
             response = authResponse.response;
         }
         if (!response.ok) {
-            onNotOk(response.status);
+            onNotOk(response.status, getOnNotOkMessage('deleting', 'rotate', description));
         }
         return response.ok;
     }
