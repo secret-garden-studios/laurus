@@ -71,7 +71,7 @@ function calculateDropFrame(
         dropArea.cy,
         dropArea.radius
     );
-    if (tool.type != 'drop') return frame;
+    if (tool.type != 'marquee') return frame;
     if (tool.size.value) {
         const mediaAspectRatio = width / height;
         if (tool.size.width !== undefined && tool.size.height !== undefined) {
@@ -149,7 +149,7 @@ export default function Canvas() {
 
     const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         switch (appState.tool.type) {
-            case 'drop': {
+            case 'marquee': {
                 const canvas = drawingCanvasRef.current;
                 if (!canvas) return;
                 const p = calcMousePosition(canvas, event);
@@ -166,7 +166,7 @@ export default function Canvas() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         switch (appState.tool.type) {
-            case 'drop': {
+            case 'marquee': {
                 const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.beginPath();
@@ -302,7 +302,7 @@ export default function Canvas() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         switch (appState.tool.type) {
-            case 'drop':
+            case 'marquee':
                 {
                     const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
                     if (newRadius < minRadius) break;

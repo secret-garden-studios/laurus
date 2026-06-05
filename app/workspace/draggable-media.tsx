@@ -170,7 +170,7 @@ function ProjectImg({
         return appState.tool.type != 'move';
     }, [appState.tool.type]);
     const isStackable = useMemo(() => {
-        return appState.tool.type === 'drop' && appState.tool.stack
+        return appState.tool.type === 'marquee' && appState.tool.stack
     }, [appState.tool]);
     const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
         useDraggable({
@@ -287,7 +287,7 @@ function ProjectSvg({
         return appState.tool.type != 'move';
     }, [appState.tool.type]);
     const isStackable = useMemo(() => {
-        return appState.tool.type === 'drop' && appState.tool.stack
+        return appState.tool.type === 'marquee' && appState.tool.stack
     }, [appState.tool]);
     const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
         useDraggable({
@@ -584,12 +584,12 @@ export function DraggableProjectImg({
             });
         }
         else {
-            if (appState.tool.type === 'drop' && appState.tool.stack) {
+            if (appState.tool.type === 'marquee' && appState.tool.stack) {
                 onImgStackDrop();
                 return;
             }
             switch (appState.tool.type) {
-                case "drop": { break; }
+                case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
                     const newContextMenuConfig = getNewContextMenuConfig(
@@ -867,12 +867,12 @@ export function DraggableProjectSvg({
             });
         }
         else {
-            if (appState.tool.type === 'drop' && appState.tool.stack) {
+            if (appState.tool.type === 'marquee' && appState.tool.stack) {
                 onSvgStackDrop();
                 return;
             }
             switch (appState.tool.type) {
-                case "drop": { break; }
+                case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
                     const newContextMenuConfig = getNewContextMenuConfig(

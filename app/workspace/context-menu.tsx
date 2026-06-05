@@ -844,7 +844,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                         title="active tool"
                                         svg={(() => {
                                             switch (appState.tool.type) {
-                                                case "drop": return lassoSelect();
+                                                case "marquee": return lassoSelect();
                                                 case "contextmenu": return keyboardCommandKey();
                                                 case "viewport": return browse();
                                                 case "move": return earthquake();

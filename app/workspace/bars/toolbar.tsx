@@ -1,5 +1,5 @@
 import { useCallback, useContext, useState } from "react"
-import { defaultDropTool, WorkspaceActionType, WorkspaceContext } from "../workspace.client"
+import { defaultMarqueeTool, WorkspaceActionType, WorkspaceContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
@@ -71,11 +71,11 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 justifyContent: 'center'
             }}>
             <div
-                data-tooltip-id="drop-tool-tooltip"
+                data-tooltip-id="marquee-tool-tooltip"
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'drop' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: appState.tool.type == 'marquee' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={lassoSelect()}
@@ -86,11 +86,11 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'drop') {
+                        if (appState.tool.type == 'marquee') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: defaultDropTool })
+                            dispatch({ type: WorkspaceActionType.SetTool, value: defaultMarqueeTool })
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
@@ -113,9 +113,9 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
             </div>
             <Tooltip
                 className={dellaRespira.className}
-                id="drop-tool-tooltip"
+                id="marquee-tool-tooltip"
                 delayShow={tooltipDelay}
-                content="drop"
+                content="marquee"
                 style={{
                     backgroundColor: 'rgb(40, 40, 40)',
                     color: 'rgb(227, 227, 227)',
@@ -127,9 +127,9 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 }}
                 render={() => (
                     <div style={{ padding: 4, width: '100%' }}>
-                        <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Drop Tool</h4>
+                        <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Marquee Tool</h4>
                         <p>
-                            Select this tool then click and drag anywhere on the canvas to drop the <strong>browser element</strong> in that area.
+                            Use this tool to select multiple elements at once or to drop the <strong>browser element</strong> into an area on the canvas.
                         </p>
                     </div>
                 )}

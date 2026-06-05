@@ -4,7 +4,7 @@ import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 
-export default function Dropbar() {
+export default function Marqueebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
@@ -140,12 +140,12 @@ export default function Dropbar() {
     const wInputRef = useRef<HTMLInputElement | null>(null);
     const hInputRef = useRef<HTMLInputElement | null>(null);
 
-    const isPositionOn = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.position.value : false; }, [appState.tool]);
-    const isSizeOn = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.size.value : false }, [appState.tool]);
-    const xValue = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.position.x?.toString() ?? "0" : "0" }, [appState.tool]);
-    const yValue = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.position.y?.toString() ?? "0" : "0" }, [appState.tool]);
-    const widthValue = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.size.width?.toString() ?? "0" : "0" }, [appState.tool]);
-    const heightValue = useMemo(() => { return appState.tool.type === 'drop' ? appState.tool.size.height?.toString() ?? "0" : "0" }, [appState.tool]);
+    const isPositionOn = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.value : false; }, [appState.tool]);
+    const isSizeOn = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.value : false }, [appState.tool]);
+    const xValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.x?.toString() ?? "0" : "0" }, [appState.tool]);
+    const yValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.y?.toString() ?? "0" : "0" }, [appState.tool]);
+    const widthValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.width?.toString() ?? "0" : "0" }, [appState.tool]);
+    const heightValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.height?.toString() ?? "0" : "0" }, [appState.tool]);
     const positionInputStyle = useMemo<CSSProperties>(() => {
         return {
             textAlign: "center",
@@ -174,7 +174,7 @@ export default function Dropbar() {
     }, [dynamicSizes.input.input, isSizeOn]);
 
     const updateToolPosition = useCallback(() => {
-        if (appState.tool.type === 'drop') {
+        if (appState.tool.type === 'marquee') {
             const newX = parseFloat(xInputRef.current?.value || "");
             const newY = parseFloat(yInputRef.current?.value || "");
             dispatch({
@@ -192,7 +192,7 @@ export default function Dropbar() {
     }, [appState.tool, dispatch]);
 
     const updateToolSize = useCallback(() => {
-        if (appState.tool.type === 'drop') {
+        if (appState.tool.type === 'marquee') {
             const newWidth: number = parseFloat(wInputRef.current?.value || "");
             const newHeight: number = parseFloat(hInputRef.current?.value || "");
             dispatch({
@@ -245,7 +245,7 @@ export default function Dropbar() {
                     <Toggle
                         value={isPositionOn}
                         onClick={() => {
-                            if (appState.tool.type === 'drop') {
+                            if (appState.tool.type === 'marquee') {
                                 const newPositionValue = !isPositionOn;
                                 const newX = parseFloat(xInputRef.current?.value || "");
                                 const newY = parseFloat(yInputRef.current?.value || "");
@@ -275,7 +275,7 @@ export default function Dropbar() {
                     {'x'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'dropbar'}|input|x`}
+                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|x`}
                     disabled={!isPositionOn}
                     ref={xInputRef}
                     onChange={updateToolPosition}
@@ -293,7 +293,7 @@ export default function Dropbar() {
                     {'y'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'dropbar'}|input|y`}
+                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|y`}
                     disabled={!isPositionOn}
                     ref={yInputRef}
                     onChange={updateToolPosition}
@@ -322,7 +322,7 @@ export default function Dropbar() {
                     <Toggle
                         value={isSizeOn}
                         onClick={() => {
-                            if (appState.tool.type === 'drop') {
+                            if (appState.tool.type === 'marquee') {
                                 const newSizeValue = !isSizeOn;
                                 const newWidth = parseFloat(wInputRef.current?.value || "");
                                 const newHeight = parseFloat(hInputRef.current?.value || "");
@@ -352,7 +352,7 @@ export default function Dropbar() {
                     {'width'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'dropbar'}|input|w`}
+                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|w`}
                     disabled={!isSizeOn}
                     ref={wInputRef}
                     onChange={updateToolSize}
@@ -370,7 +370,7 @@ export default function Dropbar() {
                     {'height'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'dropbar'}|input|h`}
+                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|h`}
                     disabled={!isSizeOn}
                     ref={hInputRef}
                     onChange={updateToolSize}
@@ -387,14 +387,14 @@ export default function Dropbar() {
                 borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
                 ...dynamicSizes.toggle.div
             }}>
-                <span style={{ textShadow: (appState.tool.type === 'drop' && appState.tool.stack) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
+                <span style={{ textShadow: (appState.tool.type === 'marquee' && appState.tool.stack) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                     {'stack'}
                 </span>
                 <Toggle
-                    value={appState.tool.type === 'drop' ? appState.tool.stack : false}
+                    value={appState.tool.type === 'marquee' ? appState.tool.stack : false}
                     onClick={() => {
                         const currentTool = { ...appState.tool };
-                        if (currentTool.type === 'drop') {
+                        if (currentTool.type === 'marquee') {
                             const newStack = !currentTool.stack;
                             const newValue = newStack ? {
                                 ...currentTool,
@@ -430,14 +430,14 @@ export default function Dropbar() {
                 borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
                 ...dynamicSizes.toggle.div
             }}>
-                <span style={{ textShadow: (appState.tool.type === 'drop' && appState.tool.select) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
+                <span style={{ textShadow: (appState.tool.type === 'marquee' && appState.tool.select) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                     {'select'}
                 </span>
                 <Toggle
-                    value={appState.tool.type === 'drop' ? appState.tool.select : false}
+                    value={appState.tool.type === 'marquee' ? appState.tool.select : false}
                     onClick={() => {
                         const currentTool = { ...appState.tool };
-                        if (currentTool.type === 'drop') {
+                        if (currentTool.type === 'marquee') {
                             const newSelect = !currentTool.select;
                             const newValue = newSelect ? {
                                 ...currentTool,

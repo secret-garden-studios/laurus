@@ -84,7 +84,7 @@ export type LaurusThumbnail =
     | { type: 'img', value: LaurusImgResult }
 export type LaurusTool =
     | {
-        type: 'drop',
+        type: 'marquee',
         stack: boolean,
         size: { value: boolean, width: number | undefined, height: number | undefined },
         position: { value: boolean, x: number | undefined, y: number | undefined },
@@ -97,8 +97,8 @@ export type LaurusTool =
     | { type: 'scale' }
     | { type: 'rotate' }
     | { type: 'mix' }
-export const defaultDropTool: LaurusTool = {
-    type: 'drop',
+export const defaultMarqueeTool: LaurusTool = {
+    type: 'marquee',
     stack: false, size: { value: false, width: undefined, height: undefined },
     position: { value: false, x: undefined, y: undefined },
     select: false,
@@ -957,7 +957,10 @@ export default function Workspace({
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: newToolType } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'd') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: defaultDropTool });
+                dispatch({ type: WorkspaceActionType.SetTool, value: defaultMarqueeTool });
+                clearAllContextMenus();
+            } else if (event.key.toLowerCase() === 'x') {
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'mix' } });
                 clearAllContextMenus();
             }
         };
@@ -1322,7 +1325,7 @@ export default function Workspace({
                                 height: appState.project.canvas_height,
                                 zIndex: Z_INDEX.CANVAS_BG,
                             }} />
-                        {appState.tool.type === 'drop' && <div
+                        {appState.tool.type === 'marquee' && <div
                             style={{
                                 position: 'absolute',
                                 top: 0,
@@ -1380,7 +1383,7 @@ export default function Workspace({
                                                     mediaKey={key}
                                                     data={imgData}
                                                     meta={meta}
-                                                    zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                     imgElementsRef={imgElementsRef}
                                                     refKey={refKey} />
                                             </div>
@@ -1411,7 +1414,7 @@ export default function Workspace({
                                                     mediaKey={key}
                                                     decodedString={decodedString}
                                                     meta={meta}
-                                                    zIndex={(appState.tool.type === 'drop' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                     svgElementsRef={svgElementsRef}
                                                     refKey={refKey} />
                                             </div>
