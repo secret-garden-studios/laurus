@@ -164,7 +164,13 @@ export function ParameterSliderY({
             </div>
             {label &&
                 <div className={dmSans.className}
-                    style={{ fontWeight: 'bold', color: 'rgb(220,220,220)', ...dynamicSizes.label }}>
+                    style={{
+                        fontWeight: 'bold',
+                        color: 'rgb(220,220,220)',
+                        pointerEvents: 'none',
+                        textAlign: 'center',
+                        ...dynamicSizes.label
+                    }}>
                     {label}
                 </div>}
         </div>

@@ -381,7 +381,12 @@ interface TimelineAreaContent {
 }
 function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: TimelineAreaContent) {
     const { appState } = useContext(WorkspaceContext);
-    const { setMostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
+    const {
+        setMostRecentlyEnteredEffectUnitKey,
+        setSelectedEffectUnitKeys,
+        selectedEffectUnitKeys,
+        mostRecentlyEnteredEffectUnitKey
+    } = useContext(HoverContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
     const [dynamicSizes] = useState(() => {
@@ -508,19 +513,29 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         minHeight: dynamicSizes.timelineAreaContent.height,
                     }}>
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
+                            const isSelected = selectedEffectUnitKeys.includes(effect.key);
+                            const isHovered = mostRecentlyEnteredEffectUnitKey === effect.key;
                             return <div key={effect.key}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                                    e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.05)';
+                                onClick={(e) => {
+                                    if (e.metaKey) {
+                                        setSelectedEffectUnitKeys((prev) => {
+                                            if (prev.includes(effect.key)) {
+                                                return prev.filter(k => k !== effect.key);
+                                            } else {
+                                                return [...prev, effect.key];
+                                            }
+                                        });
+                                    }
+                                }}
+                                onMouseEnter={() => {
                                     setMostRecentlyEnteredEffectUnitKey(effect.key);
                                 }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.0275)';
-                                    e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0)';
+                                onMouseLeave={() => {
+                                    setMostRecentlyEnteredEffectUnitKey(undefined);
                                 }}
                                 style={{
-                                    border: '1px solid rgba(0, 0, 0, 0)',
-                                    background: 'rgba(255, 255, 255, 0.0275)',
+                                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : isHovered ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(0, 0, 0, 0)',
+                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : isHovered ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.0275)',
                                     display: 'flex',
                                     borderRadius: 0,
                                 }}>

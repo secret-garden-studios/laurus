@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ScaleUnit from "../units/scale-unit";
-import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
 import { updateMove, updateRotate, updateScale } from "../workspace.server";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import MoveUnit from "../units/move-unit";
@@ -17,6 +17,7 @@ interface EffectUnit {
 }
 export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { selectedEffectUnitKeys } = useContext(HoverContext);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
@@ -177,8 +178,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "scale": {
                 const newScale: LaurusScaleResult = {
                     ...effect.value,
-                    ...(newStart != undefined && { start: newStart }),
-                    ...(newEnd != undefined && { end: newEnd })
+                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
+                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
                 }
                 const updated = await updateScale(
                     appState.apiOrigin,
@@ -207,8 +208,8 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             case "move": {
                 const newMove: LaurusMoveResult = {
                     ...effect.value,
-                    ...(newStart != undefined && { start: newStart }),
-                    ...(newEnd != undefined && { end: newEnd })
+                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
+                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
                 }
                 const updated = await updateMove(
                     appState.apiOrigin,
@@ -325,6 +326,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
+                                pointerEvents: 'none',
                                 ...dynamicSizes.input
                             }} />
                     </div>
@@ -351,6 +353,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 height: '100%',
                                 display: 'inline-block',
                                 overflowX: 'scroll',
+                                pointerEvents: 'none',
                                 ...dynamicSizes.input
                             }} />
                     </div>
@@ -368,6 +371,35 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         cursor={startCursor}
                         onNewCursor={async (c) => {
                             const newStart = cursorToTime(c.x);
+                            if (selectedEffectUnitKeys.includes(effect.key)) {
+                                const currentStart = convertTime(effect.value.start, 'sec', appState.timelineUnit);
+                                const delta = newStart - currentStart;
+                                await Promise.all(selectedEffectUnitKeys.map(async (key) => {
+                                    const item = appState.effects.find(e => e.key === key);
+                                    if (item) {
+                                        const iStart = convertTime(item.value.start, 'sec', appState.timelineUnit);
+                                        const iEnd = convertTime(item.value.end, 'sec', appState.timelineUnit);
+                                        const duration = iEnd - iStart;
+                                        let nStart = iStart + delta;
+                                        let nEnd = iEnd + delta;
+                                        if (nStart < 0) {
+                                            nStart = 0;
+                                            nEnd = duration;
+                                        } else if (nEnd > appState.timelineMaxValue) {
+                                            nEnd = appState.timelineMaxValue;
+                                            nStart = Math.max(0, nEnd - duration);
+                                        }
+                                        if (key === effect.key) {
+                                            setStartCursor({ x: timeToCursor(nStart), y: 0 });
+                                            setEndCursor({ x: timeToCursor(nEnd), y: 0 });
+                                            if (startRef.current) startRef.current.value = nStart.toFixed(2);
+                                            if (endRef.current) endRef.current.value = nEnd.toFixed(2);
+                                        }
+                                        await saveEffect(item, item, nStart, nEnd);
+                                    }
+                                }));
+                                return;
+                            }
                             const newEnd = getNewEndTime(c.x);
                             setStartCursor({ ...c });
                             if (newEnd[1] && endRef.current) {
@@ -375,13 +407,42 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 endRef.current.value = newStart.toFixed(2);
                             }
                             const rollback: LaurusEffect = { ...effect };
-                            const newEffect: LaurusEffect = { ...rollback }
+                            const newEffect: LaurusEffect = { ...rollback };
                             await saveEffect(newEffect, rollback, newStart, newEnd[0]);
                         }}
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
-                            const newStart = getNewStartTime(c.x);
                             const newEnd = cursorToTime(c.x);
+                            if (selectedEffectUnitKeys.includes(effect.key)) {
+                                const currentEnd = convertTime(effect.value.end, 'sec', appState.timelineUnit);
+                                const delta = newEnd - currentEnd;
+                                await Promise.all(selectedEffectUnitKeys.map(async (key) => {
+                                    const item = appState.effects.find(e => e.key === key);
+                                    if (item) {
+                                        const iStart = convertTime(item.value.start, 'sec', appState.timelineUnit);
+                                        const iEnd = convertTime(item.value.end, 'sec', appState.timelineUnit);
+                                        const duration = iEnd - iStart;
+                                        let nStart = iStart + delta;
+                                        let nEnd = iEnd + delta;
+                                        if (nStart < 0) {
+                                            nStart = 0;
+                                            nEnd = duration;
+                                        } else if (nEnd > appState.timelineMaxValue) {
+                                            nEnd = appState.timelineMaxValue;
+                                            nStart = Math.max(0, nEnd - duration);
+                                        }
+                                        if (key === effect.key) {
+                                            setStartCursor({ x: timeToCursor(nStart), y: 0 });
+                                            setEndCursor({ x: timeToCursor(nEnd), y: 0 });
+                                            if (startRef.current) startRef.current.value = nStart.toFixed(2);
+                                            if (endRef.current) endRef.current.value = nEnd.toFixed(2);
+                                        }
+                                        await saveEffect(item, item, nStart, nEnd);
+                                    }
+                                }));
+                                return;
+                            }
+                            const newStart = getNewStartTime(c.x);
                             setEndCursor({ ...c });
                             if (newStart[1] && startRef.current) {
                                 setStartCursor({ ...startCursor, x: c.x });

@@ -499,7 +499,6 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
             return { ...state, timelineUnit: action.value }
         }
         case WorkspaceActionType.SetTimelineMaxValue: {
-
             return { ...state, timelineMaxValue: action.value }
         }
         case WorkspaceActionType.SetRecordingLight: {
@@ -542,6 +541,8 @@ export interface HoverContextProps {
     mostRecentlyEnteredCanvasItemKey: string | undefined;
     setMostRecentlyEnteredCanvasItemKey: (key: string | undefined) => void;
     isMetaKeyPressed: boolean;
+    selectedEffectUnitKeys: string[];
+    setSelectedEffectUnitKeys: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -550,6 +551,8 @@ export const HoverContext = createContext<HoverContextProps>({
     mostRecentlyEnteredCanvasItemKey: undefined,
     setMostRecentlyEnteredCanvasItemKey: () => { },
     isMetaKeyPressed: false,
+    selectedEffectUnitKeys: [],
+    setSelectedEffectUnitKeys: () => { },
 });
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
@@ -820,6 +823,7 @@ export default function Workspace({
         }, initReducer);
     const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
     const [mostRecentlyEnteredCanvasItemKey, setMostRecentlyEnteredCanvasItemKey] = useState<string | undefined>(undefined);
+    const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<string[]>([]);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [mediabarHeight] = useState(() => {
         switch (resolutionInit.type) {
@@ -914,6 +918,7 @@ export default function Workspace({
                 });
             };
             if (event.key === 'Escape') {
+                setSelectedEffectUnitKeys([]);
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
                     const [key, svgMeta] = pendingSvgs[i];
@@ -948,7 +953,7 @@ export default function Workspace({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch]);
+    }, [appState.project.imgs, appState.project.svgs, appState.tool.type, dispatch, setSelectedEffectUnitKeys]);
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
@@ -1184,7 +1189,9 @@ export default function Workspace({
         mostRecentlyEnteredCanvasItemKey,
         setMostRecentlyEnteredCanvasItemKey,
         isMetaKeyPressed,
-    }), [mostRecentlyEnteredEffectUnitKey, mostRecentlyEnteredCanvasItemKey, isMetaKeyPressed]);
+        selectedEffectUnitKeys,
+        setSelectedEffectUnitKeys,
+    }), [mostRecentlyEnteredEffectUnitKey, mostRecentlyEnteredCanvasItemKey, isMetaKeyPressed, selectedEffectUnitKeys]);
 
     const workspaceContextValue = useMemo(() => ({
         appState,
