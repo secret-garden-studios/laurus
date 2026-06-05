@@ -385,7 +385,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         setMostRecentlyEnteredEffectUnitKey,
         setSelectedEffectUnitKeys,
         selectedEffectUnitKeys,
-        mostRecentlyEnteredEffectUnitKey
+        mostRecentlyEnteredEffectUnitKey,
+        isMetaKeyPressed
     } = useContext(HoverContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
     const layerNameRef = useRef<HTMLInputElement | null>(null);
@@ -538,6 +539,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                     background: isSelected ? 'rgba(255, 255, 255, 0.08)' : isHovered ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.0275)',
                                     display: 'flex',
                                     borderRadius: 0,
+                                    cursor: isMetaKeyPressed ? 'crosshair' : 'default',
                                 }}>
                                 <div style={{
                                     height: '100%',

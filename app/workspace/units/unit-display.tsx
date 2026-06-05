@@ -1,6 +1,6 @@
 import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
-import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
@@ -13,6 +13,7 @@ interface UnitDisplay {
 }
 export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
 
     const setActiveElement = useCallback((newCarouselIndex: number) => {
@@ -85,10 +86,12 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         svg={appState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
                         containerStyle={{
                             width: 30,
-                            height: 30
+                            height: 30,
+                            cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                         }}
                         scale={1}
                         onContainerClick={() => {
+                            if (isMetaKeyPressed) return;
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             const newLocalIndex = Math.max(localIndex - 1, 0);
                             onNewLocalIndex(newLocalIndex);
@@ -118,6 +121,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                         <div
                                             key={c.key}
                                             onClick={() => {
+                                                if (isMetaKeyPressed) return;
                                                 setActiveElement(i);
                                                 const inactives = appState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
@@ -126,7 +130,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                             }}
                                             style={{
                                                 position: 'relative',
-                                                cursor: 'pointer',
+                                                cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                                                 ...dynamicSizes.displayImg
                                             }}>
                                             <LaurusImage
@@ -150,8 +154,9 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                         <SvgRepo
                                             key={c.key}
                                             svg={canvasSvg}
-                                            containerStyle={{ ...dynamicSizes.displaySvg }}
+                                            containerStyle={{ ...dynamicSizes.displaySvg, cursor: isMetaKeyPressed ? 'crosshair' : 'pointer' }}
                                             onContainerClick={() => {
+                                                if (isMetaKeyPressed) return;
                                                 setActiveElement(i);
                                                 const inactives = appState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
@@ -173,10 +178,12 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         svg={appState.carouselEntries.length == 0 || carouselIndex >= appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
                         containerStyle={{
                             width: 30,
-                            height: 30
+                            height: 30,
+                            cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                         }}
                         scale={1}
                         onContainerClick={() => {
+                            if (isMetaKeyPressed) return;
                             const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             const newLocalIndex = Math.min(localIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
                             onNewLocalIndex(newLocalIndex);

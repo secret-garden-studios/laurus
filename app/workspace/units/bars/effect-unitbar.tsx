@@ -1,6 +1,6 @@
 import { SvgRepo, allOut, circle, earthquake, experiment, lock, lockOpenRight, toysFan, tune } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../../workspace.client";
+import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../../workspace.client";
 import { deleteMove, deleteRotate, deleteScale } from "../../workspace.server";
 import styles from "@/app/app.module.css";
 
@@ -22,6 +22,7 @@ export default function EffectUnitbar({
     setRotateCarouselIndex,
     setScaleCarouselIndex }: EffectUnitbar) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
@@ -93,13 +94,18 @@ export default function EffectUnitbar({
                 })()}
                 scale={0.6}
                 scaleToContaier={true}
-                containerStyle={{ width: dynamicSizes.toolbar.width, height: dynamicSizes.toolbar.width }} />
+                containerStyle={{
+                    width: dynamicSizes.toolbar.width,
+                    height: dynamicSizes.toolbar.width,
+                    cursor: isMetaKeyPressed ? 'crosshair' : 'default'
+                }} />
             <SvgRepo
                 title={"parameters"}
                 svg={tune()}
                 scale={0.65}
                 scaleToContaier={true}
                 onContainerClick={() => {
+                    if (isMetaKeyPressed) return;
                     const closed = !showUnitControls;
                     if (closed) {
                         if (!appState.activeElement) {
@@ -146,7 +152,7 @@ export default function EffectUnitbar({
                     }
                 }}
                 containerStyle={{
-                    cursor: 'pointer',
+                    cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                     width: dynamicSizes.toolbar.width,
                     height: dynamicSizes.toolbar.width,
                     background: showUnitControls ? 'rgba(255,255,255,0.075)' : 'none',
@@ -179,9 +185,10 @@ export default function EffectUnitbar({
                             height: dynamicSizes.toolbar.width,
                             background: effect.value.mixState === LaurusMixState.Selected ? 'rgba(255, 255, 255, 0.075)' : 'none',
                             border: '1px solid rgba(0,0,0,0)',
-                            cursor: effect.value.mixState === LaurusMixState.Waiting || effect.value.mixState === LaurusMixState.Selected ? 'pointer' : ''
+                            cursor: isMetaKeyPressed ? 'crosshair' : (effect.value.mixState === LaurusMixState.Waiting || effect.value.mixState === LaurusMixState.Selected ? 'pointer' : '')
                         }}
                             onClick={() => {
+                                if (isMetaKeyPressed) return;
                                 const newEffects: LaurusEffect[] = appState.effects.map(e => {
                                     if (e.key !== effect.key) return e;
                                     const currentMixUiState = e.value.mixState;
@@ -210,6 +217,7 @@ export default function EffectUnitbar({
                 scale={0.6}
                 scaleToContaier={true}
                 onContainerClick={async () => {
+                    if (isMetaKeyPressed) return;
                     const rollback: LaurusEffect = { ...effect };
                     let newEffect: LaurusEffect;
                     switch (effect.type) {
@@ -228,6 +236,7 @@ export default function EffectUnitbar({
                 containerStyle={{
                     width: dynamicSizes.toolbar.width,
                     height: dynamicSizes.toolbar.width,
+                    cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                     background: 'none',
                     border: '1px solid rgba(0,0,0,0)',
                     transition: 'border-left 0.25s ease-out'
@@ -238,6 +247,7 @@ export default function EffectUnitbar({
                 scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={async () => {
+                    if (isMetaKeyPressed) return;
                     const rollback: LaurusEffect = { ...effect };
                     let newEffect: LaurusEffect;
                     switch (effect.type) {
@@ -256,6 +266,7 @@ export default function EffectUnitbar({
                 containerStyle={{
                     width: dynamicSizes.toolbar.width,
                     height: dynamicSizes.toolbar.width,
+                    cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                     background: 'none',
                     border: '1px solid rgba(0,0,0,0)',
                     transition: 'border-left 0.25s ease-out'
@@ -267,13 +278,14 @@ export default function EffectUnitbar({
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
+                        if (isMetaKeyPressed) return;
                         const confirmed = confirm('are you sure you want to delete this effect?');
                         if (confirmed) {
                             deleteEffect(effect);
                         }
                     }}
                     containerStyle={{
-                        cursor: 'pointer',
+                        cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
                         width: dynamicSizes.toolbar.width,
                         height: dynamicSizes.toolbar.width,
                         background: 'none',
