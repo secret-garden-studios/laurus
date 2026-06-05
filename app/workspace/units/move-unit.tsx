@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusActiveElement, convertTime } from "../workspace.client";
+import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusActiveElement, convertTime, HoverContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server";
 import Dial from "../../components/dial";
@@ -41,6 +41,7 @@ interface MoveUnit {
 }
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, move.move_id);
     const [mainControls] = useState(true);
@@ -336,7 +337,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             const val = getAmplitudeValue(c.y, amplitudeTrackRef.current.clientHeight, 0);
                                             amplitudeRef.current.innerHTML = val.toFixed(2) + 'px';
                                         }}
-                                        disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                         title={amplitudeTitle}
                                         liveTitleRef={amplitudeRef} />
                                     <ParameterSliderY
@@ -370,7 +371,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             const val = getFrequencyValue(c.y, frequencyTrackRef.current.clientHeight);
                                             frequencyRef.current.innerHTML = val.toFixed(2) + 'hz';
                                         }}
-                                        disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                         title={frequencyTitle}
                                         liveTitleRef={frequencyRef} />
                                     {(shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse) && <ParameterSliderY
@@ -404,7 +405,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
                                             wavelengthRef.current.innerHTML = val.toFixed(2) + 'px';
                                         }}
-                                        disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                         title={wavelengthTitle}
                                         liveTitleRef={wavelengthRef} />}
                                     {shapeType != LaurusShapeType.circle && <ParameterSliderY
@@ -438,7 +439,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
                                             distanceRef.current.innerHTML = val.toFixed(2) + 'px';
                                         }}
-                                        disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                         title={distanceTitle}
                                         liveTitleRef={distanceRef} />}
                                     <ParameterSliderY
@@ -473,7 +474,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                             timeRef.current.innerHTML = val.toFixed(2) + 's';
                                         }}
-                                        disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                         title={timeTitle}
                                         liveTitleRef={timeRef} />
                                 </div>
@@ -543,7 +544,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                    disabled={move.locked}
+                                        disabled={move.locked || isMetaKeyPressed}
                                     size={{
                                         container: 90,
                                         gauge: 90,

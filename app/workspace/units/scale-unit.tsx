@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
 import { dellaRespira, dmSans } from "../../fonts";
 import { updateScale, LaurusLoopType } from "../workspace.server";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
@@ -35,6 +35,7 @@ interface ScaleUnit {
 }
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, scale.scale_id);
     const [mainControls] = useState(true);
@@ -348,7 +349,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                         const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                         timeRef.current.innerHTML = val.toFixed(2) + 's';
                                     }}
-                                    disabled={scale.locked}
+                                    disabled={scale.locked || isMetaKeyPressed}
                                     title={timeTitle}
                                     liveTitleRef={timeRef} />
                             </div>
@@ -461,7 +462,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             }
                                         }
                                     }}
-                                    disabled={scale.locked}
+                                    disabled={scale.locked || isMetaKeyPressed}
                                     title={scaleXTitle} />
                                 <div style={{ display: 'flex', marginTop: dynamicSizes.scaleParamDisplay.marginTop, gap: dynamicSizes.scaleParamDisplay.flexGap }}>
                                     <div className={dmSans.className}
@@ -565,7 +566,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                             }
                                         }
                                     }}
-                                    disabled={scale.locked}
+                                    disabled={scale.locked || isMetaKeyPressed}
                                     title={scaleYTitle} />
                             </div>
                             <div />

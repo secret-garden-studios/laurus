@@ -17,7 +17,7 @@ interface EffectUnit {
 }
 export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const { selectedEffectUnitKeys } = useContext(HoverContext);
+    const { selectedEffectUnitKeys, isMetaKeyPressed } = useContext(HoverContext);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
@@ -438,7 +438,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             const newValue = cursorToTime(c.x);
                             endRef.current.value = newValue.toFixed(2);
                         }}
-                        disabled={effect.value.locked}
+                        disabled={effect.value.locked || isMetaKeyPressed}
                         isSelected={selectedEffectUnitKeys.includes(effect.key)}
                         startTitle={startTitle}
                         endTitle={endTitle} />

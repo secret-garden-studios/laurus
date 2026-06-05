@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime } from "../workspace.client";
+import { WorkspaceActionType, WorkspaceContext, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime, HoverContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
@@ -37,6 +37,7 @@ interface RotateUnit {
 }
 export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, carouselIndexInit }: RotateUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, rotate.rotate_id);
     const [mainControls] = useState(true);
@@ -320,7 +321,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const val = getXValue(c.y, xTrackRef.current.clientHeight, 0);
                                             xRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked}
+                                        disabled={rotate.locked || isMetaKeyPressed}
                                         title={xTitle}
                                         liveTitleRef={xRef} />
                                     <ParameterSliderY
@@ -354,7 +355,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const val = getYValue(c.y, yTrackRef.current.clientHeight, 0);
                                             yRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked}
+                                        disabled={rotate.locked || isMetaKeyPressed}
                                         title={yTitle}
                                         liveTitleRef={yRef} />
                                     <ParameterSliderY
@@ -388,7 +389,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const val = getZValue(c.y, zTrackRef.current.clientHeight, 0);
                                             zRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked}
+                                        disabled={rotate.locked || isMetaKeyPressed}
                                         title={zTitle}
                                         liveTitleRef={zRef} />
                                     <ParameterSliderY
@@ -423,7 +424,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                             timeRef.current.innerHTML = val.toFixed(2) + 's';
                                         }}
-                                        disabled={rotate.locked}
+                                        disabled={rotate.locked || isMetaKeyPressed}
                                         title={timeTitle}
                                         liveTitleRef={timeRef} />
                                 </div>
@@ -498,7 +499,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                    disabled={rotate.locked}
+                                    disabled={rotate.locked || isMetaKeyPressed}
                                     size={{
                                         container: 90,
                                         gauge: 90,
