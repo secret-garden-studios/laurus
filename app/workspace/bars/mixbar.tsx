@@ -273,7 +273,7 @@ export default function Mixbar() {
                                             switch (e.type) {
                                                 case "move": return { ...e, value: { ...e.value, mixState: newMixState, mix: newMix } } as LaurusEffect;
                                                 case "rotate": return { ...e, value: { ...e.value, mixState: newMixState, mix: newMix } } as LaurusEffect;
-                                                case "scale": return { ...e, value: { ...e.value, mixState: newMixState }, mix: newMix } as LaurusEffect;
+                                                case "scale": return { ...e, value: { ...e.value, mixState: newMixState, mix: newMix } } as LaurusEffect;
                                             }
                                         }
                                         return e;
@@ -305,6 +305,12 @@ export default function Mixbar() {
                                     if (updateCount > 0) {
                                         dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
                                     }
+                                    else {
+                                        dispatch({ type: WorkspaceActionType.SetEffects, value: prevEffects });
+                                    }
+                                } catch (error) {
+                                    console.error("Failed to save mix", error);
+                                    dispatch({ type: WorkspaceActionType.SetEffects, value: prevEffects });
                                 } finally {
                                     setSelectedEffectType("");
                                     setIsSaving(false);
