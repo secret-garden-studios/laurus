@@ -11,7 +11,7 @@ interface EffectUnitbar {
     setMoveCarouselIndex: Dispatch<SetStateAction<number>>,
     setRotateCarouselIndex: Dispatch<SetStateAction<number>>,
     setScaleCarouselIndex: Dispatch<SetStateAction<number>>,
-    saveEffect: (effect: LaurusEffect, rollback: LaurusEffect, newStart?: number, newEnd?: number) => Promise<void>,
+    saveEffect: (effect: LaurusEffect, rollback: LaurusEffect) => Promise<void>,
 }
 export default function EffectUnitbar({
     effect,

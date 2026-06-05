@@ -173,121 +173,65 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
             [cursorToTime(startCursor.x), false];
     }, [cursorToTime, startCursor.x]);
 
-    const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect, newStart?: number, newEnd?: number) => {
+    const updateTrackpads = useCallback(() => {
+        const convertedStart = convertTime(effect.value.start, 'sec', appState.timelineUnit);
+        const convertedEnd = convertTime(effect.value.end, 'sec', appState.timelineUnit);
+        const clampedStart = Math.min(appState.timelineMaxValue, Math.max(0, convertedStart));
+        const clampedEnd = Math.min(appState.timelineMaxValue, Math.max(0, convertedEnd));
+        const newStartCursor = timeToCursor(clampedStart);
+        const newEndCursor = timeToCursor(clampedEnd);
+        setStartCursor({ x: newStartCursor, y: 0 });
+        setEndCursor({ x: newEndCursor, y: 0 });
+        if (startRef.current) {
+            startRef.current.value = clampedStart.toFixed(2);
+        }
+        if (endRef.current) {
+            endRef.current.value = clampedEnd.toFixed(2);
+        }
+    }, [appState.timelineMaxValue, appState.timelineUnit, effect.value.end, effect.value.start, timeToCursor]);
+
+    const saveEffect = useCallback(async (effect: LaurusEffect, rollback: LaurusEffect) => {
+        let updated: boolean = false;
         switch (effect.type) {
             case "scale": {
-                const newScale: LaurusScaleResult = {
-                    ...effect.value,
-                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
-                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
-                }
-                const updated = await updateScale(
+                updated = await updateScale(
                     appState.apiOrigin,
                     appState.accessToken,
                     effect.key,
-                    newScale);
-                if (updated) {
-                    const newEffect: LaurusEffect = {
-                        type: 'scale',
-                        key: effect.key,
-                        value: { ...newScale }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
-                else {
-                    const rollbackScaleResult = rollback.value as LaurusScaleResult;
-                    const newEffect: LaurusEffect = {
-                        type: 'scale',
-                        key: rollback.key,
-                        value: { ...rollbackScaleResult }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
+                    effect.value as LaurusScaleResult);
                 break;
             }
             case "move": {
-                const newMove: LaurusMoveResult = {
-                    ...effect.value,
-                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
-                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
-                }
-                const updated = await updateMove(
+                updated = await updateMove(
                     appState.apiOrigin,
                     appState.accessToken,
                     effect.key,
-                    newMove);
-                if (updated) {
-                    const newEffect: LaurusEffect = {
-                        type: 'move',
-                        key: effect.key,
-                        value: { ...newMove }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
-                else {
-                    const rollbackMoveResult = rollback.value as LaurusMoveResult;
-                    const newEffect: LaurusEffect = {
-                        type: 'move',
-                        key: rollback.key,
-                        value: { ...rollbackMoveResult }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
+                    effect.value as LaurusMoveResult);
                 break;
             }
             case "rotate": {
-                const newRotate: LaurusRotateResult = {
-                    ...effect.value,
-                    ...(newStart != undefined && { start: convertTime(newStart, appState.timelineUnit, 'sec') }),
-                    ...(newEnd != undefined && { end: convertTime(newEnd, appState.timelineUnit, 'sec') })
-                }
-
-                const updated = await updateRotate(
+                updated = await updateRotate(
                     appState.apiOrigin,
                     appState.accessToken,
                     effect.key,
-                    newRotate);
-                if (updated) {
-                    const newEffect: LaurusEffect = {
-                        type: 'rotate',
-                        key: effect.key,
-                        value: { ...newRotate }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
-                else {
-                    const rollbackRotateResult = rollback.value as LaurusRotateResult;
-                    const newEffect: LaurusEffect = {
-                        type: 'rotate',
-                        key: rollback.key,
-                        value: { ...rollbackRotateResult }
-                    };
-                    dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
-                }
+                    effect.value as LaurusRotateResult);
                 break;
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.timelineUnit, dispatch]);
+        if (updated) {
+            dispatch({ type: WorkspaceActionType.SetEffect, value: effect });
+        }
+        else {
+            updateTrackpads();
+            dispatch({ type: WorkspaceActionType.SetEffect, value: rollback });
+        }
+    }, [appState.accessToken, appState.apiOrigin, dispatch, updateTrackpads]);
 
     useLayoutEffect(() => {
-        (async () => {
-            const convertedStart = convertTime(effect.value.start, 'sec', appState.timelineUnit);
-            const convertedEnd = convertTime(effect.value.end, 'sec', appState.timelineUnit);
-            const clampedStart = Math.min(appState.timelineMaxValue, Math.max(0, convertedStart));
-            const clampedEnd = Math.min(appState.timelineMaxValue, Math.max(0, convertedEnd));
-            const newStartCursor = timeToCursor(clampedStart);
-            const newEndCursor = timeToCursor(clampedEnd);
-            setStartCursor({ x: newStartCursor, y: 0 });
-            setEndCursor({ x: newEndCursor, y: 0 });
-            if (startRef.current) {
-                startRef.current.value = clampedStart.toFixed(2);
-            }
-            if (endRef.current) {
-                endRef.current.value = clampedEnd.toFixed(2);
-            }
+        (() => {
+            updateTrackpads();
         })();
-
-    }, [appState.timelineMaxValue, appState.timelineUnit, cursorToTime, effect.value, timeToCursor]);
+    }, [updateTrackpads]);
 
     const startTitle = useMemo(() => {
         return convertTime(effect.value.start, "sec", appState.timelineUnit).toPrecision(7);
@@ -395,7 +339,16 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                             if (startRef.current) startRef.current.value = nStart.toFixed(2);
                                             if (endRef.current) endRef.current.value = nEnd.toFixed(2);
                                         }
-                                        await saveEffect(item, item, nStart, nEnd);
+                                        const rollback: LaurusEffect = { ...item };
+                                        const updatedEffect: LaurusEffect = {
+                                            ...rollback,
+                                            value: {
+                                                ...rollback.value,
+                                                start: convertTime(nStart, appState.timelineUnit, 'sec'),
+                                                end: convertTime(nEnd, appState.timelineUnit, 'sec')
+                                            }
+                                        } as LaurusEffect;
+                                        await saveEffect(updatedEffect, rollback);
                                     }
                                 }));
                                 return;
@@ -407,8 +360,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 endRef.current.value = newStart.toFixed(2);
                             }
                             const rollback: LaurusEffect = { ...effect };
-                            const newEffect: LaurusEffect = { ...rollback };
-                            await saveEffect(newEffect, rollback, newStart, newEnd[0]);
+                            const updatedEffect: LaurusEffect = {
+                                ...rollback,
+                                value: {
+                                    ...rollback.value,
+                                    start: convertTime(newStart, appState.timelineUnit, 'sec'),
+                                    end: convertTime(newEnd[0], appState.timelineUnit, 'sec'),
+                                }
+                            } as LaurusEffect;
+                            await saveEffect(updatedEffect, rollback);
                         }}
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
@@ -437,7 +397,16 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                             if (startRef.current) startRef.current.value = nStart.toFixed(2);
                                             if (endRef.current) endRef.current.value = nEnd.toFixed(2);
                                         }
-                                        await saveEffect(item, item, nStart, nEnd);
+                                        const rollback: LaurusEffect = { ...item };
+                                        const updatedEffect: LaurusEffect = {
+                                            ...rollback,
+                                            value: {
+                                                ...rollback.value,
+                                                start: convertTime(nStart, appState.timelineUnit, 'sec'),
+                                                end: convertTime(nEnd, appState.timelineUnit, 'sec')
+                                            }
+                                        } as LaurusEffect;
+                                        await saveEffect(updatedEffect, rollback);
                                     }
                                 }));
                                 return;
@@ -449,8 +418,15 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                                 startRef.current.value = newEnd.toFixed(2);
                             }
                             const rollback: LaurusEffect = { ...effect };
-                            const newEffect: LaurusEffect = { ...rollback };
-                            await saveEffect(newEffect, rollback, newStart[0], newEnd);
+                            const updatedEffect: LaurusEffect = {
+                                ...rollback,
+                                value: {
+                                    ...rollback.value,
+                                    start: convertTime(newStart[0], appState.timelineUnit, 'sec'),
+                                    end: convertTime(newEnd, appState.timelineUnit, 'sec'),
+                                }
+                            } as LaurusEffect;
+                            await saveEffect(updatedEffect, rollback);
                         }}
                         onCursorMove={(c) => {
                             if (!startRef.current || effect.value.locked) return;
