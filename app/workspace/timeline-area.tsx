@@ -385,7 +385,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         setMostRecentlyEnteredEffectUnitKey,
         setSelectedEffectUnitKeys,
         selectedEffectUnitKeys,
-        mostRecentlyEnteredEffectUnitKey,
         isMetaKeyPressed
     } = useContext(HoverContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
@@ -515,7 +514,6 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     }}>
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
                             const isSelected = selectedEffectUnitKeys.includes(effect.key);
-                            const isHovered = mostRecentlyEnteredEffectUnitKey === effect.key;
                             return <div key={effect.key}
                                 onClick={(e) => {
                                     if (e.metaKey) {
@@ -528,15 +526,18 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                                         });
                                     }
                                 }}
-                                onMouseEnter={() => {
+                                onMouseEnter={(e) => {
                                     setMostRecentlyEnteredEffectUnitKey(effect.key);
+                                    e.currentTarget.style.background = isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.05)';
+                                    e.currentTarget.style.border = isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(255, 255, 255, 0.05)';
                                 }}
-                                onMouseLeave={() => {
-                                    setMostRecentlyEnteredEffectUnitKey(undefined);
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.0275)';
+                                    e.currentTarget.style.border = isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(0, 0, 0, 0)';
                                 }}
                                 style={{
-                                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : isHovered ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(0, 0, 0, 0)',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : isHovered ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.0275)',
+                                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(0, 0, 0, 0)',
+                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.0275)',
                                     display: 'flex',
                                     borderRadius: 0,
                                     cursor: isMetaKeyPressed ? 'crosshair' : 'default',

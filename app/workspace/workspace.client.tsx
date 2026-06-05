@@ -538,8 +538,6 @@ export interface WorkspaceContextProps {
 export interface HoverContextProps {
     mostRecentlyEnteredEffectUnitKey: string | undefined;
     setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
-    mostRecentlyEnteredCanvasItemKey: string | undefined;
-    setMostRecentlyEnteredCanvasItemKey: (key: string | undefined) => void;
     isMetaKeyPressed: boolean;
     selectedEffectUnitKeys: string[];
     setSelectedEffectUnitKeys: React.Dispatch<React.SetStateAction<string[]>>;
@@ -548,8 +546,6 @@ export interface HoverContextProps {
 export const HoverContext = createContext<HoverContextProps>({
     mostRecentlyEnteredEffectUnitKey: undefined,
     setMostRecentlyEnteredEffectUnitKey: () => { },
-    mostRecentlyEnteredCanvasItemKey: undefined,
-    setMostRecentlyEnteredCanvasItemKey: () => { },
     isMetaKeyPressed: false,
     selectedEffectUnitKeys: [],
     setSelectedEffectUnitKeys: () => { },
@@ -822,7 +818,6 @@ export default function Workspace({
             arg9: mixableEffectsInit,
         }, initReducer);
     const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
-    const [mostRecentlyEnteredCanvasItemKey, setMostRecentlyEnteredCanvasItemKey] = useState<string | undefined>(undefined);
     const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<string[]>([]);
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [mediabarHeight] = useState(() => {
@@ -1186,12 +1181,10 @@ export default function Workspace({
     const hoverContextValue = useMemo(() => ({
         mostRecentlyEnteredEffectUnitKey,
         setMostRecentlyEnteredEffectUnitKey,
-        mostRecentlyEnteredCanvasItemKey,
-        setMostRecentlyEnteredCanvasItemKey,
         isMetaKeyPressed,
         selectedEffectUnitKeys,
         setSelectedEffectUnitKeys,
-    }), [mostRecentlyEnteredEffectUnitKey, mostRecentlyEnteredCanvasItemKey, isMetaKeyPressed, selectedEffectUnitKeys]);
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys]);
 
     const workspaceContextValue = useMemo(() => ({
         appState,
