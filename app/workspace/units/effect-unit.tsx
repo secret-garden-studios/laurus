@@ -439,6 +439,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             endRef.current.value = newValue.toFixed(2);
                         }}
                         disabled={effect.value.locked}
+                        isSelected={selectedEffectUnitKeys.includes(effect.key)}
                         startTitle={startTitle}
                         endTitle={endTitle} />
                 </div>

@@ -21,7 +21,8 @@ interface TimelineSlider {
     onRangeMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
     startTitle?: string,
-    endTitle?: string
+    endTitle?: string,
+    isSelected?: boolean
 }
 export default function TimelineSlider({
     size,
@@ -36,7 +37,8 @@ export default function TimelineSlider({
     onRangeMove,
     disabled,
     startTitle,
-    endTitle
+    endTitle,
+    isSelected
 }: TimelineSlider) {
     const { getTrackValue } = useTrackpadState(0, 100);
 
@@ -51,9 +53,11 @@ export default function TimelineSlider({
     const [rangeValue, setRangeValue] = useState(0);
 
     useEffect(() => {
-        (async () => {
-            setStartValue(cursorToValue(cursor.x))
-            setRangeValue(cursorToValue(rangeCursor.x));
+        (() => {
+            const newStartValue = cursorToValue(cursor.x);
+            const newRangeValue = cursorToValue(rangeCursor.x);
+            setStartValue(newStartValue);
+            setRangeValue(newRangeValue);
         })();
     }, [cursor.x, cursorToValue, rangeCursor.x]);
 
@@ -89,6 +93,8 @@ export default function TimelineSlider({
                         onNewValue={onNewCursor}
                         onMove={(c) => {
                             const newStartValue = cursorToValue(c.x);
+                            const goingUp: boolean = newStartValue > startValue;
+                            if (isSelected && rangeValue == 100 && goingUp) return;
                             setStartValue(newStartValue);
                             if (onCursorMove) { onCursorMove(c) }
                         }}
@@ -119,6 +125,8 @@ export default function TimelineSlider({
                         onNewValue={onNewRangeCursor}
                         onMove={(c) => {
                             const newRangeValue = cursorToValue(c.x);
+                            const goingDown: boolean = newRangeValue < rangeValue;
+                            if (isSelected && startValue == 0 && goingDown) return;
                             setRangeValue(newRangeValue);
                             if (onRangeMove) { onRangeMove(c) }
                         }}
