@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext } from "./workspace.client";
+import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext, defaultDropTool } from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
@@ -280,12 +280,7 @@ export default function MediaBrowser({
                             dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: created, first: true });
                             dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...created } } });
                             const currentTool = { ...appState.tool };
-                            const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
-                                type: 'drop',
-                                stack: false,
-                                size: { value: false, width: undefined, height: undefined },
-                                position: { value: false, x: undefined, y: undefined }
-                            };
+                            const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : defaultDropTool;
                             dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
                             if (++actualSvgUploads == expectedSvgUploads) {
                                 setUploading(false);
@@ -308,12 +303,7 @@ export default function MediaBrowser({
                         dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...created }, first: true });
                         dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...created } } });
                         const currentTool = { ...appState.tool };
-                        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
-                            type: 'drop',
-                            stack: false,
-                            size: { value: false, width: undefined, height: undefined },
-                            position: { value: false, x: undefined, y: undefined }
-                        };
+                        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : defaultDropTool;
                         dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
                         if (++actualImgUploads == expectedImgUploads) {
                             setUploading(false);
@@ -354,12 +344,7 @@ export default function MediaBrowser({
     const onMediaClick = useCallback((selectedMedia: LaurusThumbnail) => {
         dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...selectedMedia } });
         const currentTool = { ...appState.tool };
-        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : {
-            type: 'drop',
-            stack: false,
-            size: { value: false, width: undefined, height: undefined },
-            position: { value: false, x: undefined, y: undefined }
-        };
+        const newTool: LaurusTool = currentTool.type == 'drop' ? currentTool : defaultDropTool;
         dispatch({
             type: WorkspaceActionType.SetTool,
             value: newTool,

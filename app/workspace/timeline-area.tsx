@@ -513,16 +513,15 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         minHeight: dynamicSizes.timelineAreaContent.height,
                     }}>
                         {appState.effects.sort((a, b) => a.value.order - b.value.order).map((effect, i) => {
-                            const isSelected = selectedEffectUnitKeys.includes(effect.key);
+                            const isSelected = selectedEffectUnitKeys.has(effect.key);
                             return <div key={effect.key}
                                 onClick={(e) => {
                                     if (e.metaKey) {
                                         setSelectedEffectUnitKeys((prev) => {
-                                            if (prev.includes(effect.key)) {
-                                                return prev.filter(k => k !== effect.key);
-                                            } else {
-                                                return [...prev, effect.key];
-                                            }
+                                            const next = new Set(prev);
+                                            if (next.has(effect.key)) next.delete(effect.key);
+                                            else next.add(effect.key);
+                                            return next;
                                         });
                                     }
                                 }}

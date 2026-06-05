@@ -1,5 +1,5 @@
 import { useCallback, useContext, useState } from "react"
-import { WorkspaceActionType, WorkspaceContext } from "../workspace.client"
+import { defaultDropTool, WorkspaceActionType, WorkspaceContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
@@ -90,7 +90,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', stack: false, size: { value: false, width: undefined, height: undefined }, position: { value: false, x: undefined, y: undefined } } })
+                            dispatch({ type: WorkspaceActionType.SetTool, value: defaultDropTool })
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());

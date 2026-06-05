@@ -315,10 +315,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         cursor={startCursor}
                         onNewCursor={async (c) => {
                             const newStart = cursorToTime(c.x);
-                            if (selectedEffectUnitKeys.includes(effect.key)) {
+                            if (selectedEffectUnitKeys.has(effect.key)) {
                                 const currentStart = convertTime(effect.value.start, 'sec', appState.timelineUnit);
                                 const delta = newStart - currentStart;
-                                await Promise.all(selectedEffectUnitKeys.map(async (key) => {
+                                await Promise.all(Array.from(selectedEffectUnitKeys).map(async (key) => {
                                     const item = appState.effects.find(e => e.key === key);
                                     if (item) {
                                         const iStart = convertTime(item.value.start, 'sec', appState.timelineUnit);
@@ -373,10 +373,10 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                         rangeCursor={endCursor}
                         onNewRangeCursor={async (c) => {
                             const newEnd = cursorToTime(c.x);
-                            if (selectedEffectUnitKeys.includes(effect.key)) {
+                            if (selectedEffectUnitKeys.has(effect.key)) {
                                 const currentEnd = convertTime(effect.value.end, 'sec', appState.timelineUnit);
                                 const delta = newEnd - currentEnd;
-                                await Promise.all(selectedEffectUnitKeys.map(async (key) => {
+                                await Promise.all(Array.from(selectedEffectUnitKeys).map(async (key) => {
                                     const item = appState.effects.find(e => e.key === key);
                                     if (item) {
                                         const iStart = convertTime(item.value.start, 'sec', appState.timelineUnit);
@@ -439,7 +439,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                             endRef.current.value = newValue.toFixed(2);
                         }}
                         disabled={effect.value.locked || isMetaKeyPressed}
-                        isSelected={selectedEffectUnitKeys.includes(effect.key)}
+                        isSelected={selectedEffectUnitKeys.has(effect.key)}
                         startTitle={startTitle}
                         endTitle={endTitle} />
                 </div>

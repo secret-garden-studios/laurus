@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool, HoverContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
@@ -126,6 +126,7 @@ function isBadFrame(
 export default function Canvas() {
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
     const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
     const [minRadius] = useState(10);
 
@@ -304,12 +305,40 @@ export default function Canvas() {
             case 'drop':
                 {
                     const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
-                    if (newRadius < minRadius || !appState.browserElement) break;
+                    if (newRadius < minRadius) break;
+
                     const dropArea: ProjectCircle = {
                         cx: anchor.x,
                         cy: anchor.y,
                         radius: newRadius,
                     };
+
+                    if (appState.tool.select) {
+                        const foundImgKeys = new Set<string>();
+                        const foundSvgKeys = new Set<string>();
+                        const isInside = (meta: LaurusProjectImg | LaurusProjectSvg) => {
+                            const centerX = meta.left + (meta.width * meta.scale_x / 2);
+                            const centerY = meta.top + (meta.height * meta.scale_y / 2);
+                            const dx = centerX - dropArea.cx;
+                            const dy = centerY - dropArea.cy;
+                            return (dx * dx + dy * dy) <= (dropArea.radius * dropArea.radius);
+                        };
+
+                        appState.project.imgs.forEach((meta, key) => {
+                            if (isInside(meta)) foundImgKeys.add(key);
+                        });
+
+                        appState.project.svgs.forEach((meta, key) => {
+                            if (isInside(meta)) foundSvgKeys.add(key);
+                        });
+
+                        setSelectedImgKeys(foundImgKeys);
+                        setSelectedSvgKeys(foundSvgKeys);
+                        break;
+                    }
+
+                    if (!appState.browserElement) break;
+
                     switch (appState.browserElement.type) {
                         case "svg": {
                             const key = appState.browserElement.value.media_key;
@@ -333,7 +362,7 @@ export default function Canvas() {
         }
         setAnchor(undefined);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }, [anchor, appState.browserElement, appState.browserImgs, appState.browserSvgs, appState.tool.type, handleImgDrop, handleSvgDrop, minRadius]);
+    }, [anchor, appState.browserElement, appState.browserImgs, appState.browserSvgs, appState.project.imgs, appState.project.svgs, appState.tool, handleImgDrop, handleSvgDrop, minRadius, setSelectedImgKeys, setSelectedSvgKeys]);
 
     return (<>
         <div style={{

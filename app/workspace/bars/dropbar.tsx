@@ -19,7 +19,7 @@ export default function Dropbar() {
                 toggle: {
                     div: {
                         paddingLeft: 20,
-                        paddingRight: 4,
+                        paddingRight: 20,
                         gap: 12,
                         fontSize: 13,
                     },
@@ -36,7 +36,8 @@ export default function Dropbar() {
                 },
                 input: {
                     container: {
-                        gap: 10
+                        gap: 10,
+                        paddingRight: 20
                     },
                     label: {
                         fontSize: 12
@@ -59,7 +60,7 @@ export default function Dropbar() {
                 toggle: {
                     div: {
                         paddingLeft: 14,
-                        paddingRight: 4,
+                        paddingRight: 14,
                         gap: 8,
                         fontSize: 12,
                     },
@@ -76,7 +77,8 @@ export default function Dropbar() {
                 },
                 input: {
                     container: {
-                        gap: 10
+                        gap: 10,
+                        paddingRight: 14,
                     },
                     label: {
                         fontSize: 11
@@ -100,7 +102,7 @@ export default function Dropbar() {
                 toggle: {
                     div: {
                         paddingLeft: 16,
-                        paddingRight: 2,
+                        paddingRight: 16,
                         gap: 12,
                         fontSize: 12,
                     },
@@ -117,7 +119,8 @@ export default function Dropbar() {
                 },
                 input: {
                     container: {
-                        gap: 10
+                        gap: 10,
+                        paddingRight: 16,
                     },
                     label: {
                         fontSize: 11
@@ -255,7 +258,7 @@ export default function Dropbar() {
                                             x: newPositionValue && !isNaN(newX) ? newX : undefined,
                                             y: newPositionValue && !isNaN(newY) ? newY : undefined
                                         },
-                                        ...(newPositionValue && { stack: false }),
+                                        ...(newPositionValue && { stack: false, select: false}),
                                     },
                                 });
                             }
@@ -332,7 +335,7 @@ export default function Dropbar() {
                                             width: newSizeValue && !isNaN(newWidth) ? newWidth : undefined,
                                             height: newSizeValue && !isNaN(newHeight) ? newHeight : undefined
                                         },
-                                        ...(newSizeValue && { stack: false }),
+                                        ...(newSizeValue && { stack: false, select: false}),
                                     }
                                 });
                             }
@@ -396,6 +399,7 @@ export default function Dropbar() {
                             const newValue = newStack ? {
                                 ...currentTool,
                                 stack: newStack,
+                                select: false,
                                 position: {
                                     value: false,
                                     x: undefined,
@@ -409,6 +413,49 @@ export default function Dropbar() {
                             } : {
                                 ...currentTool,
                                 stack: newStack
+                            };
+                            dispatch({
+                                type: WorkspaceActionType.SetTool,
+                                value: newValue
+                            });
+                        }
+                    }}
+                    trackStyles={{ ...dynamicSizes.toggle.track }}
+                    buttonStyles={{ ...dynamicSizes.toggle.button }} />
+            </div>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                height: '100%',
+                borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                ...dynamicSizes.toggle.div
+            }}>
+                <span style={{ textShadow: (appState.tool.type === 'drop' && appState.tool.select) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
+                    {'select'}
+                </span>
+                <Toggle
+                    value={appState.tool.type === 'drop' ? appState.tool.select : false}
+                    onClick={() => {
+                        const currentTool = { ...appState.tool };
+                        if (currentTool.type === 'drop') {
+                            const newSelect = !currentTool.select;
+                            const newValue = newSelect ? {
+                                ...currentTool,
+                                select: newSelect,
+                                stack: false,
+                                position: {
+                                    value: false,
+                                    x: undefined,
+                                    y: undefined
+                                },
+                                size: {
+                                    value: false,
+                                    width: undefined,
+                                    height: undefined
+                                }
+                            } : {
+                                ...currentTool,
+                                select: newSelect
                             };
                             dispatch({
                                 type: WorkspaceActionType.SetTool,

@@ -87,7 +87,8 @@ export type LaurusTool =
         type: 'drop',
         stack: boolean,
         size: { value: boolean, width: number | undefined, height: number | undefined },
-        position: { value: boolean, x: number | undefined, y: number | undefined }
+        position: { value: boolean, x: number | undefined, y: number | undefined },
+        select: boolean,
     }
     | { type: 'none' }
     | { type: 'contextmenu' }
@@ -96,6 +97,12 @@ export type LaurusTool =
     | { type: 'scale' }
     | { type: 'rotate' }
     | { type: 'mix' }
+export const defaultDropTool: LaurusTool = {
+    type: 'drop',
+    stack: false, size: { value: false, width: undefined, height: undefined },
+    position: { value: false, x: undefined, y: undefined },
+    select: false,
+}
 export type LaurusBrowserElement = LaurusThumbnail
 export type LaurusActiveElement = { key: string, type: 'svg' | 'img', locallyActivatedEffectKey?: string }
 export enum AbsolutePosition {
@@ -539,16 +546,24 @@ export interface HoverContextProps {
     mostRecentlyEnteredEffectUnitKey: string | undefined;
     setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
     isMetaKeyPressed: boolean;
-    selectedEffectUnitKeys: string[];
-    setSelectedEffectUnitKeys: React.Dispatch<React.SetStateAction<string[]>>;
+    selectedEffectUnitKeys: Set<string>;
+    setSelectedEffectUnitKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+    selectedImgKeys: Set<string>;
+    setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+    selectedSvgKeys: Set<string>;
+    setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
     mostRecentlyEnteredEffectUnitKey: undefined,
     setMostRecentlyEnteredEffectUnitKey: () => { },
     isMetaKeyPressed: false,
-    selectedEffectUnitKeys: [],
+    selectedEffectUnitKeys: new Set<string>(),
     setSelectedEffectUnitKeys: () => { },
+    selectedImgKeys: new Set<string>(),
+    setSelectedImgKeys: () => { },
+    selectedSvgKeys: new Set<string>(),
+    setSelectedSvgKeys: () => { },
 });
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
@@ -818,7 +833,9 @@ export default function Workspace({
             arg9: mixableEffectsInit,
         }, initReducer);
     const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
-    const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<string[]>([]);
+    const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
+    const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
+    const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
     const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [mediabarHeight] = useState(() => {
         switch (resolutionInit.type) {
@@ -913,7 +930,7 @@ export default function Workspace({
                 });
             };
             if (event.key === 'Escape') {
-                setSelectedEffectUnitKeys([]);
+                setSelectedEffectUnitKeys(new Set<string>());
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
                     const [key, svgMeta] = pendingSvgs[i];
@@ -940,7 +957,7 @@ export default function Workspace({
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: newToolType } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'd') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'drop', stack: false, size: { value: false, width: undefined, height: undefined }, position: { value: false, x: undefined, y: undefined } } });
+                dispatch({ type: WorkspaceActionType.SetTool, value: defaultDropTool });
                 clearAllContextMenus();
             }
         };
@@ -1184,7 +1201,11 @@ export default function Workspace({
         isMetaKeyPressed,
         selectedEffectUnitKeys,
         setSelectedEffectUnitKeys,
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys]);
+        selectedImgKeys,
+        setSelectedImgKeys,
+        selectedSvgKeys,
+        setSelectedSvgKeys,
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys]);
 
     const workspaceContextValue = useMemo(() => ({
         appState,
