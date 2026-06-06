@@ -149,7 +149,7 @@ export function ProjectbarLevel2() {
                 container: {
                     height: 50,
                     fontSize: 14,
-                    padding: '0px 0px 0px 10px',
+                    padding: '0px 18px',
                     letterSpacing: 0,
                 },
             }
@@ -157,7 +157,7 @@ export function ProjectbarLevel2() {
                 container: {
                     height: 40,
                     fontSize: 11,
-                    padding: '0px 0px 0px 10px',
+                    padding: '0px 13px 0px 10px',
                     letterSpacing: 0,
                 },
             }
@@ -166,7 +166,7 @@ export function ProjectbarLevel2() {
                 container: {
                     height: 38,
                     fontSize: 11,
-                    padding: '0px 0px 0px 10px',
+                    padding: '0px 13px 0px 10px',
                     letterSpacing: 0,
                 },
             }

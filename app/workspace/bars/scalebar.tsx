@@ -3,8 +3,9 @@ import { useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
 import { LaurusProjectResult } from "@/app/projects/projects.client";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { SCALE_MAX } from "../workspace.config";
 
 export default function Scalebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -14,7 +15,7 @@ export default function Scalebar() {
             case "high": return {
                 paramSize: {
                     containerHeight: 38,
-                    containerWidth: 250,
+                    containerWidth: '100%',
                     capWidth: 17,
                     capHeight: 17,
                     capBorderOffset: 2,
@@ -42,7 +43,7 @@ export default function Scalebar() {
                     capWidth: 13,
                     capHeight: 13,
                     capBorderOffset: 0,
-                    containerWidth: 170,
+                    containerWidth: '100%',
                     containerHeight: 36,
                     trackHeight: 1,
                     tickHeight: 20,
@@ -69,7 +70,7 @@ export default function Scalebar() {
                     capWidth: 13,
                     capHeight: 13,
                     capBorderOffset: 0,
-                    containerWidth: 170,
+                    containerWidth: '100%',
                     containerHeight: 36,
                     trackHeight: 1,
                     tickHeight: 20,
@@ -92,7 +93,7 @@ export default function Scalebar() {
             }
         }
     });
-    const [maxScale, setMaxScale] = useState(1);
+    const [maxScale, setMaxScale] = useState(SCALE_MAX);
     const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
@@ -200,27 +201,54 @@ export default function Scalebar() {
         }
     }, [appState.activeElement, appState.project]);
 
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const [sliderColumnSize, setSliderColumnSize] = useState(0);
+    useLayoutEffect(() => {
+        (() => {
+            if (containerRef.current && sliderColumnSize <= 0) {
+                const newSize = containerRef.current.clientWidth / 2;
+                setSliderColumnSize(newSize);
+            }
+        })();
+    }, [sliderColumnSize]);
+
     useEffect(() => {
-        (async () => {
+        (() => {
             const scaleInit = getActiveScale();
-            if (scaleXTrackRef.current) {
+            if (scaleXTrackRef.current && scaleXTrackRef.current.clientWidth > 0) {
                 const newScaleCursor = getScaleXCursor(scaleInit[0], scaleXTrackRef.current.clientWidth);
                 setScaleXCursor({ x: newScaleCursor, y: 0 });
             }
-            if (scaleYTrackRef.current) {
+            else if (sliderColumnSize > 0) {
+                const newScaleCursor = getScaleXCursor(scaleInit[0], sliderColumnSize);
+                setScaleXCursor({ x: newScaleCursor, y: 0 });
+            }
+            else {
+                setScaleXCursor({ x: 0, y: 0 });
+            }
+
+            if (scaleYTrackRef.current && scaleYTrackRef.current.clientWidth > 0) {
                 const newScaleYCursor = getScaleYCursor(scaleInit[1], scaleYTrackRef.current.clientWidth);
                 setScaleYCursor({ x: newScaleYCursor, y: 0 });
             }
+            else if (sliderColumnSize > 0) {
+                const newScaleYCursor = getScaleYCursor(scaleInit[1], sliderColumnSize);
+                setScaleYCursor({ x: newScaleYCursor, y: 0 });
+            }
+            else {
+                setScaleYCursor({ x: 0, y: 0 });
+            }
+
             if (widthRef.current && heightRef.current) {
                 const dimensions = getActiveDimensions(scaleInit);
                 widthRef.current.value = (dimensions[0]).toFixed(0);
                 heightRef.current.value = (dimensions[1]).toFixed(0);
             }
         })();
-    }, [appState.tool.type, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor]);
+    }, [appState.tool.type, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize]);
 
     useEffect(() => {
-        (async () => {
+        (() => {
             const dimensions = getActiveDimensions([1, 1]);
             if (dimensions[0] > 0 && dimensions[1] > 0) {
                 const quarterCanvas = 1500;
@@ -231,12 +259,12 @@ export default function Scalebar() {
     }, [getActiveDimensions]);
 
     return <>
-        <div style={
+        <div ref={containerRef} style={
             {
                 width: '100%',
                 display: 'grid',
                 gridTemplateRows: 'auto',
-                gridTemplateColumns: 'min-content min-content min-content min-content min-content auto',
+                gridTemplateColumns: `min-content ${sliderColumnSize}px min-content ${sliderColumnSize}px min-content`,
                 alignItems: 'center',
                 height: '100%',
                 overflowX: 'auto',
@@ -372,7 +400,6 @@ export default function Scalebar() {
                     }}
                 />
             </div>
-            <div />
         </div>
     </>
 }
