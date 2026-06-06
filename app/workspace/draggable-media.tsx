@@ -204,7 +204,7 @@ function ProjectImg({
                         ...(transform && { ...transform.cssProps }),
                         position: 'relative',
                         zIndex: Z_INDEX.ITEM_CONTENT,
-                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
                     }} >
                     <LaurusImage
                         onClick={(e) => onClick(e.metaKey)}
@@ -337,7 +337,7 @@ function ProjectSvg({
                     ...(transform && { ...transform.cssProps }),
                     position: 'relative',
                     zIndex: Z_INDEX.ITEM_CONTENT,
-                    cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                    cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move') ? 'context-menu' : isStackable ? 'crosshair' : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
                 }}>
                 <div
                     style={{

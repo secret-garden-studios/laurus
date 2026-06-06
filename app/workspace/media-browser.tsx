@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusThumbnail, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext, defaultMarqueeTool } from "./workspace.client";
+import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext, defaultMarqueeTool } from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
@@ -341,16 +341,6 @@ export default function MediaBrowser({
         }
     }, [onNextPage]);
 
-    const onMediaClick = useCallback((selectedMedia: LaurusThumbnail) => {
-        dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { ...selectedMedia } });
-        const currentTool = { ...appState.tool };
-        const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
-        dispatch({
-            type: WorkspaceActionType.SetTool,
-            value: newTool,
-        })
-    }, [appState.tool, dispatch]);
-
     const onImgDiscoverToggle = useCallback(async () => {
         let newProjectIdAck = "";
         const newBrowsePublicImgs = !appState.project.browse_public_imgs;
@@ -637,7 +627,7 @@ export default function MediaBrowser({
                                                 displayHeight={display.displayHeight}>
                                                 <LaurusImage
                                                     onClick={(e) => {
-                                                        if (e.metaKey && appState.tool.type !== 'viewport') {
+                                                        if (e.metaKey) {
                                                             let newShowContextMenu = false;
                                                             const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != img.img_media_id);
                                                             if (thisIsNotSelected && showContextMenu) {
@@ -647,11 +637,17 @@ export default function MediaBrowser({
                                                                 newShowContextMenu = !showContextMenu;
                                                             }
                                                             setShowContextMenu(newShowContextMenu);
-                                                            onMediaClick({ value: { ...img }, type: 'img' });
+                                                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
                                                         }
                                                         else {
                                                             if (showContextMenu) setShowContextMenu(false);
-                                                            onMediaClick({ value: { ...img }, type: 'img' });
+                                                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
+                                                            const currentTool = { ...appState.tool };
+                                                            const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
+                                                            dispatch({
+                                                                type: WorkspaceActionType.SetTool,
+                                                                value: newTool,
+                                                            });
                                                         }
                                                     }}
                                                     draggable={false}
@@ -663,7 +659,7 @@ export default function MediaBrowser({
                                                         display: 'block',
                                                         objectFit: display.isSquareish ? 'cover' : 'unset',
                                                         borderRadius: 10,
-                                                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
+                                                        cursor: (isMetaKeyPressed) ? 'context-menu' : 'pointer',
                                                     }} />
                                             </ScrollableImageContainer>}
                                         {(showContextMenu && browserElementMediaId == img.img_media_id) &&
@@ -724,7 +720,7 @@ export default function MediaBrowser({
                                     }} >
                                         <div className={styles['transparent-checkerboard-background']}
                                             onClick={(e) => {
-                                                if (e.metaKey && appState.tool.type !== 'viewport') {
+                                                if (e.metaKey) {
                                                     let newShowContextMenu = false;
                                                     const thisIsNotSelected = !browserElementMediaId || (browserElementMediaId && browserElementMediaId != svg.svg_media_id);
                                                     if (thisIsNotSelected && showContextMenu) {
@@ -734,11 +730,17 @@ export default function MediaBrowser({
                                                         newShowContextMenu = !showContextMenu;
                                                     }
                                                     setShowContextMenu(newShowContextMenu);
-                                                    onMediaClick({ value: { ...svg }, type: 'svg' });
+                                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
                                                 }
                                                 else {
                                                     if (showContextMenu) setShowContextMenu(false);
-                                                    onMediaClick({ value: { ...svg }, type: 'svg' });
+                                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
+                                                    const currentTool = { ...appState.tool };
+                                                    const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
+                                                    dispatch({
+                                                        type: WorkspaceActionType.SetTool,
+                                                        value: newTool,
+                                                    });
                                                 }
                                             }}
                                             style={{
@@ -750,7 +752,7 @@ export default function MediaBrowser({
                                                 borderRadius: 10,
                                                 boxShadow: '5px 5px 12px rgba(11, 11, 11, 0.6)',
                                                 border: '1px solid rgba(255,255,255,0.05)',
-                                                cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'pointer',
+                                                cursor: isMetaKeyPressed ? 'context-menu' : 'pointer',
                                             }}>
                                             <svg
                                                 version="1.1"

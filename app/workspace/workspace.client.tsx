@@ -946,7 +946,8 @@ export default function Workspace({
                     dispatch({ type: WorkspaceActionType.SetProjectImg, key, value: newImg });
                 }
             } else if (event.key.toLowerCase() === 'm') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'move' } });
+                const newToolType = appState.tool.type === 'move' ? 'none' : 'move';
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: newToolType } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'r') {
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
