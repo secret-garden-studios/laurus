@@ -407,6 +407,7 @@ export function DraggableProjectImg({
     imgElementsRef,
     refKey }: DraggableProjectImg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
         switch (appState.tool.type) {
@@ -471,37 +472,45 @@ export function DraggableProjectImg({
     };
 
     const onNewImgPosition = useCallback(async (deltaX: number, deltaY: number) => {
-        let newLeft = Math.min(appState.project.canvas_width - meta.width, Math.max(0, Math.round(meta.left + deltaX)));
-        let newTop = Math.min(appState.project.canvas_height - meta.height, Math.max(0, Math.round(meta.top + deltaY)));
-
-        const yMaxActual = newTop + meta.height + transformedBounds.deltas.bottom;
-        const xMaxActual = newLeft + meta.width + transformedBounds.deltas.right;
-        const yMinActual = newTop + transformedBounds.deltas.top;
-        const xMinActual = newLeft + transformedBounds.deltas.left;
-        if (yMaxActual > appState.project.canvas_height) {
-            newTop -= (yMaxActual - appState.project.canvas_height);
-        }
-        if (xMaxActual > appState.project.canvas_width) {
-            newLeft -= (xMaxActual - appState.project.canvas_width);
-        }
-        if (yMinActual < 0) {
-            newTop += Math.abs(yMinActual);
-        }
-        if (xMinActual < 0) {
-            newLeft += Math.abs(xMinActual);
-        }
-
-        const newContextMenuConfig = getNewContextMenuConfig(
-            { left: newLeft, top: newTop },
-            { width: appState.project.canvas_width, height: appState.project.canvas_height },
-            { ...meta },
-            { x: meta.scale_x, y: meta.scale_y },
-            meta.contextMenuConfig);
-        const newImg: LaurusProjectImg = { ...meta, left: newLeft, top: newTop, contextMenuConfig: newContextMenuConfig };
-        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        newImgs.set(mediaKey, newImg);
         const rollback: LaurusProjectResult = { ...appState.project };
-        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs };
+        const newImgs = new Map(appState.project.imgs);
+        const newSvgs = new Map(appState.project.svgs);
+        const updateItem = (itemKey: string, itemType: 'img' | 'svg') => {
+            const itemMeta = itemType === 'img' ? newImgs.get(itemKey) : newSvgs.get(itemKey);
+            if (!itemMeta) return;
+            const bounds = calculateTransformedBounds(itemMeta);
+            let newLeft = Math.min(appState.project.canvas_width - itemMeta.width, Math.max(0, Math.round(itemMeta.left + deltaX)));
+            let newTop = Math.min(appState.project.canvas_height - itemMeta.height, Math.max(0, Math.round(itemMeta.top + deltaY)));
+            const yMaxActual = newTop + itemMeta.height + bounds.deltas.bottom;
+            const xMaxActual = newLeft + itemMeta.width + bounds.deltas.right;
+            const yMinActual = newTop + bounds.deltas.top;
+            const xMinActual = newLeft + bounds.deltas.left;
+            if (yMaxActual > appState.project.canvas_height) newTop -= (yMaxActual - appState.project.canvas_height);
+            if (xMaxActual > appState.project.canvas_width) newLeft -= (xMaxActual - appState.project.canvas_width);
+            if (yMinActual < 0) newTop += Math.abs(yMinActual);
+            if (xMinActual < 0) newLeft += Math.abs(xMinActual);
+            const nContextMenuConfig = getNewContextMenuConfig(
+                { left: newLeft, top: newTop },
+                { width: appState.project.canvas_width, height: appState.project.canvas_height },
+                { ...itemMeta },
+                { x: itemMeta.scale_x, y: itemMeta.scale_y },
+                itemMeta.contextMenuConfig);
+            if (itemType === 'img') {
+                newImgs.set(itemKey, { ...itemMeta as LaurusProjectImg, left: newLeft, top: newTop, contextMenuConfig: nContextMenuConfig });
+            } else {
+                newSvgs.set(itemKey, { ...itemMeta as LaurusProjectSvg, left: newLeft, top: newTop, contextMenuConfig: nContextMenuConfig });
+            }
+        };
+
+        updateItem(mediaKey, 'img');
+        selectedImgKeys.forEach(key => {
+            if (key !== mediaKey) updateItem(key, 'img');
+        });
+        selectedSvgKeys.forEach(key => {
+            updateItem(key, 'svg');
+        });
+
+        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs };
         dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
         if (newProject.project_id) {
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
@@ -509,7 +518,7 @@ export function DraggableProjectImg({
                 dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, transformedBounds.deltas, dispatch, mediaKey, meta]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, mediaKey, selectedImgKeys, selectedSvgKeys]);
 
     const onImgStackDrop = useCallback(async () => {
         if (!appState.browserElement) return;
@@ -686,6 +695,7 @@ export function DraggableProjectSvg({
     svgElementsRef,
     refKey }: DraggableProjectSvg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
         switch (appState.tool.type) {
@@ -749,42 +759,45 @@ export function DraggableProjectSvg({
     };
 
     const onNewSvgPosition = useCallback(async (deltaX: number, deltaY: number) => {
-        let newLeft = Math.min(appState.project.canvas_width - meta.width, Math.max(0, Math.round(meta.left + deltaX)));
-        let newTop = Math.min(appState.project.canvas_height - meta.height, Math.max(0, Math.round(meta.top + deltaY)));
-
-        const yMaxActual = newTop + meta.height + transformedBounds.deltas.bottom;
-        const xMaxActual = newLeft + meta.width + transformedBounds.deltas.right;
-        const yMinActual = newTop + transformedBounds.deltas.top;
-        const xMinActual = newLeft + transformedBounds.deltas.left;
-        if (yMaxActual > appState.project.canvas_height) {
-            newTop -= (yMaxActual - appState.project.canvas_height);
-        }
-        if (xMaxActual > appState.project.canvas_width) {
-            newLeft -= (xMaxActual - appState.project.canvas_width);
-        }
-        if (yMinActual < 0) {
-            newTop += Math.abs(yMinActual);
-        }
-        if (xMinActual < 0) {
-            newLeft += Math.abs(xMinActual);
-        }
-
-        const newContextMenuConfig = getNewContextMenuConfig(
-            { left: newLeft, top: newTop },
-            { width: appState.project.canvas_width, height: appState.project.canvas_height },
-            { ...meta },
-            { x: meta.scale_x, y: meta.scale_y },
-            meta.contextMenuConfig);
-        const newSvg: LaurusProjectSvg = {
-            ...meta,
-            top: newTop,
-            left: newLeft,
-            contextMenuConfig: newContextMenuConfig,
-        };
-        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        newSvgs.set(mediaKey, newSvg);
         const rollback: LaurusProjectResult = { ...appState.project };
-        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs };
+        const newImgs = new Map(appState.project.imgs);
+        const newSvgs = new Map(appState.project.svgs);
+        const updateItem = (itemKey: string, itemType: 'img' | 'svg') => {
+            const itemMeta = itemType === 'img' ? newImgs.get(itemKey) : newSvgs.get(itemKey);
+            if (!itemMeta) return;
+            const bounds = calculateTransformedBounds(itemMeta);
+            let newLeft = Math.min(appState.project.canvas_width - itemMeta.width, Math.max(0, Math.round(itemMeta.left + deltaX)));
+            let newTop = Math.min(appState.project.canvas_height - itemMeta.height, Math.max(0, Math.round(itemMeta.top + deltaY)));
+            const yMaxActual = newTop + itemMeta.height + bounds.deltas.bottom;
+            const xMaxActual = newLeft + itemMeta.width + bounds.deltas.right;
+            const yMinActual = newTop + bounds.deltas.top;
+            const xMinActual = newLeft + bounds.deltas.left;
+            if (yMaxActual > appState.project.canvas_height) newTop -= (yMaxActual - appState.project.canvas_height);
+            if (xMaxActual > appState.project.canvas_width) newLeft -= (xMaxActual - appState.project.canvas_width);
+            if (yMinActual < 0) newTop += Math.abs(yMinActual);
+            if (xMinActual < 0) newLeft += Math.abs(xMinActual);
+            const nContextMenuConfig = getNewContextMenuConfig(
+                { left: newLeft, top: newTop },
+                { width: appState.project.canvas_width, height: appState.project.canvas_height },
+                { ...itemMeta },
+                { x: itemMeta.scale_x, y: itemMeta.scale_y },
+                itemMeta.contextMenuConfig);
+            if (itemType === 'img') {
+                newImgs.set(itemKey, { ...itemMeta as LaurusProjectImg, left: newLeft, top: newTop, contextMenuConfig: nContextMenuConfig });
+            } else {
+                newSvgs.set(itemKey, { ...itemMeta as LaurusProjectSvg, left: newLeft, top: newTop, contextMenuConfig: nContextMenuConfig });
+            }
+        };
+
+        updateItem(mediaKey, 'svg');
+        selectedImgKeys.forEach(key => {
+            updateItem(key, 'img');
+        });
+        selectedSvgKeys.forEach(key => {
+            if (key !== mediaKey) updateItem(key, 'svg');
+        });
+
+        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs };
         dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
         if (newProject.project_id) {
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
@@ -792,7 +805,7 @@ export function DraggableProjectSvg({
                 dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, transformedBounds.deltas, dispatch, mediaKey, meta]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, mediaKey, selectedImgKeys, selectedSvgKeys]);
 
     const onSvgStackDrop = useCallback(async () => {
         if (!appState.browserElement) return;
