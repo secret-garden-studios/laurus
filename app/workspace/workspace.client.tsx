@@ -931,6 +931,8 @@ export default function Workspace({
             };
             if (event.key === 'Escape') {
                 setSelectedEffectUnitKeys(new Set<string>());
+                setSelectedImgKeys(new Set<string>());
+                setSelectedSvgKeys(new Set<string>());
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
                     const [key, svgMeta] = pendingSvgs[i];
@@ -1383,7 +1385,7 @@ export default function Workspace({
                                                     mediaKey={key}
                                                     data={imgData}
                                                     meta={meta}
-                                                zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                     imgElementsRef={imgElementsRef}
                                                     refKey={refKey} />
                                             </div>
@@ -1414,7 +1416,7 @@ export default function Workspace({
                                                     mediaKey={key}
                                                     decodedString={decodedString}
                                                     meta={meta}
-                                                zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    zIndex={(appState.tool.type === 'marquee' && appState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                     svgElementsRef={svgElementsRef}
                                                     refKey={refKey} />
                                             </div>

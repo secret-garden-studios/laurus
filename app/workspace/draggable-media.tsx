@@ -164,8 +164,9 @@ function ProjectImg({
     title,
     transform }: ProjectImg) {
     const { appState } = useContext(WorkspaceContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isMetaKeyPressed, selectedImgKeys } = useContext(HoverContext);
     const [isHovered, setIsHovered] = useState(false);
+    const isSelected = selectedImgKeys.has(mediaKey);
     const dragDisabled = useMemo(() => {
         return appState.tool.type != 'move';
     }, [appState.tool.type]);
@@ -225,11 +226,13 @@ function ProjectImg({
                         style={{
                             objectFit: 'cover',
                             cursor: 'inherit',
-                            outline: (isStackable && isHovered)
-                                ? '2px solid rgba(255, 255, 255, 0.9)'
-                                : meta.showContextMenu
-                                    ? '1px solid rgba(255, 255, 255, 0.175)'
-                                    : 'none',
+                            outline: isSelected
+                                ? '2px solid rgba(66, 133, 244, 1)'
+                                : (isStackable && isHovered)
+                                    ? '2px solid rgba(255, 255, 255, 0.9)'
+                                    : meta.showContextMenu
+                                        ? '1px solid rgba(255, 255, 255, 0.175)'
+                                        : 'none',
                             backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                             background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
@@ -282,7 +285,9 @@ function ProjectSvg({
     title,
     transform }: ProjectSvg) {
     const { appState } = useContext(WorkspaceContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isMetaKeyPressed, selectedSvgKeys } = useContext(HoverContext);
+    const isSelected = selectedSvgKeys.has(mediaKey);
+
     const dragDisabled = useMemo(() => {
         return appState.tool.type != 'move';
     }, [appState.tool.type]);
@@ -340,11 +345,13 @@ function ProjectSvg({
                         display: 'grid',
                         placeContent: 'center',
                         cursor: 'inherit',
-                        outline: (isStackable && isHovered)
-                            ? '2px solid rgba(255, 255, 255, 0.9)'
-                            : meta.showContextMenu
-                                ? '1px solid rgba(255, 255, 255, 0.175)'
-                                : 'none',
+                        outline: isSelected
+                            ? '2px solid rgba(66, 133, 244, 1)'
+                            : (isStackable && isHovered)
+                                ? '2px solid rgba(255, 255, 255, 0.9)'
+                                : meta.showContextMenu
+                                    ? '1px solid rgba(255, 255, 255, 0.175)'
+                                    : 'none',
                         backdropFilter: meta.showContextMenu ? 'blur(10px)' : 'none',
                         background: meta.showContextMenu ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
