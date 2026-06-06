@@ -17,6 +17,8 @@ export interface MoveUnitControls {
     time: number,
     angle: number,
     shape: LaurusShapeType,
+    loop: LaurusLoopType,
+    limit_factor: number,
 }
 
 export const defaultMoveEquation: LaurusMoveEquation = {
@@ -252,6 +254,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 initControls.distance = activeEquation.distance;
                 initControls.time = activeEquation.time / 1000;
                 initControls.angle = activeEquation.angle;
+                initControls.loop = activeEquation.loop;
+                initControls.limit_factor = activeEquation.limit_factor;
             }
             else if (activeKey) {
                 initControls.amplitude = defaultMoveEquation.amplitude;
@@ -260,6 +264,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                 initControls.distance = defaultMoveEquation.distance;
                 initControls.time = 0;
                 initControls.angle = defaultMoveEquation.angle;
+                initControls.loop = defaultMoveEquation.loop;
+                initControls.limit_factor = defaultMoveEquation.limit_factor;
             }
             updateTrackpads(initControls);
         })();

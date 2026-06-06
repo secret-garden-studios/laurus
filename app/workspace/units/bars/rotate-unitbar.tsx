@@ -187,18 +187,20 @@ export default function RotateUnitbar({
                     if (rotate.locked || isMetaKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
+                        const nextLoop = getNextLoopType();
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                loop: getNextLoopType(),
+                                loop: nextLoop,
                             } :
                             {
                                 ...defaultRotateEquation,
                                 input_id: activeKey,
-                                loop: getNextLoopType(),
+                                loop: nextLoop,
                             };
+                        setCurrentControls(v => ({ ...v, loop: nextLoop }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -353,18 +355,20 @@ export default function RotateUnitbar({
                     if (isMetaKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
+                        const nextFactor = incrementLimitFactor();
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultRotateEquation,
                                 input_id: activeKey,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -388,18 +392,20 @@ export default function RotateUnitbar({
                     if (isMetaKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
+                        const nextFactor = decrementLimitFactor();
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultRotateEquation,
                                 input_id: activeKey,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -429,9 +435,7 @@ export default function RotateUnitbar({
                     const currentEq: LaurusRotateEquation = {
                         ...clipboardData,
                         input_id: "clipboard",
-                        loop: defaultRotateEquation.loop,
                         solution: defaultRotateEquation.solution,
-                        limit_factor: defaultRotateEquation.limit_factor
                     }
                     const newMath: Map<string, LaurusRotateEquation> = new Map();
                     newMath.set("clipboard", currentEq);

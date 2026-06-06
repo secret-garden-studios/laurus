@@ -241,15 +241,17 @@ export default function MoveUnitbar({
                     if (move.locked || isMetaKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
+                        const nextLoop = getNextLoopType();
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
-                            { ...activeEquation, loop: getNextLoopType() } :
+                            { ...activeEquation, loop: nextLoop } :
                             {
                                 ...defaultMoveEquation,
                                 input_id: activeKey,
-                                loop: getNextLoopType(),
+                                loop: nextLoop,
                             };
+                        setCurrentControls(v => ({ ...v, loop: nextLoop }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -362,18 +364,20 @@ export default function MoveUnitbar({
                     if (isMetaKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
+                        const nextFactor = incrementLimitFactor();
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultMoveEquation,
                                 input_id: activeKey,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -397,18 +401,20 @@ export default function MoveUnitbar({
                     if (isMetaKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
+                        const nextFactor = decrementLimitFactor();
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultMoveEquation,
                                 input_id: activeKey,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -438,9 +444,7 @@ export default function MoveUnitbar({
                     const currentMoveEq: LaurusMoveEquation = {
                         ...clipboardData,
                         input_id: "clipboard",
-                        loop: defaultMoveEquation.loop,
                         solution: defaultMoveEquation.solution,
-                        limit_factor: defaultMoveEquation.limit_factor
                     }
                     const newMath: Map<string, LaurusMoveEquation> = new Map();
                     newMath.set("clipboard", currentMoveEq);

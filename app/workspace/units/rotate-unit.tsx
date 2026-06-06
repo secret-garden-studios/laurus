@@ -15,6 +15,8 @@ export interface RotateUnitControls {
     z: number,
     time: number,
     angle: number,
+    loop: LaurusLoopType,
+    limit_factor: number,
 }
 
 export const defaultRotateEquation: LaurusRotateEquation = {
@@ -47,6 +49,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         z: 0,
         time: 0.000001,
         angle: 0,
+        loop: defaultRotateEquation.loop,
+        limit_factor: defaultRotateEquation.limit_factor,
     });
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
@@ -244,6 +248,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 initControls.z = activeEquation.z;
                 initControls.time = activeEquation.time / 1000;
                 initControls.angle = activeEquation.angle;
+                initControls.loop = activeEquation.loop;
+                initControls.limit_factor = activeEquation.limit_factor;
             }
             else if (activeKey) {
                 initControls.x = defaultRotateEquation.x;
@@ -251,6 +257,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                 initControls.z = defaultRotateEquation.z;
                 initControls.time = defaultRotateEquation.time;
                 initControls.angle = defaultRotateEquation.angle;
+                initControls.loop = defaultRotateEquation.loop;
+                initControls.limit_factor = defaultRotateEquation.limit_factor;
             }
             updateTrackpads(initControls);
         })();
