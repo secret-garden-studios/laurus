@@ -124,7 +124,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                                             {JSON.stringify(
                                                 clipboardData,
                                                 (key, value) => {
-                                                    if (key === 'solution' || key === 'input_id' || key === 'loop') return undefined;
+                                                    if (key === 'solution' || key === 'input_id') return undefined;
                                                     return value;
                                                 },
                                                 2)}

@@ -177,15 +177,17 @@ export default function ScaleUnitbar({
                     if (scale.locked || isMetaKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
+                        const nextLoop = getNextLoopType();
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
-                            { ...activeEquation, loop: getNextLoopType() } :
+                            { ...activeEquation, loop: nextLoop } :
                             {
                                 ...defaultScaleEquation,
                                 input_id: activeKey,
-                                loop: getNextLoopType(),
+                                loop: nextLoop,
                             };
+                        setCurrentControls(v => ({ ...v, loop: nextLoop }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -299,18 +301,20 @@ export default function ScaleUnitbar({
                     if (isMetaKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
+                        const nextFactor = incrementLimitFactor();
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultScaleEquation,
                                 input_id: activeKey,
-                                limit_factor: incrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -334,18 +338,20 @@ export default function ScaleUnitbar({
                     if (isMetaKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
+                        const nextFactor = decrementLimitFactor();
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeEquation = snapshot.math.get(activeKey);
                         const newEquation = activeEquation ?
                             {
                                 ...activeEquation,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             } :
                             {
                                 ...defaultScaleEquation,
                                 input_id: activeKey,
-                                limit_factor: decrementLimitFactor(),
+                                limit_factor: nextFactor,
                             };
+                        setCurrentControls(v => ({ ...v, limit_factor: nextFactor }));
                         saveNewEquation(snapshot, newEquation);
                     }
                 }}
@@ -398,9 +404,7 @@ export default function ScaleUnitbar({
                     const currentEq: LaurusScaleEquation = {
                         ...clipboardData,
                         input_id: "clipboard",
-                        loop: defaultScaleEquation.loop,
                         solution: defaultScaleEquation.solution,
-                        limit_factor: defaultScaleEquation.limit_factor
                     }
                     const newMath: Map<string, LaurusScaleEquation> = new Map();
                     newMath.set("clipboard", currentEq);
@@ -473,7 +477,10 @@ export default function ScaleUnitbar({
                         const newMath = new Map(snapshot.math);
                         newMath.delete(activeKey);
                         const newScale: LaurusScaleResult = { ...snapshot, math: newMath };
-                        const defaultControls: ScaleUnitControls = { scale_x: defaultScaleEquation.scale_x, scale_y: defaultScaleEquation.scale_y, time: 0 };
+                        const defaultControls: ScaleUnitControls = {
+                            ...defaultScaleEquation,
+                            time: 0
+                        };
                         setCurrentControls(defaultControls);
                         updateTrackpads(defaultControls);
                         dispatch({

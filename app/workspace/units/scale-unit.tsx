@@ -15,6 +15,8 @@ export interface ScaleUnitControls {
     scale_x: number,
     scale_y: number,
     time: number,
+    loop: LaurusLoopType,
+    limit_factor: number,
 }
 
 export const defaultScaleEquation: LaurusScaleEquation = {
@@ -43,6 +45,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         scale_x: defaultScaleEquation.scale_x,
         scale_y: defaultScaleEquation.scale_y,
         time: 0,
+        loop: defaultScaleEquation.loop,
+        limit_factor: defaultScaleEquation.limit_factor,
     });
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(appState.resolution);
@@ -273,11 +277,15 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 initControls.time = activeEquation.time / 1000;
                 initControls.scale_x = activeEquation.scale_x;
                 initControls.scale_y = activeEquation.scale_y;
+                initControls.loop = activeEquation.loop;
+                initControls.limit_factor = activeEquation.limit_factor;
             }
             else if (activeKey) {
                 initControls.scale_x = defaultScaleEquation.scale_x;
                 initControls.scale_y = defaultScaleEquation.scale_y;
                 initControls.time = 0;
+                initControls.loop = defaultScaleEquation.loop;
+                initControls.limit_factor = defaultScaleEquation.limit_factor;
             }
             updateTrackpads(initControls);
         })();
