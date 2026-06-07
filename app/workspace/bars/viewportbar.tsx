@@ -112,9 +112,10 @@ export default function Viewportbar() {
                         style={{
                             textAlign: 'left',
                             color: 'rgb(227, 227, 227)',
+                            fontVariantLigatures: 'no-common-ligatures',
                             ...dynamicSizes.progress.label
                         }}>
-                        <span>rendering&#46;&#46;&#46;</span>
+                        <span>rendering...</span>
                     </div>
                     <div style={{
                         flex: 1,
