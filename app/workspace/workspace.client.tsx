@@ -216,6 +216,7 @@ export interface WorkspaceState {
     playEnabled: boolean;
     skipPreviousEnabled: boolean;
     skipNextEnabled: boolean;
+    animationProgress: number | undefined;
 }
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
@@ -269,6 +270,7 @@ export const defaultWorkspace: WorkspaceState = {
     playEnabled: true,
     skipPreviousEnabled: true,
     skipNextEnabled: true,
+    animationProgress: undefined,
 }
 
 export enum WorkspaceActionType {
@@ -309,6 +311,7 @@ export enum WorkspaceActionType {
     SetPlayEnabled,
     SetSkipPreviousEnabled,
     SetSkipNextEnabled,
+    SetAnimationProgress,
 }
 
 export type WorkspaceAction =
@@ -349,6 +352,7 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetPlayEnabled, value: boolean }
     | { type: WorkspaceActionType.SetSkipPreviousEnabled, value: boolean }
     | { type: WorkspaceActionType.SetSkipNextEnabled, value: boolean }
+    | { type: WorkspaceActionType.SetAnimationProgress, value: number | undefined }
 
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
@@ -529,6 +533,9 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         }
         case WorkspaceActionType.SetSkipNextEnabled: {
             return { ...state, skipNextEnabled: action.value }
+        }
+        case WorkspaceActionType.SetAnimationProgress: {
+            return { ...state, animationProgress: action.value }
         }
     }
 }
@@ -1041,10 +1048,17 @@ export default function Workspace({
                 fill,
             };
 
-            const imgArray = Array.from(appState.project.imgs.entries());
-            for (let i = 0; i < imgArray.length; i++) {
-                const [key] = imgArray[i];
-                if (imgArray[i][1].left < 0 || imgArray[i][1].top < 0 || !mathFound(key)) continue;
+            const imgsToProcess = Array.from(appState.project.imgs.entries())
+                .filter(([key, meta]) => meta.left >= 0 && meta.top >= 0 && mathFound(key));
+            const svgsToProcess = Array.from(appState.project.svgs.entries())
+                .filter(([key, meta]) => meta.left >= 0 && meta.top >= 0 && mathFound(key));
+            const total = imgsToProcess.length + svgsToProcess.length;
+            let current = 0;
+
+            if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: 0 });
+
+            for (let i = 0; i < imgsToProcess.length; i++) {
+                const [key] = imgsToProcess[i];
                 const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
                 if (frames) {
                     const keyframes = toKeyframes(firstFrame, frames);
@@ -1058,12 +1072,12 @@ export default function Workspace({
                         new KeyframeEffect(imgRef, keyframes, options);
                     newAnimations.push(new Animation(keyframeEffect, document.timeline));
                 }
+                current++;
+                if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: Math.round((current / total) * 100) });
             };
 
-            const svgArray = Array.from(appState.project.svgs.entries());
-            for (let i = 0; i < svgArray.length; i++) {
-                const [key] = svgArray[i];
-                if (svgArray[i][1].left < 0 || svgArray[i][1].top < 0 || !mathFound(key)) continue;
+            for (let i = 0; i < svgsToProcess.length; i++) {
+                const [key] = svgsToProcess[i];
                 const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
                 if (frames) {
                     const keyframes = toKeyframes(firstFrame, frames);
@@ -1077,13 +1091,16 @@ export default function Workspace({
                         new KeyframeEffect(svgRef, keyframes, options);
                     newAnimations.push(new Animation(keyframeEffect, document.timeline));
                 }
+                current++;
+                if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: Math.round((current / total) * 100) });
             };
 
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
+            dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: undefined });
         }
-    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
+    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef, dispatch]);
 
     const handleMixRestoration = useCallback(() => {
         if (appState.tool.type === 'mix') {

@@ -9,6 +9,7 @@ import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
 import Scalebar from "./scalebar";
 import Marqueebar from "./marqueebar";
+import Viewportbar from "./viewportbar";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -187,8 +188,8 @@ export function ProjectbarLevel2() {
                     case "marquee": return <Marqueebar />
                     case "none":
                     case "contextmenu":
-                    case "viewport":
                     case "move": return <></>
+                    case "viewport": return <Viewportbar />
                     case "scale": return <Scalebar />
                     case "rotate": return <Rotatebar />
                     case "mix": return <Mixbar />
