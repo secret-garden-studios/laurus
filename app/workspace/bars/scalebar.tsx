@@ -20,8 +20,20 @@ export default function Scalebar() {
     const isMultiSelect = useMemo(() => (selectedImgKeys.size + selectedSvgKeys.size) > 1, [selectedImgKeys, selectedSvgKeys]);
     const [relativeScaleX, setRelativeScaleX] = useState(1);
     const [relativeScaleY, setRelativeScaleY] = useState(1);
-    const appliedScaleXRef = useRef(1);
-    const appliedScaleYRef = useRef(1);
+    const [appliedScaleX, setAppliedScaleX] = useState(1);
+    const [appliedScaleY, setAppliedScaleY] = useState(1);
+    const [prevImgKeys, setPrevImgKeys] = useState(selectedImgKeys);
+    const [prevSvgKeys, setPrevSvgKeys] = useState(selectedSvgKeys);
+
+    // beta: render-phase state adjustment pattern
+    if (selectedImgKeys !== prevImgKeys || selectedSvgKeys !== prevSvgKeys) {
+        setPrevImgKeys(selectedImgKeys);
+        setPrevSvgKeys(selectedSvgKeys);
+        setRelativeScaleX(1);
+        setRelativeScaleY(1);
+        setAppliedScaleX(1);
+        setAppliedScaleY(1);
+    }
 
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
     const [dynamicSizes] = useState(() => {
@@ -167,19 +179,8 @@ export default function Scalebar() {
             }
         }
     });
+
     const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({ fineTuningLimit: 2, minValue: 0.000001 });
-
-    useEffect(() => {
-        if (isMultiSelect) {
-            (() => {
-                setRelativeScaleX(1);
-                setRelativeScaleY(1);
-                appliedScaleXRef.current = 1;
-                appliedScaleYRef.current = 1;
-            })();
-        }
-    }, [isMultiSelect, selectedImgKeys, selectedSvgKeys]);
-
     const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
@@ -211,11 +212,11 @@ export default function Scalebar() {
 
             if (isMultiSelect) {
                 if (scaleX !== undefined) {
-                    const multiplier = scaleX / appliedScaleXRef.current;
+                    const multiplier = scaleX / appliedScaleX;
                     nextScaleX *= multiplier;
                 }
                 if (scaleY !== undefined) {
-                    const multiplier = scaleY / appliedScaleYRef.current;
+                    const multiplier = scaleY / appliedScaleY;
                     nextScaleY *= multiplier;
                 }
             } else {
@@ -238,13 +239,13 @@ export default function Scalebar() {
         if (saved) {
             dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
             if (isMultiSelect) {
-                if (scaleX !== undefined) appliedScaleXRef.current = scaleX;
-                if (scaleY !== undefined) appliedScaleYRef.current = scaleY;
+                if (scaleX !== undefined) setAppliedScaleX(scaleX);
+                if (scaleY !== undefined) setAppliedScaleY(scaleY);
             }
         } else {
             dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys, isMultiSelect]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys, isMultiSelect, appliedScaleX, appliedScaleY]);
 
     const isSelectionEmpty = useMemo(() => {
         return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
