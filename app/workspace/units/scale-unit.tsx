@@ -78,8 +78,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             case "midhigh": return {
                 ...ds,
                 scaleParam: {
-                    capWidth: 13,
-                    capHeight: 13,
+                    capWidth: 15,
+                    capHeight: 15,
                     capBorderOffset: 0,
                     containerWidth: 170,
                     containerHeight: 36,
@@ -103,8 +103,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
             case "low": return {
                 ...ds,
                 scaleParam: {
-                    capWidth: 11,
-                    capHeight: 11,
+                    capWidth: 13,
+                    capHeight: 13,
                     capBorderOffset: 0,
                     containerWidth: 160,
                     containerHeight: 20,

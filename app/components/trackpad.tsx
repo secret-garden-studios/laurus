@@ -1,11 +1,13 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToParentElement } from "@dnd-kit/modifiers";
-import { CSSProperties, RefObject, useState } from "react";
+import { CSSProperties, RefObject, useContext, useState } from "react";
+import { WorkspaceContext } from "../workspace/workspace.client";
 
 export enum PointerStyle {
     Blurry,
     Solid,
+    BlurryBottomTitle
 }
 
 interface TrackpadProps {
@@ -25,7 +27,7 @@ interface TrackpadProps {
     zIndex?: number,
     disabled?: boolean,
     title?: string,
-    liveTitleRef?: RefObject<HTMLDivElement | null>,
+    liveTitleRef?: RefObject<HTMLDivElement | null>
 }
 
 export function Trackpad({
@@ -104,6 +106,42 @@ interface CoarsePointerProps {
 
 function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title, liveTitleRef }: CoarsePointerProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+    const { appState } = useContext(WorkspaceContext);
+    const [dynamicSizes] = useState(() => {
+        switch (appState.resolution.type) {
+            case "high": return {
+                tooltip: {
+                    letterSpacing: 1,
+                    fontSize: 11,
+                },
+                titleOffsets: {
+                    top: 8,
+                    left: 6
+                }
+            }
+            case "midhigh": return {
+                tooltip: {
+                    letterSpacing: 1,
+                    fontSize: 9,
+                },
+                titleOffsets: {
+                    top: 6,
+                    left: 4
+                }
+            }
+            case "midlow":
+            case "low": return {
+                tooltip: {
+                    letterSpacing: 1,
+                    fontSize: 8,
+                },
+                titleOffsets: {
+                    top: 6,
+                    left: 4
+                }
+            }
+        }
+    });
     const [isHovered, setIsHovered] = useState(false);
     const dndCss = {
         left: coords.x,
@@ -111,22 +149,39 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
         transform: CSS.Translate.toString(transform),
         touchAction: 'none',
     };
-    const tooltipStyle: CSSProperties = {
-        position: 'absolute',
-        top: '50%',
-        left: 'calc(100% + 6px)',
-        transform: 'translateY(-50%)',
-        color: 'rgb(227,227,227)',
-        fontWeight: 'bold',
-        textAlign: 'center',
-        whiteSpace: 'nowrap',
-        pointerEvents: 'none',
-        zIndex: 1000,
-        letterSpacing: 1,
-        fontSize: 11,
-    };
+    const tooltipCss: CSSProperties = ((p) => {
+        switch (p) {
+            case PointerStyle.BlurryBottomTitle: return {
+                position: 'absolute',
+                top: `calc(100% + ${dynamicSizes.titleOffsets.top}px)`,
+                transform: 'translateY(-50%)',
+                color: 'rgb(227,227,227)',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                zIndex: 1000,
+                ...dynamicSizes.tooltip
+            }
+            default: return {
+                position: 'absolute',
+                top: '50%',
+                left: `calc(100% + ${dynamicSizes.titleOffsets.left}px)`,
+                transform: 'translateY(-50%)',
+                color: 'rgb(227,227,227)',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                zIndex: 1000,
+                ...dynamicSizes.tooltip
+            }
+        }
+    })(pointerStyle);
+
     const css: CSSProperties = ((p) => {
         switch (p) {
+            case PointerStyle.BlurryBottomTitle:
             case PointerStyle.Blurry: {
                 return {
                     background: 'rgba(255,255,255,0.01)',
@@ -143,11 +198,12 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                     boxShadow: "1px 1px 6px rgba(0, 0, 0, 0.9)",
                 }
             }
+
         }
     })(pointerStyle);
 
-    return (<>
-        {liveTitleRef ? <div ref={setNodeRef}
+    if (liveTitleRef !== undefined) {
+        return (<div ref={setNodeRef}
             {...listeners}
             {...attributes}
             onMouseEnter={() => setIsHovered(true)}
@@ -161,19 +217,23 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                 height,
                 zIndex
             }} >
-            {(isDragging && (title || liveTitleRef)) && (
+            {(title && (isDragging || isHovered)) && (
                 <div
                     ref={liveTitleRef}
-                    style={tooltipStyle} >
+                    style={tooltipCss} >
                     {title}
                 </div>
             )}
-            {(!isDragging && isHovered && title) && (
-                <div style={tooltipStyle}>
-                    {title}
+            {(!title && (isDragging || isHovered)) && (
+                <div
+                    ref={liveTitleRef}
+                    style={tooltipCss} >
                 </div>
             )}
-        </div> : <div ref={setNodeRef}
+        </div>);
+    }
+    else {
+        return (<div ref={setNodeRef}
             title={title}
             {...listeners}
             {...attributes}
@@ -188,6 +248,6 @@ function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, border
                 height,
                 zIndex
             }} >
-        </div>}
-    </>)
+        </div>);
+    }
 }

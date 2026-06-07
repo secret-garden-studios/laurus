@@ -1,11 +1,13 @@
 import { ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
-import { useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
+import { ComplexTrackpadOptions, useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
 import { LaurusProjectResult } from "@/app/projects/projects.client";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
-import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
 import { SCALE_MAX } from "../workspace.config";
+import Toggle from "@/app/components/toggle";
+import styles from "@/app/app.module.css";
 
 export default function Scalebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
@@ -18,30 +20,50 @@ export default function Scalebar() {
                     containerWidth: '100%',
                     capWidth: 17,
                     capHeight: 17,
-                    capBorderOffset: 2,
+                    capBorderOffset: 0,
                     trackHeight: 1,
                     tickHeight: 22,
                     tickLeft: 2,
                     svgSize: { width: 24, height: 24 }
                 },
+                sliderRatio: 0.8,
                 svgSize: {
                     width: 20,
                     height: 20
                 },
-                unitFontSize: 11,
+                unitFontSize: 12,
                 input: {
                     fontSize: 13,
-                    width: '4ch',
+                    width: '6ch',
                     padding: 0
                 },
                 grid: {
-                    gap: 10
-                }
+                    gap: 10,
+                    padding: '0 10px'
+                },
+                toggle: {
+                    div: {
+                        paddingLeft: 20,
+                        paddingRight: 20,
+                        gap: 12,
+                        fontSize: 13,
+                    },
+                    track: {
+                        width: 30,
+                        height: 16,
+                        borderRadius: 20,
+                        padding: 2,
+                    },
+                    button: {
+                        width: 10,
+                        height: 10,
+                    }
+                },
             }
             case "midhigh": return {
                 paramSize: {
-                    capWidth: 13,
-                    capHeight: 13,
+                    capWidth: 15,
+                    capHeight: 15,
                     capBorderOffset: 0,
                     containerWidth: '100%',
                     containerHeight: 36,
@@ -50,6 +72,7 @@ export default function Scalebar() {
                     tickLeft: 1,
                     svgSize: { width: 20, height: 20 }
                 },
+                sliderRatio: 0.8,
                 svgSize: {
                     width: 18,
                     height: 18
@@ -57,26 +80,46 @@ export default function Scalebar() {
                 unitFontSize: 10,
                 input: {
                     fontSize: 11,
-                    width: '4ch',
+                    width: '6ch',
                     padding: 0
                 },
                 grid: {
-                    gap: 10
-                }
+                    gap: 10,
+                    padding: '0 10px'
+                },
+                toggle: {
+                    div: {
+                        paddingLeft: 14,
+                        paddingRight: 14,
+                        gap: 8,
+                        fontSize: 12,
+                    },
+                    track: {
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                        padding: 2,
+                    },
+                    button: {
+                        width: 8,
+                        height: 8,
+                    }
+                },
             }
             case "midlow":
             case "low": return {
                 paramSize: {
-                    capWidth: 13,
-                    capHeight: 13,
+                    capWidth: 14,
+                    capHeight: 14,
                     capBorderOffset: 0,
                     containerWidth: '100%',
                     containerHeight: 36,
                     trackHeight: 1,
                     tickHeight: 20,
-                    tickLeft: 1,
+                    tickLeft: 0,
                     svgSize: { width: 20, height: 20 }
                 },
+                sliderRatio: 0.75,
                 svgSize: {
                     width: 20,
                     height: 20
@@ -84,30 +127,51 @@ export default function Scalebar() {
                 unitFontSize: 11,
                 input: {
                     fontSize: 13,
-                    width: '4ch',
+                    width: '6ch',
                     padding: 0
                 },
                 grid: {
-                    gap: 10
-                }
+                    gap: 10,
+                    padding: '0 10px'
+                },
+                toggle: {
+                    div: {
+                        paddingLeft: 16,
+                        paddingRight: 16,
+                        gap: 12,
+                        fontSize: 12,
+                    },
+                    track: {
+                        width: 28,
+                        height: 14,
+                        borderRadius: 20,
+                        padding: 2,
+                    },
+                    button: {
+                        width: 8,
+                        height: 8,
+                    }
+                },
             }
         }
     });
-    const [maxScale, setMaxScale] = useState(SCALE_MAX);
+    const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({ fineTuningLimit: 2, minValue: 0.000001 });
     const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
         useComplexTrackpadState(
             dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-            maxScale);
+            SCALE_MAX);
     const scaleYTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleYCursor, setScaleYCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleYValue, getComplexTrackCursor: getScaleYCursor } =
         useComplexTrackpadState(
             dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-            maxScale);
+            SCALE_MAX);
     const widthRef = useRef<HTMLInputElement>(null);
     const heightRef = useRef<HTMLInputElement>(null);
+    const scaleXLiveTitleRef = useRef<HTMLDivElement | null>(null);
+    const scaleYLiveTitleRef = useRef<HTMLDivElement | null>(null);
 
     const saveActiveScale = useCallback(async (scaleX: number | undefined, scaleY: number | undefined) => {
         if (!appState.activeElement) return;
@@ -201,26 +265,27 @@ export default function Scalebar() {
         }
     }, [appState.activeElement, appState.project]);
 
-    const containerRef = useRef<HTMLDivElement | null>(null);
+    const sliderXContainerRef = useRef<HTMLDivElement | null>(null);
+    const sliderYContainerRef = useRef<HTMLDivElement | null>(null);
     const [sliderColumnSize, setSliderColumnSize] = useState(0);
     useLayoutEffect(() => {
         (() => {
-            if (containerRef.current && sliderColumnSize <= 0) {
-                const newSize = containerRef.current.clientWidth / 2;
+            if (sliderXContainerRef.current && sliderColumnSize <= 0) {
+                const newSize = sliderXContainerRef.current.clientWidth * dynamicSizes.sliderRatio;
                 setSliderColumnSize(newSize);
             }
         })();
-    }, [sliderColumnSize]);
+    }, [dynamicSizes.sliderRatio, sliderColumnSize]);
 
     useEffect(() => {
         (() => {
             const scaleInit = getActiveScale();
             if (scaleXTrackRef.current && scaleXTrackRef.current.clientWidth > 0) {
-                const newScaleCursor = getScaleXCursor(scaleInit[0], scaleXTrackRef.current.clientWidth);
+                const newScaleCursor = getScaleXCursor(scaleInit[0], scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                 setScaleXCursor({ x: newScaleCursor, y: 0 });
             }
             else if (sliderColumnSize > 0) {
-                const newScaleCursor = getScaleXCursor(scaleInit[0], sliderColumnSize);
+                const newScaleCursor = getScaleXCursor(scaleInit[0], sliderColumnSize, complexTrackpadOptions);
                 setScaleXCursor({ x: newScaleCursor, y: 0 });
             }
             else {
@@ -228,11 +293,11 @@ export default function Scalebar() {
             }
 
             if (scaleYTrackRef.current && scaleYTrackRef.current.clientWidth > 0) {
-                const newScaleYCursor = getScaleYCursor(scaleInit[1], scaleYTrackRef.current.clientWidth);
+                const newScaleYCursor = getScaleYCursor(scaleInit[1], scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                 setScaleYCursor({ x: newScaleYCursor, y: 0 });
             }
             else if (sliderColumnSize > 0) {
-                const newScaleYCursor = getScaleYCursor(scaleInit[1], sliderColumnSize);
+                const newScaleYCursor = getScaleYCursor(scaleInit[1], sliderColumnSize, complexTrackpadOptions);
                 setScaleYCursor({ x: newScaleYCursor, y: 0 });
             }
             else {
@@ -245,30 +310,28 @@ export default function Scalebar() {
                 heightRef.current.value = (dimensions[1]).toFixed(0);
             }
         })();
-    }, [appState.tool.type, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize]);
+    }, [appState.tool.type, complexTrackpadOptions, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize]);
 
-    useEffect(() => {
-        (() => {
-            const dimensions = getActiveDimensions([1, 1]);
-            if (dimensions[0] > 0 && dimensions[1] > 0) {
-                const quarterCanvas = 1500;
-                const x = quarterCanvas / Math.max(dimensions[0], dimensions[1]);
-                setMaxScale(x);
-            }
-        })()
-    }, [getActiveDimensions]);
+    const scaleXTitle = useMemo(() => {
+        const scaleX = getActiveScale()[0];
+        const decimalPlaces = scaleX >= 10 ? 2 : 3;
+        return appState.activeElement == undefined ? '' : scaleX.toFixed(decimalPlaces) + 'x';
+    }, [appState.activeElement, getActiveScale]);
+
+    const scaleYTitle = useMemo(() => {
+        const scaleY = getActiveScale()[1];
+        const decimalPlaces = scaleY >= 10 ? 2 : 3;
+        return appState.activeElement == undefined ? '' : scaleY.toFixed(decimalPlaces) + 'x';
+    }, [appState.activeElement, getActiveScale]);
 
     return <>
-        <div ref={containerRef} style={
+        <div style={
             {
-                width: '100%',
-                display: 'grid',
-                gridTemplateRows: 'auto',
-                gridTemplateColumns: `min-content ${sliderColumnSize}px min-content ${sliderColumnSize}px min-content`,
+                display: 'flex',
                 alignItems: 'center',
                 height: '100%',
+                width: '100%',
                 overflowX: 'auto',
-                ...dynamicSizes.grid,
             }}>
             <SvgRepo
                 svg={allOut()}
@@ -278,102 +341,71 @@ export default function Scalebar() {
                 }}
                 scale={1}
                 scaleToContaier={true} />
-            <ParameterSliderXPlusMinus
-                label={"zoom"}
-                hash={`${appState.activeElement?.key ?? 'scalebar'}|scalex`}
-                size={dynamicSizes.paramSize}
-                containerRef={scaleXTrackRef}
-                cursor={scaleXCursor}
-                onCursorMove={(newCursor) => {
-                    if (!scaleXTrackRef.current || !widthRef.current || !heightRef.current) return;
-                    const newScaleValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, { minValue: 0.000001 });
-                    const scaledDimensions = getActiveDimensions([newScaleValue, newScaleValue]);
-                    widthRef.current.value = (scaledDimensions[0]).toFixed(0);
-                    if (!unlockAspectRatio) {
-                        heightRef.current.value = (scaledDimensions[1]).toFixed(0);
-                    }
-                }}
-                onNewCursor={(newCursor) => {
-                    if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
-                    setScaleXCursor({ ...newCursor, y: 0 });
-                    if (!unlockAspectRatio) {
-                        const d = getActiveScale();
-                        const r = d[0] / d[1];
-                        const newYCursor = newCursor.x / r;
-                        const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, { minValue: 0.000001 });
-                        const newYValue = newXValue / r;
-                        setScaleYCursor({ x: newYCursor, y: 0 });
-                        saveActiveScale(newXValue, newYValue);
-                    }
-                    else {
-                        const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, { minValue: 0.000001 });
-                        saveActiveScale(newXValue, undefined);
-                    }
-                }}
-                disabled={appState.activeElement == undefined} />
-            <SvgRepo
-                svg={unlockAspectRatio ? linkOff() : link()}
-                containerStyle={{
-                    width: dynamicSizes.svgSize.width,
-                    height: dynamicSizes.svgSize.height
-                }}
-                scale={0.75}
-                scaleToContaier={true}
-                onContainerClick={() => {
-                    setUnlockAspectRatio(v => !v);
-                }} />
-            <ParameterSliderXPlusMinus
-                label={"zoom"}
-                hash={`${appState.activeElement?.key ?? 'scalebar'}|scaley`}
-                size={dynamicSizes.paramSize}
-                containerRef={scaleYTrackRef}
-                cursor={scaleYCursor}
-                onCursorMove={(newCursor) => {
-                    if (!scaleYTrackRef.current || !heightRef.current || !widthRef.current) return;
-                    const newScaleValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, { minValue: 0.000001 });
-                    const scaledDimensions = getActiveDimensions([newScaleValue, newScaleValue]);
-                    heightRef.current.value = (scaledDimensions[1]).toFixed(0);
-                    if (!unlockAspectRatio) {
-                        widthRef.current.value = (scaledDimensions[0]).toFixed(0);
-                    }
-                }}
-                onNewCursor={(newCursor) => {
-                    if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
-                    setScaleYCursor({ ...newCursor, y: 0 });
-                    if (!unlockAspectRatio) {
-                        const d = getActiveScale();
-                        const r = d[0] / d[1];
-                        const newXCursor = newCursor.x * r;
-                        const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, { minValue: 0.000001 });
-                        const newXValue = newYValue * r;
-                        setScaleXCursor({ x: newXCursor, y: 0 });
-                        saveActiveScale(newXValue, newYValue);
-                    }
-                    else {
-                        const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, { minValue: 0.000001 });
-                        saveActiveScale(undefined, newYValue);
-                    }
-                }}
-                disabled={appState.activeElement == undefined} />
-            <div style={{
-                display: 'grid',
-                height: '100%',
-                gridTemplateRows: 'min-content',
-                gridTemplateColumns: 'min-content auto min-content auto',
-                alignContent: 'center',
-                ...dynamicSizes.grid
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: dynamicSizes.unitFontSize, letterSpacing: 0 }}>{'w'}</div>
-                <input
+            <div ref={sliderXContainerRef}
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'grid',
+                    gridTemplateRows: 'auto',
+                    gridTemplateColumns: `${sliderColumnSize}px min-content min-content`,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    ...dynamicSizes.grid
+                }}>
+                <ParameterSliderXPlusMinus
+                    label={"zoom"}
+                    hash={`${appState.activeElement?.key ?? 'scalebar'}|scalex`}
+                    size={dynamicSizes.paramSize}
+                    containerRef={scaleXTrackRef}
+                    cursor={scaleXCursor}
+                    onCursorMove={(newCursor) => {
+                        if (!scaleXTrackRef.current || !widthRef.current || !heightRef.current || !scaleXLiveTitleRef.current) return;
+                        const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+                        const scaledDimensions = getActiveDimensions([newScaleXValue, newScaleXValue]);
+                        widthRef.current.value = scaledDimensions[0].toFixed(0);
+                        const decimalPlaces = newScaleXValue >= 10 ? 2 : 3;
+                        scaleXLiveTitleRef.current.innerHTML = newScaleXValue.toFixed(decimalPlaces) + 'x';
+                        if (!unlockAspectRatio) {
+                            heightRef.current.value = scaledDimensions[1].toFixed(0);
+                        }
+                    }}
+                    onNewCursor={(newCursor) => {
+                        if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
+                        setScaleXCursor({ ...newCursor, y: 0 });
+                        if (!unlockAspectRatio) {
+                            const d = getActiveScale();
+                            const r = d[0] / d[1];
+                            const newYCursor = newCursor.x / r;
+                            const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+                            const newYValue = newXValue / r;
+                            setScaleYCursor({ x: newYCursor, y: 0 });
+                            saveActiveScale(newXValue, newYValue);
+                        }
+                        else {
+                            const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+                            saveActiveScale(newXValue, undefined);
+                        }
+                    }}
+                    disabled={appState.activeElement == undefined}
+                    title={scaleXTitle}
+                    liveTitleRef={scaleXLiveTitleRef} />
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                    fontSize: dynamicSizes.unitFontSize,
+                }}>
+                    {'width'}
+                </div>
+                <input className={styles['numberInput']}
                     id={`${appState.activeElement?.key ?? 'scalebar'}|input|scalex`}
                     disabled
                     ref={widthRef}
                     type="text"
-                    placeholder="0.00"
                     style={{
                         textAlign: "center",
                         background: 'none',
-                        color: "rgba(255, 255, 255, 0.8)",
+                        color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         border: 'none',
                         outline: 'none',
                         display: 'inline-block',
@@ -381,17 +413,73 @@ export default function Scalebar() {
                         ...dynamicSizes.input
                     }}
                 />
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: dynamicSizes.unitFontSize, letterSpacing: 0 }}>{'h'}</div>
-                <input
+            </div>
+            <div ref={sliderYContainerRef}
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'grid',
+                    gridTemplateRows: 'auto',
+                    gridTemplateColumns: `${sliderColumnSize}px min-content min-content`,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                    ...dynamicSizes.grid
+                }}>
+                <ParameterSliderXPlusMinus
+                    label={"zoom"}
+                    hash={`${appState.activeElement?.key ?? 'scalebar'}|scaley`}
+                    size={dynamicSizes.paramSize}
+                    containerRef={scaleYTrackRef}
+                    cursor={scaleYCursor}
+                    onCursorMove={(newCursor) => {
+                        if (!scaleYTrackRef.current || !heightRef.current || !widthRef.current || !scaleYLiveTitleRef.current) return;
+                        const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+                        const scaledDimensions = getActiveDimensions([newScaleYValue, newScaleYValue]);
+                        const decimalPlaces = newScaleYValue >= 10 ? 2 : 3;
+                        heightRef.current.value = scaledDimensions[1].toFixed();
+                        scaleYLiveTitleRef.current.innerHTML = newScaleYValue.toFixed(decimalPlaces) + 'x';
+                        if (!unlockAspectRatio) {
+                            widthRef.current.value = scaledDimensions[0].toFixed();
+                        }
+                    }}
+                    onNewCursor={(newCursor) => {
+                        if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
+                        setScaleYCursor({ ...newCursor, y: 0 });
+                        if (!unlockAspectRatio) {
+                            const d = getActiveScale();
+                            const r = d[0] / d[1];
+                            const newXCursor = newCursor.x * r;
+                            const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+                            const newXValue = newYValue * r;
+                            setScaleXCursor({ x: newXCursor, y: 0 });
+                            saveActiveScale(newXValue, newYValue);
+                        }
+                        else {
+                            const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+                            saveActiveScale(undefined, newYValue);
+                        }
+                    }}
+                    disabled={appState.activeElement == undefined}
+                    title={scaleYTitle}
+                    liveTitleRef={scaleYLiveTitleRef} />
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                    fontSize: dynamicSizes.unitFontSize
+                }}>
+                    {'height'}
+                </div>
+                <input className={styles['numberInput']}
                     id={`${appState.activeElement?.key ?? 'scalebar'}|input|scaley`}
                     disabled
                     ref={heightRef}
                     type="text"
-                    placeholder="0.00"
                     style={{
                         textAlign: "center",
                         background: 'none',
-                        color: "rgba(255, 255, 255, 0.8)",
+                        color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         border: 'none',
                         outline: 'none',
                         display: 'inline-block',
@@ -399,6 +487,30 @@ export default function Scalebar() {
                         ...dynamicSizes.input
                     }}
                 />
+            </div>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                height: '100%',
+                borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+                ...dynamicSizes.toggle.div
+            }}>
+                <SvgRepo
+                    title="aspect ratio lock"
+                    svg={unlockAspectRatio ? linkOff() : link()}
+                    containerStyle={{
+                        width: dynamicSizes.svgSize.width,
+                        height: dynamicSizes.svgSize.height
+                    }}
+                    scale={1}
+                    scaleToContaier={true} />
+                <Toggle
+                    value={!unlockAspectRatio}
+                    onClick={() => {
+                        setUnlockAspectRatio(v => !v);
+                    }}
+                    trackStyles={{ ...dynamicSizes.toggle.track }}
+                    buttonStyles={{ ...dynamicSizes.toggle.button }} />
             </div>
         </div>
     </>

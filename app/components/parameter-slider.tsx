@@ -197,6 +197,7 @@ interface ParameterSliderXPlusMinus {
     onCursorMove?: (newCursor: { x: number, y: number }) => void,
     disabled?: boolean,
     title?: string,
+    liveTitleRef?: RefObject<HTMLDivElement | null>
 }
 export function ParameterSliderXPlusMinus({
     hash,
@@ -206,7 +207,8 @@ export function ParameterSliderXPlusMinus({
     onNewCursor,
     onCursorMove,
     disabled,
-    title
+    title,
+    liveTitleRef,
 }: ParameterSliderXPlusMinus) {
     return (<>
         <div style={{
@@ -244,7 +246,7 @@ export function ParameterSliderXPlusMinus({
                         coarsePointer={{
                             width: size.capWidth,
                             height: size.capHeight,
-                            pointerStyle: PointerStyle.Blurry,
+                            pointerStyle: PointerStyle.BlurryBottomTitle,
                             zIndex: 2,
                             borderColor: 'rgba(255,255,255,0.3)'
                         }}
@@ -252,7 +254,8 @@ export function ParameterSliderXPlusMinus({
                         onNewValue={onNewCursor}
                         onMove={onCursorMove}
                         disabled={disabled}
-                        title={title} />
+                        title={title}
+                        liveTitleRef={liveTitleRef} />
                 </div>
                 {/* label*/}
                 <div
