@@ -114,7 +114,7 @@ export default function Viewportbar() {
                             color: 'rgb(227, 227, 227)',
                             ...dynamicSizes.progress.label
                         }}>
-                        {`rendering...`}
+                        {"rendering" + "..."}
                     </div>
                     <div style={{
                         flex: 1,
