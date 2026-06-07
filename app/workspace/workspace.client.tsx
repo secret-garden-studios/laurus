@@ -1316,7 +1316,7 @@ export default function Workspace({
                             position: 'relative',
                             width: "100%",
                             height: '100%',
-                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : 'default',
+                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : (appState.tool.type === 'scale') ? 'crosshair' : 'default',
                         }}>
                         <div
                             className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}

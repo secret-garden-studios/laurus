@@ -1,6 +1,6 @@
 import { ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
-import { LaurusProjectResult } from "@/app/projects/projects.client";
+import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "@/app/projects/projects.client";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -15,8 +15,14 @@ export default function Scalebar() {
     const target = useMemo(() => {
         return selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
             selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
-            null;
+                null;
     }, [selectedImgKeys, selectedSvgKeys]);
+    const isMultiSelect = useMemo(() => (selectedImgKeys.size + selectedSvgKeys.size) > 1, [selectedImgKeys, selectedSvgKeys]);
+    const [relativeScaleX, setRelativeScaleX] = useState(1);
+    const [relativeScaleY, setRelativeScaleY] = useState(1);
+    const appliedScaleXRef = useRef(1);
+    const appliedScaleYRef = useRef(1);
+
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
@@ -162,6 +168,18 @@ export default function Scalebar() {
         }
     });
     const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({ fineTuningLimit: 2, minValue: 0.000001 });
+
+    useEffect(() => {
+        if (isMultiSelect) {
+            (() => {
+                setRelativeScaleX(1);
+                setRelativeScaleY(1);
+                appliedScaleXRef.current = 1;
+                appliedScaleYRef.current = 1;
+            })();
+        }
+    }, [isMultiSelect, selectedImgKeys, selectedSvgKeys]);
+
     const scaleXTrackRef = useRef<HTMLDivElement | null>(null);
     const [scaleXCursor, setScaleXCursor] = useState({ x: 0, y: 0 });
     const { getComplexTrackValue: getScaleXValue, getComplexTrackCursor: getScaleXCursor } =
@@ -184,71 +202,56 @@ export default function Scalebar() {
         const newImgs = new Map(snapshot.imgs);
         const newSvgs = new Map(snapshot.svgs);
 
-        const targetImgKeys = new Set(selectedImgKeys);
-        const targetSvgKeys = new Set(selectedSvgKeys);
         const updateItem = (key: string, type: 'img' | 'svg') => {
-            if (type === 'img') {
-                const m = newImgs.get(key);
-                if (m) {
-                    newImgs.set(key, {
-                        ...m,
-                        ...(scaleX !== undefined && { scale_x: scaleX }),
-                        ...(scaleY !== undefined && { scale_y: scaleY }),
-                    });
+            const m = type === 'img' ? newImgs.get(key) : newSvgs.get(key);
+            if (!m) return;
+
+            let nextScaleX = m.scale_x;
+            let nextScaleY = m.scale_y;
+
+            if (isMultiSelect) {
+                if (scaleX !== undefined) {
+                    const multiplier = scaleX / appliedScaleXRef.current;
+                    nextScaleX *= multiplier;
+                }
+                if (scaleY !== undefined) {
+                    const multiplier = scaleY / appliedScaleYRef.current;
+                    nextScaleY *= multiplier;
                 }
             } else {
-                const m = newSvgs.get(key);
-                if (m) {
-                    newSvgs.set(key, {
-                        ...m,
-                        ...(scaleX !== undefined && { scale_x: scaleX }),
-                        ...(scaleY !== undefined && { scale_y: scaleY }),
-                    });
-                }
+                if (scaleX !== undefined) nextScaleX = scaleX;
+                if (scaleY !== undefined) nextScaleY = scaleY;
+            }
+
+            if (type === 'img') {
+                newImgs.set(key, { ...m as LaurusProjectImg, scale_x: nextScaleX, scale_y: nextScaleY });
+            } else {
+                newSvgs.set(key, { ...m as LaurusProjectSvg, scale_x: nextScaleX, scale_y: nextScaleY });
             }
         };
 
         selectedImgKeys.forEach(key => updateItem(key, 'img'));
         selectedSvgKeys.forEach(key => updateItem(key, 'svg'));
 
-        if (targetImgKeys.size === 0 && targetSvgKeys.size === 0) return;
-
-        targetImgKeys.forEach(key => {
-            const m = newImgs.get(key);
-            if (m) {
-                newImgs.set(key, {
-                    ...m,
-                    ...(scaleX !== undefined && { scale_x: scaleX }),
-                    ...(scaleY !== undefined && { scale_y: scaleY }),
-                });
-            }
-        });
-
-        targetSvgKeys.forEach(key => {
-            const m = newSvgs.get(key);
-            if (m) {
-                newSvgs.set(key, {
-                    ...m,
-                    ...(scaleX !== undefined && { scale_x: scaleX }),
-                    ...(scaleY !== undefined && { scale_y: scaleY }),
-                });
-            }
-        });
-
         const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs, svgs: newSvgs };
         const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
         if (saved) {
             dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+            if (isMultiSelect) {
+                if (scaleX !== undefined) appliedScaleXRef.current = scaleX;
+                if (scaleY !== undefined) appliedScaleYRef.current = scaleY;
+            }
         } else {
             dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys, isMultiSelect]);
 
     const isSelectionEmpty = useMemo(() => {
         return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
     }, [selectedImgKeys.size, selectedSvgKeys.size]);
 
     const getActiveDimensions = useCallback((newScaleValue: [number, number]): [number, number] => {
+        if (isMultiSelect) return newScaleValue;
         if (!target) return [0, 0];
 
         const snapshot: LaurusProjectResult = { ...appState.project };
@@ -261,9 +264,10 @@ export default function Scalebar() {
             if (!img) return [0, 0];
             return [img.width * newScaleValue[0], img.height * newScaleValue[1]]
         }
-    }, [appState.project, target]);
+    }, [appState.project, target, isMultiSelect]);
 
     const getActiveScale = useCallback((): [number, number] => {
+        if (isMultiSelect) return [relativeScaleX, relativeScaleY];
         if (!target) return [1, 1];
 
         const snapshot: LaurusProjectResult = { ...appState.project };
@@ -276,7 +280,7 @@ export default function Scalebar() {
             if (!img) return [1, 1];
             return [img.scale_x, img.scale_y]
         }
-    }, [appState.project, target]);
+    }, [appState.project, target, isMultiSelect, relativeScaleX, relativeScaleY]);
 
     const sliderXContainerRef = useRef<HTMLDivElement | null>(null);
     const sliderYContainerRef = useRef<HTMLDivElement | null>(null);
@@ -319,11 +323,12 @@ export default function Scalebar() {
 
             if (widthRef.current && heightRef.current) {
                 const dimensions = getActiveDimensions(scaleInit);
-                widthRef.current.value = (dimensions[0]).toFixed(0);
-                heightRef.current.value = (dimensions[1]).toFixed(0);
+                const precision = isMultiSelect ? 3 : 0;
+                widthRef.current.value = (dimensions[0]).toFixed(precision);
+                heightRef.current.value = (dimensions[1]).toFixed(precision);
             }
         })();
-    }, [appState.tool.type, complexTrackpadOptions, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize]);
+    }, [appState.tool.type, complexTrackpadOptions, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize, isMultiSelect]);
 
     const scaleXTitle = useMemo(() => {
         const scaleX = getActiveScale()[0];
@@ -375,27 +380,30 @@ export default function Scalebar() {
                         if (!scaleXTrackRef.current || !widthRef.current || !heightRef.current || !scaleXLiveTitleRef.current) return;
                         const newScaleXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                         const scaledDimensions = getActiveDimensions([newScaleXValue, newScaleXValue]);
-                        widthRef.current.value = scaledDimensions[0].toFixed(0);
+                        const precision = isMultiSelect ? 3 : 0;
+                        widthRef.current.value = scaledDimensions[0].toFixed(precision);
                         const decimalPlaces = newScaleXValue >= 10 ? 2 : 3;
                         scaleXLiveTitleRef.current.innerHTML = newScaleXValue.toFixed(decimalPlaces) + 'x';
                         if (!unlockAspectRatio) {
-                            heightRef.current.value = scaledDimensions[1].toFixed(0);
+                            heightRef.current.value = scaledDimensions[1].toFixed(precision);
                         }
                     }}
                     onNewCursor={(newCursor) => {
                         if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
                         setScaleXCursor({ ...newCursor, y: 0 });
+                        const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
+                        if (isMultiSelect) setRelativeScaleX(newXValue);
+
                         if (!unlockAspectRatio) {
                             const d = getActiveScale();
                             const r = d[0] / d[1];
                             const newYCursor = newCursor.x / r;
-                            const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                             const newYValue = newXValue / r;
                             setScaleYCursor({ x: newYCursor, y: 0 });
+                            if (isMultiSelect) setRelativeScaleY(newYValue);
                             saveActiveScale(newXValue, newYValue);
                         }
                         else {
-                            const newXValue = getScaleXValue(newCursor.x, scaleXTrackRef.current.clientWidth, complexTrackpadOptions);
                             saveActiveScale(newXValue, undefined);
                         }
                     }}
@@ -450,26 +458,29 @@ export default function Scalebar() {
                         const newScaleYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                         const scaledDimensions = getActiveDimensions([newScaleYValue, newScaleYValue]);
                         const decimalPlaces = newScaleYValue >= 10 ? 2 : 3;
-                        heightRef.current.value = scaledDimensions[1].toFixed();
+                        const precision = isMultiSelect ? 3 : 0;
+                        heightRef.current.value = scaledDimensions[1].toFixed(precision);
                         scaleYLiveTitleRef.current.innerHTML = newScaleYValue.toFixed(decimalPlaces) + 'x';
                         if (!unlockAspectRatio) {
-                            widthRef.current.value = scaledDimensions[0].toFixed();
+                            widthRef.current.value = scaledDimensions[0].toFixed(precision);
                         }
                     }}
                     onNewCursor={(newCursor) => {
                         if (!scaleXTrackRef.current || !scaleYTrackRef.current) return;
                         setScaleYCursor({ ...newCursor, y: 0 });
+                        const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
+                        if (isMultiSelect) setRelativeScaleY(newYValue);
+
                         if (!unlockAspectRatio) {
                             const d = getActiveScale();
                             const r = d[0] / d[1];
                             const newXCursor = newCursor.x * r;
-                            const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                             const newXValue = newYValue * r;
                             setScaleXCursor({ x: newXCursor, y: 0 });
+                            if (isMultiSelect) setRelativeScaleX(newXValue);
                             saveActiveScale(newXValue, newYValue);
                         }
                         else {
-                            const newYValue = getScaleYValue(newCursor.x, scaleYTrackRef.current.clientWidth, complexTrackpadOptions);
                             saveActiveScale(undefined, newYValue);
                         }
                     }}
