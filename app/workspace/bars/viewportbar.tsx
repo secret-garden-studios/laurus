@@ -15,10 +15,11 @@ export default function Viewportbar() {
                 },
                 progress: {
                     flex: {
-                        gap: 12,
+                        gap: 10,
                         padding: '0px 20px'
                     },
                     label: {
+                        width: '12ch',
                         fontSize: 10,
                     },
                     bar: {
@@ -38,10 +39,11 @@ export default function Viewportbar() {
                 },
                 progress: {
                     flex: {
-                        gap: 12,
+                        gap: 10,
                         padding: '0px 20px'
                     },
                     label: {
+                        width: '12ch',
                         fontSize: 10,
                     },
                     bar: {
@@ -62,10 +64,11 @@ export default function Viewportbar() {
                 },
                 progress: {
                     flex: {
-                        gap: 12,
+                        gap: 10,
                         padding: '0px 20px'
                     },
                     label: {
+                        width: '12ch',
                         fontSize: 10,
                     },
                     bar: {
@@ -107,7 +110,6 @@ export default function Viewportbar() {
                 }}>
                     <div className={geistMono.className}
                         style={{
-                            width: 'min-content',
                             textAlign: 'left',
                             color: 'rgb(227, 227, 227)',
                             ...dynamicSizes.progress.label
