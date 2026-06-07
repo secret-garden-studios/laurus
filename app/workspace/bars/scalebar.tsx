@@ -24,6 +24,7 @@ export default function Scalebar() {
     const [appliedScaleY, setAppliedScaleY] = useState(1);
     const [prevImgKeys, setPrevImgKeys] = useState(selectedImgKeys);
     const [prevSvgKeys, setPrevSvgKeys] = useState(selectedSvgKeys);
+    const [isSaving, setIsSaving] = useState(false);
 
     // beta: render-phase state adjustment pattern
     if (selectedImgKeys !== prevImgKeys || selectedSvgKeys !== prevSvgKeys) {
@@ -199,6 +200,9 @@ export default function Scalebar() {
     const scaleYLiveTitleRef = useRef<HTMLDivElement | null>(null);
 
     const saveActiveScale = useCallback(async (scaleX: number | undefined, scaleY: number | undefined) => {
+        if (isSaving) return;
+        setIsSaving(true);
+
         const snapshot: LaurusProjectResult = { ...appState.project };
         const newImgs = new Map(snapshot.imgs);
         const newSvgs = new Map(snapshot.svgs);
@@ -235,17 +239,21 @@ export default function Scalebar() {
         selectedSvgKeys.forEach(key => updateItem(key, 'svg'));
 
         const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs, svgs: newSvgs };
-        const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
-        if (saved) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
-            if (isMultiSelect) {
-                if (scaleX !== undefined) setAppliedScaleX(scaleX);
-                if (scaleY !== undefined) setAppliedScaleY(scaleY);
+        try {
+            const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
+            if (saved) {
+                dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+                if (isMultiSelect) {
+                    if (scaleX !== undefined) setAppliedScaleX(scaleX);
+                    if (scaleY !== undefined) setAppliedScaleY(scaleY);
+                }
+            } else {
+                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
             }
-        } else {
-            dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+        } finally {
+            setIsSaving(false);
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys, isMultiSelect, appliedScaleX, appliedScaleY]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys, isMultiSelect, appliedScaleX, appliedScaleY, isSaving]);
 
     const isSelectionEmpty = useMemo(() => {
         return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
