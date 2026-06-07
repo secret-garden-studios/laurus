@@ -4,13 +4,14 @@ import { LaurusProjectResult } from "@/app/projects/projects.client";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
 import { SCALE_MAX } from "../workspace.config";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 
 export default function Scalebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
+    const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
@@ -174,96 +175,120 @@ export default function Scalebar() {
     const scaleYLiveTitleRef = useRef<HTMLDivElement | null>(null);
 
     const saveActiveScale = useCallback(async (scaleX: number | undefined, scaleY: number | undefined) => {
-        if (!appState.activeElement) return;
-        const activeElement = { ...appState.activeElement };
-        if (!activeElement) return;
         const snapshot: LaurusProjectResult = { ...appState.project };
+        const newImgs = new Map(snapshot.imgs);
+        const newSvgs = new Map(snapshot.svgs);
 
-        switch (activeElement.type) {
-            case "svg": {
-                const newSvg = snapshot.svgs.get(activeElement.key);
-                if (newSvg) {
-                    const rollbackSvgs = new Map(snapshot.svgs);
-
-                    const newSvgs = new Map(snapshot.svgs);
-                    newSvgs.set(activeElement.key, {
-                        ...newSvg,
+        const targetImgKeys = new Set(selectedImgKeys);
+        const targetSvgKeys = new Set(selectedSvgKeys);
+        const updateItem = (key: string, type: 'img' | 'svg') => {
+            if (type === 'img') {
+                const m = newImgs.get(key);
+                if (m) {
+                    newImgs.set(key, {
+                        ...m,
                         ...(scaleX !== undefined && { scale_x: scaleX }),
                         ...(scaleY !== undefined && { scale_y: scaleY }),
                     });
-                    const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs }
-                    const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
-                    if (saved) {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
-                    }
-                    else {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...snapshot, svgs: rollbackSvgs } });
-                    }
                 }
-                break;
-            }
-            case "img": {
-                const newImg = snapshot.imgs.get(activeElement.key);
-                if (newImg) {
-                    const rollbackImgs = new Map(snapshot.imgs);
-
-                    const newImgs = new Map(snapshot.imgs);
-                    newImgs.set(activeElement.key, {
-                        ...newImg,
+            } else {
+                const m = newSvgs.get(key);
+                if (m) {
+                    newSvgs.set(key, {
+                        ...m,
                         ...(scaleX !== undefined && { scale_x: scaleX }),
                         ...(scaleY !== undefined && { scale_y: scaleY }),
                     });
-                    const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs }
-                    const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
-                    if (saved) {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
-                    }
-                    else {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...snapshot, imgs: rollbackImgs } });
-                    }
                 }
-                break;
             }
+        };
+
+        selectedImgKeys.forEach(key => updateItem(key, 'img'));
+        selectedSvgKeys.forEach(key => updateItem(key, 'svg'));
+        if (appState.activeElement) {
+            if (appState.activeElement.type === 'img') targetImgKeys.add(appState.activeElement.key);
+            else targetSvgKeys.add(appState.activeElement.key);
+            updateItem(appState.activeElement.key, appState.activeElement.type);
         }
-    }, [appState.accessToken, appState.activeElement, appState.apiOrigin, appState.project, dispatch]);
+
+        if (targetImgKeys.size === 0 && targetSvgKeys.size === 0) return;
+
+        targetImgKeys.forEach(key => {
+            const m = newImgs.get(key);
+            if (m) {
+                newImgs.set(key, {
+                    ...m,
+                    ...(scaleX !== undefined && { scale_x: scaleX }),
+                    ...(scaleY !== undefined && { scale_y: scaleY }),
+                });
+            }
+        });
+
+        targetSvgKeys.forEach(key => {
+            const m = newSvgs.get(key);
+            if (m) {
+                newSvgs.set(key, {
+                    ...m,
+                    ...(scaleX !== undefined && { scale_x: scaleX }),
+                    ...(scaleY !== undefined && { scale_y: scaleY }),
+                });
+            }
+        });
+
+        const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs, svgs: newSvgs };
+        const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
+        if (saved) {
+            dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+        } else {
+            dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+        }
+    }, [appState.accessToken, appState.activeElement, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys]);
+
+    const isSelectionEmpty = useMemo(() => {
+        return appState.activeElement == undefined && selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
+    }, [appState.activeElement, selectedImgKeys, selectedSvgKeys]);
 
     const getActiveDimensions = useCallback((newScaleValue: [number, number]): [number, number] => {
-        if (!appState.activeElement) return [0, 0];
-        const activeElement = { ...appState.activeElement };
-        if (!activeElement) return [0, 0];
+        const target = appState.activeElement ? 
+            { key: appState.activeElement.key, type: appState.activeElement.type } :
+            selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
+            selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
+            null;
+
+        if (!target) return [0, 0];
+
         const snapshot: LaurusProjectResult = { ...appState.project };
-        switch (activeElement.type) {
-            case "svg": {
-                const svg = snapshot.svgs.get(activeElement.key);
-                if (!svg) return [0, 0];
-                return [svg.width * newScaleValue[0], svg.height * newScaleValue[1]]
-            }
-            case "img": {
-                const img = snapshot.imgs.get(activeElement.key);
-                if (!img) return [0, 0];
-                return [img.width * newScaleValue[0], img.height * newScaleValue[1]]
-            }
+        if (target.type === "svg") {
+            const svg = snapshot.svgs.get(target.key);
+            if (!svg) return [0, 0];
+            return [svg.width * newScaleValue[0], svg.height * newScaleValue[1]]
+        } else {
+            const img = snapshot.imgs.get(target.key);
+            if (!img) return [0, 0];
+            return [img.width * newScaleValue[0], img.height * newScaleValue[1]]
         }
-    }, [appState.activeElement, appState.project]);
+    }, [appState.activeElement, appState.project, selectedImgKeys, selectedSvgKeys]);
 
     const getActiveScale = useCallback((): [number, number] => {
-        if (!appState.activeElement) return [1, 1];
-        const activeElement = { ...appState.activeElement };
-        if (!activeElement) return [1, 1];
+        const target = appState.activeElement ? 
+            { key: appState.activeElement.key, type: appState.activeElement.type } :
+            selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
+            selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
+            null;
+
+        if (!target) return [1, 1];
+
         const snapshot: LaurusProjectResult = { ...appState.project };
-        switch (activeElement.type) {
-            case "svg": {
-                const svg = snapshot.svgs.get(activeElement.key);
-                if (!svg) return [1, 1];
-                return [svg.scale_x, svg.scale_y]
-            }
-            case "img": {
-                const img = snapshot.imgs.get(activeElement.key);
-                if (!img) return [1, 1];
-                return [img.scale_x, img.scale_y]
-            }
+        if (target.type === "svg") {
+            const svg = snapshot.svgs.get(target.key);
+            if (!svg) return [1, 1];
+            return [svg.scale_x, svg.scale_y]
+        } else {
+            const img = snapshot.imgs.get(target.key);
+            if (!img) return [1, 1];
+            return [img.scale_x, img.scale_y]
         }
-    }, [appState.activeElement, appState.project]);
+    }, [appState.activeElement, appState.project, selectedImgKeys, selectedSvgKeys]);
 
     const sliderXContainerRef = useRef<HTMLDivElement | null>(null);
     const sliderYContainerRef = useRef<HTMLDivElement | null>(null);
@@ -315,14 +340,14 @@ export default function Scalebar() {
     const scaleXTitle = useMemo(() => {
         const scaleX = getActiveScale()[0];
         const decimalPlaces = scaleX >= 10 ? 2 : 3;
-        return appState.activeElement == undefined ? '' : scaleX.toFixed(decimalPlaces) + 'x';
-    }, [appState.activeElement, getActiveScale]);
+        return isSelectionEmpty ? '' : scaleX.toFixed(decimalPlaces) + 'x';
+    }, [isSelectionEmpty, getActiveScale]);
 
     const scaleYTitle = useMemo(() => {
         const scaleY = getActiveScale()[1];
         const decimalPlaces = scaleY >= 10 ? 2 : 3;
-        return appState.activeElement == undefined ? '' : scaleY.toFixed(decimalPlaces) + 'x';
-    }, [appState.activeElement, getActiveScale]);
+        return isSelectionEmpty ? '' : scaleY.toFixed(decimalPlaces) + 'x';
+    }, [isSelectionEmpty, getActiveScale]);
 
     return <>
         <div style={
@@ -386,7 +411,7 @@ export default function Scalebar() {
                             saveActiveScale(newXValue, undefined);
                         }
                     }}
-                    disabled={appState.activeElement == undefined}
+                    disabled={isSelectionEmpty}
                     title={scaleXTitle}
                     liveTitleRef={scaleXLiveTitleRef} />
                 <div style={{
@@ -406,7 +431,7 @@ export default function Scalebar() {
                         textAlign: "center",
                         background: 'none',
                         color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                        border: 'none',
+                        border: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         outline: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',
@@ -460,7 +485,7 @@ export default function Scalebar() {
                             saveActiveScale(undefined, newYValue);
                         }
                     }}
-                    disabled={appState.activeElement == undefined}
+                    disabled={isSelectionEmpty}
                     title={scaleYTitle}
                     liveTitleRef={scaleYLiveTitleRef} />
                 <div style={{
@@ -480,7 +505,7 @@ export default function Scalebar() {
                         textAlign: "center",
                         background: 'none',
                         color: appState.activeElement == undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                        border: 'none',
+                        border: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         outline: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',

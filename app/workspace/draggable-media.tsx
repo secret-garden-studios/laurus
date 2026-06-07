@@ -226,7 +226,7 @@ function ProjectImg({
                         style={{
                             objectFit: 'cover',
                             cursor: 'inherit',
-                            outline: isSelected
+                            outline: (isSelected || (appState.activeElement?.key === mediaKey && appState.tool.type === 'scale'))
                                 ? '2px solid rgba(66, 133, 244, 1)'
                                 : (isStackable && isHovered)
                                     ? '2px solid rgba(255, 255, 255, 0.9)'
@@ -345,7 +345,7 @@ function ProjectSvg({
                         display: 'grid',
                         placeContent: 'center',
                         cursor: 'inherit',
-                        outline: isSelected
+                        outline: (isSelected || (appState.activeElement?.key === mediaKey && appState.tool.type === 'scale'))
                             ? '2px solid rgba(66, 133, 244, 1)'
                             : (isStackable && isHovered)
                                 ? '2px solid rgba(255, 255, 255, 0.9)'
