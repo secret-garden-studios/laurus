@@ -185,6 +185,16 @@ function ProjectImg({
         touchAction: 'none',
     };
 
+    const imgCursor = useMemo(() => {
+        return (isMetaKeyPressed && appState.tool.type === 'marquee' && appState.tool.select)
+            ? 'crosshair'
+            : (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move')
+                ? 'context-menu'
+                : (isStackable || appState.tool.type === 'scale')
+                    ? 'crosshair'
+                    : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
+    }, [appState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+
     return <>
         <div
             ref={setNodeRef}
@@ -204,11 +214,7 @@ function ProjectImg({
                         ...(transform && { ...transform.cssProps }),
                         position: 'relative',
                         zIndex: Z_INDEX.ITEM_CONTENT,
-                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move') 
-                            ? 'context-menu' 
-                            : (isStackable || appState.tool.type === 'scale') 
-                                ? 'crosshair' 
-                                : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                        cursor: imgCursor,
                     }} >
                     <LaurusImage
                         onClick={(e) => onClick(e.metaKey)}
@@ -317,6 +323,16 @@ function ProjectSvg({
         touchAction: 'none',
     };
 
+    const svgCursor = useMemo(() => {
+        return (isMetaKeyPressed && appState.tool.type === 'marquee' && appState.tool.select)
+            ? 'crosshair'
+            : (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move')
+                ? 'context-menu'
+                : (isStackable || appState.tool.type === 'scale')
+                    ? 'crosshair'
+                    : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
+    }, [appState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+
     return <>
         <div
             ref={setNodeRef}
@@ -341,11 +357,7 @@ function ProjectSvg({
                     ...(transform && { ...transform.cssProps }),
                     position: 'relative',
                     zIndex: Z_INDEX.ITEM_CONTENT,
-                        cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move') 
-                            ? 'context-menu' 
-                            : (isStackable || appState.tool.type === 'scale') 
-                                ? 'crosshair' 
-                                : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab',
+                    cursor: svgCursor,
                 }}>
                 <div
                     style={{
@@ -589,7 +601,18 @@ export function DraggableProjectImg({
     }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
 
     const onImgClick = useCallback((metaKey: boolean) => {
-        if (metaKey && appState.tool.type !== 'viewport') {
+        if (metaKey && appState.tool.type === 'marquee' && appState.tool.select) {
+            setSelectedImgKeys(prev => {
+                const next = new Set(prev);
+                if (next.has(mediaKey)) {
+                    next.delete(mediaKey);
+                } else {
+                    next.add(mediaKey);
+                }
+                return next;
+            });
+        }
+        else if (metaKey && appState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },
@@ -887,7 +910,18 @@ export function DraggableProjectSvg({
     }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
 
     const onSvgClick = useCallback((metaKey: boolean) => {
-        if (metaKey && appState.tool.type !== 'viewport') {
+        if (metaKey && appState.tool.type === 'marquee' && appState.tool.select) {
+            setSelectedSvgKeys(prev => {
+                const next = new Set(prev);
+                if (next.has(mediaKey)) {
+                    next.delete(mediaKey);
+                } else {
+                    next.add(mediaKey);
+                }
+                return next;
+            });
+        }
+        else if (metaKey && appState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },

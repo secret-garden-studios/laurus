@@ -1222,6 +1222,16 @@ export default function Workspace({
         handleFastForwardAll,
     }), [appState, getNewAnimations, handleRewindAll, handlePlayAll, handleFastForwardAll]);
 
+    const canvasCursor = useMemo(() => {
+        return (isMetaKeyPressed && appState.tool.type === 'marquee' && appState.tool.select)
+            ? 'crosshair'
+            : (isMetaKeyPressed && appState.tool.type !== 'viewport')
+                ? 'context-menu'
+                : (appState.tool.type === 'scale')
+                    ? 'crosshair'
+                    : 'default';
+    }, [appState.tool, isMetaKeyPressed]);
+
     return (<>
         <div style={{
             width: "100vw",
@@ -1316,7 +1326,7 @@ export default function Workspace({
                             position: 'relative',
                             width: "100%",
                             height: '100%',
-                            cursor: (isMetaKeyPressed && appState.tool.type !== 'viewport') ? 'context-menu' : (appState.tool.type === 'scale') ? 'crosshair' : 'default',
+                            cursor: canvasCursor,
                         }}>
                         <div
                             className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-3' : 'noisy-background-20-3-low-res'}`]}
