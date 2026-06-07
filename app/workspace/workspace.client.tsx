@@ -216,7 +216,6 @@ export interface WorkspaceState {
     playEnabled: boolean;
     skipPreviousEnabled: boolean;
     skipNextEnabled: boolean;
-    animationProgress: number | undefined;
 }
 export const defaultWorkspace: WorkspaceState = {
     apiOrigin: undefined,
@@ -270,7 +269,6 @@ export const defaultWorkspace: WorkspaceState = {
     playEnabled: true,
     skipPreviousEnabled: true,
     skipNextEnabled: true,
-    animationProgress: undefined,
 }
 
 export enum WorkspaceActionType {
@@ -311,7 +309,6 @@ export enum WorkspaceActionType {
     SetPlayEnabled,
     SetSkipPreviousEnabled,
     SetSkipNextEnabled,
-    SetAnimationProgress,
 }
 
 export type WorkspaceAction =
@@ -352,7 +349,6 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetPlayEnabled, value: boolean }
     | { type: WorkspaceActionType.SetSkipPreviousEnabled, value: boolean }
     | { type: WorkspaceActionType.SetSkipNextEnabled, value: boolean }
-    | { type: WorkspaceActionType.SetAnimationProgress, value: number | undefined }
 
 
 function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
@@ -534,9 +530,6 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.SetSkipNextEnabled: {
             return { ...state, skipNextEnabled: action.value }
         }
-        case WorkspaceActionType.SetAnimationProgress: {
-            return { ...state, animationProgress: action.value }
-        }
     }
 }
 
@@ -559,6 +552,7 @@ export interface HoverContextProps {
     setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
     selectedSvgKeys: Set<string>;
     setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+    animationProgress: number | undefined;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -571,6 +565,7 @@ export const HoverContext = createContext<HoverContextProps>({
     setSelectedImgKeys: () => { },
     selectedSvgKeys: new Set<string>(),
     setSelectedSvgKeys: () => { },
+    animationProgress: undefined,
 });
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
@@ -826,6 +821,7 @@ export default function Workspace({
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
     const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
+    const [animationProgress, setAnimationProgress] = useState<number | undefined>(undefined);
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
@@ -1055,7 +1051,7 @@ export default function Workspace({
             const total = imgsToProcess.length + svgsToProcess.length;
             let current = 0;
 
-            if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: 0 });
+            if (total > 0) setAnimationProgress(0);
 
             for (let i = 0; i < imgsToProcess.length; i++) {
                 const [key] = imgsToProcess[i];
@@ -1073,7 +1069,7 @@ export default function Workspace({
                     newAnimations.push(new Animation(keyframeEffect, document.timeline));
                 }
                 current++;
-                if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: Math.round((current / total) * 100) });
+                if (total > 0) setAnimationProgress(Math.round((current / total) * 100));
             };
 
             for (let i = 0; i < svgsToProcess.length; i++) {
@@ -1092,15 +1088,15 @@ export default function Workspace({
                     newAnimations.push(new Animation(keyframeEffect, document.timeline));
                 }
                 current++;
-                if (total > 0) dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: Math.round((current / total) * 100) });
+                if (total > 0) setAnimationProgress(Math.round((current / total) * 100));
             };
 
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
-            dispatch({ type: WorkspaceActionType.SetAnimationProgress, value: undefined });
+            setAnimationProgress(undefined);
         }
-    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef, dispatch]);
+    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
 
     const handleMixRestoration = useCallback(() => {
         if (appState.tool.type === 'mix') {
@@ -1228,7 +1224,8 @@ export default function Workspace({
         setSelectedImgKeys,
         selectedSvgKeys,
         setSelectedSvgKeys,
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys]);
+        animationProgress,
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationProgress]);
 
     const workspaceContextValue = useMemo(() => ({
         appState,

@@ -1,10 +1,11 @@
 import { useContext, useState } from "react";
 import { geistMono } from "@/app/fonts";
-import { WorkspaceContext } from "../workspace.client";
+import { WorkspaceContext, HoverContext } from "../workspace.client";
 import { browse, SvgRepo } from "@/app/svg-repo";
 
 export default function Viewportbar() {
     const { appState } = useContext(WorkspaceContext);
+    const { animationProgress } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -97,7 +98,7 @@ export default function Viewportbar() {
                 }}
                 scale={1}
                 scaleToContaier={true} />
-            {appState.animationProgress !== undefined && (
+            {animationProgress !== undefined && (
                 <div style={{
                     flex: 1,
                     display: 'flex',
@@ -120,7 +121,7 @@ export default function Viewportbar() {
                         ...dynamicSizes.progress.bar
                     }}>
                         <div style={{
-                            width: `${appState.animationProgress}%`,
+                            width: `${animationProgress}%`,
                             height: '100%',
                             background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
                             borderRadius: dynamicSizes.progress.bar.borderRadius,
@@ -133,7 +134,7 @@ export default function Viewportbar() {
                             color: 'rgb(227, 227, 227)',
                             ...dynamicSizes.progress.units
                         }}>
-                        {`${appState.animationProgress}%`}
+                        {`${animationProgress}%`}
                     </div>
                 </div>
             )}
