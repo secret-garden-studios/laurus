@@ -94,7 +94,7 @@ export type LaurusTool =
     | { type: 'contextmenu' }
     | { type: 'viewport' }
     | { type: 'move' }
-    | { type: 'scale' }
+    | { type: 'scale', selectedKey: string | undefined }
     | { type: 'rotate' }
     | { type: 'mix' }
 export const defaultMarqueeTool: LaurusTool = {
@@ -953,7 +953,7 @@ export default function Workspace({
                 dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 's') {
-                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
+                dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale', selectedKey: undefined } });
                 clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'v') {
                 const newToolType = appState.tool.type === 'viewport' ? 'none' : 'viewport';

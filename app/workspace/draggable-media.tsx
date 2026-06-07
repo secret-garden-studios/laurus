@@ -226,7 +226,7 @@ function ProjectImg({
                         style={{
                             objectFit: 'cover',
                             cursor: 'inherit',
-                            outline: (isSelected || (appState.activeElement?.key === mediaKey && appState.tool.type === 'scale'))
+                            outline: (isSelected || (appState.tool.type === 'scale' && appState.tool.selectedKey == mediaKey))
                                 ? '2px solid rgba(66, 133, 244, 1)'
                                 : (isStackable && isHovered)
                                     ? '2px solid rgba(255, 255, 255, 0.9)'
@@ -345,7 +345,7 @@ function ProjectSvg({
                         display: 'grid',
                         placeContent: 'center',
                         cursor: 'inherit',
-                        outline: (isSelected || (appState.activeElement?.key === mediaKey && appState.tool.type === 'scale'))
+                        outline: (isSelected || (appState.tool.type === 'scale' && appState.tool.selectedKey == mediaKey))
                             ? '2px solid rgba(66, 133, 244, 1)'
                             : (isStackable && isHovered)
                                 ? '2px solid rgba(255, 255, 255, 0.9)'
@@ -628,7 +628,10 @@ export function DraggableProjectImg({
                 }
                 case "viewport": { break; }
                 case "move": { break; }
-                case "scale":
+                case "scale": {
+                    dispatch({ type: WorkspaceActionType.SetTool, value: { ...appState.tool, selectedKey: mediaKey } });
+                    break;
+                }
                 case "rotate": {
                     const newActiveElement: LaurusActiveElement = {
                         key: mediaKey,
@@ -915,7 +918,10 @@ export function DraggableProjectSvg({
                 }
                 case "viewport": { break; }
                 case "move": { break; }
-                case "scale":
+                case "scale": {
+                    dispatch({ type: WorkspaceActionType.SetTool, value: { ...appState.tool, selectedKey: mediaKey } });
+                    break;
+                }
                 case "rotate": {
                     const newActiveElement: LaurusActiveElement = {
                         key: mediaKey,
