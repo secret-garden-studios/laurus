@@ -226,7 +226,7 @@ function ProjectImg({
                         style={{
                             objectFit: 'cover',
                             cursor: 'inherit',
-                            outline: (isSelected || (appState.tool.type === 'scale' && appState.tool.selectedKey == mediaKey))
+                            outline: (isSelected)
                                 ? '2px solid rgba(66, 133, 244, 1)'
                                 : (isStackable && isHovered)
                                     ? '2px solid rgba(255, 255, 255, 0.9)'
@@ -345,7 +345,7 @@ function ProjectSvg({
                         display: 'grid',
                         placeContent: 'center',
                         cursor: 'inherit',
-                        outline: (isSelected || (appState.tool.type === 'scale' && appState.tool.selectedKey == mediaKey))
+                        outline: (isSelected)
                             ? '2px solid rgba(66, 133, 244, 1)'
                             : (isStackable && isHovered)
                                 ? '2px solid rgba(255, 255, 255, 0.9)'
@@ -407,7 +407,7 @@ export function DraggableProjectImg({
     imgElementsRef,
     refKey }: DraggableProjectImg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
+    const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
         switch (appState.tool.type) {
@@ -629,7 +629,15 @@ export function DraggableProjectImg({
                 case "viewport": { break; }
                 case "move": { break; }
                 case "scale": {
-                    dispatch({ type: WorkspaceActionType.SetTool, value: { ...appState.tool, selectedKey: mediaKey } });
+                    setSelectedImgKeys(prev => {
+                        const next = new Set(prev);
+                        if (next.has(mediaKey)) {
+                            next.delete(mediaKey);
+                        } else {
+                            next.add(mediaKey);
+                        }
+                        return next;
+                    });
                     break;
                 }
                 case "rotate": {
@@ -651,7 +659,7 @@ export function DraggableProjectImg({
                 }
             }
         }
-    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool, onImgStackDrop, dispatch, mediaKey, meta]);
+    }, [appState.tool, appState.project.canvas_width, appState.project.canvas_height, appState.project.imgs, appState.project.svgs, meta, dispatch, mediaKey, onImgStackDrop, setSelectedImgKeys]);
 
     return (<>
         <DndContext
@@ -698,7 +706,7 @@ export function DraggableProjectSvg({
     svgElementsRef,
     refKey }: DraggableProjectSvg) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
+    const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
         switch (appState.tool.type) {
@@ -919,7 +927,15 @@ export function DraggableProjectSvg({
                 case "viewport": { break; }
                 case "move": { break; }
                 case "scale": {
-                    dispatch({ type: WorkspaceActionType.SetTool, value: { ...appState.tool, selectedKey: mediaKey } });
+                    setSelectedSvgKeys(prev => {
+                        const next = new Set(prev);
+                        if (next.has(mediaKey)) {
+                            next.delete(mediaKey);
+                        } else {
+                            next.add(mediaKey);
+                        }
+                        return next;
+                    });
                     break;
                 }
                 case "rotate": {
@@ -941,7 +957,7 @@ export function DraggableProjectSvg({
                 }
             }
         }
-    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, appState.tool, onSvgStackDrop, dispatch, mediaKey, meta]);
+    }, [appState.tool, appState.project.canvas_width, appState.project.canvas_height, appState.project.svgs, appState.project.imgs, meta, dispatch, mediaKey, onSvgStackDrop, setSelectedSvgKeys]);
 
     return (<>
         <DndContext

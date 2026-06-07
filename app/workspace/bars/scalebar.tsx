@@ -12,9 +12,11 @@ import styles from "@/app/app.module.css";
 export default function Scalebar() {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
-    const selectedKey = useMemo(() => {
-        return appState.tool.type === 'scale' ? appState.tool.selectedKey : undefined;
-    }, [appState.tool]);
+    const target = useMemo(() => {
+        return selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
+            selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
+            null;
+    }, [selectedImgKeys, selectedSvgKeys]);
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
@@ -208,15 +210,6 @@ export default function Scalebar() {
 
         selectedImgKeys.forEach(key => updateItem(key, 'img'));
         selectedSvgKeys.forEach(key => updateItem(key, 'svg'));
-        if (selectedKey) {
-            if (snapshot.imgs.has(selectedKey)) {
-                targetImgKeys.add(selectedKey);
-                updateItem(selectedKey, 'img');
-            } else if (snapshot.svgs.has(selectedKey)) {
-                targetSvgKeys.add(selectedKey);
-                updateItem(selectedKey, 'svg');
-            }
-        }
 
         if (targetImgKeys.size === 0 && targetSvgKeys.size === 0) return;
 
@@ -249,20 +242,13 @@ export default function Scalebar() {
         } else {
             dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedKey, selectedSvgKeys]);
+    }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, selectedImgKeys, selectedSvgKeys]);
 
     const isSelectionEmpty = useMemo(() => {
-        return selectedKey == undefined && selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
-    }, [selectedImgKeys.size, selectedKey, selectedSvgKeys.size]);
+        return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
+    }, [selectedImgKeys.size, selectedSvgKeys.size]);
 
     const getActiveDimensions = useCallback((newScaleValue: [number, number]): [number, number] => {
-        const target = selectedKey ?
-            (appState.project.imgs.has(selectedKey) ? { key: selectedKey, type: 'img' as const } :
-                appState.project.svgs.has(selectedKey) ? { key: selectedKey, type: 'svg' as const } : null) :
-            selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
-            selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
-            null;
-
         if (!target) return [0, 0];
 
         const snapshot: LaurusProjectResult = { ...appState.project };
@@ -275,16 +261,9 @@ export default function Scalebar() {
             if (!img) return [0, 0];
             return [img.width * newScaleValue[0], img.height * newScaleValue[1]]
         }
-    }, [appState.project, selectedImgKeys, selectedKey, selectedSvgKeys]);
+    }, [appState.project, target]);
 
     const getActiveScale = useCallback((): [number, number] => {
-        const target = selectedKey ?
-            (appState.project.imgs.has(selectedKey) ? { key: selectedKey, type: 'img' as const } :
-                appState.project.svgs.has(selectedKey) ? { key: selectedKey, type: 'svg' as const } : null) :
-            selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
-            selectedSvgKeys.size > 0 ? { key: Array.from(selectedSvgKeys)[0], type: 'svg' as const } :
-            null;
-
         if (!target) return [1, 1];
 
         const snapshot: LaurusProjectResult = { ...appState.project };
@@ -297,7 +276,7 @@ export default function Scalebar() {
             if (!img) return [1, 1];
             return [img.scale_x, img.scale_y]
         }
-    }, [selectedKey, appState.project, selectedImgKeys, selectedSvgKeys]);
+    }, [appState.project, target]);
 
     const sliderXContainerRef = useRef<HTMLDivElement | null>(null);
     const sliderYContainerRef = useRef<HTMLDivElement | null>(null);
@@ -388,7 +367,7 @@ export default function Scalebar() {
                 }}>
                 <ParameterSliderXPlusMinus
                     label={"zoom"}
-                    hash={`${selectedKey ?? 'scalebar'}|scalex`}
+                    hash={`${target?.key ?? 'scalebar'}|scalex`}
                     size={dynamicSizes.paramSize}
                     containerRef={scaleXTrackRef}
                     cursor={scaleXCursor}
@@ -426,22 +405,22 @@ export default function Scalebar() {
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    color: selectedKey === undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                    color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                     fontSize: dynamicSizes.unitFontSize,
                 }}>
                     {'width'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${selectedKey ?? 'scalebar'}|input|scalex`}
+                    id={`${target?.key ?? 'scalebar'}|input|scalex`}
                     disabled
                     ref={widthRef}
                     type="text"
                     style={{
                         textAlign: "center",
                         background: 'none',
-                        color: selectedKey === undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                        border: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                        color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         outline: 'none',
+                        border: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',
                         ...dynamicSizes.input
@@ -462,7 +441,7 @@ export default function Scalebar() {
                 }}>
                 <ParameterSliderXPlusMinus
                     label={"zoom"}
-                    hash={`${selectedKey ?? 'scalebar'}|scaley`}
+                    hash={`${target?.key ?? 'scalebar'}|scaley`}
                     size={dynamicSizes.paramSize}
                     containerRef={scaleYTrackRef}
                     cursor={scaleYCursor}
@@ -500,22 +479,22 @@ export default function Scalebar() {
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    color: selectedKey === undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                    color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                     fontSize: dynamicSizes.unitFontSize
                 }}>
                     {'height'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${selectedKey ?? 'scalebar'}|input|scaley`}
+                    id={`${target?.key ?? 'scalebar'}|input|scaley`}
                     disabled
                     ref={heightRef}
                     type="text"
                     style={{
                         textAlign: "center",
                         background: 'none',
-                        color: selectedKey === undefined ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                        border: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
+                        color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
                         outline: 'none',
+                        border: 'none',
                         display: 'inline-block',
                         overflowX: 'scroll',
                         ...dynamicSizes.input

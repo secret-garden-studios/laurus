@@ -337,7 +337,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             setShowActiveContextMenu(false);
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale', selectedKey: undefined } });
+                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
                             setShowActiveContextMenu(true);
                         }
                     }}
