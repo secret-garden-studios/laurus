@@ -48,7 +48,7 @@ export default function Scalebar() {
                     capBorderOffset: 0,
                     trackHeight: 1,
                     tickHeight: 22,
-                    tickLeft: 2,
+                    tickLeft: 0,
                     svgSize: { width: 24, height: 24 }
                 },
                 sliderRatio: 0.8,
@@ -56,7 +56,10 @@ export default function Scalebar() {
                     width: 20,
                     height: 20
                 },
-                unitFontSize: 12,
+                inputLabel: {
+                    width: '6ch',
+                    fontSize: 12
+                },
                 input: {
                     fontSize: 13,
                     width: '6ch',
@@ -94,7 +97,7 @@ export default function Scalebar() {
                     containerHeight: 36,
                     trackHeight: 1,
                     tickHeight: 20,
-                    tickLeft: 1,
+                    tickLeft: 0,
                     svgSize: { width: 20, height: 20 }
                 },
                 sliderRatio: 0.8,
@@ -102,7 +105,10 @@ export default function Scalebar() {
                     width: 18,
                     height: 18
                 },
-                unitFontSize: 10,
+                inputLabel: {
+                    width: '6ch',
+                    fontSize: 10
+                },
                 input: {
                     fontSize: 11,
                     width: '6ch',
@@ -149,7 +155,10 @@ export default function Scalebar() {
                     width: 20,
                     height: 20
                 },
-                unitFontSize: 11,
+                inputLabel: {
+                    width: '6ch',
+                    fontSize: 11
+                },
                 input: {
                     fontSize: 13,
                     width: '6ch',
@@ -377,6 +386,7 @@ export default function Scalebar() {
                     gridTemplateColumns: `${sliderColumnSize}px min-content min-content`,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    borderLeft: '1px solid rgba(255, 255, 255, 0)',
                     ...dynamicSizes.grid
                 }}>
                 <ParameterSliderXPlusMinus
@@ -422,8 +432,9 @@ export default function Scalebar() {
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'center',
                     color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                    fontSize: dynamicSizes.unitFontSize,
+                    ...dynamicSizes.inputLabel
                 }}>
                     {'width'}
                 </div>
@@ -499,8 +510,9 @@ export default function Scalebar() {
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
+                    justifyContent: 'center',
                     color: isSelectionEmpty ? 'rgb(67, 67, 67)' : "rgb(227, 227, 227)",
-                    fontSize: dynamicSizes.unitFontSize
+                    ...dynamicSizes.inputLabel
                 }}>
                     {'height'}
                 </div>
