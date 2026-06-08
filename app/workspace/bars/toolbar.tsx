@@ -1,10 +1,9 @@
-import { useCallback, useContext, useState } from "react"
+import { useContext, useState } from "react"
 import { defaultMarqueeTool, WorkspaceActionType, WorkspaceContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
-import { LaurusProjectResult } from "../../projects/projects.client";
 
 interface Toolbar {
     resolution: WorkspaceResolution,
@@ -39,25 +38,6 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
             }
         }
     });
-
-    const setShowActiveContextMenu = useCallback((newShowContextMenu: boolean): void => {
-        if (!appState.activeElement) return;
-        const activeElement = { ...appState.activeElement };
-        if (!activeElement) return;
-        const snapshot: LaurusProjectResult = { ...appState.project };
-        switch (activeElement.type) {
-            case "svg": {
-                const svg = snapshot.svgs.get(activeElement.key);
-                if (!svg) return;
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: activeElement.key, value: { ...svg, showContextMenu: newShowContextMenu } });
-            }
-            case "img": {
-                const img = snapshot.imgs.get(activeElement.key);
-                if (!img) return;
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: activeElement.key, value: { ...img, showContextMenu: newShowContextMenu } });
-            }
-        }
-    }, [appState.activeElement, appState.project, dispatch]);
 
     return <>
         <div
@@ -334,11 +314,9 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         handleMixRestoration();
                         if (appState.tool.type == 'scale') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                            setShowActiveContextMenu(false);
                         }
                         else {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
-                            setShowActiveContextMenu(true);
                         }
                     }}
                     containerStyle={!appState.skipPreviousEnabled ? {
@@ -391,11 +369,9 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         handleMixRestoration();
                         if (appState.tool.type == 'rotate') {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
-                            setShowActiveContextMenu(false);
                         }
                         else {
                             dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
-                            setShowActiveContextMenu(true);
                         }
                     }}
                     containerStyle={!appState.skipPreviousEnabled ? {
