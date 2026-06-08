@@ -10,15 +10,16 @@ import {
     LaurusMove,
     LaurusRotate,
     Bumper,
-    LaurusMixState
+    LaurusMixState,
+    LaurusEffectGroupResult,
+    LaurusEffectGroup
 } from "./workspace.client";
-import { createMove, createRotate, createScale } from "./workspace.server";
-import { v4 } from "uuid";
+import { createEffectGroup, createMove, createRotate, createScale, updateEffectGroup } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./units/effect-unit";
 import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectResult, LaurusProjectLayer } from "../projects/projects.client";
+import { LaurusProjectResult } from "../projects/projects.client";
 
 interface TimelineArea {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
@@ -388,11 +389,11 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
         isMetaKeyPressed
     } = useContext(HoverContext);
     const [showEffectsBrowser, setShowEffectsBrowser] = useState(false);
-    const layerNameRef = useRef<HTMLInputElement | null>(null);
+    const effectGroupDescriptionRef = useRef<HTMLInputElement | null>(null);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
-                layerHeaderStyle: {
+                groupHeaderStyle: {
                     height: 32,
                     paddingLeft: 10,
                 },
@@ -407,7 +408,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                 }
             }
             case "midhigh": return {
-                layerHeaderStyle: {
+                groupHeaderStyle: {
                     height: 24,
                     paddingLeft: 10,
                 },
@@ -423,7 +424,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
             }
             case "midlow":
             case "low": return {
-                layerHeaderStyle: {
+                groupHeaderStyle: {
                     height: 20,
                     paddingLeft: 10,
                 },
@@ -442,7 +443,7 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
 
     return (<>
         {/* empty timeline area */}
-        {appState.project.layers.size == 0 && (
+        {appState.effectGroups.size == 0 && (
             <div style={{
                 maxWidth,
                 display: 'grid',
@@ -478,33 +479,32 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                     {showEffectsBrowser && (
                         <EffectsBrowser
                             onAddClick={() => setShowEffectsBrowser(false)}
-                            layer_id={""}
-                            layerNameRef={layerNameRef} />
+                            effect_group_id={""}
+                            effectGroupDescriptionRef={effectGroupDescriptionRef} />
                     )}
                 </div>
             </div>)}
         {/* effect units */}
-        {Array.from(appState.project.layers.entries()).map((layerEntry) => {
+        {Array.from(appState.effectGroups.entries()).map((groupEntry) => {
             return (
-                <div key={layerEntry[0]}
+                <div key={groupEntry[0]}
                     style={{
                         maxWidth,
                         display: 'grid',
                         width: '100%',
                         gridTemplateRows: 'min-content auto',
                     }}>
-                    {/* layer header */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         width: '100%',
                         background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(23, 23, 23))",
-                        ...dynamicSizes.layerHeaderStyle,
+                        ...dynamicSizes.groupHeaderStyle,
                     }}>
-                        <LayerTitle
-                            layerId={layerEntry[0]}
-                            layerNameInit={layerEntry[1].name}
-                            layerNameRef={layerNameRef} />
+                        <EffectGroupDescription
+                            effectGroupId={groupEntry[0]}
+                            effectGroupDescriptionInit={groupEntry[1].description}
+                            effectGroupDescriptionRef={effectGroupDescriptionRef} />
                     </div>
                     {/* effects */}
                     <div style={{
@@ -578,7 +578,8 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
                         {showEffectsBrowser && (
                             <EffectsBrowser
                                 onAddClick={() => setShowEffectsBrowser(false)}
-                                layer_id={layerEntry[0]} layerNameRef={layerNameRef} />
+                                effect_group_id={groupEntry[0]}
+                                effectGroupDescriptionRef={effectGroupDescriptionRef} />
                         )}
                     </div>
                 </div>)
@@ -586,18 +587,19 @@ function TimelineAreaContent({ maxWidth, svgElementsRef, imgElementsRef }: Timel
     </>)
 }
 
-interface LayerTitle {
-    layerId: string,
-    layerNameInit: string,
-    layerNameRef: RefObject<HTMLInputElement | null>,
+interface EffectGroupDescription {
+    effectGroupId: string,
+    effectGroupDescriptionInit: string,
+    effectGroupDescriptionRef: RefObject<HTMLInputElement | null>,
 }
-function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
+function EffectGroupDescription({ effectGroupId, effectGroupDescriptionRef, effectGroupDescriptionInit }: EffectGroupDescription) {
     const { appState, dispatch } = useContext(WorkspaceContext);
-    const [layerName, setLayerName] = useState<string>(layerNameInit);
-    const [layerNameSnapshot] = useState<string>(layerNameInit);
-    const layerNameHook = useDebounce<string>(layerName, 1000);
+    const [effectGroupDescription, setEffectGroupDescription] = useState<string>(effectGroupDescriptionInit);
+    const [effectGroupDescriptionSnapshot] = useState<string>(effectGroupDescriptionInit);
+    const effectGroupDescriptionDebounce = useDebounce<string>(effectGroupDescription, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
-    const layerIdRef = useRef<string | undefined>(undefined);
+    const effectGroupsRef = useRef<Map<string, LaurusEffectGroupResult> | undefined>(undefined);
+    const effectGroupIdRef = useRef<string | undefined>(undefined);
     const [fontSize] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return 10
@@ -609,78 +611,59 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
 
     useEffect(() => {
         const renameProjectOnSever = (async () => {
-            if (!projectRef.current) return;
-            const newLayers = new Map(projectRef.current.layers);
-            if (layerIdRef && layerIdRef.current && newLayers.has(layerIdRef.current)) {
-                const newLayer = newLayers.get(layerIdRef.current)!;
-                newLayer.name = layerNameHook;
-            }
-            else {
-                const newLayerId = v4();
-                newLayers.set(newLayerId, { name: layerNameHook, order: 0 });
-            }
-            if (layerIdRef.current && projectRef.current.project_id && layerNameHook) {
-                const newProject = { ...projectRef.current, layers: newLayers };
-                const updated = await updateProject(
-                    appState.apiOrigin,
-                    appState.accessToken,
-                    projectRef.current.project_id,
-                    newProject);
+            if (!effectGroupsRef.current || !projectRef.current) return;
+            const newEffectGroupResults: Map<string, LaurusEffectGroupResult> = new Map(effectGroupsRef.current);
+            if (effectGroupIdRef
+                && effectGroupIdRef.current
+                && newEffectGroupResults.has(effectGroupIdRef.current)
+                && effectGroupDescriptionDebounce) {
+                const newEffectGroup = newEffectGroupResults.get(effectGroupIdRef.current)!;
+                newEffectGroup.description = effectGroupDescriptionDebounce;
+                const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupIdRef.current, newEffectGroup);
                 if (updated) {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+                    dispatch({ type: WorkspaceActionType.SetEffectGroup, value: newEffectGroup });
                 }
                 else {
-                    if (layerNameRef.current) {
-                        layerNameRef.current.value = layerNameSnapshot;
+                    if (effectGroupDescriptionRef.current) {
+                        effectGroupDescriptionRef.current.value = effectGroupDescriptionSnapshot;
                     }
                 }
             }
-            else if (layerIdRef.current && layerNameHook) {
-                const newProject = { ...projectRef.current, layers: newLayers };
-                const created = await createProject(
-                    appState.apiOrigin,
-                    appState.accessToken,
-                    newProject);
+            else if (effectGroupDescriptionDebounce) {
+                const newEffectGroup: LaurusEffectGroup = { description: effectGroupDescriptionDebounce, order: 0, project_id: projectRef.current.project_id }
+                const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
                 if (created) {
-                    const newProject2: LaurusProjectResult = { ...newProject, project_id: created.project_id }
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                    dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
                 }
                 else {
-                    if (layerNameRef.current) {
-                        layerNameRef.current.value = layerNameSnapshot;
+                    if (effectGroupDescriptionRef.current) {
+                        effectGroupDescriptionRef.current.value = effectGroupDescriptionSnapshot;
                     }
                 }
             }
         });
         renameProjectOnSever();
-    }, [appState.apiOrigin, layerNameHook, dispatch, appState.accessToken, layerNameSnapshot, layerNameRef]);
+    }, [appState.apiOrigin, effectGroupDescriptionDebounce, dispatch, appState.accessToken, effectGroupDescriptionSnapshot, effectGroupDescriptionRef]);
 
-    const onLayerNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newLayers = new Map(appState.project.layers);
-        if (layerId && newLayers.has(layerId)) {
-            layerIdRef.current = layerId;
-            const newLayer = newLayers.get(layerId)!;
-            newLayer.name = e.target.value;
+    const onEffectGroupDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newEffectGroups: Map<string, LaurusEffectGroup> = new Map(appState.effectGroups);
+        if (effectGroupId && newEffectGroups.has(effectGroupId)) {
+            effectGroupIdRef.current = effectGroupId;
+            const newEffectGroup = newEffectGroups.get(effectGroupId)!;
+            newEffectGroup.description = e.target.value;
         }
-        else {
-            const newLayerId = v4();
-            layerIdRef.current = newLayerId;
-            newLayers.set(newLayerId, { name: e.target.value, order: 0 });
-        }
-        projectRef.current = { ...appState.project, layers: newLayers };
-        setLayerName(e.target.value);
+        projectRef.current = { ...appState.project };
+        effectGroupsRef.current = new Map(appState.effectGroups);
+        setEffectGroupDescription(e.target.value);
     };
 
     return (<>
         <div style={{
             width: '100%',
-            display: 'grid',
-            alignContent: 'center',
-            justifyContent: 'start',
             height: '100%',
         }}>
-            <input id={`layer-name-input-${layerId}`}
-                ref={layerNameRef}
+            <input id={`effect-group-description-input-${effectGroupId}`}
+                ref={effectGroupDescriptionRef}
                 className={dellaRespira.className}
                 placeholder="name me..."
                 style={{
@@ -690,21 +673,22 @@ function LayerTitle({ layerId, layerNameRef, layerNameInit }: LayerTitle) {
                     fontSize: fontSize,
                     border: 'none',
                     outline: 'none',
+                    width: '100%',
                 }}
                 type="text"
-                value={layerName}
-                onChange={onLayerNameChange}
+                value={effectGroupDescription}
+                onChange={onEffectGroupDescriptionChange}
             />
         </div>
     </>)
 }
 
 interface EffectsBrowser {
-    layer_id: string,
-    layerNameRef: RefObject<HTMLInputElement | null>,
+    effect_group_id: string,
+    effectGroupDescriptionRef: RefObject<HTMLInputElement | null>,
     onAddClick: () => void,
 }
-function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) {
+function EffectsBrowser({ effect_group_id, effectGroupDescriptionRef, onAddClick }: EffectsBrowser) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const [effectBrowserSize] = useState(() => {
         switch (appState.resolution.type) {
@@ -733,16 +717,11 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
         }
     });
 
-    const createEffect = useCallback(async (effectName: string) => {
-        const newLayers: Map<string, LaurusProjectLayer> = new Map(appState.project.layers);
-        const newLayerId = v4();
-        if (!layer_id) {
-            const newLayerName = layerNameRef.current?.value ?? "untitled";
-            newLayers.set(newLayerId, { name: newLayerName, order: 0 });
-        }
+    const onAddEffectClick = useCallback(async (effectName: string) => {
+        let newEffectGroupIdAck = "";
         let newProjectIdAck = "";
         if (!appState.project.project_id) {
-            const newProject: LaurusProjectResult = { ...appState.project, layers: newLayers }
+            const newProject: LaurusProjectResult = { ...appState.project }
             const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
             if (projectCreated) {
                 newProjectIdAck = projectCreated.project_id;
@@ -751,7 +730,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
             }
         }
         else {
-            const newProject: LaurusProjectResult = { ...appState.project, layers: newLayers }
+            const newProject: LaurusProjectResult = { ...appState.project }
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
                 newProjectIdAck = newProject.project_id;
@@ -759,6 +738,24 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
             }
         }
         if (!newProjectIdAck) return;
+
+        if (!effect_group_id) {
+            const newEffectGroup: LaurusEffectGroup = {
+                description: effectGroupDescriptionRef.current?.value ?? "untitled",
+                order: 0,
+                project_id: newProjectIdAck
+            }
+            const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
+            if (created) {
+                newEffectGroupIdAck = created.effect_group_id;
+                dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
+            }
+        }
+        else {
+            newEffectGroupIdAck = effect_group_id;
+        }
+        if (!newEffectGroupIdAck) return;
+
         const sortedEffects = appState.effects
             .sort((a, b) => new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime());
         const newOrder = sortedEffects.length > 0 ? Math.max(...sortedEffects.map(e => e.value.order)) + 1 : 1;
@@ -770,7 +767,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     start: 0,
                     end: 0,
                     project_id: newProjectIdAck,
-                    layer_id: layer_id ? layer_id : newLayerId,
+                    layer_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
@@ -798,7 +795,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     start: 0,
                     end: 0,
                     project_id: newProjectIdAck,
-                    layer_id: layer_id ? layer_id : newLayerId,
+                    layer_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
@@ -826,7 +823,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                     start: 0,
                     end: 0,
                     project_id: newProjectIdAck,
-                    layer_id: layer_id ? layer_id : newLayerId,
+                    layer_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
                     order: newOrder,
@@ -849,7 +846,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                 break;
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.effects, appState.fps, appState.project, dispatch, layerNameRef, layer_id])
+    }, [appState.accessToken, appState.apiOrigin, appState.effects, appState.fps, appState.project, dispatch, effectGroupDescriptionRef, effect_group_id])
 
     return (<>
         <div style={{
@@ -911,7 +908,7 @@ function EffectsBrowser({ layer_id, layerNameRef, onAddClick }: EffectsBrowser) 
                             scale={1}
                             scaleToContaier={true}
                             onContainerClick={async () => {
-                                await createEffect(effectName);
+                                await onAddEffectClick(effectName);
                                 onAddClick();
                             }} />}
                     </div>

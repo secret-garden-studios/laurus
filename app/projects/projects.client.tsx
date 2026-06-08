@@ -1,6 +1,6 @@
 import { CSSProperties, use, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectsResolution } from "./projects-resolution"
-import { createProject, deleteProject, Project_V1_0, ProjectImg_V1_0, ProjectLayer_V1_0, ProjectResult_V1_0, ProjectSvg_V1_0 } from "./projects.server"
+import { createProject, deleteProject, Project_V1_0, ProjectImg_V1_0, ProjectResult_V1_0, ProjectSvg_V1_0 } from "./projects.server"
 import { addCircle, arrowDropDown, arrowDropUp, fileCopy, outbound, search, SvgRepo, cancelCircle } from "../svg-repo";
 import Menubar from "../menubar";
 import { dellaRespira, italiana } from "../fonts";
@@ -20,7 +20,6 @@ export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
     showContextMenu: boolean
     contextMenuConfig: ContextMenuConfig
 }
-export type LaurusProjectLayer = ProjectLayer_V1_0;
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>
     svgs: Map<string, LaurusProjectSvg>
@@ -141,7 +140,11 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     new Map(x.imgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
                 const newSvgs: Map<string, LaurusProjectSvg> =
                     new Map(x.svgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
-                return { ...x, imgs: newImgs, svgs: newSvgs, layers: new Map(x.layers) }
+                return {
+                    ...x,
+                    imgs: newImgs,
+                    svgs: newSvgs,
+                }
             })
         }
         else {
@@ -566,7 +569,6 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             frame_height: Math.round(FRAME_HEIGHT_5_7 * resolutionInit.factor),
                             imgs: new Map(),
                             svgs: new Map(),
-                            layers: new Map(),
                             frame_rotate_x: 0,
                             frame_rotate_y: 0,
                             frame_rotate_z: 0,
@@ -637,7 +639,6 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                             name: `${selectedProject.name} (copy)`,
                             imgs: newImgs,
                             svgs: newSvgs,
-                            layers: new Map(selectedProject.layers)
                         }
                         const response = await createProject(apiOriginInit, me.accessToken, newProject);
                         if (response) {

@@ -16,6 +16,8 @@ import {
     getEffects,
     getRotates,
     RotateResult_V1_0,
+    getEffectGroups,
+    EffectGroupResult_V1_0,
 } from "./workspace.server";
 export const dynamic = 'force-dynamic';
 import { cookies } from 'next/headers';
@@ -25,6 +27,7 @@ export interface ProjectDependencies {
     scales: ScaleResult_V1_0[],
     moves: MoveResult_V1_0[],
     rotates: RotateResult_V1_0[],
+    effectGroups: EffectGroupResult_V1_0[],
     canvasImgs: ImgMediaResult_V1_0[],
     canvasSvgs: SvgMediaResult_V1_0[],
 }
@@ -65,6 +68,7 @@ async function fetchProject(
         const scales = await getScales(laurusApi, newProject.project_id);
         const moves = await getMoves(laurusApi, newProject.project_id);
         const rotates = await getRotates(laurusApi, newProject.project_id);
+        const effectGroups = await getEffectGroups(laurusApi, newProject.project_id);
         const svgsArray = Array.from(newProject.svgs.values());
         const canvasSvgs: SvgMediaResult_V1_0[] = [];
         for (let i = 0; i < svgsArray.length; i++) {
@@ -86,6 +90,7 @@ async function fetchProject(
             scales: scales ?? [],
             moves: moves ?? [],
             rotates: rotates ?? [],
+            effectGroups: effectGroups ?? [],
             canvasImgs,
             canvasSvgs,
         }

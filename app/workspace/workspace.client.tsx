@@ -17,7 +17,9 @@ import {
     Rotate_V1_0,
     RotateEquation_V1_0,
     RotateResult_V1_0,
-    LaurusFrame
+    LaurusFrame,
+    EffectGroupResult_V1_0,
+    EffectGroup_V1_0
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./bars/statusbar";
@@ -79,6 +81,8 @@ export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }
     | { type: 'move', key: string, value: LaurusMoveResult }
     | { type: 'rotate', key: string, value: LaurusRotateResult }
+export type LaurusEffectGroup = EffectGroup_V1_0;
+export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
 export type LaurusThumbnail =
     | { type: 'svg', value: LaurusSvgResult }
     | { type: 'img', value: LaurusImgResult }
@@ -204,6 +208,7 @@ export interface WorkspaceState {
     activeElement: LaurusActiveElement | undefined,
     effectNames: string[],
     effects: LaurusEffect[],
+    effectGroups: Map<string, LaurusEffectGroupResult>,
     effectClipboard: LaurusEffect | undefined,
     timelineUnit: string,
     timelineMaxValue: number,
@@ -239,7 +244,6 @@ export const defaultWorkspace: WorkspaceState = {
         last_active: "",
         imgs: new Map(),
         svgs: new Map(),
-        layers: new Map(),
         browse_public_imgs: false,
         browse_public_svgs: false,
         creator: "",
@@ -255,6 +259,7 @@ export const defaultWorkspace: WorkspaceState = {
     carouselEntries: [],
     effectNames: [],
     effects: [],
+    effectGroups: new Map(),
     effectClipboard: undefined,
     timelineUnit: '',
     timelineMaxValue: 0,
@@ -299,6 +304,8 @@ export enum WorkspaceActionType {
     SetEffects,
     SetEffect,
     DeleteEffect,
+    SetEffectGroup,
+    DeleteEffectGroup,
     SetEffectClipboard,
     SetTimelineUnit,
     SetTimelineMaxValue,
@@ -339,6 +346,8 @@ export type WorkspaceAction =
     | { type: WorkspaceActionType.SetEffects, value: LaurusEffect[] }
     | { type: WorkspaceActionType.SetEffect, value: LaurusEffect }
     | { type: WorkspaceActionType.DeleteEffect, key: string }
+    | { type: WorkspaceActionType.SetEffectGroup, value: LaurusEffectGroupResult }
+    | { type: WorkspaceActionType.DeleteEffectGroup, key: string }
     | { type: WorkspaceActionType.SetEffectClipboard, value: LaurusEffect }
     | { type: WorkspaceActionType.SetTimelineUnit, value: string }
     | { type: WorkspaceActionType.SetTimelineMaxValue, value: number }
@@ -498,6 +507,16 @@ function workspaceContextReducer(state: WorkspaceState, action: WorkspaceAction)
         case WorkspaceActionType.DeleteEffect: {
             const newEffects = state.effects.filter(e => e.key != action.key);
             return { ...state, effects: newEffects }
+        }
+        case WorkspaceActionType.SetEffectGroup: {
+            const newEffectGroups = new Map(state.effectGroups);
+            newEffectGroups.set(action.value.effect_group_id, action.value);
+            return { ...state, effectGroups: newEffectGroups }
+        }
+        case WorkspaceActionType.DeleteEffectGroup: {
+            const newEffectGroups = new Map(state.effectGroups);
+            newEffectGroups.delete(action.key);
+            return { ...state, effectGroups: newEffectGroups }
         }
         case WorkspaceActionType.SetEffectClipboard: {
             return { ...state, effectClipboard: { ...action.value } }
@@ -692,6 +711,12 @@ function initReducer({
             })
         });
     }
+    const newEffectGroups: Map<string, LaurusEffectGroupResult> = new Map();
+    if (projectDependencies) {
+        projectDependencies.effectGroups.forEach(e => {
+            newEffectGroups.set(e.effect_group_id, e);
+        })
+    }
 
     const defaultProject: LaurusProjectResult = {
         ...defaultWorkspace.project,
@@ -772,6 +797,7 @@ function initReducer({
         ...defaultWorkspace,
         project: newProject,
         effects: newEffects,
+        effectGroups: newEffectGroups,
         canvasImgs: newCanvasImgs,
         canvasSvgs: newCanvasSvgs,
         effectNames: effectNames ?? [],

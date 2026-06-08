@@ -44,10 +44,6 @@ export interface ProjectSvg_V1_0 {
     stroke_width: number
     description: string
 }
-export interface ProjectLayer_V1_0 {
-    name: string,
-    order: number,
-}
 export interface Project_V1_0 {
     name: string
     canvas_width: number
@@ -64,7 +60,6 @@ export interface Project_V1_0 {
     frame_rotate_angle: number
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
-    layers: Map<string, ProjectLayer_V1_0>
     browse_public_imgs: boolean
     browse_public_svgs: boolean
 }
@@ -87,7 +82,6 @@ export interface ProjectResult_V1_0 {
     last_active: string
     imgs: Map<string, ProjectImg_V1_0>
     svgs: Map<string, ProjectSvg_V1_0>
-    layers: Map<string, ProjectLayer_V1_0>
     browse_public_imgs: boolean
     browse_public_svgs: boolean
     creator: string
@@ -111,7 +105,6 @@ export async function getProjects(baseUrl: string | undefined) {
                 ...r,
                 imgs: new Map(Object.entries(r.imgs)),
                 svgs: new Map(Object.entries(r.svgs)),
-                layers: new Map(Object.entries(r.layers)),
             }
         });
     }
@@ -139,7 +132,6 @@ export async function getProject(
             ...result,
             imgs: new Map(Object.entries(result.imgs)),
             svgs: new Map(Object.entries(result.svgs)),
-            layers: new Map(Object.entries(result.layers)),
         };
     }
     catch (error) {
@@ -157,7 +149,6 @@ export async function createProject(
             ...project,
             imgs: Object.fromEntries(project.imgs),
             svgs: Object.fromEntries(project.svgs),
-            layers: Object.fromEntries(project.layers),
         });
         let response: Response | undefined = undefined;
         const authResponse = await authFetch(baseUrl, accessToken, body, url, 'POST');
@@ -177,7 +168,6 @@ export async function createProject(
             ...result,
             imgs: new Map(Object.entries(result.imgs)),
             svgs: new Map(Object.entries(result.svgs)),
-            layers: new Map(Object.entries(result.layers)),
         };
     }
     catch (error) {
@@ -196,7 +186,6 @@ export async function updateProject(
             ...project,
             imgs: Object.fromEntries(project.imgs),
             svgs: Object.fromEntries(project.svgs),
-            layers: Object.fromEntries(project.layers),
         });
         let response: Response | undefined = undefined;
         const authResponse = await authFetch(baseUrl, accessToken, body, url, 'PUT');
