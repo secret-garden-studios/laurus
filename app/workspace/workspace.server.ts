@@ -8,7 +8,7 @@ const onNotOk = (status: number, message?: string) => {
     }
 };
 
-const getOnNotOkMessage = (action: 'creating' | 'updating' | 'deleting', type: 'scale' | 'move' | 'rotate', description?: string) => {
+const getOnNotOkMessage = (action: 'creating' | 'updating' | 'deleting', type: 'scale' | 'move' | 'rotate' | 'effect_group', description?: string) => {
     return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
 };
 
@@ -230,6 +230,20 @@ export async function createSvg(
 
 /* /effects */
 
+export interface EffectGroup_V1_0 {
+    project_id: string
+    description: string
+    order: number
+}
+export interface EffectGroupResult_V1_0 {
+    timestamp: string
+    last_active: string
+    effect_group_id: string
+    project_id: string
+    description: string
+    order: number
+}
+
 export async function getEffects(baseUrl: string | undefined) {
     try {
         const url = `${baseUrl}/effects`;
@@ -248,6 +262,135 @@ export async function getEffects(baseUrl: string | undefined) {
     catch (error) {
         console.log({ error });
         return undefined;
+    }
+}
+
+export async function getEffectGroups(baseUrl: string | undefined, projectId: string) {
+    try {
+        const url = `${baseUrl}/effects/groups?project_id=${projectId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: EffectGroupResult_V1_0[] = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function getEffectGroup(
+    baseUrl: string | undefined,
+    effectGroupId: string) {
+    try {
+        const url = `${baseUrl}/effects/groups/${effectGroupId}`;
+        const raw_response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        if (!raw_response.ok) {
+            return undefined;
+        }
+        const response: EffectGroupResult_V1_0 = await raw_response.json();
+        return response;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function createEffectGroup(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    effectGroup: EffectGroup_V1_0) {
+    try {
+        const url = `${baseUrl}/effects/groups`;
+        const body = JSON.stringify(effectGroup);
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'POST');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'POST');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+
+        if (!response.ok) {
+            onNotOk(response.status, getOnNotOkMessage('creating', 'effect_group', effectGroup.description));
+            return undefined;
+        }
+
+        const result: EffectGroupResult_V1_0 = await response.json();
+        return result;
+    }
+    catch (error) {
+        console.log({ error });
+        return undefined;
+    }
+}
+export async function updateEffectGroup(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    effectGroupId: string,
+    effectGroup: EffectGroup_V1_0): Promise<boolean> {
+    try {
+        const body = JSON.stringify(effectGroup);
+        const url = `${baseUrl}/effects/groups/${effectGroupId}`;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, body, url, 'PUT');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, 'PUT');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status, getOnNotOkMessage('updating', 'effect_group', effectGroup.description));
+            return false;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const result: EffectGroupResult_V1_0 = await response.json();
+        return true;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
+    }
+}
+export async function deleteEffectGroup(
+    baseUrl: string | undefined,
+    accessToken: string | undefined,
+    effectGroupId: string,
+    description?: string): Promise<boolean> {
+    try {
+        const url = `${baseUrl}/effects/groups/${effectGroupId}`;
+        let response: Response | undefined = undefined;
+        const authResponse = await authFetch(baseUrl, accessToken, undefined, url, 'DELETE');
+        if (authResponse.newToken) {
+            const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, 'DELETE');
+            response = authResponse2.response;
+        }
+        else {
+            response = authResponse.response;
+        }
+        if (!response.ok) {
+            onNotOk(response.status, getOnNotOkMessage('deleting', 'effect_group', description));
+        }
+        return response.ok;
+    }
+    catch (error) {
+        console.log({ error });
+        return false;
     }
 }
 
