@@ -436,7 +436,7 @@ export interface Scale_V1_0 {
      */
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
@@ -458,7 +458,7 @@ export interface ScaleResult_V1_0 {
      */
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
@@ -636,7 +636,7 @@ export interface Move_V1_0 {
     start: number
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
@@ -652,7 +652,7 @@ export interface MoveResult_V1_0 {
     start: number
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
@@ -829,7 +829,7 @@ export interface Rotate_V1_0 {
     start: number
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
@@ -845,7 +845,7 @@ export interface RotateResult_V1_0 {
     start: number
     end: number
     project_id: string
-    layer_id: string
+    effect_group_id: string
     order: number
     fps: number
     locked: boolean
