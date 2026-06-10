@@ -1234,7 +1234,7 @@ interface SelectionControlPanel {
 }
 function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
     const { appState, dispatch, } = useContext(WorkspaceContext);
-    const { selectedEffectUnitKeys } = useContext(HoverContext);
+    const { selectedEffectUnitKeys, setSelectedEffectUnitKeys } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -1242,6 +1242,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 16,
                 selectedLabelFontSize: 15,
+                selectedInputGap: 2,
                 mainSvg: 50,
                 recordingLightSize: 16,
                 input: {
@@ -1254,6 +1255,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 14,
                 selectedLabelFontSize: 13,
+                selectedInputGap: 2,
                 mainSvg: 40,
                 recordingLightSize: 12,
                 input: {
@@ -1267,6 +1269,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 12,
                 selectedLabelFontSize: 11,
+                selectedInputGap: 2,
                 mainSvg: 38,
                 recordingLightSize: 11,
                 input: {
@@ -1290,7 +1293,6 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         }
         const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
         if (created) {
-            dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
             const localEffectGroups = new Map(appState.effectGroups);
             localEffectGroups.set(created.effect_group_id, created);
             const snapshot = [...appState.effects];
@@ -1302,9 +1304,11 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
             });
             const reindexedEffects = reindexEffects(effectsWithNewGroups, localEffectGroups);
             await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
+            setSelectedEffectUnitKeys(new Set());
             dispatch({ type: WorkspaceActionType.SetEffects, value: reindexedEffects });
+            dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
         }
-    }, [selectedEffectUnitKeys, appState.project.project_id, appState.effectGroups, appState.apiOrigin, appState.accessToken, appState.effects, effectGroupDescription, dispatch]);
+    }, [selectedEffectUnitKeys, appState.project.project_id, appState.effectGroups, appState.apiOrigin, appState.accessToken, appState.effects, effectGroupDescription, dispatch, setSelectedEffectUnitKeys]);
 
     return (
         <div style={{
@@ -1322,7 +1326,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
             ...containerStyle,
 
         }}>
-            <div title={"frame rate"} style={{ display: 'flex', }}>
+            <div title={"effect selection count"} style={{ display: 'flex', gap: dynamicSizes.selectedInputGap }}>
                 <input className={dellaRespira.className + ' ' + styles['numberInput']}
                     id={`fps-input`}
                     type="text"
@@ -1352,7 +1356,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
             </div>
             <input id={`new-effect-group-description-input`}
                 className={dellaRespira.className}
-                placeholder="name me..."
+                placeholder="new group name..."
                 style={{
                     textAlign: "center",
                     letterSpacing: '3px',
