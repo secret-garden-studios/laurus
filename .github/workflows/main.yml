@@ -7,19 +7,20 @@ on:
     branches: [main]
 
 permissions:
-  id-token: write
-  contents: read
+  id-token: write # Required for requesting the JWT contents
+  contents: read # Required for actions/checkout
+
 jobs:
   DeployToAwsViaDocker:
     runs-on: ubuntu-latest
     steps:
       - name: Git clone the repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{secrets.IAM_ROLE_ARN}}
+          role-to-assume: ${{ secrets.IAM_ROLE_ARN }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ secrets.AWS_REGION }}
 
@@ -33,11 +34,11 @@ jobs:
 
       - name: Build and push with Docker
         id: build-image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{secrets.ECR_REPO_NAME}}:${{ github.sha }}
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO_NAME }}:${{ github.sha }}
 
       - name: Download current task definition
         run: |
@@ -51,7 +52,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ secrets.TASK_CONTAINER_NAME }}
-          image: ${{ steps.login-ecr.outputs.registry }}/${{secrets.ECR_REPO_NAME}}:${{ github.sha }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO_NAME }}:${{ github.sha }}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
