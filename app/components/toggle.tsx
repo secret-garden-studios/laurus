@@ -5,8 +5,9 @@ interface Toggle {
     onClick: () => void,
     trackStyles?: CSSProperties,
     buttonStyles?: CSSProperties,
+    translateX?: number,
 }
-export default function Toggle({ value, onClick, trackStyles, buttonStyles }: Toggle) {
+export default function Toggle({ value, onClick, trackStyles, buttonStyles, translateX = 15 }: Toggle) {
     return <>
         <div onClick={onClick}
             style={{
@@ -26,7 +27,7 @@ export default function Toggle({ value, onClick, trackStyles, buttonStyles }: To
                     'radial-gradient(circle at 30% 30%, rgb(255, 255, 255) 0%, rgb(200, 200, 200) 45%, rgb(150, 150, 150) 100%)',
                 borderRadius: '50%',
                 transition: 'transform 0.3s',
-                transform: value ? 'translateX(15px)' : 'translateX(0px)',
+                transform: value ? `translateX(${translateX}px)` : 'translateX(0px)',
                 ...buttonStyles
             }} />
         </div>

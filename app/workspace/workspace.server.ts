@@ -466,6 +466,8 @@ export interface ScaleResult_V1_0 {
     description: string
     mix: boolean
     math: Map<string, ScaleEquation_V1_0>
+    creator: string
+    last_editor: string
 }
 export async function getScales(baseUrl: string | undefined, projectId: string) {
     try {
@@ -660,6 +662,8 @@ export interface MoveResult_V1_0 {
     description: string
     mix: boolean
     math: Map<string, MoveEquation_V1_0>
+    creator: string
+    last_editor: string
 }
 export async function getMoves(baseUrl: string | undefined, projectId: string) {
     try {
@@ -853,6 +857,8 @@ export interface RotateResult_V1_0 {
     description: string
     mix: boolean
     math: Map<string, RotateEquation_V1_0>
+    creator: string
+    last_editor: string
 }
 export async function getRotates(baseUrl: string | undefined, projectId: string) {
     try {
