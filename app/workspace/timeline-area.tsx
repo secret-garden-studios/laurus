@@ -393,7 +393,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRe
             }}>
                 <EffectGroupTitlebar
                     effectGroupId={effectGroupId}
-                    effectGroupDescriptionInit={effectGroupResult.description} />
+                    effectGroupResult={effectGroupResult} />
             </div>
             {/* effects */}
             <div style={{
@@ -558,17 +558,15 @@ function EffectGroupSkeleton({ maxWidth }: EffectGroupSkeleton) {
 
 interface EffectGroupTitlebar {
     effectGroupId: string,
-    effectGroupDescriptionInit: string,
+    effectGroupResult: LaurusEffectGroupResult,
 }
-function EffectGroupTitlebar({ effectGroupId, effectGroupDescriptionInit }: EffectGroupTitlebar) {
+function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTitlebar) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { isMetaKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
-    const [effectGroupDescription, setEffectGroupDescription] = useState<string>(effectGroupDescriptionInit);
-    const [effectGroupDescriptionSnapshot] = useState<string>(effectGroupDescriptionInit);
+    const [effectGroupDescription, setEffectGroupDescription] = useState<string>(effectGroupResult.description);
+    const [effectGroupDescriptionSnapshot] = useState<string>(effectGroupResult.description);
     const effectGroupDescriptionDebounce = useDebounce<string>(effectGroupDescription, 1000);
-    const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
-    const effectGroupsRef = useRef<Map<string, LaurusEffectGroupResult> | undefined>(undefined);
-    const effectGroupIdRef = useRef<string | undefined>(undefined);
+    const [isHovered, setIsHovered] = useState(false);
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
             case "high": return {
@@ -700,7 +698,9 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupDescriptionInit }: Effe
             }
         }
     });
-
+    const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
+    const effectGroupsRef = useRef<Map<string, LaurusEffectGroupResult> | undefined>(undefined);
+    const effectGroupIdRef = useRef<string | undefined>(undefined);
     const effectGroupDescriptionRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
@@ -724,7 +724,12 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupDescriptionInit }: Effe
                 }
             }
             else if (effectGroupDescriptionDebounce) {
-                const newEffectGroup: LaurusEffectGroup = { description: effectGroupDescriptionDebounce, order: 0, project_id: projectRef.current.project_id }
+                const newEffectGroup: LaurusEffectGroup = {
+                    description: effectGroupDescriptionDebounce,
+                    order: 0,
+                    project_id: projectRef.current.project_id,
+                    disabled: false
+                }
                 const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
                 if (created) {
                     dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
@@ -777,9 +782,6 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupDescriptionInit }: Effe
         }
     }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, isMetaKeyPressed, setSelectedEffectUnitKeys]);
 
-    const [effectGroupDisabled] = useState(false);
-    const [isHovered, setIsHovered] = useState(false);
-
     return (<>
         <div style={{
             width: '100%',
@@ -830,8 +832,17 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupDescriptionInit }: Effe
                 ...dynamicSizes.toggle.div
             }}>
                 <Toggle
-                    value={!effectGroupDisabled}
-                    onClick={() => { }}
+                    value={!effectGroupResult.disabled}
+                    onClick={async () => {
+                        const newEffectGroup: LaurusEffectGroupResult = {
+                            ...effectGroupResult,
+                            disabled: !effectGroupResult.disabled
+                        }
+                        const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
+                        if (updated) {
+                            dispatch({ type: WorkspaceActionType.SetEffectGroup, value: newEffectGroup });
+                        }
+                    }}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
                     buttonStyles={{ ...dynamicSizes.toggle.button }}
                     translateX={dynamicSizes.toggle.translateX} />
@@ -874,7 +885,9 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
     });
 
     const onAddEffectClick = useCallback(async (effectName: string) => {
-        let newEffectGroupIdAck = "";
+        const effectsSnapshot = [...appState.effects];
+        const effectGroupsSnapshot = new Map(appState.effectGroups);
+
         let newProjectIdAck = "";
         if (!appState.project.project_id) {
             const newProject: LaurusProjectResult = { ...appState.project }
@@ -895,28 +908,25 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
         }
         if (!newProjectIdAck) return;
 
-        const localEffectGroups = new Map(appState.effectGroups);
-
+        let newEffectGroupIdAck = "";
         if (!effect_group_id) {
-            // coming from an empty project, 
             const newEffectGroup: LaurusEffectGroup = {
                 description: "",
                 order: 0,
-                project_id: newProjectIdAck
+                project_id: newProjectIdAck,
+                disabled: false
             }
             const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
             if (created) {
                 newEffectGroupIdAck = created.effect_group_id;
                 dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
-                localEffectGroups.set(created.effect_group_id, created);
+                effectGroupsSnapshot.set(created.effect_group_id, created);
             }
         }
         else {
             newEffectGroupIdAck = effect_group_id;
         }
         if (!newEffectGroupIdAck) return;
-
-        const newOrder = appState.effects.length;
 
         switch (effectName) {
             case 'scale': {
@@ -928,7 +938,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: newOrder,
+                    order: effectsSnapshot.length,
                     mix: false,
                     description: "",
                     disabled: false
@@ -940,10 +950,8 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                         key: created.scale_id,
                         value: { ...created, mixState: LaurusMixState.None }
                     }
-                    const snapshot = [...appState.effects];
-                    const reindexed = reindexEffects([...snapshot, newEffect], localEffectGroups);
-                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...snapshot, newEffect]);
-
+                    const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
+                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
                     dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
                 }
                 break;
@@ -957,7 +965,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: newOrder,
+                    order: effectsSnapshot.length,
                     mix: false,
                     description: "",
                     disabled: false
@@ -969,9 +977,8 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                         key: created.move_id,
                         value: { ...created, mixState: LaurusMixState.None }
                     }
-                    const snapshot = [...appState.effects];
-                    const reindexed = reindexEffects([...snapshot, newEffect], localEffectGroups);
-                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...snapshot, newEffect]);
+                    const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
+                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
                     dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
                 }
                 break;
@@ -985,7 +992,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: newOrder,
+                    order: effectsSnapshot.length,
                     mix: false,
                     description: "",
                     disabled: false
@@ -997,9 +1004,8 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                         key: created.rotate_id,
                         value: { ...created, mixState: LaurusMixState.None }
                     }
-                    const snapshot = [...appState.effects];
-                    const reindexed = reindexEffects([...snapshot, newEffect], localEffectGroups);
-                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...snapshot, newEffect]);
+                    const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
+                    await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
                     dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
                 }
                 break;
@@ -1279,7 +1285,8 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         const newEffectGroup: LaurusEffectGroup = {
             description: effectGroupDescription,
             order: Array.from(appState.effectGroups.values()).reduce((max, g) => Math.max(max, g.order), -1) + 1,
-            project_id: appState.project.project_id
+            project_id: appState.project.project_id,
+            disabled: false
         }
         const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
         if (created) {

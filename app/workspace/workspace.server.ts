@@ -234,6 +234,7 @@ export interface EffectGroup_V1_0 {
     project_id: string
     description: string
     order: number
+    disabled: boolean
 }
 export interface EffectGroupResult_V1_0 {
     timestamp: string
@@ -242,6 +243,7 @@ export interface EffectGroupResult_V1_0 {
     project_id: string
     description: string
     order: number
+    disabled: boolean
 }
 
 export async function getEffects(baseUrl: string | undefined) {

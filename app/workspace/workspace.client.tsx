@@ -571,7 +571,7 @@ export interface HoverContextProps {
     setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
     selectedSvgKeys: Set<string>;
     setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
-    animationProgress: number | undefined;
+    animationDownloadProgress: number | undefined;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -584,7 +584,7 @@ export const HoverContext = createContext<HoverContextProps>({
     setSelectedImgKeys: () => { },
     selectedSvgKeys: new Set<string>(),
     setSelectedSvgKeys: () => { },
-    animationProgress: undefined,
+    animationDownloadProgress: undefined,
 });
 
 export const WorkspaceContext = createContext<WorkspaceContextProps>(
@@ -847,7 +847,7 @@ export default function Workspace({
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
     const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
-    const [animationProgress, setAnimationProgress] = useState<number | undefined>(undefined);
+    const [animationDownloadProgress, setAnimationDownloadProgress] = useState<number | undefined>(undefined);
     const [appState, dispatch] = useReducer(
         workspaceContextReducer,
         {
@@ -1028,7 +1028,6 @@ export default function Workspace({
             }
             return true;
         }
-
         else {
             return false;
         }
@@ -1043,7 +1042,6 @@ export default function Workspace({
             }
             return true;
         }
-
         else {
             return false;
         }
@@ -1052,77 +1050,55 @@ export default function Workspace({
     const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
         try {
             document.body.style.cursor = 'progress';
-            const mathFound = ((key: string): boolean => {
-                let mathFound = false;
-                appState.effects.forEach(e => {
-                    if (Array.from(e.value.math.keys()).includes(key)) {
-                        mathFound = true;
+
+            const enabledEffects = [...appState.effects
+                .filter(e => !e.value.disabled
+                    && !appState.effectGroups.get(e.value.effect_group_id)?.disabled)];
+            const keysWithMath = new Set<string>();
+            enabledEffects.forEach(e => {
+                e.value.math.forEach((_, key) => {
+                    const meta = appState.project.imgs.get(key) || appState.project.svgs.get(key);
+                    if (meta && meta.left >= 0 && meta.top >= 0) {
+                        keysWithMath.add(key);
                     }
-                })
-                return mathFound;
+                });
             });
-            const newAnimations: Animation[] = [];
-            const globalLimit: number = Math.max(...appState.effects
-                .map(e => e.value.end));
+
+            const globalLimit: number = Math.max(...enabledEffects.map(e => e.value.end), 0);
             const options: KeyframeAnimationOptions = {
                 duration: firstFrame ? 2 / appState.fps : globalLimit * 1000,
                 iterations: 1,
                 fill,
             };
 
-            const imgsToProcess = Array.from(appState.project.imgs.entries())
-                .filter(([key, meta]) => meta.left >= 0 && meta.top >= 0 && mathFound(key));
-            const svgsToProcess = Array.from(appState.project.svgs.entries())
-                .filter(([key, meta]) => meta.left >= 0 && meta.top >= 0 && mathFound(key));
-            const total = imgsToProcess.length + svgsToProcess.length;
+            const total = keysWithMath.size;
             let current = 0;
-
-            if (total > 0) setAnimationProgress(0);
-
-            for (let i = 0; i < imgsToProcess.length; i++) {
-                const [key] = imgsToProcess[i];
-                const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
+            if (total > 0) setAnimationDownloadProgress(0);
+            const newAnimations: Animation[] = [];
+            const keysWithMathArray = Array.from(keysWithMath);
+            for (let i = 0; i < keysWithMathArray.length; i++) {
+                const inputId = keysWithMathArray[i];
+                const frames = await getFrames(appState.apiOrigin, appState.project.project_id, inputId, appState.fps);
                 if (frames) {
                     const keyframes = toKeyframes(firstFrame, frames);
-                    const imgRef = imgElementsRef.current?.get(key);
-                    if (!imgRef) continue;
-                    const animations = imgRef.getAnimations();
-                    for (let j = 0; j < animations.length; j++) {
-                        animations[j].cancel();
+                    const element = imgElementsRef.current?.get(inputId) || svgElementsRef.current?.get(inputId);
+                    if (element) {
+                        element.getAnimations().forEach(a => a.cancel());
+                        const keyframeEffect = new KeyframeEffect(element, keyframes, options);
+                        const animation = new Animation(keyframeEffect, document.timeline);
+                        current++;
+                        if (total > 0) setAnimationDownloadProgress(Math.round((current / total) * 100));
+                        newAnimations.push(animation);
                     }
-                    const keyframeEffect =
-                        new KeyframeEffect(imgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
                 }
-                current++;
-                if (total > 0) setAnimationProgress(Math.round((current / total) * 100));
-            };
-
-            for (let i = 0; i < svgsToProcess.length; i++) {
-                const [key] = svgsToProcess[i];
-                const frames = await getFrames(appState.apiOrigin, appState.project.project_id, key, appState.fps);
-                if (frames) {
-                    const keyframes = toKeyframes(firstFrame, frames);
-                    const svgRef = svgElementsRef.current?.get(key);
-                    if (!svgRef) continue;
-                    const animations = svgRef.getAnimations();
-                    for (let j = 0; j < animations.length; j++) {
-                        animations[j].cancel();
-                    }
-                    const keyframeEffect =
-                        new KeyframeEffect(svgRef, keyframes, options);
-                    newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                }
-                current++;
-                if (total > 0) setAnimationProgress(Math.round((current / total) * 100));
-            };
+            }
 
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
-            setAnimationProgress(undefined);
+            setAnimationDownloadProgress(undefined);
         }
-    }, [appState.apiOrigin, appState.effects, appState.project.imgs, appState.project.project_id, appState.project.svgs, appState.fps, imgElementsRef, svgElementsRef]);
+    }, [appState.effects, appState.fps, appState.effectGroups, appState.project.imgs, appState.project.svgs, appState.project.project_id, appState.apiOrigin]);
 
     const handleMixRestoration = useCallback(() => {
         if (appState.tool.type === 'mix') {
@@ -1250,8 +1226,8 @@ export default function Workspace({
         setSelectedImgKeys,
         selectedSvgKeys,
         setSelectedSvgKeys,
-        animationProgress,
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationProgress]);
+        animationDownloadProgress,
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationDownloadProgress]);
 
     const workspaceContextValue = useMemo(() => ({
         appState,
