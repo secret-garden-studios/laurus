@@ -97,7 +97,7 @@ export default function EffectUnitbar({
                 containerStyle={{
                     width: dynamicSizes.toolbar.width,
                     height: dynamicSizes.toolbar.width,
-                    cursor: isMetaKeyPressed ? 'crosshair' : 'default'
+                    cursor: isMetaKeyPressed ? 'crosshair' : ''
                 }} />
             <SvgRepo
                 title={"parameters"}

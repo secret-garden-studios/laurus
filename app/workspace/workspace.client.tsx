@@ -1269,7 +1269,7 @@ export default function Workspace({
                 ? 'context-menu'
                 : (appState.tool.type === 'scale')
                     ? 'crosshair'
-                    : 'default';
+                    : '';
     }, [appState.tool, isMetaKeyPressed]);
 
     return (<>
@@ -1590,7 +1590,7 @@ export default function Workspace({
                             <div
                                 title='browser element'
                                 onMouseEnter={(e) => { e.currentTarget.style.cursor = 'pointer' }}
-                                onMouseLeave={(e) => { e.currentTarget.style.cursor = 'default' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.cursor = '' }}
                                 onClick={() => setShowMediaBrowser(v => !v)}
                                 style={{
                                     borderLeft: '1px solid rgba(255, 255, 255, 0.05)',

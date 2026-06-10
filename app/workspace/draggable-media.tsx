@@ -700,7 +700,7 @@ export function DraggableProjectImg({
                 document.body.style.cursor = 'grabbing';
             }}
             onDragEnd={(e) => {
-                document.body.style.cursor = 'default';
+                document.body.style.cursor = '';
                 const delta = e.delta;
                 onNewImgPosition(delta.x, delta.y);
             }}>
@@ -1009,7 +1009,7 @@ export function DraggableProjectSvg({
                 document.body.style.cursor = 'grabbing';
             }}
             onDragEnd={(e) => {
-                document.body.style.cursor = 'default';
+                document.body.style.cursor = '';
                 const delta = e.delta;
                 onNewSvgPosition(delta.x, delta.y);
             }}>

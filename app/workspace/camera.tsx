@@ -69,7 +69,7 @@ export default function DraggableCamera({
                 document.body.style.cursor = 'grabbing';
             }}
             onDragEnd={(e) => {
-                document.body.style.cursor = 'default';
+                document.body.style.cursor = '';
                 const delta = e.delta;
                 const newPosition = {
                     x: Math.min(appState.project.canvas_width - appState.project.frame_width, Math.max(0, Math.round(appState.project.frame_left + delta.x))),

@@ -80,7 +80,7 @@ export function SvgRepo({ svg, scale, scaleToContaier, onContainerClick, onSvgRe
             style={{
                 display: 'grid',
                 placeContent: 'center',
-                cursor: onContainerClick ? 'pointer' : 'default',
+                cursor: onContainerClick ? 'pointer' : '',
                 ...containerStyle,
             }}>
             {decodedString && <svg
@@ -1416,5 +1416,21 @@ export function scienceOff(
         stroke: "none",
         stroke_width: 0,
         markup: base64Encode(`<path d="m600-473-80-80v-207h-80v127l-80-80v-47h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v287ZM200-200h448L402-446 200-200ZM764-84l-36-36H200q-51 0-72.5-45.5T138-250l208-252L84-764q-11-11-11-28t11-28q11-11 28-11t28 11l680 680q11 11 11 28t-11 28q-11 11-28 11t-28-11ZM402-446Zm78-147Z"/>`)
+    }
+}
+
+export function send(
+    fill: string = 'rgba(227, 227, 227, 1)',
+    width: number = 24,
+    height: number = 24): LaurusClientSvg {
+    return {
+        media_key: "/material-ui/send_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24_45deg.svg",
+        width,
+        height,
+        viewbox: "0 -960 960 960",
+        fill,
+        stroke: "none",
+        stroke_width: 0,
+        markup: base64Encode(`<path d="M 575.77836,-148.75092 Q 567.29308,-128.95193 546.43343,-124.35573 525.57378,-119.75954 510.01743,-135.31589 L 382.73821,-262.5951 552.44384,-545.43782 269.60112,-375.73219 142.32191,-503.01141 Q 126.76556,-518.56776 131.36175,-539.42741 135.95795,-560.28706 155.75693,-568.77234 L 775.18247,-820.50235 Q 800.63832,-830.40185 819.02309,-812.01707 837.40787,-793.6323 827.50837,-768.17645 Z"/>`)
     }
 }
