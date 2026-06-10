@@ -447,6 +447,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRe
                             }}>{(effect.value.order + 1).toFixed()}</div>
                             <EffectUnit
                                 effect={effect}
+                                showUnitControlsInit={!effectGroupResult.disabled}
                                 svgElementsRef={svgElementsRef}
                                 imgElementsRef={imgElementsRef} />
                         </div>

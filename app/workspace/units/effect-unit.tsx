@@ -12,10 +12,11 @@ import EffectUnitbar from "./bars/effect-unitbar";
 
 interface EffectUnit {
     effect: LaurusEffect,
+    showUnitControlsInit: boolean,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: EffectUnit) {
+export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRef, imgElementsRef }: EffectUnit) {
     const { appState, dispatch } = useContext(WorkspaceContext);
     const { selectedEffectUnitKeys, isMetaKeyPressed } = useContext(HoverContext);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
@@ -47,7 +48,7 @@ export default function EffectUnit({ effect, svgElementsRef, imgElementsRef }: E
                 break;
             }
         }
-        return true;
+        return showUnitControlsInit;
     });
     const [dynamicSizes] = useState(() => {
         switch (appState.resolution.type) {
