@@ -1,20 +1,37 @@
 import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect } from "react";
 import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult, projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
 import { updateProject } from "../projects/projects.server";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceContext, WorkspaceActionType, LaurusScaleResult, LaurusMoveResult, LaurusRotateResult, LaurusActiveElement, LaurusTransform, LaurusBrowserElement, WorkspaceAction, LaurusEffect, defaultWorkspace, LaurusThumbnail } from "./workspace.client";
+import {
+    LaurusImgResult,
+    LaurusSvgResult,
+    CoreContext,
+    CoreActionType,
+    LaurusScaleResult,
+    LaurusMoveResult,
+    LaurusRotateResult,
+    LaurusActiveElement,
+    LaurusTransform,
+    LaurusBrowserElement,
+    CoreAction,
+    LaurusEffect,
+    LaurusThumbnail,
+    UIAction,
+    UIActionType,
+    defaultUIState,
+    UIContext
+} from "./workspace.client";
 import { updateScale, updateMove, updateRotate } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import { allOut, browse, earthquake, experiment, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
 import Toggle from "../components/toggle";
 
-
 async function deleteEffects(
     mediaKey: string,
     apiOrigin: string | undefined,
     accessToken: string | undefined,
     effects: LaurusEffect[],
-    dispatch: Dispatch<WorkspaceAction>) {
+    dispatch: Dispatch<CoreAction>) {
     for (let i = 0; i < effects.length; i++) {
         const effect = effects[i];
         if (!effect.value.math.has(mediaKey)) continue;
@@ -26,7 +43,7 @@ async function deleteEffects(
                 const updated = await updateScale(apiOrigin, accessToken, effect.key, newScale);
                 if (updated) {
                     dispatch({
-                        type: WorkspaceActionType.SetEffect,
+                        type: CoreActionType.SetEffect,
                         value: { type: 'scale', key: effect.key, value: { ...newScale } }
                     });
                 }
@@ -39,7 +56,7 @@ async function deleteEffects(
                 const updated = await updateMove(apiOrigin, accessToken, effect.key, { ...newMove });
                 if (updated) {
                     dispatch({
-                        type: WorkspaceActionType.SetEffect,
+                        type: CoreActionType.SetEffect,
                         value: { type: 'move', key: effect.key, value: { ...newMove } }
                     });
                 }
@@ -52,7 +69,7 @@ async function deleteEffects(
                 const updated = await updateRotate(apiOrigin, accessToken, effect.key, { ...newRotate });
                 if (updated) {
                     dispatch({
-                        type: WorkspaceActionType.SetEffect,
+                        type: CoreActionType.SetEffect,
                         value: { type: 'rotate', key: effect.key, value: { ...newRotate } }
                     });
                 }
@@ -62,14 +79,14 @@ async function deleteEffects(
     }
 }
 
-function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch: Dispatch<WorkspaceAction>) {
+function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch: Dispatch<CoreAction>) {
     switch (mediaType) {
         case "img": {
-            dispatch({ type: WorkspaceActionType.DeleteCanvasImg, key: mediaKey });
+            dispatch({ type: CoreActionType.DeleteCanvasImg, key: mediaKey });
             break;
         }
         case "svg": {
-            dispatch({ type: WorkspaceActionType.DeleteCanvasSvg, key: mediaKey });
+            dispatch({ type: CoreActionType.DeleteCanvasSvg, key: mediaKey });
             break;
         }
     }
@@ -79,19 +96,19 @@ function cleanUpMediaBrowser(
     mediaType: "img" | "svg",
     mediaId: string,
     project: LaurusProjectResult,
-    dispatch: Dispatch<WorkspaceAction>) {
+    uiDispatch: Dispatch<UIAction>) {
     switch (mediaType) {
         case "img": {
             const stillExists = Array.from(project.imgs.values()).some(i => i.img_media_id === mediaId);
             if (!project.browse_public_imgs && !stillExists) {
-                dispatch({ type: WorkspaceActionType.DeleteBrowserImg, value: mediaId })
+                uiDispatch({ type: UIActionType.DeleteBrowserImg, value: mediaId })
             }
             break;
         }
         case "svg": {
             const stillExists = Array.from(project.svgs.values()).some(s => s.svg_media_id === mediaId);
             if (!project.browse_public_svgs && !stillExists) {
-                dispatch({ type: WorkspaceActionType.DeleteBrowserSvg, value: mediaId })
+                uiDispatch({ type: UIActionType.DeleteBrowserSvg, value: mediaId })
             }
             break;
         }
@@ -102,14 +119,14 @@ function cleanUpBrowserElement(
     mediaId: string,
     browserElement: LaurusThumbnail,
     project: LaurusProjectResult,
-    dispatch: Dispatch<WorkspaceAction>) {
+    uiDispatch: Dispatch<UIAction>) {
     switch (browserElement.type) {
         case "img": {
             const stillExists = Array.from(project.imgs.values()).some(i => i.img_media_id === mediaId);
             if (browserElement.value.img_media_id == mediaId && !project.browse_public_imgs && !stillExists) {
-                dispatch({
-                    type: WorkspaceActionType.SetBrowserElement,
-                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                uiDispatch({
+                    type: UIActionType.SetBrowserElement,
+                    value: defaultUIState.browserElement == undefined ? undefined : { ...defaultUIState.browserElement }
                 });
             }
             break;
@@ -117,9 +134,9 @@ function cleanUpBrowserElement(
         case "svg": {
             const stillExists = Array.from(project.svgs.values()).some(s => s.svg_media_id === mediaId);
             if (browserElement.value.svg_media_id == mediaId && !project.browse_public_svgs && !stillExists) {
-                dispatch({
-                    type: WorkspaceActionType.SetBrowserElement,
-                    value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+                uiDispatch({
+                    type: UIActionType.SetBrowserElement,
+                    value: defaultUIState.browserElement == undefined ? undefined : { ...defaultUIState.browserElement }
                 });
             }
             break;
@@ -135,8 +152,9 @@ interface ContextMenu {
     transform?: LaurusTransform,
 }
 export default function ContextMenu({ media, transform }: ContextMenu) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
-    const selected = useMemo<boolean>(() => { return (appState.activeElement?.key ?? "") == media.key }, [appState.activeElement?.key, media.key]);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
+    const selected = useMemo<boolean>(() => { return (uiState.activeElement?.key ?? "") == media.key }, [uiState.activeElement?.key, media.key]);
     const [isAltPressed, setIsAltPressed] = useState(false);
 
     useEffect(() => {
@@ -153,7 +171,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
     }, []);
 
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 contextMenu: {
                     widthFactor: 1,
@@ -392,25 +410,25 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
             ...(newImgs !== undefined && { imgs: newImgs })
         };
         if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+                dispatch({ type: CoreActionType.SetProject, value: snapshot });
             }
             else {
-                if (appState.activeElement?.key == media.key) {
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                if (uiState.activeElement?.key == media.key) {
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                 }
-                dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
+                uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: media.key });
                 await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
-                cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
-                if (appState.browserElement) {
-                    cleanUpBrowserElement(mediaId, appState.browserElement, newProject, dispatch)
+                cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+                if (uiState.browserElement) {
+                    cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch)
                 }
             }
         }
-    }, [appState.accessToken, appState.activeElement?.key, appState.apiOrigin, appState.browserElement, appState.effects, dispatch, media.key, media.type]);
+    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch]);
 
     const leftSide = useMemo(() => {
         if (media.meta.contextMenuConfig.position.toLowerCase().endsWith('left')) {
@@ -470,8 +488,8 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
     }, [contextMenuWidth, dynamicSizes.innerClipPath.width, dynamicSizes.innerClipPath.height, dynamicSizes.innerClipPath.radius, dynamicSizes.innerClipPath.triangleRadius, dynamicSizes.innerClipPath.caretS, dynamicSizes.innerClipPath.caretHeight, dynamicSizes.clipPath.width, dynamicSizes.clipPath.height, dynamicSizes.clipPath.radius, dynamicSizes.clipPath.triangleRadius, dynamicSizes.clipPath.caretS, dynamicSizes.clipPath.caretHeight, contextMenuHeight, leftSide, bottomSide]);
 
     const swapMedia = useCallback(async () => {
-        if (!appState.browserElement) return;
-        const browserElement: LaurusBrowserElement = { ...appState.browserElement };
+        if (!uiState.browserElement) return;
+        const browserElement: LaurusBrowserElement = { ...uiState.browserElement };
         const snapshot: LaurusProjectResult = { ...appState.project };
         const newImgs = new Map(snapshot.imgs);
         const newSvgs = new Map(snapshot.svgs);
@@ -577,11 +595,11 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs }
         const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
         if (updated) {
-            dispatch({ type: WorkspaceActionType.SetCanvasImgs, value: newCanvasImgs });
-            dispatch({ type: WorkspaceActionType.SetCanvasSvgs, value: newCanvasSvgs });
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetCanvasImgs, value: newCanvasImgs });
+            dispatch({ type: CoreActionType.SetCanvasSvgs, value: newCanvasSvgs });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.browserElement, appState.canvasImgs, appState.canvasSvgs, appState.project, dispatch, media.key, media.meta, media.type]);
+    }, [appState.accessToken, appState.apiOrigin, appState.canvasImgs, appState.canvasSvgs, appState.project, dispatch, media.key, media.meta, media.type, uiState.browserElement]);
 
     const updateMediaOrder = useCallback(async (direction: 'increment' | 'decrement' | 'top' | 'bottom') => {
         const snapshot = { ...appState.project }
@@ -614,7 +632,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
         const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs, svgs: newSvgs, };
         const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
         if (updated) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
         }
     }, [appState.project, appState.apiOrigin, appState.accessToken, media.key, dispatch]);
 
@@ -660,7 +678,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs }
         const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
         if (updated) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
         }
     }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, media.key, media.type]);
 
@@ -746,7 +764,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                     value={selected}
                                     onClick={() => {
                                         if (selected) {
-                                            dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                                            uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                                             return;
                                         }
                                         switch (media.type) {
@@ -755,7 +773,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                                     key: media.key,
                                                     type: 'img',
                                                 }
-                                                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                                                uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                                                 break;
                                             }
                                             case "svg": {
@@ -763,7 +781,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                                     key: media.key,
                                                     type: 'svg',
                                                 }
-                                                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                                                uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                                                 break;
                                             }
                                         }
@@ -830,7 +848,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                 height: '100%',
                                 ...dynamicSizes.footer.div
                             }}>
-                                {appState.tool.type == 'none' ?
+                                {uiState.tool.type == 'none' ?
                                     <div title="active tool"
                                         style={{
                                             display: 'grid',
@@ -843,7 +861,7 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                                     <SvgRepo
                                         title="active tool"
                                         svg={(() => {
-                                            switch (appState.tool.type) {
+                                            switch (uiState.tool.type) {
                                                 case "marquee": return lassoSelect();
                                                 case "contextmenu": return keyboardCommandKey();
                                                 case "viewport": return browse();
@@ -876,9 +894,10 @@ interface BrowserContextMenu {
     position: CSSProperties,
 }
 export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 container: {
                     gridTemplateRows: `min-content auto`,
@@ -958,25 +977,25 @@ export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
             ...(newImgs !== undefined && { imgs: newImgs })
         };
         if (newProject.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+                dispatch({ type: CoreActionType.SetProject, value: snapshot });
             }
             else {
-                if (appState.activeElement?.key == media.key) {
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: undefined });
+                if (uiState.activeElement?.key == media.key) {
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                 }
-                dispatch({ type: WorkspaceActionType.DeleteCarouselEntry, key: media.key });
+                uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: media.key });
                 await deleteEffects(media.key, appState.apiOrigin, appState.accessToken, appState.effects, dispatch);
                 cleanUpCanvasMedia(media.type, media.key, dispatch);
-                cleanUpMediaBrowser(media.type, mediaId, newProject, dispatch);
-                if (appState.browserElement) {
-                    cleanUpBrowserElement(mediaId, appState.browserElement, newProject, dispatch)
+                cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+                if (uiState.browserElement) {
+                    cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch)
                 }
             }
         }
-    }, [appState.accessToken, appState.activeElement?.key, appState.apiOrigin, appState.browserElement, appState.effects, dispatch, media.key, media.type]);
+    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch]);
 
     return <>
         <div

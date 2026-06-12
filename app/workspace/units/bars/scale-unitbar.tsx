@@ -1,7 +1,7 @@
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../../workspace.client";
+import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
 import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
 import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
@@ -31,27 +31,28 @@ export default function ScaleUnitbar({
     setCurrentControls,
     saveNewEquation,
     setUnlockAspectRatio }: ScaleUnitbar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 angleParam: { padding: 15 }
             }
             case "midhigh": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
 
             }
             case "midlow": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
             case "low": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
         }
     });
@@ -73,8 +74,8 @@ export default function ScaleUnitbar({
         const options: KeyframeAnimationOptions = {
             duration: firstFrame ? 2 / fps : end * 1000,
         }
-        const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (appState.carouselEntries[carouselIndex].type) {
+        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
+        switch (uiState.carouselEntries[carouselIndex].type) {
             case "svg": {
                 const svgRef = svgElementsRef.current?.get(previewKey);
                 if (!svgRef) return [];
@@ -95,7 +96,7 @@ export default function ScaleUnitbar({
             }
         }
         return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
+    }, [appState.apiOrigin, uiState.carouselEntries, uiState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -236,7 +237,7 @@ export default function ScaleUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -269,7 +270,7 @@ export default function ScaleUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -279,7 +280,7 @@ export default function ScaleUnitbar({
                     newAnimations.forEach(a => {
                         a.play();
                     });
-                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
                 }}
                 style={{
                     display: 'grid',
@@ -413,7 +414,7 @@ export default function ScaleUnitbar({
                         key: scale.scale_id,
                         value: { ...scale, math: newMath }
                     };
-                    dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
+                    uiDispatch({ type: UIActionType.SetEffectClipboard, value: newClipboardEffect });
                 }}
                 style={{
                     display: 'grid',
@@ -433,8 +434,8 @@ export default function ScaleUnitbar({
             <div title={"paste"}
                 onClick={() => {
                     if (isMetaKeyPressed) return;
-                    if (appState.effectClipboard && appState.effectClipboard.type == 'scale') {
-                        const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
+                    if (uiState.effectClipboard && uiState.effectClipboard.type == 'scale') {
+                        const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
                         const snapshot: LaurusScaleResult = { ...scale };
                         const activeKey = carouselEntryKey;
@@ -458,7 +459,7 @@ export default function ScaleUnitbar({
                 }}>
                 <SvgRepo
                     title={"paste"}
-                    svg={appState.effectClipboard?.type == 'scale' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
+                    svg={uiState.effectClipboard?.type == 'scale' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
                         cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
@@ -484,13 +485,13 @@ export default function ScaleUnitbar({
                         setCurrentControls(defaultControls);
                         updateTrackpads(defaultControls);
                         dispatch({
-                            type: WorkspaceActionType.SetEffect,
+                            type: CoreActionType.SetEffect,
                             value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
                         });
                         const updated = await updateScale(appState.apiOrigin, appState.accessToken, snapshot.scale_id, { ...newScale });
                         if (!updated) {
                             dispatch({
-                                type: WorkspaceActionType.SetEffect,
+                                type: CoreActionType.SetEffect,
                                 value: { type: 'scale', value: { ...snapshot }, key: snapshot.scale_id },
                             });
                         }

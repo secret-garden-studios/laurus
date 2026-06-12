@@ -1,7 +1,7 @@
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, circleFillZero, contentPaste, earthquake, ellipseFillZero, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../../workspace.client";
+import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
 import { getMove, LaurusLoopType, LaurusShapeType, updateMove } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
@@ -28,28 +28,29 @@ export default function MoveUnitbar({
     updateTrackpads,
     currentControls,
     setCurrentControls, }: MoveUnitbar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 angleParam: { padding: 15 }
             }
             case "midhigh": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
 
             }
             case "midlow": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
             case "low": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
         }
     });
@@ -72,8 +73,8 @@ export default function MoveUnitbar({
         const options: KeyframeAnimationOptions = {
             duration: firstFrame ? 2 / fps : end * 1000,
         }
-        const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (appState.carouselEntries[carouselIndex].type) {
+        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
+        switch (uiState.carouselEntries[carouselIndex].type) {
             case "svg": {
                 const svgRef = svgElementsRef.current?.get(previewKey);
                 if (!svgRef) return [];
@@ -95,7 +96,7 @@ export default function MoveUnitbar({
             }
         }
         return newAnimations;
-    }, [appState.apiOrigin, appState.carouselEntries, appState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
+    }, [appState.apiOrigin, uiState.carouselEntries, uiState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -299,7 +300,7 @@ export default function MoveUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -332,7 +333,7 @@ export default function MoveUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -342,7 +343,7 @@ export default function MoveUnitbar({
                     newAnimations.forEach(a => {
                         a.play();
                     });
-                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
                 }}
                 style={{
                     display: 'grid',
@@ -453,7 +454,7 @@ export default function MoveUnitbar({
                         key: move.move_id,
                         value: { ...move, math: newMath }
                     };
-                    dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
+                    uiDispatch({ type: UIActionType.SetEffectClipboard, value: newClipboardEffect });
                 }}
                 style={{
                     display: 'grid',
@@ -473,8 +474,8 @@ export default function MoveUnitbar({
             <div title={"paste"}
                 onClick={() => {
                     if (isMetaKeyPressed) return;
-                    if (appState.effectClipboard && appState.effectClipboard.type == 'move') {
-                        const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
+                    if (uiState.effectClipboard && uiState.effectClipboard.type == 'move') {
+                        const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
                         const snapshot: LaurusMoveResult = { ...move };
                         const activeKey = carouselEntryKey;
@@ -498,7 +499,7 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"paste"}
-                    svg={appState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
+                    svg={uiState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
                         cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
@@ -521,13 +522,13 @@ export default function MoveUnitbar({
                         setCurrentControls(defaultControls);
                         updateTrackpads(defaultControls);
                         dispatch({
-                            type: WorkspaceActionType.SetEffect,
+                            type: CoreActionType.SetEffect,
                             value: { type: 'move', value: { ...newMove }, key: newMove.move_id },
                         });
                         const updated = await updateMove(appState.apiOrigin, appState.accessToken, snapshot.move_id, { ...newMove });
                         if (!updated) {
                             dispatch({
-                                type: WorkspaceActionType.SetEffect,
+                                type: CoreActionType.SetEffect,
                                 value: { type: 'move', value: { ...snapshot }, key: snapshot.move_id },
                             });
                         }

@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { LaurusMoveEquation, LaurusMoveResult, WorkspaceActionType, WorkspaceContext, LaurusActiveElement, convertTime, HoverContext } from "../workspace.client";
+import { LaurusMoveEquation, LaurusMoveResult, CoreActionType, CoreContext, LaurusActiveElement, convertTime, HoverContext, UIContext, UIActionType } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server";
 import Dial from "../../components/dial";
@@ -42,18 +42,19 @@ interface MoveUnit {
     carouselIndexInit: number,
 }
 export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, move.move_id);
+        useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, move.move_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
         ...defaultMoveEquation,
         time: 0,
     });
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 angleParam: { padding: 15 },
@@ -88,8 +89,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         }
     });
     const carouselEntryKey = useMemo(() => {
-        if (carouselIndex < appState.carouselEntries.length) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
@@ -102,7 +103,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         else {
             return "";
         }
-    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
+    }, [uiState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
 
     // param 1
     const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
@@ -175,8 +176,8 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
     const angleRef = useRef<HTMLDivElement | null>(null);
 
     const setActiveElementIfNull = useCallback(() => {
-        if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
@@ -184,7 +185,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                         type: "svg",
                         locallyActivatedEffectKey: move.move_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
                 case "img": {
@@ -193,12 +194,12 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                         type: "img",
                         locallyActivatedEffectKey: move.move_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, move.move_id]);
+    }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, move.move_id, uiDispatch]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => {
         const newMath: Map<string, LaurusMoveEquation> = new Map(rollback.math);
@@ -206,13 +207,13 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
         const newMove: LaurusMoveResult = { ...rollback, math: newMath };
         setActiveElementIfNull();
         dispatch({
-            type: WorkspaceActionType.SetEffect,
+            type: CoreActionType.SetEffect,
             value: { type: 'move', value: { ...newMove }, key: newMove.move_id },
         });
         const updated = await updateMove(appState.apiOrigin, appState.accessToken, rollback.move_id, { ...newMove });
         if (!updated) {
             dispatch({
-                type: WorkspaceActionType.SetEffect,
+                type: CoreActionType.SetEffect,
                 value: { type: 'move', value: { ...rollback }, key: rollback.move_id },
             });
         }
@@ -313,6 +314,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"amplitude"}
                                         hash={`${move.move_id}|p1`}
                                         size={dynamicSizes.paramSlider}
@@ -347,6 +349,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         title={amplitudeTitle}
                                         liveTitleRef={amplitudeRef} />
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"frequency"}
                                         hash={`${move.move_id}|p2`}
                                         size={dynamicSizes.paramSlider}
@@ -380,75 +383,80 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                         disabled={move.locked || isMetaKeyPressed}
                                         title={frequencyTitle}
                                         liveTitleRef={frequencyRef} />
-                                    {(shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse) && <ParameterSliderY
-                                        label={"wavelength"}
-                                        hash={`${move.move_id}|p3`}
-                                        size={dynamicSizes.paramSlider}
-                                        trackRef={wavelengthTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
-                                        cursor={wavelengthCursor}
-                                        onNewCursor={(newCursor) => {
-                                            setWavelengthCursor({ ...newCursor, x: 0 });
-                                            if (!wavelengthTrackRef.current) return;
-                                            const newWavelength = getWavelengthValue(newCursor.y, wavelengthTrackRef.current.clientHeight);
-                                            setCurrentControls(v => { return { ...v, wavelength: newWavelength } });
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation: LaurusMoveEquation = activeEquation ?
-                                                    { ...activeEquation, wavelength: newWavelength } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                        wavelength: newWavelength,
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        onCursorMove={(c) => {
-                                            if (!wavelengthTrackRef.current || !wavelengthRef.current) return;
-                                            const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
-                                            wavelengthRef.current.innerHTML = val.toFixed(2) + 'px';
-                                        }}
-                                        disabled={move.locked || isMetaKeyPressed}
-                                        title={wavelengthTitle}
-                                        liveTitleRef={wavelengthRef} />}
-                                    {shapeType != LaurusShapeType.circle && <ParameterSliderY
-                                        label={"distance"}
-                                        hash={`${move.move_id}|p4`}
-                                        size={dynamicSizes.paramSlider}
-                                        trackRef={distanceTrackRef}
-                                        trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
-                                        cursor={distanceCursor}
-                                        onNewCursor={(newCursor) => {
-                                            setDistanceCursor({ ...newCursor, x: 0 });
-                                            if (!distanceTrackRef.current) return;
-                                            const newDistance = getDistanceValue(newCursor.y, distanceTrackRef.current.clientHeight);
-                                            setCurrentControls(v => { return { ...v, distance: newDistance } });
-                                            const activeKey = carouselEntryKey;
-                                            if (activeKey) {
-                                                const snapshot: LaurusMoveResult = { ...move };
-                                                const activeEquation = snapshot.math.get(activeKey);
-                                                const newEquation: LaurusMoveEquation = activeEquation ?
-                                                    { ...activeEquation, distance: newDistance } :
-                                                    {
-                                                        ...defaultMoveEquation,
-                                                        input_id: activeKey,
-                                                        distance: newDistance,
-                                                    };
-                                                saveNewEquation(snapshot, newEquation);
-                                            }
-                                        }}
-                                        onCursorMove={(c) => {
-                                            if (!distanceTrackRef.current || !distanceRef.current) return;
-                                            const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
-                                            distanceRef.current.innerHTML = val.toFixed(2) + 'px';
-                                        }}
-                                        disabled={move.locked || isMetaKeyPressed}
-                                        title={distanceTitle}
-                                        liveTitleRef={distanceRef} />}
+                                    {(shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse) &&
+                                        (<ParameterSliderY
+                                            resolution={{ ...uiState.resolution }}
+                                            label={"wavelength"}
+                                            hash={`${move.move_id}|p3`}
+                                            size={dynamicSizes.paramSlider}
+                                            trackRef={wavelengthTrackRef}
+                                            trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
+                                            cursor={wavelengthCursor}
+                                            onNewCursor={(newCursor) => {
+                                                setWavelengthCursor({ ...newCursor, x: 0 });
+                                                if (!wavelengthTrackRef.current) return;
+                                                const newWavelength = getWavelengthValue(newCursor.y, wavelengthTrackRef.current.clientHeight);
+                                                setCurrentControls(v => { return { ...v, wavelength: newWavelength } });
+                                                const activeKey = carouselEntryKey;
+                                                if (activeKey) {
+                                                    const snapshot: LaurusMoveResult = { ...move };
+                                                    const activeEquation = snapshot.math.get(activeKey);
+                                                    const newEquation: LaurusMoveEquation = activeEquation ?
+                                                        { ...activeEquation, wavelength: newWavelength } :
+                                                        {
+                                                            ...defaultMoveEquation,
+                                                            input_id: activeKey,
+                                                            wavelength: newWavelength,
+                                                        };
+                                                    saveNewEquation(snapshot, newEquation);
+                                                }
+                                            }}
+                                            onCursorMove={(c) => {
+                                                if (!wavelengthTrackRef.current || !wavelengthRef.current) return;
+                                                const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
+                                                wavelengthRef.current.innerHTML = val.toFixed(2) + 'px';
+                                            }}
+                                            disabled={move.locked || isMetaKeyPressed}
+                                            title={wavelengthTitle}
+                                            liveTitleRef={wavelengthRef} />)}
+                                    {shapeType != LaurusShapeType.circle && (
+                                        <ParameterSliderY
+                                            resolution={{ ...uiState.resolution }}
+                                            label={"distance"}
+                                            hash={`${move.move_id}|p4`}
+                                            size={dynamicSizes.paramSlider}
+                                            trackRef={distanceTrackRef}
+                                            trackBackground={'linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))'}
+                                            cursor={distanceCursor}
+                                            onNewCursor={(newCursor) => {
+                                                setDistanceCursor({ ...newCursor, x: 0 });
+                                                if (!distanceTrackRef.current) return;
+                                                const newDistance = getDistanceValue(newCursor.y, distanceTrackRef.current.clientHeight);
+                                                setCurrentControls(v => { return { ...v, distance: newDistance } });
+                                                const activeKey = carouselEntryKey;
+                                                if (activeKey) {
+                                                    const snapshot: LaurusMoveResult = { ...move };
+                                                    const activeEquation = snapshot.math.get(activeKey);
+                                                    const newEquation: LaurusMoveEquation = activeEquation ?
+                                                        { ...activeEquation, distance: newDistance } :
+                                                        {
+                                                            ...defaultMoveEquation,
+                                                            input_id: activeKey,
+                                                            distance: newDistance,
+                                                        };
+                                                    saveNewEquation(snapshot, newEquation);
+                                                }
+                                            }}
+                                            onCursorMove={(c) => {
+                                                if (!distanceTrackRef.current || !distanceRef.current) return;
+                                                const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
+                                                distanceRef.current.innerHTML = val.toFixed(2) + 'px';
+                                            }}
+                                            disabled={move.locked || isMetaKeyPressed}
+                                            title={distanceTitle}
+                                            liveTitleRef={distanceRef} />)}
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"time"}
                                         hash={`${move.move_id}|p5`}
                                         size={dynamicSizes.paramSlider}
@@ -528,6 +536,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                     {angleTitle}
                                 </div>}
                                 <Dial
+                                    resolution={{ ...uiState.resolution }}
                                     ids={{
                                         contextId: `${move.move_id}|main|c1`,
                                         draggableId: `${move.move_id}|main|d1`
@@ -550,7 +559,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                        disabled={move.locked || isMetaKeyPressed}
+                                    disabled={move.locked || isMetaKeyPressed}
                                     size={{
                                         container: 90,
                                         gauge: 90,

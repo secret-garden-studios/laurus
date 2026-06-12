@@ -1,5 +1,5 @@
 import { useContext, useState } from "react"
-import { defaultMarqueeTool, WorkspaceActionType, WorkspaceContext } from "../workspace.client"
+import { defaultMarqueeTool, CoreActionType, CoreContext, UIContext, UIActionType } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
@@ -10,7 +10,8 @@ interface Toolbar {
     handleMixRestoration: () => void,
 }
 export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
-    const { appState, dispatch, handleRewindAll } = useContext(WorkspaceContext);
+    const { appState, dispatch, handleRewindAll } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const [tooltipDelay] = useState(1000);
     const [rightPanelSize] = useState(() => {
         switch (resolution.type) {
@@ -55,33 +56,33 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'marquee' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'marquee' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={lassoSelect()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'marquee') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'marquee') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: defaultMarqueeTool })
+                            uiDispatch({ type: UIActionType.SetTool, value: defaultMarqueeTool })
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -119,25 +120,25 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'contextmenu' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'contextmenu' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={keyboardCommandKey()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'contextmenu') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'contextmenu') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'contextmenu' } })
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'contextmenu' } });
                         }
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -175,33 +176,33 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'viewport' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'viewport' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={browse()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'viewport') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'viewport') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'viewport' } })
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } })
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -238,33 +239,33 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'move' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'move' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={earthquake()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'move') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'move') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'move' } })
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'move' } });
                         }
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -301,25 +302,25 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'scale' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'scale' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={allOut()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'scale') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'scale') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'scale' } });
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
                         }
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -356,25 +357,25 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'rotate' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'rotate' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={toysFan()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'rotate') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'rotate') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'rotate' } });
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
                         }
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -411,25 +412,25 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                 style={{
                     width: 'min-content',
                     height: 'min-content',
-                    background: appState.tool.type == 'mix' ? 'rgba(255, 255, 255, 0.1)' : 'none',
+                    background: uiState.tool.type == 'mix' ? 'rgba(255, 255, 255, 0.1)' : 'none',
                 }}>
                 <SvgRepo
                     svg={experiment()}
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={async () => {
-                        if (!appState.playEnabled) {
+                        if (!uiState.playEnabled) {
                             await handleRewindAll();
                         }
                         handleMixRestoration();
-                        if (appState.tool.type == 'mix') {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                        if (uiState.tool.type == 'mix') {
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                         }
                         else {
-                            dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'mix' } });
+                            uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
                         }
                     }}
-                    containerStyle={!appState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.skipPreviousEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg

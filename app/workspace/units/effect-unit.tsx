@@ -1,6 +1,6 @@
 import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ScaleUnit from "../units/scale-unit";
-import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
+import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { updateMove, updateRotate, updateScale } from "../workspace.server";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import MoveUnit from "../units/move-unit";
@@ -17,14 +17,15 @@ interface EffectUnit {
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRef, imgElementsRef }: EffectUnit) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { selectedEffectUnitKeys, isMetaKeyPressed } = useContext(HoverContext);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
     const [showUnitControls, setShowUnitControls] = useState(() => {
-        const keys = appState.carouselEntries;
-        const activeElementIndex = appState.activeElement ? keys.findIndex(k => k.key === appState.activeElement?.key) : -1;
+        const keys = uiState.carouselEntries;
+        const activeElementIndex = uiState.activeElement ? keys.findIndex(k => k.key === uiState.activeElement?.key) : -1;
         switch (effect.type) {
             case "move": {
                 const moveEqautionKeys = Array.from(effect.value.math.keys())
@@ -51,7 +52,7 @@ export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRe
         return showUnitControlsInit;
     });
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 timelineSliderContainer: {
                     padding: '0px 15px 0px 15px',
@@ -220,11 +221,11 @@ export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRe
             }
         }
         if (updated) {
-            dispatch({ type: WorkspaceActionType.SetEffect, value: effect });
+            dispatch({ type: CoreActionType.SetEffect, value: effect });
         }
         else {
             updateTrackpads();
-            dispatch({ type: WorkspaceActionType.SetEffect, value: rollback });
+            dispatch({ type: CoreActionType.SetEffect, value: rollback });
         }
     }, [appState.accessToken, appState.apiOrigin, dispatch, updateTrackpads]);
 
@@ -309,6 +310,7 @@ export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRe
                     ...dynamicSizes.timelineSliderContainer,
                 }}>
                     <TimelineSlider
+                        resolution={{ ...uiState.resolution }}
                         hash={`${effect.key}|t1`}
                         size={dynamicSizes.timelineTrackSize}
                         trackRef={timelineTrackRef}
@@ -492,13 +494,14 @@ interface EffectDescription {
     effectDescriptionInit: string,
 }
 function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescription) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [effectDescription, setEffectDescription] = useState<string>(effectDescriptionInit);
     const [effectDescriptionSnapshot] = useState<string>(effectDescriptionInit);
     const effectDescriptionHook = useDebounce<string>(effectDescription, 300);
     const dependenciesRef = useRef<LaurusEffect | undefined>(undefined);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return { fontSize: 13, padding: 6 }
             case "midhigh": return { fontSize: 12, padding: 6 }
             case "midlow":
@@ -527,7 +530,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                                     ...newScale,
                                 }
                             };
-                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                            dispatch({ type: CoreActionType.SetEffect, value: newEffect });
                         }
                         else {
                             effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
@@ -548,7 +551,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                                     ...newMove,
                                 }
                             };
-                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                            dispatch({ type: CoreActionType.SetEffect, value: newEffect });
                         }
                         else {
                             effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
@@ -569,7 +572,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                                     ...newRotate,
                                 }
                             };
-                            dispatch({ type: WorkspaceActionType.SetEffect, value: newEffect });
+                            dispatch({ type: CoreActionType.SetEffect, value: newEffect });
                         }
                         else {
                             effectDescriptionInputRef.current.value = effectDescriptionSnapshot;

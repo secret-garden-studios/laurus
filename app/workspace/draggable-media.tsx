@@ -4,13 +4,15 @@ import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "
 import { CSS } from '@dnd-kit/utilities';
 import {
     LaurusImgResult,
-    WorkspaceContext,
+    CoreContext,
     HoverContext,
-    WorkspaceActionType,
+    CoreActionType,
     getNewContextMenuConfig,
     LaurusActiveElement,
     LaurusTransform,
     DEFAULT_CONTEXT_MENU_CONFIG,
+    UIContext,
+    UIActionType,
 } from "./workspace.client";
 import { RefObject, useCallback, useContext, useMemo, useState } from "react";
 import { updateProject } from "../projects/projects.server";
@@ -163,16 +165,16 @@ function ProjectImg({
     refKey,
     title,
     transform }: ProjectImg) {
-    const { appState } = useContext(WorkspaceContext);
+    const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed, selectedImgKeys } = useContext(HoverContext);
     const [isHovered, setIsHovered] = useState(false);
     const isSelected = selectedImgKeys.has(mediaKey);
     const dragDisabled = useMemo(() => {
-        return appState.tool.type != 'move';
-    }, [appState.tool.type]);
+        return uiState.tool.type != 'move';
+    }, [uiState.tool.type]);
     const isStackable = useMemo(() => {
-        return appState.tool.type === 'marquee' && appState.tool.stack
-    }, [appState.tool]);
+        return uiState.tool.type === 'marquee' && uiState.tool.stack
+    }, [uiState.tool]);
     const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
         useDraggable({
             id: dndId,
@@ -186,14 +188,14 @@ function ProjectImg({
     };
 
     const imgCursor = useMemo(() => {
-        return (isMetaKeyPressed && appState.tool.type === 'marquee' && appState.tool.select)
+        return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move')
+            : (isMetaKeyPressed && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
                 ? 'context-menu'
-                : (isStackable || appState.tool.type === 'scale')
+                : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
                     : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
-    }, [appState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+    }, [uiState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
 
     return <>
         <div
@@ -294,16 +296,16 @@ function ProjectSvg({
     refKey,
     title,
     transform }: ProjectSvg) {
-    const { appState } = useContext(WorkspaceContext);
+    const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed, selectedSvgKeys } = useContext(HoverContext);
     const isSelected = selectedSvgKeys.has(mediaKey);
 
     const dragDisabled = useMemo(() => {
-        return appState.tool.type != 'move';
-    }, [appState.tool.type]);
+        return uiState.tool.type != 'move';
+    }, [uiState.tool.type]);
     const isStackable = useMemo(() => {
-        return appState.tool.type === 'marquee' && appState.tool.stack
-    }, [appState.tool]);
+        return uiState.tool.type === 'marquee' && uiState.tool.stack
+    }, [uiState.tool]);
     const { attributes, listeners, setNodeRef, transform: dndTransform, isDragging } =
         useDraggable({
             id: dndId,
@@ -324,14 +326,14 @@ function ProjectSvg({
     };
 
     const svgCursor = useMemo(() => {
-        return (isMetaKeyPressed && appState.tool.type === 'marquee' && appState.tool.select)
+        return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : (isMetaKeyPressed && appState.tool.type !== 'viewport' && appState.tool.type !== 'move')
+            : (isMetaKeyPressed && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
                 ? 'context-menu'
-                : (isStackable || appState.tool.type === 'scale')
+                : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
                     : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
-    }, [appState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+    }, [uiState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
 
     return <>
         <div
@@ -426,11 +428,12 @@ export function DraggableProjectImg({
     zIndex,
     imgElementsRef,
     refKey }: DraggableProjectImg) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
-        switch (appState.tool.type) {
+        switch (uiState.tool.type) {
             case "viewport": {
                 return {
                     x: (meta.left - appState.project.frame_left),
@@ -444,7 +447,7 @@ export function DraggableProjectImg({
                 }
             }
         }
-    }, [appState.project.frame_left, appState.project.frame_top, appState.tool.type, meta.left, meta.top]);
+    }, [appState.project.frame_left, appState.project.frame_top, uiState.tool.type, meta.left, meta.top]);
     const laurusTransform = useMemo<LaurusTransform>(() => {
         return {
             cssProps: {
@@ -531,18 +534,18 @@ export function DraggableProjectImg({
         });
 
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs };
-        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+        dispatch({ type: CoreActionType.SetProject, value: newProject });
         if (newProject.project_id) {
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                dispatch({ type: CoreActionType.SetProject, value: rollback });
             }
         }
     }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, mediaKey, selectedImgKeys, selectedSvgKeys]);
 
     const onImgStackDrop = useCallback(async () => {
-        if (!appState.browserElement) return;
-        const browserElement = { ...appState.browserElement };
+        if (!uiState.browserElement) return;
+        const browserElement = { ...uiState.browserElement };
         const snapshot = { ...appState.project };
         const newKey = v4();
         const maxOrder = Math.max(
@@ -565,11 +568,11 @@ export function DraggableProjectImg({
             const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const encodedImg = appState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
+                const encodedImg = uiState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
                 if (encodedImg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                 }
             }
         } else if (browserElement.type === 'svg') {
@@ -590,18 +593,18 @@ export function DraggableProjectImg({
             const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs };
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const encodedSvg = appState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
+                const encodedSvg = uiState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
                 if (encodedSvg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                 }
             }
         }
-    }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
+    }, [uiState.browserElement, uiState.browserImgs, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, meta, dispatch, uiDispatch]);
 
     const onImgClick = useCallback((metaKey: boolean) => {
-        if (metaKey && appState.tool.type === 'marquee' && appState.tool.select) {
+        if (metaKey && uiState.tool.type === 'marquee' && uiState.tool.select) {
             setSelectedImgKeys(prev => {
                 const next = new Set(prev);
                 if (next.has(mediaKey)) {
@@ -612,7 +615,7 @@ export function DraggableProjectImg({
                 return next;
             });
         }
-        else if (metaKey && appState.tool.type !== 'viewport') {
+        else if (metaKey && uiState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },
@@ -620,22 +623,22 @@ export function DraggableProjectImg({
                 { x: meta.scale_x, y: meta.scale_y },
                 meta.contextMenuConfig);
             const newImg: LaurusProjectImg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-            dispatch({ type: WorkspaceActionType.SetProjectImg, key: mediaKey, value: newImg });
+            dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: newImg });
             const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
             const inactiveSvgs = Array.from(appState.project.svgs.entries());
             inactiveImgs.forEach(i => {
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
             });
             inactiveSvgs.forEach(i => {
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
             });
         }
         else {
-            if (appState.tool.type === 'marquee' && appState.tool.stack) {
+            if (uiState.tool.type === 'marquee' && uiState.tool.stack) {
                 onImgStackDrop();
                 return;
             }
-            switch (appState.tool.type) {
+            switch (uiState.tool.type) {
                 case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
@@ -646,14 +649,14 @@ export function DraggableProjectImg({
                         { x: meta.scale_x, y: meta.scale_y },
                         meta.contextMenuConfig);
                     const newImg: LaurusProjectImg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: mediaKey, value: newImg });
+                    dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: newImg });
                     const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveSvgs = Array.from(appState.project.svgs.entries());
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     break;
                 }
@@ -676,21 +679,21 @@ export function DraggableProjectImg({
                         key: mediaKey,
                         type: 'img',
                     };
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                    dispatch({ type: WorkspaceActionType.SetProjectImg, key: mediaKey, value: { ...meta, showContextMenu: true } });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+                    dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: { ...meta, showContextMenu: true } });
                     const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveSvgs = Array.from(appState.project.svgs.entries());
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     break;
                 }
             }
         }
-    }, [appState.tool, appState.project.canvas_width, appState.project.canvas_height, appState.project.imgs, appState.project.svgs, meta, dispatch, mediaKey, onImgStackDrop, setSelectedImgKeys]);
+    }, [uiState.tool, setSelectedImgKeys, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, appState.project.imgs, appState.project.svgs, dispatch, onImgStackDrop, uiDispatch]);
 
     return (<>
         <DndContext
@@ -736,11 +739,12 @@ export function DraggableProjectSvg({
     zIndex,
     svgElementsRef,
     refKey }: DraggableProjectSvg) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
-        switch (appState.tool.type) {
+        switch (uiState.tool.type) {
             case "viewport": {
                 return {
                     x: (meta.left - appState.project.frame_left),
@@ -754,7 +758,7 @@ export function DraggableProjectSvg({
                 }
             }
         }
-    }, [appState.project.frame_left, appState.project.frame_top, appState.tool.type, meta.left, meta.top]);
+    }, [appState.project.frame_left, appState.project.frame_top, uiState.tool.type, meta.left, meta.top]);
     const laurusTransform = useMemo<LaurusTransform>(() => {
         return {
             cssProps: {
@@ -840,18 +844,18 @@ export function DraggableProjectSvg({
         });
 
         const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs, svgs: newSvgs };
-        dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+        dispatch({ type: CoreActionType.SetProject, value: newProject });
         if (newProject.project_id) {
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (!updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: rollback });
+                dispatch({ type: CoreActionType.SetProject, value: rollback });
             }
         }
     }, [appState.accessToken, appState.apiOrigin, appState.project, dispatch, mediaKey, selectedImgKeys, selectedSvgKeys]);
 
     const onSvgStackDrop = useCallback(async () => {
-        if (!appState.browserElement) return;
-        const browserElement = { ...appState.browserElement };
+        if (!uiState.browserElement) return;
+        const browserElement = { ...uiState.browserElement };
         const snapshot = { ...appState.project };
         const newKey = v4();
         const maxOrder = Math.max(
@@ -874,11 +878,11 @@ export function DraggableProjectSvg({
             const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs };
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const encodedImg = appState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
+                const encodedImg = uiState.browserImgs.find(i => i.media_key === browserElement.value.media_key);
                 if (encodedImg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                 }
             }
         } else if (browserElement.type === 'svg') {
@@ -899,18 +903,18 @@ export function DraggableProjectSvg({
             const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs };
             const updated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (updated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const encodedSvg = appState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
+                const encodedSvg = uiState.browserSvgs.find(i => i.media_key === browserElement.value.media_key);
                 if (encodedSvg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                 }
             }
         }
-    }, [appState.browserElement, appState.project, appState.apiOrigin, appState.accessToken, appState.browserImgs, appState.browserSvgs, dispatch, meta]);
+    }, [uiState.browserElement, uiState.browserImgs, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, meta, dispatch, uiDispatch]);
 
     const onSvgClick = useCallback((metaKey: boolean) => {
-        if (metaKey && appState.tool.type === 'marquee' && appState.tool.select) {
+        if (metaKey && uiState.tool.type === 'marquee' && uiState.tool.select) {
             setSelectedSvgKeys(prev => {
                 const next = new Set(prev);
                 if (next.has(mediaKey)) {
@@ -921,7 +925,7 @@ export function DraggableProjectSvg({
                 return next;
             });
         }
-        else if (metaKey && appState.tool.type !== 'viewport') {
+        else if (metaKey && uiState.tool.type !== 'viewport') {
             const newContextMenuConfig = getNewContextMenuConfig(
                 { ...meta },
                 { width: appState.project.canvas_width, height: appState.project.canvas_height },
@@ -929,22 +933,22 @@ export function DraggableProjectSvg({
                 { x: meta.scale_x, y: meta.scale_y },
                 meta.contextMenuConfig);
             const newSvg: LaurusProjectSvg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-            dispatch({ type: WorkspaceActionType.SetProjectSvg, key: mediaKey, value: newSvg });
+            dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: newSvg });
             const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
             const inactiveImgs = Array.from(appState.project.imgs.entries());
             inactiveSvgs.forEach(i => {
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
             });
             inactiveImgs.forEach(i => {
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
             });
         }
         else {
-            if (appState.tool.type === 'marquee' && appState.tool.stack) {
+            if (uiState.tool.type === 'marquee' && uiState.tool.stack) {
                 onSvgStackDrop();
                 return;
             }
-            switch (appState.tool.type) {
+            switch (uiState.tool.type) {
                 case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
@@ -955,14 +959,14 @@ export function DraggableProjectSvg({
                         { x: meta.scale_x, y: meta.scale_y },
                         meta.contextMenuConfig);
                     const newSvg: LaurusProjectSvg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: mediaKey, value: newSvg });
+                    dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: newSvg });
                     const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveImgs = Array.from(appState.project.imgs.entries());
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     break;
                 }
@@ -985,21 +989,21 @@ export function DraggableProjectSvg({
                         key: mediaKey,
                         type: 'svg',
                     };
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                    dispatch({ type: WorkspaceActionType.SetProjectSvg, key: mediaKey, value: { ...meta, showContextMenu: true } });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+                    dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: { ...meta, showContextMenu: true } });
                     const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveImgs = Array.from(appState.project.imgs.entries());
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: WorkspaceActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
                     });
                     break;
                 }
             }
         }
-    }, [appState.tool, appState.project.canvas_width, appState.project.canvas_height, appState.project.svgs, appState.project.imgs, meta, dispatch, mediaKey, onSvgStackDrop, setSelectedSvgKeys]);
+    }, [uiState.tool, setSelectedSvgKeys, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, appState.project.svgs, appState.project.imgs, dispatch, onSvgStackDrop, uiDispatch]);
 
     return (<>
         <DndContext

@@ -1,14 +1,15 @@
 import { geistMono } from "@/app/fonts";
 import { SvgRepo, allOut, arrowDownwardAlt, check, circle, earthquake, experiment, toysFan } from "@/app/svg-repo";
 import { useContext, useEffect, useMemo, useState } from "react";
-import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { CoreActionType, LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, UIActionType, UIContext, CoreContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
 import { updateMove, updateRotate, updateScale } from "../workspace.server";
 
 export default function Mixbar() {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 container: {
                     height: 50,
@@ -136,12 +137,12 @@ export default function Mixbar() {
     const updateMenuSelectHeader = 'scroll down and select an effect type';
 
     const selectedMixablesCount = useMemo(() => {
-        return appState.effects.filter(e => appState.mixableEffects.includes(e.type) && e.value.mixState === LaurusMixState.Selected).length;
-    }, [appState.effects, appState.mixableEffects]);
+        return appState.effects.filter(e => uiState.mixableEffects.includes(e.type) && e.value.mixState === LaurusMixState.Selected).length;
+    }, [appState.effects, uiState.mixableEffects]);
 
     const someActiveMixables = useMemo(() => {
-        return appState.effects.some(e => appState.mixableEffects.includes(e.type) && e.value.mixState === LaurusMixState.Active);
-    }, [appState.effects, appState.mixableEffects]);
+        return appState.effects.some(e => uiState.mixableEffects.includes(e.type) && e.value.mixState === LaurusMixState.Active);
+    }, [appState.effects, uiState.mixableEffects]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -151,7 +152,7 @@ export default function Mixbar() {
             }
             if (event.key === 'Escape') {
                 if (selectedEffectType && !isSaving) {
-                    dispatch({ type: WorkspaceActionType.SetEffects, value: prevEffects });
+                    dispatch({ type: CoreActionType.SetEffects, value: prevEffects });
                     setSelectedEffectType("");
                 }
             }
@@ -160,7 +161,7 @@ export default function Mixbar() {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [appState.effects, dispatch, appState.mixableEffects, selectedEffectType, prevEffects, isSaving]);
+    }, [appState.effects, dispatch, uiState.mixableEffects, selectedEffectType, prevEffects, isSaving]);
 
     return <>
         <div style={{
@@ -262,12 +263,12 @@ export default function Mixbar() {
                             scale={1}
                             scaleToContaier={true}
                             onContainerClick={async () => {
-                                if (!appState.mixableEffects.includes(selectedEffectType)) return;
+                                if (!uiState.mixableEffects.includes(selectedEffectType)) return;
                                 setIsSaving(true);
                                 try {
                                     const snapshot: LaurusEffect[] = [...appState.effects];
                                     const newEffects: LaurusEffect[] = snapshot.map(e => {
-                                        if (e.type === selectedEffectType && appState.mixableEffects.includes(e.type)) {
+                                        if (e.type === selectedEffectType && uiState.mixableEffects.includes(e.type)) {
                                             const newMixState: LaurusMixState = e.value.mixState === LaurusMixState.Selected ? LaurusMixState.Active : LaurusMixState.None;
                                             const newMix: boolean = newMixState == LaurusMixState.Active ? true : false;
                                             switch (e.type) {
@@ -281,7 +282,7 @@ export default function Mixbar() {
                                     let updateCount = 0;
                                     for (let i = 0; i < newEffects.length; i++) {
                                         const e = newEffects[i];
-                                        if (e.type === selectedEffectType && appState.mixableEffects.includes(e.type)) {
+                                        if (e.type === selectedEffectType && uiState.mixableEffects.includes(e.type)) {
                                             let updated = false;
                                             switch (e.type) {
                                                 case "move": {
@@ -303,18 +304,18 @@ export default function Mixbar() {
                                         }
                                     }
                                     if (updateCount > 0) {
-                                        dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                                        dispatch({ type: CoreActionType.SetEffects, value: newEffects });
                                     }
                                     else {
-                                        dispatch({ type: WorkspaceActionType.SetEffects, value: prevEffects });
+                                        dispatch({ type: CoreActionType.SetEffects, value: prevEffects });
                                     }
                                 } catch (error) {
                                     console.error("Failed to save mix", error);
-                                    dispatch({ type: WorkspaceActionType.SetEffects, value: prevEffects });
+                                    dispatch({ type: CoreActionType.SetEffects, value: prevEffects });
                                 } finally {
                                     setSelectedEffectType("");
                                     setIsSaving(false);
-                                    dispatch({ type: WorkspaceActionType.SetTool, value: { type: 'none' } });
+                                    uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
                                 }
                             }} />
                     </div>
@@ -338,10 +339,11 @@ interface SelectionMenu {
     setSnapshot: React.Dispatch<React.SetStateAction<LaurusEffect[]>>,
 }
 function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: SelectionMenu) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const selectList = useMemo(() => {
-        const prioritySet = new Set<string>(appState.mixableEffects);
-        const effectNames = appState.effectNames
+        const prioritySet = new Set<string>(uiState.mixableEffects);
+        const effectNames = uiState.effectNames
             .filter(e => e != 'skew')
             .sort((a, b) => {
                 const hasA = prioritySet.has(a) ? 1 : 0;
@@ -349,10 +351,10 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                 return hasB - hasA;
             });
         return [selectHeader, ...effectNames];
-    }, [appState.effectNames, appState.mixableEffects, selectHeader]);
+    }, [uiState.effectNames, uiState.mixableEffects, selectHeader]);
 
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 effectBrowser: {
                     height: 96,
@@ -395,25 +397,25 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
             {selectList.map((selectOption) => {
                 return (
                     <div key={selectOption}
-                        className={styles[appState.mixableEffects.includes(selectOption) ? 'animated-nav-dark' : '']}
+                        className={styles[uiState.mixableEffects.includes(selectOption) ? 'animated-nav-dark' : '']}
                         onMouseEnter={(e) => {
-                            if (!appState.mixableEffects.includes(selectOption)) return;
+                            if (!uiState.mixableEffects.includes(selectOption)) return;
                             e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                         }}
                         onMouseLeave={(e) => {
-                            if (!appState.mixableEffects.includes(selectOption)) return;
+                            if (!uiState.mixableEffects.includes(selectOption)) return;
                             e.currentTarget.style.background = 'none';
                         }}
                         onClick={(e) => {
                             e.currentTarget.style.background = 'none';
-                            if (!appState.mixableEffects.includes(selectOption)) return;
+                            if (!uiState.mixableEffects.includes(selectOption)) return;
                             const newSelectedEffectType = selectOption;
                             const snapshot: LaurusEffect[] = [...appState.effects];
                             const newEffects: LaurusEffect[] = [];
                             snapshot
                                 .forEach(e => {
                                     const i = newEffects.findIndex(ne => ne.key == e.key);
-                                    if (e.type === newSelectedEffectType && appState.mixableEffects.includes(e.type)) {
+                                    if (e.type === newSelectedEffectType && uiState.mixableEffects.includes(e.type)) {
                                         const newMixState = e.value.mixState === LaurusMixState.Active ? LaurusMixState.Selected : LaurusMixState.Waiting;
                                         const newEffect = (() => {
                                             switch (e.type) {
@@ -433,12 +435,12 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                                         newEffects.push(e);
                                     }
                                 });
-                            dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                            dispatch({ type: CoreActionType.SetEffects, value: newEffects });
                             setSelectedEffectType(newSelectedEffectType);
                             setSnapshot(snapshot);
                         }}
                         style={{
-                            cursor: !appState.mixableEffects.includes(selectOption) ? '' : 'pointer',
+                            cursor: !uiState.mixableEffects.includes(selectOption) ? '' : 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             fontSize: dynamicSizes.effectBrowser.itemFontSize,
@@ -446,7 +448,7 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                             height: '100%',
                             padding: dynamicSizes.effectBrowser.itemPadding,
                             borderRadius: 0,
-                            color: appState.mixableEffects.includes(selectOption) || selectOption == selectHeader ? 'rgb(227,227,227)' : 'rgba(255, 255, 255, 0.3)',
+                            color: uiState.mixableEffects.includes(selectOption) || selectOption == selectHeader ? 'rgb(227,227,227)' : 'rgba(255, 255, 255, 0.3)',
                         }}>
                         <div >
                             {selectOption}
@@ -455,9 +457,9 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                             svg={(() => {
                                 switch (selectOption) {
                                     case selectHeader: return arrowDownwardAlt();
-                                    case "scale": return appState.mixableEffects.includes(selectOption) ? allOut() : allOut("rgb(67,67,67)");
-                                    case "move": return appState.mixableEffects.includes(selectOption) ? earthquake() : earthquake("rgb(67,67,67)");
-                                    case "rotate": return appState.mixableEffects.includes(selectOption) ? toysFan() : toysFan("rgb(67,67,67)");
+                                    case "scale": return uiState.mixableEffects.includes(selectOption) ? allOut() : allOut("rgb(67,67,67)");
+                                    case "move": return uiState.mixableEffects.includes(selectOption) ? earthquake() : earthquake("rgb(67,67,67)");
+                                    case "rotate": return uiState.mixableEffects.includes(selectOption) ? toysFan() : toysFan("rgb(67,67,67)");
                                     default: return circle('rgba(0,0,0,0)')
                                 }
                             })()}

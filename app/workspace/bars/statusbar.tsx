@@ -1,9 +1,9 @@
 'use client'
 
 import { useContext, useState } from "react";
-import { WorkspaceContext } from "../workspace.client";
+import { CoreContext, UIContext } from "../workspace.client";
 import { dellaRespira, ubuntuMono } from "../../fonts";
-import { allOut, browse, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
+import { allOut, browse, circle, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 
@@ -12,9 +12,10 @@ export interface Statusbar {
     body: string[],
 }
 export default function Statusbar({ action, body }: Statusbar) {
-    const { appState } = useContext(WorkspaceContext);
+    const { appState } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [statusbarSize] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 height: 30,
                 actionFont: 11,
@@ -74,22 +75,22 @@ export default function Statusbar({ action, body }: Statusbar) {
                     })}
                 </div>
                 <div
-                    title={appState.effectClipboard ? "" : "clipboard"}
+                    title={uiState.effectClipboard ? "" : "clipboard"}
                     data-tooltip-id="clipboard-tooltip-id"
                     style={{
                         marginLeft: "auto",
                         fontSize: statusbarSize.actionFont,
                     }}>
                     <SvgRepo
-                        title={appState.effectClipboard ? "" : "clipboard"}
-                        svg={appState.effectClipboard ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
+                        title={uiState.effectClipboard ? "" : "clipboard"}
+                        svg={uiState.effectClipboard ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
                         containerStyle={{
                             width: 30,
                             height: 30
                         }}
                         scale={0.5} />
                 </div>
-                {appState.effectClipboard &&
+                {uiState.effectClipboard &&
                     <>
                         <Tooltip
                             className={dellaRespira.className}
@@ -104,11 +105,11 @@ export default function Statusbar({ action, body }: Statusbar) {
                                 maxWidth: "300px",
                             }}
                             render={() => {
-                                const clipboardData = appState.effectClipboard?.value.math.get("clipboard") ?? undefined;
+                                const clipboardData = uiState.effectClipboard?.value.math.get("clipboard") ?? undefined;
                                 return <div style={{ padding: 4, width: '100%' }}>
                                     <SvgRepo
                                         svg={(() => {
-                                            switch (appState.effectClipboard!.type) {
+                                            switch (uiState.effectClipboard!.type) {
                                                 case "scale": return allOut();
                                                 case "move": return earthquake();
                                                 case "rotate": return toysFan();
@@ -139,14 +140,14 @@ export default function Statusbar({ action, body }: Statusbar) {
                     style={{
                         fontSize: statusbarSize.actionFont,
                     }}>
-                    {appState.tool.type == 'none' ?
+                    {uiState.tool.type == 'none' ?
                         <div style={{ width: 30, height: 30, display: 'grid', placeContent: 'center' }}>
                             <RiToolsLine size={15} color="rgb(62, 62, 62)" />
                         </div> :
                         <SvgRepo
                             title="active tool"
                             svg={(() => {
-                                switch (appState.tool.type) {
+                                switch (uiState.tool.type) {
                                     case "marquee": return lassoSelect();
                                     case "contextmenu": return keyboardCommandKey();
                                     case "viewport": return browse();
@@ -210,7 +211,7 @@ export default function Statusbar({ action, body }: Statusbar) {
                         fontSize: statusbarSize.bodyFont,
                         letterSpacing: '1px'
                     }}>
-                    {`${appState.resolution.value.width}x${appState.resolution.value.height}`}
+                    {`${uiState.resolution.value.width}x${uiState.resolution.value.height}`}
                 </div>
             </div>
         </>

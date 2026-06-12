@@ -2,7 +2,7 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../../app.module.css";
 import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
-import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { CoreActionType, UIContext, CoreContext } from "../workspace.client";
 import { updateProject, createProject } from "../../projects/projects.server";
 import { LaurusProjectResult } from "../../projects/projects.client";
 import Mixbar from "./mixbar";
@@ -12,14 +12,15 @@ import Marqueebar from "./marqueebar";
 import Viewportbar from "./viewportbar";
 
 export default function Projectbar() {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [projectName, setProjectName] = useState<string>(appState.project.name);
     const [projectNameSnapshot] = useState<string>(appState.project.name);
     const projectNameHook = useDebounce<string>(projectName, 1000);
     const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
     const projectTitleRef = useRef<HTMLInputElement>(null);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 input: {
                     fontSize: 14,
@@ -56,7 +57,7 @@ export default function Projectbar() {
                     newProject.project_id,
                     newProject);
                 if (updated) {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                    dispatch({ type: CoreActionType.SetProject, value: newProject });
                 }
                 else {
                     if (projectTitleRef.current) {
@@ -72,7 +73,7 @@ export default function Projectbar() {
                     newProject);
                 if (created) {
                     const newProject2: LaurusProjectResult = { ...created }
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                    dispatch({ type: CoreActionType.SetProject, value: newProject2 });
                 }
                 else {
                     if (projectTitleRef.current) {
@@ -92,7 +93,7 @@ export default function Projectbar() {
 
     return (<>
         <div
-            className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}
+            className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-16-2' : 'noisy-background-16-2-low-res'}`]}
             style={{
                 width: "100%",
                 display: "grid",
@@ -143,9 +144,9 @@ export default function Projectbar() {
 }
 
 export function ProjectbarLevel2() {
-    const { appState } = useContext(WorkspaceContext);
+    const { uiState } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 container: {
                     height: 50,
@@ -184,7 +185,7 @@ export function ProjectbarLevel2() {
                 ...dynamicSizes.container
             }}>
             {(() => {
-                switch (appState.tool.type) {
+                switch (uiState.tool.type) {
                     case "marquee": return <Marqueebar />
                     case "none":
                     case "contextmenu":

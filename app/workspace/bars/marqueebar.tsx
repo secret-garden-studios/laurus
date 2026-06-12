@@ -1,13 +1,13 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
-import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { UIActionType, UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 
 export default function Marqueebar() {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 flex: {
                     gap: 0,
@@ -140,12 +140,12 @@ export default function Marqueebar() {
     const wInputRef = useRef<HTMLInputElement | null>(null);
     const hInputRef = useRef<HTMLInputElement | null>(null);
 
-    const isPositionOn = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.value : false; }, [appState.tool]);
-    const isSizeOn = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.value : false }, [appState.tool]);
-    const xValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.x?.toString() ?? "0" : "0" }, [appState.tool]);
-    const yValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.position.y?.toString() ?? "0" : "0" }, [appState.tool]);
-    const widthValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.width?.toString() ?? "0" : "0" }, [appState.tool]);
-    const heightValue = useMemo(() => { return appState.tool.type === 'marquee' ? appState.tool.size.height?.toString() ?? "0" : "0" }, [appState.tool]);
+    const isPositionOn = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.position.value : false; }, [uiState.tool]);
+    const isSizeOn = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.size.value : false }, [uiState.tool]);
+    const xValue = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.position.x?.toString() ?? "0" : "0" }, [uiState.tool]);
+    const yValue = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.position.y?.toString() ?? "0" : "0" }, [uiState.tool]);
+    const widthValue = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.size.width?.toString() ?? "0" : "0" }, [uiState.tool]);
+    const heightValue = useMemo(() => { return uiState.tool.type === 'marquee' ? uiState.tool.size.height?.toString() ?? "0" : "0" }, [uiState.tool]);
     const positionInputStyle = useMemo<CSSProperties>(() => {
         return {
             textAlign: "center",
@@ -174,40 +174,40 @@ export default function Marqueebar() {
     }, [dynamicSizes.input.input, isSizeOn]);
 
     const updateToolPosition = useCallback(() => {
-        if (appState.tool.type === 'marquee') {
+        if (uiState.tool.type === 'marquee') {
             const newX = parseFloat(xInputRef.current?.value || "");
             const newY = parseFloat(yInputRef.current?.value || "");
-            dispatch({
-                type: WorkspaceActionType.SetTool,
+            uiDispatch({
+                type: UIActionType.SetTool,
                 value: {
-                    ...appState.tool,
+                    ...uiState.tool,
                     position: {
-                        ...appState.tool.position,
+                        ...uiState.tool.position,
                         x: isNaN(newX) ? undefined : newX,
                         y: isNaN(newY) ? undefined : newY
                     }
                 }
             });
         }
-    }, [appState.tool, dispatch]);
+    }, [uiState.tool, uiDispatch]);
 
     const updateToolSize = useCallback(() => {
-        if (appState.tool.type === 'marquee') {
+        if (uiState.tool.type === 'marquee') {
             const newWidth: number = parseFloat(wInputRef.current?.value || "");
             const newHeight: number = parseFloat(hInputRef.current?.value || "");
-            dispatch({
-                type: WorkspaceActionType.SetTool,
+            uiDispatch({
+                type: UIActionType.SetTool,
                 value: {
-                    ...appState.tool,
+                    ...uiState.tool,
                     size: {
-                        ...appState.tool.size,
+                        ...uiState.tool.size,
                         width: isNaN(newWidth) ? undefined : newWidth,
                         height: isNaN(newHeight) ? undefined : newHeight
                     }
                 }
             });
         }
-    }, [appState.tool, dispatch]);
+    }, [uiState.tool, uiDispatch]);
 
     return <>
         <div style={
@@ -245,20 +245,20 @@ export default function Marqueebar() {
                     <Toggle
                         value={isPositionOn}
                         onClick={() => {
-                            if (appState.tool.type === 'marquee') {
+                            if (uiState.tool.type === 'marquee') {
                                 const newPositionValue = !isPositionOn;
                                 const newX = parseFloat(xInputRef.current?.value || "");
                                 const newY = parseFloat(yInputRef.current?.value || "");
-                                dispatch({
-                                    type: WorkspaceActionType.SetTool,
+                                uiDispatch({
+                                    type: UIActionType.SetTool,
                                     value: {
-                                        ...appState.tool,
+                                        ...uiState.tool,
                                         position: {
                                             value: newPositionValue,
                                             x: newPositionValue && !isNaN(newX) ? newX : undefined,
                                             y: newPositionValue && !isNaN(newY) ? newY : undefined
                                         },
-                                        ...(newPositionValue && { stack: false, select: false}),
+                                        ...(newPositionValue && { stack: false, select: false }),
                                     },
                                 });
                             }
@@ -275,7 +275,7 @@ export default function Marqueebar() {
                     {'x'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|x`}
+                    id={`${uiState.activeElement?.key ?? 'marqueebar'}|input|x`}
                     disabled={!isPositionOn}
                     ref={xInputRef}
                     onChange={updateToolPosition}
@@ -293,7 +293,7 @@ export default function Marqueebar() {
                     {'y'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|y`}
+                    id={`${uiState.activeElement?.key ?? 'marqueebar'}|input|y`}
                     disabled={!isPositionOn}
                     ref={yInputRef}
                     onChange={updateToolPosition}
@@ -322,20 +322,20 @@ export default function Marqueebar() {
                     <Toggle
                         value={isSizeOn}
                         onClick={() => {
-                            if (appState.tool.type === 'marquee') {
+                            if (uiState.tool.type === 'marquee') {
                                 const newSizeValue = !isSizeOn;
                                 const newWidth = parseFloat(wInputRef.current?.value || "");
                                 const newHeight = parseFloat(hInputRef.current?.value || "");
-                                dispatch({
-                                    type: WorkspaceActionType.SetTool,
+                                uiDispatch({
+                                    type: UIActionType.SetTool,
                                     value: {
-                                        ...appState.tool,
+                                        ...uiState.tool,
                                         size: {
                                             value: newSizeValue,
                                             width: newSizeValue && !isNaN(newWidth) ? newWidth : undefined,
                                             height: newSizeValue && !isNaN(newHeight) ? newHeight : undefined
                                         },
-                                        ...(newSizeValue && { stack: false, select: false}),
+                                        ...(newSizeValue && { stack: false, select: false }),
                                     }
                                 });
                             }
@@ -352,7 +352,7 @@ export default function Marqueebar() {
                     {'width'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|w`}
+                    id={`${uiState.activeElement?.key ?? 'marqueebar'}|input|w`}
                     disabled={!isSizeOn}
                     ref={wInputRef}
                     onChange={updateToolSize}
@@ -370,7 +370,7 @@ export default function Marqueebar() {
                     {'height'}
                 </div>
                 <input className={styles['numberInput']}
-                    id={`${appState.activeElement?.key ?? 'marqueebar'}|input|h`}
+                    id={`${uiState.activeElement?.key ?? 'marqueebar'}|input|h`}
                     disabled={!isSizeOn}
                     ref={hInputRef}
                     onChange={updateToolSize}
@@ -387,13 +387,13 @@ export default function Marqueebar() {
                 borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
                 ...dynamicSizes.toggle.div
             }}>
-                <span style={{ textShadow: (appState.tool.type === 'marquee' && appState.tool.stack) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
+                <span style={{ textShadow: (uiState.tool.type === 'marquee' && uiState.tool.stack) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                     {'stack'}
                 </span>
                 <Toggle
-                    value={appState.tool.type === 'marquee' ? appState.tool.stack : false}
+                    value={uiState.tool.type === 'marquee' ? uiState.tool.stack : false}
                     onClick={() => {
-                        const currentTool = { ...appState.tool };
+                        const currentTool = { ...uiState.tool };
                         if (currentTool.type === 'marquee') {
                             const newStack = !currentTool.stack;
                             const newValue = newStack ? {
@@ -414,8 +414,8 @@ export default function Marqueebar() {
                                 ...currentTool,
                                 stack: newStack
                             };
-                            dispatch({
-                                type: WorkspaceActionType.SetTool,
+                            uiDispatch({
+                                type: UIActionType.SetTool,
                                 value: newValue
                             });
                         }
@@ -430,13 +430,13 @@ export default function Marqueebar() {
                 borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
                 ...dynamicSizes.toggle.div
             }}>
-                <span style={{ textShadow: (appState.tool.type === 'marquee' && appState.tool.select) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
+                <span style={{ textShadow: (uiState.tool.type === 'marquee' && uiState.tool.select) ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                     {'select'}
                 </span>
                 <Toggle
-                    value={appState.tool.type === 'marquee' ? appState.tool.select : false}
+                    value={uiState.tool.type === 'marquee' ? uiState.tool.select : false}
                     onClick={() => {
-                        const currentTool = { ...appState.tool };
+                        const currentTool = { ...uiState.tool };
                         if (currentTool.type === 'marquee') {
                             const newSelect = !currentTool.select;
                             const newValue = newSelect ? {
@@ -457,8 +457,8 @@ export default function Marqueebar() {
                                 ...currentTool,
                                 select: newSelect
                             };
-                            dispatch({
-                                type: WorkspaceActionType.SetTool,
+                            uiDispatch({
+                                type: UIActionType.SetTool,
                                 value: newValue
                             });
                         }

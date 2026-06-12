@@ -5,14 +5,16 @@ import { addCircle, allOut, circle, closeIcon, earthquake, playArrow, skipNext, 
 import {
     LaurusEffect,
     LaurusScale,
-    WorkspaceActionType, WorkspaceContext,
+    CoreContext,
     HoverContext,
     LaurusMove,
     LaurusRotate,
     Bumper,
     LaurusMixState,
+    UIContext,
     LaurusEffectGroupResult,
-    LaurusEffectGroup
+    LaurusEffectGroup,
+    CoreActionType
 } from "./workspace.client";
 import { createEffectGroup, createMove, createRotate, createScale, deleteEffectGroup, updateEffectGroup, updateMove, updateRotate, updateScale } from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
@@ -81,10 +83,11 @@ export default function TimelineArea({
     imgElementsRef,
     onRightPanelClick,
 }: TimelineArea) {
-    const { appState } = useContext(WorkspaceContext);
+    const { appState } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { selectedEffectUnitKeys } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return { width: 1000 };
             case "midhigh": return { width: 740 };
             case "midlow":
@@ -93,7 +96,7 @@ export default function TimelineArea({
     });
 
     return (<>
-        <div className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
+        <div className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
             style={{
                 width: "100%",
                 height: '100%',
@@ -156,7 +159,8 @@ interface TimelineRuler {
     containerStyle?: CSSProperties
 }
 function TimelineRuler({ containerStyle }: TimelineRuler) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [rulerSize] = useState(20);
     function calculateRuler(timelineMaxValue: number, resolution: WorkspaceResolution) {
         switch (resolution.type) {
@@ -214,8 +218,8 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
             }
         }
     };
-    const [rulerParams, setRulerParams] = useState(
-        calculateRuler(appState.timelineMaxValue, appState.resolution)
+    const [rulerParams, setRulerParams] = useState(() =>
+        calculateRuler(appState.timelineMaxValue, uiState.resolution)
     );
     return (
         <div style={{
@@ -228,7 +232,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
         }}>
             <div style={{
                 padding: (() => {
-                    switch (appState.resolution.type) {
+                    switch (uiState.resolution.type) {
                         case "high": return '0px 20px 0px 28px'
                         case "midhigh": return '0px 12px 0px 28px'
                         case "midlow":
@@ -242,13 +246,13 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
                 background: 'rgba(46,46,46,1)',
             }}
                 onDoubleClick={() => {
-                    const currentTimelineValues = [...appState.timelineValues];
+                    const currentTimelineValues = [...uiState.timelineValues];
                     const currentIndex = currentTimelineValues.findIndex(v => v == appState.timelineMaxValue);
                     const newValue: number = (currentIndex >= 0) && (currentIndex + 1 < currentTimelineValues.length)
                         ? currentTimelineValues[currentIndex + 1]
                         : currentTimelineValues[0];
-                    setRulerParams(calculateRuler(newValue, appState.resolution));
-                    dispatch({ type: WorkspaceActionType.SetTimelineMaxValue, value: newValue });
+                    setRulerParams(calculateRuler(newValue, uiState.resolution));
+                    dispatch({ type: CoreActionType.SetTimelineMaxValue, value: newValue });
                 }}>
                 {[...Array(rulerParams.ticks)].map((_, i) => {
                     return <div key={i}>
@@ -281,12 +285,12 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
             }}
                 onDoubleClick={() => {
                     const currentUnit = appState.timelineUnit;
-                    const currentUnits = [...appState.timelineUnits];
+                    const currentUnits = [...uiState.timelineUnits];
                     const currentIndex = currentUnits.findIndex(v => v == currentUnit);
                     const newUnit: string = (currentIndex >= 0) && (currentIndex + 1 < currentUnits.length)
                         ? currentUnits[currentIndex + 1]
                         : currentUnits[0];
-                    dispatch({ type: WorkspaceActionType.SetTimelineUnit, value: newUnit });
+                    dispatch({ type: CoreActionType.SetTimelineUnit, value: newUnit });
                 }}>
                 {(() => {
                     return (<>
@@ -309,7 +313,8 @@ interface EffectGroup {
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
 function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRef, imgElementsRef }: EffectGroup) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const {
         setMostRecentlyEnteredEffectUnitKey,
         setSelectedEffectUnitKeys,
@@ -321,7 +326,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRe
         return effectsBrowserToggle && selectedEffectUnitKeys.size === 0;
     }, [effectsBrowserToggle, selectedEffectUnitKeys.size]);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 timelineAreaContent: {
                     height: 40,
@@ -370,7 +375,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRe
             });
             const reindexedEffects = reindexEffects(effectsWithNewGroups, appState.effectGroups);
             await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
-            dispatch({ type: WorkspaceActionType.SetEffects, value: reindexedEffects });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
         }
         else {
             setEffectsBrowserToggle(v => !v);
@@ -487,9 +492,9 @@ interface EffectGroupSkeleton {
     maxWidth: number,
 }
 function EffectGroupSkeleton({ maxWidth }: EffectGroupSkeleton) {
-    const { appState } = useContext(WorkspaceContext);
+    const { uiState } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 timelineAreaContent: {
                     padding: '0px 8px',
@@ -562,14 +567,15 @@ interface EffectGroupTitlebar {
     effectGroupResult: LaurusEffectGroupResult,
 }
 function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTitlebar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
     const [effectGroupDescription, setEffectGroupDescription] = useState<string>(effectGroupResult.description);
     const [effectGroupDescriptionSnapshot] = useState<string>(effectGroupResult.description);
     const effectGroupDescriptionDebounce = useDebounce<string>(effectGroupDescription, 1000);
     const [isHovered, setIsHovered] = useState(false);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 flex: {
                     height: 32,
@@ -716,7 +722,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                 newEffectGroup.description = effectGroupDescriptionDebounce;
                 const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupIdRef.current, newEffectGroup);
                 if (updated) {
-                    dispatch({ type: WorkspaceActionType.SetEffectGroup, value: newEffectGroup });
+                    dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
                 }
                 else {
                     if (effectGroupDescriptionRef.current) {
@@ -733,7 +739,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                 }
                 const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
                 if (created) {
-                    dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
+                    dispatch({ type: CoreActionType.SetEffectGroup, value: { ...created } });
                 }
                 else {
                     if (effectGroupDescriptionRef.current) {
@@ -771,8 +777,8 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
 
             await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, remainingEffects);
 
-            dispatch({ type: WorkspaceActionType.DeleteEffectGroup, key: effectGroupId });
-            dispatch({ type: WorkspaceActionType.SetEffects, value: reindexedEffects });
+            dispatch({ type: CoreActionType.DeleteEffectGroup, key: effectGroupId });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
             setSelectedEffectUnitKeys(prev => {
                 const next = new Set(prev);
                 snapshot
@@ -841,7 +847,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                         }
                         const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
                         if (updated) {
-                            dispatch({ type: WorkspaceActionType.SetEffectGroup, value: newEffectGroup });
+                            dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
                         }
                     }}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -857,9 +863,10 @@ interface EffectsBrowser {
     onAddClick: () => void,
 }
 function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [effectBrowserSize] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 height: 96,
                 itemFontSize: 14,
@@ -896,7 +903,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             if (projectCreated) {
                 newProjectIdAck = projectCreated.project_id;
                 const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
             }
         }
         else {
@@ -904,7 +911,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
                 newProjectIdAck = newProject.project_id;
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
             }
         }
         if (!newProjectIdAck) return;
@@ -920,7 +927,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
             if (created) {
                 newEffectGroupIdAck = created.effect_group_id;
-                dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
+                dispatch({ type: CoreActionType.SetEffectGroup, value: { ...created } });
                 effectGroupsSnapshot.set(created.effect_group_id, created);
             }
         }
@@ -953,7 +960,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     }
                     const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
                     await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
-                    dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
+                    dispatch({ type: CoreActionType.SetEffects, value: reindexed });
                 }
                 break;
             }
@@ -980,7 +987,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     }
                     const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
                     await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
-                    dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
+                    dispatch({ type: CoreActionType.SetEffects, value: reindexed });
                 }
                 break;
             }
@@ -1007,7 +1014,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     }
                     const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
                     await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexed, [...effectsSnapshot, newEffect]);
-                    dispatch({ type: WorkspaceActionType.SetEffects, value: reindexed });
+                    dispatch({ type: CoreActionType.SetEffects, value: reindexed });
                 }
                 break;
             }
@@ -1025,7 +1032,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             borderBottomLeftRadius: 10,
             borderBottomRightRadius: 10,
         }}>
-            {appState.effectNames.map((effectName, i) => {
+            {uiState.effectNames.map((effectName, i) => {
                 return (
                     <div key={effectName}
                         onMouseEnter={(e) => {
@@ -1088,10 +1095,11 @@ interface ControlPanel {
     containerStyle?: CSSProperties
 }
 function ControlPanel({ containerStyle }: ControlPanel) {
-    const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(WorkspaceContext);
+    const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [fastRate] = useState(25);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 padding: 10,
                 fpsInputWidth: '2ch',
@@ -1149,7 +1157,7 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     value={fpsValue}
                     onChange={(e) => {
                         const newFps: number = parseFloat(e.currentTarget.value) || 60;
-                        dispatch({ type: WorkspaceActionType.SetFps, value: newFps });
+                        dispatch({ type: CoreActionType.SetFps, value: newFps });
                     }}
                     style={{
                         textAlign: "center",
@@ -1175,11 +1183,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
             <div style={{ display: 'flex', height: '100%', alignItems: 'center' }}>
                 <SvgRepo
                     title={"rewind all"}
-                    svg={appState.skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
                     onContainerClick={handleRewindAll}
-                    containerStyle={appState.skipPreviousEnabled ? {
+                    containerStyle={uiState.skipPreviousEnabled ? {
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {
@@ -1189,11 +1197,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     }} />
                 <SvgRepo
                     title={"play all"}
-                    svg={appState.playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
                     onContainerClick={handlePlayAll}
-                    containerStyle={appState.playEnabled ? {
+                    containerStyle={uiState.playEnabled ? {
                         width: dynamicSizes.mainSvg,
                         height: dynamicSizes.mainSvg
                     } : {
@@ -1203,11 +1211,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     }} />
                 <SvgRepo
                     title={"fast-forward all"}
-                    svg={appState.skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
                     onContainerClick={async () => await handleFastForwardAll(fastRate)}
-                    containerStyle={appState.skipNextEnabled ? {
+                    containerStyle={uiState.skipNextEnabled ? {
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {
@@ -1221,9 +1229,9 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     width: dynamicSizes.recordingLightSize,
                     height: dynamicSizes.recordingLightSize,
                     borderRadius: '50%',
-                    border: appState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
-                    background: appState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
-                    boxShadow: appState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
+                    border: uiState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
+                    background: uiState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
+                    boxShadow: uiState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
                 }} />
             </div>
         </div>
@@ -1234,10 +1242,11 @@ interface SelectionControlPanel {
     containerStyle?: CSSProperties
 }
 function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
-    const { appState, dispatch, } = useContext(WorkspaceContext);
+    const { appState, dispatch, } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { selectedEffectUnitKeys, setSelectedEffectUnitKeys } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 padding: '10px 12px 10px 10px',
                 selectedInputWidth: '2ch',
@@ -1306,8 +1315,8 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
             const reindexedEffects = reindexEffects(effectsWithNewGroups, localEffectGroups);
             await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
             setSelectedEffectUnitKeys(new Set());
-            dispatch({ type: WorkspaceActionType.SetEffects, value: reindexedEffects });
-            dispatch({ type: WorkspaceActionType.SetEffectGroup, value: { ...created } });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+            dispatch({ type: CoreActionType.SetEffectGroup, value: { ...created } });
         }
     }, [selectedEffectUnitKeys, appState.project.project_id, appState.effectGroups, appState.apiOrigin, appState.accessToken, appState.effects, effectGroupDescription, dispatch, setSelectedEffectUnitKeys]);
 

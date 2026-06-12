@@ -1,6 +1,6 @@
 import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
-import { CarouselEntry, LaurusActiveElement, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
+import { CarouselEntry, LaurusActiveElement, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
@@ -12,14 +12,15 @@ interface UnitDisplay {
     onNewLocalIndex: (v: number) => void,
 }
 export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
-    const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
+    const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
 
     const setActiveElement = useCallback((newCarouselIndex: number) => {
-        if (appState.carouselEntries.length <= newCarouselIndex) return;
+        if (uiState.carouselEntries.length <= newCarouselIndex) return;
         if (newCarouselIndex < 0) return;
-        const entry: CarouselEntry = { ...appState.carouselEntries[newCarouselIndex] };
+        const entry: CarouselEntry = { ...uiState.carouselEntries[newCarouselIndex] };
         switch (entry.type) {
             case "svg": {
                 const projectSvg = appState.project.svgs.get(entry.key);
@@ -31,8 +32,8 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     type: 'svg',
                     locallyActivatedEffectKey: effectKey,
                 }
-                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
+                uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
                 break;
             }
             case "img": {
@@ -45,25 +46,25 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     type: 'img',
                     locallyActivatedEffectKey: effectKey,
                 }
-                dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
+                uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
                 break;
             }
         }
-    }, [appState.canvasImgs, appState.canvasSvgs, appState.carouselEntries, appState.project.imgs, appState.project.svgs, dispatch, effectKey]);
+    }, [uiState.carouselEntries, appState.project.svgs, appState.project.imgs, appState.canvasSvgs, appState.canvasImgs, effectKey, uiDispatch, dispatch]);
 
     const hideContextMenu = useCallback((entry: CarouselEntry) => {
         switch (entry.type) {
             case "svg": {
                 const projectSvg = appState.project.svgs.get(entry.key);
                 if (!projectSvg) break;
-                dispatch({ type: WorkspaceActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false } });
                 break;
             }
             case "img": {
                 const projectImg = appState.project.imgs.get(entry.key);
                 if (!projectImg) break;
-                dispatch({ type: WorkspaceActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false } });
                 break;
             }
         }
@@ -83,7 +84,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
                         title={"select previous"}
-                        svg={appState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
+                        svg={uiState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft('rgb(67,67,67)') : chevronLeft()}
                         containerStyle={{
                             width: 30,
                             height: 30,
@@ -96,7 +97,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                             const newLocalIndex = Math.max(localIndex - 1, 0);
                             onNewLocalIndex(newLocalIndex);
                             setActiveElement(newIndex);
-                            const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
+                            const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
                             inactives.forEach(ce => {
                                 hideContextMenu(ce);
                             });
@@ -109,7 +110,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     display: 'grid',
                     placeContent: 'center'
                 }}>
-                    {appState.carouselEntries.map((c, i) => {
+                    {uiState.carouselEntries.map((c, i) => {
                         if (i == carouselIndex) {
                             switch (c.type) {
                                 case "img": {
@@ -123,7 +124,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                             onClick={() => {
                                                 if (isMetaKeyPressed) return;
                                                 setActiveElement(i);
-                                                const inactives = appState.carouselEntries.filter((_, index) => index !== i);
+                                                const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
                                                     hideContextMenu(ce);
                                                 });
@@ -158,7 +159,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                             onContainerClick={() => {
                                                 if (isMetaKeyPressed) return;
                                                 setActiveElement(i);
-                                                const inactives = appState.carouselEntries.filter((_, index) => index !== i);
+                                                const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
                                                     hideContextMenu(ce);
                                                 });
@@ -175,7 +176,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 <div style={{ width: 30, height: '100%', display: 'grid', placeContent: 'center' }}>
                     <SvgRepo
                         title={"select next"}
-                        svg={appState.carouselEntries.length == 0 || carouselIndex >= appState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
+                        svg={uiState.carouselEntries.length == 0 || carouselIndex >= uiState.carouselEntries.length - 1 ? chevronRight('rgb(67,67,67)') : chevronRight()}
                         containerStyle={{
                             width: 30,
                             height: 30,
@@ -184,11 +185,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         scale={1}
                         onContainerClick={() => {
                             if (isMetaKeyPressed) return;
-                            const newIndex = Math.min(carouselIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
-                            const newLocalIndex = Math.min(localIndex + 1, Math.max(appState.carouselEntries.length - 1, 0));
+                            const newIndex = Math.min(carouselIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
+                            const newLocalIndex = Math.min(localIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
                             onNewLocalIndex(newLocalIndex);
                             setActiveElement(newIndex);
-                            const inactives = appState.carouselEntries.filter((_, index) => index !== newIndex);
+                            const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
                             inactives.forEach(ce => {
                                 hideContextMenu(ce);
                             });
@@ -200,8 +201,8 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
 }
 
 export function DeepControls() {
-    const { appState } = useContext(WorkspaceContext);
-    const [dynamicSizes] = useState(() => getDynamicUnitSizes(appState.resolution));
+    const { uiState } = useContext(UIContext);
+    const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
     return <>
         <div
             style={{

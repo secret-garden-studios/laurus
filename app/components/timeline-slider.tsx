@@ -1,8 +1,10 @@
 import { RefObject, useCallback, useEffect, useState } from "react"
 import { PointerStyle, Trackpad } from "./trackpad"
 import { useTrackpadState } from "../hooks/useTrackpadState";
+import { LaurusResolution } from "../landing.boot";
 
 interface TimelineSlider {
+    resolution: LaurusResolution,
     hash: string,
     size: {
         containerHeight: number | string,
@@ -25,6 +27,7 @@ interface TimelineSlider {
     isSelected?: boolean
 }
 export default function TimelineSlider({
+    resolution,
     size,
     hash,
     trackRef,
@@ -80,6 +83,7 @@ export default function TimelineSlider({
                     margin: 'auto',
                 }}>
                     <Trackpad
+                        resolution={resolution}
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
                         height={size.capHeight}
@@ -112,6 +116,7 @@ export default function TimelineSlider({
                     margin: 'auto',
                 }}>
                     <Trackpad
+                        resolution={resolution}
                         ids={{ contextId: `${hash}|c2`, draggableId: `${hash}|d2` }}
                         width={'100%'}
                         height={size.capHeight}

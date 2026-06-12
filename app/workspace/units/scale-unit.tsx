@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
+import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../workspace.client";
 import { dellaRespira, dmSans } from "../../fonts";
 import { updateScale, LaurusLoopType } from "../workspace.server";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
@@ -36,10 +36,11 @@ interface ScaleUnit {
     carouselIndexInit: number,
 }
 export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, scale.scale_id);
+        useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, scale.scale_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
         scale_x: defaultScaleEquation.scale_x,
@@ -49,8 +50,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         limit_factor: defaultScaleEquation.limit_factor,
     });
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 scaleParam: {
@@ -127,8 +128,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         }
     });
     const carouselEntryKey = useMemo(() => {
-        if (carouselIndex < appState.carouselEntries.length) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
@@ -141,7 +142,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         else {
             return "";
         }
-    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
+    }, [uiState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
 
     // param 1
     const timeUpperLimit = useMemo(() => {
@@ -185,8 +186,8 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
     }, [carouselEntryKey, scale.math]);
 
     const setActiveElementIfNull = useCallback(() => {
-        if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
@@ -194,7 +195,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                         type: "svg",
                         locallyActivatedEffectKey: scale.scale_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
                 case "img": {
@@ -203,16 +204,16 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                         type: "img",
                         locallyActivatedEffectKey: scale.scale_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, scale.scale_id]);
+    }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, scale.scale_id, uiDispatch]);
 
     const getActiveScale = useCallback((): [number, number] => {
-        if (!appState.activeElement) return [1, 1];
-        const activeElement = { ...appState.activeElement };
+        if (!uiState.activeElement) return [1, 1];
+        const activeElement = { ...uiState.activeElement };
         if (!activeElement) return [1, 1];
         const snapshot: LaurusProjectResult = { ...appState.project };
         switch (activeElement.type) {
@@ -227,7 +228,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                 return [img.scale_x, img.scale_y]
             }
         }
-    }, [appState.activeElement, appState.project]);
+    }, [uiState.activeElement, appState.project]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => {
         const newMath: Map<string, LaurusScaleEquation> = new Map(rollback.math);
@@ -235,13 +236,13 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
         const newScale: LaurusScaleResult = { ...rollback, math: newMath };
         setActiveElementIfNull();
         dispatch({
-            type: WorkspaceActionType.SetEffect,
+            type: CoreActionType.SetEffect,
             value: { type: 'scale', value: { ...newScale }, key: newScale.scale_id },
         });
         const updated = await updateScale(appState.apiOrigin, appState.accessToken, rollback.scale_id, { ...newScale });
         if (!updated) {
             dispatch({
-                type: WorkspaceActionType.SetEffect,
+                type: CoreActionType.SetEffect,
                 value: { type: 'scale', value: { ...rollback }, key: rollback.scale_id },
             });
         }
@@ -326,6 +327,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                 ...dynamicSizes.paramFlex
                             }}>
                                 <ParameterSliderY
+                                    resolution={{ ...uiState.resolution }}
                                     label={"time"}
                                     hash={`${scale.scale_id}|p1`}
                                     size={dynamicSizes.paramSlider}
@@ -412,6 +414,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     </div>
                                 </div>
                                 <ParameterSliderXPlusMinus
+                                    resolution={{ ...uiState.resolution }}
                                     label={"zoom"}
                                     hash={`${scale.scale_id}|p2`}
                                     size={dynamicSizes.scaleParam}
@@ -516,6 +519,7 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                                     </div>
                                 </div>
                                 <ParameterSliderXPlusMinus
+                                    resolution={{ ...uiState.resolution }}
                                     label={"zoom"}
                                     hash={`${scale.scale_id}|p3`}
                                     size={dynamicSizes.scaleParam}

@@ -5,13 +5,14 @@ import { LaurusProjectResult } from "@/app/projects/projects.client";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, toysFan } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext } from "../workspace.client";
+import { CoreActionType, UIContext, CoreContext } from "../workspace.client";
 
 export default function Rotatebar() {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [angle, setAngle] = useState<number>(0);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 paramSize: {
                     containerHeight: 38,
@@ -121,8 +122,8 @@ export default function Rotatebar() {
     const angleRef = useRef<HTMLInputElement>(null);
 
     const getActiveRotate = useCallback((): [number, number, number, number] => {
-        if (!appState.activeElement) return [0, 0, 0, 0];
-        const activeElement = { ...appState.activeElement };
+        if (!uiState.activeElement) return [0, 0, 0, 0];
+        const activeElement = { ...uiState.activeElement };
         if (!activeElement) return [0, 0, 0, 0];
         const snapshot: LaurusProjectResult = { ...appState.project };
         switch (activeElement.type) {
@@ -137,7 +138,7 @@ export default function Rotatebar() {
                 return [img.rotate_x, img.rotate_y, img.rotate_z, img.rotate_angle];
             }
         }
-    }, [appState.activeElement, appState.project]);
+    }, [uiState.activeElement, appState.project]);
 
     const saveRotate = useCallback(async (
         key: string,
@@ -163,10 +164,10 @@ export default function Rotatebar() {
                     const newProject: LaurusProjectResult = { ...snapshot, svgs: newSvgs }
                     const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
                     if (saved) {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+                        dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
                     }
                     else {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...snapshot, svgs: rollbackSvgs } });
+                        dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, svgs: rollbackSvgs } });
                     }
                 }
                 break;
@@ -186,10 +187,10 @@ export default function Rotatebar() {
                     const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs }
                     const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
                     if (saved) {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+                        dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
                     }
                     else {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...snapshot, imgs: rollbackImgs } });
+                        dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, imgs: rollbackImgs } });
                     }
                 }
                 break;
@@ -241,7 +242,8 @@ export default function Rotatebar() {
                 scaleToContaier={true} />
             <div style={{ paddingLeft: 4 }}>{'x'}</div>
             <ParameterSliderX
-                hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatex`}
+                resolution={{ ...uiState.resolution }}
+                hash={`${uiState.activeElement?.key ?? 'rotatebar'}|rotatex`}
                 size={dynamicSizes.paramSize}
                 containerRef={xTrackRef}
                 cursor={xCursor}
@@ -249,12 +251,13 @@ export default function Rotatebar() {
                     setXCursor({ ...newCursor, y: 0 });
                     if (!xTrackRef.current) return;
                     const newX = getXValue(newCursor.x, xTrackRef.current.clientWidth, 0);
-                    saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", newX, undefined, undefined, undefined);
+                    saveRotate(uiState.activeElement?.key ?? "", uiState.activeElement?.type ?? "", newX, undefined, undefined, undefined);
                 }}
-                disabled={appState.activeElement == undefined} />
+                disabled={uiState.activeElement == undefined} />
             <div>{'y'}</div>
             <ParameterSliderX
-                hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatey`}
+                resolution={{ ...uiState.resolution }}
+                hash={`${uiState.activeElement?.key ?? 'rotatebar'}|rotatey`}
                 size={dynamicSizes.paramSize}
                 containerRef={yTrackRef}
                 cursor={yCursor}
@@ -262,12 +265,13 @@ export default function Rotatebar() {
                     setYCursor({ ...newCursor, y: 0 });
                     if (!yTrackRef.current) return;
                     const newY = getYValue(newCursor.x, yTrackRef.current.clientWidth, 0);
-                    saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", undefined, newY, undefined, undefined);
+                    saveRotate(uiState.activeElement?.key ?? "", uiState.activeElement?.type ?? "", undefined, newY, undefined, undefined);
                 }}
-                disabled={appState.activeElement == undefined} />
+                disabled={uiState.activeElement == undefined} />
             <div>{'z'}</div>
             <ParameterSliderX
-                hash={`${appState.activeElement?.key ?? 'rotatebar'}|rotatez`}
+                resolution={{ ...uiState.resolution }}
+                hash={`${uiState.activeElement?.key ?? 'rotatebar'}|rotatez`}
                 size={dynamicSizes.paramSize}
                 containerRef={zTrackRef}
                 cursor={zCursor}
@@ -275,12 +279,13 @@ export default function Rotatebar() {
                     setZCursor({ ...newCursor, y: 0 });
                     if (!zTrackRef.current) return;
                     const newZ = getZValue(newCursor.x, zTrackRef.current.clientWidth, 0);
-                    saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", undefined, undefined, newZ, undefined);
+                    saveRotate(uiState.activeElement?.key ?? "", uiState.activeElement?.type ?? "", undefined, undefined, newZ, undefined);
                 }}
-                disabled={appState.activeElement == undefined} />
+                disabled={uiState.activeElement == undefined} />
             <div style={{}}>
                 {/* todo: the main tick mark on this mini dial is not rendered properly */}
                 <Dial
+                    resolution={{ ...uiState.resolution }}
                     ids={{
                         contextId: `{rotate.rotate_id}|main|c1`,
                         draggableId: `{rotate.rotate_id}|main|d1`
@@ -294,7 +299,7 @@ export default function Rotatebar() {
                     }}
                     onNewValue={function (v: number): void {
                         const newAngle: number = ((v) => { const x = (Math.round(v) % 360); return x < 0 ? x + 360 : x; })(v);
-                        saveRotate(appState.activeElement?.key ?? "", appState.activeElement?.type ?? "", undefined, undefined, undefined, newAngle);
+                        saveRotate(uiState.activeElement?.key ?? "", uiState.activeElement?.type ?? "", undefined, undefined, undefined, newAngle);
                         setAngle(newAngle);
                     }}
                     size={{
@@ -304,10 +309,10 @@ export default function Rotatebar() {
                         dial: 80 * 0.45,
                         dialTick: 11 * 0.45
                     }}
-                    disabled={appState.activeElement == undefined} />
+                    disabled={uiState.activeElement == undefined} />
             </div>
             <div style={{}}>
-                <input id={`${appState.activeElement?.key ?? 'rotatebar'}|rotateangle`}
+                <input id={`${uiState.activeElement?.key ?? 'rotatebar'}|rotateangle`}
                     disabled
                     ref={angleRef}
                     type="text"

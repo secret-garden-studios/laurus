@@ -1,6 +1,17 @@
 import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../fonts";
-import { defaultWorkspace, LaurusImgResult, LaurusSvgResult, LaurusTool, WorkspaceActionType, WorkspaceContext, HoverContext, defaultMarqueeTool } from "./workspace.client";
+import {
+    LaurusImgResult,
+    LaurusSvgResult,
+    LaurusTool,
+    CoreActionType,
+    CoreContext,
+    HoverContext,
+    defaultMarqueeTool,
+    UIContext,
+    UIActionType,
+    defaultUIState
+} from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
@@ -71,12 +82,13 @@ export default function MediaBrowser({
     onNextPage,
     onFilterSelect,
 }: MediaBrowser) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const [uploading, setUploading] = useState(false);
     const [sortStrategy, setSortStrategy] = useState<'timestamp' | 'order' | 'none'>('none');
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 mediaFilterSize: {
                     container: 50,
@@ -273,15 +285,15 @@ export default function MediaBrowser({
                         const svgFile: File = dataUrlToFile(pngDataUrl, `${file.name.split('.')[0]}.png`);
                         const created = await createSvg(appState.apiOrigin, { svg: file, raster: svgFile });
                         if (created) {
-                            const existingSvg = appState.browserSvgs.find(v => v.media_key === created.media_key);
+                            const existingSvg = uiState.browserSvgs.find(v => v.media_key === created.media_key);
                             if (existingSvg && existingSvg.svg_media_id !== created.svg_media_id) {
-                                dispatch({ type: WorkspaceActionType.DeleteBrowserSvg, value: existingSvg.svg_media_id });
+                                uiDispatch({ type: UIActionType.DeleteBrowserSvg, value: existingSvg.svg_media_id });
                             }
-                            dispatch({ type: WorkspaceActionType.AddBrowserSvg, value: created, first: true });
-                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'svg', value: { ...created } } });
-                            const currentTool = { ...appState.tool };
+                            uiDispatch({ type: UIActionType.AddBrowserSvg, value: created, first: true });
+                            uiDispatch({ type: UIActionType.SetBrowserElement, value: { type: 'svg', value: { ...created } } });
+                            const currentTool = { ...uiState.tool };
                             const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
-                            dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
+                            uiDispatch({ type: UIActionType.SetTool, value: newTool });
                             if (++actualSvgUploads == expectedSvgUploads) {
                                 setUploading(false);
                             }
@@ -296,15 +308,15 @@ export default function MediaBrowser({
                 try {
                     const created = await createImg(appState.apiOrigin, file);
                     if (created) {
-                        const existingImg = appState.browserImgs.find(v => v.media_key === created.media_key);
+                        const existingImg = uiState.browserImgs.find(v => v.media_key === created.media_key);
                         if (existingImg && existingImg.img_media_id !== created.img_media_id) {
-                            dispatch({ type: WorkspaceActionType.DeleteBrowserImg, value: existingImg.img_media_id });
+                            uiDispatch({ type: UIActionType.DeleteBrowserImg, value: existingImg.img_media_id });
                         }
-                        dispatch({ type: WorkspaceActionType.AddBrowserImg, value: { ...created }, first: true });
-                        dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { type: 'img', value: { ...created } } });
-                        const currentTool = { ...appState.tool };
+                        uiDispatch({ type: UIActionType.AddBrowserImg, value: { ...created }, first: true });
+                        uiDispatch({ type: UIActionType.SetBrowserElement, value: { type: 'img', value: { ...created } } });
+                        const currentTool = { ...uiState.tool };
                         const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
-                        dispatch({ type: WorkspaceActionType.SetTool, value: newTool });
+                        uiDispatch({ type: UIActionType.SetTool, value: newTool });
                         if (++actualImgUploads == expectedImgUploads) {
                             setUploading(false);
                         }
@@ -316,7 +328,7 @@ export default function MediaBrowser({
                 }
             }
         }
-    }, [appState.apiOrigin, appState.browserImgs, appState.browserSvgs, appState.tool, dispatch]);
+    }, [appState.apiOrigin, uiState.browserSvgs, uiState.tool, uiState.browserImgs, uiDispatch]);
 
     function sortByTimestamp(
         a: LaurusImgResult | LaurusSvgResult | LaurusCropSvg,
@@ -350,28 +362,28 @@ export default function MediaBrowser({
             if (projectCreated) {
                 newProjectIdAck = projectCreated.project_id;
                 const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
             }
         }
         else {
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
                 newProjectIdAck = newProject.project_id;
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
             }
         }
         if (!newBrowsePublicImgs && newProjectIdAck) {
-            const newBrowserImgs = appState.browserImgs
+            const newBrowserImgs = uiState.browserImgs
                 .filter(b => Array.from(newProject.imgs.values())
                     .flatMap(v => v.img_media_id)
                     .includes(b.img_media_id));
-            dispatch({ type: WorkspaceActionType.SetBrowserImgs, value: newBrowserImgs });
-            dispatch({
-                type: WorkspaceActionType.SetBrowserElement,
-                value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+            uiDispatch({ type: UIActionType.SetBrowserImgs, value: newBrowserImgs });
+            uiDispatch({
+                type: UIActionType.SetBrowserElement,
+                value: defaultUIState.browserElement == undefined ? undefined : { ...defaultUIState.browserElement }
             });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.browserImgs, appState.project, dispatch]);
+    }, [appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiState.browserImgs, uiDispatch]);
 
     const onSvgDiscoverToggle = useCallback(async () => {
         let newProjectIdAck = "";
@@ -382,40 +394,40 @@ export default function MediaBrowser({
             if (projectCreated) {
                 newProjectIdAck = projectCreated.project_id;
                 const newProject2: LaurusProjectResult = { ...newProject, project_id: newProjectIdAck }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
+                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
             }
         }
         else {
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
                 newProjectIdAck = newProject.project_id;
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
             }
         }
         if (!newBrowsePublicSvgs && newProjectIdAck) {
-            const newBrowserSvgs = appState.browserSvgs
+            const newBrowserSvgs = uiState.browserSvgs
                 .filter(b => Array.from(newProject.svgs.values())
                     .flatMap(v => v.svg_media_id)
                     .includes(b.svg_media_id));
-            dispatch({ type: WorkspaceActionType.SetBrowserSvgs, value: newBrowserSvgs });
-            dispatch({
-                type: WorkspaceActionType.SetBrowserElement,
-                value: defaultWorkspace.browserElement == undefined ? undefined : { ...defaultWorkspace.browserElement }
+            uiDispatch({ type: UIActionType.SetBrowserSvgs, value: newBrowserSvgs });
+            uiDispatch({
+                type: UIActionType.SetBrowserElement,
+                value: defaultUIState.browserElement == undefined ? undefined : { ...defaultUIState.browserElement }
             });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.browserSvgs, appState.project, dispatch]);
+    }, [appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiState.browserSvgs, uiDispatch]);
 
     const browserElementMediaId = useMemo(() => {
-        if (!appState.browserElement) return "";
-        switch (appState.browserElement.type) {
+        if (!uiState.browserElement) return "";
+        switch (uiState.browserElement.type) {
             case "img": {
-                return appState.browserElement.value.img_media_id;
+                return uiState.browserElement.value.img_media_id;
             }
             case "svg": {
-                return appState.browserElement.value.svg_media_id;
+                return uiState.browserElement.value.svg_media_id;
             }
         }
-    }, [appState.browserElement]);
+    }, [uiState.browserElement]);
 
     const [showContextMenu, setShowContextMenu] = useState(false);
 
@@ -482,7 +494,7 @@ export default function MediaBrowser({
                     onClick={() => onFilterSelect('frame')}
                     selected={(filter == 'frame')} />
             </div>
-            <div className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-23-2' : 'noisy-background-23-2-low-res'}`]}
+            <div className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-23-2' : 'noisy-background-23-2-low-res'}`]}
                 onScroll={handleScroll}
                 style={{
                     gridRow: 2,
@@ -498,7 +510,7 @@ export default function MediaBrowser({
                     width: '100%',
                     color: 'rgba(220, 220, 220, 1)',
                     height: '100%',
-                    paddingTop: Math.round(10 * appState.resolution.factor),
+                    paddingTop: Math.round(10 * uiState.resolution.factor),
                     ...dynamicSizes.uploadingLight.container
                 }} >
                     <div title={"light"}
@@ -581,16 +593,16 @@ export default function MediaBrowser({
                                     }} />
                             </div>
                             <Toggle
-                                value={appState.lightFrameBackground}
+                                value={uiState.lightFrameBackground}
                                 onClick={() => {
-                                    dispatch({ type: WorkspaceActionType.SetLightFrameBackground, value: !appState.lightFrameBackground });
+                                    uiDispatch({ type: UIActionType.SetLightFrameBackground, value: !uiState.lightFrameBackground });
                                 }}
                                 trackStyles={{ ...dynamicSizes.switch.track }}
                                 buttonStyles={{ ...dynamicSizes.switch.button }} />
                         </div>
                     </>}
                     {/* media thumbnails */}
-                    {filter == 'img' && appState.browserImgs
+                    {filter == 'img' && uiState.browserImgs
                         .sort((a, b) => {
                             switch (sortStrategy) {
                                 case 'order': {
@@ -637,15 +649,15 @@ export default function MediaBrowser({
                                                                 newShowContextMenu = !showContextMenu;
                                                             }
                                                             setShowContextMenu(newShowContextMenu);
-                                                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
+                                                            uiDispatch({ type: UIActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
                                                         }
                                                         else {
                                                             if (showContextMenu) setShowContextMenu(false);
-                                                            dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
-                                                            const currentTool = { ...appState.tool };
+                                                            uiDispatch({ type: UIActionType.SetBrowserElement, value: { value: { ...img }, type: 'img' } });
+                                                            const currentTool = { ...uiState.tool };
                                                             const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
-                                                            dispatch({
-                                                                type: WorkspaceActionType.SetTool,
+                                                            uiDispatch({
+                                                                type: UIActionType.SetTool,
                                                                 value: newTool,
                                                             });
                                                         }
@@ -676,7 +688,7 @@ export default function MediaBrowser({
                                     </ div>
                                 </div>)
                         })}
-                    {filter == 'svg' && appState.browserSvgs
+                    {filter == 'svg' && uiState.browserSvgs
                         .sort((a, b) => {
                             switch (sortStrategy) {
                                 case 'order': {
@@ -730,15 +742,15 @@ export default function MediaBrowser({
                                                         newShowContextMenu = !showContextMenu;
                                                     }
                                                     setShowContextMenu(newShowContextMenu);
-                                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
+                                                    uiDispatch({ type: UIActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
                                                 }
                                                 else {
                                                     if (showContextMenu) setShowContextMenu(false);
-                                                    dispatch({ type: WorkspaceActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
-                                                    const currentTool = { ...appState.tool };
+                                                    uiDispatch({ type: UIActionType.SetBrowserElement, value: { value: { ...svg }, type: 'svg' } });
+                                                    const currentTool = { ...uiState.tool };
                                                     const newTool: LaurusTool = currentTool.type == 'marquee' ? currentTool : defaultMarqueeTool;
-                                                    dispatch({
-                                                        type: WorkspaceActionType.SetTool,
+                                                    uiDispatch({
+                                                        type: UIActionType.SetTool,
                                                         value: newTool,
                                                     });
                                                 }
@@ -779,7 +791,7 @@ export default function MediaBrowser({
                                 </div>
                             )
                         })}
-                    {filter == 'frame' && appState.browserFrames
+                    {filter == 'frame' && uiState.browserFrames
                         .sort((a, b) => {
                             switch (sortStrategy) {
                                 case 'order': {
@@ -819,8 +831,8 @@ export default function MediaBrowser({
                                         containerSize={dynamicSizes.mediaItemSize.container}
                                         svgSize={dynamicSizes.mediaItemSize.svg} />
                                     <div style={{
-                                        paddingTop: Math.round(20 * appState.resolution.factor),
-                                        paddingBottom: Math.round(20 * appState.resolution.factor),
+                                        paddingTop: Math.round(20 * uiState.resolution.factor),
+                                        paddingBottom: Math.round(20 * uiState.resolution.factor),
                                     }}>
                                         <FrameSvg
                                             scale={dynamicSizes.frameScales.midhigh}
@@ -955,7 +967,8 @@ interface FrameSvg {
     svgSize: number
 }
 function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSize, svgSize }: FrameSvg) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const [cropSize] = useState(() => {
         const s = getCropSize(crop);
         return {
@@ -964,7 +977,7 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
         }
     });
     const [overlaySize] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 padding: "9px 13px",
                 xWidth: 17,
@@ -1005,13 +1018,13 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
                     frame_height: cropSize.height
                 };
                 if (appState.project.project_id) {
-                    dispatch({ type: WorkspaceActionType.SetProject, value: newProject, });
+                    dispatch({ type: CoreActionType.SetProject, value: newProject, });
                     await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
                 }
                 else {
                     const response = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
                     if (response) {
-                        dispatch({ type: WorkspaceActionType.SetProject, value: { ...response } });
+                        dispatch({ type: CoreActionType.SetProject, value: { ...response } });
                     }
                 }
             }}

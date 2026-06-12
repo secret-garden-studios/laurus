@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime, HoverContext } from "../workspace.client";
+import { CoreActionType, CoreContext, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime, HoverContext, UIContext, UIActionType } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
@@ -38,10 +38,11 @@ interface RotateUnit {
     carouselIndexInit: number,
 }
 export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, carouselIndexInit }: RotateUnit) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
-        useCarouselIndex(appState.activeElement, appState.carouselEntries, carouselIndexInit, rotate.rotate_id);
+        useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, rotate.rotate_id);
     const [mainControls] = useState(true);
     const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
         x: 0,
@@ -53,8 +54,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         limit_factor: defaultRotateEquation.limit_factor,
     });
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 angleParam: { padding: 15 },
@@ -89,8 +90,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         }
     });
     const carouselEntryKey = useMemo(() => {
-        if (carouselIndex < appState.carouselEntries.length) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     return appState.project.svgs.entries().find(m => m[0] == carouselEntry.key)?.[0] ?? "";
@@ -103,7 +104,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         else {
             return "";
         }
-    }, [appState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
+    }, [uiState.carouselEntries, appState.project.imgs, appState.project.svgs, carouselIndex]);
 
     // param 1
     const xTrackRef = useRef<HTMLDivElement | null>(null);
@@ -168,8 +169,8 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
     });
 
     const setActiveElementIfNull = useCallback(() => {
-        if (carouselIndex < appState.carouselEntries.length && appState.activeElement == undefined) {
-            const carouselEntry = appState.carouselEntries[carouselIndex];
+        if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+            const carouselEntry = uiState.carouselEntries[carouselIndex];
             switch (carouselEntry.type) {
                 case "svg": {
                     const newActiveElement: LaurusActiveElement = {
@@ -177,7 +178,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                         type: "svg",
                         locallyActivatedEffectKey: rotate.rotate_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
                 case "img": {
@@ -186,12 +187,12 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                         type: "img",
                         locallyActivatedEffectKey: rotate.rotate_id
                     }
-                    dispatch({ type: WorkspaceActionType.SetActiveElement, value: newActiveElement });
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
                     break;
                 }
             }
         }
-    }, [appState.activeElement, appState.carouselEntries, carouselIndex, dispatch, rotate.rotate_id]);
+    }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, rotate.rotate_id, uiDispatch]);
 
     const saveNewEquation = useCallback(async (rollback: LaurusRotateResult, newEquation: LaurusRotateEquation) => {
         const newMath: Map<string, LaurusRotateEquation> = new Map(rollback.math);
@@ -199,13 +200,13 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
         const newRotate: LaurusRotateResult = { ...rollback, math: newMath };
         setActiveElementIfNull();
         dispatch({
-            type: WorkspaceActionType.SetEffect,
+            type: CoreActionType.SetEffect,
             value: { type: 'rotate', value: { ...newRotate }, key: newRotate.rotate_id },
         });
         const updated = await updateRotate(appState.apiOrigin, appState.accessToken, rollback.rotate_id, { ...newRotate });
         if (!updated) {
             dispatch({
-                type: WorkspaceActionType.SetEffect,
+                type: CoreActionType.SetEffect,
                 value: { type: 'rotate', value: { ...rollback }, key: rollback.rotate_id },
             });
         }
@@ -299,6 +300,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                     ...dynamicSizes.paramFlex
                                 }}>
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"x"}
                                         hash={`${rotate.rotate_id}|p1`}
                                         size={dynamicSizes.paramSlider}
@@ -333,6 +335,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         title={xTitle}
                                         liveTitleRef={xRef} />
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"y"}
                                         hash={`${rotate.rotate_id}|p2`}
                                         size={dynamicSizes.paramSlider}
@@ -367,6 +370,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         title={yTitle}
                                         liveTitleRef={yRef} />
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"z"}
                                         hash={`${rotate.rotate_id}|p3`}
                                         size={dynamicSizes.paramSlider}
@@ -401,6 +405,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                         title={zTitle}
                                         liveTitleRef={zRef} />
                                     <ParameterSliderY
+                                        resolution={{ ...uiState.resolution }}
                                         label={"time"}
                                         hash={`${rotate.rotate_id}|p4`}
                                         size={dynamicSizes.paramSlider}
@@ -481,6 +486,7 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                     {angleTitle}
                                 </div>}
                                 <Dial
+                                    resolution={{ ...uiState.resolution }}
                                     ids={{
                                         contextId: `${rotate.rotate_id}|main|c1`,
                                         draggableId: `${rotate.rotate_id}|main|d1`

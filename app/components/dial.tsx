@@ -1,9 +1,10 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { CSSProperties, RefObject, useContext, useEffect, useRef, useState } from "react";
-import { WorkspaceContext } from "../workspace/workspace.client";
+import { CSSProperties, RefObject, useEffect, useRef, useState } from "react";
+import { LaurusResolution } from "../landing.boot";
 
 interface DialProps {
+    resolution: LaurusResolution,
     ids: { contextId: string, draggableId: string }
     value: number,
     onNewValue: (v: number) => void,
@@ -20,7 +21,7 @@ interface DialProps {
     liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-export default function Dial({ ids, value, size, onMove, onNewValue, disabled, title, liveTitleRef }: DialProps) {
+export default function Dial({ resolution, ids, value, size, onMove, onNewValue, disabled, title, liveTitleRef }: DialProps) {
     const rotationRef = useRef(value);
     const [rotation, setRotation] = useState(value);
     const sensors = useSensors(useSensor(PointerSensor));
@@ -61,6 +62,7 @@ export default function Dial({ ids, value, size, onMove, onNewValue, disabled, t
             }}
             modifiers={[restrictToVerticalAxis]}>
             <BlurryCap
+                resolution={resolution}
                 id={ids.draggableId}
                 size={size}
                 rotation={rotation}
@@ -72,6 +74,7 @@ export default function Dial({ ids, value, size, onMove, onNewValue, disabled, t
 }
 
 interface BlurryCapProps {
+    resolution: LaurusResolution,
     id: string,
     rotation: number,
     size: {
@@ -86,16 +89,36 @@ interface BlurryCapProps {
     liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: BlurryCapProps) {
+function BlurryCap({ resolution, id, rotation, size, disabled, title, liveTitleRef }: BlurryCapProps) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, disabled });
-    const { appState } = useContext(WorkspaceContext);
     const [isHovered, setIsHovered] = useState(false);
     const dndCss = { touchAction: 'none', };
-    const [containerSize] = useState(Math.round(size.container * appState.resolution.factor));
-    const [gaugeSize] = useState(Math.round(size.gauge * appState.resolution.factor));
-    const [dialSize] = useState(Math.round(size.dial * appState.resolution.factor));
-    const [gaugeTickLength] = useState(Math.round(size.gaugeTick * appState.resolution.factor));
-    const [dialTickLength] = useState(Math.round(size.dialTick * appState.resolution.factor));
+    const [dynamicSizes] = useState(() => {
+        switch (resolution.type) {
+            case "high": return {
+                containerSize: size.container,
+                gaugeSize: size.gauge,
+                gaugeTickLength: size.gaugeTick,
+                dialSize: size.dial,
+                dialTickLength: size.dialTick,
+            }
+            case "midhigh": return {
+                containerSize: size.container * 0.7,
+                gaugeSize: size.gauge * 0.7,
+                gaugeTickLength: size.gaugeTick * 0.7,
+                dialSize: size.dial * 0.7,
+                dialTickLength: size.dialTick * 0.7,
+            }
+            case "midlow":
+            case "low": return {
+                containerSize: size.container * 0.5,
+                gaugeSize: size.gauge * 0.5,
+                gaugeTickLength: size.gaugeTick * 0.5,
+                dialSize: size.dial * 0.5,
+                dialTickLength: size.dialTick * 0.5,
+            }
+        }
+    });
 
     const [dialTickLeftPercentage] = useState(73);
     const [gaugeFactor] = useState(45);
@@ -122,16 +145,16 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: `${containerSize}px`,
-            height: `${containerSize}px`,
+            width: `${dynamicSizes.containerSize}px`,
+            height: `${dynamicSizes.containerSize}px`,
             position: 'relative',
         }}>
             {/* gauge */}
             <div style={{
                 zIndex: 1,
                 position: 'absolute',
-                width: `${gaugeSize}px`,
-                height: `${gaugeSize}px`,
+                width: `${dynamicSizes.gaugeSize}px`,
+                height: `${dynamicSizes.gaugeSize}px`,
             }}>
                 {gaugeTicks.map((_, index) => {
                     const r = index * gaugeFactor;
@@ -145,8 +168,8 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
                                     left: '50%',
                                     top: '0%',
                                     width: `${1}px`,
-                                    height: `${gaugeTickLength}px`,
-                                    transformOrigin: `center ${gaugeSize / 2}px`,
+                                    height: `${dynamicSizes.gaugeTickLength}px`,
+                                    transformOrigin: `center ${dynamicSizes.gaugeSize / 2}px`,
                                     backgroundColor: 'rgba(255, 255, 255, 0.2)',
                                     transform: `translateX(-50%) rotate(${r}deg)`,
                                 }
@@ -159,8 +182,8 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
             <div style={{
                 zIndex: 1,
                 position: 'absolute',
-                width: `${dialSize}px`,
-                height: `${dialSize}px`,
+                width: `${dynamicSizes.dialSize}px`,
+                height: `${dynamicSizes.dialSize}px`,
                 background: 'rgba(255,255,255,0.01)',
                 border: `1px solid rgb(70, 70, 70)`,
                 backdropFilter: 'blur(3px)',
@@ -170,8 +193,8 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
                 zIndex: 1,
                 transform: `rotate(${rotation}deg)`,
                 position: 'absolute',
-                width: `${containerSize}px`,
-                height: `${containerSize}px`,
+                width: `${dynamicSizes.containerSize}px`,
+                height: `${dynamicSizes.containerSize}px`,
             }}>
                 {/* tick */}
                 <div style={{
@@ -180,7 +203,7 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
                     left: `${dialTickLeftPercentage}%`,
                     position: 'absolute',
                     borderRadius: 2,
-                    width: dialTickLength,
+                    width: dynamicSizes.dialTickLength,
                     height: `${2}px`,
                     backgroundImage: 'linear-gradient(to right, rgb(189, 189, 189) 15%,rgb(228, 228, 228))',
                 }} />
@@ -194,8 +217,8 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
                     zIndex: 3,
                     ...dndCss,
                     position: 'absolute',
-                    width: `${dialSize}px`,
-                    height: `${dialSize}px`,
+                    width: `${dynamicSizes.dialSize}px`,
+                    height: `${dynamicSizes.dialSize}px`,
                     cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
                     borderRadius: '50%',
                 }} >
@@ -221,8 +244,8 @@ function BlurryCap({ id, rotation, size, disabled, title, liveTitleRef }: Blurry
                     zIndex: 3,
                     ...dndCss,
                     position: 'absolute',
-                    width: `${dialSize}px`,
-                    height: `${dialSize}px`,
+                    width: `${dynamicSizes.dialSize}px`,
+                    height: `${dynamicSizes.dialSize}px`,
                     cursor: isDragging ? 'grabbing' : disabled ? '' : 'grab',
                     borderRadius: '50%',
                 }} >

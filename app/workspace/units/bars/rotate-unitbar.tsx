@@ -2,7 +2,7 @@ import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
-import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../../workspace.client";
+import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
 import { getRotate, LaurusLoopType, updateRotate } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 
@@ -33,28 +33,29 @@ export default function RotateUnitbar({
     counterClockwise,
     setCounterClockwise
 }: RotateUnitbar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
-        const ds = getDynamicUnitSizes(appState.resolution);
-        switch (appState.resolution.type) {
+        const ds = getDynamicUnitSizes(uiState.resolution);
+        switch (uiState.resolution.type) {
             case "high": return {
                 ...ds,
                 angleParam: { padding: 15 }
             }
             case "midhigh": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
 
             }
             case "midlow": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
             case "low": return {
                 ...ds,
-                angleParam: { padding: Math.round(15 * appState.resolution.factor) }
+                angleParam: { padding: Math.round(15 * uiState.resolution.factor) }
             }
         }
     });
@@ -84,8 +85,8 @@ export default function RotateUnitbar({
         const options: KeyframeAnimationOptions = {
             duration: firstFrame ? 2 / fps : end * 1000,
         }
-        const previewKey = appState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (appState.carouselEntries[carouselIndex].type) {
+        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
+        switch (uiState.carouselEntries[carouselIndex].type) {
             case "svg": {
                 const svgRef = svgElementsRef.current?.get(previewKey);
                 if (!svgRef) return [];
@@ -106,7 +107,7 @@ export default function RotateUnitbar({
             }
         }
         return newAnimations;
-    }, [carouselEntryKey, appState.apiOrigin, appState.tool.type, appState.carouselEntries, rotate.rotate_id, carouselIndex, svgElementsRef, imgElementsRef]);
+    }, [carouselEntryKey, appState.apiOrigin, uiState.tool.type, uiState.carouselEntries, rotate.rotate_id, carouselIndex, svgElementsRef, imgElementsRef]);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -290,7 +291,7 @@ export default function RotateUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -323,7 +324,7 @@ export default function RotateUnitbar({
                     Promise.all(newAnimations.map(animation => animation.finished))
                         // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         .then((_animations: Animation[]) => {
-                            dispatch({ type: WorkspaceActionType.SetRecordingLight, value: false });
+                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                         })
                         .catch(err => {
                             if (err instanceof Error && err.name !== 'AbortError') {
@@ -333,7 +334,7 @@ export default function RotateUnitbar({
                     newAnimations.forEach(a => {
                         a.play();
                     });
-                    dispatch({ type: WorkspaceActionType.SetRecordingLight, value: true });
+                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
                 }}
                 style={{
                     display: 'grid',
@@ -444,7 +445,7 @@ export default function RotateUnitbar({
                         key: rotate.rotate_id,
                         value: { ...rotate, math: newMath }
                     };
-                    dispatch({ type: WorkspaceActionType.SetEffectClipboard, value: newClipboardEffect });
+                    uiDispatch({ type: UIActionType.SetEffectClipboard, value: newClipboardEffect });
                 }}
                 style={{
                     display: 'grid',
@@ -464,8 +465,8 @@ export default function RotateUnitbar({
             <div title="paste"
                 onClick={() => {
                     if (isMetaKeyPressed) return;
-                    if (appState.effectClipboard && appState.effectClipboard.type == 'rotate') {
-                        const clipboardEquation = appState.effectClipboard.value.math.get("clipboard");
+                    if (uiState.effectClipboard && uiState.effectClipboard.type == 'rotate') {
+                        const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
                         const snapshot: LaurusRotateResult = { ...rotate };
                         const activeKey = carouselEntryKey;
@@ -489,7 +490,7 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="paste"
-                    svg={appState.effectClipboard?.type == 'rotate' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
+                    svg={uiState.effectClipboard?.type == 'rotate' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
                         cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
@@ -512,13 +513,13 @@ export default function RotateUnitbar({
                         setCurrentControls(defaultControls);
                         updateTrackpads(defaultControls);
                         dispatch({
-                            type: WorkspaceActionType.SetEffect,
+                            type: CoreActionType.SetEffect,
                             value: { type: 'rotate', value: { ...newRotate }, key: newRotate.rotate_id },
                         });
                         const updated = await updateRotate(appState.apiOrigin, appState.accessToken, snapshot.rotate_id, { ...newRotate });
                         if (!updated) {
                             dispatch({
-                                type: WorkspaceActionType.SetEffect,
+                                type: CoreActionType.SetEffect,
                                 value: { type: 'rotate', value: { ...snapshot }, key: snapshot.rotate_id },
                             });
                         }

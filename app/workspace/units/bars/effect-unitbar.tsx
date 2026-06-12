@@ -1,6 +1,6 @@
 import { SvgRepo, allOut, circle, earthquake, experiment, lock, lockOpenRight, toysFan, tune } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, WorkspaceActionType, WorkspaceContext, HoverContext } from "../../workspace.client";
+import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import { deleteMove, deleteRotate, deleteScale } from "../../workspace.server";
 import styles from "@/app/app.module.css";
 
@@ -21,11 +21,12 @@ export default function EffectUnitbar({
     setMoveCarouselIndex,
     setRotateCarouselIndex,
     setScaleCarouselIndex }: EffectUnitbar) {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 toolbar: {
                     width: 24
@@ -46,30 +47,30 @@ export default function EffectUnitbar({
     });
 
     const effectIsMixableAndHasMixState = useMemo(() => {
-        if (!appState.mixableEffects) return false;
-        return appState.mixableEffects.includes(effect.type) && effect.value.mixState && effect.value.mixState !== LaurusMixState.None;
-    }, [appState.mixableEffects, effect.type, effect.value.mixState]);
+        if (!uiState.mixableEffects) return false;
+        return uiState.mixableEffects.includes(effect.type) && effect.value.mixState && effect.value.mixState !== LaurusMixState.None;
+    }, [uiState.mixableEffects, effect.type, effect.value.mixState]);
 
     const deleteEffect = useCallback(async (effect: LaurusEffect) => {
         switch (effect.type) {
             case "move": {
                 const deleted = await deleteMove(appState.apiOrigin, appState.accessToken, effect.value.move_id);
                 if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                    dispatch({ type: CoreActionType.DeleteEffect, key: effect.key })
                 }
                 break;
             }
             case "rotate": {
                 const deleted = await deleteRotate(appState.apiOrigin, appState.accessToken, effect.value.rotate_id);
                 if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                    dispatch({ type: CoreActionType.DeleteEffect, key: effect.key })
                 }
                 break;
             }
             case "scale": {
                 const deleted = await deleteScale(appState.apiOrigin, appState.accessToken, effect.value.scale_id);
                 if (deleted) {
-                    dispatch({ type: WorkspaceActionType.DeleteEffect, key: effect.key })
+                    dispatch({ type: CoreActionType.DeleteEffect, key: effect.key })
                 }
                 break;
             }
@@ -108,11 +109,11 @@ export default function EffectUnitbar({
                     if (isMetaKeyPressed) return;
                     const closed = !showUnitControls;
                     if (closed) {
-                        if (!appState.activeElement) {
+                        if (!uiState.activeElement) {
                             switch (effect.type) {
                                 case "move": {
                                     const moveEqautionKeys = Array.from(effect.value.math.keys())
-                                    const keys = appState.carouselEntries;
+                                    const keys = uiState.carouselEntries;
                                     const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
                                     const newIndex = k > -1 ? k : 0;
                                     setMoveCarouselIndex(newIndex);
@@ -120,7 +121,7 @@ export default function EffectUnitbar({
                                 }
                                 case "rotate": {
                                     const eqKeys = Array.from(effect.value.math.keys())
-                                    const carouselKeys = appState.carouselEntries;
+                                    const carouselKeys = uiState.carouselEntries;
                                     const k = carouselKeys.findIndex(k => eqKeys.includes(k.key));
                                     const newIndex = k > -1 ? k : 0;
                                     setRotateCarouselIndex(newIndex);
@@ -128,7 +129,7 @@ export default function EffectUnitbar({
                                 }
                                 case "scale": {
                                     const moveEqautionKeys = Array.from(effect.value.math.keys())
-                                    const keys = appState.carouselEntries;
+                                    const keys = uiState.carouselEntries;
                                     const k = keys.findIndex(k => moveEqautionKeys.includes(k.key));
                                     const newIndex = k > -1 ? k : 0;
                                     setScaleCarouselIndex(newIndex);
@@ -136,9 +137,9 @@ export default function EffectUnitbar({
                                 }
                             }
                         }
-                        else if (appState.activeElement.locallyActivatedEffectKey == undefined) {
-                            const activeKey = appState.activeElement.key;
-                            const initialIndex = appState.carouselEntries.findIndex(c => c.key == activeKey);
+                        else if (uiState.activeElement.locallyActivatedEffectKey == undefined) {
+                            const activeKey = uiState.activeElement.key;
+                            const initialIndex = uiState.carouselEntries.findIndex(c => c.key == activeKey);
                             if (initialIndex > -1) {
                                 setScaleCarouselIndex(initialIndex);
                                 setMoveCarouselIndex(initialIndex);
@@ -197,7 +198,7 @@ export default function EffectUnitbar({
                                         LaurusMixState.Selected :
                                         currentMixUiState == LaurusMixState.Selected ? LaurusMixState.Waiting : undefined;
 
-                                    if (appState.mixableEffects.includes(e.type)) {
+                                    if (uiState.mixableEffects.includes(e.type)) {
                                         switch (e.type) {
                                             case "move": return { ...e, value: { ...e.value, mixState: newMixUiState } as LaurusMoveResult };
                                             case "rotate": return { ...e, value: { ...e.value, mixState: newMixUiState } as LaurusRotateResult };
@@ -206,7 +207,7 @@ export default function EffectUnitbar({
                                     }
                                     return e;
                                 });
-                                dispatch({ type: WorkspaceActionType.SetEffects, value: newEffects });
+                                dispatch({ type: CoreActionType.SetEffects, value: newEffects });
                             }} />
                     </div>
                 </>

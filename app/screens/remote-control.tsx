@@ -299,6 +299,7 @@ export default function RemoteControl({
                     scaleToContaier={true} />
                 <div style={{ padding: volumeSize.innerPadding }}>
                     <ParameterSliderY
+                        resolution={{ ...resolution }}
                         label={""}
                         hash={`${videoMedia.video_media_id}|p1`}
                         size={paramSize}
@@ -542,6 +543,7 @@ export default function RemoteControl({
                         paddingLeft: timelineTrackPadding.left,
                     }}>
                     <TimelineSlider
+                        resolution={{ ...resolution }}
                         size={timelineTrackSize}
                         hash={`${videoMedia.video_media_id}|t1`}
                         trackRef={timelineTrackRef}

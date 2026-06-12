@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, WorkspaceActionType, WorkspaceContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool, HoverContext } from "./workspace.client";
+import { LaurusImgResult, LaurusSvgResult, CoreActionType, CoreContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool, HoverContext, UIContext, UIActionType } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import { updateProject, createProject } from "../projects/projects.server";
 import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
@@ -125,7 +125,8 @@ function isBadFrame(
 
 export default function Canvas() {
     const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState, uiDispatch } = useContext(UIContext);
     const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
     const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
     const [minRadius] = useState(10);
@@ -148,7 +149,7 @@ export default function Canvas() {
     }, []);
 
     const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-        switch (appState.tool.type) {
+        switch (uiState.tool.type) {
             case 'marquee': {
                 const canvas = drawingCanvasRef.current;
                 if (!canvas) return;
@@ -157,7 +158,7 @@ export default function Canvas() {
                 break;
             }
         }
-    }, [appState.tool.type]);
+    }, [uiState.tool.type]);
 
     const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!anchor) return;
@@ -165,7 +166,7 @@ export default function Canvas() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        switch (appState.tool.type) {
+        switch (uiState.tool.type) {
             case 'marquee': {
                 const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -175,14 +176,14 @@ export default function Canvas() {
                 break;
             }
         }
-    }, [anchor, appState.tool.type]);
+    }, [anchor, uiState.tool.type]);
 
     const handleSvgDrop = useCallback(async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
         const newFrame = calculateDropFrame(
             svgData.width,
             svgData.height,
             dropArea,
-            appState.tool
+            uiState.tool
         );
         if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
             return;
@@ -214,13 +215,13 @@ export default function Canvas() {
         newSvgs.set(newKey, projectSvg);
         const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
         if (appState.project.project_id) {
-            dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
+            dispatch({ type: CoreActionType.SetProject, value: newProject });
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
-                const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                const encodedSvg = uiState.browserSvgs.find(i => i.media_key == svgData.media_key);
                 if (encodedSvg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                 }
             }
         }
@@ -228,22 +229,22 @@ export default function Canvas() {
             const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
             if (projectCreated) {
                 const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                const encodedSvg = appState.browserSvgs.find(i => i.media_key == svgData.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
+                const encodedSvg = uiState.browserSvgs.find(i => i.media_key == svgData.media_key);
                 if (encodedSvg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
                 }
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.browserSvgs, appState.project, appState.tool, dispatch]);
+    }, [uiState.tool, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiDispatch]);
 
     const handleImgDrop = useCallback(async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
         const newFrame = calculateDropFrame(
             imgData.width,
             imgData.height,
             dropArea,
-            appState.tool
+            uiState.tool
         );
         if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
             return;
@@ -273,11 +274,11 @@ export default function Canvas() {
         if (appState.project.project_id) {
             const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
             if (projectUpdated) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject });
-                const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject });
+                const encodedImg = uiState.browserImgs.find(i => i.media_key == imgData.media_key);
                 if (encodedImg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                 }
             }
         }
@@ -285,15 +286,15 @@ export default function Canvas() {
             const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
             if (projectCreated) {
                 const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
-                dispatch({ type: WorkspaceActionType.SetProject, value: newProject2 });
-                const encodedImg = appState.browserImgs.find(i => i.media_key == imgData.media_key);
+                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
+                const encodedImg = uiState.browserImgs.find(i => i.media_key == imgData.media_key);
                 if (encodedImg) {
-                    dispatch({ type: WorkspaceActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    dispatch({ type: WorkspaceActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
+                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
                 }
             }
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.browserImgs, appState.project, appState.tool, dispatch]);
+    }, [uiState.tool, uiState.browserImgs, appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiDispatch]);
 
     const handleMouseUp = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!anchor) return;
@@ -301,7 +302,7 @@ export default function Canvas() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        switch (appState.tool.type) {
+        switch (uiState.tool.type) {
             case 'marquee':
                 {
                     const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
@@ -313,7 +314,7 @@ export default function Canvas() {
                         radius: newRadius,
                     };
 
-                    if (appState.tool.select) {
+                    if (uiState.tool.select) {
                         const foundImgKeys = new Set<string>();
                         const foundSvgKeys = new Set<string>();
                         const isInside = (meta: LaurusProjectImg | LaurusProjectSvg) => {
@@ -337,20 +338,20 @@ export default function Canvas() {
                         break;
                     }
 
-                    if (!appState.browserElement) break;
+                    if (!uiState.browserElement) break;
 
-                    switch (appState.browserElement.type) {
+                    switch (uiState.browserElement.type) {
                         case "svg": {
-                            const key = appState.browserElement.value.media_key;
-                            const svgData = appState.browserSvgs.find(s => s.media_key === key);
+                            const key = uiState.browserElement.value.media_key;
+                            const svgData = uiState.browserSvgs.find(s => s.media_key === key);
                             if (svgData) {
                                 handleSvgDrop(svgData, dropArea);
                             }
                             break;
                         }
                         case "img": {
-                            const key = appState.browserElement.value.media_key;
-                            const imgData = appState.browserImgs.find(s => s.media_key === key);
+                            const key = uiState.browserElement.value.media_key;
+                            const imgData = uiState.browserImgs.find(s => s.media_key === key);
                             if (imgData) {
                                 handleImgDrop(imgData, dropArea)
                             }
@@ -362,7 +363,7 @@ export default function Canvas() {
         }
         setAnchor(undefined);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }, [anchor, appState.browserElement, appState.browserImgs, appState.browserSvgs, appState.project.imgs, appState.project.svgs, appState.tool, handleImgDrop, handleSvgDrop, minRadius, setSelectedImgKeys, setSelectedSvgKeys]);
+    }, [anchor, uiState.tool, uiState.browserElement, uiState.browserSvgs, uiState.browserImgs, minRadius, appState.project.imgs, appState.project.svgs, setSelectedImgKeys, setSelectedSvgKeys, handleSvgDrop, handleImgDrop]);
 
     return (<>
         <div style={{

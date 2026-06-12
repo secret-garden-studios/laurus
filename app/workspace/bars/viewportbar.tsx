@@ -1,13 +1,13 @@
 import { useContext, useState } from "react";
 import { geistMono } from "@/app/fonts";
-import { WorkspaceContext, HoverContext } from "../workspace.client";
+import { HoverContext, UIContext } from "../workspace.client";
 import { browse, SvgRepo } from "@/app/svg-repo";
 
 export default function Viewportbar() {
-    const { appState } = useContext(WorkspaceContext);
+    const { uiState } = useContext(UIContext);
     const { animationDownloadProgress } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 svgSize: {
                     width: 20,

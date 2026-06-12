@@ -1,11 +1,12 @@
-import { RefObject, useCallback, useContext, useEffect, useState } from "react";
+import { RefObject, useCallback, useEffect, useState } from "react";
 import { dmSans } from "../fonts";
 import { Trackpad, PointerStyle } from "./trackpad";
-import { WorkspaceContext } from "../workspace/workspace.client";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { SvgRepo, remove, add2 } from "../svg-repo";
+import { LaurusResolution } from "../landing.boot";
 
 interface ParameterSliderY {
+    resolution: LaurusResolution,
     label: string,
     hash: string,
     size: {
@@ -26,6 +27,7 @@ interface ParameterSliderY {
     liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 export function ParameterSliderY({
+    resolution,
     label,
     hash,
     size,
@@ -38,9 +40,8 @@ export function ParameterSliderY({
     title,
     liveTitleRef
 }: ParameterSliderY) {
-    const { appState } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (resolution.type) {
             case "high": return {
                 label: {
                     fontSize: 11,
@@ -103,6 +104,7 @@ export function ParameterSliderY({
                     margin: 'auto',
                 }}>
                     <Trackpad
+                        resolution={resolution}
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={size.capWidth}
                         height={'100%'}
@@ -178,6 +180,7 @@ export function ParameterSliderY({
 }
 
 interface ParameterSliderXPlusMinus {
+    resolution: LaurusResolution,
     label?: string,
     hash: string,
     size: {
@@ -200,6 +203,7 @@ interface ParameterSliderXPlusMinus {
     liveTitleRef?: RefObject<HTMLDivElement | null>
 }
 export function ParameterSliderXPlusMinus({
+    resolution,
     hash,
     size,
     containerRef,
@@ -240,6 +244,7 @@ export function ParameterSliderXPlusMinus({
                     margin: 'auto',
                 }}>
                     <Trackpad
+                        resolution={resolution}
                         ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                         width={'100%'}
                         height={size.capHeight}
@@ -310,6 +315,7 @@ export function ParameterSliderXPlusMinus({
 }
 
 interface ParameterSliderX {
+    resolution: LaurusResolution,
     label?: string,
     hash: string,
     size: {
@@ -331,6 +337,7 @@ interface ParameterSliderX {
     title?: string,
 }
 export function ParameterSliderX({
+    resolution,
     hash,
     size,
     containerRef,
@@ -358,6 +365,7 @@ export function ParameterSliderX({
                 margin: 'auto',
             }}>
                 <Trackpad
+                    resolution={resolution}
                     ids={{ contextId: `${hash}|c1`, draggableId: `${hash}|d1` }}
                     width={'100%'}
                     height={size.capHeight}

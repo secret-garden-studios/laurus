@@ -1,8 +1,8 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToParentElement } from "@dnd-kit/modifiers";
-import { CSSProperties, RefObject, useContext, useState } from "react";
-import { WorkspaceContext } from "../workspace/workspace.client";
+import { CSSProperties, RefObject, useState } from "react";
+import { LaurusResolution } from "../landing.boot";
 
 export enum PointerStyle {
     Blurry,
@@ -11,6 +11,7 @@ export enum PointerStyle {
 }
 
 interface TrackpadProps {
+    resolution: LaurusResolution,
     ids: { contextId: string, draggableId: string }
     width: number | string,
     height: number | string,
@@ -31,6 +32,7 @@ interface TrackpadProps {
 }
 
 export function Trackpad({
+    resolution,
     ids,
     width,
     height,
@@ -75,6 +77,7 @@ export function Trackpad({
                 modifiers={[restrictToParentElement]}
             >
                 <CoarsePointer
+                    resolution={resolution}
                     id={ids.draggableId}
                     coords={value}
                     width={coarsePointer.width}
@@ -92,6 +95,7 @@ export function Trackpad({
 }
 
 interface CoarsePointerProps {
+    resolution: LaurusResolution,
     id: string
     coords: { x: number, y: number },
     width: number | string,
@@ -104,11 +108,10 @@ interface CoarsePointerProps {
     liveTitleRef?: RefObject<HTMLDivElement | null>,
 }
 
-function CoarsePointer({ id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title, liveTitleRef }: CoarsePointerProps) {
+function CoarsePointer({ resolution, id, width, height, pointerStyle, coords, zIndex, borderColor, disabled, title, liveTitleRef }: CoarsePointerProps) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
-    const { appState } = useContext(WorkspaceContext);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (resolution.type) {
             case "high": return {
                 tooltip: {
                     letterSpacing: 1,

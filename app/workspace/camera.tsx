@@ -1,6 +1,6 @@
 import { useDraggable, useSensors, useSensor, PointerSensor, DndContext } from "@dnd-kit/core";
 import { RefObject, useContext } from "react";
-import { WorkspaceContext } from "./workspace.client";
+import { UIContext, CoreContext } from "./workspace.client";
 import { CSS as DndCss } from '@dnd-kit/utilities';
 import styles from "../app.module.css";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
@@ -57,7 +57,8 @@ export default function DraggableCamera({
     zIndex,
     onNewPosition,
     disabled }: DraggableCamera) {
-    const { appState } = useContext(WorkspaceContext);
+    const { appState } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const sensors = useSensors(
         useSensor(PointerSensor)
     );
@@ -80,7 +81,7 @@ export default function DraggableCamera({
         >
             <div style={{ position: 'relative' }}>
                 <div
-                    className={styles[`${appState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
+                    className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
                     style={{
                         position: 'absolute',
                         top: appState.project.frame_top,
@@ -90,15 +91,15 @@ export default function DraggableCamera({
                         overflow: 'hidden',
                         boxShadow: "0px 0px 30px rgba(0, 0, 0, 0.65)",
                         borderRadius: 3,
-                        outline: appState.lightFrameBackground ? '1px solid rgba(0, 0, 0, 0)' : '1px solid rgba(255,255,255,0.2)',
-                        background: appState.lightFrameBackground ? 'rgb(227, 227, 227)' : 'none'
+                        outline: uiState.lightFrameBackground ? '1px solid rgba(0, 0, 0, 0)' : '1px solid rgba(255,255,255,0.2)',
+                        background: uiState.lightFrameBackground ? 'rgb(227, 227, 227)' : 'none'
                     }} >
-                    {appState.tool.type == 'viewport' &&
+                    {uiState.tool.type == 'viewport' &&
                         <>
                             {Array.from(appState.project.imgs.entries()).map((e) => {
                                 const [key, meta] = e;
                                 if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const imgData = appState.canvasImgs.get(key);
                                 if (imgData) {
                                     return (
@@ -117,7 +118,7 @@ export default function DraggableCamera({
                             {Array.from(appState.project.svgs.entries()).map((e) => {
                                 const [key, meta] = e;
                                 if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = appState.tool.type != 'viewport' ? `${key}|preview` : key;
+                                const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const svgData = appState.canvasSvgs.get(key);
                                 if (!svgData) return;
                                 let decodedString = "";

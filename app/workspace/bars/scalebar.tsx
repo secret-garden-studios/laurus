@@ -4,13 +4,14 @@ import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "@/app/p
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { WorkspaceActionType, WorkspaceContext, HoverContext } from "../workspace.client";
+import { CoreActionType, CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { SCALE_MAX } from "../workspace.config";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 
 export default function Scalebar() {
-    const { appState, dispatch } = useContext(WorkspaceContext);
+    const { appState, dispatch } = useContext(CoreContext);
+    const { uiState } = useContext(UIContext);
     const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
     const target = useMemo(() => {
         return selectedImgKeys.size > 0 ? { key: Array.from(selectedImgKeys)[0], type: 'img' as const } :
@@ -38,7 +39,7 @@ export default function Scalebar() {
 
     const [unlockAspectRatio, setUnlockAspectRatio] = useState(false);
     const [dynamicSizes] = useState(() => {
-        switch (appState.resolution.type) {
+        switch (uiState.resolution.type) {
             case "high": return {
                 paramSize: {
                     containerHeight: 38,
@@ -251,13 +252,13 @@ export default function Scalebar() {
         try {
             const saved = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, newProject);
             if (saved) {
-                dispatch({ type: WorkspaceActionType.SetProject, value: { ...newProject } });
+                dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
                 if (isMultiSelect) {
                     if (scaleX !== undefined) setAppliedScaleX(scaleX);
                     if (scaleY !== undefined) setAppliedScaleY(scaleY);
                 }
             } else {
-                dispatch({ type: WorkspaceActionType.SetProject, value: snapshot });
+                dispatch({ type: CoreActionType.SetProject, value: snapshot });
             }
         } finally {
             setIsSaving(false);
@@ -346,7 +347,7 @@ export default function Scalebar() {
                 heightRef.current.value = (dimensions[1]).toFixed(precision);
             }
         })();
-    }, [appState.tool.type, complexTrackpadOptions, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize, isMultiSelect]);
+    }, [uiState.tool.type, complexTrackpadOptions, getActiveDimensions, getActiveScale, getScaleXCursor, getScaleYCursor, sliderColumnSize, isMultiSelect]);
 
     const scaleXTitle = useMemo(() => {
         const scaleX = getActiveScale()[0];
@@ -390,6 +391,7 @@ export default function Scalebar() {
                     ...dynamicSizes.grid
                 }}>
                 <ParameterSliderXPlusMinus
+                    resolution={{ ...uiState.resolution }}
                     label={"zoom"}
                     hash={`${target?.key ?? 'scalebar'}|scalex`}
                     size={dynamicSizes.paramSize}
@@ -468,6 +470,7 @@ export default function Scalebar() {
                     ...dynamicSizes.grid
                 }}>
                 <ParameterSliderXPlusMinus
+                    resolution={{ ...uiState.resolution }}
                     label={"zoom"}
                     hash={`${target?.key ?? 'scalebar'}|scaley`}
                     size={dynamicSizes.paramSize}
