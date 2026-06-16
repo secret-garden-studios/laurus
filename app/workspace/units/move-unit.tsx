@@ -1,13 +1,15 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { LaurusMoveEquation, LaurusMoveResult, CoreActionType, CoreContext, LaurusActiveElement, convertTime, HoverContext, UIContext, UIActionType } from "../workspace.client";
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
-import { updateMove, LaurusLoopType, LaurusShapeType } from "../workspace.server";
+import { updateMove, LaurusLoopType, LaurusShapeType, LaurusMoveEquation, LaurusMoveResult } from "../workspace.server";
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, MOVE_AMPLITUDE_MAX, MOVE_DISTANCE_MAX, MOVE_FREQUENCY_MAX, MOVE_WAVELENGTH_MAX } from "../workspace.config";
-import { useCarouselIndex } from "../../hooks/useCarouselIndex";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
 
 export interface MoveUnitControls {
     amplitude: number,
@@ -37,11 +39,9 @@ export const defaultMoveEquation: LaurusMoveEquation = {
 
 interface MoveUnit {
     move: LaurusMoveResult
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     carouselIndexInit: number,
 }
-export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouselIndexInit }: MoveUnit) {
+export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
@@ -496,10 +496,7 @@ export default function MoveUnit({ move, svgElementsRef, imgElementsRef, carouse
                                 {/* toolbar */}
                                 <MoveUnitbar
                                     move={move}
-                                    imgElementsRef={imgElementsRef}
-                                    svgElementsRef={svgElementsRef}
                                     carouselEntryKey={carouselEntryKey}
-                                    carouselIndex={carouselIndex}
                                     currentControls={currentControls}
                                     setCurrentControls={setCurrentControls}
                                     updateTrackpads={updateTrackpads}

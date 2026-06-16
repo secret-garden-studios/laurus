@@ -1,17 +1,16 @@
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, circleFillZero, contentPaste, earthquake, ellipseFillZero, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
-import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusMoveEquation, LaurusMoveResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
-import { getMove, LaurusLoopType, LaurusShapeType, updateMove } from "../../workspace.server";
+import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
+import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
+import { LaurusEffect, LaurusLoopType, LaurusMoveEquation, LaurusMoveResult, LaurusShapeType, updateMove } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
+import { UIActionType } from "../../states/ui-state";
+import { CoreActionType } from "../../states/core-state";
 
 interface MoveUnitbar {
     move: LaurusMoveResult,
     carouselEntryKey: string,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
-    carouselIndex: number,
     saveNewEquation: (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => Promise<void>,
     updateTrackpads: (newControls: MoveUnitControls) => void,
     currentControls: MoveUnitControls,
@@ -21,14 +20,11 @@ interface MoveUnitbar {
 export default function MoveUnitbar({
     move,
     carouselEntryKey,
-    svgElementsRef,
-    imgElementsRef,
-    carouselIndex,
     saveNewEquation,
     updateTrackpads,
     currentControls,
     setCurrentControls, }: MoveUnitbar) {
-    const { appState, dispatch } = useContext(CoreContext);
+    const { appState, dispatch, handleRewindTarget, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
@@ -55,48 +51,7 @@ export default function MoveUnitbar({
         }
     });
 
-    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = carouselEntryKey;
-        if (!activeKey) return [];
-        const newAnimations: Animation[] = [];
-        const response = await getMove(appState.apiOrigin, move.move_id, activeKey);
-        const math: Map<string, LaurusMoveEquation> | undefined = response?.math;
-        const fps = response?.fps;
-        const end = response?.end;
-        if (!math || math.size == 0 || !fps || !end) return [];
-
-        const activeMath = math
-            .get(activeKey);
-        if (!activeMath) return [];
-        const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-            .map(s => { return { translate: `${s.x}px ${s.y}px 0px`, } }) ?? [];
-        const options: KeyframeAnimationOptions = {
-            duration: firstFrame ? 2 / fps : end * 1000,
-        }
-        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (uiState.carouselEntries[carouselIndex].type) {
-            case "svg": {
-                const svgRef = svgElementsRef.current?.get(previewKey);
-                if (!svgRef) return [];
-                svgRef.getAnimations().forEach((a) => a.cancel());
-
-                const keyframeEffect =
-                    new KeyframeEffect(svgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-            case "img": {
-                const imgRef = imgElementsRef.current?.get(previewKey);
-                if (!imgRef) return [];
-                imgRef.getAnimations().forEach((a) => a.cancel());
-                const keyframeEffect =
-                    new KeyframeEffect(imgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-        }
-        return newAnimations;
-    }, [appState.apiOrigin, uiState.carouselEntries, uiState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, move.move_id, svgElementsRef]);
+    const [playbackRate] = useState(10);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = move.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -294,22 +249,9 @@ export default function MoveUnitbar({
                 )}
             </div>
             <div title={"rewind"}
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(true);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handleRewindTarget(carouselEntryKey, 'move', playbackRate);
                 }}
                 style={{
                     display: 'grid',
@@ -318,32 +260,18 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"rewind"}
-                    svg={move.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                    svg={move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.92}
                     scaleToContaier={true} />
             </div>
             <div title={"play"}
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(false);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handlePlayTarget(carouselEntryKey, 'move');
                 }}
                 style={{
                     display: 'grid',
@@ -352,9 +280,9 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"play"}
-                    svg={move.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                    svg={move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}

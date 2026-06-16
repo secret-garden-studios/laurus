@@ -1,7 +1,7 @@
-import { RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ScaleUnit from "../units/scale-unit";
-import { convertTime, LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext } from "../workspace.client";
-import { updateMove, updateRotate, updateScale } from "../workspace.server";
+import { convertTime, CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { LaurusEffect, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, updateMove, updateRotate, updateScale } from "../workspace.server";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import MoveUnit from "../units/move-unit";
 import TimelineSlider from "../../components/timeline-slider";
@@ -9,14 +9,13 @@ import RotateUnit from "../units/rotate-unit";
 import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
 import EffectUnitbar from "./bars/effect-unitbar";
+import { CoreActionType } from "../states/core-state";
 
 interface EffectUnit {
     effect: LaurusEffect,
     showUnitControlsInit: boolean,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRef, imgElementsRef }: EffectUnit) {
+export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const { selectedEffectUnitKeys, isMetaKeyPressed } = useContext(HoverContext);
@@ -455,22 +454,16 @@ export default function EffectUnit({ effect, showUnitControlsInit, svgElementsRe
                         case "scale": {
                             return <ScaleUnit
                                 scale={effect.value}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef}
                                 carouselIndexInit={scaleCarouselIndex} />
                         }
                         case "move": {
                             return <MoveUnit
                                 move={effect.value}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef}
                                 carouselIndexInit={moveCarouselIndex} />
                         }
                         case "rotate": {
                             return <RotateUnit
                                 rotate={effect.value}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef}
                                 carouselIndexInit={rotateCarouselIndex} />
                         }
                     }

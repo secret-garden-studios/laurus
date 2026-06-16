@@ -1,16 +1,18 @@
 import { useContext, useState } from "react"
-import { defaultMarqueeTool, CoreActionType, CoreContext, UIContext, UIActionType } from "../workspace.client"
+import { CoreContext, UIContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
+import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
 
 interface Toolbar {
     resolution: WorkspaceResolution,
     handleMixRestoration: () => void,
 }
 export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
-    const { appState, dispatch, handleRewindAll } = useContext(CoreContext);
+    const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const [tooltipDelay] = useState(1000);
     const [rightPanelSize] = useState(() => {
@@ -62,10 +64,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={lassoSelect()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'marquee') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -82,7 +82,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -126,10 +126,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={keyboardCommandKey()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'contextmenu') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -138,7 +136,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'contextmenu' } });
                         }
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -182,10 +180,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={browse()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'viewport') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -202,7 +198,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -245,10 +241,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={earthquake()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'move') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -265,7 +259,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
                         });
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -308,10 +302,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={allOut()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'scale') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -320,7 +312,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
                         }
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -363,10 +355,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={toysFan()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'rotate') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -375,7 +365,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
                         }
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -418,10 +408,8 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     svg={experiment()}
                     scale={0.5}
                     scaleToContaier={true}
-                    onContainerClick={async () => {
-                        if (!uiState.playEnabled) {
-                            await handleRewindAll();
-                        }
+                    onContainerClick={() => {
+                        if (!uiState.playbackControlsEnabled) return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'mix') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -430,7 +418,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
                         }
                     }}
-                    containerStyle={!uiState.skipPreviousEnabled ? {
+                    containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg

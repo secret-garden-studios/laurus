@@ -1,8 +1,10 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { LaurusImgResult, LaurusSvgResult, CoreActionType, CoreContext, DEFAULT_CONTEXT_MENU_CONFIG, LaurusTool, HoverContext, UIContext, UIActionType } from "./workspace.client";
+import { CoreContext, HoverContext, UIContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
-import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
+import { updateProject, createProject, DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.server";
+import { LaurusTool, UIActionType } from "./states/ui-state";
+import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
+import { CoreActionType } from "./states/core-state";
 
 function calcMousePosition(
     canvas: HTMLCanvasElement,

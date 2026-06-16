@@ -1,17 +1,16 @@
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, link, linkOff, playArrow, remove, skipPrevious, syncAlt, updateDisabled } from "@/app/svg-repo";
-import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LaurusEffect, LaurusScaleEquation, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
-import { getScale, LaurusLoopType, updateScale } from "../../workspace.server";
+import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
+import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
+import { LaurusEffect, LaurusLoopType, LaurusScaleEquation, LaurusScaleResult, updateScale } from "../../workspace.server";
 import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { UIActionType } from "../../states/ui-state";
+import { CoreActionType } from "../../states/core-state";
 
 interface ScaleUnitbar {
     scale: LaurusScaleResult,
     carouselEntryKey: string,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
-    carouselIndex: number,
     unlockAspectRatio: boolean,
     updateTrackpads: (newControls: ScaleUnitControls) => void,
     currentControls: ScaleUnitControls,
@@ -22,16 +21,13 @@ interface ScaleUnitbar {
 export default function ScaleUnitbar({
     scale,
     carouselEntryKey,
-    svgElementsRef,
-    imgElementsRef,
-    carouselIndex,
     unlockAspectRatio,
     updateTrackpads,
     currentControls,
     setCurrentControls,
     saveNewEquation,
     setUnlockAspectRatio }: ScaleUnitbar) {
-    const { appState, dispatch } = useContext(CoreContext);
+    const { appState, dispatch, handleRewindTarget, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
@@ -57,46 +53,7 @@ export default function ScaleUnitbar({
         }
     });
 
-    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = carouselEntryKey;
-        if (!activeKey) return [];
-        const newAnimations: Animation[] = [];
-        const response = await getScale(appState.apiOrigin, scale.scale_id, activeKey);
-        const math: Map<string, LaurusScaleEquation> | undefined = response?.math;
-        const fps = response?.fps;
-        const end = response?.end;
-        if (!math || math.size == 0 || !fps || !end) return [];
-        const activeMath = math
-            .get(activeKey);
-        if (!activeMath) return [];
-        const keyframes: Keyframe[] = (firstFrame ? [activeMath.solution[0]] : activeMath.solution)
-            .map(s => { return { "scale": `${s.x} ${s.y}` } }) ?? [];
-        const options: KeyframeAnimationOptions = {
-            duration: firstFrame ? 2 / fps : end * 1000,
-        }
-        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (uiState.carouselEntries[carouselIndex].type) {
-            case "svg": {
-                const svgRef = svgElementsRef.current?.get(previewKey);
-                if (!svgRef) return [];
-                svgRef.getAnimations().forEach((a) => a.cancel());
-                const keyframeEffect =
-                    new KeyframeEffect(svgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-            case "img": {
-                const imgRef = imgElementsRef.current?.get(previewKey);
-                if (!imgRef) return [];
-                imgRef.getAnimations().forEach((a) => a.cancel());
-                const keyframeEffect =
-                    new KeyframeEffect(imgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-        }
-        return newAnimations;
-    }, [appState.apiOrigin, uiState.carouselEntries, uiState.tool.type, carouselIndex, carouselEntryKey, imgElementsRef, scale.scale_id, svgElementsRef]);
+    const [playbackRate] = useState(10);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -231,22 +188,9 @@ export default function ScaleUnitbar({
                 )}
             </div>
             <div title={"rewind"}
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(true);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handleRewindTarget(carouselEntryKey, 'scale', playbackRate);
                 }}
                 style={{
                     display: 'grid',
@@ -255,32 +199,18 @@ export default function ScaleUnitbar({
                 }}>
                 <SvgRepo
                     title={"rewind"}
-                    svg={scale.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                    svg={scale.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
                     scaleToContaier={true} />
             </div>
             <div title={"play"}
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(false);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handlePlayTarget(carouselEntryKey, 'scale');
                 }}
                 style={{
                     display: 'grid',
@@ -289,9 +219,9 @@ export default function ScaleUnitbar({
                 }}>
                 <SvgRepo
                     title={"play"}
-                    svg={scale.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                    svg={scale.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}

@@ -1,13 +1,15 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreActionType, CoreContext, LaurusRotateResult, LaurusRotateEquation, LaurusActiveElement, convertTime, HoverContext, UIContext, UIActionType } from "../workspace.client";
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { LaurusLoopType, updateRotate } from "../workspace.server";
+import { LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../workspace.server";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
-import { useCarouselIndex } from "../../hooks/useCarouselIndex";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
 
 export interface RotateUnitControls {
     x: number,
@@ -33,11 +35,9 @@ export const defaultRotateEquation: LaurusRotateEquation = {
 
 interface RotateUnit {
     rotate: LaurusRotateResult,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     carouselIndexInit: number,
 }
-export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, carouselIndexInit }: RotateUnit) {
+export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
@@ -445,9 +445,6 @@ export default function RotateUnit({ rotate, svgElementsRef, imgElementsRef, car
                                 {/* toolbar */}
                                 <RotateUnitbar
                                     rotate={rotate}
-                                    carouselIndex={carouselIndex}
-                                    svgElementsRef={svgElementsRef}
-                                    imgElementsRef={imgElementsRef}
                                     carouselEntryKey={carouselEntryKey}
                                     updateTrackpads={updateTrackpads}
                                     saveNewEquation={saveNewEquation}

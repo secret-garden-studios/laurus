@@ -3,23 +3,20 @@ import LaurusImage from "../components/laurus-image";
 import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from '@dnd-kit/utilities';
 import {
-    LaurusImgResult,
     CoreContext,
     HoverContext,
-    CoreActionType,
     getNewContextMenuConfig,
-    LaurusActiveElement,
     LaurusTransform,
-    DEFAULT_CONTEXT_MENU_CONFIG,
     UIContext,
-    UIActionType,
 } from "./workspace.client";
 import { RefObject, useCallback, useContext, useMemo, useState } from "react";
-import { updateProject } from "../projects/projects.server";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
+import { updateProject, DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.server";
 import ContextMenu from "./context-menu";
 import { v4 } from "uuid";
 import { Z_INDEX } from "./workspace.config";
+import { LaurusFrame, LaurusImgResult } from "./workspace.server";
+import { LaurusActiveElement, UIActionType } from "./states/ui-state";
+import { CoreActionType } from "./states/core-state";
 
 interface Point2D {
     x: number;
@@ -146,6 +143,7 @@ interface ProjectImg {
     mediaKey: string,
     meta: LaurusProjectImg,
     data: LaurusImgResult,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     onClick: (metaKey: boolean) => void,
     onImgRef?: (element: HTMLImageElement | null, refKey: string) => void,
     refKey?: string,
@@ -160,6 +158,7 @@ function ProjectImg({
     mediaKey,
     meta,
     data,
+    framesCacheRef,
     onClick,
     onImgRef,
     refKey,
@@ -262,6 +261,7 @@ function ProjectImg({
                             type: 'img',
                             meta: meta,
                         }}
+                        framesCacheRef={framesCacheRef}
                         transform={transform} />
                 }
             </div>
@@ -277,6 +277,7 @@ interface ProjectSvg {
     mediaKey: string,
     meta: LaurusProjectSvg,
     decodedString: string,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     onClick: (metaKey: boolean) => void,
     onSvgRef?: (element: SVGSVGElement | null, refKey: string) => void,
     refKey?: string,
@@ -291,6 +292,7 @@ function ProjectSvg({
     mediaKey,
     meta,
     decodedString,
+    framesCacheRef,
     onClick,
     onSvgRef,
     refKey,
@@ -407,6 +409,7 @@ function ProjectSvg({
                         type: 'svg',
                         meta: meta,
                     }}
+                    framesCacheRef={framesCacheRef}
                     transform={transform} />
             }
         </div>
@@ -419,6 +422,7 @@ interface DraggableProjectImg {
     meta: LaurusProjectImg,
     zIndex: number,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     refKey?: string,
 }
 export function DraggableProjectImg({
@@ -427,6 +431,7 @@ export function DraggableProjectImg({
     meta,
     zIndex,
     imgElementsRef,
+    framesCacheRef,
     refKey }: DraggableProjectImg) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
@@ -715,6 +720,7 @@ export function DraggableProjectImg({
                 mediaKey={mediaKey}
                 meta={meta}
                 data={data}
+                framesCacheRef={framesCacheRef}
                 onClick={onImgClick}
                 onImgRef={onImgRef}
                 refKey={refKey}
@@ -730,6 +736,7 @@ interface DraggableProjectSvg {
     meta: LaurusProjectSvg,
     zIndex: number,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     refKey?: string,
 }
 export function DraggableProjectSvg({
@@ -738,6 +745,7 @@ export function DraggableProjectSvg({
     meta,
     zIndex,
     svgElementsRef,
+    framesCacheRef,
     refKey }: DraggableProjectSvg) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
@@ -1026,6 +1034,7 @@ export function DraggableProjectSvg({
                 mediaKey={mediaKey}
                 meta={meta}
                 decodedString={decodedString}
+                framesCacheRef={framesCacheRef}
                 onClick={onSvgClick}
                 onSvgRef={onSvgRef}
                 refKey={refKey}

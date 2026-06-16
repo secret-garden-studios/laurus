@@ -1,6 +1,6 @@
 import { CSSProperties, use, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectsResolution } from "./projects-resolution"
-import { createProject, deleteProject, Project_V1_0, ProjectImg_V1_0, ProjectResult_V1_0, ProjectSvg_V1_0 } from "./projects.server"
+import { createProject, DEFAULT_CONTEXT_MENU_CONFIG, deleteProject, LaurusProject, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, ProjectResult_V1_0 } from "./projects.server"
 import { addCircle, arrowDropDown, arrowDropUp, fileCopy, outbound, search, SvgRepo, cancelCircle } from "../svg-repo";
 import Menubar from "../menubar";
 import { dellaRespira, italiana } from "../fonts";
@@ -10,24 +10,6 @@ import Statusbar from "./statusbar";
 import { useRouter } from 'next/navigation'
 import useDebounce from "../hooks/useDebounce";
 import { MeDependencies } from "../page";
-import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../workspace/workspace.client";
-
-export interface LaurusProjectImg extends ProjectImg_V1_0 {
-    showContextMenu: boolean
-    contextMenuConfig: ContextMenuConfig
-}
-export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
-    showContextMenu: boolean
-    contextMenuConfig: ContextMenuConfig
-}
-export interface LaurusProjectResult extends ProjectResult_V1_0 {
-    imgs: Map<string, LaurusProjectImg>
-    svgs: Map<string, LaurusProjectSvg>
-}
-interface LaurusProject extends Project_V1_0 {
-    imgs: Map<string, LaurusProjectImg>
-    svgs: Map<string, LaurusProjectSvg>
-}
 
 export function projectSvgIsTransformed(svg: LaurusProjectSvg) {
     if (svg.scale_x == 1 && svg.scale_y == 1 && svg.rotate_x == 0 && svg.rotate_y == 0 && svg.rotate_z == 0) {

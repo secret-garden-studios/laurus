@@ -1,17 +1,16 @@
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
-import { Dispatch, RefObject, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
+import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
-import { LaurusEffect, LaurusRotateEquation, LaurusRotateResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../../workspace.client";
-import { getRotate, LaurusLoopType, updateRotate } from "../../workspace.server";
+import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
+import { LaurusEffect, LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { UIActionType } from "../../states/ui-state";
+import { CoreActionType } from "../../states/core-state";
 
 interface RotateUnitbar {
     rotate: LaurusRotateResult,
     carouselEntryKey: string,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
-    carouselIndex: number,
     saveNewEquation: (rollback: LaurusRotateResult, newEquation: LaurusRotateEquation) => Promise<void>,
     updateTrackpads: (newControls: RotateUnitControls) => void,
     currentControls: RotateUnitControls,
@@ -23,9 +22,6 @@ interface RotateUnitbar {
 export default function RotateUnitbar({
     rotate,
     carouselEntryKey,
-    svgElementsRef,
-    imgElementsRef,
-    carouselIndex,
     saveNewEquation,
     updateTrackpads,
     currentControls,
@@ -33,7 +29,7 @@ export default function RotateUnitbar({
     counterClockwise,
     setCounterClockwise
 }: RotateUnitbar) {
-    const { appState, dispatch } = useContext(CoreContext);
+    const { appState, dispatch, handleRewindTarget, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
@@ -60,54 +56,7 @@ export default function RotateUnitbar({
         }
     });
 
-    const getPreviewAnimations = useCallback(async (firstFrame: boolean) => {
-        const activeKey = carouselEntryKey;
-        if (!activeKey) return [];
-        const newAnimations: Animation[] = [];
-        const response = await getRotate(appState.apiOrigin, rotate.rotate_id, activeKey);
-        const math: Map<string, LaurusRotateEquation> | undefined = response?.math;
-        const fps = response?.fps;
-        const end = response?.end;
-        if (!math || math.size == 0 || !fps || !end) return [];
-        const activeMath = math
-            .get(activeKey);
-        if (!activeMath) return [];
-        const framesToMap = firstFrame ? [activeMath.solution[0]] : activeMath.solution;
-        const keyframes: Keyframe[] = framesToMap
-            .map((f, i) => {
-                return i < activeMath.solution.length - 1 ? {
-                    rotate: `${f.x} ${f.y} ${f.z} ${f.angle}deg`,
-                    easing: 'step-end'
-                } : {
-                    rotate: `${f.x} ${f.y} ${f.z} ${f.angle}deg`
-                }
-            }) ?? [];
-        const options: KeyframeAnimationOptions = {
-            duration: firstFrame ? 2 / fps : end * 1000,
-        }
-        const previewKey = uiState.tool.type != 'viewport' ? `${activeKey}|preview` : activeKey;
-        switch (uiState.carouselEntries[carouselIndex].type) {
-            case "svg": {
-                const svgRef = svgElementsRef.current?.get(previewKey);
-                if (!svgRef) return [];
-                svgRef.getAnimations().forEach((a) => a.cancel());
-                const keyframeEffect =
-                    new KeyframeEffect(svgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-            case "img": {
-                const imgRef = imgElementsRef.current?.get(previewKey);
-                if (!imgRef) return [];
-                imgRef.getAnimations().forEach((a) => a.cancel());
-                const keyframeEffect =
-                    new KeyframeEffect(imgRef, keyframes, options);
-                newAnimations.push(new Animation(keyframeEffect, document.timeline));
-                break;
-            }
-        }
-        return newAnimations;
-    }, [carouselEntryKey, appState.apiOrigin, uiState.tool.type, uiState.carouselEntries, rotate.rotate_id, carouselIndex, svgElementsRef, imgElementsRef]);
+    const [playbackRate] = useState(10);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -285,22 +234,9 @@ export default function RotateUnitbar({
                     scaleToContaier={true} />
             </div>
             <div title="rewind"
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(true);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handleRewindTarget(carouselEntryKey, 'rotate', playbackRate);
                 }}
                 style={{
                     display: 'grid',
@@ -309,32 +245,18 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="rewind"
-                    svg={rotate.math.has(carouselEntryKey) ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
+                    svg={rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
                     scaleToContaier={true} />
             </div>
             <div title="play"
-                onClick={async () => {
-                    if (isMetaKeyPressed) return;
-                    const newAnimations = await getPreviewAnimations(false);
-                    Promise.all(newAnimations.map(animation => animation.finished))
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        .then((_animations: Animation[]) => {
-                            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                        })
-                        .catch(err => {
-                            if (err instanceof Error && err.name !== 'AbortError') {
-                                console.log('unknown error from waapi:', err);
-                            }
-                        });
-                    newAnimations.forEach(a => {
-                        a.play();
-                    });
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
+                onClick={() => {
+                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    handlePlayTarget(carouselEntryKey, 'rotate');
                 }}
                 style={{
                     display: 'grid',
@@ -343,9 +265,9 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="play"
-                    svg={rotate.math.has(carouselEntryKey) ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                    svg={rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}

@@ -1,11 +1,11 @@
 import Dial from "@/app/components/dial";
 import { ParameterSliderX } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
-import { LaurusProjectResult } from "@/app/projects/projects.client";
-import { updateProject } from "@/app/projects/projects.server";
+import { LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, toysFan } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { CoreActionType, UIContext, CoreContext } from "../workspace.client";
+import { UIContext, CoreContext } from "../workspace.client";
+import { CoreActionType } from "../states/core-state";
 
 export default function Rotatebar() {
     const { appState, dispatch } = useContext(CoreContext);

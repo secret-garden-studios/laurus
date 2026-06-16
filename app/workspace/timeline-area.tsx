@@ -1,28 +1,37 @@
-import { CSSProperties, RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import { addCircle, allOut, circle, closeIcon, earthquake, playArrow, skipNext, skipPrevious, SvgRepo, toysFan } from "../svg-repo";
 import {
-    LaurusEffect,
-    LaurusScale,
     CoreContext,
     HoverContext,
+    Bumper,
+    UIContext,
+} from "./workspace.client";
+import {
+    createEffectGroup,
+    createMove,
+    createRotate,
+    createScale,
+    deleteEffectGroup,
+    LaurusEffect,
+    LaurusEffectGroup,
+    LaurusEffectGroupResult,
+    LaurusMixState,
     LaurusMove,
     LaurusRotate,
-    Bumper,
-    LaurusMixState,
-    UIContext,
-    LaurusEffectGroupResult,
-    LaurusEffectGroup,
-    CoreActionType
-} from "./workspace.client";
-import { createEffectGroup, createMove, createRotate, createScale, deleteEffectGroup, updateEffectGroup, updateMove, updateRotate, updateScale } from "./workspace.server";
+    LaurusScale,
+    updateEffectGroup,
+    updateMove,
+    updateRotate,
+    updateScale
+} from "./workspace.server";
 import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./units/effect-unit";
 import { WorkspaceResolution } from "./workspace.config";
-import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectResult } from "../projects/projects.client";
+import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
+import { CoreActionType } from "./states/core-state";
 
 function reindexEffects(
     effects: LaurusEffect[],
@@ -74,13 +83,9 @@ async function persistReindexedEffects(
 };
 
 interface TimelineArea {
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     onRightPanelClick: () => void,
 }
 export default function TimelineArea({
-    svgElementsRef,
-    imgElementsRef,
     onRightPanelClick,
 }: TimelineArea) {
     const { appState } = useContext(CoreContext);
@@ -132,9 +137,7 @@ export default function TimelineArea({
                                 <EffectGroup
                                     effectGroupId={effectGroupId}
                                     effectGroupResult={effectGroup}
-                                    maxWidth={dynamicSizes.width}
-                                    svgElementsRef={svgElementsRef}
-                                    imgElementsRef={imgElementsRef} />
+                                    maxWidth={dynamicSizes.width} />
                             </div>
                         })}</>)
                 }
@@ -309,10 +312,8 @@ interface EffectGroup {
     effectGroupId: string,
     effectGroupResult: LaurusEffectGroupResult,
     maxWidth: number,
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
 }
-function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRef, imgElementsRef }: EffectGroup) {
+function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const {
@@ -452,9 +453,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, svgElementsRe
                             }}>{(effect.value.order + 1).toFixed()}</div>
                             <EffectUnit
                                 effect={effect}
-                                showUnitControlsInit={!effectGroupResult.disabled}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef} />
+                                showUnitControlsInit={!effectGroupResult.disabled} />
                         </div>
                     })}
                 <div style={{
@@ -1097,7 +1096,7 @@ interface ControlPanel {
 function ControlPanel({ containerStyle }: ControlPanel) {
     const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
-    const [fastRate] = useState(25);
+    const [playbackRate] = useState(10);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
@@ -1183,11 +1182,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
             <div style={{ display: 'flex', height: '100%', alignItems: 'center' }}>
                 <SvgRepo
                     title={"rewind all"}
-                    svg={uiState.skipPreviousEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
-                    onContainerClick={handleRewindAll}
-                    containerStyle={uiState.skipPreviousEnabled ? {
+                    onContainerClick={() => handleRewindAll(playbackRate)}
+                    containerStyle={uiState.playbackControlsEnabled ? {
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {
@@ -1197,11 +1196,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     }} />
                 <SvgRepo
                     title={"play all"}
-                    svg={uiState.playEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playbackControlsEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
                     onContainerClick={handlePlayAll}
-                    containerStyle={uiState.playEnabled ? {
+                    containerStyle={uiState.playbackControlsEnabled ? {
                         width: dynamicSizes.mainSvg,
                         height: dynamicSizes.mainSvg
                     } : {
@@ -1211,11 +1210,11 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                     }} />
                 <SvgRepo
                     title={"fast-forward all"}
-                    svg={uiState.skipNextEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playbackControlsEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
-                    onContainerClick={async () => await handleFastForwardAll(fastRate)}
-                    containerStyle={uiState.skipNextEnabled ? {
+                    onContainerClick={() => handleFastForwardAll(playbackRate)}
+                    containerStyle={uiState.playbackControlsEnabled ? {
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {

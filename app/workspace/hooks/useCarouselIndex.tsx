@@ -1,5 +1,6 @@
 import { useState, useContext } from 'react';
-import { CarouselEntry, LaurusActiveElement, HoverContext } from '../workspace/workspace.client';
+import { HoverContext } from '../workspace.client';
+import { CarouselEntry, LaurusActiveElement } from '../states/ui-state';
 
 export const useCarouselIndex = (
     activeElement: LaurusActiveElement | undefined,

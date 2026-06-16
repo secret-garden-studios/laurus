@@ -2,24 +2,15 @@
 import { createContext, CSSProperties, use, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import styles from '../app.module.css';
 import {
-    ScaleEquation_V1_0,
-    Scale_V1_0,
-    ScaleResult_V1_0,
-    MoveEquation_V1_0,
-    Move_V1_0,
-    MoveResult_V1_0,
     getFrames,
-    ImgMedia_V1_0,
     getImgDiscoveryPage,
     getSvgDiscoveryPage,
-    ImgMediaResult_V1_0,
-    SvgMediaResult_V1_0,
-    Rotate_V1_0,
-    RotateEquation_V1_0,
-    RotateResult_V1_0,
+    LaurusEffect,
+    LaurusEffectGroupResult,
     LaurusFrame,
-    EffectGroupResult_V1_0,
-    EffectGroup_V1_0
+    LaurusImgResult,
+    LaurusMixState,
+    LaurusSvgResult,
 } from "./workspace.server";
 import Menubar from "../menubar";
 import Statusbar from "./bars/statusbar";
@@ -31,7 +22,6 @@ import Projectbar, { ProjectbarLevel2 } from "./bars/projectbar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import {
-    NEW_PROJECT_CANVAS_SIZE,
     FRAME_HEIGHT_5_7,
     FRAME_WIDTH_5_7,
     WorkspaceResolution,
@@ -39,88 +29,22 @@ import {
 } from "./workspace.config";
 import { ProjectDependencies, BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
-import { ProjectResult_V1_0, updateProject, createProject } from "../projects/projects.server";
+import {
+    ProjectResult_V1_0,
+    updateProject,
+    createProject,
+    AbsolutePosition,
+    ContextMenuConfig,
+    DEFAULT_CONTEXT_MENU_CONFIG,
+    LaurusProjectImg,
+    LaurusProjectResult,
+    LaurusProjectSvg
+} from "../projects/projects.server";
 import { MeDependencies } from "../page";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.client";
 import LaurusImage from "../components/laurus-image";
+import { uiContextReducer, CarouselEntry, UIAction, UIActionType, UIState, defaultMarqueeTool, defaultUIState } from "./states/ui-state";
+import { CoreAction, CoreActionType, CoreState, coreContextReducer, defaultCoreState } from "./states/core-state";
 
-export type LaurusImgResult = ImgMediaResult_V1_0;
-export type LaurusSvgResult = SvgMediaResult_V1_0;
-export type LaurusImg = ImgMedia_V1_0;
-export type LaurusScaleEquation = ScaleEquation_V1_0;
-export enum LaurusMixState {
-    None = 'none',
-    Waiting = 'waiting',
-    Selected = 'selected',
-    Active = 'active',
-}
-export interface LaurusScale extends Scale_V1_0 {
-    math: Map<string, LaurusScaleEquation>,
-}
-export interface LaurusScaleResult extends ScaleResult_V1_0 {
-    math: Map<string, LaurusScaleEquation>,
-    mixState: LaurusMixState,
-}
-export type LaurusMoveEquation = MoveEquation_V1_0;
-export interface LaurusMove extends Move_V1_0 {
-    math: Map<string, LaurusMoveEquation>,
-}
-export interface LaurusMoveResult extends MoveResult_V1_0 {
-    math: Map<string, LaurusMoveEquation>,
-    mixState: LaurusMixState,
-}
-export type LaurusRotateEquation = RotateEquation_V1_0;
-export interface LaurusRotate extends Rotate_V1_0 {
-    math: Map<string, LaurusRotateEquation>,
-}
-export interface LaurusRotateResult extends RotateResult_V1_0 {
-    math: Map<string, LaurusRotateEquation>,
-    mixState: LaurusMixState,
-}
-export type LaurusEffect =
-    | { type: 'scale', key: string, value: LaurusScaleResult }
-    | { type: 'move', key: string, value: LaurusMoveResult }
-    | { type: 'rotate', key: string, value: LaurusRotateResult }
-export type LaurusEffectGroup = EffectGroup_V1_0;
-export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
-export type LaurusThumbnail =
-    | { type: 'svg', value: LaurusSvgResult }
-    | { type: 'img', value: LaurusImgResult }
-export type LaurusTool =
-    | {
-        type: 'marquee',
-        stack: boolean,
-        size: { value: boolean, width: number | undefined, height: number | undefined },
-        position: { value: boolean, x: number | undefined, y: number | undefined },
-        select: boolean,
-    }
-    | { type: 'none' }
-    | { type: 'contextmenu' }
-    | { type: 'viewport' }
-    | { type: 'move' }
-    | { type: 'scale' }
-    | { type: 'rotate' }
-    | { type: 'mix' }
-export const defaultMarqueeTool: LaurusTool = {
-    type: 'marquee',
-    stack: false, size: { value: false, width: undefined, height: undefined },
-    position: { value: false, x: undefined, y: undefined },
-    select: false,
-}
-export type LaurusBrowserElement = LaurusThumbnail
-export type LaurusActiveElement = { key: string, type: 'svg' | 'img', locallyActivatedEffectKey?: string }
-export enum AbsolutePosition {
-    topRight = 'topRight',
-    topLeft = 'topLeft',
-    bottomRight = 'bottomRight',
-    bottomLeft = 'bottomLeft',
-}
-export type ContextMenuConfig =
-    | { position: AbsolutePosition.topRight, width: number, height: number }
-    | { position: AbsolutePosition.topLeft, width: number, height: number }
-    | { position: AbsolutePosition.bottomRight, width: number, height: number }
-    | { position: AbsolutePosition.bottomLeft, width: number, height: number }
-export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = { position: AbsolutePosition.topRight, width: 300, height: 400 }
 export function getNewContextMenuConfig(
     newPosition: { top: number, left: number },
     canvasSize: { width: number, height: number },
@@ -155,9 +79,6 @@ export interface LaurusTransform {
         }
     }
 }
-export type CarouselEntry =
-    | { type: 'svg', key: string }
-    | { type: 'img', key: string }
 
 export function convertTime(time: number, currentUnit: string, newUnit: string) {
     switch (currentUnit + newUnit) {
@@ -173,7 +94,7 @@ export function convertTime(time: number, currentUnit: string, newUnit: string) 
     }
 }
 
-export function toKeyframes(firstFrame: boolean, laurusFrames: LaurusFrame[]): Keyframe[] {
+export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): Keyframe[] {
     const framesToMap = firstFrame ? [laurusFrames[0]] : laurusFrames;
     const keyframes: Keyframe[] = framesToMap.map((f, i) => {
         return i < laurusFrames.length - 1 ?
@@ -192,421 +113,14 @@ export function toKeyframes(firstFrame: boolean, laurusFrames: LaurusFrame[]): K
     return keyframes;
 }
 
-export interface UIState {
-    lightFrameBackground: boolean;
-    browserImgs: LaurusImgResult[];
-    browserSvgs: LaurusSvgResult[];
-    browserFrames: LaurusCropSvg[];
-    carouselEntries: CarouselEntry[];
-    tool: LaurusTool;
-    browserElement: LaurusBrowserElement | undefined;
-    activeElement: LaurusActiveElement | undefined;
-    effectNames: string[];
-    effectClipboard: LaurusEffect | undefined;
-    recordingLight: boolean;
-    timelineUnits: string[];
-    timelineValues: number[];
-    resolution: WorkspaceResolution;
-    mixableEffects: string[];
-    playEnabled: boolean;
-    skipPreviousEnabled: boolean;
-    skipNextEnabled: boolean;
-}
-
-export interface CoreState {
-    apiOrigin: string | undefined,
-    accessToken: string | undefined,
-    project: LaurusProjectResult,
-    canvasImgs: Map<string, LaurusImgResult>,
-    canvasSvgs: Map<string, LaurusSvgResult>,
-    effects: LaurusEffect[],
-    effectGroups: Map<string, LaurusEffectGroupResult>,
-    timelineUnit: string,
-    timelineMaxValue: number,
-    fps: number,
-}
-
-export const defaultUIState: UIState = {
-    lightFrameBackground: false,
-    tool: { type: 'none' },
-    browserImgs: [],
-    browserSvgs: [],
-    browserFrames: [],
-    carouselEntries: [],
-    effectNames: [],
-    effectClipboard: undefined,
-    browserElement: undefined,
-    activeElement: undefined,
-    recordingLight: false,
-    timelineUnits: [],
-    timelineValues: [],
-    resolution: { type: 'midhigh', factor: 0.7, value: { width: 0, height: 0 } },
-    mixableEffects: [],
-    playEnabled: true,
-    skipPreviousEnabled: true,
-    skipNextEnabled: true,
-}
-
-export const defaultCoreState: CoreState = {
-    apiOrigin: undefined,
-    accessToken: undefined,
-    project: {
-        name: "untitled",
-        canvas_width: NEW_PROJECT_CANVAS_SIZE,
-        canvas_height: NEW_PROJECT_CANVAS_SIZE,
-        frame_top: -1,
-        frame_left: -1,
-        frame_width: 0,
-        frame_height: 0,
-        frame_scale_x: 1,
-        frame_scale_y: 1,
-        frame_rotate_x: 0,
-        frame_rotate_y: 0,
-        frame_rotate_z: 0,
-        frame_rotate_angle: 0,
-        project_id: "",
-        timestamp: "",
-        last_active: "",
-        imgs: new Map(),
-        svgs: new Map(),
-        browse_public_imgs: false,
-        browse_public_svgs: false,
-        creator: "",
-        last_editor: ""
-    },
-    canvasImgs: new Map(),
-    canvasSvgs: new Map(),
-    effects: [],
-    effectGroups: new Map(),
-    timelineUnit: '',
-    timelineMaxValue: 0,
-    fps: 60,
-}
-
-export enum CoreActionType {
-    SetCoreState,
-    SetProject,
-    SetCanvasImg,
-    DeleteCanvasImg,
-    SetCanvasImgs,
-    SetCanvasSvg,
-    DeleteCanvasSvg,
-    SetCanvasSvgs,
-    SetProjectImg,
-    SetProjectSvg,
-    DeleteProjectImg,
-    DeleteProjectSvg,
-    SetLightFrameBackground,
-    SetEffects,
-    SetEffect,
-    DeleteEffect,
-    SetEffectGroup,
-    DeleteEffectGroup,
-    SetTimelineUnit,
-    SetTimelineMaxValue,
-    SetFps,
-}
-
-export enum UIActionType {
-    SetUIState,
-    AddBrowserImg,
-    UpdateBrowserImgs,
-    SetBrowserImgs,
-    DeleteBrowserImg,
-    AddBrowserSvg,
-    UpdateBrowserSvgs,
-    SetBrowserSvgs,
-    DeleteBrowserSvg,
-    SetTool,
-    SetBrowserElement,
-    SetActiveElement,
-    SetLightFrameBackground,
-    SetEffectClipboard,
-    SetRecordingLight,
-    AddCarouselEntry,
-    DeleteCarouselEntry,
-    SetPlayEnabled,
-    SetSkipPreviousEnabled,
-    SetSkipNextEnabled,
-    SetResolution,
-    SetEffectNames,
-    SetTimelineUnits,
-    SetTimelineValues,
-    SetMixableEffects,
-}
-
-export type CoreAction =
-    | { type: CoreActionType.SetCoreState, value: CoreState }
-    | { type: CoreActionType.SetProject, value: LaurusProjectResult }
-    | { type: CoreActionType.SetCanvasImg, key: string, value: LaurusImgResult }
-    | { type: CoreActionType.DeleteCanvasImg, key: string }
-    | { type: CoreActionType.SetCanvasImgs, value: Map<string, LaurusImgResult> }
-    | { type: CoreActionType.SetCanvasSvg, key: string, value: LaurusSvgResult }
-    | { type: CoreActionType.DeleteCanvasSvg, key: string }
-    | { type: CoreActionType.SetCanvasSvgs, value: Map<string, LaurusSvgResult> }
-    | { type: CoreActionType.SetProjectImg, key: string, value: LaurusProjectImg }
-    | { type: CoreActionType.DeleteProjectImg, key: string }
-    | { type: CoreActionType.SetProjectSvg, key: string, value: LaurusProjectSvg }
-    | { type: CoreActionType.DeleteProjectSvg, key: string }
-    | { type: CoreActionType.SetEffects, value: LaurusEffect[] }
-    | { type: CoreActionType.SetEffect, value: LaurusEffect }
-    | { type: CoreActionType.DeleteEffect, key: string }
-    | { type: CoreActionType.SetEffectGroup, value: LaurusEffectGroupResult }
-    | { type: CoreActionType.DeleteEffectGroup, key: string }
-    | { type: CoreActionType.SetTimelineUnit, value: string }
-    | { type: CoreActionType.SetTimelineMaxValue, value: number }
-    | { type: CoreActionType.SetFps, value: number }
-
-export type UIAction =
-    | { type: UIActionType.SetUIState, value: UIState }
-    | { type: UIActionType.AddBrowserImg, value: LaurusImgResult, first: boolean }
-    | { type: UIActionType.UpdateBrowserImgs, value: LaurusImgResult[] }
-    | { type: UIActionType.SetBrowserImgs, value: LaurusImgResult[] }
-    | { type: UIActionType.DeleteBrowserImg, value: string }
-    | { type: UIActionType.AddBrowserSvg, value: LaurusSvgResult, first: boolean }
-    | { type: UIActionType.UpdateBrowserSvgs, value: LaurusSvgResult[] }
-    | { type: UIActionType.SetBrowserSvgs, value: LaurusSvgResult[] }
-    | { type: UIActionType.DeleteBrowserSvg, value: string }
-    | { type: UIActionType.SetTool, value: LaurusTool }
-    | { type: UIActionType.SetBrowserElement, value: LaurusBrowserElement | undefined }
-    | { type: UIActionType.SetActiveElement, value: LaurusActiveElement | undefined }
-    | { type: UIActionType.SetLightFrameBackground, value: boolean }
-    | { type: UIActionType.SetEffectClipboard, value: LaurusEffect }
-    | { type: UIActionType.SetRecordingLight, value: boolean }
-    | { type: UIActionType.AddCarouselEntry, value: CarouselEntry }
-    | { type: UIActionType.DeleteCarouselEntry, key: string }
-    | { type: UIActionType.SetPlayEnabled, value: boolean }
-    | { type: UIActionType.SetSkipPreviousEnabled, value: boolean }
-    | { type: UIActionType.SetSkipNextEnabled, value: boolean }
-    | { type: UIActionType.SetResolution, value: WorkspaceResolution }
-    | { type: UIActionType.SetEffectNames, value: string[] }
-    | { type: UIActionType.SetTimelineUnits, value: string[] }
-    | { type: UIActionType.SetTimelineValues, value: number[] }
-    | { type: UIActionType.SetMixableEffects, value: string[] }
-
-
-function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
-    switch (action.type) {
-        case CoreActionType.SetCoreState: {
-            return { ...action.value }
-        }
-        case CoreActionType.SetProject: {
-            return { ...state, project: { ...action.value } }
-        }
-        case CoreActionType.SetCanvasImg: {
-            const newImgs = new Map(state.canvasImgs);
-            newImgs.set(action.key, action.value);
-            return { ...state, canvasImgs: newImgs }
-        }
-        case CoreActionType.DeleteCanvasImg: {
-            const newImgs = new Map(state.canvasImgs);
-            newImgs.delete(action.key);
-            return { ...state, canvasImgs: newImgs }
-        }
-        case CoreActionType.SetCanvasImgs: {
-            return { ...state, canvasImgs: new Map(action.value) }
-        }
-        case CoreActionType.SetCanvasSvg: {
-            const newSvgs = new Map(state.canvasSvgs);
-            newSvgs.set(action.key, action.value);
-            return { ...state, canvasSvgs: newSvgs }
-        }
-        case CoreActionType.DeleteCanvasSvg: {
-            const newSvgs = new Map(state.canvasSvgs);
-            newSvgs.delete(action.key);
-            return { ...state, canvasSvgs: newSvgs }
-        }
-        case CoreActionType.SetCanvasSvgs: {
-            return { ...state, canvasSvgs: new Map(action.value) }
-        }
-        case CoreActionType.SetProjectImg: {
-            const newImgs = new Map(state.project.imgs);
-            newImgs.set(action.key, action.value);
-            const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
-            return { ...state, project: newProject }
-        }
-        case CoreActionType.DeleteProjectImg: {
-            const newImgs = new Map(state.project.imgs);
-            newImgs.delete(action.key);
-            const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
-            return { ...state, project: newProject }
-        }
-        case CoreActionType.SetProjectSvg: {
-            const newSvgs = new Map(state.project.svgs);
-            newSvgs.set(action.key, action.value);
-            const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
-            return { ...state, project: newProject }
-        }
-        case CoreActionType.DeleteProjectSvg: {
-            const newSvgs = new Map(state.project.svgs);
-            newSvgs.delete(action.key);
-            const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
-            return { ...state, project: newProject }
-        }
-        case CoreActionType.SetEffects: {
-            return { ...state, effects: [...action.value] }
-        }
-        case CoreActionType.SetEffect: {
-            return { ...state, effects: state.effects.map(e => e.key == action.value.key ? { ...action.value } : e) }
-        }
-        case CoreActionType.DeleteEffect: {
-            const newEffects = state.effects.filter(e => e.key != action.key);
-            return { ...state, effects: newEffects }
-        }
-        case CoreActionType.SetEffectGroup: {
-            const newEffectGroups = new Map(state.effectGroups);
-            newEffectGroups.set(action.value.effect_group_id, action.value);
-            return { ...state, effectGroups: newEffectGroups }
-        }
-        case CoreActionType.DeleteEffectGroup: {
-            const newEffectGroups = new Map(state.effectGroups);
-            newEffectGroups.delete(action.key);
-            return { ...state, effectGroups: newEffectGroups }
-        }
-        case CoreActionType.SetTimelineUnit: {
-            return { ...state, timelineUnit: action.value }
-        }
-        case CoreActionType.SetTimelineMaxValue: {
-            return { ...state, timelineMaxValue: action.value }
-        }
-        case CoreActionType.SetFps: {
-            return { ...state, fps: action.value }
-        }
-    }
-}
-
-function uiContextReducer(state: UIState, action: UIAction): UIState {
-    switch (action.type) {
-        case UIActionType.SetUIState: {
-            return { ...action.value }
-        }
-        case UIActionType.AddBrowserImg: {
-            const currentBrowserImgs = [...state.browserImgs];
-            const i = currentBrowserImgs.findIndex(i => i.img_media_id == action.value.img_media_id);
-            if (i < 0) {
-                return action.first ?
-                    { ...state, browserImgs: [action.value, ...currentBrowserImgs] } :
-                    { ...state, browserImgs: [...currentBrowserImgs, action.value] }
-            }
-            else {
-                const newBrowserImgs = [...currentBrowserImgs];
-                newBrowserImgs.splice(i, 1);
-                return action.first ?
-                    { ...state, browserImgs: [action.value, ...newBrowserImgs] } :
-                    { ...state, browserImgs: [...newBrowserImgs, action.value] }
-            }
-        }
-        case UIActionType.UpdateBrowserImgs: {
-            const newBrowserImgs = [...state.browserImgs];
-            for (let i = 0; i < action.value.length; i++) {
-                const newBrowserImg = action.value[i];
-                const index = newBrowserImgs.findIndex(img => img.img_media_id == newBrowserImg.img_media_id);
-                if (index > -1) {
-                    newBrowserImgs[index] = { ...newBrowserImg }
-                }
-            }
-            return { ...state, browserImgs: newBrowserImgs }
-        }
-        case UIActionType.SetBrowserImgs: {
-            return { ...state, browserImgs: [...action.value] }
-        }
-        case UIActionType.DeleteBrowserImg: {
-            const newBrowserImgs = state.browserImgs.filter(b => b.img_media_id != action.value);
-            return { ...state, browserImgs: newBrowserImgs }
-        }
-        case UIActionType.AddBrowserSvg: {
-            const currentBrowserSvgs = [...state.browserSvgs];
-            const i = currentBrowserSvgs.findIndex(i => i.svg_media_id == action.value.svg_media_id);
-            if (i < 0) {
-                return action.first ?
-                    { ...state, browserSvgs: [action.value, ...currentBrowserSvgs] } :
-                    { ...state, browserSvgs: [...currentBrowserSvgs, action.value] }
-            }
-            else {
-                const newBrowserSvgs = [...currentBrowserSvgs];
-                newBrowserSvgs.splice(i, 1);
-                return action.first ?
-                    { ...state, browserSvgs: [action.value, ...newBrowserSvgs] } :
-                    { ...state, browserSvgs: [...newBrowserSvgs, action.value] }
-            }
-        }
-        case UIActionType.UpdateBrowserSvgs: {
-            const newBrowserSvgs = [...state.browserSvgs];
-            for (let i = 0; i < action.value.length; i++) {
-                const newBrowserSvg = action.value[i];
-                const index = newBrowserSvgs.findIndex(svg => svg.svg_media_id == newBrowserSvg.svg_media_id);
-                if (index > -1) {
-                    newBrowserSvgs[index] = { ...newBrowserSvg }
-                }
-            }
-            return { ...state, browserSvgs: newBrowserSvgs }
-        }
-        case UIActionType.SetBrowserSvgs: {
-            return { ...state, browserSvgs: [...action.value] }
-        }
-        case UIActionType.DeleteBrowserSvg: {
-            const newBrowserSvgs = state.browserSvgs.filter(b => b.svg_media_id != action.value);
-            return { ...state, browserSvgs: newBrowserSvgs }
-        }
-        case UIActionType.SetTool: {
-            return { ...state, tool: { ...action.value } }
-        }
-        case UIActionType.SetBrowserElement: {
-            return { ...state, browserElement: action.value }
-        }
-        case UIActionType.SetActiveElement: {
-            return { ...state, activeElement: action.value }
-        }
-        case UIActionType.SetLightFrameBackground: {
-            return { ...state, lightFrameBackground: action.value }
-        }
-        case UIActionType.SetEffectClipboard: {
-            return { ...state, effectClipboard: { ...action.value } }
-        }
-        case UIActionType.SetRecordingLight: {
-            return { ...state, recordingLight: action.value }
-        }
-        case UIActionType.AddCarouselEntry: {
-            return { ...state, carouselEntries: [...state.carouselEntries, action.value] }
-        }
-        case UIActionType.DeleteCarouselEntry: {
-            const newEntries = [...state.carouselEntries].filter(m => m.key != action.key);
-            return { ...state, carouselEntries: newEntries }
-        }
-        case UIActionType.SetPlayEnabled: {
-            return { ...state, playEnabled: action.value }
-        }
-        case UIActionType.SetSkipPreviousEnabled: {
-            return { ...state, skipPreviousEnabled: action.value }
-        }
-        case UIActionType.SetSkipNextEnabled: {
-            return { ...state, skipNextEnabled: action.value }
-        }
-        case UIActionType.SetResolution: {
-            return { ...state, resolution: action.value }
-        }
-        case UIActionType.SetEffectNames: {
-            return { ...state, effectNames: action.value }
-        }
-        case UIActionType.SetTimelineUnits: {
-            return { ...state, timelineUnits: action.value }
-        }
-        case UIActionType.SetTimelineValues: {
-            return { ...state, timelineValues: action.value }
-        }
-        case UIActionType.SetMixableEffects: {
-            return { ...state, mixableEffects: action.value }
-        }
-    }
-}
-
 export interface CoreContextProps {
     appState: CoreState;
     dispatch: React.Dispatch<CoreAction>;
-    getNewAnimations: (fill: FillMode, firstFrame: boolean) => Promise<Animation[]>;
-    handleRewindAll: () => Promise<void>;
-    handlePlayAll: () => Promise<void>;
-    handleFastForwardAll: (fastRate: number) => Promise<void>;
+    handleRewindAll: (playbackRate: number) => void;
+    handlePlayAll: () => void;
+    handleFastForwardAll: (playbackRate: number) => void;
+    handlePlayTarget: (targetKey: string, effectType: string) => void;
+    handleRewindTarget: (targetKey: string, effectType: string, playbackRate: number) => void;
 }
 
 export interface UIContextProps {
@@ -644,19 +158,20 @@ export const CoreContext = createContext<CoreContextProps>(
     {
         appState: { ...defaultCoreState },
         dispatch: () => { },
-        getNewAnimations: async () => [],
-        handleRewindAll: async () => { },
-        handlePlayAll: async () => { },
-        handleFastForwardAll: async () => { },
+        handleRewindAll: () => { },
+        handlePlayAll: () => { },
+        handleFastForwardAll: () => { },
+        handlePlayTarget: () => { },
+        handleRewindTarget: () => { },
     }
-)
+);
 
 export const UIContext = createContext<UIContextProps>(
     {
         uiState: { ...defaultUIState },
         uiDispatch: () => { },
     }
-)
+);
 
 function initProject(p: ProjectResult_V1_0) {
     const projectImgsInit: Map<string, LaurusProjectImg> =
@@ -736,6 +251,7 @@ interface InitReducer {
     arg8: string | undefined,
     arg9: string[],
 }
+
 function initReducer({
     arg1: projectDependencies,
     arg2: effectNames,
@@ -892,6 +408,7 @@ interface Workspace {
     resolutionInit: WorkspaceResolution,
     me: MeDependencies,
 }
+
 export default function Workspace({
     apiOriginInit,
     mediaPageSizeInit,
@@ -904,8 +421,6 @@ export default function Workspace({
     resolutionInit,
     me
 }: Workspace) {
-    const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
-    const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
     const effectNamesInit = use(effectNamesInitPromise);
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
@@ -915,7 +430,6 @@ export default function Workspace({
     const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
     const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
     const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
-    const canvasAreaRef = useRef<HTMLDivElement>(null);
     const [mediabarHeight] = useState(() => {
         switch (resolutionInit.type) {
             case "high": return 50
@@ -991,12 +505,298 @@ export default function Workspace({
     });
     const [appState, dispatch] = useReducer(coreContextReducer, coreInit);
     const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
-
+    const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
+    const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
+    const canvasAreaRef = useRef<HTMLDivElement>(null);
     const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
-    const cacheNeedsRefreshRef = useRef<boolean>(true);
-    useEffect(() => {
-        cacheNeedsRefreshRef.current = true;
-    }, [appState]);
+
+    const handleImgPageRequest = useCallback(async () => {
+        const mediaArray = Array.from(uiState.browserImgs.values());
+        const response = await getImgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.img_media_id));
+        if (response && response.length > 0) {
+            for (let i = 0; i < response.length; i++) {
+                uiDispatch({ type: UIActionType.AddBrowserImg, value: { ...response[i] }, first: false })
+            }
+            return true;
+        }
+        else {
+            return false;
+        }
+    }, [appState.apiOrigin, mediaPageSize, uiState.browserImgs]);
+
+    const handleSvgPageRequest = useCallback(async () => {
+        const mediaArray = Array.from(uiState.browserSvgs.values());
+        const response = await getSvgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.svg_media_id));
+        if (response && response.length > 0) {
+            for (let i = 0; i < response.length; i++) {
+                uiDispatch({ type: UIActionType.AddBrowserSvg, value: { ...response[i] }, first: false })
+            }
+            return true;
+        }
+        else {
+            return false;
+        }
+    }, [appState.apiOrigin, mediaPageSize, uiState.browserSvgs]);
+
+    const handleMixRestoration = useCallback(() => {
+        if (uiState.tool.type === 'mix') {
+            const restoredEffects = appState.effects.map(e => ({
+                ...e,
+                value: {
+                    ...e.value,
+                    mixState: e.value.mix ? LaurusMixState.Active : LaurusMixState.None
+                }
+            })) as LaurusEffect[];
+            dispatch({ type: CoreActionType.SetEffects, value: restoredEffects, preserveCache: true });
+        }
+    }, [uiState.tool.type, appState.effects, dispatch]);
+
+    const closeContextMenus = useCallback(() => {
+        const inactiveSvgs = Array.from(appState.project.svgs.entries());
+        const inactiveImgs = Array.from(appState.project.imgs.entries());
+        inactiveSvgs.forEach(i => {
+            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false }, preserveCache: true });
+        });
+        inactiveImgs.forEach(i => {
+            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false }, preserveCache: true });
+        });
+    }, [appState.project.imgs, appState.project.svgs]);
+
+    const getNewAnimations = useCallback(async (fill: FillMode, reverse: boolean, setCache: boolean, targetKey?: string, effectType?: string) => {
+        try {
+            document.body.style.cursor = 'progress';
+            let enabledEffects = [...appState.effects
+                .filter(e => !e.value.disabled
+                    && !appState.effectGroups.get(e.value.effect_group_id)?.disabled)];
+            if (effectType) {
+                enabledEffects = enabledEffects.filter(e => e.type === effectType);
+            }
+            const keysWithMath = new Set<string>();
+            let globalLimit = 0;
+            enabledEffects.forEach(e => {
+                e.value.math.forEach((_, key) => {
+                    const meta = appState.project.imgs.get(key) || appState.project.svgs.get(key);
+                    if (meta && meta.left >= 0 && meta.top >= 0) {
+                        if (!targetKey || targetKey === key) {
+                            keysWithMath.add(key);
+                            globalLimit = Math.max(globalLimit, e.value.end);
+                        }
+                    }
+                });
+            });
+            const options: KeyframeAnimationOptions = {
+                duration: globalLimit * 1000,
+                iterations: 1,
+                fill,
+            };
+            const total = keysWithMath.size;
+            let current = 0;
+            if (total > 0) setAnimationDownloadProgress(0);
+            const newAnimations: Animation[] = [];
+            const keysWithMathArray = Array.from(keysWithMath);
+            for (let i = 0; i < keysWithMathArray.length; i++) {
+                const inputId = keysWithMathArray[i];
+                let laurusFrames: LaurusFrame[] = [];
+                if (!appState.cacheNeedsRefresh) {
+                    laurusFrames = [...(framesCacheRef.current.get(inputId) ?? [])];
+                }
+                if (laurusFrames.length === 0) {
+                    const framesFromServer = await getFrames(appState.apiOrigin, appState.project.project_id, inputId, appState.fps);
+                    if (!framesFromServer) continue;
+                    laurusFrames = framesFromServer;
+                    if (setCache) {
+                        framesCacheRef.current.set(inputId, [...framesFromServer]);
+                    }
+                }
+                if (reverse) {
+                    laurusFrames.reverse();
+                }
+                const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
+                const element = imgElementsRef.current?.get(inputId) || svgElementsRef.current?.get(inputId);
+                if (element) {
+                    const keyframeEffect = new KeyframeEffect(element, keyframes, options);
+                    const animation = new Animation(keyframeEffect, document.timeline);
+                    current++;
+                    if (total > 0) setAnimationDownloadProgress(Math.round((current / total) * 100));
+                    newAnimations.push(animation);
+                }
+            }
+            return newAnimations;
+        } finally {
+            document.body.style.cursor = '';
+            setAnimationDownloadProgress(undefined);
+        }
+    }, [appState.apiOrigin, appState.cacheNeedsRefresh, appState.effectGroups, appState.effects, appState.fps, appState.project.imgs, appState.project.project_id, appState.project.svgs]);
+
+    const handleRewindAll = useCallback(async (playbackRate: number) => {
+        if (!uiState.playbackControlsEnabled || !uiState.filledForwards) return;
+        if (uiState.tool.type !== 'viewport') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
+        }
+        handleMixRestoration();
+        closeContextMenus();
+        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+
+        const newAnimations = await getNewAnimations('forwards', true, false);
+        if (newAnimations.length == 0) return;
+        Promise.all(newAnimations.map(animation => animation.finished))
+            .then(() => {
+                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
+            })
+            .catch(err => {
+                if (err instanceof Error && err.name !== 'AbortError') {
+                    console.log('unknown error from waapi:', err);
+                }
+            });
+        newAnimations.forEach(a => {
+            a.updatePlaybackRate(playbackRate);
+            a.play();
+        });
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled, uiState.tool.type]);
+
+    const handleRewindTarget = useCallback(async (targetKey: string, effectType: string, playbackRate: number) => {
+        if (!uiState.playbackControlsEnabled || !uiState.filledForwards) return;
+        handleMixRestoration();
+        closeContextMenus();
+        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+
+        const newAnimations = await getNewAnimations('forwards', true, false, targetKey, effectType);
+        if (newAnimations.length == 0) return;
+        Promise.all(newAnimations.map(animation => animation.finished))
+            .then(() => {
+                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            })
+            .catch(err => {
+                if (err instanceof Error && err.name !== 'AbortError') {
+                    console.log('unknown error from waapi:', err);
+                }
+            });
+        newAnimations.forEach(a => {
+            a.updatePlaybackRate(playbackRate);
+            a.play();
+        });
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled]);
+
+    const handlePlayAll = useCallback(async () => {
+        if (!uiState.playbackControlsEnabled) return;
+        if (uiState.tool.type !== 'viewport') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
+        }
+        handleMixRestoration();
+        closeContextMenus();
+        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
+        dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
+
+        const newAnimations = await getNewAnimations('none', false, true);
+        if (newAnimations.length == 0) return;
+        Promise.all(newAnimations.map(animation => animation.finished))
+            .then(() => {
+                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            })
+            .catch(err => {
+                if (err instanceof Error && err.name !== 'AbortError') {
+                    console.log('unknown error from waapi:', err);
+                }
+            });
+
+        newAnimations.forEach(a => a.play());
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
+
+    const handlePlayTarget = useCallback(async (targetKey: string, effectType: string) => {
+        if (!uiState.playbackControlsEnabled) return;
+        handleMixRestoration();
+        closeContextMenus();
+        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
+
+        const newAnimations = await getNewAnimations('none', false, false, targetKey, effectType);
+        if (newAnimations.length == 0) return;
+        Promise.all(newAnimations.map(animation => animation.finished))
+            .then(() => {
+                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            })
+            .catch(err => {
+                if (err instanceof Error && err.name !== 'AbortError') {
+                    console.log('unknown error from waapi:', err);
+                }
+            });
+
+        newAnimations.forEach(a => a.play());
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
+
+    const handleFastForwardAll = useCallback(async (playbackRate: number) => {
+        if (!uiState.playbackControlsEnabled) return;
+        if (uiState.tool.type !== 'viewport') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
+        }
+        handleMixRestoration();
+        closeContextMenus();
+        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+
+        const newAnimations = await getNewAnimations('forwards', false, false);
+        if (newAnimations.length == 0) return;
+        Promise.all((newAnimations).map(animation => animation.finished))
+            .then(() => {
+                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
+            })
+            .catch(err => {
+                if (err instanceof Error && err.name !== 'AbortError') {
+                    console.log('unknown error from waapi:', err);
+                }
+            });
+        newAnimations.forEach(a => {
+            a.updatePlaybackRate(playbackRate);
+            a.play();
+        });
+
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
+
+    const hoverContextValue = useMemo(() => ({
+        mostRecentlyEnteredEffectUnitKey,
+        setMostRecentlyEnteredEffectUnitKey,
+        isMetaKeyPressed,
+        selectedEffectUnitKeys,
+        setSelectedEffectUnitKeys,
+        selectedImgKeys,
+        setSelectedImgKeys,
+        selectedSvgKeys,
+        setSelectedSvgKeys,
+        animationDownloadProgress,
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationDownloadProgress]);
+
+    const coreContextValue = useMemo(() => ({
+        appState,
+        dispatch,
+        getNewAnimations,
+        handleRewindAll,
+        handleRewindTarget,
+        handlePlayAll,
+        handleFastForwardAll,
+        handlePlayTarget,
+    }), [appState, getNewAnimations, handleRewindAll, handleRewindTarget, handlePlayAll, handleFastForwardAll, handlePlayTarget]);
+
+    const uiContextValue = useMemo(() => ({
+        uiState,
+        uiDispatch,
+    }), [uiState]);
+
+    const canvasCursor = useMemo(() => {
+        return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
+            ? 'crosshair'
+            : (isMetaKeyPressed && uiState.tool.type !== 'viewport')
+                ? 'context-menu'
+                : (uiState.tool.type === 'scale')
+                    ? 'crosshair'
+                    : '';
+    }, [uiState.tool, isMetaKeyPressed]);
 
     useLayoutEffect(() => {
         const initCurrentPaper = (async () => {
@@ -1071,7 +871,7 @@ export default function Workspace({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type, dispatch, uiDispatch, setSelectedEffectUnitKeys]);
+    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type]);
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
@@ -1090,254 +890,6 @@ export default function Workspace({
         };
     }, []);
 
-    const handleImgPageRequest = useCallback(async () => {
-        const mediaArray = Array.from(uiState.browserImgs.values());
-        const response = await getImgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.img_media_id));
-        if (response && response.length > 0) {
-            for (let i = 0; i < response.length; i++) {
-                uiDispatch({ type: UIActionType.AddBrowserImg, value: { ...response[i] }, first: false })
-            }
-            return true;
-        }
-        else {
-            return false;
-        }
-    }, [appState.apiOrigin, uiState.browserImgs, mediaPageSize, uiDispatch]);
-
-    const handleSvgPageRequest = useCallback(async () => {
-        const mediaArray = Array.from(uiState.browserSvgs.values());
-        const response = await getSvgDiscoveryPage(appState.apiOrigin, mediaPageSize, mediaArray.flatMap(m => m.svg_media_id));
-        if (response && response.length > 0) {
-            for (let i = 0; i < response.length; i++) {
-                uiDispatch({ type: UIActionType.AddBrowserSvg, value: { ...response[i] }, first: false })
-            }
-            return true;
-        }
-        else {
-            return false;
-        }
-    }, [appState.apiOrigin, uiState.browserSvgs, mediaPageSize, uiDispatch]);
-
-    const getNewAnimations = useCallback(async (fill: FillMode, firstFrame: boolean) => {
-        try {
-            document.body.style.cursor = 'progress';
-
-            const enabledEffects = [...appState.effects
-                .filter(e => !e.value.disabled
-                    && !appState.effectGroups.get(e.value.effect_group_id)?.disabled)];
-            const keysWithMath = new Set<string>();
-            enabledEffects.forEach(e => {
-                e.value.math.forEach((_, key) => {
-                    const meta = appState.project.imgs.get(key) || appState.project.svgs.get(key);
-                    if (meta && meta.left >= 0 && meta.top >= 0) {
-                        keysWithMath.add(key);
-                    }
-                });
-            });
-
-            const globalLimit: number = Math.max(...enabledEffects.map(e => e.value.end), 0);
-            const options: KeyframeAnimationOptions = {
-                duration: firstFrame ? 2 / appState.fps : globalLimit * 1000,
-                iterations: 1,
-                fill,
-            };
-
-            if (cacheNeedsRefreshRef.current) {
-                framesCacheRef.current.clear();
-            }
-
-            const total = keysWithMath.size;
-            let current = 0;
-            if (total > 0) setAnimationDownloadProgress(0);
-            const newAnimations: Animation[] = [];
-            const keysWithMathArray = Array.from(keysWithMath);
-
-            for (let i = 0; i < keysWithMathArray.length; i++) {
-                const inputId = keysWithMathArray[i];
-                let frames = framesCacheRef.current.get(inputId);
-
-                // Source from the cache if available, otherwise call the server
-                if (!frames) {
-                    frames = await getFrames(appState.apiOrigin, appState.project.project_id, inputId, appState.fps);
-                    if (frames) {
-                        framesCacheRef.current.set(inputId, frames);
-                    }
-                }
-
-                if (frames) {
-                    const keyframes = toKeyframes(firstFrame, frames);
-                    const element = imgElementsRef.current?.get(inputId) || svgElementsRef.current?.get(inputId);
-                    if (element) {
-                        element.getAnimations().forEach(a => a.cancel());
-                        const keyframeEffect = new KeyframeEffect(element, keyframes, options);
-                        const animation = new Animation(keyframeEffect, document.timeline);
-                        current++;
-                        if (total > 0) setAnimationDownloadProgress(Math.round((current / total) * 100));
-                        newAnimations.push(animation);
-                    }
-                }
-            }
-
-            cacheNeedsRefreshRef.current = false;
-            return newAnimations;
-        } finally {
-            document.body.style.cursor = '';
-            setAnimationDownloadProgress(undefined);
-        }
-    }, [appState.apiOrigin, appState.effectGroups, appState.effects, appState.fps, appState.project.imgs, appState.project.project_id, appState.project.svgs]);
-
-    const handleMixRestoration = useCallback(() => {
-        if (uiState.tool.type === 'mix') {
-            const restoredEffects = appState.effects.map(e => ({
-                ...e,
-                value: {
-                    ...e.value,
-                    mixState: e.value.mix ? LaurusMixState.Active : LaurusMixState.None
-                }
-            })) as LaurusEffect[];
-            dispatch({ type: CoreActionType.SetEffects, value: restoredEffects });
-        }
-    }, [uiState.tool.type, appState.effects, dispatch]);
-
-    const handleRewindAll = useCallback(async () => {
-        if (!uiState.skipPreviousEnabled) return;
-        handleMixRestoration();
-        uiDispatch({ type: UIActionType.SetSkipPreviousEnabled, value: false });
-        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-        const inactiveImgs = Array.from(appState.project.imgs.entries());
-        inactiveSvgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-        inactiveImgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-
-        const newAnimations = await getNewAnimations('forwards', true);
-        if (newAnimations) {
-            Promise.all(newAnimations.map(animation => animation.finished))
-                .then(() => {
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                    uiDispatch({ type: UIActionType.SetPlayEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipNextEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipPreviousEnabled, value: true });
-                })
-                .catch(err => {
-                    if (err instanceof Error && err.name !== 'AbortError') {
-                        console.log('unknown error from waapi:', err);
-                    }
-                });
-            newAnimations.forEach(a => {
-                a.play()
-            });
-        }
-    }, [appState.project.imgs, appState.project.svgs, uiState.skipPreviousEnabled, getNewAnimations, handleMixRestoration, uiDispatch, dispatch]);
-
-    const handlePlayAll = useCallback(async () => {
-        if (!uiState.playEnabled) return;
-        handleMixRestoration();
-        uiDispatch({ type: UIActionType.SetPlayEnabled, value: false });
-        uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-
-        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-        const inactiveImgs = Array.from(appState.project.imgs.entries());
-        inactiveSvgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-        inactiveImgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-
-        const newAnimations = await getNewAnimations('none', false);
-        if (newAnimations) {
-            Promise.all(newAnimations.map(animation => animation.finished))
-                .then(() => {
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                    uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
-                    uiDispatch({ type: UIActionType.SetPlayEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipNextEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipPreviousEnabled, value: true });
-                })
-                .catch(err => {
-                    if (err instanceof Error && err.name !== 'AbortError') {
-                        console.log('unknown error from waapi:', err);
-                    }
-                });
-            newAnimations.forEach(a => a.play());
-            uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
-        }
-    }, [uiState.playEnabled, appState.project.imgs, appState.project.svgs, getNewAnimations, handleMixRestoration, uiDispatch, dispatch]);
-
-    const handleFastForwardAll = useCallback(async (fastRate: number) => {
-        if (!uiState.skipNextEnabled) return;
-        handleMixRestoration();
-        uiDispatch({ type: UIActionType.SetSkipNextEnabled, value: false });
-        uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-        const inactiveImgs = Array.from(appState.project.imgs.entries());
-        inactiveSvgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-        inactiveImgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-        });
-
-        const newAnimations = await getNewAnimations('forwards', false);
-        if (newAnimations) {
-            Promise.all(newAnimations.map(animation => animation.finished))
-                .then(() => {
-                    uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                    uiDispatch({ type: UIActionType.SetPlayEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipNextEnabled, value: true });
-                    uiDispatch({ type: UIActionType.SetSkipPreviousEnabled, value: true });
-                })
-                .catch(err => {
-                    if (err instanceof Error && err.name !== 'AbortError') {
-                        console.log('unknown error from waapi:', err);
-                    }
-                });
-            newAnimations.forEach(a => {
-                a.updatePlaybackRate(fastRate);
-                a.play();
-            });
-        }
-    }, [appState.project.imgs, appState.project.svgs, uiState.skipNextEnabled, getNewAnimations, handleMixRestoration, uiDispatch, dispatch]);
-
-    const hoverContextValue = useMemo(() => ({
-        mostRecentlyEnteredEffectUnitKey,
-        setMostRecentlyEnteredEffectUnitKey,
-        isMetaKeyPressed,
-        selectedEffectUnitKeys,
-        setSelectedEffectUnitKeys,
-        selectedImgKeys,
-        setSelectedImgKeys,
-        selectedSvgKeys,
-        setSelectedSvgKeys,
-        animationDownloadProgress,
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationDownloadProgress]);
-
-    const coreContextValue = useMemo(() => ({
-        appState,
-        dispatch,
-        getNewAnimations,
-        handleRewindAll,
-        handlePlayAll,
-        handleFastForwardAll,
-    }), [appState, getNewAnimations, handleRewindAll, handlePlayAll, handleFastForwardAll]);
-
-    const uiContextValue = useMemo(() => ({
-        uiState,
-        uiDispatch,
-    }), [uiState, uiDispatch]);
-
-    const canvasCursor = useMemo(() => {
-        return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
-            ? 'crosshair'
-            : (isMetaKeyPressed && uiState.tool.type !== 'viewport')
-                ? 'context-menu'
-                : (uiState.tool.type === 'scale')
-                    ? 'crosshair'
-                    : '';
-    }, [uiState.tool, isMetaKeyPressed]);
 
     return (<>
         <div style={{
@@ -1358,8 +910,6 @@ export default function Workspace({
                         <div style={{ gridRow: '2 / span 3', gridColumn: '1', overflowY: 'auto', }}>
                             {showTimeline ?
                                 <TimelineArea
-                                    svgElementsRef={svgElementsRef}
-                                    imgElementsRef={imgElementsRef}
                                     onRightPanelClick={() => setShowTimeline(false)}
                                 /> :
                                 <>
@@ -1382,11 +932,11 @@ export default function Workspace({
                                         boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                                     }}>
                                         <SvgRepo
-                                            svg={uiState.playEnabled ? playArrow() : playArrow("rgb(67,67,67)")}
+                                            svg={uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(67,67,67)")}
                                             containerStyle={{
                                                 width: minifiedControlsSize.playSvg,
                                                 height: minifiedControlsSize.playSvg,
-                                                cursor: uiState.playEnabled ? 'pointer' : 'progress',
+                                                cursor: uiState.playbackControlsEnabled ? 'pointer' : 'progress',
                                             }}
                                             scale={0.5}
                                             scaleToContaier={true}
@@ -1464,6 +1014,7 @@ export default function Workspace({
                                 nodeId={"draggable-camera-node-id"}
                                 svgElementsRef={svgElementsRef}
                                 imgElementsRef={imgElementsRef}
+                                framesCacheRef={framesCacheRef}
                                 zIndex={Z_INDEX.CAMERA_FRAME}
                                 onNewPosition={async function (newPosition: { x: number; y: number; }) {
                                     const rollback: LaurusProjectResult = { ...appState.project };
@@ -1495,7 +1046,6 @@ export default function Workspace({
                                     {Array.from(appState.project.imgs.entries()).map((e) => {
                                         const [key, meta] = e;
                                         if (meta.top < 0 || meta.left < 0) return;
-                                        const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                         const imgData = appState.canvasImgs.get(key);
                                         if (imgData) {
                                             return (
@@ -1506,7 +1056,8 @@ export default function Workspace({
                                                         meta={meta}
                                                         zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                         imgElementsRef={imgElementsRef}
-                                                        refKey={refKey} />
+                                                        framesCacheRef={framesCacheRef}
+                                                        refKey={key} />
                                                 </div>
                                             );
                                         }
@@ -1514,7 +1065,6 @@ export default function Workspace({
                                     {Array.from(appState.project.svgs.entries()).map((e) => {
                                         const [key, meta] = e;
                                         if (meta.top < 0 || meta.left < 0) return;
-                                        const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                         const svgData = appState.canvasSvgs.get(key);
                                         if (!svgData) return;
                                         let decodedString = "";
@@ -1537,7 +1087,8 @@ export default function Workspace({
                                                         meta={meta}
                                                         zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                         svgElementsRef={svgElementsRef}
-                                                        refKey={refKey} />
+                                                        framesCacheRef={framesCacheRef}
+                                                        refKey={key} />
                                                 </div>
                                             );
                                         }
@@ -1568,6 +1119,7 @@ export default function Workspace({
                                 }} >
                                 <MediaBrowser
                                     filter={mediaBrowserFilter}
+                                    framesCacheRef={framesCacheRef}
                                     onNextPage={async () => {
                                         switch (mediaBrowserFilter) {
                                             case "img": {
@@ -1704,7 +1256,8 @@ export default function Workspace({
                             </div>
                             <Statusbar
                                 action={statusAction}
-                                body={statusBody} />
+                                body={statusBody}
+                                framesCache={framesCacheRef} />
                         </div>
                     </UIContext>
                 </CoreContext>

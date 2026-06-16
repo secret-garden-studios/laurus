@@ -5,6 +5,7 @@ import { CSS as DndCss } from '@dnd-kit/utilities';
 import styles from "../app.module.css";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import { Z_INDEX } from "./workspace.config";
+import { LaurusFrame } from "./workspace.server";
 
 interface CameraDragOverlay {
     id: string
@@ -45,6 +46,7 @@ interface DraggableCamera {
     nodeId: string,
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     zIndex: number,
     onNewPosition: (newPosition: { x: number, y: number }) => void,
     disabled?: boolean,
@@ -54,6 +56,7 @@ export default function DraggableCamera({
     nodeId,
     svgElementsRef,
     imgElementsRef,
+    framesCacheRef,
     zIndex,
     onNewPosition,
     disabled }: DraggableCamera) {
@@ -99,7 +102,6 @@ export default function DraggableCamera({
                             {Array.from(appState.project.imgs.entries()).map((e) => {
                                 const [key, meta] = e;
                                 if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const imgData = appState.canvasImgs.get(key);
                                 if (imgData) {
                                     return (
@@ -110,7 +112,8 @@ export default function DraggableCamera({
                                                 meta={meta}
                                                 zIndex={meta.order + zIndex + Z_INDEX.CAMERA_ITEMS_OFFSET}
                                                 imgElementsRef={imgElementsRef}
-                                                refKey={refKey} />
+                                                framesCacheRef={framesCacheRef}
+                                                refKey={key} />
                                         </div>
                                     );
                                 }
@@ -118,7 +121,6 @@ export default function DraggableCamera({
                             {Array.from(appState.project.svgs.entries()).map((e) => {
                                 const [key, meta] = e;
                                 if (meta.top < 0 || meta.left < 0) return;
-                                const refKey = uiState.tool.type != 'viewport' ? `${key}|preview` : key;
                                 const svgData = appState.canvasSvgs.get(key);
                                 if (!svgData) return;
                                 let decodedString = "";
@@ -141,7 +143,8 @@ export default function DraggableCamera({
                                                 meta={meta}
                                                 zIndex={meta.order + zIndex + Z_INDEX.CAMERA_ITEMS_OFFSET}
                                                 svgElementsRef={svgElementsRef}
-                                                refKey={refKey} />
+                                                framesCacheRef={framesCacheRef}
+                                                refKey={key} />
                                         </div>
                                     );
                                 }

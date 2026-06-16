@@ -1,26 +1,20 @@
-import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect } from "react";
+import { useContext, useRef, useState, DragEvent, useCallback, useMemo, useEffect, RefObject } from "react";
 import { dellaRespira } from "../fonts";
 import {
-    LaurusImgResult,
-    LaurusSvgResult,
-    LaurusTool,
-    CoreActionType,
     CoreContext,
     HoverContext,
-    defaultMarqueeTool,
     UIContext,
-    UIActionType,
-    defaultUIState
 } from "./workspace.client";
 import LaurusImage from "../components/laurus-image";
 import styles from "../app.module.css";
 import { bookmarkStacks, LaurusCropSvg, publicIcon, SvgRepo, timerArrowDown } from "../svg-repo";
-import { createImg, createSvg } from "./workspace.server";
+import { createImg, createSvg, LaurusFrame, LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { getCropSize, HIGH_FACTOR, MIDHIGH_FACTOR, MIDLOW_FACTOR } from "./workspace.config";
-import { updateProject, createProject } from "../projects/projects.server";
-import { LaurusProjectResult } from "../projects/projects.client";
+import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import { BrowserContextMenu } from "./context-menu";
 import Toggle from "../components/toggle";
+import { LaurusTool, UIActionType, defaultMarqueeTool, defaultUIState } from "./states/ui-state";
+import { CoreActionType } from "./states/core-state";
 
 export type MediaBrowserFilter = 'img' | 'svg' | 'frame';
 
@@ -73,12 +67,14 @@ async function rasterizeSvg(
 
 interface MediaBrowser {
     filter: MediaBrowserFilter,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     onNextPage: () => void,
     onPrevPage?: () => void,
     onFilterSelect: (filter: MediaBrowserFilter) => void,
 }
 export default function MediaBrowser({
     filter,
+    framesCacheRef,
     onNextPage,
     onFilterSelect,
 }: MediaBrowser) {
@@ -677,6 +673,7 @@ export default function MediaBrowser({
                                         {(showContextMenu && browserElementMediaId == img.img_media_id) &&
                                             <BrowserContextMenu
                                                 media={{ type: 'img', key: appState.project.imgs.entries().find(e => e[1].img_media_id == img.img_media_id)?.[0] ?? "", data: img }}
+                                                framesCacheRef={framesCacheRef}
                                                 position={{
                                                     position: 'absolute',
                                                     right: 0,
@@ -779,6 +776,7 @@ export default function MediaBrowser({
                                         {(showContextMenu && browserElementMediaId == svg.svg_media_id) &&
                                             <BrowserContextMenu
                                                 media={{ type: 'svg', key: appState.project.svgs.entries().find(e => e[1].svg_media_id == svg.svg_media_id)?.[0] ?? "", data: svg }}
+                                                framesCacheRef={framesCacheRef}
                                                 position={{
                                                     position: 'absolute',
                                                     right: 0,

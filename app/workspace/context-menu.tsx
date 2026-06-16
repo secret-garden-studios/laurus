@@ -1,30 +1,18 @@
-import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect } from "react";
-import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult, projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
-import { updateProject } from "../projects/projects.server";
+import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect, RefObject } from "react";
+import { projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
+import { updateProject, LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult } from "../projects/projects.server";
 import {
-    LaurusImgResult,
-    LaurusSvgResult,
     CoreContext,
-    CoreActionType,
-    LaurusScaleResult,
-    LaurusMoveResult,
-    LaurusRotateResult,
-    LaurusActiveElement,
     LaurusTransform,
-    LaurusBrowserElement,
-    CoreAction,
-    LaurusEffect,
-    LaurusThumbnail,
-    UIAction,
-    UIActionType,
-    defaultUIState,
     UIContext
 } from "./workspace.client";
-import { updateScale, updateMove, updateRotate } from "./workspace.server";
+import { updateScale, updateMove, updateRotate, LaurusFrame, LaurusImgResult, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, LaurusSvgResult, LaurusEffect } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import { allOut, browse, earthquake, experiment, keyboardCommandKey, lassoSelect, SvgRepo, toysFan } from "../svg-repo";
 import Toggle from "../components/toggle";
+import { LaurusActiveElement, LaurusBrowserElement, LaurusThumbnail, UIAction, UIActionType, defaultUIState } from "./states/ui-state";
+import { CoreAction, CoreActionType } from "./states/core-state";
 
 async function deleteEffects(
     mediaKey: string,
@@ -149,9 +137,10 @@ export type ContextMenuMedia =
     | { type: 'svg', key: string, meta: LaurusProjectSvg }
 interface ContextMenu {
     media: ContextMenuMedia,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     transform?: LaurusTransform,
 }
-export default function ContextMenu({ media, transform }: ContextMenu) {
+export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const selected = useMemo<boolean>(() => { return (uiState.activeElement?.key ?? "") == media.key }, [uiState.activeElement?.key, media.key]);
@@ -426,9 +415,12 @@ export default function ContextMenu({ media, transform }: ContextMenu) {
                 if (uiState.browserElement) {
                     cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch)
                 }
+                if (framesCacheRef.current) {
+                    framesCacheRef.current.delete(media.key);
+                }
             }
         }
-    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch]);
+    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch, framesCacheRef]);
 
     const leftSide = useMemo(() => {
         if (media.meta.contextMenuConfig.position.toLowerCase().endsWith('left')) {
@@ -892,8 +884,9 @@ export type BrorwserContextMenuMedia =
 interface BrowserContextMenu {
     media: BrorwserContextMenuMedia,
     position: CSSProperties,
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
 }
-export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
+export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserContextMenu) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
@@ -993,9 +986,12 @@ export function BrowserContextMenu({ media, position }: BrowserContextMenu) {
                 if (uiState.browserElement) {
                     cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch)
                 }
+                if (framesCacheRef.current) {
+                    framesCacheRef.current.delete(media.key);
+                }
             }
         }
-    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch]);
+    }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch, framesCacheRef]);
 
     return <>
         <div

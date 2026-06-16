@@ -2,14 +2,14 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../../app.module.css";
 import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
-import { CoreActionType, UIContext, CoreContext } from "../workspace.client";
-import { updateProject, createProject } from "../../projects/projects.server";
-import { LaurusProjectResult } from "../../projects/projects.client";
+import { UIContext, CoreContext } from "../workspace.client";
+import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
 import Scalebar from "./scalebar";
 import Marqueebar from "./marqueebar";
 import Viewportbar from "./viewportbar";
+import { CoreActionType } from "../states/core-state";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(CoreContext);

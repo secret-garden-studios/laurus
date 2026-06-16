@@ -1,15 +1,18 @@
-import { RefObject, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, LaurusActiveElement, LaurusScaleEquation, LaurusScaleResult, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../workspace.client";
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { convertTime, CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { dellaRespira, dmSans } from "../../fonts";
-import { updateScale, LaurusLoopType } from "../workspace.server";
+import { updateScale, LaurusLoopType, LaurusScaleEquation, LaurusScaleResult } from "../workspace.server";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
-import { LaurusProjectResult } from "../../projects/projects.client";
-import { useCarouselIndex } from "../../hooks/useCarouselIndex";
+import { LaurusProjectResult } from "../../projects/projects.server";
+import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
+
 
 export interface ScaleUnitControls {
     scale_x: number,
@@ -31,11 +34,9 @@ export const defaultScaleEquation: LaurusScaleEquation = {
 
 interface ScaleUnit {
     scale: LaurusScaleResult
-    svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
-    imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     carouselIndexInit: number,
 }
-export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carouselIndexInit }: ScaleUnit) {
+export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
@@ -586,9 +587,6 @@ export default function ScaleUnit({ scale, svgElementsRef, imgElementsRef, carou
                             <ScaleUnitbar
                                 scale={scale}
                                 carouselEntryKey={carouselEntryKey}
-                                svgElementsRef={svgElementsRef}
-                                imgElementsRef={imgElementsRef}
-                                carouselIndex={carouselIndex}
                                 unlockAspectRatio={unlockAspectRatio}
                                 updateTrackpads={updateTrackpads}
                                 currentControls={currentControls}

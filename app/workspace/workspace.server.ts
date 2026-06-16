@@ -1049,3 +1049,57 @@ export async function getFrames(
         return undefined;
     }
 }
+
+export type LaurusImgResult = ImgMediaResult_V1_0;
+
+export type LaurusSvgResult = SvgMediaResult_V1_0;
+
+export type LaurusImg = ImgMedia_V1_0;
+
+export type LaurusScaleEquation = ScaleEquation_V1_0;
+
+export enum LaurusMixState {
+    None = 'none',
+    Waiting = 'waiting',
+    Selected = 'selected',
+    Active = 'active',
+}
+
+export interface LaurusScale extends Scale_V1_0 {
+    math: Map<string, LaurusScaleEquation>,
+}
+
+export interface LaurusScaleResult extends ScaleResult_V1_0 {
+    math: Map<string, LaurusScaleEquation>,
+    mixState: LaurusMixState,
+}
+
+export type LaurusMoveEquation = MoveEquation_V1_0;
+
+export interface LaurusMove extends Move_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
+}
+
+export interface LaurusMoveResult extends MoveResult_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
+    mixState: LaurusMixState,
+}
+
+export type LaurusRotateEquation = RotateEquation_V1_0;
+
+export interface LaurusRotate extends Rotate_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+}
+
+export interface LaurusRotateResult extends RotateResult_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+    mixState: LaurusMixState,
+}
+export type LaurusEffectGroup = EffectGroup_V1_0;
+
+export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
+
+export type LaurusEffect =
+    | { type: 'scale', key: string, value: LaurusScaleResult }
+    | { type: 'move', key: string, value: LaurusMoveResult }
+    | { type: 'rotate', key: string, value: LaurusRotateResult }

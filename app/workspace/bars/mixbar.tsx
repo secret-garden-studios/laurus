@@ -1,9 +1,11 @@
 import { geistMono } from "@/app/fonts";
 import { SvgRepo, allOut, arrowDownwardAlt, check, circle, earthquake, experiment, toysFan } from "@/app/svg-repo";
 import { useContext, useEffect, useMemo, useState } from "react";
-import { CoreActionType, LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, UIActionType, UIContext, CoreContext } from "../workspace.client";
+import { UIContext, CoreContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
-import { updateMove, updateRotate, updateScale } from "../workspace.server";
+import { LaurusEffect, LaurusMixState, LaurusMoveResult, LaurusRotateResult, LaurusScaleResult, updateMove, updateRotate, updateScale } from "../workspace.server";
+import { UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
 
 export default function Mixbar() {
     const { appState, dispatch } = useContext(CoreContext);

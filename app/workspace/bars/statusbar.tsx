@@ -1,18 +1,21 @@
 'use client'
 
-import { useContext, useState } from "react";
+import { RefObject, useContext, useState } from "react";
 import { CoreContext, UIContext } from "../workspace.client";
 import { dellaRespira, ubuntuMono } from "../../fonts";
-import { allOut, browse, circle, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
+import { allOut, autorenew, browse, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
+import { LaurusFrame } from "../workspace.server";
+import { CoreActionType } from "../states/core-state";
 
 export interface Statusbar {
     action: string,
     body: string[],
+    framesCache: RefObject<Map<string, LaurusFrame[]>>
 }
-export default function Statusbar({ action, body }: Statusbar) {
-    const { appState } = useContext(CoreContext);
+export default function Statusbar({ action, body, framesCache }: Statusbar) {
+    const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const [statusbarSize] = useState(() => {
         switch (uiState.resolution.type) {
@@ -136,6 +139,26 @@ export default function Statusbar({ action, body }: Statusbar) {
                     </>
                 }
                 <div
+                    title={"cache"}
+                    onDoubleClick={() => {
+                        if (!appState.cacheNeedsRefresh && framesCache.current) {
+                            framesCache.current.clear();
+                            dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: true });
+                        }
+                    }}
+                    style={{
+                        fontSize: statusbarSize.actionFont,
+                    }}>
+                    <SvgRepo
+                        title={"cache"}
+                        svg={!appState.cacheNeedsRefresh ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                        containerStyle={{
+                            width: 30,
+                            height: 30
+                        }}
+                        scale={0.5} />
+                </div>
+                <div
                     title="active tool"
                     style={{
                         fontSize: statusbarSize.actionFont,
@@ -209,7 +232,9 @@ export default function Statusbar({ action, body }: Statusbar) {
                     className={dellaRespira.className}
                     style={{
                         fontSize: statusbarSize.bodyFont,
-                        letterSpacing: '1px'
+                        letterSpacing: '1px',
+                        userSelect: 'none',
+                        pointerEvents: 'none',
                     }}>
                     {`${uiState.resolution.value.width}x${uiState.resolution.value.height}`}
                 </div>

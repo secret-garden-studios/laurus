@@ -237,3 +237,37 @@ export async function deleteProject(
         return false;
     }
 }
+
+export enum AbsolutePosition {
+    topRight = 'topRight',
+    topLeft = 'topLeft',
+    bottomRight = 'bottomRight',
+    bottomLeft = 'bottomLeft',
+}
+export type ContextMenuConfig =
+    | { position: AbsolutePosition.topRight, width: number, height: number }
+    | { position: AbsolutePosition.topLeft, width: number, height: number }
+    | { position: AbsolutePosition.bottomRight, width: number, height: number }
+    | { position: AbsolutePosition.bottomLeft, width: number, height: number }
+
+export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = { position: AbsolutePosition.topRight, width: 300, height: 400 }
+
+export interface LaurusProjectImg extends ProjectImg_V1_0 {
+    showContextMenu: boolean
+    contextMenuConfig: ContextMenuConfig
+}
+
+export interface LaurusProjectSvg extends ProjectSvg_V1_0 {
+    showContextMenu: boolean
+    contextMenuConfig: ContextMenuConfig
+}
+
+export interface LaurusProjectResult extends ProjectResult_V1_0 {
+    imgs: Map<string, LaurusProjectImg>
+    svgs: Map<string, LaurusProjectSvg>
+}
+
+export interface LaurusProject extends Project_V1_0 {
+    imgs: Map<string, LaurusProjectImg>
+    svgs: Map<string, LaurusProjectSvg>
+}

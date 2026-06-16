@@ -1,9 +1,11 @@
 import { useContext, useState, useCallback } from "react";
 import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
-import { CarouselEntry, LaurusActiveElement, CoreActionType, CoreContext, HoverContext, UIContext, UIActionType } from "../workspace.client";
+import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CoreActionType } from "../states/core-state";
 
 interface UnitDisplay {
     carouselIndex: number,

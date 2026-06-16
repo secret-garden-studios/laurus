@@ -1,13 +1,14 @@
 import { ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "@/app/projects/projects.client";
+import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "@/app/projects/projects.server";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreActionType, CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { SCALE_MAX } from "../workspace.config";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
+import { CoreActionType } from "../states/core-state";
 
 export default function Scalebar() {
     const { appState, dispatch } = useContext(CoreContext);

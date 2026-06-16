@@ -1,8 +1,9 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
-import { UIActionType, UIContext } from "../workspace.client";
+import { UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
+import { UIActionType } from "../states/ui-state";
 
 export default function Marqueebar() {
     const { uiState, uiDispatch } = useContext(UIContext);
