@@ -189,7 +189,7 @@ function ProjectImg({
     const imgCursor = useMemo(() => {
         return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : (isMetaKeyPressed && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
+            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
                 ? 'context-menu'
                 : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
@@ -330,7 +330,7 @@ function ProjectSvg({
     const svgCursor = useMemo(() => {
         return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : (isMetaKeyPressed && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
+            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
                 ? 'context-menu'
                 : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
