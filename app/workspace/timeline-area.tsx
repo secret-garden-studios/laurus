@@ -1,7 +1,7 @@
 import { CSSProperties, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, allOut, circle, closeIcon, earthquake, playArrow, skipNext, skipPrevious, SvgRepo, toysFan } from "../svg-repo";
+import { addCircle, adjust, allOut, circle, closeIcon, earthquake, playArrow, skipNext, skipPrevious, SvgRepo, toysFan } from "../svg-repo";
 import {
     CoreContext,
     HoverContext,
@@ -26,12 +26,34 @@ import {
     updateRotate,
     updateScale
 } from "./workspace.server";
-import useDebounce from "../hooks/useDebounce";
 import EffectUnit from "./units/effect-unit";
 import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
 import { CoreActionType } from "./states/core-state";
+
+function reindexEffectGroups(
+    effectGroups: Map<string, LaurusEffectGroupResult>
+): LaurusEffectGroupResult[] {
+    return Array.from(effectGroups.values())
+        .sort((a, b) => (a.order - b.order) || (new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()))
+        .map((g, i) => ({ ...g, order: i }));
+}
+
+async function persistReindexedGroups(
+    apiOrigin: string | undefined,
+    accessToken: string | undefined,
+    reindexedGroups: LaurusEffectGroupResult[],
+    previousGroups: Map<string, LaurusEffectGroupResult>
+) {
+    const updates = reindexedGroups.filter(ng => {
+        const og = previousGroups.get(ng.effect_group_id);
+        return !og || og.order !== ng.order;
+    });
+    for (const group of updates) {
+        await updateEffectGroup(apiOrigin, accessToken, group.effect_group_id, group);
+    }
+}
 
 function reindexEffects(
     effects: LaurusEffect[],
@@ -100,6 +122,30 @@ export default function TimelineArea({
         }
     });
 
+    const [showSelectionPanel, setShowSelectionPanel] = useState(false);
+    const selectionPanelVisible = useMemo(() => {
+        return selectedEffectUnitKeys.size > 0 || showSelectionPanel;
+    }, [selectedEffectUnitKeys.size, showSelectionPanel]);
+    const effectGroupsContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setShowSelectionPanel(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type]);
+
+    useEffect(() => {
+        if (effectGroupsContainerRef.current) {
+            effectGroupsContainerRef.current.scrollTop = effectGroupsContainerRef.current.scrollHeight;
+        }
+    }, [appState.effectGroups.size]);
+
     return (<>
         <div className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
             style={{
@@ -114,14 +160,15 @@ export default function TimelineArea({
                     gridRow: '1',
                     gridColumn: 'span 2',
                 }} />
-            <div style={{
-                overflowY: 'auto',
-                gridRow: '2',
-                gridColumn: '1',
-                display: 'grid',
-                alignContent: 'start',
-                ...dynamicSizes
-            }}>
+            <div ref={effectGroupsContainerRef}
+                style={{
+                    overflowY: 'auto',
+                    gridRow: '2',
+                    gridColumn: '1',
+                    display: 'grid',
+                    alignContent: 'start',
+                    ...dynamicSizes
+                }}>
                 {appState.effectGroups.size == 0
                     ? (<EffectGroupSkeleton maxWidth={dynamicSizes.width} />)
                     : (<>{Array.from(appState.effectGroups.entries())
@@ -152,7 +199,7 @@ export default function TimelineArea({
                 display: 'grid',
                 alignContent: 'space-between',
             }}>
-                {selectedEffectUnitKeys.size > 0 ? <SelectionControlPanel /> : <ControlPanel />}
+                {selectionPanelVisible ? <SelectionControlPanel /> : <ControlPanel onSwitchViews={() => setShowSelectionPanel(true)} />}
             </div>
         </div>
     </>)
@@ -464,18 +511,28 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
                     display: 'flex',
                     justifyContent: showEffectsBrowser ? 'start' : 'start'
                 }}>
-                    <SvgRepo
-                        title={`${showEffectsBrowser ? 'close effects browser' : selectedEffectUnitKeys.size > 0 ? 'add to group' : 'open effects browser'}`}
-                        svg={showEffectsBrowser ?
-                            closeIcon('rgba(204, 204, 204, 0.8)') :
-                            addCircle('rgba(204, 204, 204, 0.8)')}
-                        containerStyle={{
-                            width: dynamicSizes.timelineAreaContent.svg.width,
-                            height: dynamicSizes.timelineAreaContent.svg.height
-                        }}
-                        scale={1}
-                        scaleToContaier={true}
-                        onContainerClick={onEffectsBrowserExpandClick} />
+                    {!isMetaKeyPressed
+                        ? (<SvgRepo
+                            title={`${showEffectsBrowser ? 'close effects browser' : selectedEffectUnitKeys.size > 0 ? 'add to group' : 'open effects browser'}`}
+                            svg={showEffectsBrowser ?
+                                closeIcon('rgba(204, 204, 204, 0.8)') :
+                                addCircle('rgba(204, 204, 204, 0.8)')}
+                            containerStyle={{
+                                width: dynamicSizes.timelineAreaContent.svg.width,
+                                height: dynamicSizes.timelineAreaContent.svg.height
+                            }}
+                            scale={1}
+                            scaleToContaier={true}
+                            onContainerClick={onEffectsBrowserExpandClick} />)
+                        : (<SvgRepo
+                            svg={circle("rgba(255, 255, 255, 0)")}
+                            containerStyle={{
+                                width: dynamicSizes.timelineAreaContent.svg.width,
+                                height: dynamicSizes.timelineAreaContent.svg.height
+                            }}
+                            scale={1}
+                            scaleToContaier={true} />)
+                    }
                 </div>
                 {showEffectsBrowser && (
                     <EffectsBrowser
@@ -569,10 +626,6 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
-    const [effectGroupDescription, setEffectGroupDescription] = useState<string>(effectGroupResult.description);
-    const [effectGroupDescriptionSnapshot] = useState<string>(effectGroupResult.description);
-    const effectGroupDescriptionDebounce = useDebounce<string>(effectGroupDescription, 1000);
-    const [isHovered, setIsHovered] = useState(false);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
@@ -704,63 +757,18 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             }
         }
     });
-    const projectRef = useRef<LaurusProjectResult | undefined>(undefined);
-    const effectGroupsRef = useRef<Map<string, LaurusEffectGroupResult> | undefined>(undefined);
-    const effectGroupIdRef = useRef<string | undefined>(undefined);
     const effectGroupDescriptionRef = useRef<HTMLInputElement | null>(null);
 
-    useEffect(() => {
-        const renameProjectOnSever = (async () => {
-            if (!effectGroupsRef.current || !projectRef.current) return;
-            const newEffectGroupResults: Map<string, LaurusEffectGroupResult> = new Map(effectGroupsRef.current);
-            if (effectGroupIdRef
-                && effectGroupIdRef.current
-                && newEffectGroupResults.has(effectGroupIdRef.current)
-                && effectGroupDescriptionDebounce) {
-                const newEffectGroup = newEffectGroupResults.get(effectGroupIdRef.current)!;
-                newEffectGroup.description = effectGroupDescriptionDebounce;
-                const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupIdRef.current, newEffectGroup);
-                if (updated) {
-                    dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
-                }
-                else {
-                    if (effectGroupDescriptionRef.current) {
-                        effectGroupDescriptionRef.current.value = effectGroupDescriptionSnapshot;
-                    }
-                }
-            }
-            else if (effectGroupDescriptionDebounce) {
-                const newEffectGroup: LaurusEffectGroup = {
-                    description: effectGroupDescriptionDebounce,
-                    order: 0,
-                    project_id: projectRef.current.project_id,
-                    disabled: false
-                }
-                const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
-                if (created) {
-                    dispatch({ type: CoreActionType.SetEffectGroup, value: { ...created } });
-                }
-                else {
-                    if (effectGroupDescriptionRef.current) {
-                        effectGroupDescriptionRef.current.value = effectGroupDescriptionSnapshot;
-                    }
-                }
-            }
-        });
-        renameProjectOnSever();
-    }, [appState.apiOrigin, effectGroupDescriptionDebounce, dispatch, appState.accessToken, effectGroupDescriptionSnapshot, effectGroupDescriptionRef]);
-
-    const onEffectGroupDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newEffectGroups: Map<string, LaurusEffectGroup> = new Map(appState.effectGroups);
-        if (effectGroupId && newEffectGroups.has(effectGroupId)) {
-            effectGroupIdRef.current = effectGroupId;
-            const newEffectGroup = newEffectGroups.get(effectGroupId)!;
-            newEffectGroup.description = e.target.value;
+    const onEffectGroupDescriptionChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newEffectGroup: LaurusEffectGroupResult = {
+            ...effectGroupResult,
+            description: e.target.value
         }
-        projectRef.current = { ...appState.project };
-        effectGroupsRef.current = new Map(appState.effectGroups);
-        setEffectGroupDescription(e.target.value);
-    };
+        const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
+        if (updated) {
+            dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
+        }
+    }, [appState.accessToken, appState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
 
     const deleteEffectGroupClick = useCallback(async () => {
         if (!isMetaKeyPressed) return;
@@ -770,13 +778,15 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         if (deleted) {
             const localEffectGroups = new Map(appState.effectGroups);
             localEffectGroups.delete(effectGroupId);
+            const reindexedGroups = reindexEffectGroups(localEffectGroups);
+            await persistReindexedGroups(appState.apiOrigin, appState.accessToken, reindexedGroups, appState.effectGroups);
+            const reindexedGroupsMap = new Map(reindexedGroups.map(g => [g.effect_group_id, g]));
             const snapshot = [...appState.effects];
             const remainingEffects = snapshot.filter(e => e.value.effect_group_id !== effectGroupId);
-            const reindexedEffects = reindexEffects(remainingEffects, localEffectGroups);
-
+            const reindexedEffects = reindexEffects(remainingEffects, reindexedGroupsMap);
             await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, remainingEffects);
-
             dispatch({ type: CoreActionType.DeleteEffectGroup, key: effectGroupId });
+            reindexedGroups.forEach(g => dispatch({ type: CoreActionType.SetEffectGroup, value: g }));
             dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
             setSelectedEffectUnitKeys(prev => {
                 const next = new Set(prev);
@@ -788,7 +798,18 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         }
     }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, isMetaKeyPressed, setSelectedEffectUnitKeys]);
 
-    return (<>
+    const onToggleClick = useCallback(async () => {
+        const newEffectGroup: LaurusEffectGroupResult = {
+            ...effectGroupResult,
+            disabled: !effectGroupResult.disabled
+        }
+        const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
+        if (updated) {
+            dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
+        }
+    }, [appState.accessToken, appState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
+
+    return (
         <div style={{
             width: '100%',
             display: 'flex',
@@ -797,12 +818,10 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             borderBottom: '1px solid rgba(255, 255, 255, 0.025)',
             borderRadius: 0,
             ...dynamicSizes.flex
-        }}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}>
+        }} >
             <SvgRepo
                 title={"delete effect group"}
-                svg={isMetaKeyPressed && isHovered ? circle('rgb(220, 112, 112)') : circle('rgba(255, 255, 255, 0.05)')}
+                svg={isMetaKeyPressed ? circle('rgb(220, 112, 112)') : circle('rgba(255, 255, 255, 0.05)')}
                 scale={0.4}
                 scaleToContaier={true}
                 onContainerClick={deleteEffectGroupClick}
@@ -828,7 +847,8 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                     ...dynamicSizes.input
                 }}
                 type="text"
-                value={effectGroupDescription}
+                value={effectGroupResult.description}
+                autoComplete="off"
                 onChange={onEffectGroupDescriptionChange}
             />
             <div title="enable effect group" style={{
@@ -839,22 +859,13 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             }}>
                 <Toggle
                     value={!effectGroupResult.disabled}
-                    onClick={async () => {
-                        const newEffectGroup: LaurusEffectGroupResult = {
-                            ...effectGroupResult,
-                            disabled: !effectGroupResult.disabled
-                        }
-                        const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
-                        if (updated) {
-                            dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
-                        }
-                    }}
+                    onClick={onToggleClick}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
                     buttonStyles={{ ...dynamicSizes.toggle.button }}
                     translateX={dynamicSizes.toggle.translateX} />
             </div>
         </div>
-    </>)
+    );
 }
 
 interface EffectsBrowser {
@@ -894,7 +905,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
     const onAddEffectClick = useCallback(async (effectName: string) => {
         const effectsSnapshot = [...appState.effects];
         const effectGroupsSnapshot = new Map(appState.effectGroups);
-
         let newProjectIdAck = "";
         if (!appState.project.project_id) {
             const newProject: LaurusProjectResult = { ...appState.project }
@@ -917,9 +927,11 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
 
         let newEffectGroupIdAck = "";
         if (!effect_group_id) {
+            const reindexedGroups = reindexEffectGroups(appState.effectGroups);
+            await persistReindexedGroups(appState.apiOrigin, appState.accessToken, reindexedGroups, appState.effectGroups);
             const newEffectGroup: LaurusEffectGroup = {
                 description: "",
-                order: 0,
+                order: reindexedGroups.length > 0 ? reindexedGroups[reindexedGroups.length - 1].order + 1 : 0,
                 project_id: newProjectIdAck,
                 disabled: false
             }
@@ -1091,11 +1103,13 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
 }
 
 interface ControlPanel {
+    onSwitchViews: () => void,
     containerStyle?: CSSProperties
 }
-function ControlPanel({ containerStyle }: ControlPanel) {
+function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
     const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
+    const { isMetaKeyPressed } = useContext(HoverContext);
     const [playbackRate] = useState(10);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
@@ -1107,7 +1121,7 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 50,
                 secondarySvg: 20,
-                recordingLightSize: 16
+                recordingLightSize: 18
             }
             case "midhigh": return {
                 padding: 10,
@@ -1117,7 +1131,7 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 40,
                 secondarySvg: 16,
-                recordingLightSize: 12
+                recordingLightSize: 14
             }
             case "midlow":
             case "low": return {
@@ -1128,7 +1142,7 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 38,
                 secondarySvg: 14,
-                recordingLightSize: 11
+                recordingLightSize: 13
             }
         }
     });
@@ -1223,15 +1237,33 @@ function ControlPanel({ containerStyle }: ControlPanel) {
                         height: dynamicSizes.secondarySvg
                     }} />
             </div>
-            <div title={"light"}>
-                <div style={{
-                    width: dynamicSizes.recordingLightSize,
-                    height: dynamicSizes.recordingLightSize,
-                    borderRadius: '50%',
-                    border: uiState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
-                    background: uiState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
-                    boxShadow: uiState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
-                }} />
+            <div title={isMetaKeyPressed ? "switch to selection panel" : "light"}>
+                {isMetaKeyPressed ? (
+                    <SvgRepo
+                        title={"switch to selection panel"}
+                        svg={adjust()}
+                        scale={1}
+                        scaleToContaier={true}
+                        onContainerClick={() => onSwitchViews()}
+                        containerStyle={uiState.playbackControlsEnabled ? {
+                            width: dynamicSizes.recordingLightSize,
+                            height: dynamicSizes.recordingLightSize,
+                        } : {
+                            cursor: 'progress',
+                            width: dynamicSizes.recordingLightSize,
+                            height: dynamicSizes.recordingLightSize,
+                        }} />
+                ) : (
+                    <div
+                        style={{
+                            width: dynamicSizes.recordingLightSize,
+                            height: dynamicSizes.recordingLightSize,
+                            borderRadius: '50%',
+                            border: uiState.recordingLight ? '1px solid rgb(239, 239, 239)' : '1px solid rgba(255, 255, 255, 0.03)',
+                            background: uiState.recordingLight ? 'linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))' : 'rgba(255, 255, 255, 0.03)',
+                            boxShadow: uiState.recordingLight ? 'rgba(255, 255, 255, 1) 0px 0px 100px 10px' : 'none'
+                        }} />
+                )}
             </div>
         </div>
     );
@@ -1292,30 +1324,40 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
     const [effectGroupDescription, setEffectGroupDescription] = useState<string>("");
 
     const onCreateEffectGroupClick = useCallback(async () => {
-        if (selectedEffectUnitKeys.size === 0) return;
         if (!appState.project.project_id) return;
+        const effectGroupsSnapshot = new Map(appState.effectGroups);
+        const reindexedGroups = reindexEffectGroups(effectGroupsSnapshot);
         const newEffectGroup: LaurusEffectGroup = {
             description: effectGroupDescription,
-            order: Array.from(appState.effectGroups.values()).reduce((max, g) => Math.max(max, g.order), -1) + 1,
+            order: reindexedGroups.length > 0 ? reindexedGroups[reindexedGroups.length - 1].order + 1 : 0,
             project_id: appState.project.project_id,
             disabled: false
         }
+
         const created = await createEffectGroup(appState.apiOrigin, appState.accessToken, newEffectGroup);
         if (created) {
-            const localEffectGroups = new Map(appState.effectGroups);
-            localEffectGroups.set(created.effect_group_id, created);
-            const snapshot = [...appState.effects];
-            const effectsWithNewGroups = snapshot.map(e => {
+            const reindexedGroupsMap: Map<string, LaurusEffectGroupResult> = new Map();
+            reindexedGroups.forEach(g => {
+                reindexedGroupsMap.set(g.effect_group_id, g);
+            });
+            reindexedGroupsMap.set(created.effect_group_id, created);
+            const effectsSnapshot = [...appState.effects];
+            const newEffects = effectsSnapshot.map(e => {
                 if (selectedEffectUnitKeys.has(e.key)) {
                     return { ...e, value: { ...e.value, effect_group_id: created.effect_group_id } } as LaurusEffect;
                 }
                 return e;
             });
-            const reindexedEffects = reindexEffects(effectsWithNewGroups, localEffectGroups);
-            await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
+
+            const reindexedNewEffects = reindexEffects(newEffects, reindexedGroupsMap);
+            await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedNewEffects, effectsSnapshot);
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedNewEffects });
+
+            const newGroupsArray = Array.from(reindexedGroupsMap.values());
+            await persistReindexedGroups(appState.apiOrigin, appState.accessToken, newGroupsArray, effectGroupsSnapshot);
+            newGroupsArray.forEach(g => dispatch({ type: CoreActionType.SetEffectGroup, value: g }));
+
             setSelectedEffectUnitKeys(new Set());
-            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
-            dispatch({ type: CoreActionType.SetEffectGroup, value: { ...created } });
         }
     }, [selectedEffectUnitKeys, appState.project.project_id, appState.effectGroups, appState.apiOrigin, appState.accessToken, appState.effects, effectGroupDescription, dispatch, setSelectedEffectUnitKeys]);
 
@@ -1357,8 +1399,9 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
                     }}
                 />
                 <div style={{
-                    fontSize: dynamicSizes.selectedLabelFontSize,
                     color: "rgba(255, 255, 255, 0.5)",
+                    userSelect: 'none',
+                    fontSize: dynamicSizes.selectedLabelFontSize,
                 }}>
                     {<i>{'selected'}</i>}
                 </div>
@@ -1377,6 +1420,13 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
                     ...dynamicSizes.input
                 }}
                 type="text"
+                autoComplete="off"
+                onKeyUp={(e) => {
+                    if (e.key == 'Enter') {
+                        onCreateEffectGroupClick();
+                    }
+                }}
+                autoFocus
                 value={effectGroupDescription}
                 onChange={(e) => {
                     setEffectGroupDescription(e.target.value);
