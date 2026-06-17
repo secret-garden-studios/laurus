@@ -1041,11 +1041,10 @@ export default function Workspace({
                                     }
                                 }}
                                 disabled={uiState.tool.type != 'move'} />
-                            {uiState.tool.type != 'viewport' &&
-                                <>
-                                    {Array.from(appState.project.imgs.entries()).map((e) => {
-                                        const [key, meta] = e;
-                                        if (meta.top < 0 || meta.left < 0) return;
+                            <>
+                                {Array.from(appState.project.imgs.entries()).map((e) => {
+                                    const [key, meta] = e;
+                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
                                         const imgData = appState.canvasImgs.get(key);
                                         if (imgData) {
                                             return (
@@ -1057,14 +1056,15 @@ export default function Workspace({
                                                         zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                         imgElementsRef={imgElementsRef}
                                                         framesCacheRef={framesCacheRef}
-                                                        refKey={key} />
+                                                    refKey={key}
+                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
                                                 </div>
                                             );
                                         }
                                     })}
                                     {Array.from(appState.project.svgs.entries()).map((e) => {
                                         const [key, meta] = e;
-                                        if (meta.top < 0 || meta.left < 0) return;
+                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
                                         const svgData = appState.canvasSvgs.get(key);
                                         if (!svgData) return;
                                         let decodedString = "";
@@ -1088,12 +1088,13 @@ export default function Workspace({
                                                         zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
                                                         svgElementsRef={svgElementsRef}
                                                         framesCacheRef={framesCacheRef}
-                                                        refKey={key} />
+                                                    refKey={key}
+                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
                                                 </div>
                                             );
                                         }
                                     })}
-                                </>}
+                            </>
                         </div>
                         {showMediaBrowser &&
                             <div

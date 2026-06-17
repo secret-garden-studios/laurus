@@ -424,6 +424,7 @@ interface DraggableProjectImg {
     imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>,
     framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     refKey?: string,
+    forceAbsolutePosition?: boolean,
 }
 export function DraggableProjectImg({
     mediaKey,
@@ -432,12 +433,19 @@ export function DraggableProjectImg({
     zIndex,
     imgElementsRef,
     framesCacheRef,
-    refKey }: DraggableProjectImg) {
+    refKey,
+    forceAbsolutePosition }: DraggableProjectImg) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
+        if (forceAbsolutePosition) {
+            return {
+                x: Math.max(0, meta.left),
+                y: Math.max(0, meta.top)
+            }
+        }
         switch (uiState.tool.type) {
             case "viewport": {
                 return {
@@ -452,7 +460,7 @@ export function DraggableProjectImg({
                 }
             }
         }
-    }, [appState.project.frame_left, appState.project.frame_top, uiState.tool.type, meta.left, meta.top]);
+    }, [forceAbsolutePosition, uiState.tool.type, meta.left, meta.top, appState.project.frame_left, appState.project.frame_top]);
     const laurusTransform = useMemo<LaurusTransform>(() => {
         return {
             cssProps: {
@@ -738,6 +746,7 @@ interface DraggableProjectSvg {
     svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>,
     framesCacheRef: RefObject<Map<string, LaurusFrame[]>>,
     refKey?: string,
+    forceAbsolutePosition?: boolean,
 }
 export function DraggableProjectSvg({
     mediaKey,
@@ -746,12 +755,19 @@ export function DraggableProjectSvg({
     zIndex,
     svgElementsRef,
     framesCacheRef,
-    refKey }: DraggableProjectSvg) {
+    refKey,
+    forceAbsolutePosition }: DraggableProjectSvg) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys } = useContext(HoverContext);
     const transformedBounds = useMemo(() => { return calculateTransformedBounds(meta) }, [meta]);
     const dndPosition = useMemo(() => {
+        if (forceAbsolutePosition) {
+            return {
+                x: Math.max(0, meta.left),
+                y: Math.max(0, meta.top)
+            }
+        }
         switch (uiState.tool.type) {
             case "viewport": {
                 return {
@@ -766,7 +782,7 @@ export function DraggableProjectSvg({
                 }
             }
         }
-    }, [appState.project.frame_left, appState.project.frame_top, uiState.tool.type, meta.left, meta.top]);
+    }, [forceAbsolutePosition, uiState.tool.type, meta.left, meta.top, appState.project.frame_left, appState.project.frame_top]);
     const laurusTransform = useMemo<LaurusTransform>(() => {
         return {
             cssProps: {
