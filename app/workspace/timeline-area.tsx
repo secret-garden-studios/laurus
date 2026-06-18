@@ -927,11 +927,11 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
 
         let newEffectGroupIdAck = "";
         if (!effect_group_id) {
-            const reindexedGroups = reindexEffectGroups(appState.effectGroups);
-            await persistReindexedGroups(appState.apiOrigin, appState.accessToken, reindexedGroups, appState.effectGroups);
+            const reindexedGroups = reindexEffectGroups(effectGroupsSnapshot);
+            await persistReindexedGroups(appState.apiOrigin, appState.accessToken, reindexedGroups, effectGroupsSnapshot);
             const newEffectGroup: LaurusEffectGroup = {
                 description: "",
-                order: reindexedGroups.length > 0 ? reindexedGroups[reindexedGroups.length - 1].order + 1 : 0,
+                order: reindexedGroups.length > 0 ? Math.max(...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
                 project_id: newProjectIdAck,
                 disabled: false
             }
@@ -947,6 +947,9 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
         }
         if (!newEffectGroupIdAck) return;
 
+        const newOrder = Math.max(...effectsSnapshot
+            .filter(e => e.value.effect_group_id === effect_group_id)
+            .flatMap(e => e.value.order)) + 1;
         switch (effectName) {
             case 'scale': {
                 const newScale: LaurusScale = {
@@ -957,7 +960,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: effectsSnapshot.length,
+                    order: newOrder,
                     mix: false,
                     description: "",
                     disabled: false
@@ -984,7 +987,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: effectsSnapshot.length,
+                    order: newOrder,
                     mix: false,
                     description: "",
                     disabled: false
@@ -1011,7 +1014,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     effect_group_id: newEffectGroupIdAck,
                     fps: appState.fps,
                     locked: false,
-                    order: effectsSnapshot.length,
+                    order: newOrder,
                     mix: false,
                     description: "",
                     disabled: false
@@ -1329,7 +1332,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         const reindexedGroups = reindexEffectGroups(effectGroupsSnapshot);
         const newEffectGroup: LaurusEffectGroup = {
             description: effectGroupDescription,
-            order: reindexedGroups.length > 0 ? reindexedGroups[reindexedGroups.length - 1].order + 1 : 0,
+            order: reindexedGroups.length > 0 ? Math.max(...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
             project_id: appState.project.project_id,
             disabled: false
         }
