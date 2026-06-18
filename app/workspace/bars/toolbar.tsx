@@ -76,10 +76,10 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                         });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
@@ -192,10 +192,10 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                         });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
@@ -253,10 +253,10 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         const inactiveImgs = Array.from(appState.project.imgs.entries());
                         const inactiveSvgs = Array.from(appState.project.svgs.entries());
                         inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                         });
                         inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                         });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {

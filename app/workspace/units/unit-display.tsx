@@ -25,52 +25,40 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
         const entry: CarouselEntry = { ...uiState.carouselEntries[newCarouselIndex] };
         switch (entry.type) {
             case "svg": {
-                const projectSvg = appState.project.svgs.get(entry.key);
-                if (!projectSvg) break;
-                const canvasSvg = appState.canvasSvgs.get(entry.key);
-                if (!canvasSvg) break;
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'svg',
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true }, preserveCache: true });
+                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: entry.key, value: true });
                 break;
             }
             case "img": {
-                const projectImg = appState.project.imgs.get(entry.key);
-                if (!projectImg) break;
-                const canvasImg = appState.canvasImgs.get(entry.key);
-                if (!canvasImg) break;
                 const newActiveElement: LaurusActiveElement = {
                     key: entry.key,
                     type: 'img',
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true }, preserveCache: true });
+                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: entry.key, value: true });
                 break;
             }
         }
-    }, [uiState.carouselEntries, appState.project.svgs, appState.project.imgs, appState.canvasSvgs, appState.canvasImgs, effectKey, uiDispatch, dispatch]);
+    }, [uiState.carouselEntries, effectKey, uiDispatch, dispatch]);
 
     const hideContextMenu = useCallback((entry: CarouselEntry) => {
         switch (entry.type) {
             case "svg": {
-                const projectSvg = appState.project.svgs.get(entry.key);
-                if (!projectSvg) break;
-                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false }, preserveCache: true });
+                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: entry.key, value: false });
                 break;
             }
             case "img": {
-                const projectImg = appState.project.imgs.get(entry.key);
-                if (!projectImg) break;
-                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false }, preserveCache: true });
+                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: entry.key, value: false });
                 break;
             }
         }
-    }, [appState.project.imgs, appState.project.svgs, dispatch]);
+    }, [dispatch]);
 
     return <>
         <div style={{ padding: dynamicSizes.param.padding }}>

@@ -617,6 +617,12 @@ export function DraggableProjectImg({
     }, [uiState.browserElement, uiState.browserImgs, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, meta, dispatch, uiDispatch]);
 
     const onImgClick = useCallback((metaKey: boolean) => {
+        const newContextMenuConfig = getNewContextMenuConfig(
+            { ...meta },
+            { width: appState.project.canvas_width, height: appState.project.canvas_height },
+            { ...meta },
+            { x: meta.scale_x, y: meta.scale_y },
+            meta.contextMenuConfig);
         if (metaKey && uiState.tool.type === 'marquee' && uiState.tool.select) {
             setSelectedImgKeys(prev => {
                 const next = new Set(prev);
@@ -629,21 +635,14 @@ export function DraggableProjectImg({
             });
         }
         else if (metaKey && uiState.tool.type !== 'viewport') {
-            const newContextMenuConfig = getNewContextMenuConfig(
-                { ...meta },
-                { width: appState.project.canvas_width, height: appState.project.canvas_height },
-                { ...meta },
-                { x: meta.scale_x, y: meta.scale_y },
-                meta.contextMenuConfig);
-            const newImg: LaurusProjectImg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-            dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: newImg });
+            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: mediaKey, value: !meta.showContextMenu, newContextMenuConfig });
             const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
             const inactiveSvgs = Array.from(appState.project.svgs.entries());
             inactiveImgs.forEach(i => {
-                dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
             });
             inactiveSvgs.forEach(i => {
-                dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
             });
         }
         else {
@@ -655,21 +654,14 @@ export function DraggableProjectImg({
                 case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
-                    const newContextMenuConfig = getNewContextMenuConfig(
-                        { ...meta },
-                        { width: appState.project.canvas_width, height: appState.project.canvas_height },
-                        { ...meta },
-                        { x: meta.scale_x, y: meta.scale_y },
-                        meta.contextMenuConfig);
-                    const newImg: LaurusProjectImg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-                    dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: newImg });
+                    dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: mediaKey, value: !meta.showContextMenu, newContextMenuConfig });
                     const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveSvgs = Array.from(appState.project.svgs.entries());
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                     });
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                     });
                     break;
                 }
@@ -693,20 +685,11 @@ export function DraggableProjectImg({
                         type: 'img',
                     };
                     uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                    dispatch({ type: CoreActionType.SetProjectImg, key: mediaKey, value: { ...meta, showContextMenu: true } });
-                    const inactiveImgs = Array.from(appState.project.imgs.entries()).filter(i => i[0] != mediaKey);
-                    const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                    inactiveImgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                    });
-                    inactiveSvgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                    });
                     break;
                 }
             }
         }
-    }, [uiState.tool, setSelectedImgKeys, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, appState.project.imgs, appState.project.svgs, dispatch, onImgStackDrop, uiDispatch]);
+    }, [appState.project.canvas_height, appState.project.canvas_width, appState.project.imgs, appState.project.svgs, dispatch, mediaKey, meta, onImgStackDrop, setSelectedImgKeys, uiDispatch, uiState.tool]);
 
     return (<>
         <DndContext
@@ -938,6 +921,12 @@ export function DraggableProjectSvg({
     }, [uiState.browserElement, uiState.browserImgs, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, meta, dispatch, uiDispatch]);
 
     const onSvgClick = useCallback((metaKey: boolean) => {
+        const newContextMenuConfig = getNewContextMenuConfig(
+            { ...meta },
+            { width: appState.project.canvas_width, height: appState.project.canvas_height },
+            { ...meta },
+            { x: meta.scale_x, y: meta.scale_y },
+            meta.contextMenuConfig);
         if (metaKey && uiState.tool.type === 'marquee' && uiState.tool.select) {
             setSelectedSvgKeys(prev => {
                 const next = new Set(prev);
@@ -950,21 +939,14 @@ export function DraggableProjectSvg({
             });
         }
         else if (metaKey && uiState.tool.type !== 'viewport') {
-            const newContextMenuConfig = getNewContextMenuConfig(
-                { ...meta },
-                { width: appState.project.canvas_width, height: appState.project.canvas_height },
-                { ...meta },
-                { x: meta.scale_x, y: meta.scale_y },
-                meta.contextMenuConfig);
-            const newSvg: LaurusProjectSvg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-            dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: newSvg });
+            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: mediaKey, value: !meta.showContextMenu, newContextMenuConfig });
             const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
             const inactiveImgs = Array.from(appState.project.imgs.entries());
             inactiveSvgs.forEach(i => {
-                dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
             });
             inactiveImgs.forEach(i => {
-                dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
             });
         }
         else {
@@ -976,21 +958,14 @@ export function DraggableProjectSvg({
                 case "marquee": { break; }
                 case "none": { break; }
                 case "contextmenu": {
-                    const newContextMenuConfig = getNewContextMenuConfig(
-                        { ...meta },
-                        { width: appState.project.canvas_width, height: appState.project.canvas_height },
-                        { ...meta },
-                        { x: meta.scale_x, y: meta.scale_y },
-                        meta.contextMenuConfig);
-                    const newSvg: LaurusProjectSvg = { ...meta, showContextMenu: !meta.showContextMenu, contextMenuConfig: newContextMenuConfig };
-                    dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: newSvg });
+                    dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: mediaKey, value: !meta.showContextMenu, newContextMenuConfig });
                     const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
                     const inactiveImgs = Array.from(appState.project.imgs.entries());
                     inactiveSvgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                     });
                     inactiveImgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                        dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                     });
                     break;
                 }
@@ -1014,15 +989,6 @@ export function DraggableProjectSvg({
                         type: 'svg',
                     };
                     uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                    dispatch({ type: CoreActionType.SetProjectSvg, key: mediaKey, value: { ...meta, showContextMenu: true } });
-                    const inactiveSvgs = Array.from(appState.project.svgs.entries()).filter(i => i[0] != mediaKey);
-                    const inactiveImgs = Array.from(appState.project.imgs.entries());
-                    inactiveSvgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                    });
-                    inactiveImgs.forEach(i => {
-                        dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
-                    });
                     break;
                 }
             }

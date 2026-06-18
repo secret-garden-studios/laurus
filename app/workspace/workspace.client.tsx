@@ -560,10 +560,10 @@ export default function Workspace({
         const inactiveSvgs = Array.from(appState.project.svgs.entries());
         const inactiveImgs = Array.from(appState.project.imgs.entries());
         inactiveSvgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false }, preserveCache: true });
+            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
         });
         inactiveImgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false }, preserveCache: true });
+            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
         });
     }, [appState.project.imgs, appState.project.svgs]);
 
@@ -673,9 +673,6 @@ export default function Workspace({
 
     const handleRewindAll = useCallback(async (playbackRate: number) => {
         if (!uiState.playbackControlsEnabled || !uiState.filledForwards) return;
-        if (uiState.tool.type !== 'viewport') {
-            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-        }
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
@@ -702,13 +699,10 @@ export default function Workspace({
             a.updatePlaybackRate(playbackRate);
             a.play();
         });
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled, uiState.tool.type]);
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled]);
 
     const handlePlayAll = useCallback(async () => {
         if (!uiState.playbackControlsEnabled) return;
-        if (uiState.tool.type !== 'viewport') {
-            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-        }
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
@@ -735,13 +729,10 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
 
     const handlePlayTarget = useCallback(async (target: AnimationTarget) => {
         if (!uiState.playbackControlsEnabled) return;
-        if (uiState.tool.type === 'viewport') {
-            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
-        }
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
@@ -765,13 +756,10 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
+    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled]);
 
     const handleFastForwardAll = useCallback(async (playbackRate: number) => {
         if (!uiState.playbackControlsEnabled) return;
-        if (uiState.tool.type !== 'viewport') {
-            uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-        }
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
@@ -799,7 +787,7 @@ export default function Workspace({
             a.play();
         });
 
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
 
     const hoverContextValue = useMemo(() => ({
         mostRecentlyEnteredEffectUnitKey,
@@ -865,10 +853,10 @@ export default function Workspace({
                 const inactiveImgs = Array.from(appState.project.imgs.entries());
                 const inactiveSvgs = Array.from(appState.project.svgs.entries());
                 inactiveImgs.forEach(i => {
-                    dispatch({ type: CoreActionType.SetProjectImg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                    dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
                 });
                 inactiveSvgs.forEach(i => {
-                    dispatch({ type: CoreActionType.SetProjectSvg, key: i[0], value: { ...i[1], showContextMenu: false } });
+                    dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
                 });
             };
             if (event.key === 'Escape') {
@@ -877,15 +865,11 @@ export default function Workspace({
                 setSelectedSvgKeys(new Set<string>());
                 const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingSvgs.length; i++) {
-                    const [key, svgMeta] = pendingSvgs[i];
-                    const newSvg: LaurusProjectSvg = { ...svgMeta, showContextMenu: false }
-                    dispatch({ type: CoreActionType.SetProjectSvg, key, value: newSvg });
+                    dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: pendingSvgs[i][0], value: false });
                 }
                 const pendingImgs = Array.from(appState.project.imgs.entries()).filter(m => m[1].showContextMenu);
                 for (let i = 0; i < pendingImgs.length; i++) {
-                    const [key, imgMeta] = pendingImgs[i];
-                    const newImg: LaurusProjectImg = { ...imgMeta, showContextMenu: false }
-                    dispatch({ type: CoreActionType.SetProjectImg, key, value: newImg });
+                    dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: pendingImgs[i][0], value: false });
                 }
             } else if (event.key.toLowerCase() === 'm') {
                 const newToolType = uiState.tool.type === 'move' ? 'none' : 'move';

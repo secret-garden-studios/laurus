@@ -1,8 +1,8 @@
 import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../../app.module.css";
-import { dellaRespira } from "../../fonts";
+import { dellaRespira, geistMono } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
-import { UIContext, CoreContext } from "../workspace.client";
+import { UIContext, CoreContext, HoverContext } from "../workspace.client";
 import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
@@ -10,6 +10,7 @@ import Scalebar from "./scalebar";
 import Marqueebar from "./marqueebar";
 import Viewportbar from "./viewportbar";
 import { CoreActionType } from "../states/core-state";
+import { SvgRepo, circle } from "@/app/svg-repo";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(CoreContext);
@@ -187,7 +188,7 @@ export function ProjectbarLevel2() {
             {(() => {
                 switch (uiState.tool.type) {
                     case "marquee": return <Marqueebar />
-                    case "none":
+                    case "none": return <Nonebar />
                     case "contextmenu":
                     case "move": return <></>
                     case "viewport": return <Viewportbar />
@@ -198,4 +199,148 @@ export function ProjectbarLevel2() {
             })()}
         </div>
     </>)
+}
+
+
+
+function Nonebar() {
+    const { uiState } = useContext(UIContext);
+    const { animationDownloadProgress } = useContext(HoverContext);
+    const [dynamicSizes] = useState(() => {
+        switch (uiState.resolution.type) {
+            case "high": return {
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                progress: {
+                    flex: {
+                        gap: 10,
+                        padding: '0px 20px'
+                    },
+                    label: {
+                        width: '12ch',
+                        fontSize: 10,
+                    },
+                    bar: {
+                        borderRadius: 10,
+                        height: 2,
+                    },
+                    units: {
+                        width: '4ch',
+                        fontSize: 10,
+                    }
+                }
+            }
+            case "midhigh": return {
+                svgSize: {
+                    width: 18,
+                    height: 18
+                },
+                progress: {
+                    flex: {
+                        gap: 10,
+                        padding: '0px 20px'
+                    },
+                    label: {
+                        width: '12ch',
+                        fontSize: 10,
+                    },
+                    bar: {
+                        borderRadius: 10,
+                        height: 2,
+                    },
+                    units: {
+                        width: '4ch',
+                        fontSize: 10,
+                    }
+                }
+            }
+            case "midlow":
+            case "low": return {
+                svgSize: {
+                    width: 20,
+                    height: 20
+                },
+                progress: {
+                    flex: {
+                        gap: 10,
+                        padding: '0px 20px'
+                    },
+                    label: {
+                        width: '12ch',
+                        fontSize: 10,
+                    },
+                    bar: {
+                        borderRadius: 10,
+                        height: 2,
+                    },
+                    units: {
+                        width: '4ch',
+                        fontSize: 10,
+                    }
+                }
+            }
+        }
+    });
+
+    return (
+        <div style={
+            {
+                display: 'flex',
+                alignItems: 'center',
+                height: '100%',
+                width: '100%',
+                overflowX: 'auto',
+            }}>
+            <SvgRepo
+                svg={circle('rgba(0,0,0,0)')}
+                containerStyle={{
+                    width: dynamicSizes.svgSize.width,
+                    height: dynamicSizes.svgSize.height
+                }}
+                scale={1}
+                scaleToContaier={true} />
+            {animationDownloadProgress !== undefined && (
+                <div style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    ...dynamicSizes.progress.flex,
+                }}>
+                    <div className={geistMono.className}
+                        style={{
+                            textAlign: 'left',
+                            color: 'rgb(227, 227, 227)',
+                            fontVariantLigatures: 'no-common-ligatures',
+                            ...dynamicSizes.progress.label
+                        }}>
+                        <span>rendering...</span>
+                    </div>
+                    <div style={{
+                        flex: 1,
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        overflow: 'hidden',
+                        ...dynamicSizes.progress.bar
+                    }}>
+                        <div style={{
+                            width: `${animationDownloadProgress}%`,
+                            height: '100%',
+                            background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
+                            borderRadius: dynamicSizes.progress.bar.borderRadius,
+                            transition: 'width 0.1s ease-out'
+                        }} />
+                    </div>
+                    <div className={geistMono.className}
+                        style={{
+                            textAlign: 'right',
+                            color: 'rgb(227, 227, 227)',
+                            ...dynamicSizes.progress.units
+                        }}>
+                        {`${animationDownloadProgress}%`}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }

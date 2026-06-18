@@ -1,4 +1,4 @@
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../../projects/projects.server";
+import { ContextMenuConfig, LaurusProjectResult } from "../../projects/projects.server";
 import { NEW_PROJECT_CANVAS_SIZE } from "../workspace.config";
 import { LaurusEffect, LaurusEffectGroupResult, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
 
@@ -76,6 +76,8 @@ export enum CoreActionType {
     SetTimelineMaxValue,
     SetFps,
     SetCacheNeedsRefresh,
+    SetProjectImgShowContextMenu,
+    SetProjectSvgShowContextMenu,
 }
 
 export type CoreAction =
@@ -87,9 +89,7 @@ export type CoreAction =
     | { type: CoreActionType.SetCanvasSvg, key: string, value: LaurusSvgResult }
     | { type: CoreActionType.DeleteCanvasSvg, key: string }
     | { type: CoreActionType.SetCanvasSvgs, value: Map<string, LaurusSvgResult> }
-    | { type: CoreActionType.SetProjectImg, key: string, value: LaurusProjectImg, preserveCache?: boolean }
     | { type: CoreActionType.DeleteProjectImg, key: string }
-    | { type: CoreActionType.SetProjectSvg, key: string, value: LaurusProjectSvg, preserveCache?: boolean }
     | { type: CoreActionType.DeleteProjectSvg, key: string }
     | { type: CoreActionType.SetEffects, value: LaurusEffect[], preserveCache?: boolean }
     | { type: CoreActionType.SetEffect, value: LaurusEffect }
@@ -100,6 +100,8 @@ export type CoreAction =
     | { type: CoreActionType.SetTimelineMaxValue, value: number }
     | { type: CoreActionType.SetFps, value: number }
     | { type: CoreActionType.SetCacheNeedsRefresh, value: boolean }
+    | { type: CoreActionType.SetProjectImgShowContextMenu, key: string, value: boolean, newContextMenuConfig?: ContextMenuConfig }
+    | { type: CoreActionType.SetProjectSvgShowContextMenu, key: string, value: boolean, newContextMenuConfig?: ContextMenuConfig }
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
     switch (action.type) {
@@ -135,25 +137,11 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         case CoreActionType.SetCanvasSvgs: {
             return { ...state, canvasSvgs: new Map(action.value), cacheNeedsRefresh: true }
         }
-        case CoreActionType.SetProjectImg: {
-            const newImgs = new Map(state.project.imgs);
-            newImgs.set(action.key, action.value);
-            const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
-            const newCacheNeedsRefresh = action.preserveCache ? state.cacheNeedsRefresh : true;
-            return { ...state, project: newProject, cacheNeedsRefresh: newCacheNeedsRefresh }
-        }
         case CoreActionType.DeleteProjectImg: {
             const newImgs = new Map(state.project.imgs);
             newImgs.delete(action.key);
             const newProject: LaurusProjectResult = { ...state.project, imgs: newImgs }
             return { ...state, project: newProject, cacheNeedsRefresh: true }
-        }
-        case CoreActionType.SetProjectSvg: {
-            const newSvgs = new Map(state.project.svgs);
-            newSvgs.set(action.key, action.value);
-            const newProject: LaurusProjectResult = { ...state.project, svgs: newSvgs }
-            const newCacheNeedsRefresh = action.preserveCache ? state.cacheNeedsRefresh : true;
-            return { ...state, project: newProject, cacheNeedsRefresh: newCacheNeedsRefresh }
         }
         case CoreActionType.DeleteProjectSvg: {
             const newSvgs = new Map(state.project.svgs);
@@ -193,6 +181,22 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         }
         case CoreActionType.SetCacheNeedsRefresh: {
             return { ...state, cacheNeedsRefresh: action.value }
+        }
+        case CoreActionType.SetProjectImgShowContextMenu: {
+            const newImgs = new Map(state.project.imgs);
+            const img = newImgs.get(action.key);
+            if (img) {
+                newImgs.set(action.key, { ...img, showContextMenu: action.value, ...(action.newContextMenuConfig ? { contextMenuConfig: action.newContextMenuConfig } : {}) })
+            }
+            return { ...state, project: { ...state.project, imgs: newImgs } }
+        }
+        case CoreActionType.SetProjectSvgShowContextMenu: {
+            const newSvgs = new Map(state.project.svgs);
+            const svg = newSvgs.get(action.key);
+            if (svg) {
+                newSvgs.set(action.key, { ...svg, showContextMenu: action.value, ...(action.newContextMenuConfig ? { contextMenuConfig: action.newContextMenuConfig } : {}) })
+            }
+            return { ...state, project: { ...state.project, svgs: newSvgs } }
         }
     }
 }
