@@ -719,12 +719,14 @@ export default function Workspace({
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
             uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
             return
         };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                 uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
             })
             .catch(err => {
                 if (err instanceof Error && err.name !== 'AbortError') {
@@ -737,6 +739,9 @@ export default function Workspace({
 
     const handlePlayTarget = useCallback(async (target: AnimationTarget) => {
         if (!uiState.playbackControlsEnabled) return;
+        if (uiState.tool.type === 'viewport') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
+        }
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
@@ -760,7 +765,7 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled]);
+    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
 
     const handleFastForwardAll = useCallback(async (playbackRate: number) => {
         if (!uiState.playbackControlsEnabled) return;
