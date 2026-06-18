@@ -1,9 +1,9 @@
 import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, playArrow, remove, skipPrevious, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
+import { LaurusClientSvg, SvgRepo, add2, autorenew, cancelCircle, contentPaste, fileCopy, playArrow, remove, syncAlt, updateCounterClockwise, updateDisabled } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
-import { LaurusEffect, LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../../workspace.server";
+import { getRotateFrames, LaurusEffect, LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
@@ -29,7 +29,7 @@ export default function RotateUnitbar({
     counterClockwise,
     setCounterClockwise
 }: RotateUnitbar) {
-    const { appState, dispatch, handleRewindTarget, handlePlayTarget } = useContext(CoreContext);
+    const { appState, dispatch, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
 
@@ -55,8 +55,6 @@ export default function RotateUnitbar({
             }
         }
     });
-
-    const [playbackRate] = useState(10);
 
     const loopSvg = useMemo((): LaurusClientSvg => {
         const loopType = rotate.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -233,10 +231,14 @@ export default function RotateUnitbar({
                     scale={0.9}
                     scaleToContaier={true} />
             </div>
-            <div title="rewind"
+            <div title="preview"
                 onClick={() => {
                     if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
-                    handleRewindTarget(carouselEntryKey, 'rotate', playbackRate);
+                    handlePlayTarget({
+                        inputKey: carouselEntryKey,
+                        getFrames: (apiOrigin) => getRotateFrames(apiOrigin, rotate.rotate_id, carouselEntryKey),
+                        effectKey: rotate.rotate_id
+                    });
                 }}
                 style={{
                     display: 'grid',
@@ -244,27 +246,7 @@ export default function RotateUnitbar({
                     ...dynamicSizes.paramButtonContainer,
                 }}>
                 <SvgRepo
-                    title="rewind"
-                    svg={rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious("rgb(62, 62, 62)")}
-                    containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
-                        ...dynamicSizes.paramButton
-                    }}
-                    scale={0.9}
-                    scaleToContaier={true} />
-            </div>
-            <div title="play"
-                onClick={() => {
-                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
-                    handlePlayTarget(carouselEntryKey, 'rotate');
-                }}
-                style={{
-                    display: 'grid',
-                    placeContent: 'center',
-                    ...dynamicSizes.paramButtonContainer,
-                }}>
-                <SvgRepo
-                    title="play"
+                    title="preview"
                     svg={rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
                         cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),

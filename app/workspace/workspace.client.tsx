@@ -66,6 +66,7 @@ export function getNewContextMenuConfig(
         return { ...currentValue, position: AbsolutePosition.topRight };
     }
 }
+
 export interface LaurusTransform {
     cssProps: CSSProperties,
     bounds: {
@@ -78,6 +79,12 @@ export interface LaurusTransform {
             left: number;
         }
     }
+}
+
+export interface AnimationTarget {
+    inputKey: string;
+    getFrames: (apiOrigin: string | undefined) => Promise<LaurusFrame[] | undefined>;
+    effectKey: string;
 }
 
 export function convertTime(time: number, currentUnit: string, newUnit: string) {
@@ -119,8 +126,7 @@ export interface CoreContextProps {
     handleRewindAll: (playbackRate: number) => void;
     handlePlayAll: () => void;
     handleFastForwardAll: (playbackRate: number) => void;
-    handlePlayTarget: (targetKey: string, effectType: string) => void;
-    handleRewindTarget: (targetKey: string, effectType: string, playbackRate: number) => void;
+    handlePlayTarget: (target: AnimationTarget) => void;
 }
 
 export interface UIContextProps {
@@ -162,7 +168,6 @@ export const CoreContext = createContext<CoreContextProps>(
         handlePlayAll: () => { },
         handleFastForwardAll: () => { },
         handlePlayTarget: () => { },
-        handleRewindTarget: () => { },
     }
 );
 
@@ -562,59 +567,97 @@ export default function Workspace({
         });
     }, [appState.project.imgs, appState.project.svgs]);
 
-    const getNewAnimations = useCallback(async (fill: FillMode, reverse: boolean, setCache: boolean, targetKey?: string, effectType?: string) => {
+    const getNewAnimationsByTarget = useCallback(async (
+        fill: FillMode,
+        reverse: boolean,
+        target: AnimationTarget) => {
+        const { inputKey, getFrames, effectKey } = target;
         try {
             document.body.style.cursor = 'progress';
-            let enabledEffects = [...appState.effects
+            const enabledEffects = [...appState.effects
                 .filter(e => !e.value.disabled
                     && !appState.effectGroups.get(e.value.effect_group_id)?.disabled)];
-            if (effectType) {
-                enabledEffects = enabledEffects.filter(e => e.type === effectType);
+            const foundEffect = enabledEffects.find(e =>
+                e.key === effectKey
+            );
+            if (!foundEffect) return [];
+
+            const animationOptions: KeyframeAnimationOptions = {
+                duration: (foundEffect.value.end * 1000) - (foundEffect.value.start * 1000),
+                iterations: 1,
+                fill,
+            };
+            setAnimationDownloadProgress(0);
+            const newAnimations: Animation[] = [];
+            const framesFromServer = await getFrames(appState.apiOrigin);
+            if (!framesFromServer) return [];
+            if (reverse) {
+                framesFromServer.reverse();
             }
-            const keysWithMath = new Set<string>();
+            const keyframes: Keyframe[] = toKeyframes(framesFromServer, false);
+            const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
+            if (element) {
+                const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
+                const animation = new Animation(keyframeEffect, document.timeline);
+                setAnimationDownloadProgress(100);
+                newAnimations.push(animation);
+            }
+            return newAnimations;
+        } finally {
+            document.body.style.cursor = '';
+            setAnimationDownloadProgress(undefined);
+        }
+    }, [appState.apiOrigin, appState.effectGroups, appState.effects]);
+
+    const getNewAnimations = useCallback(async (
+        fill: FillMode,
+        reverse: boolean,
+        setCache: boolean
+    ) => {
+        try {
+            document.body.style.cursor = 'progress';
+            const enabledEffects = [...appState.effects
+                .filter(e => !e.value.disabled
+                    && !appState.effectGroups.get(e.value.effect_group_id)?.disabled)];
+            const eligibleItems = new Set<string>();
             let globalLimit = 0;
             enabledEffects.forEach(e => {
-                e.value.math.forEach((_, key) => {
-                    const meta = appState.project.imgs.get(key) || appState.project.svgs.get(key);
-                    if (meta && meta.left >= 0 && meta.top >= 0) {
-                        if (!targetKey || targetKey === key) {
-                            keysWithMath.add(key);
-                            globalLimit = Math.max(globalLimit, e.value.end);
-                        }
+                e.value.math.forEach((_, inputKey) => {
+                    if (appState.project.imgs.has(inputKey) || appState.project.svgs.has(inputKey)) {
+                        eligibleItems.add(inputKey);
+                        globalLimit = Math.max(globalLimit, e.value.end);
                     }
                 });
             });
-            const options: KeyframeAnimationOptions = {
+            const animationOptions: KeyframeAnimationOptions = {
                 duration: globalLimit * 1000,
                 iterations: 1,
                 fill,
             };
-            const total = keysWithMath.size;
+            const total = eligibleItems.size;
             let current = 0;
             if (total > 0) setAnimationDownloadProgress(0);
             const newAnimations: Animation[] = [];
-            const keysWithMathArray = Array.from(keysWithMath);
-            for (let i = 0; i < keysWithMathArray.length; i++) {
-                const inputId = keysWithMathArray[i];
+            for (const inputKey of eligibleItems) {
                 let laurusFrames: LaurusFrame[] = [];
                 if (!appState.cacheNeedsRefresh) {
-                    laurusFrames = [...(framesCacheRef.current.get(inputId) ?? [])];
+                    laurusFrames = [...(framesCacheRef.current.get(inputKey) ?? [])];
                 }
                 if (laurusFrames.length === 0) {
-                    const framesFromServer = await getFrames(appState.apiOrigin, appState.project.project_id, inputId, appState.fps);
+                    const framesFromServer = await getFrames(appState.apiOrigin, appState.project.project_id, inputKey, appState.fps);
                     if (!framesFromServer) continue;
                     laurusFrames = framesFromServer;
                     if (setCache) {
-                        framesCacheRef.current.set(inputId, [...framesFromServer]);
+                        framesCacheRef.current.set(inputKey, [...framesFromServer]);
                     }
                 }
                 if (reverse) {
                     laurusFrames.reverse();
                 }
                 const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
-                const element = imgElementsRef.current?.get(inputId) || svgElementsRef.current?.get(inputId);
+                const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
                 if (element) {
-                    const keyframeEffect = new KeyframeEffect(element, keyframes, options);
+                    const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
                     const animation = new Animation(keyframeEffect, document.timeline);
                     current++;
                     if (total > 0) setAnimationDownloadProgress(Math.round((current / total) * 100));
@@ -638,7 +681,12 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
 
         const newAnimations = await getNewAnimations('forwards', true, false);
-        if (newAnimations.length == 0) return;
+        if (newAnimations.length == 0) {
+            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
+            return;
+        };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
@@ -656,30 +704,6 @@ export default function Workspace({
         });
     }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled, uiState.tool.type]);
 
-    const handleRewindTarget = useCallback(async (targetKey: string, effectType: string, playbackRate: number) => {
-        if (!uiState.playbackControlsEnabled || !uiState.filledForwards) return;
-        handleMixRestoration();
-        closeContextMenus();
-        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
-
-        const newAnimations = await getNewAnimations('forwards', true, false, targetKey, effectType);
-        if (newAnimations.length == 0) return;
-        Promise.all(newAnimations.map(animation => animation.finished))
-            .then(() => {
-                uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
-            })
-            .catch(err => {
-                if (err instanceof Error && err.name !== 'AbortError') {
-                    console.log('unknown error from waapi:', err);
-                }
-            });
-        newAnimations.forEach(a => {
-            a.updatePlaybackRate(playbackRate);
-            a.play();
-        });
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled]);
-
     const handlePlayAll = useCallback(async () => {
         if (!uiState.playbackControlsEnabled) return;
         if (uiState.tool.type !== 'viewport') {
@@ -692,7 +716,11 @@ export default function Workspace({
         dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
 
         const newAnimations = await getNewAnimations('none', false, true);
-        if (newAnimations.length == 0) return;
+        if (newAnimations.length == 0) {
+            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            return
+        };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
@@ -707,15 +735,19 @@ export default function Workspace({
         newAnimations.forEach(a => a.play());
     }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled, uiState.tool.type]);
 
-    const handlePlayTarget = useCallback(async (targetKey: string, effectType: string) => {
+    const handlePlayTarget = useCallback(async (target: AnimationTarget) => {
         if (!uiState.playbackControlsEnabled) return;
         handleMixRestoration();
         closeContextMenus();
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
         uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
-        const newAnimations = await getNewAnimations('none', false, false, targetKey, effectType);
-        if (newAnimations.length == 0) return;
+        const newAnimations = await getNewAnimationsByTarget('none', false, target);
+        if (newAnimations.length == 0) {
+            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            return;
+        };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
@@ -728,7 +760,7 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
+    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled]);
 
     const handleFastForwardAll = useCallback(async (playbackRate: number) => {
         if (!uiState.playbackControlsEnabled) return;
@@ -740,7 +772,12 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
 
         const newAnimations = await getNewAnimations('forwards', false, false);
-        if (newAnimations.length == 0) return;
+        if (newAnimations.length == 0) {
+            uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
+            return;
+        };
         Promise.all((newAnimations).map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
@@ -776,12 +813,12 @@ export default function Workspace({
         appState,
         dispatch,
         getNewAnimations,
+        getNewAnimationsByTarget,
         handleRewindAll,
-        handleRewindTarget,
         handlePlayAll,
         handleFastForwardAll,
         handlePlayTarget,
-    }), [appState, getNewAnimations, handleRewindAll, handleRewindTarget, handlePlayAll, handleFastForwardAll, handlePlayTarget]);
+    }), [appState, getNewAnimations, getNewAnimationsByTarget, handleRewindAll, handlePlayAll, handleFastForwardAll, handlePlayTarget]);
 
     const uiContextValue = useMemo(() => ({
         uiState,
@@ -889,7 +926,6 @@ export default function Workspace({
             window.removeEventListener('blur', handleBlur);
         };
     }, []);
-
 
     return (<>
         <div style={{
@@ -1045,55 +1081,55 @@ export default function Workspace({
                                 {Array.from(appState.project.imgs.entries()).map((e) => {
                                     const [key, meta] = e;
                                     if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
-                                        const imgData = appState.canvasImgs.get(key);
-                                        if (imgData) {
-                                            return (
-                                                <div key={key}>
-                                                    <DraggableProjectImg
-                                                        mediaKey={key}
-                                                        data={imgData}
-                                                        meta={meta}
-                                                        zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
-                                                        imgElementsRef={imgElementsRef}
-                                                        framesCacheRef={framesCacheRef}
+                                    const imgData = appState.canvasImgs.get(key);
+                                    if (imgData) {
+                                        return (
+                                            <div key={key}>
+                                                <DraggableProjectImg
+                                                    mediaKey={key}
+                                                    data={imgData}
+                                                    meta={meta}
+                                                    zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    imgElementsRef={imgElementsRef}
+                                                    framesCacheRef={framesCacheRef}
                                                     refKey={key}
                                                     forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
-                                                </div>
-                                            );
-                                        }
-                                    })}
-                                    {Array.from(appState.project.svgs.entries()).map((e) => {
-                                        const [key, meta] = e;
+                                            </div>
+                                        );
+                                    }
+                                })}
+                                {Array.from(appState.project.svgs.entries()).map((e) => {
+                                    const [key, meta] = e;
                                     if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
-                                        const svgData = appState.canvasSvgs.get(key);
-                                        if (!svgData) return;
-                                        let decodedString = "";
-                                        try {
-                                            decodedString = decodeURIComponent(
-                                                atob(svgData.markup)
-                                                    .split('')
-                                                    .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                                                    .join(''));
-                                        }
-                                        catch (error) {
-                                            console.log("Failed to decode svg markup", { media_key: meta.media_key, error });
-                                        }
-                                        if (decodedString) {
-                                            return (
-                                                <div key={key}>
-                                                    <DraggableProjectSvg
-                                                        mediaKey={key}
-                                                        decodedString={decodedString}
-                                                        meta={meta}
-                                                        zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
-                                                        svgElementsRef={svgElementsRef}
-                                                        framesCacheRef={framesCacheRef}
+                                    const svgData = appState.canvasSvgs.get(key);
+                                    if (!svgData) return;
+                                    let decodedString = "";
+                                    try {
+                                        decodedString = decodeURIComponent(
+                                            atob(svgData.markup)
+                                                .split('')
+                                                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                                                .join(''));
+                                    }
+                                    catch (error) {
+                                        console.log("Failed to decode svg markup", { media_key: meta.media_key, error });
+                                    }
+                                    if (decodedString) {
+                                        return (
+                                            <div key={key}>
+                                                <DraggableProjectSvg
+                                                    mediaKey={key}
+                                                    decodedString={decodedString}
+                                                    meta={meta}
+                                                    zIndex={(uiState.tool.type === 'marquee' && uiState.tool.stack) ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET}
+                                                    svgElementsRef={svgElementsRef}
+                                                    framesCacheRef={framesCacheRef}
                                                     refKey={key}
                                                     forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
-                                                </div>
-                                            );
-                                        }
-                                    })}
+                                            </div>
+                                        );
+                                    }
+                                })}
                             </>
                         </div>
                         {showMediaBrowser &&
@@ -1258,7 +1294,7 @@ export default function Workspace({
                             <Statusbar
                                 action={statusAction}
                                 body={statusBody}
-                                framesCache={framesCacheRef} />
+                                framesCacheRef={framesCacheRef} />
                         </div>
                     </UIContext>
                 </CoreContext>

@@ -88,6 +88,7 @@ export interface ImgMedia_V1_0 {
     height: number
     categories: string[]
 }
+export type LaurusImg = ImgMedia_V1_0;
 export interface ImgMediaResult_V1_0 {
     timestamp: string
     last_active: string
@@ -100,6 +101,7 @@ export interface ImgMediaResult_V1_0 {
     categories: string[]
     src: string
 }
+export type LaurusImgResult = ImgMediaResult_V1_0;
 export async function getImg(
     baseUrl: string | undefined,
     imgMediaId: string,
@@ -177,6 +179,7 @@ export interface SvgMediaResult_V1_0 {
     categories: string[]
     markup: string
 }
+export type LaurusSvgResult = SvgMediaResult_V1_0;
 export async function getSvg(
     baseUrl: string | undefined,
     svgMediaId: string,
@@ -245,7 +248,8 @@ export interface EffectGroupResult_V1_0 {
     order: number
     disabled: boolean
 }
-
+export type LaurusEffectGroup = EffectGroup_V1_0;
+export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
 export async function getEffects(baseUrl: string | undefined) {
     try {
         const url = `${baseUrl}/effects`;
@@ -471,6 +475,14 @@ export interface ScaleResult_V1_0 {
     creator: string
     last_editor: string
 }
+export type LaurusScaleEquation = ScaleEquation_V1_0;
+export interface LaurusScale extends Scale_V1_0 {
+    math: Map<string, LaurusScaleEquation>,
+}
+export interface LaurusScaleResult extends ScaleResult_V1_0 {
+    math: Map<string, LaurusScaleEquation>,
+    mixState: LaurusMixState,
+}
 export async function getScales(baseUrl: string | undefined, projectId: string) {
     try {
         const url = `${baseUrl}/scales?project_id=${projectId}`;
@@ -667,6 +679,14 @@ export interface MoveResult_V1_0 {
     creator: string
     last_editor: string
 }
+export type LaurusMoveEquation = MoveEquation_V1_0;
+export interface LaurusMove extends Move_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
+}
+export interface LaurusMoveResult extends MoveResult_V1_0 {
+    math: Map<string, LaurusMoveEquation>,
+    mixState: LaurusMixState,
+}
 export async function getMoves(baseUrl: string | undefined, projectId: string) {
     try {
         const url = `${baseUrl}/moves?project_id=${projectId}`;
@@ -862,6 +882,14 @@ export interface RotateResult_V1_0 {
     creator: string
     last_editor: string
 }
+export type LaurusRotateEquation = RotateEquation_V1_0;
+export interface LaurusRotate extends Rotate_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+}
+export interface LaurusRotateResult extends RotateResult_V1_0 {
+    math: Map<string, LaurusRotateEquation>,
+    mixState: LaurusMixState,
+}
 export async function getRotates(baseUrl: string | undefined, projectId: string) {
     try {
         const url = `${baseUrl}/rotates?project_id=${projectId}`;
@@ -1025,6 +1053,65 @@ interface Frame_V1_0 {
     rangle: number
     input_id: string
 }
+export async function getScaleFrames(
+    baseUrl: string | undefined,
+    scaleId: string,
+    inputId: string): Promise<LaurusFrame[] | undefined> {
+    const scaleResult = await getScale(baseUrl, scaleId, inputId);
+    if (!scaleResult) return undefined;
+    const eq: ScaleEquation_V1_0 | undefined = scaleResult.math.get(inputId);
+    if (!eq) return undefined;
+    return eq.solution.map(frame => ({
+        sx: frame.x,
+        sy: frame.y,
+        x: 0,
+        y: 0,
+        rangle: 0,
+        rx: 0,
+        ry: 0,
+        rz: 0,
+        input_id: inputId
+    }));
+}
+export async function getMoveFrames(
+    baseUrl: string | undefined,
+    moveId: string,
+    inputId: string): Promise<LaurusFrame[] | undefined> {
+    const moveResult = await getMove(baseUrl, moveId, inputId);
+    if (!moveResult) return undefined;
+    const eq: MoveEquation_V1_0 | undefined = moveResult.math.get(inputId);
+    if (!eq) return undefined;
+    return eq.solution.map(frame => ({
+        ...frame,
+        sx: 1,
+        sy: 1,
+        rangle: 0,
+        rx: 0,
+        ry: 0,
+        rz: 0,
+        input_id: inputId
+    }));
+}
+export async function getRotateFrames(
+    baseUrl: string | undefined,
+    rotateId: string,
+    inputId: string): Promise<LaurusFrame[] | undefined> {
+    const rotateResult = await getRotate(baseUrl, rotateId, inputId);
+    if (!rotateResult) return undefined;
+    const eq: RotateEquation_V1_0 | undefined = rotateResult.math.get(inputId);
+    if (!eq) return undefined;
+    return eq.solution.map(frame => ({
+        rx: frame.x,
+        ry: frame.y,
+        rz: frame.z,
+        rangle: frame.angle,
+        x: 0,
+        y: 0,
+        sx: 1,
+        sy: 1,
+        input_id: inputId
+    }));
+}
 export async function getFrames(
     baseUrl: string | undefined,
     projectId: string,
@@ -1050,54 +1137,12 @@ export async function getFrames(
     }
 }
 
-export type LaurusImgResult = ImgMediaResult_V1_0;
-
-export type LaurusSvgResult = SvgMediaResult_V1_0;
-
-export type LaurusImg = ImgMedia_V1_0;
-
-export type LaurusScaleEquation = ScaleEquation_V1_0;
-
 export enum LaurusMixState {
     None = 'none',
     Waiting = 'waiting',
     Selected = 'selected',
     Active = 'active',
 }
-
-export interface LaurusScale extends Scale_V1_0 {
-    math: Map<string, LaurusScaleEquation>,
-}
-
-export interface LaurusScaleResult extends ScaleResult_V1_0 {
-    math: Map<string, LaurusScaleEquation>,
-    mixState: LaurusMixState,
-}
-
-export type LaurusMoveEquation = MoveEquation_V1_0;
-
-export interface LaurusMove extends Move_V1_0 {
-    math: Map<string, LaurusMoveEquation>,
-}
-
-export interface LaurusMoveResult extends MoveResult_V1_0 {
-    math: Map<string, LaurusMoveEquation>,
-    mixState: LaurusMixState,
-}
-
-export type LaurusRotateEquation = RotateEquation_V1_0;
-
-export interface LaurusRotate extends Rotate_V1_0 {
-    math: Map<string, LaurusRotateEquation>,
-}
-
-export interface LaurusRotateResult extends RotateResult_V1_0 {
-    math: Map<string, LaurusRotateEquation>,
-    mixState: LaurusMixState,
-}
-export type LaurusEffectGroup = EffectGroup_V1_0;
-
-export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
 
 export type LaurusEffect =
     | { type: 'scale', key: string, value: LaurusScaleResult }

@@ -12,9 +12,9 @@ import { CoreActionType } from "../states/core-state";
 export interface Statusbar {
     action: string,
     body: string[],
-    framesCache: RefObject<Map<string, LaurusFrame[]>>
+    framesCacheRef: RefObject<Map<string, LaurusFrame[]>>
 }
-export default function Statusbar({ action, body, framesCache }: Statusbar) {
+export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const [statusbarSize] = useState(() => {
@@ -141,8 +141,8 @@ export default function Statusbar({ action, body, framesCache }: Statusbar) {
                 <div
                     title={"cache"}
                     onDoubleClick={() => {
-                        if (!appState.cacheNeedsRefresh && framesCache.current) {
-                            framesCache.current.clear();
+                        if (!appState.cacheNeedsRefresh && framesCacheRef.current) {
+                            framesCacheRef.current.clear();
                             dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: true });
                         }
                     }}
