@@ -35,7 +35,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true } });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: true }, preserveCache: true });
                 break;
             }
             case "img": {
@@ -49,7 +49,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true } });
+                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: true }, preserveCache: true });
                 break;
             }
         }
@@ -60,13 +60,13 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             case "svg": {
                 const projectSvg = appState.project.svgs.get(entry.key);
                 if (!projectSvg) break;
-                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectSvg, key: entry.key, value: { ...projectSvg, showContextMenu: false }, preserveCache: true });
                 break;
             }
             case "img": {
                 const projectImg = appState.project.imgs.get(entry.key);
                 if (!projectImg) break;
-                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false } });
+                dispatch({ type: CoreActionType.SetProjectImg, key: entry.key, value: { ...projectImg, showContextMenu: false }, preserveCache: true });
                 break;
             }
         }
