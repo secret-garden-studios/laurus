@@ -73,14 +73,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: defaultMarqueeTool })
                         }
-                        const inactiveImgs = Array.from(appState.project.imgs.entries());
-                        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                        inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
-                        });
-                        inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
-                        });
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
@@ -189,14 +182,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } })
                         }
-                        const inactiveImgs = Array.from(appState.project.imgs.entries());
-                        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                        inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
-                        });
-                        inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
-                        });
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
@@ -250,14 +236,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'move' } });
                         }
-                        const inactiveImgs = Array.from(appState.project.imgs.entries());
-                        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                        inactiveImgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
-                        });
-                        inactiveSvgs.forEach(i => {
-                            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
-                        });
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
@@ -311,6 +290,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
                         }
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
@@ -364,6 +344,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
                         }
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',
@@ -417,6 +398,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
                         }
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={!uiState.playbackControlsEnabled ? {
                         cursor: 'progress',

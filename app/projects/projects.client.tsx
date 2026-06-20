@@ -119,9 +119,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
         if (p) {
             return p.map(x => {
                 const newImgs: Map<string, LaurusProjectImg> =
-                    new Map(x.imgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
+                    new Map(x.imgs.entries().map(e => [e[0], { ...e[1] }]));
                 const newSvgs: Map<string, LaurusProjectSvg> =
-                    new Map(x.svgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
+                    new Map(x.svgs.entries().map(e => [e[0], { ...e[1] }]));
                 return {
                     ...x,
                     imgs: newImgs,
@@ -613,9 +613,9 @@ export default function Projects({ apiOriginInit, projectsPromise, resolutionIni
                     onClick={async () => {
                         if (!selectedProject) return
                         const newImgs: Map<string, LaurusProjectImg> =
-                            new Map(selectedProject.imgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
+                            new Map(selectedProject.imgs.entries().map(e => [e[0], { ...e[1] }]));
                         const newSvgs: Map<string, LaurusProjectSvg> =
-                            new Map(selectedProject.svgs.entries().map(e => [e[0], { ...e[1], showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } }]));
+                            new Map(selectedProject.svgs.entries().map(e => [e[0], { ...e[1] }]));
                         const newProject: LaurusProject = {
                             ...selectedProject,
                             name: `${selectedProject.name} (copy)`,

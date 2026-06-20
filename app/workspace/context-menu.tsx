@@ -1,6 +1,6 @@
 import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect, RefObject } from "react";
 import { projectImgIsTransformed, projectSvgIsTransformed } from "../projects/projects.client";
-import { updateProject, LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult } from "../projects/projects.server";
+import { updateProject, LaurusProjectImg, LaurusProjectSvg, LaurusProjectResult, DEFAULT_CONTEXT_MENU_CONFIG } from "../projects/projects.server";
 import {
     CoreContext,
     LaurusTransform,
@@ -143,6 +143,8 @@ interface ContextMenu {
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
+    const contextMenuState = uiState.projectContextMenus.get(media.key);
+    const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
     const selected = useMemo<boolean>(() => { return (uiState.activeElement?.key ?? "") == media.key }, [uiState.activeElement?.key, media.key]);
     const [isAltPressed, setIsAltPressed] = useState(false);
 
@@ -423,30 +425,30 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }, [dispatch, appState.apiOrigin, appState.accessToken, appState.effects, uiState.activeElement?.key, uiState.browserElement, media.key, media.type, uiDispatch, framesCacheRef]);
 
     const leftSide = useMemo(() => {
-        if (media.meta.contextMenuConfig.position.toLowerCase().endsWith('left')) {
+        if (contextMenuConfig.position.toLowerCase().endsWith('left')) {
             return true;
         }
         else {
             return false;
         }
-    }, [media.meta.contextMenuConfig.position]);
+    }, [contextMenuConfig.position]);
 
     const bottomSide = useMemo(() => {
-        if (media.meta.contextMenuConfig.position.toLowerCase().startsWith('bottom')) {
+        if (contextMenuConfig.position.toLowerCase().startsWith('bottom')) {
             return true;
         }
         else {
             return false;
         }
-    }, [media.meta.contextMenuConfig.position]);
+    }, [contextMenuConfig.position]);
 
     const contextMenuWidth = useMemo(() => {
-        return (media.meta.contextMenuConfig.width * dynamicSizes.contextMenu.widthFactor);
-    }, [dynamicSizes.contextMenu.widthFactor, media.meta.contextMenuConfig.width]);
+        return (contextMenuConfig.width * dynamicSizes.contextMenu.widthFactor);
+    }, [dynamicSizes.contextMenu.widthFactor, contextMenuConfig.width]);
 
     const contextMenuHeight = useMemo(() => {
-        return (media.meta.contextMenuConfig.height * dynamicSizes.contextMenu.heightFactor);
-    }, [dynamicSizes.contextMenu.heightFactor, media.meta.contextMenuConfig.height]);
+        return (contextMenuConfig.height * dynamicSizes.contextMenu.heightFactor);
+    }, [dynamicSizes.contextMenu.heightFactor, contextMenuConfig.height]);
 
     const dynamicClipPath = useMemo(() => {
         const getPath = (isInner: boolean) => {
@@ -694,7 +696,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             }}>
             <div style={{
                 position: 'absolute',
-                ...(media.meta.contextMenuConfig.position.toLowerCase().endsWith('right') && { left: '100%' }),
+                ...(contextMenuConfig.position.toLowerCase().endsWith('right') && { left: '100%' }),
                 ...(leftSide && { right: '100%' }),
                 ...(bottomSide && { bottom: '0%' }),
                 display: 'grid',

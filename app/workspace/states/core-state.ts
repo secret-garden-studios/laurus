@@ -76,8 +76,6 @@ export enum CoreActionType {
     SetTimelineMaxValue,
     SetFps,
     SetCacheNeedsRefresh,
-    SetProjectImgShowContextMenu,
-    SetProjectSvgShowContextMenu,
 }
 
 export type CoreAction =
@@ -100,8 +98,6 @@ export type CoreAction =
     | { type: CoreActionType.SetTimelineMaxValue, value: number }
     | { type: CoreActionType.SetFps, value: number }
     | { type: CoreActionType.SetCacheNeedsRefresh, value: boolean }
-    | { type: CoreActionType.SetProjectImgShowContextMenu, key: string, value: boolean, newContextMenuConfig?: ContextMenuConfig }
-    | { type: CoreActionType.SetProjectSvgShowContextMenu, key: string, value: boolean, newContextMenuConfig?: ContextMenuConfig }
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
     switch (action.type) {
@@ -181,22 +177,6 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         }
         case CoreActionType.SetCacheNeedsRefresh: {
             return { ...state, cacheNeedsRefresh: action.value }
-        }
-        case CoreActionType.SetProjectImgShowContextMenu: {
-            const newImgs = new Map(state.project.imgs);
-            const img = newImgs.get(action.key);
-            if (img) {
-                newImgs.set(action.key, { ...img, showContextMenu: action.value, ...(action.newContextMenuConfig ? { contextMenuConfig: action.newContextMenuConfig } : {}) })
-            }
-            return { ...state, project: { ...state.project, imgs: newImgs } }
-        }
-        case CoreActionType.SetProjectSvgShowContextMenu: {
-            const newSvgs = new Map(state.project.svgs);
-            const svg = newSvgs.get(action.key);
-            if (svg) {
-                newSvgs.set(action.key, { ...svg, showContextMenu: action.value, ...(action.newContextMenuConfig ? { contextMenuConfig: action.newContextMenuConfig } : {}) })
-            }
-            return { ...state, project: { ...state.project, svgs: newSvgs } }
         }
     }
 }

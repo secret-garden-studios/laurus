@@ -101,7 +101,8 @@ export default function DraggableCamera({
                         <>
                             {Array.from(appState.project.imgs.entries()).map((e) => {
                                 const [key, meta] = e;
-                                if (meta.top < 0 || meta.left < 0 || meta.showContextMenu) return;
+                                const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                                if (meta.top < 0 || meta.left < 0 || showContextMenu) return;
                                 const imgData = appState.canvasImgs.get(key);
                                 if (imgData) {
                                     return (
@@ -120,7 +121,8 @@ export default function DraggableCamera({
                             })}
                             {Array.from(appState.project.svgs.entries()).map((e) => {
                                 const [key, meta] = e;
-                                if (meta.top < 0 || meta.left < 0 || meta.showContextMenu) return;
+                                const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                                if (meta.top < 0 || meta.left < 0 || showContextMenu) return;
                                 const svgData = appState.canvasSvgs.get(key);
                                 if (!svgData) return;
                                 let decodedString = "";

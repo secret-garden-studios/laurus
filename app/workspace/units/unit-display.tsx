@@ -31,7 +31,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: entry.key, value: true });
+                uiDispatch({ type: UIActionType.SetProjectContextMenu, key: entry.key, showContextMenu: true });
                 break;
             }
             case "img": {
@@ -41,24 +41,15 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     locallyActivatedEffectKey: effectKey,
                 }
                 uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: entry.key, value: true });
+                uiDispatch({ type: UIActionType.SetProjectContextMenu, key: entry.key, showContextMenu: true });
                 break;
             }
         }
-    }, [uiState.carouselEntries, effectKey, uiDispatch, dispatch]);
+    }, [uiState.carouselEntries, effectKey, uiDispatch]);
 
     const hideContextMenu = useCallback((entry: CarouselEntry) => {
-        switch (entry.type) {
-            case "svg": {
-                dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: entry.key, value: false });
-                break;
-            }
-            case "img": {
-                dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: entry.key, value: false });
-                break;
-            }
-        }
-    }, [dispatch]);
+        uiDispatch({ type: UIActionType.SetProjectContextMenu, key: entry.key, showContextMenu: false });
+    }, [uiDispatch]);
 
     return <>
         <div style={{ padding: dynamicSizes.param.padding }}>

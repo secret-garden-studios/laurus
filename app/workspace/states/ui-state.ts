@@ -1,6 +1,12 @@
 import { LaurusCropSvg } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
 import { LaurusImgResult, LaurusEffect, LaurusSvgResult } from "../workspace.server";
+import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
+
+export interface ProjectMediaContextMenu {
+    showContextMenu: boolean;
+    contextMenuConfig: ContextMenuConfig;
+}
 
 export type LaurusThumbnail =
     | { type: 'svg', value: LaurusSvgResult }
@@ -55,6 +61,7 @@ export interface UIState {
     mixableEffects: string[];
     playbackControlsEnabled: boolean;
     filledForwards: boolean;
+    projectContextMenus: Map<string, ProjectMediaContextMenu>;
 }
 
 export const defaultUIState: UIState = {
@@ -75,6 +82,7 @@ export const defaultUIState: UIState = {
     mixableEffects: [],
     playbackControlsEnabled: true,
     filledForwards: false,
+    projectContextMenus: new Map(),
 }
 
 export enum UIActionType {
@@ -102,6 +110,8 @@ export enum UIActionType {
     SetTimelineValues,
     SetMixableEffects,
     SetFilledForwards,
+    SetProjectContextMenu,
+    CloseAllContextMenus,
 }
 
 export type UIAction =
@@ -129,6 +139,8 @@ export type UIAction =
     | { type: UIActionType.SetTimelineValues, value: number[] }
     | { type: UIActionType.SetMixableEffects, value: string[] }
     | { type: UIActionType.SetFilledForwards, value: boolean }
+    | { type: UIActionType.SetProjectContextMenu, key: string, showContextMenu: boolean, contextMenuConfig?: ContextMenuConfig }
+    | { type: UIActionType.CloseAllContextMenus }
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
     switch (action.type) {
@@ -248,6 +260,33 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         }
         case UIActionType.SetFilledForwards: {
             return { ...state, filledForwards: action.value }
+        }
+        case UIActionType.SetProjectContextMenu: {
+            const newProjectContextMenus = new Map(state.projectContextMenus);
+            if (action.showContextMenu) {
+                for (const [k, v] of newProjectContextMenus.entries()) {
+                    if (k !== action.key && v.showContextMenu) {
+                        newProjectContextMenus.set(k, { ...v, showContextMenu: false });
+                    }
+                }
+            }
+            const current = newProjectContextMenus.get(action.key);
+            newProjectContextMenus.set(action.key, {
+                showContextMenu: action.showContextMenu,
+                contextMenuConfig: action.contextMenuConfig ?? current?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG
+            });
+            return { ...state, projectContextMenus: newProjectContextMenus };
+        }
+        case UIActionType.CloseAllContextMenus: {
+            const newProjectContextMenus = new Map(state.projectContextMenus);
+            let changed = false;
+            for (const [k, v] of newProjectContextMenus.entries()) {
+                if (v.showContextMenu) {
+                    newProjectContextMenus.set(k, { ...v, showContextMenu: false });
+                    changed = true;
+                }
+            }
+            return changed ? { ...state, projectContextMenus: newProjectContextMenus } : state;
         }
     }
 }

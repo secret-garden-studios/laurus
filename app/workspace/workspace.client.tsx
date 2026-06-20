@@ -42,7 +42,7 @@ import {
 } from "../projects/projects.server";
 import { MeDependencies } from "../page";
 import LaurusImage from "../components/laurus-image";
-import { uiContextReducer, CarouselEntry, UIAction, UIActionType, UIState, defaultMarqueeTool, defaultUIState } from "./states/ui-state";
+import { uiContextReducer, CarouselEntry, UIAction, UIActionType, UIState, defaultMarqueeTool, defaultUIState, ProjectMediaContextMenu } from "./states/ui-state";
 import { CoreAction, CoreActionType, CoreState, coreContextReducer, defaultCoreState } from "./states/core-state";
 
 export function getNewContextMenuConfig(
@@ -180,29 +180,10 @@ export const UIContext = createContext<UIContextProps>(
 
 function initProject(p: ProjectResult_V1_0) {
     const projectImgsInit: Map<string, LaurusProjectImg> =
-        new Map(p.imgs.entries().map(e => [e[0],
-        {
-            ...e[1],
-            showContextMenu: false,
-            contextMenuConfig: getNewContextMenuConfig(
-                { top: e[1].top, left: e[1].left },
-                { width: p.canvas_width, height: p.canvas_height },
-                { ...e[1] },
-                { x: e[1].scale_x, y: e[1].scale_y },
-                { ...DEFAULT_CONTEXT_MENU_CONFIG })
-        }]));
+        new Map(p.imgs.entries().map(e => [e[0], { ...e[1] }]));
 
     const projectSvgsInit: Map<string, LaurusProjectSvg> =
-        new Map(p.svgs.entries().map(e => [e[0], {
-            ...e[1],
-            showContextMenu: false,
-            contextMenuConfig: getNewContextMenuConfig(
-                { top: e[1].top, left: e[1].left },
-                { width: p.canvas_width, height: p.canvas_height },
-                { ...e[1] },
-                { x: e[1].scale_x, y: e[1].scale_y },
-                { ...DEFAULT_CONTEXT_MENU_CONFIG })
-        }]));
+        new Map(p.svgs.entries().map(e => [e[0], { ...e[1] }]));
 
     return {
         ...p,
@@ -370,6 +351,34 @@ function initReducer({
 
     const newBrowserFrames: LaurusCropSvg[] = getCrops('rgba(200, 200, 200, 1)');
 
+    const newProjectContextMenus = new Map<string, ProjectMediaContextMenu>();
+    if (projectDependencies) {
+        projectDependencies.project.imgs.forEach((img, key) => {
+            newProjectContextMenus.set(key, {
+                showContextMenu: false,
+                contextMenuConfig: getNewContextMenuConfig(
+                    { top: img.top, left: img.left },
+                    { width: projectDependencies.project.canvas_width, height: projectDependencies.project.canvas_height },
+                    { ...img },
+                    { x: img.scale_x, y: img.scale_y },
+                    { ...DEFAULT_CONTEXT_MENU_CONFIG }
+                )
+            });
+        });
+        projectDependencies.project.svgs.forEach((svg, key) => {
+            newProjectContextMenus.set(key, {
+                showContextMenu: false,
+                contextMenuConfig: getNewContextMenuConfig(
+                    { top: svg.top, left: svg.left },
+                    { width: projectDependencies.project.canvas_width, height: projectDependencies.project.canvas_height },
+                    { ...svg },
+                    { x: svg.scale_x, y: svg.scale_y },
+                    { ...DEFAULT_CONTEXT_MENU_CONFIG }
+                )
+            });
+        });
+    }
+
     const newCarouselEntries = initCarouselEntries(newProject);
 
     return {
@@ -397,6 +406,7 @@ function initReducer({
             effectNames: effectNames ?? [],
             timelineUnits: [...timelineUnits],
             timelineValues: [...timelineValues],
+            projectContextMenus: newProjectContextMenus,
         }
     }
 }
@@ -557,15 +567,8 @@ export default function Workspace({
     }, [uiState.tool.type, appState.effects, dispatch]);
 
     const closeContextMenus = useCallback(() => {
-        const inactiveSvgs = Array.from(appState.project.svgs.entries());
-        const inactiveImgs = Array.from(appState.project.imgs.entries());
-        inactiveSvgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
-        });
-        inactiveImgs.forEach(i => {
-            dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
-        });
-    }, [appState.project.imgs, appState.project.svgs]);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+    }, [uiDispatch]);
 
     const getNewAnimationsByTarget = useCallback(async (
         fill: FillMode,
@@ -705,9 +708,15 @@ export default function Workspace({
         if (!uiState.playbackControlsEnabled) return;
         handleMixRestoration();
         closeContextMenus();
+        uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
         uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
         uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
         dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
+
+        // Yield execution to the event loop so React can render and commit the tool change to 'viewport',
+        // which unmounts the items from the main canvas and mounts them inside the camera viewport.
+        // This ensures the ref collections (imgElementsRef/svgElementsRef) point to the new mounted DOM elements.
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         const newAnimations = await getNewAnimations('none', false, true);
         if (newAnimations.length == 0) {
@@ -850,27 +859,13 @@ export default function Workspace({
             const target = event.target as HTMLElement;
             if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || event.metaKey) return;
             const clearAllContextMenus = () => {
-                const inactiveImgs = Array.from(appState.project.imgs.entries());
-                const inactiveSvgs = Array.from(appState.project.svgs.entries());
-                inactiveImgs.forEach(i => {
-                    dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: i[0], value: false });
-                });
-                inactiveSvgs.forEach(i => {
-                    dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: i[0], value: false });
-                });
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             };
             if (event.key === 'Escape') {
                 setSelectedEffectUnitKeys(new Set<string>());
                 setSelectedImgKeys(new Set<string>());
                 setSelectedSvgKeys(new Set<string>());
-                const pendingSvgs = Array.from(appState.project.svgs.entries()).filter(m => m[1].showContextMenu);
-                for (let i = 0; i < pendingSvgs.length; i++) {
-                    dispatch({ type: CoreActionType.SetProjectSvgShowContextMenu, key: pendingSvgs[i][0], value: false });
-                }
-                const pendingImgs = Array.from(appState.project.imgs.entries()).filter(m => m[1].showContextMenu);
-                for (let i = 0; i < pendingImgs.length; i++) {
-                    dispatch({ type: CoreActionType.SetProjectImgShowContextMenu, key: pendingImgs[i][0], value: false });
-                }
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key.toLowerCase() === 'm') {
                 const newToolType = uiState.tool.type === 'move' ? 'none' : 'move';
                 uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
@@ -897,7 +892,7 @@ export default function Workspace({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type]);
+    }, [uiState.tool.type, uiDispatch]);
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
@@ -1069,7 +1064,8 @@ export default function Workspace({
                             <>
                                 {Array.from(appState.project.imgs.entries()).map((e) => {
                                     const [key, meta] = e;
-                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
+                                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !showContextMenu)) return;
                                     const imgData = appState.canvasImgs.get(key);
                                     if (imgData) {
                                         return (
@@ -1082,14 +1078,15 @@ export default function Workspace({
                                                     imgElementsRef={imgElementsRef}
                                                     framesCacheRef={framesCacheRef}
                                                     refKey={key}
-                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
+                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && showContextMenu} />
                                             </div>
                                         );
                                     }
                                 })}
                                 {Array.from(appState.project.svgs.entries()).map((e) => {
                                     const [key, meta] = e;
-                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !meta.showContextMenu)) return;
+                                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === 'viewport' && !showContextMenu)) return;
                                     const svgData = appState.canvasSvgs.get(key);
                                     if (!svgData) return;
                                     let decodedString = "";
@@ -1114,7 +1111,7 @@ export default function Workspace({
                                                     svgElementsRef={svgElementsRef}
                                                     framesCacheRef={framesCacheRef}
                                                     refKey={key}
-                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && meta.showContextMenu} />
+                                                    forceAbsolutePosition={uiState.tool.type === 'viewport' && showContextMenu} />
                                             </div>
                                         );
                                     }

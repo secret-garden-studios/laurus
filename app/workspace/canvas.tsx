@@ -202,14 +202,12 @@ export default function Canvas() {
             fill: svgData.fill,
             stroke: svgData.stroke,
             stroke_width: svgData.stroke_width,
-            showContextMenu: false,
             rotate_x: 0,
             rotate_y: 0,
             rotate_z: 0,
             rotate_angle: 0,
             scale_x: 1,
             scale_y: 1,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
             description: ""
         }
         const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
@@ -224,6 +222,7 @@ export default function Canvas() {
                 if (encodedSvg) {
                     dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
                     uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
                 }
             }
         }
@@ -236,6 +235,7 @@ export default function Canvas() {
                 if (encodedSvg) {
                     dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
                     uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
+                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
                 }
             }
         }
@@ -255,7 +255,6 @@ export default function Canvas() {
             width: newFrame.width,
             height: newFrame.height,
             media_key: imgData.media_key,
-            showContextMenu: false,
             img_media_id: imgData.img_media_id,
             top: newFrame.y,
             left: newFrame.x,
@@ -266,7 +265,6 @@ export default function Canvas() {
             rotate_angle: 0,
             scale_x: 1,
             scale_y: 1,
-            contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
             description: "",
         };
         const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
@@ -281,6 +279,7 @@ export default function Canvas() {
                 if (encodedImg) {
                     dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
                     uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
                 }
             }
         }
@@ -293,6 +292,7 @@ export default function Canvas() {
                 if (encodedImg) {
                     dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
                     uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
+                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
                 }
             }
         }
