@@ -18,7 +18,7 @@ interface EffectUnit {
 export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
-    const { selectedEffectUnitKeys, isMetaKeyPressed } = useContext(HoverContext);
+    const { selectedEffectUnitKeys, isAltKeyPressed } = useContext(HoverContext);
     const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
     const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
     const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
@@ -440,7 +440,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
                             const newValue = cursorToTime(c.x);
                             endRef.current.value = newValue.toFixed(2);
                         }}
-                        disabled={effect.value.locked || isMetaKeyPressed}
+                        disabled={effect.value.locked || isAltKeyPressed}
                         isSelected={selectedEffectUnitKeys.has(effect.key)}
                         startTitle={startTitle}
                         endTitle={endTitle} />

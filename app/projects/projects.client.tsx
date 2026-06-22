@@ -1,6 +1,6 @@
 import { CSSProperties, use, useEffect, useMemo, useRef, useState } from "react";
 import { ProjectsResolution } from "./projects-resolution"
-import { createProject, DEFAULT_CONTEXT_MENU_CONFIG, deleteProject, LaurusProject, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, ProjectResult_V1_0 } from "./projects.server"
+import { createProject, deleteProject, LaurusProject, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg, ProjectResult_V1_0 } from "./projects.server"
 import { addCircle, arrowDropDown, arrowDropUp, fileCopy, outbound, search, SvgRepo, cancelCircle } from "../svg-repo";
 import Menubar from "../menubar";
 import { dellaRespira, italiana } from "../fonts";

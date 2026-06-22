@@ -39,7 +39,7 @@ interface ScaleUnit {
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, scale.scale_id);
     const [mainControls] = useState(true);
@@ -360,7 +360,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                                         const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                         timeRef.current.innerHTML = val.toFixed(2) + 's';
                                     }}
-                                    disabled={scale.locked || isMetaKeyPressed}
+                                    disabled={scale.locked || isAltKeyPressed}
                                     title={timeTitle}
                                     liveTitleRef={timeRef} />
                             </div>
@@ -474,7 +474,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                                             }
                                         }
                                     }}
-                                    disabled={scale.locked || isMetaKeyPressed}
+                                    disabled={scale.locked || isAltKeyPressed}
                                     title={scaleXTitle} />
                                 <div style={{ display: 'flex', marginTop: dynamicSizes.scaleParamDisplay.marginTop, gap: dynamicSizes.scaleParamDisplay.flexGap }}>
                                     <div className={dmSans.className}
@@ -579,7 +579,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                                             }
                                         }
                                     }}
-                                    disabled={scale.locked || isMetaKeyPressed}
+                                    disabled={scale.locked || isAltKeyPressed}
                                     title={scaleYTitle} />
                             </div>
                             <div />

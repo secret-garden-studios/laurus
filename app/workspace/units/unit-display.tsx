@@ -5,7 +5,6 @@ import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
-import { CoreActionType } from "../states/core-state";
 
 interface UnitDisplay {
     carouselIndex: number,
@@ -14,9 +13,9 @@ interface UnitDisplay {
     onNewLocalIndex: (v: number) => void,
 }
 export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
-    const { appState, dispatch } = useContext(CoreContext);
+    const { appState } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
 
     const setActiveElement = useCallback((newCarouselIndex: number) => {
@@ -69,11 +68,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         containerStyle={{
                             width: 30,
                             height: 30,
-                            cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
+                            cursor: isAltKeyPressed ? 'crosshair' : 'pointer',
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            if (isMetaKeyPressed) return;
+                            if (isAltKeyPressed) return;
                             const newIndex = Math.max(carouselIndex - 1, 0);
                             const newLocalIndex = Math.max(localIndex - 1, 0);
                             onNewLocalIndex(newLocalIndex);
@@ -103,7 +102,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                         <div
                                             key={c.key}
                                             onClick={() => {
-                                                if (isMetaKeyPressed) return;
+                                                if (isAltKeyPressed) return;
                                                 setActiveElement(i);
                                                 const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
@@ -112,7 +111,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                             }}
                                             style={{
                                                 position: 'relative',
-                                                cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
+                                                cursor: isAltKeyPressed ? 'crosshair' : 'pointer',
                                                 ...dynamicSizes.displayImg
                                             }}>
                                             <LaurusImage
@@ -136,9 +135,9 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                                         <SvgRepo
                                             key={c.key}
                                             svg={canvasSvg}
-                                            containerStyle={{ ...dynamicSizes.displaySvg, cursor: isMetaKeyPressed ? 'crosshair' : 'pointer' }}
+                                            containerStyle={{ ...dynamicSizes.displaySvg, cursor: isAltKeyPressed ? 'crosshair' : 'pointer' }}
                                             onContainerClick={() => {
-                                                if (isMetaKeyPressed) return;
+                                                if (isAltKeyPressed) return;
                                                 setActiveElement(i);
                                                 const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
                                                 inactives.forEach(ce => {
@@ -161,11 +160,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         containerStyle={{
                             width: 30,
                             height: 30,
-                            cursor: isMetaKeyPressed ? 'crosshair' : 'pointer',
+                            cursor: isAltKeyPressed ? 'crosshair' : 'pointer',
                         }}
                         scale={1}
                         onContainerClick={() => {
-                            if (isMetaKeyPressed) return;
+                            if (isAltKeyPressed) return;
                             const newIndex = Math.min(carouselIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
                             const newLocalIndex = Math.min(localIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
                             onNewLocalIndex(newLocalIndex);

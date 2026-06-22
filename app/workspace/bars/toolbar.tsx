@@ -1,18 +1,16 @@
 import { useContext, useState } from "react"
-import { CoreContext, UIContext } from "../workspace.client"
+import { UIContext } from "../workspace.client"
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import { SvgRepo, lassoSelect, browse, keyboardCommandKey, allOut, toysFan, earthquake, experiment } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
 import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
-import { CoreActionType } from "../states/core-state";
 
 interface Toolbar {
     resolution: WorkspaceResolution,
     handleMixRestoration: () => void,
 }
 export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
-    const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
     const [tooltipDelay] = useState(1000);
     const [rightPanelSize] = useState(() => {
@@ -182,7 +180,6 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         else {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } })
                         }
-                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
                     containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',

@@ -31,7 +31,7 @@ export default function RotateUnitbar({
 }: RotateUnitbar) {
     const { appState, dispatch, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(uiState.resolution);
@@ -132,7 +132,7 @@ export default function RotateUnitbar({
         }}>
             <div title="loop"
                 onDoubleClick={() => {
-                    if (rotate.locked || isMetaKeyPressed) return;
+                    if (rotate.locked || isAltKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
                         const nextLoop = getNextLoopType();
@@ -163,7 +163,7 @@ export default function RotateUnitbar({
                     title="loop"
                     svg={loopSvg}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={loopSvgScale}
@@ -192,7 +192,7 @@ export default function RotateUnitbar({
             </div>
             <div title="counterclockwise"
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     const newCounterClockwise: boolean = !counterClockwise;
                     const activeKey = carouselEntryKey;
                     if (!activeKey) return;
@@ -225,7 +225,7 @@ export default function RotateUnitbar({
                     title="counterclockwise"
                     svg={rotate.math.has(carouselEntryKey) ? updateCounterClockwise() : updateCounterClockwise("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
@@ -233,7 +233,7 @@ export default function RotateUnitbar({
             </div>
             <div title="preview"
                 onClick={() => {
-                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
+                    if (isAltKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getRotateFrames(apiOrigin, rotate.rotate_id, carouselEntryKey),
@@ -249,7 +249,7 @@ export default function RotateUnitbar({
                     title="preview"
                     svg={rotate.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
@@ -257,7 +257,7 @@ export default function RotateUnitbar({
             </div>
             <div title="increase limits"
                 onClick={() => {
-                    if (isMetaKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
                         const nextFactor = incrementLimitFactor();
@@ -286,7 +286,7 @@ export default function RotateUnitbar({
                     title="increase limits"
                     svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -294,7 +294,7 @@ export default function RotateUnitbar({
             </div>
             <div title="decrease limits"
                 onClick={() => {
-                    if (isMetaKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || rotate.locked || (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
                         const nextFactor = decrementLimitFactor();
@@ -323,7 +323,7 @@ export default function RotateUnitbar({
                     title="decrease limits"
                     svg={rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -331,7 +331,7 @@ export default function RotateUnitbar({
             </div>
             <div title="copy"
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     let clipboardData: RotateUnitControls = { ...currentControls };
                     const activeEquation = rotate.math.get(carouselEntryKey);
                     if (activeEquation) {
@@ -360,7 +360,7 @@ export default function RotateUnitbar({
                     title="copy"
                     svg={rotate.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}
@@ -368,7 +368,7 @@ export default function RotateUnitbar({
             </div>
             <div title="paste"
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     if (uiState.effectClipboard && uiState.effectClipboard.type == 'rotate') {
                         const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
@@ -396,7 +396,7 @@ export default function RotateUnitbar({
                     title="paste"
                     svg={uiState.effectClipboard?.type == 'rotate' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
@@ -404,7 +404,7 @@ export default function RotateUnitbar({
             </div>
             <div title="clear"
                 onClick={async () => {
-                    if (isMetaKeyPressed || rotate.locked) return;
+                    if (isAltKeyPressed || rotate.locked) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && rotate.math.has(activeKey)) {
                         const confirmed = confirm('are you sure you want to clear this equation?');
@@ -438,7 +438,7 @@ export default function RotateUnitbar({
                     title="clear"
                     svg={rotate.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (rotate.locked ? '' : rotate.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}

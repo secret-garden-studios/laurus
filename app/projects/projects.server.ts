@@ -252,9 +252,9 @@ export type ContextMenuConfig =
 
 export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = { position: AbsolutePosition.topRight, width: 300, height: 400 }
 
-export interface LaurusProjectImg extends ProjectImg_V1_0 {}
+export type LaurusProjectImg = ProjectImg_V1_0;
 
-export interface LaurusProjectSvg extends ProjectSvg_V1_0 {}
+export type LaurusProjectSvg = ProjectSvg_V1_0;
 
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
     imgs: Map<string, LaurusProjectImg>

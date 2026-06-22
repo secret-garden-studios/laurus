@@ -15,7 +15,7 @@ import ContextMenu from "./context-menu";
 import { v4 } from "uuid";
 import { Z_INDEX } from "./workspace.config";
 import { LaurusFrame, LaurusImgResult } from "./workspace.server";
-import { LaurusActiveElement, UIActionType, ProjectMediaContextMenu } from "./states/ui-state";
+import { LaurusActiveElement, UIActionType } from "./states/ui-state";
 import { CoreActionType } from "./states/core-state";
 
 interface Point2D {
@@ -191,12 +191,12 @@ function ProjectImg({
     const imgCursor = useMemo(() => {
         return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
+            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && !uiState.filledForwards && uiState.tool.type !== 'move')
                 ? 'context-menu'
                 : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
                     : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
-    }, [uiState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+    }, [isMetaKeyPressed, uiState.tool, uiState.filledForwards, isStackable, dragDisabled, isDragging]);
 
     return <>
         <div
@@ -334,12 +334,12 @@ function ProjectSvg({
     const svgCursor = useMemo(() => {
         return (isMetaKeyPressed && uiState.tool.type === 'marquee' && uiState.tool.select)
             ? 'crosshair'
-            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && uiState.tool.type !== 'viewport' && uiState.tool.type !== 'move')
+            : ((isMetaKeyPressed || uiState.tool.type === 'contextmenu') && !uiState.filledForwards && uiState.tool.type !== 'move')
                 ? 'context-menu'
                 : (isStackable || uiState.tool.type === 'scale')
                     ? 'crosshair'
                     : dragDisabled ? '' : isDragging ? 'grabbing' : 'grab'
-    }, [uiState.tool, dragDisabled, isDragging, isMetaKeyPressed, isStackable]);
+    }, [isMetaKeyPressed, uiState.tool, uiState.filledForwards, isStackable, dragDisabled, isDragging]);
 
     return <>
         <div
@@ -647,7 +647,7 @@ export function DraggableProjectImg({
                 return next;
             });
         }
-        else if (metaKey && uiState.tool.type !== 'viewport') {
+        else if (metaKey && !uiState.filledForwards) {
             uiDispatch({ type: UIActionType.SetProjectContextMenu, key: mediaKey, showContextMenu: !showContextMenu, contextMenuConfig: newContextMenuConfig });
         }
         else {
@@ -686,7 +686,7 @@ export function DraggableProjectImg({
                 }
             }
         }
-    }, [appState.project.canvas_height, appState.project.canvas_width, mediaKey, meta, onImgStackDrop, setSelectedImgKeys, uiDispatch, uiState.tool, uiState.projectContextMenus]);
+    }, [uiState.projectContextMenus, uiState.tool, uiState.filledForwards, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, setSelectedImgKeys, uiDispatch, onImgStackDrop]);
 
     return (<>
         <DndContext
@@ -944,7 +944,7 @@ export function DraggableProjectSvg({
                 return next;
             });
         }
-        else if (metaKey && uiState.tool.type !== 'viewport') {
+        else if (metaKey && !uiState.filledForwards) {
             uiDispatch({ type: UIActionType.SetProjectContextMenu, key: mediaKey, showContextMenu: !showContextMenu, contextMenuConfig: newContextMenuConfig });
         }
         else {
@@ -983,7 +983,7 @@ export function DraggableProjectSvg({
                 }
             }
         }
-    }, [uiState.tool, setSelectedSvgKeys, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, onSvgStackDrop, uiDispatch, uiState.projectContextMenus]);
+    }, [uiState.projectContextMenus, uiState.tool, uiState.filledForwards, mediaKey, meta, appState.project.canvas_width, appState.project.canvas_height, setSelectedSvgKeys, uiDispatch, onSvgStackDrop]);
 
     return (<>
         <DndContext

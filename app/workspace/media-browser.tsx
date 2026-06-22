@@ -106,7 +106,7 @@ export default function MediaBrowser({
                     midhigh: 1.1,
                     midlow: 0.6
                 },
-                switch: {
+                toggle: {
                     container: {
                         left: 10,
                         gap: 10,
@@ -158,7 +158,7 @@ export default function MediaBrowser({
                     midhigh: 0.77,
                     midlow: 0.42
                 },
-                switch: {
+                toggle: {
                     container: {
                         left: 10,
                         gap: 8,
@@ -211,7 +211,7 @@ export default function MediaBrowser({
                     midhigh: 0.55,
                     midlow: 0.3
                 },
-                switch: {
+                toggle: {
                     container: {
                         left: 8,
                         gap: 6,
@@ -525,23 +525,23 @@ export default function MediaBrowser({
                             top: 0,
                             display: 'flex',
                             alignItems: 'center',
-                            ...dynamicSizes.switch.container
+                            ...dynamicSizes.toggle.container
                         }}>
                             <SvgRepo
                                 title={"discover images"}
                                 svg={appState.project.browse_public_imgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
                                 containerStyle={{
-                                    width: dynamicSizes.switch.track.height * 1.75,
-                                    height: dynamicSizes.switch.track.height * 1.75
+                                    width: dynamicSizes.toggle.track.height * 1.75,
+                                    height: dynamicSizes.toggle.track.height * 1.75
                                 }}
                                 scale={1}
                                 scaleToContaier={true} />
                             <Toggle
                                 value={appState.project.browse_public_imgs}
                                 onClick={onImgDiscoverToggle}
-                                trackStyles={{ ...dynamicSizes.switch.track }}
-                                buttonStyles={{ ...dynamicSizes.switch.button }}
-                                translateX={dynamicSizes.switch.translateX} />
+                                trackStyles={{ ...dynamicSizes.toggle.track }}
+                                buttonStyles={{ ...dynamicSizes.toggle.button }}
+                                translateX={dynamicSizes.toggle.translateX} />
                         </div>
                     </>}
                     {filter == 'svg' && <>
@@ -550,22 +550,22 @@ export default function MediaBrowser({
                             top: 0,
                             display: 'flex',
                             alignItems: 'center',
-                            ...dynamicSizes.switch.container
+                            ...dynamicSizes.toggle.container
                         }}>
                             <SvgRepo
                                 title={"discover svgs"}
                                 svg={appState.project.browse_public_svgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
                                 containerStyle={{
-                                    width: dynamicSizes.switch.track.height * 1.33,
-                                    height: dynamicSizes.switch.track.height * 1.33
+                                    width: dynamicSizes.toggle.track.height * 1.33,
+                                    height: dynamicSizes.toggle.track.height * 1.33
                                 }}
                                 scale={1}
                                 scaleToContaier={true} />
                             <Toggle
                                 value={appState.project.browse_public_svgs}
                                 onClick={onSvgDiscoverToggle}
-                                trackStyles={{ ...dynamicSizes.switch.track }}
-                                buttonStyles={{ ...dynamicSizes.switch.button }} />
+                                trackStyles={{ ...dynamicSizes.toggle.track }}
+                                buttonStyles={{ ...dynamicSizes.toggle.button }} />
                         </div>
                     </>}
                     {filter == 'frame' && <>
@@ -574,18 +574,18 @@ export default function MediaBrowser({
                             top: 0,
                             display: 'flex',
                             alignItems: 'center',
-                            ...dynamicSizes.switch.container
+                            ...dynamicSizes.toggle.container
                         }}>
                             <div style={{
-                                width: dynamicSizes.switch.track.height * 1.33,
-                                height: dynamicSizes.switch.track.height * 1.33,
+                                width: dynamicSizes.toggle.track.height * 1.33,
+                                height: dynamicSizes.toggle.track.height * 1.33,
                                 display: 'grid',
                                 placeContent: 'center'
                             }}>
                                 <div title={"light frame background"}
                                     style={{
-                                        width: dynamicSizes.switch.track.height,
-                                        height: dynamicSizes.switch.track.height,
+                                        width: dynamicSizes.toggle.track.height,
+                                        height: dynamicSizes.toggle.track.height,
                                         background: 'rgb(227,227,227)'
                                     }} />
                             </div>
@@ -594,8 +594,8 @@ export default function MediaBrowser({
                                 onClick={() => {
                                     uiDispatch({ type: UIActionType.SetLightFrameBackground, value: !uiState.lightFrameBackground });
                                 }}
-                                trackStyles={{ ...dynamicSizes.switch.track }}
-                                buttonStyles={{ ...dynamicSizes.switch.button }} />
+                                trackStyles={{ ...dynamicSizes.toggle.track }}
+                                buttonStyles={{ ...dynamicSizes.toggle.button }} />
                         </div>
                     </>}
                     {/* media thumbnails */}

@@ -29,7 +29,7 @@ export default function ScaleUnitbar({
     setUnlockAspectRatio }: ScaleUnitbar) {
     const { appState, dispatch, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(uiState.resolution);
         switch (uiState.resolution.type) {
@@ -130,7 +130,7 @@ export default function ScaleUnitbar({
         }}>
             <div title={"loop"}
                 onDoubleClick={() => {
-                    if (scale.locked || isMetaKeyPressed) return;
+                    if (scale.locked || isAltKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
                         const nextLoop = getNextLoopType();
@@ -158,7 +158,7 @@ export default function ScaleUnitbar({
                     title={"loop"}
                     svg={loopSvg}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={loopSvgScale}
@@ -187,7 +187,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"preview"}
                 onClick={() => {
-                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
+                    if (isAltKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getScaleFrames(apiOrigin, scale.scale_id, carouselEntryKey),
@@ -203,7 +203,7 @@ export default function ScaleUnitbar({
                     title={"preview"}
                     svg={scale.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
@@ -211,7 +211,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"increase limits"}
                 onClick={() => {
-                    if (isMetaKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
                         const nextFactor = incrementLimitFactor();
@@ -240,7 +240,7 @@ export default function ScaleUnitbar({
                     title={"increase limits"}
                     svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -248,7 +248,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"decrease limits"}
                 onClick={() => {
-                    if (isMetaKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || scale.locked || (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
                         const nextFactor = decrementLimitFactor();
@@ -277,7 +277,7 @@ export default function ScaleUnitbar({
                     title={"decrease limits"}
                     svg={scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -285,7 +285,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"link width and height"}
                 onClick={() => {
-                    if (isMetaKeyPressed || scale.locked) return;
+                    if (isAltKeyPressed || scale.locked) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
                         setUnlockAspectRatio(v => !v);
@@ -300,7 +300,7 @@ export default function ScaleUnitbar({
                     title={"link width and height"}
                     svg={scale.math.has(carouselEntryKey) ? (unlockAspectRatio ? linkOff() : link()) : (unlockAspectRatio ? linkOff("rgb(62, 62, 62)") : link("rgb(62, 62, 62)"))}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
@@ -308,7 +308,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"copy"}
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     let clipboardData: ScaleUnitControls = { ...currentControls };
                     const activeEquation = scale.math.get(carouselEntryKey);
                     if (activeEquation) {
@@ -337,7 +337,7 @@ export default function ScaleUnitbar({
                     title={"copy"}
                     svg={scale.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}
@@ -345,7 +345,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"paste"}
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     if (uiState.effectClipboard && uiState.effectClipboard.type == 'scale') {
                         const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
@@ -373,7 +373,7 @@ export default function ScaleUnitbar({
                     title={"paste"}
                     svg={uiState.effectClipboard?.type == 'scale' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
@@ -381,7 +381,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"clear"}
                 onClick={async () => {
-                    if (isMetaKeyPressed || scale.locked) return;
+                    if (isAltKeyPressed || scale.locked) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && scale.math.has(activeKey)) {
                         const confirmed = confirm('are you sure you want to clear this equation?');
@@ -418,7 +418,7 @@ export default function ScaleUnitbar({
                     title={"clear"}
                     svg={scale.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (scale.locked ? '' : scale.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}

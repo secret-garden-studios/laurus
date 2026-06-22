@@ -1,4 +1,4 @@
-import { ContextMenuConfig, LaurusProjectResult } from "../../projects/projects.server";
+import { LaurusProjectResult } from "../../projects/projects.server";
 import { NEW_PROJECT_CANVAS_SIZE } from "../workspace.config";
 import { LaurusEffect, LaurusEffectGroupResult, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
 

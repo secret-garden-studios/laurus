@@ -26,7 +26,7 @@ export default function MoveUnitbar({
     setCurrentControls, }: MoveUnitbar) {
     const { appState, dispatch, handlePlayTarget } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
 
     const [dynamicSizes] = useState(() => {
         const ds = getDynamicUnitSizes(uiState.resolution);
@@ -159,7 +159,7 @@ export default function MoveUnitbar({
         }}>
             <div title={"shape"}
                 onDoubleClick={() => {
-                    if (move.locked || isMetaKeyPressed) return;
+                    if (move.locked || isAltKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
                         const snapshot: LaurusMoveResult = { ...move };
@@ -184,7 +184,7 @@ export default function MoveUnitbar({
                     title={"shape"}
                     svg={shapeSvg}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.85}
@@ -192,7 +192,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"loop"}
                 onDoubleClick={() => {
-                    if (move.locked || isMetaKeyPressed) return;
+                    if (move.locked || isAltKeyPressed) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey) {
                         const nextLoop = getNextLoopType();
@@ -219,7 +219,7 @@ export default function MoveUnitbar({
                     title={"loop"}
                     svg={loopSvg}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={loopSvgScale}
@@ -248,7 +248,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"preview"}
                 onClick={() => {
-                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
+                    if (isAltKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getMoveFrames(apiOrigin, move.move_id, carouselEntryKey),
@@ -264,7 +264,7 @@ export default function MoveUnitbar({
                     title={"preview"}
                     svg={move.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
@@ -272,7 +272,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"increase limits"}
                 onClick={() => {
-                    if (isMetaKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
                         const nextFactor = incrementLimitFactor();
@@ -301,7 +301,7 @@ export default function MoveUnitbar({
                     title={"increase limits"}
                     svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR ? add2() : add2("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -309,7 +309,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"decrease limits"}
                 onClick={() => {
-                    if (isMetaKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
+                    if (isAltKeyPressed || move.locked || (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
                         const nextFactor = decrementLimitFactor();
@@ -338,7 +338,7 @@ export default function MoveUnitbar({
                     title={"decrease limits"}
                     svg={move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR ? remove() : remove("rgb(62,62,62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.88}
@@ -346,7 +346,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"copy"}
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     let clipboardData: MoveUnitControls = { ...currentControls };
                     const activeEquation = move.math.get(carouselEntryKey);
                     if (activeEquation) {
@@ -375,7 +375,7 @@ export default function MoveUnitbar({
                     title={"copy"}
                     svg={move.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}
@@ -383,7 +383,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"paste"}
                 onClick={() => {
-                    if (isMetaKeyPressed) return;
+                    if (isAltKeyPressed) return;
                     if (uiState.effectClipboard && uiState.effectClipboard.type == 'move') {
                         const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
                         if (!clipboardEquation) return;
@@ -411,7 +411,7 @@ export default function MoveUnitbar({
                     title={"paste"}
                     svg={uiState.effectClipboard?.type == 'move' ? contentPaste() : contentPaste('rgb(62, 62, 62)')}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.9}
@@ -419,7 +419,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"clear"}
                 onClick={async () => {
-                    if (isMetaKeyPressed || move.locked) return;
+                    if (isAltKeyPressed || move.locked) return;
                     const activeKey = carouselEntryKey;
                     if (activeKey && move.math.has(activeKey)) {
                         const confirmed = confirm('are you sure you want to clear this equation?');
@@ -453,7 +453,7 @@ export default function MoveUnitbar({
                     title={"clear"}
                     svg={move.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
+                        cursor: isAltKeyPressed ? 'crosshair' : (move.locked ? '' : move.math.has(carouselEntryKey) ? 'pointer' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={0.8}

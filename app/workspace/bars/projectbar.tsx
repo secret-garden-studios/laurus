@@ -2,7 +2,7 @@ import { useContext, useState, useRef, useEffect } from "react";
 import styles from "../../app.module.css";
 import { dellaRespira, geistMono } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
-import { UIContext, CoreContext, HoverContext } from "../workspace.client";
+import { UIContext, CoreContext } from "../workspace.client";
 import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
@@ -10,7 +10,6 @@ import Scalebar from "./scalebar";
 import Marqueebar from "./marqueebar";
 import Viewportbar from "./viewportbar";
 import { CoreActionType } from "../states/core-state";
-import { SvgRepo, circle } from "@/app/svg-repo";
 
 export default function Projectbar() {
     const { appState, dispatch } = useContext(CoreContext);
@@ -188,8 +187,8 @@ export function ProjectbarLevel2() {
             {(() => {
                 switch (uiState.tool.type) {
                     case "marquee": return <Marqueebar />
-                    case "none": return <Nonebar />
-                    case "contextmenu":
+                    case "none": return <Defaultbar />
+                    case "contextmenu": return <></>
                     case "move": return <></>
                     case "viewport": return <Viewportbar />
                     case "scale": return <Scalebar />
@@ -203,19 +202,15 @@ export function ProjectbarLevel2() {
 
 
 
-function Nonebar() {
+function Defaultbar() {
     const { uiState } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
-                svgSize: {
-                    width: 20,
-                    height: 20
-                },
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 20px'
+                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
@@ -232,14 +227,10 @@ function Nonebar() {
                 }
             }
             case "midhigh": return {
-                svgSize: {
-                    width: 18,
-                    height: 18
-                },
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 20px'
+                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
@@ -257,14 +248,10 @@ function Nonebar() {
             }
             case "midlow":
             case "low": return {
-                svgSize: {
-                    width: 20,
-                    height: 20
-                },
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 20px'
+                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
@@ -292,14 +279,6 @@ function Nonebar() {
                 width: '100%',
                 overflowX: 'auto',
             }}>
-            <SvgRepo
-                svg={circle('rgba(0,0,0,0)')}
-                containerStyle={{
-                    width: dynamicSizes.svgSize.width,
-                    height: dynamicSizes.svgSize.height
-                }}
-                scale={1}
-                scaleToContaier={true} />
             {uiState.animationDownloadProgress !== undefined && (
                 <div style={{
                     flex: 1,

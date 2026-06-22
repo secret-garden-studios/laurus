@@ -129,18 +129,6 @@ export default function TimelineArea({
     const effectGroupsContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setShowSelectionPanel(false);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type]);
-
-    useEffect(() => {
         if (effectGroupsContainerRef.current) {
             effectGroupsContainerRef.current.scrollTop = effectGroupsContainerRef.current.scrollHeight;
         }
@@ -367,7 +355,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
         setMostRecentlyEnteredEffectUnitKey,
         setSelectedEffectUnitKeys,
         selectedEffectUnitKeys,
-        isMetaKeyPressed
+        isAltKeyPressed
     } = useContext(HoverContext);
     const [effectsBrowserToggle, setEffectsBrowserToggle] = useState(false);
     const showEffectsBrowser = useMemo(() => {
@@ -466,7 +454,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
                         const isSelected = selectedEffectUnitKeys.has(effect.key);
                         return <div key={effect.key}
                             onClick={(e) => {
-                                if (e.metaKey) {
+                                if (e.altKey) {
                                     setSelectedEffectUnitKeys((prev) => {
                                         const next = new Set(prev);
                                         if (next.has(effect.key)) next.delete(effect.key);
@@ -489,7 +477,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
                                 background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.0275)',
                                 display: 'flex',
                                 borderRadius: 0,
-                                cursor: isMetaKeyPressed ? 'crosshair' : '',
+                                cursor: isAltKeyPressed ? 'crosshair' : '',
                             }}>
                             <div style={{
                                 height: '100%',
@@ -511,7 +499,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
                     display: 'flex',
                     justifyContent: showEffectsBrowser ? 'start' : 'start'
                 }}>
-                    {!isMetaKeyPressed
+                    {!isAltKeyPressed
                         ? (<SvgRepo
                             title={`${showEffectsBrowser ? 'close effects browser' : selectedEffectUnitKeys.size > 0 ? 'add to group' : 'open effects browser'}`}
                             svg={showEffectsBrowser ?
@@ -625,7 +613,7 @@ interface EffectGroupTitlebar {
 function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTitlebar) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
-    const { isMetaKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
+    const { isAltKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
@@ -788,7 +776,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
     }, [appState.accessToken, appState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
 
     const deleteEffectGroupClick = useCallback(async () => {
-        if (!isMetaKeyPressed) return;
+        if (!isAltKeyPressed) return;
         const confirmed = confirm("are you sure you want to delete this effect group?");
         if (!confirmed) return;
         if (debounceTimerRef.current) {
@@ -816,7 +804,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                 return next;
             });
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, isMetaKeyPressed, setSelectedEffectUnitKeys]);
+    }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, isAltKeyPressed, setSelectedEffectUnitKeys]);
 
     const onToggleClick = useCallback(async () => {
         const newEffectGroup: LaurusEffectGroupResult = {
@@ -848,12 +836,12 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         }} >
             <SvgRepo
                 title={"delete effect group"}
-                svg={isMetaKeyPressed ? circle('rgb(220, 112, 112)') : circle('rgba(255, 255, 255, 0.05)')}
+                svg={isAltKeyPressed ? circle('rgb(220, 112, 112)') : circle('rgba(255, 255, 255, 0.05)')}
                 scale={0.4}
                 scaleToContaier={true}
                 onContainerClick={deleteEffectGroupClick}
                 style={{
-                    cursor: isMetaKeyPressed ? 'pointer' : '',
+                    cursor: isAltKeyPressed ? 'pointer' : '',
                 }}
                 containerStyle={{
                     cursor: '',
@@ -1138,7 +1126,7 @@ interface ControlPanel {
 function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
     const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll, handleStopAll } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const [playbackRate] = useState(10);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
@@ -1280,7 +1268,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                             case 'stopped': { handleFastForwardAll(playbackRate); break; }
                             case 'playing': { return; }
                             case 'waiting': { return; }
-                        }1
+                        }
                     }}
                     containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
@@ -1291,8 +1279,8 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                         height: dynamicSizes.secondarySvg
                     }} />
             </div>
-            <div title={isMetaKeyPressed ? "switch to selection panel" : "light"}>
-                {isMetaKeyPressed ? (
+            <div title={isAltKeyPressed ? "switch to selection panel" : "light"}>
+                {isAltKeyPressed ? (
                     <SvgRepo
                         title={"switch to selection panel"}
                         svg={adjust()}

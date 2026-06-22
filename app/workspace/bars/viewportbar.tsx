@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import { geistMono } from "@/app/fonts";
-import { HoverContext, UIContext } from "../workspace.client";
+import { UIContext } from "../workspace.client";
 import { browse, SvgRepo } from "@/app/svg-repo";
 
 export default function Viewportbar() {

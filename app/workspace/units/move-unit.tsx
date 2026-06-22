@@ -44,7 +44,7 @@ interface MoveUnit {
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, move.move_id);
     const [mainControls] = useState(true);
@@ -345,7 +345,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                             const val = getAmplitudeValue(c.y, amplitudeTrackRef.current.clientHeight, 0);
                                             amplitudeRef.current.innerHTML = val.toFixed(2) + 'px';
                                         }}
-                                        disabled={move.locked || isMetaKeyPressed}
+                                        disabled={move.locked || isAltKeyPressed}
                                         title={amplitudeTitle}
                                         liveTitleRef={amplitudeRef} />
                                     <ParameterSliderY
@@ -380,7 +380,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                             const val = getFrequencyValue(c.y, frequencyTrackRef.current.clientHeight);
                                             frequencyRef.current.innerHTML = val.toFixed(2) + 'hz';
                                         }}
-                                        disabled={move.locked || isMetaKeyPressed}
+                                        disabled={move.locked || isAltKeyPressed}
                                         title={frequencyTitle}
                                         liveTitleRef={frequencyRef} />
                                     {(shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse) &&
@@ -416,7 +416,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                                 const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
                                                 wavelengthRef.current.innerHTML = val.toFixed(2) + 'px';
                                             }}
-                                            disabled={move.locked || isMetaKeyPressed}
+                                            disabled={move.locked || isAltKeyPressed}
                                             title={wavelengthTitle}
                                             liveTitleRef={wavelengthRef} />)}
                                     {shapeType != LaurusShapeType.circle && (
@@ -452,7 +452,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                                 const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
                                                 distanceRef.current.innerHTML = val.toFixed(2) + 'px';
                                             }}
-                                            disabled={move.locked || isMetaKeyPressed}
+                                            disabled={move.locked || isAltKeyPressed}
                                             title={distanceTitle}
                                             liveTitleRef={distanceRef} />)}
                                     <ParameterSliderY
@@ -488,7 +488,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                             const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                             timeRef.current.innerHTML = val.toFixed(2) + 's';
                                         }}
-                                        disabled={move.locked || isMetaKeyPressed}
+                                        disabled={move.locked || isAltKeyPressed}
                                         title={timeTitle}
                                         liveTitleRef={timeRef} />
                                 </div>
@@ -556,7 +556,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                    disabled={move.locked || isMetaKeyPressed}
+                                    disabled={move.locked || isAltKeyPressed}
                                     size={{
                                         container: 90,
                                         gauge: 90,

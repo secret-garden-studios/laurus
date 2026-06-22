@@ -40,7 +40,7 @@ interface RotateUnit {
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     const { appState, dispatch } = useContext(CoreContext);
     const { uiState, uiDispatch } = useContext(UIContext);
-    const { isMetaKeyPressed } = useContext(HoverContext);
+    const { isAltKeyPressed } = useContext(HoverContext);
     const { carouselIndex, localIndex, setLocalIndex } =
         useCarouselIndex(uiState.activeElement, uiState.carouselEntries, carouselIndexInit, rotate.rotate_id);
     const [mainControls] = useState(true);
@@ -331,7 +331,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                                             const val = getXValue(c.y, xTrackRef.current.clientHeight, 0);
                                             xRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked || isMetaKeyPressed}
+                                        disabled={rotate.locked || isAltKeyPressed}
                                         title={xTitle}
                                         liveTitleRef={xRef} />
                                     <ParameterSliderY
@@ -366,7 +366,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                                             const val = getYValue(c.y, yTrackRef.current.clientHeight, 0);
                                             yRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked || isMetaKeyPressed}
+                                        disabled={rotate.locked || isAltKeyPressed}
                                         title={yTitle}
                                         liveTitleRef={yRef} />
                                     <ParameterSliderY
@@ -401,7 +401,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                                             const val = getZValue(c.y, zTrackRef.current.clientHeight, 0);
                                             zRef.current.innerHTML = val.toFixed(2);
                                         }}
-                                        disabled={rotate.locked || isMetaKeyPressed}
+                                        disabled={rotate.locked || isAltKeyPressed}
                                         title={zTitle}
                                         liveTitleRef={zRef} />
                                     <ParameterSliderY
@@ -437,7 +437,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                                             const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                                             timeRef.current.innerHTML = val.toFixed(2) + 's';
                                         }}
-                                        disabled={rotate.locked || isMetaKeyPressed}
+                                        disabled={rotate.locked || isAltKeyPressed}
                                         title={timeTitle}
                                         liveTitleRef={timeRef} />
                                 </div>
@@ -510,7 +510,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                                             saveNewEquation(snapshot, newEquation);
                                         }
                                     }}
-                                    disabled={rotate.locked || isMetaKeyPressed}
+                                    disabled={rotate.locked || isAltKeyPressed}
                                     size={{
                                         container: 90,
                                         gauge: 90,

@@ -139,6 +139,7 @@ export interface HoverContextProps {
     mostRecentlyEnteredEffectUnitKey: string | undefined;
     setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
     isMetaKeyPressed: boolean;
+    isAltKeyPressed: boolean;
     selectedEffectUnitKeys: Set<string>;
     setSelectedEffectUnitKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
     selectedImgKeys: Set<string>;
@@ -151,6 +152,7 @@ export const HoverContext = createContext<HoverContextProps>({
     mostRecentlyEnteredEffectUnitKey: undefined,
     setMostRecentlyEnteredEffectUnitKey: () => { },
     isMetaKeyPressed: false,
+    isAltKeyPressed: false,
     selectedEffectUnitKeys: new Set<string>(),
     setSelectedEffectUnitKeys: () => { },
     selectedImgKeys: new Set<string>(),
@@ -440,6 +442,7 @@ export default function Workspace({
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
     const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
+    const [isAltKeyPressed, setIsAltKeyPressed] = useState(false);
     const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
     const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
     const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
@@ -712,25 +715,26 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
         dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
 
-        // temp sln to switch to viewport here and read from the frames cache reliably: 
-        // Yield execution to the event loop so React can render and commit the tool change to 'viewport',
-        // which unmounts the items from the main canvas and mounts them inside the camera viewport.
-        // This ensures the ref collections (imgElementsRef/svgElementsRef) point to the new mounted DOM elements.
+        /* 
+        temp sln to switch to viewport here and read from the frames cache reliably: 
+        Yield execution to the event loop so React can render and commit the tool change to 'viewport',
+        which unmounts the items from the main canvas and mounts them inside the camera viewport.
+        This ensures the ref collections (imgElementsRef/svgElementsRef) point to the new mounted DOM elements.
         uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
         await new Promise(resolve => setTimeout(resolve, 50));
+        */
 
         const newAnimations = await getNewAnimations('none', false, true);
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
             uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
-            return
+            return;
         };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
                 uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
-                uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
             })
             .catch(err => {
                 if (err instanceof Error && err.name !== 'AbortError') {
@@ -809,22 +813,20 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
         uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
-        if (uiState.tool.type === 'viewport') {
-            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
-        }
     }, [uiState.playbackMode.type]);
 
     const hoverContextValue = useMemo(() => ({
         mostRecentlyEnteredEffectUnitKey,
         setMostRecentlyEnteredEffectUnitKey,
         isMetaKeyPressed,
+        isAltKeyPressed,
         selectedEffectUnitKeys,
         setSelectedEffectUnitKeys,
         selectedImgKeys,
         setSelectedImgKeys,
         selectedSvgKeys,
         setSelectedSvgKeys
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys]);
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, isAltKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys]);
 
     const coreContextValue = useMemo(() => ({
         appState,
@@ -836,7 +838,7 @@ export default function Workspace({
         handleFastForwardAll,
         handlePlayTarget,
         handleStopAll,
-    }), [appState, getNewAnimations, getNewAnimationsByTarget, handleRewindAll, handlePlayAll, handleFastForwardAll, handlePlayTarget]);
+    }), [appState, getNewAnimations, getNewAnimationsByTarget, handleRewindAll, handlePlayAll, handleFastForwardAll, handlePlayTarget, handleStopAll]);
 
     const uiContextValue = useMemo(() => ({
         uiState,
@@ -872,11 +874,7 @@ export default function Workspace({
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            const target = event.target as HTMLElement;
-            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || event.metaKey) return;
-            const clearAllContextMenus = () => {
-                uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            };
+            if (event.metaKey || uiState.playbackMode.type !== 'stopped') return;
             if (event.key === 'Escape') {
                 setSelectedEffectUnitKeys(new Set<string>());
                 setSelectedImgKeys(new Set<string>());
@@ -885,37 +883,38 @@ export default function Workspace({
             } else if (event.key.toLowerCase() === 'm') {
                 const newToolType = uiState.tool.type === 'move' ? 'none' : 'move';
                 uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
-                clearAllContextMenus();
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key.toLowerCase() === 'r') {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
-                clearAllContextMenus();
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key.toLowerCase() === 's') {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
-                clearAllContextMenus();
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key.toLowerCase() === 'v') {
                 const newToolType = uiState.tool.type === 'viewport' ? 'none' : 'viewport';
                 uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
-                clearAllContextMenus();
             } else if (event.key.toLowerCase() === 'd') {
                 uiDispatch({ type: UIActionType.SetTool, value: defaultMarqueeTool });
-                clearAllContextMenus();
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key.toLowerCase() === 'x') {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
-                clearAllContextMenus();
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [uiState.tool.type, uiDispatch]);
+    }, [uiState.playbackMode.type, uiState.tool.type]);
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
             setIsMetaKeyPressed(e.metaKey);
+            setIsAltKeyPressed(e.altKey);
         };
         const handleBlur = () => {
             setIsMetaKeyPressed(false);
+            setIsAltKeyPressed(false);
         };
         window.addEventListener('keydown', handleKey);
         window.addEventListener('keyup', handleKey);

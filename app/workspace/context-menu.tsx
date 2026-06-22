@@ -209,22 +209,23 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 h2: {
                     fontSize: 12
                 },
-                selected: {
-                    div: {
+                toggle: {
+                    container: {
                         padding: '0px 6px 12px 6px',
                         gap: 12,
                         fontSize: 13,
                     },
                     track: {
-                        width: 30,
-                        height: 16,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 26,
+                        height: 12,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 10,
-                        height: 10,
-                    }
+                        width: 8,
+                        height: 8,
+                    },
+                    translateX: 14,
                 },
                 cell: {
                     padding: '0px 6px',
@@ -284,22 +285,23 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 h2: {
                     fontSize: 10
                 },
-                selected: {
-                    div: {
+                toggle: {
+                    container: {
                         padding: '0px 4px 8px 4px',
                         gap: 12,
                         fontSize: 11,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 22,
+                        height: 10,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 12,
                 },
                 cell: {
                     padding: '0px 6px',
@@ -359,22 +361,23 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 h2: {
                     fontSize: 10
                 },
-                selected: {
-                    div: {
+                toggle: {
+                    container: {
                         padding: '0px 4px 8px 4px',
                         gap: 12,
                         fontSize: 11,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 20,
+                        height: 9,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 10,
                 },
                 cell: {
                     padding: '0px 6px',
@@ -749,7 +752,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                                 display: 'flex',
                                 alignItems: 'center',
                                 height: '100%',
-                                ...dynamicSizes.selected.div
+                                ...dynamicSizes.toggle.container
                             }}>
                                 <span style={{ textShadow: selected ? '0 0 1px rgba(255, 255, 255, 1)' : 'none' }}>
                                     {'selected'}
@@ -780,8 +783,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                                             }
                                         }
                                     }}
-                                    trackStyles={{ ...dynamicSizes.selected.track }}
-                                    buttonStyles={{ ...dynamicSizes.selected.button }} />
+                                    trackStyles={{ ...dynamicSizes.toggle.track }}
+                                    buttonStyles={{ ...dynamicSizes.toggle.button }}
+                                    translateX={dynamicSizes.toggle.translateX} />
                             </div>
                             <div style={{ ...cellStyle }}
                                 className={styles['animated-nav-dark']}
