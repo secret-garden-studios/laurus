@@ -210,7 +210,6 @@ function Defaultbar() {
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
@@ -230,7 +229,6 @@ function Defaultbar() {
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
@@ -251,7 +249,6 @@ function Defaultbar() {
                 progress: {
                     flex: {
                         gap: 10,
-                        padding: '0px 12px'
                     },
                     label: {
                         width: '12ch',
