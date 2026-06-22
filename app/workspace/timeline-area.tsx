@@ -758,22 +758,42 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         }
     });
     const effectGroupDescriptionRef = useRef<HTMLInputElement | null>(null);
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const onEffectGroupDescriptionChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const onEffectGroupDescriptionChange = useCallback((newValue: string) => {
+        const snapshot = { ...effectGroupResult };
         const newEffectGroup: LaurusEffectGroupResult = {
-            ...effectGroupResult,
-            description: e.target.value
+            ...snapshot,
+            description: newValue
+        };
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
         }
-        const updated = await updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup);
-        if (updated) {
-            dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
-        }
+        debounceTimerRef.current = setTimeout(() => {
+            updateEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId, newEffectGroup)
+                .then((updated) => {
+                    if (!updated) {
+                        dispatch({ type: CoreActionType.SetEffectGroup, value: snapshot });
+                        const inputEl = effectGroupDescriptionRef.current;
+                        if (inputEl) {
+                            inputEl.value = snapshot.description;
+                        }
+                    }
+                    else {
+                        dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
+                    }
+                });
+        }, 1000);
+
     }, [appState.accessToken, appState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
 
     const deleteEffectGroupClick = useCallback(async () => {
         if (!isMetaKeyPressed) return;
         const confirmed = confirm("are you sure you want to delete this effect group?");
         if (!confirmed) return;
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
         const deleted = await deleteEffectGroup(appState.apiOrigin, appState.accessToken, effectGroupId);
         if (deleted) {
             const localEffectGroups = new Map(appState.effectGroups);
@@ -808,6 +828,13 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
         }
     }, [appState.accessToken, appState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
+
+    useEffect(() => {
+        const inputEl = effectGroupDescriptionRef.current;
+        if (inputEl) {
+            inputEl.value = effectGroupResult.description;
+        }
+    }, [effectGroupResult.description]);
 
     return (
         <div style={{
@@ -847,9 +874,8 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
                     ...dynamicSizes.input
                 }}
                 type="text"
-                value={effectGroupResult.description}
                 autoComplete="off"
-                onChange={onEffectGroupDescriptionChange}
+                onChange={(e) => onEffectGroupDescriptionChange(e.target.value)}
             />
             <div title="enable effect group" style={{
                 display: 'flex',
