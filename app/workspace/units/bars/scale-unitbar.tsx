@@ -187,7 +187,7 @@ export default function ScaleUnitbar({
             </div>
             <div title={"preview"}
                 onClick={() => {
-                    if (isMetaKeyPressed || uiState.playbackMode.type === 'stopped') return;
+                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getScaleFrames(apiOrigin, scale.scale_id, carouselEntryKey),
@@ -203,7 +203,7 @@ export default function ScaleUnitbar({
                     title={"preview"}
                     svg={scale.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackMode.type !== 'stopped' ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (scale.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : scale.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}

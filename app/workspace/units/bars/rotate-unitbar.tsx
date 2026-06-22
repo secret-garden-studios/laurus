@@ -233,7 +233,7 @@ export default function RotateUnitbar({
             </div>
             <div title="preview"
                 onClick={() => {
-                    if (isMetaKeyPressed || uiState.playbackMode.type === 'stopped') return;
+                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getRotateFrames(apiOrigin, rotate.rotate_id, carouselEntryKey),
