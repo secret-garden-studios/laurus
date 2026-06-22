@@ -3,7 +3,7 @@
 import { RefObject, useContext, useState } from "react";
 import { CoreContext, UIContext } from "../workspace.client";
 import { dellaRespira, ubuntuMono } from "../../fonts";
-import { allOut, autorenew, browse, contentPaste, earthquake, experiment, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
+import { allOut, autorenew, browse, contentPaste, earthquake, experiment, forward, keyboardCommandKey, lassoSelect, publicIcon, SvgRepo, toysFan } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
 import { LaurusFrame } from "../workspace.server";
@@ -138,8 +138,7 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                             }} />
                     </>
                 }
-                <div
-                    title={"cache"}
+                <div title={"cache"}
                     onDoubleClick={() => {
                         if (!appState.cacheNeedsRefresh && framesCacheRef.current) {
                             framesCacheRef.current.clear();
@@ -152,6 +151,19 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                     <SvgRepo
                         title={"cache"}
                         svg={!appState.cacheNeedsRefresh ? autorenew() : autorenew("rgb(62, 62, 62)")}
+                        containerStyle={{
+                            width: 30,
+                            height: 30
+                        }}
+                        scale={0.5} />
+                </div>
+                <div title={"filled forwards"}
+                    style={{
+                        fontSize: statusbarSize.actionFont,
+                    }}>
+                    <SvgRepo
+                        title={"filled forwards"}
+                        svg={uiState.filledForwards ? forward() : forward("rgb(62, 62, 62)")}
                         containerStyle={{
                             width: 30,
                             height: 30

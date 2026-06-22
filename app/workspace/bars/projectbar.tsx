@@ -205,7 +205,6 @@ export function ProjectbarLevel2() {
 
 function Nonebar() {
     const { uiState } = useContext(UIContext);
-    const { animationDownloadProgress } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
@@ -301,7 +300,7 @@ function Nonebar() {
                 }}
                 scale={1}
                 scaleToContaier={true} />
-            {animationDownloadProgress !== undefined && (
+            {uiState.animationDownloadProgress !== undefined && (
                 <div style={{
                     flex: 1,
                     display: 'flex',
@@ -324,7 +323,7 @@ function Nonebar() {
                         ...dynamicSizes.progress.bar
                     }}>
                         <div style={{
-                            width: `${animationDownloadProgress}%`,
+                            width: `${uiState.animationDownloadProgress}%`,
                             height: '100%',
                             background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
                             borderRadius: dynamicSizes.progress.bar.borderRadius,
@@ -337,7 +336,7 @@ function Nonebar() {
                             color: 'rgb(227, 227, 227)',
                             ...dynamicSizes.progress.units
                         }}>
-                        {`${animationDownloadProgress}%`}
+                        {`${uiState.animationDownloadProgress}%`}
                     </div>
                 </div>
             )}

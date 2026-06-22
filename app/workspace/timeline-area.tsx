@@ -1,7 +1,7 @@
 import { CSSProperties, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
-import { addCircle, adjust, allOut, circle, closeIcon, earthquake, playArrow, skipNext, skipPrevious, SvgRepo, toysFan } from "../svg-repo";
+import { addCircle, adjust, allOut, circle, closeIcon, earthquake, LaurusClientSvg, playArrow, skipNext, skipPrevious, stopIcon, SvgRepo, toysFan } from "../svg-repo";
 import {
     CoreContext,
     HoverContext,
@@ -1110,7 +1110,7 @@ interface ControlPanel {
     containerStyle?: CSSProperties
 }
 function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
-    const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll } = useContext(CoreContext);
+    const { appState, dispatch, handleRewindAll, handlePlayAll, handleFastForwardAll, handleStopAll } = useContext(CoreContext);
     const { uiState } = useContext(UIContext);
     const { isMetaKeyPressed } = useContext(HoverContext);
     const [playbackRate] = useState(10);
@@ -1124,7 +1124,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 50,
                 secondarySvg: 20,
-                recordingLightSize: 18
+                recordingLightSize: 15,
             }
             case "midhigh": return {
                 padding: 10,
@@ -1134,7 +1134,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 40,
                 secondarySvg: 16,
-                recordingLightSize: 14
+                recordingLightSize: 12
             }
             case "midlow":
             case "low": return {
@@ -1145,11 +1145,18 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                 fpsInputGap: 2,
                 mainSvg: 38,
                 secondarySvg: 14,
-                recordingLightSize: 13
+                recordingLightSize: 11
             }
         }
     });
     const fpsValue = useMemo(() => { return appState.fps ?? "60" }, [appState.fps]);
+    const mainControlIcon = useMemo<LaurusClientSvg>(() => {
+        switch (uiState.playbackMode.type) {
+            case 'stopped': return playArrow();
+            case 'playing': return stopIcon();
+            case 'waiting': return playArrow('rgba(255, 255, 255, 0.2)');
+        }
+    }, [uiState.playbackMode.type]);
     return (
         <div style={{
             borderTop: '1px solid rgba(255, 255, 255, 0.05)',
@@ -1199,43 +1206,61 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
             <div style={{ display: 'flex', height: '100%', alignItems: 'center' }}>
                 <SvgRepo
                     title={"rewind all"}
-                    svg={uiState.playbackControlsEnabled ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playbackMode.type == 'stopped' ? skipPrevious() : skipPrevious('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
-                    onContainerClick={() => handleRewindAll(playbackRate)}
-                    containerStyle={uiState.playbackControlsEnabled ? {
+                    onContainerClick={() => {
+                        switch (uiState.playbackMode.type) {
+                            case 'stopped': { handleRewindAll(playbackRate); break; }
+                            case 'playing': { return; }
+                            case 'waiting': { return; }
+                        }
+                    }}
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
+                        cursor: 'progress',
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {
-                        cursor: 'progress',
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     }} />
                 <SvgRepo
-                    title={"play all"}
-                    svg={uiState.playbackControlsEnabled ? playArrow() : playArrow('rgba(255, 255, 255, 0.2)')}
-                    scale={1}
+                    title={uiState.playbackMode.type == 'playing' ? "stop all" : "play all"}
+                    svg={mainControlIcon}
+                    scale={uiState.playbackMode.type == 'playing' ? 0.75 : 1}
                     scaleToContaier={true}
-                    onContainerClick={handlePlayAll}
-                    containerStyle={uiState.playbackControlsEnabled ? {
+                    onContainerClick={() => {
+                        switch (uiState.playbackMode.type) {
+                            case 'stopped': { handlePlayAll(); break; }
+                            case 'playing': { handleStopAll(); break; }
+                            case 'waiting': { return; }
+                        }
+                    }}
+                    containerStyle={uiState.playbackMode.type === 'waiting' ? {
+                        cursor: 'progress',
                         width: dynamicSizes.mainSvg,
                         height: dynamicSizes.mainSvg
                     } : {
-                        cursor: 'progress',
                         width: dynamicSizes.mainSvg,
                         height: dynamicSizes.mainSvg
                     }} />
                 <SvgRepo
                     title={"fast-forward all"}
-                    svg={uiState.playbackControlsEnabled ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
+                    svg={uiState.playbackMode.type == 'stopped' ? skipNext() : skipNext('rgba(255, 255, 255, 0.2)')}
                     scale={1}
                     scaleToContaier={true}
-                    onContainerClick={() => handleFastForwardAll(playbackRate)}
-                    containerStyle={uiState.playbackControlsEnabled ? {
+                    onContainerClick={() => {
+                        switch (uiState.playbackMode.type) {
+                            case 'stopped': { handleFastForwardAll(playbackRate); break; }
+                            case 'playing': { return; }
+                            case 'waiting': { return; }
+                        }1
+                    }}
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
+                        cursor: 'progress',
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     } : {
-                        cursor: 'progress',
                         width: dynamicSizes.secondarySvg,
                         height: dynamicSizes.secondarySvg
                     }} />
@@ -1245,14 +1270,10 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
                     <SvgRepo
                         title={"switch to selection panel"}
                         svg={adjust()}
-                        scale={1}
+                        scale={1.2}
                         scaleToContaier={true}
                         onContainerClick={() => onSwitchViews()}
-                        containerStyle={uiState.playbackControlsEnabled ? {
-                            width: dynamicSizes.recordingLightSize,
-                            height: dynamicSizes.recordingLightSize,
-                        } : {
-                            cursor: 'progress',
+                        containerStyle={{
                             width: dynamicSizes.recordingLightSize,
                             height: dynamicSizes.recordingLightSize,
                         }} />
@@ -1282,20 +1303,20 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
-                padding: '10px 12px 10px 10px',
+                padding: 10,
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 16,
                 selectedLabelFontSize: 15,
                 selectedInputGap: 2,
                 mainSvg: 50,
-                recordingLightSize: 16,
+                recordingLightSize: 15,
                 input: {
                     fontSize: 12,
                     padding: 10
                 },
             }
             case "midhigh": return {
-                padding: '10px 12px 10px 10px',
+                padding: 10,
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 14,
                 selectedLabelFontSize: 13,
@@ -1309,7 +1330,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
             }
             case "midlow":
             case "low": return {
-                padding: '10px 12px 10px 10px',
+                padding: 10,
                 selectedInputWidth: '2ch',
                 selectedInputFontSize: 12,
                 selectedLabelFontSize: 11,

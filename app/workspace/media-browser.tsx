@@ -110,19 +110,19 @@ export default function MediaBrowser({
                     container: {
                         left: 10,
                         gap: 10,
-                        fontSize: 13,
-                        letterSpacing: 1,
+                        fontSize: 10,
                     },
                     track: {
-                        width: 30,
-                        height: 16,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 24,
+                        height: 11,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 10,
-                        height: 10,
-                    }
+                        width: 7,
+                        height: 7,
+                    },
+                    translateX: 13,
                 },
                 uploadingLight: {
                     container: {
@@ -161,20 +161,20 @@ export default function MediaBrowser({
                 switch: {
                     container: {
                         left: 10,
-                        gap: 10,
+                        gap: 8,
                         fontSize: 10,
-                        letterSpacing: 1,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 22,
+                        height: 10,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 12,
                 },
                 uploadingLight: {
                     container: {
@@ -213,21 +213,21 @@ export default function MediaBrowser({
                 },
                 switch: {
                     container: {
-                        left: 10,
-                        gap: 10,
+                        left: 8,
+                        gap: 6,
                         fontSize: 10,
-                        letterSpacing: 1,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 20,
+                        height: 9,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 10,
                 },
                 uploadingLight: {
                     container: {
@@ -531,8 +531,8 @@ export default function MediaBrowser({
                                 title={"discover images"}
                                 svg={appState.project.browse_public_imgs ? publicIcon() : publicIcon('rgba(227,227,227,0.7)')}
                                 containerStyle={{
-                                    width: dynamicSizes.switch.track.height * 1.33,
-                                    height: dynamicSizes.switch.track.height * 1.33
+                                    width: dynamicSizes.switch.track.height * 1.75,
+                                    height: dynamicSizes.switch.track.height * 1.75
                                 }}
                                 scale={1}
                                 scaleToContaier={true} />
@@ -540,7 +540,8 @@ export default function MediaBrowser({
                                 value={appState.project.browse_public_imgs}
                                 onClick={onImgDiscoverToggle}
                                 trackStyles={{ ...dynamicSizes.switch.track }}
-                                buttonStyles={{ ...dynamicSizes.switch.button }} />
+                                buttonStyles={{ ...dynamicSizes.switch.button }}
+                                translateX={dynamicSizes.switch.translateX} />
                         </div>
                     </>}
                     {filter == 'svg' && <>

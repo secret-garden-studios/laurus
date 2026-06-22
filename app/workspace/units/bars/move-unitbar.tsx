@@ -248,7 +248,7 @@ export default function MoveUnitbar({
             </div>
             <div title={"preview"}
                 onClick={() => {
-                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    if (isMetaKeyPressed || uiState.playbackMode.type !== 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getMoveFrames(apiOrigin, move.move_id, carouselEntryKey),
@@ -262,9 +262,9 @@ export default function MoveUnitbar({
                 }}>
                 <SvgRepo
                     title={"preview"}
-                    svg={move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                    svg={move.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (move.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : move.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}

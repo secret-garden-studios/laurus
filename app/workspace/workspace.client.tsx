@@ -127,6 +127,7 @@ export interface CoreContextProps {
     handlePlayAll: () => void;
     handleFastForwardAll: (playbackRate: number) => void;
     handlePlayTarget: (target: AnimationTarget) => void;
+    handleStopAll: () => void;
 }
 
 export interface UIContextProps {
@@ -144,7 +145,6 @@ export interface HoverContextProps {
     setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
     selectedSvgKeys: Set<string>;
     setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
-    animationDownloadProgress: number | undefined;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -156,8 +156,7 @@ export const HoverContext = createContext<HoverContextProps>({
     selectedImgKeys: new Set<string>(),
     setSelectedImgKeys: () => { },
     selectedSvgKeys: new Set<string>(),
-    setSelectedSvgKeys: () => { },
-    animationDownloadProgress: undefined,
+    setSelectedSvgKeys: () => { }
 });
 
 export const CoreContext = createContext<CoreContextProps>(
@@ -168,6 +167,7 @@ export const CoreContext = createContext<CoreContextProps>(
         handlePlayAll: () => { },
         handleFastForwardAll: () => { },
         handlePlayTarget: () => { },
+        handleStopAll: () => { },
     }
 );
 
@@ -440,7 +440,6 @@ export default function Workspace({
     const projectInit = use(projectInitPromise);
     const browserInit = use(browserInitPromise);
     const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
-    const [animationDownloadProgress, setAnimationDownloadProgress] = useState<number | undefined>(undefined);
     const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(undefined);
     const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
     const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
@@ -590,7 +589,7 @@ export default function Workspace({
                 iterations: 1,
                 fill,
             };
-            setAnimationDownloadProgress(0);
+            uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: 0 });
             const newAnimations: Animation[] = [];
             const framesFromServer = await getFrames(appState.apiOrigin);
             if (!framesFromServer) return [];
@@ -602,13 +601,13 @@ export default function Workspace({
             if (element) {
                 const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
                 const animation = new Animation(keyframeEffect, document.timeline);
-                setAnimationDownloadProgress(100);
+                uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: 100 });
                 newAnimations.push(animation);
             }
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
-            setAnimationDownloadProgress(undefined);
+            uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: undefined });
         }
     }, [appState.apiOrigin, appState.effectGroups, appState.effects]);
 
@@ -639,7 +638,7 @@ export default function Workspace({
             };
             const total = eligibleItems.size;
             let current = 0;
-            if (total > 0) setAnimationDownloadProgress(0);
+            if (total > 0) uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: 0 });
             const newAnimations: Animation[] = [];
             for (const inputKey of eligibleItems) {
                 let laurusFrames: LaurusFrame[] = [];
@@ -663,34 +662,34 @@ export default function Workspace({
                     const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
                     const animation = new Animation(keyframeEffect, document.timeline);
                     current++;
-                    if (total > 0) setAnimationDownloadProgress(Math.round((current / total) * 100));
+                    if (total > 0) uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: Math.round((current / total) * 100) });
                     newAnimations.push(animation);
                 }
             }
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
-            setAnimationDownloadProgress(undefined);
+            uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: undefined });
         }
     }, [appState.apiOrigin, appState.cacheNeedsRefresh, appState.effectGroups, appState.effects, appState.fps, appState.project.imgs, appState.project.project_id, appState.project.svgs]);
 
     const handleRewindAll = useCallback(async (playbackRate: number) => {
-        if (!uiState.playbackControlsEnabled || !uiState.filledForwards) return;
+        if (uiState.playbackMode.type !== 'stopped' || !uiState.filledForwards) return;
         handleMixRestoration();
         closeContextMenus();
-        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'waiting' } });
 
         const newAnimations = await getNewAnimations('forwards', true, false);
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
             return;
         };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
                 uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
             })
             .catch(err => {
@@ -702,33 +701,35 @@ export default function Workspace({
             a.updatePlaybackRate(playbackRate);
             a.play();
         });
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackControlsEnabled]);
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'playing' } });
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackMode.type]);
 
     const handlePlayAll = useCallback(async () => {
-        if (!uiState.playbackControlsEnabled) return;
+        if (uiState.playbackMode.type !== 'stopped') return;
         handleMixRestoration();
         closeContextMenus();
-        uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
-        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'waiting' } });
         uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
         dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
 
+        // temp sln to switch to viewport here and read from the frames cache reliably: 
         // Yield execution to the event loop so React can render and commit the tool change to 'viewport',
         // which unmounts the items from the main canvas and mounts them inside the camera viewport.
         // This ensures the ref collections (imgElementsRef/svgElementsRef) point to the new mounted DOM elements.
+        uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
         await new Promise(resolve => setTimeout(resolve, 50));
 
         const newAnimations = await getNewAnimations('none', false, true);
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
             return
         };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
             })
             .catch(err => {
@@ -738,25 +739,26 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'playing' } });
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type]);
 
     const handlePlayTarget = useCallback(async (target: AnimationTarget) => {
-        if (!uiState.playbackControlsEnabled) return;
+        if (uiState.playbackMode.type !== 'stopped') return;
         handleMixRestoration();
         closeContextMenus();
-        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'waiting' } });
         uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
         const newAnimations = await getNewAnimationsByTarget('none', false, target);
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             return;
         };
         Promise.all(newAnimations.map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             })
             .catch(err => {
                 if (err instanceof Error && err.name !== 'AbortError') {
@@ -765,25 +767,26 @@ export default function Workspace({
             });
 
         newAnimations.forEach(a => a.play());
-    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackControlsEnabled]);
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'playing' } });
+    }, [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackMode.type]);
 
     const handleFastForwardAll = useCallback(async (playbackRate: number) => {
-        if (!uiState.playbackControlsEnabled) return;
+        if (uiState.playbackMode.type !== 'stopped') return;
         handleMixRestoration();
         closeContextMenus();
-        uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: false });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'waiting' } });
 
         const newAnimations = await getNewAnimations('forwards', false, false);
         if (newAnimations.length == 0) {
             uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-            uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+            uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
             uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
             return;
         };
         Promise.all((newAnimations).map(animation => animation.finished))
             .then(() => {
                 uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-                uiDispatch({ type: UIActionType.SetPlaybackControlsEnabled, value: true });
+                uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
                 uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
             })
             .catch(err => {
@@ -795,8 +798,21 @@ export default function Workspace({
             a.updatePlaybackRate(playbackRate);
             a.play();
         });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'playing' } });
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type]);
 
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackControlsEnabled]);
+    const handleStopAll = useCallback(async () => {
+        if (uiState.playbackMode.type === 'stopped') return;
+        if (!svgElementsRef.current || !imgElementsRef.current) return;
+        svgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
+        imgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
+        uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
+        uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
+        uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
+        if (uiState.tool.type === 'viewport') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
+        }
+    }, [uiState.playbackMode.type]);
 
     const hoverContextValue = useMemo(() => ({
         mostRecentlyEnteredEffectUnitKey,
@@ -807,9 +823,8 @@ export default function Workspace({
         selectedImgKeys,
         setSelectedImgKeys,
         selectedSvgKeys,
-        setSelectedSvgKeys,
-        animationDownloadProgress,
-    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys, animationDownloadProgress]);
+        setSelectedSvgKeys
+    }), [mostRecentlyEnteredEffectUnitKey, isMetaKeyPressed, selectedEffectUnitKeys, selectedImgKeys, selectedSvgKeys]);
 
     const coreContextValue = useMemo(() => ({
         appState,
@@ -820,6 +835,7 @@ export default function Workspace({
         handlePlayAll,
         handleFastForwardAll,
         handlePlayTarget,
+        handleStopAll,
     }), [appState, getNewAnimations, getNewAnimationsByTarget, handleRewindAll, handlePlayAll, handleFastForwardAll, handlePlayTarget]);
 
     const uiContextValue = useMemo(() => ({
@@ -952,11 +968,11 @@ export default function Workspace({
                                         boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                                     }}>
                                         <SvgRepo
-                                            svg={uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(67,67,67)")}
+                                            svg={uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(67,67,67)")}
                                             containerStyle={{
                                                 width: minifiedControlsSize.playSvg,
                                                 height: minifiedControlsSize.playSvg,
-                                                cursor: uiState.playbackControlsEnabled ? 'pointer' : 'progress',
+                                                cursor: uiState.playbackMode.type === 'stopped' ? 'pointer' : 'progress',
                                             }}
                                             scale={0.5}
                                             scaleToContaier={true}

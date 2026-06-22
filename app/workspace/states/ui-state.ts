@@ -43,6 +43,11 @@ export type CarouselEntry =
     | { type: 'svg', key: string }
     | { type: 'img', key: string }
 
+export type PlaybackMode =
+    | { type: 'playing' }
+    | { type: 'stopped' }
+    | { type: 'waiting' }
+
 export interface UIState {
     lightFrameBackground: boolean;
     browserImgs: LaurusImgResult[];
@@ -59,9 +64,10 @@ export interface UIState {
     timelineValues: number[];
     resolution: WorkspaceResolution;
     mixableEffects: string[];
-    playbackControlsEnabled: boolean;
+    playbackMode: PlaybackMode;
     filledForwards: boolean;
     projectContextMenus: Map<string, ProjectMediaContextMenu>;
+    animationDownloadProgress: number | undefined;
 }
 
 export const defaultUIState: UIState = {
@@ -80,9 +86,10 @@ export const defaultUIState: UIState = {
     timelineValues: [],
     resolution: { type: 'midhigh', factor: 0.7, value: { width: 0, height: 0 } },
     mixableEffects: [],
-    playbackControlsEnabled: true,
+    playbackMode: { type: 'stopped' },
     filledForwards: false,
     projectContextMenus: new Map(),
+    animationDownloadProgress: undefined,
 }
 
 export enum UIActionType {
@@ -103,7 +110,7 @@ export enum UIActionType {
     SetRecordingLight,
     AddCarouselEntry,
     DeleteCarouselEntry,
-    SetPlaybackControlsEnabled,
+    SetPlaybackMode,
     SetResolution,
     SetEffectNames,
     SetTimelineUnits,
@@ -112,6 +119,7 @@ export enum UIActionType {
     SetFilledForwards,
     SetProjectContextMenu,
     CloseAllContextMenus,
+    SetAnimationDownloadProgress
 }
 
 export type UIAction =
@@ -132,7 +140,7 @@ export type UIAction =
     | { type: UIActionType.SetRecordingLight, value: boolean }
     | { type: UIActionType.AddCarouselEntry, value: CarouselEntry }
     | { type: UIActionType.DeleteCarouselEntry, key: string }
-    | { type: UIActionType.SetPlaybackControlsEnabled, value: boolean }
+    | { type: UIActionType.SetPlaybackMode, value: PlaybackMode }
     | { type: UIActionType.SetResolution, value: WorkspaceResolution }
     | { type: UIActionType.SetEffectNames, value: string[] }
     | { type: UIActionType.SetTimelineUnits, value: string[] }
@@ -141,6 +149,7 @@ export type UIAction =
     | { type: UIActionType.SetFilledForwards, value: boolean }
     | { type: UIActionType.SetProjectContextMenu, key: string, showContextMenu: boolean, contextMenuConfig?: ContextMenuConfig }
     | { type: UIActionType.CloseAllContextMenus }
+    | { type: UIActionType.SetAnimationDownloadProgress, value: number | undefined }
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
     switch (action.type) {
@@ -240,8 +249,8 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
             const newEntries = [...state.carouselEntries].filter(m => m.key != action.key);
             return { ...state, carouselEntries: newEntries }
         }
-        case UIActionType.SetPlaybackControlsEnabled: {
-            return { ...state, playbackControlsEnabled: action.value }
+        case UIActionType.SetPlaybackMode: {
+            return { ...state, playbackMode: action.value }
         }
         case UIActionType.SetResolution: {
             return { ...state, resolution: action.value }
@@ -287,6 +296,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
                 }
             }
             return changed ? { ...state, projectContextMenus: newProjectContextMenus } : state;
+        }
+        case UIActionType.SetAnimationDownloadProgress: {
+            return { ...state, animationDownloadProgress: action.value }
         }
     }
 }

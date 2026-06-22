@@ -5,7 +5,6 @@ import { browse, SvgRepo } from "@/app/svg-repo";
 
 export default function Viewportbar() {
     const { uiState } = useContext(UIContext);
-    const { animationDownloadProgress } = useContext(HoverContext);
     const [dynamicSizes] = useState(() => {
         switch (uiState.resolution.type) {
             case "high": return {
@@ -101,7 +100,7 @@ export default function Viewportbar() {
                 }}
                 scale={1}
                 scaleToContaier={true} />
-            {animationDownloadProgress !== undefined && (
+            {uiState.animationDownloadProgress !== undefined && (
                 <div style={{
                     flex: 1,
                     display: 'flex',
@@ -124,7 +123,7 @@ export default function Viewportbar() {
                         ...dynamicSizes.progress.bar
                     }}>
                         <div style={{
-                            width: `${animationDownloadProgress}%`,
+                            width: `${uiState.animationDownloadProgress}%`,
                             height: '100%',
                             background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
                             borderRadius: dynamicSizes.progress.bar.borderRadius,
@@ -137,7 +136,7 @@ export default function Viewportbar() {
                             color: 'rgb(227, 227, 227)',
                             ...dynamicSizes.progress.units
                         }}>
-                        {`${animationDownloadProgress}%`}
+                        {`${uiState.animationDownloadProgress}%`}
                     </div>
                 </div>
             )}

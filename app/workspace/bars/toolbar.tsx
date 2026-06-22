@@ -65,7 +65,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'marquee') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -75,7 +75,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -120,7 +120,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'contextmenu') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -129,7 +129,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'contextmenu' } });
                         }
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -174,7 +174,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'viewport') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -184,7 +184,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -228,7 +228,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'move') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -238,7 +238,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -282,7 +282,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'scale') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -292,7 +292,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -336,7 +336,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'rotate') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -346,7 +346,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg
@@ -390,7 +390,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     scale={0.5}
                     scaleToContaier={true}
                     onContainerClick={() => {
-                        if (!uiState.playbackControlsEnabled) return;
+                        if (uiState.playbackMode.type !== 'stopped') return;
                         handleMixRestoration();
                         if (uiState.tool.type == 'mix') {
                             uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
@@ -400,7 +400,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                         }
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                     }}
-                    containerStyle={!uiState.playbackControlsEnabled ? {
+                    containerStyle={uiState.playbackMode.type !== 'stopped' ? {
                         cursor: 'progress',
                         width: rightPanelSize.svg,
                         height: rightPanelSize.svg

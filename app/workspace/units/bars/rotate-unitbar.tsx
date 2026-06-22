@@ -233,7 +233,7 @@ export default function RotateUnitbar({
             </div>
             <div title="preview"
                 onClick={() => {
-                    if (isMetaKeyPressed || !uiState.playbackControlsEnabled) return;
+                    if (isMetaKeyPressed || uiState.playbackMode.type === 'stopped') return;
                     handlePlayTarget({
                         inputKey: carouselEntryKey,
                         getFrames: (apiOrigin) => getRotateFrames(apiOrigin, rotate.rotate_id, carouselEntryKey),
@@ -247,9 +247,9 @@ export default function RotateUnitbar({
                 }}>
                 <SvgRepo
                     title="preview"
-                    svg={rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? playArrow() : playArrow("rgb(62, 62, 62)")}
+                    svg={rotate.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? playArrow() : playArrow("rgb(62, 62, 62)")}
                     containerStyle={{
-                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackControlsEnabled ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
+                        cursor: isMetaKeyPressed ? 'crosshair' : (rotate.math.has(carouselEntryKey) && uiState.playbackMode.type === 'stopped' ? 'pointer' : rotate.math.has(carouselEntryKey) ? 'progress' : ''),
                         ...dynamicSizes.paramButton
                     }}
                     scale={1}
