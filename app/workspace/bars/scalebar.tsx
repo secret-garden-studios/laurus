@@ -79,15 +79,16 @@ export default function Scalebar() {
                         fontSize: 13,
                     },
                     track: {
-                        width: 30,
-                        height: 16,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 26,
+                        height: 12,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 10,
-                        height: 10,
-                    }
+                        width: 8,
+                        height: 8,
+                    },
+                    translateX: 14,
                 },
             }
             case "midhigh": return {
@@ -128,15 +129,16 @@ export default function Scalebar() {
                         fontSize: 12,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 22,
+                        height: 10,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 12,
                 },
             }
             case "midlow":
@@ -178,15 +180,16 @@ export default function Scalebar() {
                         fontSize: 12,
                     },
                     track: {
-                        width: 28,
-                        height: 14,
-                        borderRadius: 20,
-                        padding: 2,
+                        width: 20,
+                        height: 9,
+                        borderRadius: 10,
+                        padding: 1,
                     },
                     button: {
-                        width: 8,
-                        height: 8,
-                    }
+                        width: 6,
+                        height: 6,
+                    },
+                    translateX: 10,
                 },
             }
         }
@@ -559,7 +562,8 @@ export default function Scalebar() {
                         setUnlockAspectRatio(v => !v);
                     }}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
-                    buttonStyles={{ ...dynamicSizes.toggle.button }} />
+                    buttonStyles={{ ...dynamicSizes.toggle.button }}
+                    translateX={dynamicSizes.toggle.translateX} />
             </div>
         </div>
     </>
