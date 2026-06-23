@@ -874,29 +874,31 @@ export default function Workspace({
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
+            const isInput = (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
             if (event.metaKey || uiState.playbackMode.type !== 'stopped') return;
             if (event.key === 'Escape') {
                 setSelectedEffectUnitKeys(new Set<string>());
                 setSelectedImgKeys(new Set<string>());
                 setSelectedSvgKeys(new Set<string>());
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'm') {
+            } else if (event.key.toLowerCase() === 'm' && !isInput) {
                 const newToolType = uiState.tool.type === 'move' ? 'none' : 'move';
                 uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'r') {
+            } else if (event.key.toLowerCase() === 'r' && !isInput) {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 's') {
+            } else if (event.key.toLowerCase() === 's' && !isInput) {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'v') {
+            } else if (event.key.toLowerCase() === 'v' && !isInput) {
                 const newToolType = uiState.tool.type === 'viewport' ? 'none' : 'viewport';
                 uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
-            } else if (event.key.toLowerCase() === 'd') {
+            } else if (event.key.toLowerCase() === 'd' && !isInput) {
                 uiDispatch({ type: UIActionType.SetTool, value: defaultMarqueeTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'x') {
+            } else if (event.key.toLowerCase() === 'x' && !isInput) {
                 uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }
