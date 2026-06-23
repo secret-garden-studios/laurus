@@ -141,6 +141,18 @@ export default function TimelineArea({
         }
     }, [appState.effectGroups.size]);
 
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setShowSelectionPanel(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [appState.project.imgs, appState.project.svgs, uiState.tool.type]);
+
     return (<>
         <div className={styles[`${uiState.resolution.type == 'high' ? 'noisy-background-20-2' : 'noisy-background-20-2-low-res'}`]}
             style={{
