@@ -723,6 +723,9 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetTool, value: { type: 'viewport' } });
         await new Promise(resolve => setTimeout(resolve, 50));
         */
+        if (uiState.tool.type !== 'viewport' && uiState.tool.type !== 'none') {
+            uiDispatch({ type: UIActionType.SetTool, value: { type: 'none' } });
+        }
 
         const newAnimations = await getNewAnimations('none', false, true);
         if (newAnimations.length == 0) {
@@ -744,7 +747,7 @@ export default function Workspace({
 
         newAnimations.forEach(a => a.play());
         uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'playing' } });
-    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type]);
+    }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type, uiState.tool.type]);
 
     const handlePlayTarget = useCallback(async (target: AnimationTarget) => {
         if (uiState.playbackMode.type !== 'stopped') return;
