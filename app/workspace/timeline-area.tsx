@@ -88,20 +88,27 @@ async function persistReindexedEffects(
         const oe = previousEffects.find(e => e.key === ne.key);
         return !oe || oe.value.effect_group_id !== ne.value.effect_group_id || oe.value.order !== ne.value.order;
     });
-
+    let updateCount = 0;
     for (const effect of updates) {
         switch (effect.type) {
-            case 'scale':
-                await updateScale(apiOrigin, accessToken, effect.key, effect.value);
+            case 'scale': {
+                const updatedScale = await updateScale(apiOrigin, accessToken, effect.key, effect.value);
+                if (updatedScale) updateCount++;
                 break;
-            case 'move':
-                await updateMove(apiOrigin, accessToken, effect.key, effect.value);
+            }
+            case 'move': {
+                const updatedMove = await updateMove(apiOrigin, accessToken, effect.key, effect.value);
+                if (updatedMove) updateCount++;
                 break;
-            case 'rotate':
-                await updateRotate(apiOrigin, accessToken, effect.key, effect.value);
+            }
+            case 'rotate': {
+                const updatedRotate = await updateRotate(apiOrigin, accessToken, effect.key, effect.value);
+                if (updatedRotate) updateCount++;
                 break;
+            }
         }
     }
+    return updateCount > 0 ? updateCount == updates.length : false;
 };
 
 interface TimelineArea {
@@ -358,6 +365,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
         isAltKeyPressed
     } = useContext(HoverContext);
     const [effectsBrowserToggle, setEffectsBrowserToggle] = useState(false);
+    const [updating, setUpdating] = useState(false);
     const showEffectsBrowser = useMemo(() => {
         return effectsBrowserToggle && selectedEffectUnitKeys.size === 0;
     }, [effectsBrowserToggle, selectedEffectUnitKeys.size]);
@@ -401,22 +409,35 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
     });
 
     const onEffectsBrowserExpandClick = useCallback(async () => {
+        if (updating) return;
         if (selectedEffectUnitKeys.size > 0) {
-            const snapshot = [...appState.effects];
-            const effectsWithNewGroups = snapshot.map(e => {
-                if (selectedEffectUnitKeys.has(e.key)) {
-                    return { ...e, value: { ...e.value, effect_group_id: effectGroupId } } as LaurusEffect;
+            setUpdating(true);
+            try {
+                const snapshot = [...appState.effects];
+                const effectsWithNewGroups = snapshot.map(e => {
+                    if (selectedEffectUnitKeys.has(e.key)) {
+                        return { ...e, value: { ...e.value, effect_group_id: effectGroupId } } as LaurusEffect;
+                    }
+                    return e;
+                });
+                const reindexedEffects = reindexEffects(effectsWithNewGroups, appState.effectGroups);
+                const updated = await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
+                if (updated) {
+                    dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+                    setSelectedEffectUnitKeys(new Set<string>());
                 }
-                return e;
-            });
-            const reindexedEffects = reindexEffects(effectsWithNewGroups, appState.effectGroups);
-            await persistReindexedEffects(appState.apiOrigin, appState.accessToken, reindexedEffects, snapshot);
-            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+            }
+            catch (error) {
+                console.error('Failed to update effect groups:', error);
+            }
+            finally {
+                setUpdating(false);
+            }
         }
         else {
             setEffectsBrowserToggle(v => !v);
         }
-    }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, selectedEffectUnitKeys]);
+    }, [appState.accessToken, appState.apiOrigin, appState.effectGroups, appState.effects, dispatch, effectGroupId, selectedEffectUnitKeys, setSelectedEffectUnitKeys, updating]);
 
     return (
         <div
@@ -497,9 +518,10 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
                     background: showEffectsBrowser ? 'rgba(255,255,255, 0.01)' : 'none',
                     border: showEffectsBrowser ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0)',
                     display: 'flex',
-                    justifyContent: showEffectsBrowser ? 'start' : 'start'
+                    justifyContent: showEffectsBrowser ? 'start' : 'start',
+                    cursor: updating ? 'wait' : '',
                 }}>
-                    {!isAltKeyPressed
+                    {!isAltKeyPressed && !updating
                         ? (<SvgRepo
                             title={`${showEffectsBrowser ? 'close effects browser' : selectedEffectUnitKeys.size > 0 ? 'add to group' : 'open effects browser'}`}
                             svg={showEffectsBrowser ?
