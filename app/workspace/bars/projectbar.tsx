@@ -200,8 +200,6 @@ export function ProjectbarLevel2() {
     </>)
 }
 
-
-
 function Defaultbar() {
     const { uiState } = useContext(UIContext);
     const [dynamicSizes] = useState(() => {
@@ -223,6 +221,11 @@ function Defaultbar() {
                         width: '4ch',
                         fontSize: 10,
                     }
+                },
+                playbackTime: {
+                    width: '11ch',
+                    fontSize: 12,
+                    letterSpacing: 1
                 }
             }
             case "midhigh": return {
@@ -242,6 +245,11 @@ function Defaultbar() {
                         width: '4ch',
                         fontSize: 10,
                     }
+                },
+                playbackTime: {
+                    width: '11ch',
+                    fontSize: 10,
+                    letterSpacing: 1
                 }
             }
             case "midlow":
@@ -262,60 +270,125 @@ function Defaultbar() {
                         width: '4ch',
                         fontSize: 10,
                     }
+                },
+                playbackTime: {
+                    width: '11ch',
+                    fontSize: 10,
+                    letterSpacing: 1
                 }
             }
         }
     });
+    const timeRef = useRef<number>(0);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const playbackTimeRef = useRef<HTMLDivElement | null>(null);
 
-    return (
-        <div style={
-            {
-                display: 'flex',
-                alignItems: 'center',
-                height: '100%',
-                width: '100%',
-                overflowX: 'auto',
-            }}>
-            {uiState.animationDownloadProgress !== undefined && (
-                <div style={{
-                    flex: 1,
+    useEffect(() => {
+        if (uiState.playbackMode.type === "stopped" || uiState.playbackMode.type === "waiting") {
+            timeRef.current = 0;
+            return () => {
+                if (timerRef.current) clearInterval(timerRef.current);
+            };
+        }
+        const intervalMs = 30;
+        const formatTime = (totalMilliseconds: number) => {
+            const hours = Math.floor(totalMilliseconds / 3600000);
+            const minutes = Math.floor((totalMilliseconds % 3600000) / 60000);
+            const seconds = Math.floor((totalMilliseconds % 60000) / 1000);
+            const milliseconds = Math.floor((totalMilliseconds % 1000) / 10);
+            const pad = (num: number) => String(num).padStart(2, '0');
+            return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(milliseconds)}`;
+        };
+        timerRef.current = setInterval(() => {
+            const newTime = timeRef.current + intervalMs;
+            timeRef.current = newTime;
+            if (playbackTimeRef.current) {
+                playbackTimeRef.current.textContent = formatTime(newTime);
+            }
+        }, intervalMs);
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [uiState.playbackMode.type]);
+
+    switch (uiState.playbackMode.type) {
+        case "playing": {
+            return (<div style={
+                {
                     display: 'flex',
                     alignItems: 'center',
-                    ...dynamicSizes.progress.flex,
+                    height: '100%',
+                    width: '100%',
+                    overflowX: 'auto',
                 }}>
-                    <div className={geistMono.className}
-                        style={{
-                            textAlign: 'left',
-                            color: 'rgb(227, 227, 227)',
-                            fontVariantLigatures: 'no-common-ligatures',
-                            ...dynamicSizes.progress.label
-                        }}>
-                        <span>rendering...</span>
-                    </div>
+                <div ref={playbackTimeRef}
+                    style={{
+                        fontWeight: 'bold',
+                        color: 'rgb(227, 227, 227)',
+                        ...dynamicSizes.playbackTime
+                    }}>
+                </div>
+            </div>);
+        }
+        default: {
+            if (uiState.animationDownloadProgress !== undefined) {
+                return (<div style={
+                    {
+                        display: 'flex',
+                        alignItems: 'center',
+                        height: '100%',
+                        width: '100%',
+                        overflowX: 'auto',
+                    }}>
                     <div style={{
                         flex: 1,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        overflow: 'hidden',
-                        ...dynamicSizes.progress.bar
+                        display: 'flex',
+                        alignItems: 'center',
+                        ...dynamicSizes.progress.flex,
                     }}>
                         <div style={{
-                            width: `${uiState.animationDownloadProgress}%`,
-                            height: '100%',
-                            background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
-                            borderRadius: dynamicSizes.progress.bar.borderRadius,
-                            transition: 'width 0.1s ease-out'
-                        }} />
-                    </div>
-                    <div className={geistMono.className}
-                        style={{
-                            textAlign: 'right',
-                            color: 'rgb(227, 227, 227)',
-                            ...dynamicSizes.progress.units
+                            flex: 1,
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            overflow: 'hidden',
+                            ...dynamicSizes.progress.bar
                         }}>
-                        {`${uiState.animationDownloadProgress}%`}
+                            <div style={{
+                                width: `${uiState.animationDownloadProgress}%`,
+                                height: '100%',
+                                background: 'linear-gradient(1deg, rgb(187, 187, 187), rgb(227, 227, 227))',
+                                borderRadius: dynamicSizes.progress.bar.borderRadius,
+                                transition: 'width 0.1s ease-out'
+                            }} />
+                        </div>
+                        <div className={geistMono.className}
+                            style={{
+                                textAlign: 'right',
+                                color: 'rgb(227, 227, 227)',
+                                ...dynamicSizes.progress.units
+                            }}>
+                            {`${uiState.animationDownloadProgress}%`}
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
-    );
+                </div>);
+            }
+            else {
+                return (<div style={
+                    {
+                        display: 'flex',
+                        alignItems: 'center',
+                        height: '100%',
+                        width: '100%',
+                        overflowX: 'auto',
+                    }}>
+                    <div style={{
+                        fontWeight: 'bold',
+                        color: 'rgba(100, 100, 100, 1)',
+                        ...dynamicSizes.playbackTime
+                    }}>
+                        {"00:00:00.00"}
+                    </div>
+                </div>);
+            }
+        }
+    }
 }
