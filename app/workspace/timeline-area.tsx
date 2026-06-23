@@ -967,7 +967,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             await persistReindexedGroups(appState.apiOrigin, appState.accessToken, reindexedGroups, effectGroupsSnapshot);
             const newEffectGroup: LaurusEffectGroup = {
                 description: "",
-                order: reindexedGroups.length > 0 ? Math.max(...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
+                order: reindexedGroups.length > 0 ? Math.max(-1, ...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
                 project_id: newProjectIdAck,
                 disabled: false
             }
@@ -983,7 +983,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
         }
         if (!newEffectGroupIdAck) return;
 
-        const newOrder = Math.max(...effectsSnapshot
+        const newOrder = Math.max(-1, ...effectsSnapshot
             .filter(e => e.value.effect_group_id === effect_group_id)
             .flatMap(e => e.value.order)) + 1;
         switch (effectName) {
@@ -1389,7 +1389,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         const reindexedGroups = reindexEffectGroups(effectGroupsSnapshot);
         const newEffectGroup: LaurusEffectGroup = {
             description: effectGroupDescription,
-            order: reindexedGroups.length > 0 ? Math.max(...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
+            order: reindexedGroups.length > 0 ? Math.max(-1, ...Array.from(effectGroupsSnapshot.values()).flatMap(g => g.order)) + 1 : 0,
             project_id: appState.project.project_id,
             disabled: false
         }
