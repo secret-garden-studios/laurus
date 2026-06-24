@@ -42,7 +42,7 @@ import {
 } from "../projects/projects.server";
 import { MeDependencies } from "../page";
 import LaurusImage from "../components/laurus-image";
-import { uiContextReducer, CarouselEntry, UIAction, UIActionType, UIState, defaultMarqueeTool, defaultUIState, ProjectMediaContextMenu } from "./states/ui-state";
+import { uiContextReducer, CarouselEntry, UIAction, UIActionType, UIState, defaultMarqueeTool, defaultUIState, ProjectMediaContextMenu, LaurusTool } from "./states/ui-state";
 import { CoreAction, CoreActionType, CoreState, coreContextReducer, defaultCoreState } from "./states/core-state";
 
 export function getNewContextMenuConfig(
@@ -879,30 +879,46 @@ export default function Workspace({
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement;
             const isInput = (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
-            if (event.metaKey || uiState.playbackMode.type !== 'stopped') return;
+            if (event.metaKey) return;
             if (event.key === 'Escape') {
                 setSelectedEffectUnitKeys(new Set<string>());
                 setSelectedImgKeys(new Set<string>());
                 setSelectedSvgKeys(new Set<string>());
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'm' && !isInput) {
-                const newToolType = uiState.tool.type === 'move' ? 'none' : 'move';
-                uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
+            } else if (event.key === " " && !isInput) {
+                switch (uiState.playbackMode.type) {
+                    case 'waiting':
+                        break;
+                    case 'playing':
+                        handleStopAll();
+                        break;
+                    case 'stopped':
+                        handlePlayAll();
+                        break;
+                }
+            }
+            else if (event.key.toLowerCase() === 'm' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'move' ? { type: 'none' } : { type: 'move' };
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'r' && !isInput) {
-                uiDispatch({ type: UIActionType.SetTool, value: { type: 'rotate' } });
+            } else if (event.key.toLowerCase() === 'r' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'rotate' ? { type: 'none' } : { type: 'rotate' };
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 's' && !isInput) {
-                uiDispatch({ type: UIActionType.SetTool, value: { type: 'scale' } });
+            } else if (event.key.toLowerCase() === 's' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'scale' ? { type: 'none' } : { type: 'scale' };
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'v' && !isInput) {
-                const newToolType = uiState.tool.type === 'viewport' ? 'none' : 'viewport';
-                uiDispatch({ type: UIActionType.SetTool, value: { type: newToolType } });
-            } else if (event.key.toLowerCase() === 'd' && !isInput) {
-                uiDispatch({ type: UIActionType.SetTool, value: defaultMarqueeTool });
+            } else if (event.key.toLowerCase() === 'v' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'viewport' ? { type: 'none' } : { type: 'viewport' };
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
+            } else if (event.key.toLowerCase() === 'd' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'marquee' ? { type: 'none' } : defaultMarqueeTool;
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            } else if (event.key.toLowerCase() === 'x' && !isInput) {
-                uiDispatch({ type: UIActionType.SetTool, value: { type: 'mix' } });
+            } else if (event.key.toLowerCase() === 'x' && !isInput && uiState.playbackMode.type === 'stopped') {
+                const newTool: LaurusTool = uiState.tool.type === 'mix' ? { type: 'none' } : { type: 'mix' };
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }
         };
@@ -910,7 +926,7 @@ export default function Workspace({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [uiState.playbackMode.type, uiState.tool.type]);
+    }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool.type]);
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
