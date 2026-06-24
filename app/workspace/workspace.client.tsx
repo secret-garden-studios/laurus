@@ -886,6 +886,7 @@ export default function Workspace({
                 setSelectedSvgKeys(new Set<string>());
                 uiDispatch({ type: UIActionType.CloseAllContextMenus });
             } else if (event.key === " " && !isInput) {
+                event.preventDefault();
                 switch (uiState.playbackMode.type) {
                     case 'waiting':
                         break;
