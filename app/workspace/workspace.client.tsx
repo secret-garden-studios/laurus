@@ -810,9 +810,12 @@ export default function Workspace({
 
     const handleStopAll = useCallback(async () => {
         if (uiState.playbackMode.type === 'stopped') return;
-        if (!svgElementsRef.current || !imgElementsRef.current) return;
-        svgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
-        imgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
+        if (svgElementsRef.current) {
+            svgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
+        }
+        if (imgElementsRef.current) {
+            imgElementsRef.current.forEach(el => el.getAnimations().forEach(a => a.cancel()));
+        }
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({ type: UIActionType.SetPlaybackMode, value: { type: 'stopped' } });
         uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
