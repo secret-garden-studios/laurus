@@ -424,7 +424,7 @@ export default function Toolbar({ resolution, handleMixRestoration }: Toolbar) {
                     <div style={{ padding: 4, width: '100%' }}>
                         <h4 style={{ marginBottom: rightPanelSize.tooltipMarginBottom, color: "rgb(255, 255, 255)", fontSize: rightPanelSize.tooltipFont }}>Mix Tool</h4>
                         <p>
-                            Select this tool to mix eligible effects using the <strong>project toolbar</strong>.
+                            Select this tool to mix effects of the same type via the <strong>project toolbar</strong>.
                         </p>
                     </div>
                 )}
