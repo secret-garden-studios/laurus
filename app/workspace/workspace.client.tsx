@@ -592,7 +592,6 @@ export default function Workspace({
                 iterations: 1,
                 fill,
             };
-            uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: 0 });
             const newAnimations: Animation[] = [];
             const framesFromServer = await getFrames(appState.apiOrigin);
             if (!framesFromServer) return [];
@@ -604,13 +603,11 @@ export default function Workspace({
             if (element) {
                 const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
                 const animation = new Animation(keyframeEffect, document.timeline);
-                uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: 100 });
                 newAnimations.push(animation);
             }
             return newAnimations;
         } finally {
             document.body.style.cursor = '';
-            uiDispatch({ type: UIActionType.SetAnimationDownloadProgress, value: undefined });
         }
     }, [appState.apiOrigin, appState.effectGroups, appState.effects]);
 
