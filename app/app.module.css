@@ -12,77 +12,81 @@
     linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
     linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%);
   background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0px;
   background-color: rgb(24, 24, 24);
 }
 
 .noisy-background-7-3 {
-  background-image: url('/noise2_7_3.png');
+  background-image: url("/noise2_7_3.png");
   background-size: auto;
 }
 
 .noisy-background-7-3-low-res {
-  background-image: url('/noise2_7_3.png');
+  background-image: url("/noise2_7_3.png");
   background-size: 15%;
 }
 
 .noisy-background-16-2 {
-  background-image: url('/noise2_16_2.png');
+  background-image: url("/noise2_16_2.png");
   background-size: auto;
 }
 
 .noisy-background-16-2-low-res {
-  background-image: url('/noise2_16_2.png');
+  background-image: url("/noise2_16_2.png");
   background-size: 15%;
 }
 
 .noisy-background-20-2 {
-  background-image: url('/noise2_20_2.png');
+  background-image: url("/noise2_20_2.png");
   background-size: auto;
 }
 
 .noisy-background-20-2-low-res {
-  background-image: url('/noise2_20_2.png');
+  background-image: url("/noise2_20_2.png");
   background-size: 15%;
 }
 
 .noisy-background-20-3 {
-  background-image: url('/noise2_20_3.png');
+  background-image: url("/noise2_20_3.png");
   background-size: auto;
 }
 
 .noisy-background-20-3-low-res {
-  background-image: url('/noise2_20_3.png');
+  background-image: url("/noise2_20_3.png");
   background-size: 15%;
 }
 
 .noisy-background-23-2 {
-  background-image: url('/noise2_23_2.png');
+  background-image: url("/noise2_23_2.png");
   background-size: auto;
 }
 
 .noisy-background-23-2-low-res {
-  background-image: url('/noise2_23_2.png');
+  background-image: url("/noise2_23_2.png");
   background-size: 15%;
 }
 
 .noisy-background-26-2 {
-  background-image: url('/noise2_26_2.png');
+  background-image: url("/noise2_26_2.png");
   background-size: auto;
 }
 
 .noisy-background-26-2-low-res {
-  background-image: url('/noise2_26_2.png');
+  background-image: url("/noise2_26_2.png");
   background-size: 15%;
 }
 
 .noisy-background-32-3 {
-  background-image: url('/noise2_32_3.png');
+  background-image: url("/noise2_32_3.png");
   background-size: auto;
 }
 
 .noisy-background-32-3-low-res {
-  background-image: url('/noise2_32_3.png');
+  background-image: url("/noise2_32_3.png");
   background-size: 15%;
 }
 
@@ -91,18 +95,16 @@
 }
 
 @keyframes text-focus {
-
   0%,
   5%,
   100% {
     color: rgba(227, 227, 227, 1);
     text-shadow: 0px 0px 5px rgb(255, 255, 255);
-
   }
 
   40% {
     color: rgba(227, 227, 227, 1);
-    text-shadow: 0px 0px 20px rgba(255, 255, 255. 0.9);
+    text-shadow: 0px 0px 20px rgba(255, 255, 255 0.9);
   }
 
   60% {
@@ -132,14 +134,16 @@
 }
 
 @property --grad-color {
-  syntax: '<color>';
+  syntax: "<color>";
   initial-value: rgba(23, 23, 23, 1);
   inherits: false;
 }
 
 .animated-button-dark {
   cursor: pointer;
-  transition: --grad-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition:
+    --grad-color 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
   background: linear-gradient(45deg, rgba(25, 25, 25, 1), var(--grad-color));
 }
 
@@ -149,25 +153,25 @@
 }
 
 @property --angle {
-  syntax: '<angle>';
+  syntax: "<angle>";
   initial-value: 0deg;
   inherits: false;
 }
 
 @property --color-primary {
-  syntax: '<color>';
+  syntax: "<color>";
   initial-value: rgb(227, 227, 227);
   inherits: false;
 }
 
 @property --color-secondary {
-  syntax: '<color>';
+  syntax: "<color>";
   initial-value: rgb(21, 21, 21);
   inherits: false;
 }
 
 @property --color-tertiary {
-  syntax: '<color>';
+  syntax: "<color>";
   initial-value: rgb(40, 40, 40);
   inherits: false;
 }
@@ -177,13 +181,16 @@
   border-radius: 10px;
   background:
     linear-gradient(rgb(25, 25, 25), rgb(23, 23, 23)) padding-box,
-    conic-gradient(from var(--angle),
-      var(--color-primary, rgb(227, 227, 227)),
-      var(--color-secondary, rgb(21, 21, 21)),
-      var(--color-tertiary, rgb(40, 40, 40)),
-      var(--color-tertiary, rgb(40, 40, 40)),
-      var(--color-secondary, rgb(21, 21, 21)),
-      var(--color-primary, rgb(227, 227, 227))) border-box;
+    conic-gradient(
+        from var(--angle),
+        var(--color-primary, rgb(227, 227, 227)),
+        var(--color-secondary, rgb(21, 21, 21)),
+        var(--color-tertiary, rgb(40, 40, 40)),
+        var(--color-tertiary, rgb(40, 40, 40)),
+        var(--color-secondary, rgb(21, 21, 21)),
+        var(--color-primary, rgb(227, 227, 227))
+      )
+      border-box;
 
   appearance: none;
   animation: rotateGradient 8s linear infinite;
@@ -232,7 +239,6 @@ input:-webkit-autofill::first-line {
 }
 
 .animated-nav-dark {
-  cursor: pointer;
   transition: text-shadow 0.2s ease-in-out;
 }
 

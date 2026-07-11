@@ -1,386 +1,486 @@
 import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
-import { updateProject, createProject, DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "../projects/projects.server";
+import {
+  updateProject,
+  createProject,
+  DEFAULT_CONTEXT_MENU_CONFIG,
+  LaurusProjectImg,
+  LaurusProjectResult,
+  LaurusProjectSvg,
+} from "../projects/projects.server";
 import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 
-function calcMousePosition(
-    canvas: HTMLCanvasElement,
-    event: React.MouseEvent<HTMLElement>) {
-    const rect = canvas.getBoundingClientRect();
-    const p = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-    };
-    return p;
+function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
+  const rect = canvas.getBoundingClientRect();
+  const p = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+  return p;
 }
 
 function caclRadius(
-    x: number,
-    y: number,
-    canvas: HTMLCanvasElement,
-    event: React.MouseEvent<HTMLCanvasElement>,
-    lineWidth: number) {
-    const p = calcMousePosition(canvas, event);
-    const padding = 2;
-    const minRadius = lineWidth * 2 + padding;
-    let radius = Math.sqrt(Math.pow(p.x - x, 2) + Math.pow(p.y - y, 2));
-    if (radius < minRadius) {
-        radius = minRadius;
-    }
-    return radius;
+  x: number,
+  y: number,
+  canvas: HTMLCanvasElement,
+  event: React.MouseEvent<HTMLCanvasElement>,
+  lineWidth: number,
+) {
+  const p = calcMousePosition(canvas, event);
+  const padding = 2;
+  const minRadius = lineWidth * 2 + padding;
+  let radius = Math.sqrt(Math.pow(p.x - x, 2) + Math.pow(p.y - y, 2));
+  if (radius < minRadius) {
+    radius = minRadius;
+  }
+  return radius;
 }
 
 function getCenteredRectInCircle(
-    width: number,
-    height: number,
-    cx: number,
-    cy: number,
-    radius: number
+  width: number,
+  height: number,
+  cx: number,
+  cy: number,
+  radius: number,
 ): {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 } {
-    const aspectRatio = width / height;
-    const diameter = radius * 2;
-    const newHeight = diameter / Math.sqrt(Math.pow(aspectRatio, 2) + 1);
-    const newWidth = newHeight * aspectRatio;
-    const x = cx - newWidth / 2;
-    const y = cy - newHeight / 2;
-    return { x, y, width: newWidth, height: newHeight };
+  const aspectRatio = width / height;
+  const diameter = radius * 2;
+  const newHeight = diameter / Math.sqrt(Math.pow(aspectRatio, 2) + 1);
+  const newWidth = newHeight * aspectRatio;
+  const x = cx - newWidth / 2;
+  const y = cy - newHeight / 2;
+  return { x, y, width: newWidth, height: newHeight };
 }
 
 interface ProjectCircle {
-    cx: number,
-    cy: number,
-    radius: number,
+  cx: number;
+  cy: number;
+  radius: number;
 }
 
-function calculateDropFrame(
-    width: number,
-    height: number,
-    dropArea: ProjectCircle,
-    tool: LaurusTool
-) {
-    const frame = getCenteredRectInCircle(
-        width,
-        height,
-        dropArea.cx,
-        dropArea.cy,
-        dropArea.radius
-    );
-    if (tool.type != 'marquee') return frame;
-    if (tool.size.value) {
-        const mediaAspectRatio = width / height;
-        if (tool.size.width !== undefined && tool.size.height !== undefined) {
-            if (mediaAspectRatio > tool.size.width / tool.size.height) {
-                frame.width = tool.size.width;
-                frame.height = frame.width / mediaAspectRatio;
-            } else {
-                frame.height = tool.size.height;
-                frame.width = frame.height * mediaAspectRatio;
-            }
-        } else if (tool.size.width !== undefined) {
-            frame.width = tool.size.width;
-            frame.height = frame.width / mediaAspectRatio;
-        } else if (tool.size.height !== undefined) {
-            frame.height = tool.size.height;
-            frame.width = frame.height * mediaAspectRatio;
-        }
-        frame.x = dropArea.cx - frame.width / 2;
-        frame.y = dropArea.cy - frame.height / 2;
+function calculateDropFrame(width: number, height: number, dropArea: ProjectCircle, tool: LaurusTool) {
+  const frame = getCenteredRectInCircle(width, height, dropArea.cx, dropArea.cy, dropArea.radius);
+  if (tool.type != "marquee") return frame;
+  if (tool.size.value) {
+    const mediaAspectRatio = width / height;
+    if (tool.size.width !== undefined && tool.size.height !== undefined) {
+      if (mediaAspectRatio > tool.size.width / tool.size.height) {
+        frame.width = tool.size.width;
+        frame.height = frame.width / mediaAspectRatio;
+      } else {
+        frame.height = tool.size.height;
+        frame.width = frame.height * mediaAspectRatio;
+      }
+    } else if (tool.size.width !== undefined) {
+      frame.width = tool.size.width;
+      frame.height = frame.width / mediaAspectRatio;
+    } else if (tool.size.height !== undefined) {
+      frame.height = tool.size.height;
+      frame.width = frame.height * mediaAspectRatio;
     }
-    if (tool.position.value) {
-        if (tool.position.x !== undefined) {
-            frame.x = tool.position.x;
-        }
-        if (tool.position.y !== undefined) {
-            frame.y = tool.position.y;
-        }
+    frame.x = dropArea.cx - frame.width / 2;
+    frame.y = dropArea.cy - frame.height / 2;
+  }
+  if (tool.position.value) {
+    if (tool.position.x !== undefined) {
+      frame.x = tool.position.x;
     }
-    return frame;
+    if (tool.position.y !== undefined) {
+      frame.y = tool.position.y;
+    }
+  }
+  return frame;
 }
 
 function isBadFrame(
-    newFrame: { x: number; y: number; width: number; height: number; },
-    canvas_width: number,
-    canvas_height: number): boolean {
-    if (newFrame.width < 0 || newFrame.height < 0) {
-        alert("drop area is too small!");
-        return true;
-    }
-    if (newFrame.width > canvas_width || newFrame.height > canvas_height) {
-        alert("drop area is too big!");
-        return true;
-    }
+  newFrame: { x: number; y: number; width: number; height: number },
+  canvas_width: number,
+  canvas_height: number,
+): boolean {
+  if (newFrame.width < 0 || newFrame.height < 0) {
+    alert("drop area is too small!");
+    return true;
+  }
+  if (newFrame.width > canvas_width || newFrame.height > canvas_height) {
+    alert("drop area is too big!");
+    return true;
+  }
 
-    if (newFrame.x < 0 || newFrame.y < 0 || newFrame.x + newFrame.width > canvas_width || newFrame.y + newFrame.height > canvas_height) {
-        alert("drop area is out of bounds!");
-        return true;
-    }
-    return false;
+  if (
+    newFrame.x < 0 ||
+    newFrame.y < 0 ||
+    newFrame.x + newFrame.width > canvas_width ||
+    newFrame.y + newFrame.height > canvas_height
+  ) {
+    alert("drop area is out of bounds!");
+    return true;
+  }
+  return false;
 }
 
 export default function Canvas() {
-    const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-    const { appState, dispatch } = useContext(CoreContext);
-    const { uiState, uiDispatch } = useContext(UIContext);
-    const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
-    const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
-    const [minRadius] = useState(10);
+  const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [minRadius] = useState(10);
 
-    useLayoutEffect(() => {
-        const c = drawingCanvasRef.current;
-        if (c) {
-            const ctx = c.getContext('2d');
-            if (!ctx) return;
-            const strokeStyle = ctx.createLinearGradient(0, 0, 200, 0);
-            strokeStyle.addColorStop(0, 'rgb(152, 152, 152)');
-            strokeStyle.addColorStop(1, 'rgb(81, 81, 81)');
-            ctx.strokeStyle = 'rgba(50, 50, 50, 1)';
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.7)';
-            ctx.shadowBlur = 40;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-            ctx.lineWidth = 1;
+  useLayoutEffect(() => {
+    const c = drawingCanvasRef.current;
+    if (c) {
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      const strokeStyle = ctx.createLinearGradient(0, 0, 200, 0);
+      strokeStyle.addColorStop(0, "rgb(152, 152, 152)");
+      strokeStyle.addColorStop(1, "rgb(81, 81, 81)");
+      ctx.strokeStyle = "rgba(50, 50, 50, 1)";
+      ctx.shadowColor = "rgba(255, 255, 255, 0.7)";
+      ctx.shadowBlur = 40;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.lineWidth = 1;
+    }
+  }, []);
+
+  const handleMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      switch (uiState.tool.type) {
+        case "marquee": {
+          const canvas = drawingCanvasRef.current;
+          if (!canvas) return;
+          const p = calcMousePosition(canvas, event);
+          setAnchor({ x: p.x, y: p.y });
+          break;
         }
-    }, []);
+      }
+    },
+    [uiState.tool.type],
+  );
 
-    const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-        switch (uiState.tool.type) {
-            case 'marquee': {
-                const canvas = drawingCanvasRef.current;
-                if (!canvas) return;
-                const p = calcMousePosition(canvas, event);
-                setAnchor({ x: p.x, y: p.y });
-                break;
+  const handleMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!anchor) return;
+      const canvas = drawingCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      switch (uiState.tool.type) {
+        case "marquee": {
+          const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
+      }
+    },
+    [anchor, uiState.tool.type],
+  );
+
+  const handleSvgDrop = useCallback(
+    async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
+      const newFrame = calculateDropFrame(svgData.width, svgData.height, dropArea, uiState.tool);
+      if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
+        return;
+      }
+      const projectSvg: LaurusProjectSvg = {
+        svg_media_id: svgData.svg_media_id,
+        width: newFrame.width,
+        height: newFrame.height,
+        top: newFrame.y,
+        left: newFrame.x,
+        order: Array.from(coreState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
+        media_key: svgData.media_key,
+        viewbox: svgData.viewbox,
+        fill: svgData.fill,
+        stroke: svgData.stroke,
+        stroke_width: svgData.stroke_width,
+        rotate_x: 0,
+        rotate_y: 0,
+        rotate_z: 0,
+        rotate_angle: 0,
+        scale_x: 1,
+        scale_y: 1,
+        description: "",
+      };
+      const newSvgs: Map<string, LaurusProjectSvg> = new Map(coreState.project.svgs);
+      const newKey = newUUID();
+      newSvgs.set(newKey, projectSvg);
+      const newProject: LaurusProjectResult = {
+        ...coreState.project,
+        svgs: newSvgs,
+      };
+      if (coreState.project.project_id) {
+        dispatch({ type: CoreActionType.SetProject, value: newProject });
+        const projectUpdated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+          ...newProject,
+        });
+        if (projectUpdated) {
+          const encodedSvg = uiState.browserSvgs.find((i) => i.media_key == svgData.media_key);
+          if (encodedSvg) {
+            dispatch({
+              type: CoreActionType.SetCanvasSvg,
+              key: newKey,
+              value: { ...encodedSvg },
+            });
+            uiDispatch({
+              type: UIActionType.AddCarouselEntry,
+              value: { type: "svg", key: newKey },
+            });
+            uiDispatch({
+              type: UIActionType.SetProjectContextMenu,
+              key: newKey,
+              showContextMenu: false,
+              contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            });
+          }
+        }
+      } else {
+        const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
+        if (projectCreated) {
+          const newProject2: LaurusProjectResult = {
+            ...projectCreated,
+            svgs: newSvgs,
+          };
+          dispatch({ type: CoreActionType.SetProject, value: newProject2 });
+          const encodedSvg = uiState.browserSvgs.find((i) => i.media_key == svgData.media_key);
+          if (encodedSvg) {
+            dispatch({
+              type: CoreActionType.SetCanvasSvg,
+              key: newKey,
+              value: { ...encodedSvg },
+            });
+            uiDispatch({
+              type: UIActionType.AddCarouselEntry,
+              value: { type: "svg", key: newKey },
+            });
+            uiDispatch({
+              type: UIActionType.SetProjectContextMenu,
+              key: newKey,
+              showContextMenu: false,
+              contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            });
+          }
+        }
+      }
+    },
+    [
+      uiState.tool,
+      uiState.browserSvgs,
+      coreState.project,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      uiDispatch,
+    ],
+  );
+
+  const handleImgDrop = useCallback(
+    async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
+      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
+      if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
+        return;
+      }
+      const projectImg: LaurusProjectImg = {
+        width: newFrame.width,
+        height: newFrame.height,
+        media_key: imgData.media_key,
+        img_media_id: imgData.img_media_id,
+        top: newFrame.y,
+        left: newFrame.x,
+        order: Array.from(coreState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
+        rotate_x: 0,
+        rotate_y: 0,
+        rotate_z: 0,
+        rotate_angle: 0,
+        scale_x: 1,
+        scale_y: 1,
+        description: "",
+      };
+      const newImgs: Map<string, LaurusProjectImg> = new Map(coreState.project.imgs);
+      const newKey = newUUID();
+      newImgs.set(newKey, projectImg);
+      const newProject: LaurusProjectResult = {
+        ...coreState.project,
+        imgs: newImgs,
+      };
+      if (coreState.project.project_id) {
+        const projectUpdated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+          ...newProject,
+        });
+        if (projectUpdated) {
+          dispatch({ type: CoreActionType.SetProject, value: newProject });
+          const encodedImg = uiState.browserImgs.find((i) => i.media_key == imgData.media_key);
+          if (encodedImg) {
+            dispatch({
+              type: CoreActionType.SetCanvasImg,
+              key: newKey,
+              value: { ...encodedImg },
+            });
+            uiDispatch({
+              type: UIActionType.AddCarouselEntry,
+              value: { type: "img", key: newKey },
+            });
+            uiDispatch({
+              type: UIActionType.SetProjectContextMenu,
+              key: newKey,
+              showContextMenu: false,
+              contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            });
+          }
+        }
+      } else {
+        const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
+        if (projectCreated) {
+          const newProject2: LaurusProjectResult = {
+            ...projectCreated,
+            imgs: newImgs,
+          };
+          dispatch({ type: CoreActionType.SetProject, value: newProject2 });
+          const encodedImg = uiState.browserImgs.find((i) => i.media_key == imgData.media_key);
+          if (encodedImg) {
+            dispatch({
+              type: CoreActionType.SetCanvasImg,
+              key: newKey,
+              value: { ...encodedImg },
+            });
+            uiDispatch({
+              type: UIActionType.AddCarouselEntry,
+              value: { type: "img", key: newKey },
+            });
+            uiDispatch({
+              type: UIActionType.SetProjectContextMenu,
+              key: newKey,
+              showContextMenu: false,
+              contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+            });
+          }
+        }
+      }
+    },
+    [
+      uiState.tool,
+      uiState.browserImgs,
+      coreState.project,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      uiDispatch,
+    ],
+  );
+
+  const handleMouseUp = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!anchor) return;
+      const canvas = drawingCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      switch (uiState.tool.type) {
+        case "marquee": {
+          const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          if (newRadius < minRadius) break;
+
+          const dropArea: ProjectCircle = {
+            cx: anchor.x,
+            cy: anchor.y,
+            radius: newRadius,
+          };
+
+          if (uiState.tool.select) {
+            const foundImgKeys = new Set<string>();
+            const foundSvgKeys = new Set<string>();
+            const isInside = (meta: LaurusProjectImg | LaurusProjectSvg) => {
+              const centerX = meta.left + (meta.width * meta.scale_x) / 2;
+              const centerY = meta.top + (meta.height * meta.scale_y) / 2;
+              const dx = centerX - dropArea.cx;
+              const dy = centerY - dropArea.cy;
+              return dx * dx + dy * dy <= dropArea.radius * dropArea.radius;
+            };
+
+            coreState.project.imgs.forEach((meta, key) => {
+              if (isInside(meta)) foundImgKeys.add(key);
+            });
+
+            coreState.project.svgs.forEach((meta, key) => {
+              if (isInside(meta)) foundSvgKeys.add(key);
+            });
+
+            setSelectedImgKeys(foundImgKeys);
+            setSelectedSvgKeys(foundSvgKeys);
+            break;
+          }
+
+          if (!uiState.browserElement) break;
+
+          switch (uiState.browserElement.type) {
+            case "svg": {
+              const key = uiState.browserElement.value.media_key;
+              const svgData = uiState.browserSvgs.find((s) => s.media_key === key);
+              if (svgData) {
+                handleSvgDrop(svgData, dropArea);
+              }
+              break;
             }
-        }
-    }, [uiState.tool.type]);
-
-    const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!anchor) return;
-        const canvas = drawingCanvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        switch (uiState.tool.type) {
-            case 'marquee': {
-                const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.beginPath();
-                ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
-                ctx.stroke();
-                break;
+            case "img": {
+              const key = uiState.browserElement.value.media_key;
+              const imgData = uiState.browserImgs.find((s) => s.media_key === key);
+              if (imgData) {
+                handleImgDrop(imgData, dropArea);
+              }
+              break;
             }
+          }
+          break;
         }
-    }, [anchor, uiState.tool.type]);
+      }
+      setAnchor(undefined);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    },
+    [
+      anchor,
+      uiState.tool,
+      uiState.browserElement,
+      uiState.browserSvgs,
+      uiState.browserImgs,
+      minRadius,
+      coreState.project.imgs,
+      coreState.project.svgs,
+      setSelectedImgKeys,
+      setSelectedSvgKeys,
+      handleSvgDrop,
+      handleImgDrop,
+    ],
+  );
 
-    const handleSvgDrop = useCallback(async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
-        const newFrame = calculateDropFrame(
-            svgData.width,
-            svgData.height,
-            dropArea,
-            uiState.tool
-        );
-        if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
-            return;
-        }
-        const projectSvg: LaurusProjectSvg = {
-            svg_media_id: svgData.svg_media_id,
-            width: newFrame.width,
-            height: newFrame.height,
-            top: newFrame.y,
-            left: newFrame.x,
-            order: Array.from(appState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
-            media_key: svgData.media_key,
-            viewbox: svgData.viewbox,
-            fill: svgData.fill,
-            stroke: svgData.stroke,
-            stroke_width: svgData.stroke_width,
-            rotate_x: 0,
-            rotate_y: 0,
-            rotate_z: 0,
-            rotate_angle: 0,
-            scale_x: 1,
-            scale_y: 1,
-            description: ""
-        }
-        const newSvgs: Map<string, LaurusProjectSvg> = new Map(appState.project.svgs);
-        const newKey = newUUID();
-        newSvgs.set(newKey, projectSvg);
-        const newProject: LaurusProjectResult = { ...appState.project, svgs: newSvgs }
-        if (appState.project.project_id) {
-            dispatch({ type: CoreActionType.SetProject, value: newProject });
-            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (projectUpdated) {
-                const encodedSvg = uiState.browserSvgs.find(i => i.media_key == svgData.media_key);
-                if (encodedSvg) {
-                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
-                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
-                }
-            }
-        }
-        else {
-            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-            if (projectCreated) {
-                const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs }
-                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
-                const encodedSvg = uiState.browserSvgs.find(i => i.media_key == svgData.media_key);
-                if (encodedSvg) {
-                    dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...encodedSvg } });
-                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'svg', key: newKey } });
-                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
-                }
-            }
-        }
-    }, [uiState.tool, uiState.browserSvgs, appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiDispatch]);
-
-    const handleImgDrop = useCallback(async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
-        const newFrame = calculateDropFrame(
-            imgData.width,
-            imgData.height,
-            dropArea,
-            uiState.tool
-        );
-        if (isBadFrame(newFrame, appState.project.canvas_width, appState.project.canvas_height)) {
-            return;
-        }
-        const projectImg: LaurusProjectImg = {
-            width: newFrame.width,
-            height: newFrame.height,
-            media_key: imgData.media_key,
-            img_media_id: imgData.img_media_id,
-            top: newFrame.y,
-            left: newFrame.x,
-            order: Array.from(appState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
-            rotate_x: 0,
-            rotate_y: 0,
-            rotate_z: 0,
-            rotate_angle: 0,
-            scale_x: 1,
-            scale_y: 1,
-            description: "",
-        };
-        const newImgs: Map<string, LaurusProjectImg> = new Map(appState.project.imgs);
-        const newKey = newUUID();
-        newImgs.set(newKey, projectImg);
-        const newProject: LaurusProjectResult = { ...appState.project, imgs: newImgs }
-        if (appState.project.project_id) {
-            const projectUpdated = await updateProject(appState.apiOrigin, appState.accessToken, newProject.project_id, { ...newProject });
-            if (projectUpdated) {
-                dispatch({ type: CoreActionType.SetProject, value: newProject });
-                const encodedImg = uiState.browserImgs.find(i => i.media_key == imgData.media_key);
-                if (encodedImg) {
-                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
-                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
-                }
-            }
-        }
-        else {
-            const projectCreated = await createProject(appState.apiOrigin, appState.accessToken, { ...newProject });
-            if (projectCreated) {
-                const newProject2: LaurusProjectResult = { ...projectCreated, imgs: newImgs }
-                dispatch({ type: CoreActionType.SetProject, value: newProject2 });
-                const encodedImg = uiState.browserImgs.find(i => i.media_key == imgData.media_key);
-                if (encodedImg) {
-                    dispatch({ type: CoreActionType.SetCanvasImg, key: newKey, value: { ...encodedImg } });
-                    uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: 'img', key: newKey } });
-                    uiDispatch({ type: UIActionType.SetProjectContextMenu, key: newKey, showContextMenu: false, contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG } });
-                }
-            }
-        }
-    }, [uiState.tool, uiState.browserImgs, appState.project, appState.apiOrigin, appState.accessToken, dispatch, uiDispatch]);
-
-    const handleMouseUp = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!anchor) return;
-        const canvas = drawingCanvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        switch (uiState.tool.type) {
-            case 'marquee':
-                {
-                    const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
-                    if (newRadius < minRadius) break;
-
-                    const dropArea: ProjectCircle = {
-                        cx: anchor.x,
-                        cy: anchor.y,
-                        radius: newRadius,
-                    };
-
-                    if (uiState.tool.select) {
-                        const foundImgKeys = new Set<string>();
-                        const foundSvgKeys = new Set<string>();
-                        const isInside = (meta: LaurusProjectImg | LaurusProjectSvg) => {
-                            const centerX = meta.left + (meta.width * meta.scale_x / 2);
-                            const centerY = meta.top + (meta.height * meta.scale_y / 2);
-                            const dx = centerX - dropArea.cx;
-                            const dy = centerY - dropArea.cy;
-                            return (dx * dx + dy * dy) <= (dropArea.radius * dropArea.radius);
-                        };
-
-                        appState.project.imgs.forEach((meta, key) => {
-                            if (isInside(meta)) foundImgKeys.add(key);
-                        });
-
-                        appState.project.svgs.forEach((meta, key) => {
-                            if (isInside(meta)) foundSvgKeys.add(key);
-                        });
-
-                        setSelectedImgKeys(foundImgKeys);
-                        setSelectedSvgKeys(foundSvgKeys);
-                        break;
-                    }
-
-                    if (!uiState.browserElement) break;
-
-                    switch (uiState.browserElement.type) {
-                        case "svg": {
-                            const key = uiState.browserElement.value.media_key;
-                            const svgData = uiState.browserSvgs.find(s => s.media_key === key);
-                            if (svgData) {
-                                handleSvgDrop(svgData, dropArea);
-                            }
-                            break;
-                        }
-                        case "img": {
-                            const key = uiState.browserElement.value.media_key;
-                            const imgData = uiState.browserImgs.find(s => s.media_key === key);
-                            if (imgData) {
-                                handleImgDrop(imgData, dropArea)
-                            }
-                            break;
-                        }
-                    }
-                    break;
-                }
-        }
-        setAnchor(undefined);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }, [anchor, uiState.tool, uiState.browserElement, uiState.browserSvgs, uiState.browserImgs, minRadius, appState.project.imgs, appState.project.svgs, setSelectedImgKeys, setSelectedSvgKeys, handleSvgDrop, handleImgDrop]);
-
-    return (<>
-        <div style={{
-            width: appState.project.canvas_width,
-            height: appState.project.canvas_height,
-        }}>
-            <canvas
-                ref={drawingCanvasRef}
-                width={appState.project.canvas_width}
-                height={appState.project.canvas_height}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onMouseDown={handleMouseDown}
-            />
-        </div>
-    </>)
+  return (
+    <>
+      <div
+        style={{
+          width: coreState.project.canvas_width,
+          height: coreState.project.canvas_height,
+        }}
+      >
+        <canvas
+          ref={drawingCanvasRef}
+          width={coreState.project.canvas_width}
+          height={coreState.project.canvas_height}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onMouseDown={handleMouseDown}
+        />
+      </div>
+    </>
+  );
 }

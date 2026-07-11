@@ -3,47 +3,52 @@ import { UIContext } from "../workspace.client";
 import { earthquake, SvgRepo } from "@/app/svg-repo";
 
 export default function Movebar() {
-    const { uiState } = useContext(UIContext);
-    const [dynamicSizes] = useState(() => {
-        switch (uiState.resolution.type) {
-            case "high": return {
-                svgSize: {
-                    width: 20,
-                    height: 20
-                }
-            }
-            case "midhigh": return {
-                svgSize: {
-                    width: 18,
-                    height: 18
-                }
-            }
-            case "midlow":
-            case "low": return {
-                svgSize: {
-                    width: 20,
-                    height: 20
-                }
-            }
-        }
-    });
+  const { uiState } = useContext(UIContext);
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          svgSize: {
+            width: 20,
+            height: 20,
+          },
+        };
+      case "midhigh":
+        return {
+          svgSize: {
+            width: 18,
+            height: 18,
+          },
+        };
+      case "midlow":
+      case "low":
+        return {
+          svgSize: {
+            width: 20,
+            height: 20,
+          },
+        };
+    }
+  });
 
-    return (
-        <div style={
-            {
-                display: 'flex',
-                alignItems: 'center',
-                height: '100%',
-                width: '100%',
-                overflowX: 'auto',
-            }}>
-            <SvgRepo
-                svg={earthquake()}
-                containerStyle={{
-                    ...dynamicSizes.svgSize
-                }}
-                scale={1}
-                scaleToContaier={true} />
-        </div>
-    );
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        width: "100%",
+        overflowX: "auto",
+      }}
+    >
+      <SvgRepo
+        svg={earthquake()}
+        containerStyle={{
+          ...dynamicSizes.svgSize,
+        }}
+        scale={1}
+        scaleToContaier={true}
+      />
+    </div>
+  );
 }
