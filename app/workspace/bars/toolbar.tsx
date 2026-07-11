@@ -353,8 +353,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   Mix Tool
                 </h4>
                 <p>
-                  Mix effects of the same type that are set to run at the same time to render a composite of each
-                  individual animation.
+                  Render a composite of individual animations of the same type that are set to run at the same time.
                 </p>
               </div>
             )}
