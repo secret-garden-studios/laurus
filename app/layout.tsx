@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Laurus",
   description: "The first tree in a secret garden",
   icons: {
-    icon: "laurus-logo-italiana-dark-144.png",
+    icon: "logo.png",
   },
 };
 
