@@ -735,25 +735,32 @@ export default function Workspace({
           fill,
         };
         const total = eligibleItems.size;
-        let current = 0;
-        if (total > 0)
-          uiDispatch({
-            type: UIActionType.SetAnimationDownloadProgress,
-            value: 0,
-          });
         const newAnimations: Animation[] = [];
+        let renderedInputs = 0;
         for (const inputKey of eligibleItems) {
           let laurusFrames: LaurusFrame[] = [];
-          if (!coreState.cacheNeedsRefresh) {
+          if (!coreState.cacheNeedsRefresh && !coreState.cacheNeedsRefreshInputs.has(inputKey)) {
             laurusFrames = [...(framesCacheRef.current.get(inputKey) ?? [])];
           }
           if (laurusFrames.length === 0) {
+            if (renderedInputs == 0) {
+              uiDispatch({
+                type: UIActionType.SetAnimationDownloadProgress,
+                value: 0,
+              });
+            }
             const framesFromServer = await getFrames(
               coreState.apiOrigin,
               coreState.project.project_id,
               inputKey,
               coreState.fps,
             );
+            renderedInputs++;
+            uiDispatch({
+              type: UIActionType.SetAnimationDownloadProgress,
+              value: Math.round((renderedInputs / total) * 100),
+            });
+
             if (!framesFromServer) continue;
             laurusFrames = framesFromServer;
             if (setCache) {
@@ -768,15 +775,11 @@ export default function Workspace({
           if (element) {
             const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
             const animation = new Animation(keyframeEffect, document.timeline);
-            current++;
-            if (total > 0)
-              uiDispatch({
-                type: UIActionType.SetAnimationDownloadProgress,
-                value: Math.round((current / total) * 100),
-              });
             newAnimations.push(animation);
           }
         }
+        dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
+        dispatch({ type: CoreActionType.SetCacheNeedsRefreshInputs, value: new Set<string>() });
         return newAnimations;
       } finally {
         document.body.style.cursor = "";
@@ -789,6 +792,7 @@ export default function Workspace({
     [
       coreState.apiOrigin,
       coreState.cacheNeedsRefresh,
+      coreState.cacheNeedsRefreshInputs,
       coreState.effectGroups,
       coreState.effects,
       coreState.fps,
@@ -853,7 +857,6 @@ export default function Workspace({
       value: { type: "waiting" },
     });
     uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
-    dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
 
     if (uiState.tool.type !== "viewport" && uiState.tool.type !== "none") {
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });

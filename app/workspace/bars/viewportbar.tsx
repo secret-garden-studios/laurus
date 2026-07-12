@@ -248,15 +248,6 @@ export default function Viewportbar({ icon }: Viewportbar) {
                 scaleToContaier={true}
               />
             )}
-            <div
-              style={{
-                fontWeight: "bold",
-                color: "rgb(200, 200, 200)",
-                ...dynamicSizes.playbackTime,
-              }}
-            >
-              {"00:00:00.00"}
-            </div>
           </div>
         );
       }

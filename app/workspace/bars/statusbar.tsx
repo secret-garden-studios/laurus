@@ -192,7 +192,11 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
       >
         <SvgRepo
           title={"cache"}
-          svg={!coreState.cacheNeedsRefresh ? autorenew() : autorenew("rgb(62, 62, 62)")}
+          svg={
+            !coreState.cacheNeedsRefresh && coreState.cacheNeedsRefreshInputs.size == 0
+              ? autorenew()
+              : autorenew("rgb(62, 62, 62)")
+          }
           containerStyle={{
             width: 30,
             height: 30,
