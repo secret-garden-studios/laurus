@@ -739,7 +739,7 @@ export default function Workspace({
         let renderedInputs = 0;
         for (const inputKey of eligibleItems) {
           let laurusFrames: LaurusFrame[] = [];
-          if (!coreState.cacheNeedsRefresh && !coreState.cacheNeedsRefreshInputs.has(inputKey)) {
+          if (!(coreState.inputsToRender.has("*") || coreState.inputsToRender.has(inputKey))) {
             laurusFrames = [...(framesCacheRef.current.get(inputKey) ?? [])];
           }
           if (laurusFrames.length === 0) {
@@ -778,8 +778,7 @@ export default function Workspace({
             newAnimations.push(animation);
           }
         }
-        dispatch({ type: CoreActionType.SetCacheNeedsRefresh, value: false });
-        dispatch({ type: CoreActionType.SetCacheNeedsRefreshInputs, value: new Set<string>() });
+        dispatch({ type: CoreActionType.SetInputsToRender, value: new Set<string>() });
         return newAnimations;
       } finally {
         document.body.style.cursor = "";
@@ -791,8 +790,7 @@ export default function Workspace({
     },
     [
       coreState.apiOrigin,
-      coreState.cacheNeedsRefresh,
-      coreState.cacheNeedsRefreshInputs,
+      coreState.inputsToRender,
       coreState.effectGroups,
       coreState.effects,
       coreState.fps,
@@ -1151,6 +1149,22 @@ export default function Workspace({
       window.removeEventListener("blur", handleBlur);
     };
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (framesCacheRef.current.size == 0) {
+        uiDispatch({
+          type: UIActionType.SetPlaybackMode,
+          value: { type: "waiting" },
+        });
+        await getNewAnimations("none", false, true);
+        uiDispatch({
+          type: UIActionType.SetPlaybackMode,
+          value: { type: "stopped" },
+        });
+      }
+    })();
+  }, [getNewAnimations]);
 
   return (
     <>

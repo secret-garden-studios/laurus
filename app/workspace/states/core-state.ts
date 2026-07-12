@@ -13,8 +13,7 @@ export interface CoreState {
   timelineUnit: string;
   timelineMaxValue: number;
   fps: number;
-  cacheNeedsRefresh: boolean;
-  cacheNeedsRefreshInputs: Set<string>;
+  inputsToRender: Set<string>;
 }
 
 export const defaultCoreState: CoreState = {
@@ -28,8 +27,7 @@ export const defaultCoreState: CoreState = {
   timelineUnit: "",
   timelineMaxValue: 0,
   fps: 60,
-  cacheNeedsRefresh: true,
-  cacheNeedsRefreshInputs: new Set<string>(),
+  inputsToRender: new Set<string>(),
 };
 
 export enum CoreActionType {
@@ -54,8 +52,7 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetFps,
-  SetCacheNeedsRefresh,
-  SetCacheNeedsRefreshInputs,
+  SetInputsToRender,
 }
 
 export type CoreAction =
@@ -74,31 +71,28 @@ export type CoreAction =
       value: LaurusEffect[];
       preserveCache?: boolean;
     }
-  | { type: CoreActionType.SetEffect; value: LaurusEffect }
+  | { type: CoreActionType.SetEffect; value: LaurusEffect; preserveCache?: boolean }
   | { type: CoreActionType.DeleteEffect; key: string }
-  | { type: CoreActionType.SetEffectGroup; value: LaurusEffectGroupResult }
+  | { type: CoreActionType.SetEffectGroup; value: LaurusEffectGroupResult; preserveCache?: boolean }
   | { type: CoreActionType.DeleteEffectGroup; key: string }
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetFps; value: number }
-  | { type: CoreActionType.SetCacheNeedsRefresh; value: boolean }
-  | { type: CoreActionType.SetCacheNeedsRefreshInputs; value: Set<string> };
+  | { type: CoreActionType.SetInputsToRender; value: Set<string> };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
   switch (action.type) {
     case CoreActionType.SetCoreState: {
       return {
         ...action.value,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetProject: {
       return {
         ...state,
         project: { ...action.value },
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set(state.inputsToRender),
       };
     }
     case CoreActionType.SetCanvasImg: {
@@ -107,8 +101,7 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasImgs: newImgs,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.DeleteCanvasImg: {
@@ -117,16 +110,14 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasImgs: newImgs,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetCanvasImgs: {
       return {
         ...state,
         canvasImgs: new Map(action.value),
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetCanvasSvg: {
@@ -135,8 +126,7 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasSvgs: newSvgs,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.DeleteCanvasSvg: {
@@ -145,16 +135,14 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasSvgs: newSvgs,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetCanvasSvgs: {
       return {
         ...state,
         canvasSvgs: new Map(action.value),
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.DeleteProjectImg: {
@@ -167,8 +155,7 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         project: newProject,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.DeleteProjectSvg: {
@@ -181,31 +168,38 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         project: newProject,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetEffects: {
-      const newCacheNeedsRefresh = action.preserveCache ? state.cacheNeedsRefresh : true;
+      const newCacheNeedsRefreshInputs = action.preserveCache ? new Set(state.inputsToRender) : new Set<string>(["*"]);
       return {
         ...state,
         effects: [...action.value],
-        cacheNeedsRefresh: newCacheNeedsRefresh,
-        cacheNeedsRefreshInputs: action.preserveCache ? new Set(state.cacheNeedsRefreshInputs) : new Set<string>(),
+        inputsToRender: newCacheNeedsRefreshInputs,
       };
     }
     case CoreActionType.SetEffect: {
       const currentEffects = [...state.effects];
-      const currentEffect = currentEffects.find((e) => e.key == action.value.key);
-      const newCacheNeedsRefreshInputs: Set<string> = currentEffect
-        ? new Set(currentEffect.value.math.keys())
-        : new Set();
-      action.value.value.math.forEach((_, inputKey) => newCacheNeedsRefreshInputs.add(inputKey));
       const newEffects = currentEffects.map((e) => (e.key == action.value.key ? { ...action.value } : e));
+      if (action.preserveCache) {
+        return {
+          ...state,
+          effects: newEffects,
+          inputsToRender: new Set(state.inputsToRender),
+        };
+      }
+
+      const currentEffect = currentEffects.find((e) => e.key == action.value.key);
+      const newInputsToRender: Set<string> = new Set<string>();
+      if (currentEffect) {
+        currentEffect.value.math.forEach((_, k) => newInputsToRender.add(k));
+      }
+      action.value.value.math.forEach((_, inputKey) => newInputsToRender.add(inputKey));
       return {
         ...state,
         effects: newEffects,
-        cacheNeedsRefreshInputs: newCacheNeedsRefreshInputs,
+        inputsToRender: newInputsToRender.size === 0 ? new Set<string>(["*"]) : newInputsToRender,
       };
     }
     case CoreActionType.DeleteEffect: {
@@ -213,18 +207,17 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         effects: newEffects,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetEffectGroup: {
       const newEffectGroups = new Map(state.effectGroups);
       newEffectGroups.set(action.value.effect_group_id, action.value);
+      const newCacheNeedsRefreshInputs = action.preserveCache ? new Set(state.inputsToRender) : new Set<string>(["*"]);
       return {
         ...state,
         effectGroups: newEffectGroups,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: newCacheNeedsRefreshInputs,
       };
     }
     case CoreActionType.DeleteEffectGroup: {
@@ -233,41 +226,34 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         effectGroups: newEffectGroups,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetTimelineUnit: {
       return {
         ...state,
         timelineUnit: action.value,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetTimelineMaxValue: {
       return {
         ...state,
         timelineMaxValue: action.value,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
     case CoreActionType.SetFps: {
       return {
         ...state,
         fps: action.value,
-        cacheNeedsRefresh: true,
-        cacheNeedsRefreshInputs: new Set<string>(),
+        inputsToRender: new Set<string>(["*"]),
       };
     }
-    case CoreActionType.SetCacheNeedsRefresh: {
-      return { ...state, cacheNeedsRefresh: action.value };
-    }
-    case CoreActionType.SetCacheNeedsRefreshInputs: {
+    case CoreActionType.SetInputsToRender: {
       return {
         ...state,
-        cacheNeedsRefreshInputs: action.value,
+        inputsToRender: action.value,
       };
     }
   }

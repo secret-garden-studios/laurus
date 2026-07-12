@@ -172,7 +172,7 @@ export default function Mixbar() {
       }
       if (event.key === "Escape") {
         if (selectedEffectType && !isSaving) {
-          dispatch({ type: CoreActionType.SetEffects, value: prevEffects });
+          dispatch({ type: CoreActionType.SetEffects, value: prevEffects, preserveCache: true });
           setSelectedEffectType("");
         }
       }

@@ -178,11 +178,11 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
       <div
         title={"cache"}
         onDoubleClick={() => {
-          if (!coreState.cacheNeedsRefresh && framesCacheRef.current) {
+          if (framesCacheRef.current) {
             framesCacheRef.current.clear();
             dispatch({
-              type: CoreActionType.SetCacheNeedsRefresh,
-              value: true,
+              type: CoreActionType.SetInputsToRender,
+              value: new Set<string>(["*"]),
             });
           }
         }}
@@ -192,11 +192,7 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
       >
         <SvgRepo
           title={"cache"}
-          svg={
-            !coreState.cacheNeedsRefresh && coreState.cacheNeedsRefreshInputs.size == 0
-              ? autorenew()
-              : autorenew("rgb(62, 62, 62)")
-          }
+          svg={coreState.inputsToRender.size == 0 ? autorenew() : autorenew("rgb(62, 62, 62)")}
           containerStyle={{
             width: 30,
             height: 30,

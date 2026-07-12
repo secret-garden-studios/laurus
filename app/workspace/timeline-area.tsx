@@ -881,7 +881,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
       debounceTimerRef.current = setTimeout(() => {
         updateEffectGroup(coreState.apiOrigin, coreState.accessToken, effectGroupId, newEffectGroup).then((updated) => {
           if (!updated) {
-            dispatch({ type: CoreActionType.SetEffectGroup, value: snapshot });
+            dispatch({ type: CoreActionType.SetEffectGroup, value: snapshot, preserveCache: true });
             const inputEl = effectGroupDescriptionRef.current;
             if (inputEl) {
               inputEl.value = snapshot.description;
@@ -890,6 +890,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
             dispatch({
               type: CoreActionType.SetEffectGroup,
               value: newEffectGroup,
+              preserveCache: true,
             });
           }
         });
@@ -1144,7 +1145,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
               ...effectsSnapshot,
               newEffect,
             ]);
-            dispatch({ type: CoreActionType.SetEffects, value: reindexed });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexed, preserveCache: true });
           }
           break;
         }
@@ -1174,7 +1175,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
               ...effectsSnapshot,
               newEffect,
             ]);
-            dispatch({ type: CoreActionType.SetEffects, value: reindexed });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexed, preserveCache: true });
           }
           break;
         }
@@ -1204,7 +1205,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
               ...effectsSnapshot,
               newEffect,
             ]);
-            dispatch({ type: CoreActionType.SetEffects, value: reindexed });
+            dispatch({ type: CoreActionType.SetEffects, value: reindexed, preserveCache: true });
           }
           break;
         }
@@ -1418,10 +1419,15 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       <div style={{ display: "flex", height: "100%", alignItems: "center" }}>
         <SvgRepo
           title={"rewind all"}
-          svg={uiState.playbackMode.type == "stopped" ? skipPrevious() : skipPrevious("rgba(255, 255, 255, 0.2)")}
+          svg={
+            uiState.playbackMode.type == "stopped" && uiState.filledForwards
+              ? skipPrevious()
+              : skipPrevious("rgba(255, 255, 255, 0.2)")
+          }
           scale={1}
           scaleToContaier={true}
           onContainerClick={() => {
+            if (!uiState.filledForwards) return;
             switch (uiState.playbackMode.type) {
               case "stopped": {
                 handleRewindAll(playbackRate);

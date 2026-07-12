@@ -581,7 +581,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                   ...newScale,
                 },
               };
-              dispatch({ type: CoreActionType.SetEffect, value: newEffect });
+              dispatch({ type: CoreActionType.SetEffect, value: newEffect, preserveCache: true });
             } else {
               effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
             }
@@ -600,7 +600,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                   ...newMove,
                 },
               };
-              dispatch({ type: CoreActionType.SetEffect, value: newEffect });
+              dispatch({ type: CoreActionType.SetEffect, value: newEffect, preserveCache: true });
             } else {
               effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
             }
@@ -619,7 +619,7 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
                   ...newRotate,
                 },
               };
-              dispatch({ type: CoreActionType.SetEffect, value: newEffect });
+              dispatch({ type: CoreActionType.SetEffect, value: newEffect, preserveCache: true });
             } else {
               effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
             }
