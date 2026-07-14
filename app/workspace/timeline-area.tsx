@@ -1419,15 +1419,10 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       <div style={{ display: "flex", height: "100%", alignItems: "center" }}>
         <SvgRepo
           title={"rewind all"}
-          svg={
-            uiState.playbackMode.type == "stopped" && uiState.filledForwards
-              ? skipPrevious()
-              : skipPrevious("rgba(255, 255, 255, 0.2)")
-          }
+          svg={uiState.playbackMode.type == "stopped" ? skipPrevious() : skipPrevious("rgba(255, 255, 255, 0.2)")}
           scale={1}
           scaleToContaier={true}
           onContainerClick={() => {
-            if (!uiState.filledForwards) return;
             switch (uiState.playbackMode.type) {
               case "stopped": {
                 handleRewindAll(playbackRate);
