@@ -472,7 +472,7 @@ export default function RotateUnitbar({
         <div
           title="paste"
           onClick={() => {
-            if (isAltKeyPressed || uiState.playbackMode.type == "stopped") return;
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             if (uiState.effectClipboard && uiState.effectClipboard.type == "rotate") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
