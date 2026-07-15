@@ -1,6 +1,6 @@
 import { dellaRespira } from "./fonts";
 import styles from "./app.module.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SvgRepo, visibility, visibilityOff } from "./svg-repo";
 import { LaurusResolution } from "./landing.boot";
 import {
@@ -19,7 +19,6 @@ import { useRouter } from "next/navigation";
 
 export enum LandingFormType {
   login,
-  loggedIn,
   registration,
   passwordReset,
   passwordConfirmation,
@@ -59,6 +58,45 @@ interface Landing {
 export default function Landing({ laurusApi, resolution, resetPasswordToken, formInit }: Landing) {
   const [formType, setFormType] = useState<LandingFormType>(formInit);
   const [newUsername, setNewUsername] = useState("");
+  const vhPercentage = useMemo<number>(() => {
+    switch (resolution.type) {
+      case "high": {
+        switch (formType) {
+          case LandingFormType.passwordConfirmation:
+            return 35;
+          case LandingFormType.login:
+          case LandingFormType.registration:
+          case LandingFormType.passwordReset:
+          case LandingFormType.none:
+            return 30;
+        }
+      }
+      case "midhigh": {
+        switch (formType) {
+          case LandingFormType.passwordConfirmation:
+            return 33;
+          case LandingFormType.login:
+          case LandingFormType.registration:
+          case LandingFormType.passwordReset:
+          case LandingFormType.none:
+            return 28;
+        }
+      }
+      case "midlow": {
+        switch (formType) {
+          case LandingFormType.passwordConfirmation:
+          case LandingFormType.login:
+          case LandingFormType.registration:
+          case LandingFormType.passwordReset:
+          case LandingFormType.none:
+            return 20;
+        }
+      }
+      case "low": {
+        return 0;
+      }
+    }
+  }, [formType, resolution.type]);
 
   return (
     <>
@@ -68,8 +106,9 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
           display: "grid",
           height: "100vh",
           width: "100vw",
-          gridTemplateRows: `${resolution.type == "low" ? 0 : formType == LandingFormType.loggedIn || formType == LandingFormType.passwordConfirmation ? 35 : 30}vh auto min-content`,
+          gridTemplateRows: `${vhPercentage}vh auto min-content`,
           color: "rgb(227,227,227)",
+          overflow: "auto",
         }}
       >
         <div />
@@ -79,18 +118,9 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
           (() => {
             switch (formType) {
               case LandingFormType.login:
-              case LandingFormType.loggedIn:
                 return (
                   <>
-                    <LoginBody
-                      laurusApi={laurusApi}
-                      resolution={resolution}
-                      onNewFormType={(form) => {
-                        setNewUsername("");
-                        setFormType(form);
-                      }}
-                      newUsername={newUsername}
-                    />
+                    <LoginBody laurusApi={laurusApi} resolution={resolution} newUsername={newUsername} />
                   </>
                 );
               case LandingFormType.registration:
@@ -145,26 +175,47 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
             padding: 20,
             width: "100%",
             display: "grid",
-            placeContent: "center",
+            gap: 12,
+            justifyItems: "center",
+            alignItems: "center",
           }}
         >
           {resolution.type != "low" && formType == LandingFormType.login ? (
-            <div
-              onClick={async () => {
-                setFormType(LandingFormType.passwordReset);
-              }}
-              style={{
-                cursor: "pointer",
-                fontSize: 12,
-                letterSpacing: "3px",
-                textDecoration: "underline",
-                textUnderlineOffset: 2,
-                textDecorationColor: "rgba(255,255,255,0.4)",
-              }}
-            >
-              {"reset your password"}
-            </div>
-          ) : (
+            <>
+              <div
+                onClick={() => {
+                  setNewUsername("");
+                  setFormType(LandingFormType.registration);
+                }}
+                style={{
+                  cursor: "pointer",
+                  fontSize: 12,
+                  letterSpacing: "3px",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                  textDecorationColor: "rgba(255,255,255,0.4)",
+                }}
+              >
+                {"full access"}
+              </div>
+              <div
+                onClick={() => {
+                  setNewUsername("");
+                  setFormType(LandingFormType.passwordReset);
+                }}
+                style={{
+                  cursor: "pointer",
+                  fontSize: 12,
+                  letterSpacing: "3px",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                  textDecorationColor: "rgba(255,255,255,0.4)",
+                }}
+              >
+                {"reset password"}
+              </div>
+            </>
+          ) : resolution.type == "low" ? (
             <div
               style={{
                 fontSize: 12,
@@ -173,6 +224,8 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
             >
               {"designed for desktop"}
             </div>
+          ) : (
+            <></>
           )}
         </div>
       </div>
@@ -523,10 +576,9 @@ function LowResBody() {
 interface LoginBody {
   laurusApi: string | undefined;
   resolution: LaurusResolution;
-  onNewFormType: (newFormType: LandingFormType) => void;
   newUsername: string;
 }
-function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginBody) {
+function LoginBody({ laurusApi, resolution, newUsername }: LoginBody) {
   const router = useRouter();
   const [username, setUsername] = useState<string>(newUsername ? newUsername : "");
   const [password, setPassword] = useState<string>("");
@@ -552,285 +604,230 @@ function LoginBody({ laurusApi, resolution, onNewFormType, newUsername }: LoginB
     }
   });
   return (
-    <>
-      <div
-        style={{
-          display: "grid",
-          alignContent: "start",
-          justifyContent: "center",
-          position: "relative",
-          letterSpacing: "2px",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "grid", width: "100%", padding: 24 }}>
-          <div style={{ padding: "10px 0px" }}>
-            <LaurusText
-              scale={1}
-              color={{
-                a: "rgb(255, 255, 255)",
-                b: "rgb(190, 190, 190)",
-                c: "rgb(163, 163, 163)",
-                d: "rgb(255, 255, 255)",
-                e: "rgb(255, 255, 255)",
-                f: "rgb(199, 199, 199)",
-              }}
-            />
-          </div>
-          <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: "center", padding: 4 }}>
-            <div>{"beta version"}</div>
-          </div>
-        </div>
-        <div style={{ display: "grid", gap: 12 }}>
-          <input
-            className={dellaRespira.className}
-            id="username"
-            placeholder="username"
-            autoComplete="username"
-            value={username}
-            onChange={(v) => {
-              buttonBorderRef.current = ButtonBorderColor.primary;
-              setUsername(v.currentTarget.value);
-              setMsg("");
-              setButtonBorder(ButtonBorderColor.primary);
+    <div
+      style={{
+        display: "grid",
+        alignContent: "start",
+        justifyContent: "center",
+        position: "relative",
+        letterSpacing: "2px",
+        gap: 10,
+      }}
+    >
+      <div style={{ display: "grid", width: "100%", padding: 24 }}>
+        <div style={{ padding: "10px 0px" }}>
+          <LaurusText
+            scale={1}
+            color={{
+              a: "rgb(255, 255, 255)",
+              b: "rgb(190, 190, 190)",
+              c: "rgb(163, 163, 163)",
+              d: "rgb(255, 255, 255)",
+              e: "rgb(255, 255, 255)",
+              f: "rgb(199, 199, 199)",
             }}
-            style={{
-              ...dynamicSizes.input,
-              width: "100%",
-              borderRadius: 10,
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              background: "rgb(25, 25, 25)",
-              boxSizing: "border-box",
-              outline: "none",
-            }}
-            required
           />
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div
-              style={{
-                position: "relative",
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              <input
-                className={dellaRespira.className}
-                id="password-input"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => {
-                  buttonBorderRef.current = ButtonBorderColor.primary;
-                  setPassword(e.target.value);
-                  setMsg("");
-                  setButtonBorder(ButtonBorderColor.primary);
-                }}
-                placeholder="password"
-                style={{
-                  ...dynamicSizes.input,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255, 255, 255, 0.1)",
-                  background: "rgb(25, 25, 25)",
-                  boxSizing: "border-box",
-                  outline: "none",
-                  width: "100%",
-                }}
-                autoComplete="current-password"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPassword(!showPassword);
-                }}
-                style={{
-                  position: "absolute",
-                  right: "8px",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                {showPassword ? (
-                  <SvgRepo
-                    svg={visibility("rgba(67,67,67,1)")}
-                    containerStyle={{
-                      width: 20,
-                      height: 20,
-                    }}
-                    scale={1}
-                  />
-                ) : (
-                  <SvgRepo
-                    svg={visibilityOff("rgba(67,67,67,1)")}
-                    containerStyle={{
-                      width: 20,
-                      height: 20,
-                    }}
-                    scale={1}
-                  />
-                )}
-              </button>
-            </div>
-          </div>
-          <div
-            className={dellaRespira.className + " " + styles["glowing-border"] + " " + styles["animated-button-dark"]}
-            onClick={async () => {
-              if (!username) {
-                setMsg("provide a username");
-                buttonBorderRef.current = ButtonBorderColor.red;
-                setButtonBorder(ButtonBorderColor.red);
-                return;
-              }
-              if (!password) {
-                setMsg("provide a password");
-                buttonBorderRef.current = ButtonBorderColor.red;
-                setButtonBorder(ButtonBorderColor.red);
-                return;
-              }
-              const loginResult = await login(laurusApi, username, password);
-              if (!loginResult.success) {
-                setMsg(loginResult.message == UNAUTHORIZED_ERROR ? "try different credentials" : LANDING_ERROR);
-                buttonBorderRef.current = ButtonBorderColor.red;
-                setButtonBorder(ButtonBorderColor.red);
-                return;
-              } else {
-                if (resolution.type == "low") {
-                  router.push("/screens");
-                } else {
-                  router.push("/workspace");
-                }
-              }
-            }}
-            style={
-              {
-                display: "grid",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                borderRadius: 10,
-                height: 50,
-                padding: 10,
-                width: "100%",
-                fontSize: 13,
-                placeContent: "center",
-                cursor: "pointer",
-                "--color-primary": buttonBorderRecord[buttonBorder].p,
-                "--color-secondary": buttonBorderRecord[buttonBorder].s,
-                "--color-tertiary": buttonBorderRecord[buttonBorder].t,
-              } as React.CSSProperties
-            }
-          >
-            {msg ? msg : "login"}
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                height: "1px",
-                width: "100%",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
-            <div
-              style={{
-                padding: "0 8px",
-                display: "grid",
-                placeContent: "center",
-              }}
-            >
-              {"or"}
-            </div>
-            <div
-              style={{
-                height: "1px",
-                width: "100%",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
-          </div>
-          <div
-            className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
-            onClick={() => {
-              setMsg("");
-              buttonBorderRef.current = ButtonBorderColor.primary;
-              setButtonBorder(ButtonBorderColor.primary);
-              onNewFormType(LandingFormType.registration);
-            }}
-            style={{
-              display: "grid",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              borderRadius: 10,
-              height: 50,
-              padding: 10,
-              width: "100%",
-              fontSize: 13,
-              placeContent: "center",
-            }}
-          >
-            {"create an account"}
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                height: "1px",
-                width: "100%",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
-            <div
-              style={{
-                padding: "0 8px",
-                display: "grid",
-                placeContent: "center",
-              }}
-            >
-              {"or"}
-            </div>
-            <div
-              style={{
-                height: "1px",
-                width: "100%",
-                background: "rgba(255,255,255,0.05)",
-              }}
-            />
-          </div>
-          <div
-            className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
-            onClick={async () => {
-              if (resolution.type == "low") {
-                router.push("/screens?guest=true");
-              } else {
-                router.push("/workspace?guest=true");
-              }
-            }}
-            style={{
-              display: "grid",
-
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              borderRadius: 10,
-              height: 50,
-              padding: 10,
-              width: "100%",
-              fontSize: 13,
-              placeContent: "center",
-            }}
-          >
-            {"continue as a guest"}
-          </div>
+        </div>
+        <div className={styles["animated-font"]} style={{ fontSize: 20, justifySelf: "center", padding: 4 }}>
+          <div>{"beta version"}</div>
         </div>
       </div>
-    </>
+      <div style={{ display: "grid", gap: 12 }}>
+        <input
+          className={dellaRespira.className}
+          id="username"
+          placeholder="username"
+          autoComplete="username"
+          value={username}
+          onChange={(v) => {
+            buttonBorderRef.current = ButtonBorderColor.primary;
+            setUsername(v.currentTarget.value);
+            setMsg("");
+            setButtonBorder(ButtonBorderColor.primary);
+          }}
+          style={{
+            ...dynamicSizes.input,
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            background: "rgb(25, 25, 25)",
+            boxSizing: "border-box",
+            outline: "none",
+          }}
+          required
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <input
+              className={dellaRespira.className}
+              id="password-input"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => {
+                buttonBorderRef.current = ButtonBorderColor.primary;
+                setPassword(e.target.value);
+                setMsg("");
+                setButtonBorder(ButtonBorderColor.primary);
+              }}
+              placeholder="password"
+              style={{
+                ...dynamicSizes.input,
+                borderRadius: 10,
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                background: "rgb(25, 25, 25)",
+                boxSizing: "border-box",
+                outline: "none",
+                width: "100%",
+              }}
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setShowPassword(!showPassword);
+              }}
+              style={{
+                position: "absolute",
+                right: "8px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {showPassword ? (
+                <SvgRepo
+                  svg={visibility("rgba(67,67,67,1)")}
+                  containerStyle={{
+                    width: 20,
+                    height: 20,
+                  }}
+                  scale={1}
+                />
+              ) : (
+                <SvgRepo
+                  svg={visibilityOff("rgba(67,67,67,1)")}
+                  containerStyle={{
+                    width: 20,
+                    height: 20,
+                  }}
+                  scale={1}
+                />
+              )}
+            </button>
+          </div>
+        </div>
+        <div
+          className={dellaRespira.className + " " + styles["glowing-border"] + " " + styles["animated-button-dark"]}
+          onClick={async () => {
+            if (!username) {
+              setMsg("provide a username");
+              buttonBorderRef.current = ButtonBorderColor.red;
+              setButtonBorder(ButtonBorderColor.red);
+              return;
+            }
+            if (!password) {
+              setMsg("provide a password");
+              buttonBorderRef.current = ButtonBorderColor.red;
+              setButtonBorder(ButtonBorderColor.red);
+              return;
+            }
+            const loginResult = await login(laurusApi, username, password);
+            if (!loginResult.success) {
+              setMsg(loginResult.message == UNAUTHORIZED_ERROR ? "try different credentials" : LANDING_ERROR);
+              buttonBorderRef.current = ButtonBorderColor.red;
+              setButtonBorder(ButtonBorderColor.red);
+              return;
+            } else {
+              if (resolution.type == "low") {
+                router.push("/screens");
+              } else {
+                router.push("/workspace");
+              }
+            }
+          }}
+          style={
+            {
+              display: "grid",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              height: 50,
+              padding: 10,
+              width: "100%",
+              fontSize: 13,
+              placeContent: "center",
+              cursor: "pointer",
+              "--color-primary": buttonBorderRecord[buttonBorder].p,
+              "--color-secondary": buttonBorderRecord[buttonBorder].s,
+              "--color-tertiary": buttonBorderRecord[buttonBorder].t,
+            } as React.CSSProperties
+          }
+        >
+          {msg ? msg : "login"}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              height: "1px",
+              width: "100%",
+              background: "rgba(255,255,255,0.05)",
+            }}
+          />
+          <div
+            style={{
+              padding: "0 8px",
+              display: "grid",
+              placeContent: "center",
+            }}
+          >
+            {"or"}
+          </div>
+          <div
+            style={{
+              height: "1px",
+              width: "100%",
+              background: "rgba(255,255,255,0.05)",
+            }}
+          />
+        </div>
+        <div
+          className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
+          onClick={async () => {
+            if (resolution.type == "low") {
+              router.push("/screens?guest=true");
+            } else {
+              router.push("/workspace?guest=true");
+            }
+          }}
+          style={{
+            display: "grid",
+
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            borderRadius: 10,
+            height: 50,
+            padding: 10,
+            width: "100%",
+            fontSize: 13,
+            placeContent: "center",
+          }}
+        >
+          {"continue as a guest"}
+        </div>
+      </div>
+    </div>
   );
 }
 
