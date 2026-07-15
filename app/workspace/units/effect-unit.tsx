@@ -669,28 +669,27 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
   );
 
   return (
-    <>
-      <input
-        id={`effect-description-input-${effectKey}`}
-        ref={effectDescriptionInputRef}
-        className={dellaRespira.className}
-        type="text"
-        placeholder="describe me..."
-        style={{
-          textAlign: "center",
-          background: "none",
-          color: "rgb(220, 220, 220)",
-          border: "none",
-          outline: "none",
-          height: "100%",
-          display: "inline-block",
-          overflowX: "scroll",
-          width: "100%",
-          ...dynamicSizes,
-        }}
-        value={effectDescription}
-        onChange={onEffectDescriptionChange}
-      />
-    </>
+    <input
+      id={`effect-description-input-${effectKey}`}
+      ref={effectDescriptionInputRef}
+      className={dellaRespira.className}
+      type="text"
+      disabled={uiState.playbackMode.type !== "stopped"}
+      placeholder="describe me..."
+      style={{
+        textAlign: "center",
+        background: "none",
+        color: "rgb(220, 220, 220)",
+        border: "none",
+        outline: "none",
+        height: "100%",
+        display: "inline-block",
+        overflowX: "scroll",
+        width: "100%",
+        ...dynamicSizes,
+      }}
+      value={effectDescription}
+      onChange={onEffectDescriptionChange}
+    />
   );
 }
