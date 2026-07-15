@@ -369,7 +369,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                       const val = getXValue(c.y, xTrackRef.current.clientHeight, 0);
                       xRef.current.innerHTML = val.toFixed(2);
                     }}
-                    disabled={rotate.locked || isAltKeyPressed}
+                    disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={xTitle}
                     liveTitleRef={xRef}
                   />
@@ -407,7 +407,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                       const val = getYValue(c.y, yTrackRef.current.clientHeight, 0);
                       yRef.current.innerHTML = val.toFixed(2);
                     }}
-                    disabled={rotate.locked || isAltKeyPressed}
+                    disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={yTitle}
                     liveTitleRef={yRef}
                   />
@@ -445,7 +445,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                       const val = getZValue(c.y, zTrackRef.current.clientHeight, 0);
                       zRef.current.innerHTML = val.toFixed(2);
                     }}
-                    disabled={rotate.locked || isAltKeyPressed}
+                    disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={zTitle}
                     liveTitleRef={zRef}
                   />
@@ -484,7 +484,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                       const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                       timeRef.current.innerHTML = val.toFixed(2) + "s";
                     }}
-                    disabled={rotate.locked || isAltKeyPressed}
+                    disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
                   />
@@ -566,7 +566,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                       saveNewEquation(snapshot, newEquation);
                     }
                   }}
-                  disabled={rotate.locked || isAltKeyPressed}
+                  disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   size={{
                     container: 90,
                     gauge: 90,

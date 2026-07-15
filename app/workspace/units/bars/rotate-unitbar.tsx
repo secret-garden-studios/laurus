@@ -160,7 +160,7 @@ export default function RotateUnitbar({
         <div
           title="loop"
           onDoubleClick={() => {
-            if (rotate.locked || isAltKeyPressed) return;
+            if (rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey) {
               const nextLoop = getNextLoopType();
@@ -194,7 +194,7 @@ export default function RotateUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : rotate.locked
+                : rotate.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : rotate.math.has(carouselEntryKey)
                     ? "pointer"
@@ -232,7 +232,7 @@ export default function RotateUnitbar({
         <div
           title="counterclockwise"
           onClick={() => {
-            if (isAltKeyPressed) return;
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const newCounterClockwise: boolean = !counterClockwise;
             const activeKey = carouselEntryKey;
             if (!activeKey) return;
@@ -270,7 +270,11 @@ export default function RotateUnitbar({
               rotate.math.has(carouselEntryKey) ? updateCounterClockwise() : updateCounterClockwise("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : rotate.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : rotate.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.9}
@@ -320,6 +324,7 @@ export default function RotateUnitbar({
             if (
               isAltKeyPressed ||
               rotate.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
             )
               return;
@@ -356,7 +361,11 @@ export default function RotateUnitbar({
                 : add2("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : rotate.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : rotate.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -369,6 +378,7 @@ export default function RotateUnitbar({
             if (
               isAltKeyPressed ||
               rotate.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (rotate.math.has(carouselEntryKey) && rotate.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
             )
               return;
@@ -405,7 +415,11 @@ export default function RotateUnitbar({
                 : remove("rgb(62,62,62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : rotate.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : rotate.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -458,7 +472,7 @@ export default function RotateUnitbar({
         <div
           title="paste"
           onClick={() => {
-            if (isAltKeyPressed) return;
+            if (isAltKeyPressed || uiState.playbackMode.type == "stopped") return;
             if (uiState.effectClipboard && uiState.effectClipboard.type == "rotate") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
@@ -489,7 +503,11 @@ export default function RotateUnitbar({
             title="paste"
             svg={uiState.effectClipboard?.type == "rotate" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : rotate.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : rotate.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.9}
@@ -499,7 +517,7 @@ export default function RotateUnitbar({
         <div
           title="clear"
           onClick={async () => {
-            if (isAltKeyPressed || rotate.locked) return;
+            if (isAltKeyPressed || rotate.locked || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey && rotate.math.has(activeKey)) {
               const confirmed = confirm("are you sure you want to clear this equation?");
@@ -552,7 +570,7 @@ export default function RotateUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : rotate.locked
+                : rotate.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : rotate.math.has(carouselEntryKey)
                     ? "pointer"

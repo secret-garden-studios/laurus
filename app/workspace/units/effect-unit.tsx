@@ -498,7 +498,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
               const newValue = cursorToTime(c.x);
               endRef.current.value = newValue.toFixed(2);
             }}
-            disabled={effect.value.locked || isAltKeyPressed}
+            disabled={effect.value.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
             isSelected={selectedEffectUnitKeys.has(effect.key)}
             startTitle={startTitle}
             endTitle={endTitle}

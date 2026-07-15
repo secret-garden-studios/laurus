@@ -382,7 +382,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       const val = getAmplitudeValue(c.y, amplitudeTrackRef.current.clientHeight, 0);
                       amplitudeRef.current.innerHTML = val.toFixed(2) + "px";
                     }}
-                    disabled={move.locked || isAltKeyPressed}
+                    disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={amplitudeTitle}
                     liveTitleRef={amplitudeRef}
                   />
@@ -420,7 +420,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       const val = getFrequencyValue(c.y, frequencyTrackRef.current.clientHeight);
                       frequencyRef.current.innerHTML = val.toFixed(2) + "hz";
                     }}
-                    disabled={move.locked || isAltKeyPressed}
+                    disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={frequencyTitle}
                     liveTitleRef={frequencyRef}
                   />
@@ -462,7 +462,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                         const val = getWavelengthValue(c.y, wavelengthTrackRef.current.clientHeight);
                         wavelengthRef.current.innerHTML = val.toFixed(2) + "px";
                       }}
-                      disabled={move.locked || isAltKeyPressed}
+                      disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={wavelengthTitle}
                       liveTitleRef={wavelengthRef}
                     />
@@ -502,7 +502,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                         const val = getDistanceValue(c.y, distanceTrackRef.current.clientHeight);
                         distanceRef.current.innerHTML = val.toFixed(2) + "px";
                       }}
-                      disabled={move.locked || isAltKeyPressed}
+                      disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={distanceTitle}
                       liveTitleRef={distanceRef}
                     />
@@ -542,7 +542,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                       timeRef.current.innerHTML = val.toFixed(2) + "s";
                     }}
-                    disabled={move.locked || isAltKeyPressed}
+                    disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
                   />
@@ -622,7 +622,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                         saveNewEquation(snapshot, newEquation);
                       }
                     }}
-                    disabled={move.locked || isAltKeyPressed}
+                    disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     size={{
                       container: 90,
                       gauge: 90,

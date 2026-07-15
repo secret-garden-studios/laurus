@@ -917,15 +917,17 @@ function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
-        const currentTool = { ...uiState.tool };
-        const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
-        uiDispatch({
-          type: UIActionType.SetTool,
-          value: newTool,
-        });
+        if (uiState.playbackMode.type == "stopped") {
+          const currentTool = { ...uiState.tool };
+          const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
+          uiDispatch({
+            type: UIActionType.SetTool,
+            value: newTool,
+          });
+        }
       }
     },
-    [browserElementMediaId, showContextMenu, uiDispatch, uiState.tool],
+    [browserElementMediaId, showContextMenu, uiDispatch, uiState.playbackMode.type, uiState.tool],
   );
 
   const display = useMemo(() => {
@@ -1110,15 +1112,17 @@ function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        const currentTool = { ...uiState.tool };
-        const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
-        uiDispatch({
-          type: UIActionType.SetTool,
-          value: newTool,
-        });
+        if (uiState.playbackMode.type == "stopped") {
+          const currentTool = { ...uiState.tool };
+          const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
+          uiDispatch({
+            type: UIActionType.SetTool,
+            value: newTool,
+          });
+        }
       }
     },
-    [browserElementMediaId, showContextMenu, uiDispatch, uiState.tool],
+    [browserElementMediaId, showContextMenu, uiDispatch, uiState.playbackMode.type, uiState.tool],
   );
 
   useEffect(() => {

@@ -329,6 +329,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           background: "rgba(46,46,46,1)",
         }}
         onDoubleClick={() => {
+          if (uiState.playbackMode.type !== "stopped") return;
           const currentTimelineValues = [...uiState.timelineValues];
           const currentIndex = currentTimelineValues.findIndex((v) => v == coreState.timelineMaxValue);
           const newValue: number =
@@ -379,6 +380,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           color: "rgb(255, 255, 255)",
         }}
         onDoubleClick={() => {
+          if (uiState.playbackMode.type !== "stopped") return;
           const currentUnit = coreState.timelineUnit;
           const currentUnits = [...uiState.timelineUnits];
           const currentIndex = currentUnits.findIndex((v) => v == currentUnit);
@@ -460,7 +462,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
   });
 
   const onEffectsBrowserExpandClick = useCallback(async () => {
-    if (updating) return;
+    if (updating || uiState.playbackMode.type !== "stopped") return;
     if (selectedEffectUnitKeys.size > 0) {
       setUpdating(true);
       try {
@@ -505,6 +507,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
     effectGroupId,
     selectedEffectUnitKeys,
     setSelectedEffectUnitKeys,
+    uiState.playbackMode.type,
     updating,
   ]);
 
@@ -616,6 +619,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
               containerStyle={{
                 width: dynamicSizes.timelineAreaContent.svg.width,
                 height: dynamicSizes.timelineAreaContent.svg.height,
+                cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
               }}
               scale={1}
               scaleToContaier={true}
@@ -900,7 +904,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
   );
 
   const deleteEffectGroupClick = useCallback(async () => {
-    if (!isAltKeyPressed) return;
+    if (!isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
     const confirmed = confirm("are you sure you want to delete this effect group?");
     if (!confirmed) return;
     if (debounceTimerRef.current) {
@@ -935,9 +939,11 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
     effectGroupId,
     isAltKeyPressed,
     setSelectedEffectUnitKeys,
+    uiState.playbackMode.type,
   ]);
 
   const onToggleClick = useCallback(async () => {
+    if (uiState.playbackMode.type !== "stopped") return;
     const newEffectGroup: LaurusEffectGroupResult = {
       ...effectGroupResult,
       disabled: !effectGroupResult.disabled,
@@ -946,7 +952,14 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
     if (updated) {
       dispatch({ type: CoreActionType.SetEffectGroup, value: newEffectGroup });
     }
-  }, [coreState.accessToken, coreState.apiOrigin, dispatch, effectGroupId, effectGroupResult]);
+  }, [
+    coreState.accessToken,
+    coreState.apiOrigin,
+    dispatch,
+    effectGroupId,
+    effectGroupResult,
+    uiState.playbackMode.type,
+  ]);
 
   useEffect(() => {
     const inputEl = effectGroupDescriptionRef.current;
@@ -974,7 +987,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         scaleToContaier={true}
         onContainerClick={deleteEffectGroupClick}
         style={{
-          cursor: isAltKeyPressed ? "pointer" : "",
+          cursor: isAltKeyPressed && uiState.playbackMode.type == "stopped" ? "pointer" : "",
         }}
         containerStyle={{
           cursor: "",
@@ -985,6 +998,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         id={`effect-group-description-input-${effectGroupId}`}
         ref={effectGroupDescriptionRef}
         className={dellaRespira.className}
+        disabled={uiState.playbackMode.type !== "stopped" ? true : false}
         placeholder="name me..."
         style={{
           textAlign: "center",
@@ -1012,7 +1026,10 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         <Toggle
           value={!effectGroupResult.disabled}
           onClick={onToggleClick}
-          trackStyles={{ ...dynamicSizes.toggle.track }}
+          trackStyles={{
+            cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+            ...dynamicSizes.toggle.track,
+          }}
           buttonStyles={{ ...dynamicSizes.toggle.button }}
           translateX={dynamicSizes.toggle.translateX}
         />
@@ -1290,10 +1307,12 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                 containerStyle={{
                   width: effectBrowserSize.svg,
                   height: effectBrowserSize.svg,
+                  cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
                 }}
                 scale={1}
                 scaleToContaier={true}
                 onContainerClick={async () => {
+                  if (uiState.playbackMode.type !== "stopped") return;
                   await onAddEffectClick(effectName);
                   onAddClick();
                 }}
@@ -1605,7 +1624,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
   const [effectGroupDescription, setEffectGroupDescription] = useState<string>("");
 
   const onCreateEffectGroupClick = useCallback(async () => {
-    if (!coreState.project.project_id) return;
+    if (!coreState.project.project_id || uiState.playbackMode.type !== "stopped") return;
     const effectGroupsSnapshot = new Map(coreState.effectGroups);
     const reindexedGroups = reindexEffectGroups(effectGroupsSnapshot);
     const newEffectGroup: LaurusEffectGroup = {
@@ -1647,15 +1666,16 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
       setSelectedEffectUnitKeys(new Set());
     }
   }, [
-    selectedEffectUnitKeys,
     coreState.project.project_id,
     coreState.effectGroups,
     coreState.apiOrigin,
     coreState.accessToken,
     coreState.effects,
+    uiState.playbackMode.type,
     effectGroupDescription,
     dispatch,
     setSelectedEffectUnitKeys,
+    selectedEffectUnitKeys,
   ]);
 
   return (
@@ -1711,6 +1731,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         id={`new-effect-group-description-input`}
         className={dellaRespira.className}
         placeholder="new group name..."
+        disabled={uiState.playbackMode.type !== "stopped" ? true : false}
         style={{
           textAlign: "center",
           letterSpacing: "3px",
@@ -1741,7 +1762,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
         scaleToContaier={true}
         onContainerClick={onCreateEffectGroupClick}
         style={{
-          cursor: "pointer",
+          cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
         }}
         containerStyle={{
           cursor: "",

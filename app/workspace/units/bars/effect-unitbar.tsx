@@ -99,297 +99,295 @@ export default function EffectUnitbar({
   );
 
   return (
-    <>
-      <div
-        style={{
-          height: "100%",
-          background: "rgba(22, 22, 22, 0.9)",
-          display: "flex",
-          flexDirection: "column",
-          ...dynamicSizes.toolbar,
+    <div
+      style={{
+        height: "100%",
+        background: "rgba(22, 22, 22, 0.9)",
+        display: "flex",
+        flexDirection: "column",
+        ...dynamicSizes.toolbar,
+      }}
+    >
+      <SvgRepo
+        svg={(() => {
+          switch (effect.type) {
+            case "scale":
+              return allOut();
+            case "move":
+              return earthquake();
+            case "rotate":
+              return cycle400();
+          }
+        })()}
+        scale={0.6}
+        scaleToContaier={true}
+        containerStyle={{
+          width: dynamicSizes.toolbar.width,
+          height: dynamicSizes.toolbar.width,
+          cursor: isAltKeyPressed ? "crosshair" : "",
         }}
-      >
-        <SvgRepo
-          svg={(() => {
-            switch (effect.type) {
-              case "scale":
-                return allOut();
-              case "move":
-                return earthquake();
-              case "rotate":
-                return cycle400();
-            }
-          })()}
-          scale={0.6}
-          scaleToContaier={true}
-          containerStyle={{
-            width: dynamicSizes.toolbar.width,
-            height: dynamicSizes.toolbar.width,
-            cursor: isAltKeyPressed ? "crosshair" : "",
-          }}
-        />
-        <SvgRepo
-          title={"parameters"}
-          svg={tune()}
-          scale={0.65}
-          scaleToContaier={true}
-          onContainerClick={() => {
-            if (isAltKeyPressed) return;
-            const closed = !showUnitControls;
-            if (closed) {
-              if (!uiState.activeElement) {
-                switch (effect.type) {
-                  case "move": {
-                    const moveEqautionKeys = Array.from(effect.value.math.keys());
-                    const keys = uiState.carouselEntries;
-                    const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setMoveCarouselIndex(newIndex);
-                    break;
-                  }
-                  case "rotate": {
-                    const eqKeys = Array.from(effect.value.math.keys());
-                    const carouselKeys = uiState.carouselEntries;
-                    const k = carouselKeys.findIndex((k) => eqKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setRotateCarouselIndex(newIndex);
-                    break;
-                  }
-                  case "scale": {
-                    const moveEqautionKeys = Array.from(effect.value.math.keys());
-                    const keys = uiState.carouselEntries;
-                    const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
-                    const newIndex = k > -1 ? k : 0;
-                    setScaleCarouselIndex(newIndex);
-                    break;
-                  }
+      />
+      <SvgRepo
+        title={"parameters"}
+        svg={tune()}
+        scale={0.65}
+        scaleToContaier={true}
+        onContainerClick={() => {
+          if (isAltKeyPressed) return;
+          const closed = !showUnitControls;
+          if (closed) {
+            if (!uiState.activeElement) {
+              switch (effect.type) {
+                case "move": {
+                  const moveEqautionKeys = Array.from(effect.value.math.keys());
+                  const keys = uiState.carouselEntries;
+                  const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
+                  const newIndex = k > -1 ? k : 0;
+                  setMoveCarouselIndex(newIndex);
+                  break;
                 }
-              } else if (uiState.activeElement.locallyActivatedEffectKey == undefined) {
-                const activeKey = uiState.activeElement.key;
-                const initialIndex = uiState.carouselEntries.findIndex((c) => c.key == activeKey);
-                if (initialIndex > -1) {
-                  setScaleCarouselIndex(initialIndex);
-                  setMoveCarouselIndex(initialIndex);
-                  setRotateCarouselIndex(initialIndex);
+                case "rotate": {
+                  const eqKeys = Array.from(effect.value.math.keys());
+                  const carouselKeys = uiState.carouselEntries;
+                  const k = carouselKeys.findIndex((k) => eqKeys.includes(k.key));
+                  const newIndex = k > -1 ? k : 0;
+                  setRotateCarouselIndex(newIndex);
+                  break;
+                }
+                case "scale": {
+                  const moveEqautionKeys = Array.from(effect.value.math.keys());
+                  const keys = uiState.carouselEntries;
+                  const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
+                  const newIndex = k > -1 ? k : 0;
+                  setScaleCarouselIndex(newIndex);
+                  break;
                 }
               }
-              setShowUnitControls(true);
-            } else {
-              setShowUnitControls(false);
+            } else if (uiState.activeElement.locallyActivatedEffectKey == undefined) {
+              const activeKey = uiState.activeElement.key;
+              const initialIndex = uiState.carouselEntries.findIndex((c) => c.key == activeKey);
+              if (initialIndex > -1) {
+                setScaleCarouselIndex(initialIndex);
+                setMoveCarouselIndex(initialIndex);
+                setRotateCarouselIndex(initialIndex);
+              }
             }
-          }}
-          containerStyle={{
-            cursor: isAltKeyPressed ? "crosshair" : "pointer",
-            width: dynamicSizes.toolbar.width,
-            height: dynamicSizes.toolbar.width,
-            background: showUnitControls ? "rgba(255,255,255,0.075)" : "none",
-            border: "1px solid rgba(0,0,0,0)",
-          }}
-        />
-        {effectIsMixableAndHasMixState &&
-          (() => {
-            return (
-              <>
-                <div
-                  style={{
-                    position: "relative",
+            setShowUnitControls(true);
+          } else {
+            setShowUnitControls(false);
+          }
+        }}
+        containerStyle={{
+          cursor: isAltKeyPressed ? "crosshair" : "pointer",
+          width: dynamicSizes.toolbar.width,
+          height: dynamicSizes.toolbar.width,
+          background: showUnitControls ? "rgba(255,255,255,0.075)" : "none",
+          border: "1px solid rgba(0,0,0,0)",
+        }}
+      />
+      {effectIsMixableAndHasMixState &&
+        (() => {
+          return (
+            <>
+              <div
+                style={{
+                  position: "relative",
+                  width: dynamicSizes.toolbar.width,
+                  height: dynamicSizes.toolbar.width,
+                }}
+              >
+                <SvgRepo
+                  title={"mix"}
+                  svg={experiment()}
+                  scale={0.65}
+                  scaleToContaier={true}
+                  containerStyle={{
                     width: dynamicSizes.toolbar.width,
                     height: dynamicSizes.toolbar.width,
+                    border: "1px solid rgba(0,0,0,0)",
+                    transition: "all 0.2s ease-out",
+                    animation:
+                      effect.value.mixState === LaurusMixState.Waiting ||
+                      effect.value.mixState === LaurusMixState.Selected
+                        ? `${styles["pulse-opacity"]} 1.5s infinite`
+                        : "none",
                   }}
-                >
-                  <SvgRepo
-                    title={"mix"}
-                    svg={experiment()}
-                    scale={0.65}
-                    scaleToContaier={true}
-                    containerStyle={{
-                      width: dynamicSizes.toolbar.width,
-                      height: dynamicSizes.toolbar.width,
-                      border: "1px solid rgba(0,0,0,0)",
-                      transition: "all 0.2s ease-out",
-                      animation:
-                        effect.value.mixState === LaurusMixState.Waiting ||
-                        effect.value.mixState === LaurusMixState.Selected
-                          ? `${styles["pulse-opacity"]} 1.5s infinite`
-                          : "none",
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: dynamicSizes.toolbar.width,
-                      height: dynamicSizes.toolbar.width,
-                      background:
-                        effect.value.mixState === LaurusMixState.Selected ? "rgba(255, 255, 255, 0.075)" : "none",
-                      border: "1px solid rgba(0,0,0,0)",
-                      cursor: isAltKeyPressed
-                        ? "crosshair"
-                        : effect.value.mixState === LaurusMixState.Waiting ||
-                            effect.value.mixState === LaurusMixState.Selected
-                          ? "pointer"
-                          : "",
-                    }}
-                    onClick={() => {
-                      if (isAltKeyPressed) return;
-                      const newEffects: LaurusEffect[] = coreState.effects.map((e) => {
-                        if (e.key !== effect.key) return e;
-                        const currentMixUiState = e.value.mixState;
-                        if (!currentMixUiState) return e;
-                        const newMixUiState =
-                          currentMixUiState == LaurusMixState.Waiting
-                            ? LaurusMixState.Selected
-                            : currentMixUiState == LaurusMixState.Selected
-                              ? LaurusMixState.Waiting
-                              : undefined;
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: dynamicSizes.toolbar.width,
+                    height: dynamicSizes.toolbar.width,
+                    background:
+                      effect.value.mixState === LaurusMixState.Selected ? "rgba(255, 255, 255, 0.075)" : "none",
+                    border: "1px solid rgba(0,0,0,0)",
+                    cursor: isAltKeyPressed
+                      ? "crosshair"
+                      : effect.value.mixState === LaurusMixState.Waiting ||
+                          effect.value.mixState === LaurusMixState.Selected
+                        ? "pointer"
+                        : "",
+                  }}
+                  onClick={() => {
+                    if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+                    const newEffects: LaurusEffect[] = coreState.effects.map((e) => {
+                      if (e.key !== effect.key) return e;
+                      const currentMixUiState = e.value.mixState;
+                      if (!currentMixUiState) return e;
+                      const newMixUiState =
+                        currentMixUiState == LaurusMixState.Waiting
+                          ? LaurusMixState.Selected
+                          : currentMixUiState == LaurusMixState.Selected
+                            ? LaurusMixState.Waiting
+                            : undefined;
 
-                        if (uiState.mixableEffects.includes(e.type)) {
-                          switch (e.type) {
-                            case "move":
-                              return {
-                                ...e,
-                                value: {
-                                  ...e.value,
-                                  mixState: newMixUiState,
-                                } as LaurusMoveResult,
-                              };
-                            case "rotate":
-                              return {
-                                ...e,
-                                value: {
-                                  ...e.value,
-                                  mixState: newMixUiState,
-                                } as LaurusRotateResult,
-                              };
-                            case "scale":
-                              return {
-                                ...e,
-                                value: {
-                                  ...e.value,
-                                  mixState: newMixUiState,
-                                } as LaurusScaleResult,
-                              };
-                          }
+                      if (uiState.mixableEffects.includes(e.type)) {
+                        switch (e.type) {
+                          case "move":
+                            return {
+                              ...e,
+                              value: {
+                                ...e.value,
+                                mixState: newMixUiState,
+                              } as LaurusMoveResult,
+                            };
+                          case "rotate":
+                            return {
+                              ...e,
+                              value: {
+                                ...e.value,
+                                mixState: newMixUiState,
+                              } as LaurusRotateResult,
+                            };
+                          case "scale":
+                            return {
+                              ...e,
+                              value: {
+                                ...e.value,
+                                mixState: newMixUiState,
+                              } as LaurusScaleResult,
+                            };
                         }
-                        return e;
-                      });
-                      dispatch({
-                        type: CoreActionType.SetEffects,
-                        value: newEffects,
-                      });
-                    }}
-                  />
-                </div>
-              </>
-            );
-          })()}
-        <SvgRepo
-          title={"lock"}
-          svg={effect.value.locked ? lock() : lockOpenRight()}
-          scale={0.6}
-          scaleToContaier={true}
-          onContainerClick={async () => {
-            if (isAltKeyPressed) return;
-            const rollback: LaurusEffect = { ...effect };
-            let newEffect: LaurusEffect;
-            switch (effect.type) {
-              case "scale":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, locked: !effect.value.locked },
-                };
-                break;
-              case "move":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, locked: !effect.value.locked },
-                };
-                break;
-              case "rotate":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, locked: !effect.value.locked },
-                };
-                break;
-            }
-            await saveEffect(newEffect, rollback);
-          }}
-          containerStyle={{
-            width: dynamicSizes.toolbar.width,
-            height: dynamicSizes.toolbar.width,
-            cursor: isAltKeyPressed ? "crosshair" : "pointer",
-            background: "none",
-            border: "1px solid rgba(0,0,0,0)",
-            transition: "border-left 0.25s ease-out",
-          }}
-        />
-        <SvgRepo
-          title={"disable"}
-          svg={effect.value.disabled ? circle("rgb(255, 255, 95)") : circle("rgba(255, 255, 255, 0.15)")}
-          scale={0.5}
-          scaleToContaier={true}
-          onContainerClick={async () => {
-            if (isAltKeyPressed) return;
-            const rollback: LaurusEffect = { ...effect };
-            let newEffect: LaurusEffect;
-            switch (effect.type) {
-              case "scale":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, disabled: !effect.value.disabled },
-                };
-                break;
-              case "move":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, disabled: !effect.value.disabled },
-                };
-                break;
-              case "rotate":
-                newEffect = {
-                  ...effect,
-                  value: { ...effect.value, disabled: !effect.value.disabled },
-                };
-                break;
-            }
-            await saveEffect(newEffect, rollback);
-          }}
-          containerStyle={{
-            width: dynamicSizes.toolbar.width,
-            height: dynamicSizes.toolbar.width,
-            cursor: isAltKeyPressed ? "crosshair" : "pointer",
-            background: "none",
-            border: "1px solid rgba(0,0,0,0)",
-            transition: "border-left 0.25s ease-out",
-          }}
-        />
-        {showUnitControls && (
-          <>
-            <SvgRepo
-              title={"delete"}
-              svg={circle("rgb(220, 112, 112)")}
-              scale={0.5}
-              scaleToContaier={true}
-              onContainerClick={() => {
-                if (isAltKeyPressed) return;
-                const confirmed = confirm("are you sure you want to delete this effect?");
-                if (confirmed) {
-                  deleteEffect(effect);
-                }
-              }}
-              containerStyle={{
-                cursor: isAltKeyPressed ? "crosshair" : "pointer",
-                width: dynamicSizes.toolbar.width,
-                height: dynamicSizes.toolbar.width,
-                background: "none",
-                border: "1px solid rgba(0,0,0,0)",
-                transition: "border-left 0.25s ease-out",
-              }}
-            />
-          </>
-        )}
-      </div>
-    </>
+                      }
+                      return e;
+                    });
+                    dispatch({
+                      type: CoreActionType.SetEffects,
+                      value: newEffects,
+                    });
+                  }}
+                />
+              </div>
+            </>
+          );
+        })()}
+      <SvgRepo
+        title={"lock"}
+        svg={effect.value.locked ? lock() : lockOpenRight()}
+        scale={0.6}
+        scaleToContaier={true}
+        onContainerClick={async () => {
+          if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+          const rollback: LaurusEffect = { ...effect };
+          let newEffect: LaurusEffect;
+          switch (effect.type) {
+            case "scale":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, locked: !effect.value.locked },
+              };
+              break;
+            case "move":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, locked: !effect.value.locked },
+              };
+              break;
+            case "rotate":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, locked: !effect.value.locked },
+              };
+              break;
+          }
+          await saveEffect(newEffect, rollback);
+        }}
+        containerStyle={{
+          width: dynamicSizes.toolbar.width,
+          height: dynamicSizes.toolbar.width,
+          cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+          background: "none",
+          border: "1px solid rgba(0,0,0,0)",
+          transition: "border-left 0.25s ease-out",
+        }}
+      />
+      <SvgRepo
+        title={"disable"}
+        svg={effect.value.disabled ? circle("rgb(255, 255, 95)") : circle("rgba(255, 255, 255, 0.15)")}
+        scale={0.5}
+        scaleToContaier={true}
+        onContainerClick={async () => {
+          if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+          const rollback: LaurusEffect = { ...effect };
+          let newEffect: LaurusEffect;
+          switch (effect.type) {
+            case "scale":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, disabled: !effect.value.disabled },
+              };
+              break;
+            case "move":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, disabled: !effect.value.disabled },
+              };
+              break;
+            case "rotate":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, disabled: !effect.value.disabled },
+              };
+              break;
+          }
+          await saveEffect(newEffect, rollback);
+        }}
+        containerStyle={{
+          width: dynamicSizes.toolbar.width,
+          height: dynamicSizes.toolbar.width,
+          cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+          background: "none",
+          border: "1px solid rgba(0,0,0,0)",
+          transition: "border-left 0.25s ease-out",
+        }}
+      />
+      {showUnitControls && (
+        <>
+          <SvgRepo
+            title={"delete"}
+            svg={circle("rgb(220, 112, 112)")}
+            scale={0.5}
+            scaleToContaier={true}
+            onContainerClick={() => {
+              if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+              const confirmed = confirm("are you sure you want to delete this effect?");
+              if (confirmed) {
+                deleteEffect(effect);
+              }
+            }}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              width: dynamicSizes.toolbar.width,
+              height: dynamicSizes.toolbar.width,
+              background: "none",
+              border: "1px solid rgba(0,0,0,0)",
+              transition: "border-left 0.25s ease-out",
+            }}
+          />
+        </>
+      )}
+    </div>
   );
 }

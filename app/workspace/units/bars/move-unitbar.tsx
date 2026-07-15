@@ -233,7 +233,7 @@ export default function MoveUnitbar({
         <div
           title={"loop"}
           onDoubleClick={() => {
-            if (move.locked || isAltKeyPressed) return;
+            if (move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey) {
               const nextLoop = getNextLoopType();
@@ -263,7 +263,7 @@ export default function MoveUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : move.locked
+                : move.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : move.math.has(carouselEntryKey)
                     ? "pointer"
@@ -341,6 +341,7 @@ export default function MoveUnitbar({
             if (
               isAltKeyPressed ||
               move.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
             )
               return;
@@ -377,7 +378,11 @@ export default function MoveUnitbar({
                 : add2("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : move.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : move.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -390,6 +395,7 @@ export default function MoveUnitbar({
             if (
               isAltKeyPressed ||
               move.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (move.math.has(carouselEntryKey) && move.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
             )
               return;
@@ -426,7 +432,11 @@ export default function MoveUnitbar({
                 : remove("rgb(62,62,62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : move.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : move.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -479,7 +489,7 @@ export default function MoveUnitbar({
         <div
           title={"paste"}
           onClick={() => {
-            if (isAltKeyPressed) return;
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             if (uiState.effectClipboard && uiState.effectClipboard.type == "move") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
@@ -508,7 +518,11 @@ export default function MoveUnitbar({
             title={"paste"}
             svg={uiState.effectClipboard?.type == "move" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : move.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : move.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.9}
@@ -518,7 +532,7 @@ export default function MoveUnitbar({
         <div
           title={"clear"}
           onClick={async () => {
-            if (isAltKeyPressed || move.locked) return;
+            if (isAltKeyPressed || move.locked || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey && move.math.has(activeKey)) {
               const confirmed = confirm("are you sure you want to clear this equation?");
@@ -568,7 +582,7 @@ export default function MoveUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : move.locked
+                : move.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : move.math.has(carouselEntryKey)
                     ? "pointer"

@@ -185,6 +185,7 @@ export default function Titlebar() {
           id={`project-name-input-${coreState.project.project_id}`}
           className={dellaRespira.className}
           placeholder="name me..."
+          disabled={uiState.playbackMode.type != "stopped" ? true : false}
           style={{
             width: "100%",
             boxSizing: "border-box",

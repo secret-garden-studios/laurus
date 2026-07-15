@@ -159,7 +159,7 @@ export default function ScaleUnitbar({
         <div
           title={"loop"}
           onDoubleClick={() => {
-            if (scale.locked || isAltKeyPressed) return;
+            if (scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey) {
               const nextLoop = getNextLoopType();
@@ -190,7 +190,7 @@ export default function ScaleUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.locked
+                : scale.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : scale.math.has(carouselEntryKey)
                     ? "pointer"
@@ -268,6 +268,7 @@ export default function ScaleUnitbar({
             if (
               isAltKeyPressed ||
               scale.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
             )
               return;
@@ -304,7 +305,11 @@ export default function ScaleUnitbar({
                 : add2("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -317,6 +322,7 @@ export default function ScaleUnitbar({
             if (
               isAltKeyPressed ||
               scale.locked ||
+              uiState.playbackMode.type !== "stopped" ||
               (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
             )
               return;
@@ -353,7 +359,11 @@ export default function ScaleUnitbar({
                 : remove("rgb(62,62,62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.88}
@@ -440,7 +450,7 @@ export default function ScaleUnitbar({
         <div
           title={"paste"}
           onClick={() => {
-            if (isAltKeyPressed) return;
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             if (uiState.effectClipboard && uiState.effectClipboard.type == "scale") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
@@ -469,7 +479,11 @@ export default function ScaleUnitbar({
             title={"paste"}
             svg={uiState.effectClipboard?.type == "scale" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.9}
@@ -479,7 +493,7 @@ export default function ScaleUnitbar({
         <div
           title={"clear"}
           onClick={async () => {
-            if (isAltKeyPressed || scale.locked) return;
+            if (isAltKeyPressed || scale.locked || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey && scale.math.has(activeKey)) {
               const confirmed = confirm("are you sure you want to clear this equation?");
@@ -532,7 +546,7 @@ export default function ScaleUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.locked
+                : scale.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
                   : scale.math.has(carouselEntryKey)
                     ? "pointer"

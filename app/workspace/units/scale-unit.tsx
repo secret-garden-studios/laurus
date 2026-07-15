@@ -407,7 +407,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                     const val = getTimeValue(c.y, timeTrackRef.current.clientHeight);
                     timeRef.current.innerHTML = val.toFixed(2) + "s";
                   }}
-                  disabled={scale.locked || isAltKeyPressed}
+                  disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={timeTitle}
                   liveTitleRef={timeRef}
                 />
@@ -545,7 +545,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       }
                     }
                   }}
-                  disabled={scale.locked || isAltKeyPressed}
+                  disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={scaleXTitle}
                 />
                 <div
@@ -671,7 +671,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       }
                     }
                   }}
-                  disabled={scale.locked || isAltKeyPressed}
+                  disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={scaleYTitle}
                 />
               </div>
