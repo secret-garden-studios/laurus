@@ -165,7 +165,14 @@ export default function Landing({ laurusApi, resolution, resetPasswordToken, for
               {"reset your password"}
             </div>
           ) : (
-            <></>
+            <div
+              style={{
+                fontSize: 12,
+                letterSpacing: "3px",
+              }}
+            >
+              {"designed for desktop"}
+            </div>
           )}
         </div>
       </div>
