@@ -580,6 +580,7 @@ export default function Workspace({
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
+  const hasInitiatedFrameDownloadRef = useRef(false);
 
   function startRefreshAnimaiton() {
     if (refreshIconRef.current) {
@@ -1151,6 +1152,8 @@ export default function Workspace({
   }, []);
 
   useEffect(() => {
+    if (hasInitiatedFrameDownloadRef.current) return;
+    hasInitiatedFrameDownloadRef.current = true;
     (async () => {
       if (framesCacheRef.current.size == 0) {
         uiDispatch({
