@@ -4,7 +4,8 @@ import { LaurusResolution } from "./landing.boot";
 import { useRouter } from "next/navigation";
 import { accountBox200, cardsStack200, desktopMac300 } from "./svg-repo";
 import ToolbarButton from "./components/toolbar-button";
-import { useRef } from "react";
+import { useContext, useRef } from "react";
+import { CoreContext } from "./workspace/workspace.client";
 
 interface Navbar {
   resolution: LaurusResolution;
@@ -14,6 +15,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
   const router = useRouter();
   const pathname = usePathname();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { cancelFrameDownload } = useContext(CoreContext);
   return (
     <div ref={containerRef} style={{ cursor: "pointer" }}>
       <ToolbarButton
@@ -36,6 +38,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
           if (containerRef.current) {
             containerRef.current.style.cursor = "wait";
           }
+          cancelFrameDownload();
           router.push(!guest ? "/projects" : "/projects?guest=true");
         }}
         resolution={resolution}

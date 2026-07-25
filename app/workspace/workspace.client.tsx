@@ -170,6 +170,7 @@ export interface CoreContextProps {
   handleFastForwardAll: (playbackRate: number) => void;
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
+  cancelFrameDownload: () => void;
 }
 
 export const CoreContext = createContext<CoreContextProps>({
@@ -180,6 +181,7 @@ export const CoreContext = createContext<CoreContextProps>({
   handleFastForwardAll: () => {},
   handlePlayTarget: () => {},
   handleStopAll: () => {},
+  cancelFrameDownload: () => {},
 });
 
 export interface UIContextProps {
@@ -581,6 +583,7 @@ export default function Workspace({
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
   const hasInitiatedFrameDownloadRef = useRef(false);
+  const frameDownloadAbortControllerRef = useRef<AbortController | null>(null);
 
   function startRefreshAnimaiton() {
     if (refreshIconRef.current) {
@@ -713,6 +716,8 @@ export default function Workspace({
 
   const getNewAnimations = useCallback(
     async (fill: FillMode, reverse: boolean, setCache: boolean) => {
+      const abortController = new AbortController();
+      frameDownloadAbortControllerRef.current = abortController;
       try {
         document.body.style.cursor = "progress";
         const enabledEffects = [
@@ -739,6 +744,7 @@ export default function Workspace({
         const newAnimations: Animation[] = [];
         let renderedInputs = 0;
         for (const inputKey of eligibleItems) {
+          if (abortController.signal.aborted) break;
           let laurusFrames: LaurusFrame[] = [];
           if (!(coreState.inputsToRender.has("*") || coreState.inputsToRender.has(inputKey))) {
             laurusFrames = [...(framesCacheRef.current.get(inputKey) ?? [])];
@@ -755,7 +761,9 @@ export default function Workspace({
               coreState.project.project_id,
               inputKey,
               coreState.fps,
+              abortController.signal,
             );
+            if (abortController.signal.aborted) break;
             renderedInputs++;
             uiDispatch({
               type: UIActionType.SetAnimationDownloadProgress,
@@ -779,6 +787,7 @@ export default function Workspace({
             newAnimations.push(animation);
           }
         }
+        if (abortController.signal.aborted) return [];
         dispatch({ type: CoreActionType.SetInputsToRender, value: new Set<string>() });
         return newAnimations;
       } finally {
@@ -787,6 +796,9 @@ export default function Workspace({
           type: UIActionType.SetAnimationDownloadProgress,
           value: undefined,
         });
+        if (frameDownloadAbortControllerRef.current === abortController) {
+          frameDownloadAbortControllerRef.current = null;
+        }
       }
     },
     [
@@ -800,6 +812,10 @@ export default function Workspace({
       coreState.project.svgs,
     ],
   );
+
+  const cancelFrameDownload = useCallback(() => {
+    frameDownloadAbortControllerRef.current?.abort();
+  }, []);
 
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
@@ -1031,6 +1047,7 @@ export default function Workspace({
       handleFastForwardAll,
       handlePlayTarget,
       handleStopAll,
+      cancelFrameDownload,
     }),
     [
       coreState,
@@ -1041,6 +1058,7 @@ export default function Workspace({
       handleFastForwardAll,
       handlePlayTarget,
       handleStopAll,
+      cancelFrameDownload,
     ],
   );
 

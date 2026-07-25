@@ -1066,7 +1066,13 @@ export async function getRotateFrames(
     input_id: inputId,
   }));
 }
-export async function getFrames(baseUrl: string | undefined, projectId: string, inputId: string, fps: number) {
+export async function getFrames(
+  baseUrl: string | undefined,
+  projectId: string,
+  inputId: string,
+  fps: number,
+  signal?: AbortSignal,
+) {
   try {
     const url = `${baseUrl}/frames?project_id=${projectId}&input_id=${inputId}&fps=${fps}`;
     const raw_response = await fetch(url, {
@@ -1074,6 +1080,7 @@ export async function getFrames(baseUrl: string | undefined, projectId: string, 
       headers: {
         "Content-Type": "application/json",
       },
+      signal,
     });
     if (!raw_response.ok) {
       return undefined;
@@ -1081,6 +1088,9 @@ export async function getFrames(baseUrl: string | undefined, projectId: string, 
     const response: Frame_V1_0[] = await raw_response.json();
     return response;
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return undefined;
+    }
     console.log({ error });
     return undefined;
   }
