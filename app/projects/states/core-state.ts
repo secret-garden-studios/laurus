@@ -17,6 +17,7 @@ export const defaultProject: LaurusProjectResult = {
   frame_rotate_angle: 0,
   frame_scale_x: 1,
   frame_scale_y: 1,
+  fps: 60,
   browse_public_imgs: false,
   browse_public_svgs: false,
   project_id: "",

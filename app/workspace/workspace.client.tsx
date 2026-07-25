@@ -434,7 +434,6 @@ function initReducer({
       timelineUnit: timelineUnits[0],
       timelineMaxValue: timelineValues[1],
       accessToken,
-      fps: 60,
     },
     ui: {
       ...defaultUIState,
@@ -760,7 +759,7 @@ export default function Workspace({
               coreState.apiOrigin,
               coreState.project.project_id,
               inputKey,
-              coreState.fps,
+              coreState.project.fps,
               abortController.signal,
             );
             if (abortController.signal.aborted) break;
@@ -806,7 +805,7 @@ export default function Workspace({
       coreState.inputsToRender,
       coreState.effectGroups,
       coreState.effects,
-      coreState.fps,
+      coreState.project.fps,
       coreState.project.imgs,
       coreState.project.project_id,
       coreState.project.svgs,

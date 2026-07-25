@@ -12,7 +12,6 @@ export interface CoreState {
   effectGroups: Map<string, LaurusEffectGroupResult>;
   timelineUnit: string;
   timelineMaxValue: number;
-  fps: number;
   inputsToRender: Set<string>;
 }
 
@@ -26,7 +25,6 @@ export const defaultCoreState: CoreState = {
   effectGroups: new Map(),
   timelineUnit: "",
   timelineMaxValue: 0,
-  fps: 60,
   inputsToRender: new Set<string>(),
 };
 
@@ -51,7 +49,6 @@ export enum CoreActionType {
   DeleteEffectGroup,
   SetTimelineUnit,
   SetTimelineMaxValue,
-  SetFps,
   SetInputsToRender,
 }
 
@@ -77,7 +74,6 @@ export type CoreAction =
   | { type: CoreActionType.DeleteEffectGroup; key: string }
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
-  | { type: CoreActionType.SetFps; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
@@ -240,13 +236,6 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         timelineMaxValue: action.value,
-        inputsToRender: new Set<string>(["*"]),
-      };
-    }
-    case CoreActionType.SetFps: {
-      return {
-        ...state,
-        fps: action.value,
         inputsToRender: new Set<string>(["*"]),
       };
     }

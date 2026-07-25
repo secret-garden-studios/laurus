@@ -1143,7 +1143,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.fps,
+            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1173,7 +1173,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.fps,
+            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1203,7 +1203,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.fps,
+            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1233,7 +1233,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
       coreState.apiOrigin,
       coreState.effectGroups,
       coreState.effects,
-      coreState.fps,
       coreState.project,
       dispatch,
       effect_group_id,
@@ -1340,7 +1339,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       case "high":
         return {
           padding: 10,
-          fpsInputWidth: "2ch",
+          fpsInputWidth: "3ch",
           fpsInputFontSize: 16,
           fpsLabelFontSize: 15,
           fpsInputGap: 2,
@@ -1351,7 +1350,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       case "midhigh":
         return {
           padding: 10,
-          fpsInputWidth: "2ch",
+          fpsInputWidth: "3ch",
           fpsInputFontSize: 14,
           fpsLabelFontSize: 13,
           fpsInputGap: 2,
@@ -1363,7 +1362,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       case "low":
         return {
           padding: 10,
-          fpsInputWidth: "2ch",
+          fpsInputWidth: "3ch",
           fpsInputFontSize: 12,
           fpsLabelFontSize: 11,
           fpsInputGap: 2,
@@ -1373,9 +1372,50 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
         };
     }
   });
-  const fpsValue = useMemo(() => {
-    return coreState.fps ?? "60";
-  }, [coreState.fps]);
+  const fpsInputRef = useRef<HTMLInputElement | null>(null);
+  const fpsUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const onFpsChange = useCallback(
+    async (newFps: number) => {
+      const snapshot = { ...coreState.project };
+      const newProject: LaurusProjectResult = { ...snapshot, fps: newFps };
+      const rollback = () => {
+        dispatch({ type: CoreActionType.SetProject, value: snapshot });
+        const inputEl = fpsInputRef.current;
+        if (inputEl) {
+          inputEl.value = `${snapshot.fps}`;
+        }
+      };
+      if (!newProject.project_id) {
+        const created = await createProject(coreState.apiOrigin, coreState.accessToken, newProject);
+        if (created) {
+          dispatch({ type: CoreActionType.SetProject, value: created });
+        } else {
+          rollback();
+        }
+      } else {
+        const updated = await updateProject(
+          coreState.apiOrigin,
+          coreState.accessToken,
+          newProject.project_id,
+          newProject,
+        );
+        if (updated) {
+          dispatch({ type: CoreActionType.SetProject, value: newProject });
+        } else {
+          rollback();
+        }
+      }
+    },
+    [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch],
+  );
+
+  useEffect(() => {
+    const inputEl = fpsInputRef.current;
+    if (inputEl) {
+      inputEl.value = `${coreState.project.fps ?? 60}`;
+    }
+  }, [coreState.project.fps]);
   const mainControlIcon = useMemo<LaurusClientSvg>(() => {
     switch (uiState.playbackMode.type) {
       case "stopped":
@@ -1403,14 +1443,20 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
     >
       <div title={"frame rate"} style={{ display: "flex", gap: dynamicSizes.fpsInputGap }}>
         <input
+          ref={fpsInputRef}
           className={dellaRespira.className + " " + styles["numberInput"]}
           id={`fps-input`}
           type="text"
           autoComplete="off"
-          value={fpsValue}
+          disabled={uiState.playbackMode.type !== "stopped" ? true : false}
           onChange={(e) => {
             const newFps: number = parseFloat(e.currentTarget.value) || 60;
-            dispatch({ type: CoreActionType.SetFps, value: newFps });
+            if (fpsUpdateTimerRef.current) {
+              clearTimeout(fpsUpdateTimerRef.current);
+            }
+            fpsUpdateTimerRef.current = setTimeout(() => {
+              onFpsChange(newFps);
+            }, 1000);
           }}
           style={{
             textAlign: "center",

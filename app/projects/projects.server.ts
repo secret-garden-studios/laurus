@@ -63,6 +63,7 @@ export interface Project_V1_0 {
   frame_rotate_y: number;
   frame_rotate_z: number;
   frame_rotate_angle: number;
+  fps: number;
   imgs: Map<string, ProjectImg_V1_0>;
   svgs: Map<string, ProjectSvg_V1_0>;
   browse_public_imgs: boolean;
@@ -82,6 +83,7 @@ export interface ProjectResult_V1_0 {
   frame_rotate_y: number;
   frame_rotate_z: number;
   frame_rotate_angle: number;
+  fps: number;
   project_id: string;
   timestamp: string;
   last_active: string;
