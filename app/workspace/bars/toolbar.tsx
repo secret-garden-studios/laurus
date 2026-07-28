@@ -387,7 +387,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 svg={{
                   svg: image200(),
                   scale: 0.55,
-                  cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+                  cursor: "pointer",
                 }}
                 onClick={() => {
                   uiDispatch({
@@ -403,7 +403,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 svg={{
                   svg: polyline200(),
                   scale: 0.55,
-                  cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+                  cursor: "pointer",
                 }}
                 onClick={() => {
                   uiDispatch({
@@ -419,7 +419,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 svg={{
                   svg: crop200(),
                   scale: 0.55,
-                  cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+                  cursor: "pointer",
                 }}
                 onClick={() => {
                   uiDispatch({
@@ -435,7 +435,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 svg={{
                   svg: bookmarkStacks200(),
                   scale: 0.55,
-                  cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+                  cursor: "pointer",
                 }}
                 onClick={() => {
                   uiDispatch({

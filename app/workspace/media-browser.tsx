@@ -559,6 +559,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
         height: "100%",
         width: dynamicSizes.width,
         borderLeft: "1px solid rgba(255,255,255,0.1)",
+        cursor: "default",
       }}
       onDragOver={(e) => {
         e.preventDefault();
