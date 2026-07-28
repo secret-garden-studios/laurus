@@ -67,10 +67,7 @@ function initReducer({
 
   const newEffectsMetadata: Map<string, number> = projectDependencies
     ? new Map(
-        projectDependencies.map((x) => [
-          x.project.project_id,
-          x.scales.length + x.moves.length + x.rotates.length + x.effectGroups.length,
-        ]),
+        projectDependencies.map((x) => [x.project.project_id, x.scales.length + x.moves.length + x.rotates.length]),
       )
     : new Map();
 
