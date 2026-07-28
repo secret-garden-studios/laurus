@@ -29,7 +29,7 @@ import {
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
-import MediaBrowser from "./media-browser";
+import MediaBrowser from "./browsers/media-browser";
 import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
