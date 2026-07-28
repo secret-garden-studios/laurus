@@ -195,6 +195,7 @@ export default function Canvas() {
       }
       const projectSvg: LaurusProjectSvg = {
         svg_media_id: svgData.svg_media_id,
+        media_group_id: "",
         width: newFrame.width,
         height: newFrame.height,
         top: newFrame.y,
@@ -296,6 +297,7 @@ export default function Canvas() {
         height: newFrame.height,
         media_key: imgData.media_key,
         img_media_id: imgData.img_media_id,
+        media_group_id: "",
         top: newFrame.y,
         left: newFrame.x,
         order: Array.from(coreState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,

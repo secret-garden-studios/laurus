@@ -1,12 +1,14 @@
-import { fetchMe, fetchProject } from "../page";
+import { fetchMe, fetchProject, ProjectDependencies } from "../page";
 import { getProjects } from "../projects/projects.server";
 import WorkspaceBoot from "./workspace.boot";
 import {
   ImgMediaResult_V1_0,
   SvgMediaResult_V1_0,
-  getImgDiscoveryPage,
-  getSvgDiscoveryPage,
+  LaurusMediaGroupResult,
+  downloadImgs,
+  downloadSvgs,
   getEffects,
+  getMediaGroups,
 } from "./workspace.server";
 export const dynamic = "force-dynamic";
 
@@ -20,19 +22,31 @@ async function fetchMediaFromServer(laurusApi: string | undefined, pageSize: num
   if (pageSize <= 0) {
     return { browserImgs, browserSvgs };
   }
-  const imgPageOne = await getImgDiscoveryPage(laurusApi, pageSize);
+  const imgPageOne = await downloadImgs(laurusApi, pageSize);
   if (imgPageOne && imgPageOne.length > 0) {
     for (let i = 0; i < imgPageOne.length; i++) {
       browserImgs.push({ ...imgPageOne[i] });
     }
   }
-  const svgPageOne = await getSvgDiscoveryPage(laurusApi, pageSize);
+  const svgPageOne = await downloadSvgs(laurusApi, pageSize);
   if (svgPageOne && svgPageOne.length > 0) {
     for (let i = 0; i < svgPageOne.length; i++) {
       browserSvgs.push({ ...svgPageOne[i] });
     }
   }
   return { browserImgs, browserSvgs };
+}
+
+async function fetchMediaGroupsFromServer(
+  laurusApi: string | undefined,
+  projectDependencies: Promise<ProjectDependencies | undefined>,
+): Promise<LaurusMediaGroupResult[]> {
+  const project = await projectDependencies;
+  if (!project) {
+    return [];
+  }
+  const mediaGroups = await getMediaGroups(laurusApi, project.project.project_id);
+  return mediaGroups ?? [];
 }
 
 export default async function Page({
@@ -49,17 +63,17 @@ export default async function Page({
   const mediaPageSizeInit = mediaPageSize ? parseInt(mediaPageSize) || 0 : 0;
   const projectDependencies = fetchProject(laurusApi, Boolean(guest), projects, project_id, true);
   const browserDependencies = fetchMediaFromServer(laurusApi, mediaPageSizeInit);
+  const mediaGroupsDependencies = fetchMediaGroupsFromServer(laurusApi, projectDependencies);
 
   return (
-    <>
-      <WorkspaceBoot
-        laurusApi={laurusApi}
-        mediaPageSizeInit={mediaPageSizeInit}
-        effectsEnum={effectsEnum}
-        projectDependencies={projectDependencies}
-        browserDependencies={browserDependencies}
-        mePromise={me}
-      />
-    </>
+    <WorkspaceBoot
+      laurusApi={laurusApi}
+      mediaPageSizeInit={mediaPageSizeInit}
+      effectsEnum={effectsEnum}
+      projectDependencies={projectDependencies}
+      browserDependencies={browserDependencies}
+      mediaGroupsDependencies={mediaGroupsDependencies}
+      mePromise={me}
+    />
   );
 }

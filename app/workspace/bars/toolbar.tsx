@@ -13,6 +13,7 @@ import {
   cycle200,
   lassoSelect300,
   browse,
+  bookmarkStacks200,
 } from "../../svg-repo";
 import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
 import ToolbarButton from "@/app/components/toolbar-button";
@@ -428,6 +429,22 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 }}
                 resolution={{ ...uiState.resolution }}
                 title="browse frames"
+              />
+              <ToolbarButton
+                selected={uiState.mediaBrowserFilter == "group"}
+                svg={{
+                  svg: bookmarkStacks200(),
+                  scale: 0.55,
+                  cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+                }}
+                onClick={() => {
+                  uiDispatch({
+                    type: UIActionType.SetMediaBrowserFilter,
+                    value: "group",
+                  });
+                }}
+                resolution={{ ...uiState.resolution }}
+                title="browse groups"
               />
             </div>
           </>

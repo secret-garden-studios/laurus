@@ -1776,7 +1776,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
       <input
         id={`new-effect-group-description-input`}
         className={dellaRespira.className}
-        placeholder="new group name..."
+        placeholder="new fx group name..."
         disabled={uiState.playbackMode.type !== "stopped" ? true : false}
         style={{
           textAlign: "center",

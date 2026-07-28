@@ -15,6 +15,7 @@ const onNotOk = (status: number) => {
 };
 export interface ProjectImg_V1_0 {
   img_media_id: string;
+  media_group_id: string;
   media_key: string;
   width: number;
   height: number;
@@ -31,6 +32,7 @@ export interface ProjectImg_V1_0 {
 }
 export interface ProjectSvg_V1_0 {
   svg_media_id: string;
+  media_group_id: string;
   media_key: string;
   width: number;
   height: number;

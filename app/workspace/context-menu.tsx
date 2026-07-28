@@ -608,6 +608,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               order: browserElement.value.order,
               categories: browserElement.value.categories,
               markup: browserElement.value.markup,
+              creator: browserElement.value.creator,
+              last_editor: browserElement.value.last_editor,
             };
             newSvgs.set(media.key, newProjectSvg);
             newCanvasSvgs.set(media.key, newSvgResult);
@@ -627,6 +629,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               order: browserElement.value.order,
               categories: browserElement.value.categories,
               src: browserElement.value.src,
+              creator: browserElement.value.creator,
+              last_editor: browserElement.value.last_editor,
             };
             newImgs.set(media.key, newProjectImg);
             newCanvasImgs.set(media.key, newImgResult);
@@ -652,6 +656,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               order: browserElement.value.order,
               categories: browserElement.value.categories,
               markup: browserElement.value.markup,
+              creator: browserElement.value.creator,
+              last_editor: browserElement.value.last_editor,
             };
             newSvgs.set(media.key, newProjectSvg);
             newCanvasSvgs.set(media.key, newSvgResult);
@@ -673,6 +679,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               order: browserElement.value.order,
               categories: browserElement.value.categories,
               src: browserElement.value.src,
+              creator: browserElement.value.creator,
+              last_editor: browserElement.value.last_editor,
             };
             newImgs.set(media.key, newProjectImg);
             newCanvasImgs.set(media.key, newImgResult);

@@ -43,7 +43,7 @@ export const defaultMarqueeTool: LaurusTool = {
   select: false,
 };
 
-export type MediaBrowserFilter = "img" | "svg" | "frame";
+export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 

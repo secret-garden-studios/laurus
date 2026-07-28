@@ -167,7 +167,7 @@ function ProjectImg({
   const { uiState } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(mediaKey);
   const showContextMenu = contextMenuState?.showContextMenu ?? false;
-  const { isMetaKeyPressed, selectedImgKeys } = useContext(HoverContext);
+  const { isMetaKeyPressed, selectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
   const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedImgKeys.has(mediaKey);
   const dragDisabled = useMemo(() => {
@@ -194,7 +194,7 @@ function ProjectImg({
   };
 
   const imgCursor = useMemo(() => {
-    return isMetaKeyPressed && uiState.tool.type === "marquee" && uiState.tool.select
+    return isAltKeyPressed && uiState.tool.type !== "marquee"
       ? "crosshair"
       : (isMetaKeyPressed || uiState.tool.type === "contextmenu") &&
           !uiState.filledForwards &&
@@ -207,84 +207,90 @@ function ProjectImg({
             : isDragging
               ? "grabbing"
               : "grab";
-  }, [isMetaKeyPressed, uiState.tool, uiState.filledForwards, isStackable, dragDisabled, isDragging]);
+  }, [
+    isAltKeyPressed,
+    isMetaKeyPressed,
+    uiState.tool.type,
+    uiState.filledForwards,
+    isStackable,
+    dragDisabled,
+    isDragging,
+  ]);
 
   return (
-    <>
-      <div
-        ref={setNodeRef}
-        style={{
-          ...dndCss,
-          position: "absolute",
-          width: meta.width * meta.scale_x,
-          height: meta.height * meta.scale_y,
-          zIndex: showContextMenu ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
-        }}
-      >
-        <div>
-          <div
-            {...listeners}
-            {...attributes}
-            title={title}
-            style={{
-              ...(transform && { ...transform.cssProps }),
-              position: "relative",
-              zIndex: Z_INDEX.ITEM_CONTENT,
-              cursor: imgCursor,
+    <div
+      ref={setNodeRef}
+      style={{
+        ...dndCss,
+        position: "absolute",
+        width: meta.width * meta.scale_x,
+        height: meta.height * meta.scale_y,
+        zIndex: showContextMenu ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
+      }}
+    >
+      <div>
+        <div
+          {...listeners}
+          {...attributes}
+          title={title}
+          style={{
+            ...(transform && { ...transform.cssProps }),
+            position: "relative",
+            zIndex: Z_INDEX.ITEM_CONTENT,
+            cursor: imgCursor,
+          }}
+        >
+          <LaurusImage
+            onClick={(e) => onClick(e.metaKey)}
+            onMouseEnter={() => {
+              setIsHovered(true);
             }}
-          >
-            <LaurusImage
-              onClick={(e) => onClick(e.metaKey)}
-              onMouseEnter={() => {
-                setIsHovered(true);
-              }}
-              onMouseLeave={() => {
-                setIsHovered(false);
-              }}
-              imgRef={(r) => {
-                if (onImgRef && refKey) {
-                  onImgRef(r, `${refKey}`);
-                }
-              }}
-              draggable={false}
-              alt={data.media_key}
-              src={data.src}
-              fill
-              style={{
-                objectFit: "cover",
-                cursor: "inherit",
-                outline: isSelected
-                  ? "2px solid rgba(66, 133, 244, 1)"
-                  : isStackable && isHovered
-                    ? "2px solid rgba(255, 255, 255, 0.9)"
-                    : showContextMenu
-                      ? "1px solid rgba(255, 255, 255, 0.175)"
-                      : "none",
-                backdropFilter: showContextMenu ? "blur(10px)" : "none",
-                background: showContextMenu
-                  ? `
+            onMouseLeave={() => {
+              setIsHovered(false);
+            }}
+            imgRef={(r) => {
+              if (onImgRef && refKey) {
+                onImgRef(r, `${refKey}`);
+              }
+            }}
+            draggable={false}
+            alt={data.media_key}
+            src={data.src}
+            fill
+            style={{
+              objectFit: "cover",
+              cursor: "inherit",
+              outline: isSelected
+                ? "2px solid rgba(66, 133, 244, 1)"
+                : (isStackable || isAltKeyPressed) && isHovered
+                  ? "2px solid rgba(255, 255, 255, 0.9)"
+                  : showContextMenu
+                    ? "1px solid rgba(255, 255, 255, 0.175)"
+                    : "none",
+              backdropFilter: showContextMenu ? "blur(10px)" : "none",
+              background: showContextMenu
+                ? `
                                 linear-gradient(to right, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
                                 linear-gradient(to bottom, rgba(255, 255, 255, 0.055) 0.5px, transparent 1px) 0 0 / 20px 20px,
                                 linear-gradient(45deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.005))
                             `
-                  : "none",
-              }}
-            />
-          </div>
-          {showContextMenu && (
-            <ContextMenu
-              media={{
-                key: mediaKey,
-                type: "img",
-                meta: meta,
-              }}
-              framesCacheRef={framesCacheRef}
-              transform={transform}
-            />
-          )}
+                : "none",
+            }}
+          />
         </div>
+        {showContextMenu && (
+          <ContextMenu
+            media={{
+              key: mediaKey,
+              type: "img",
+              meta: meta,
+            }}
+            framesCacheRef={framesCacheRef}
+            transform={transform}
+          />
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -321,7 +327,7 @@ function ProjectSvg({
   const { uiState } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(mediaKey);
   const showContextMenu = contextMenuState?.showContextMenu ?? false;
-  const { isMetaKeyPressed, selectedSvgKeys } = useContext(HoverContext);
+  const { isMetaKeyPressed, selectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const isSelected = selectedSvgKeys.has(mediaKey);
 
   const dragDisabled = useMemo(() => {
@@ -355,7 +361,7 @@ function ProjectSvg({
   };
 
   const svgCursor = useMemo(() => {
-    return isMetaKeyPressed && uiState.tool.type === "marquee" && uiState.tool.select
+    return isAltKeyPressed && uiState.tool.type !== "marquee"
       ? "crosshair"
       : (isMetaKeyPressed || uiState.tool.type === "contextmenu") &&
           !uiState.filledForwards &&
@@ -368,7 +374,15 @@ function ProjectSvg({
             : isDragging
               ? "grabbing"
               : "grab";
-  }, [isMetaKeyPressed, uiState.tool, uiState.filledForwards, isStackable, dragDisabled, isDragging]);
+  }, [
+    isAltKeyPressed,
+    isMetaKeyPressed,
+    uiState.tool.type,
+    uiState.filledForwards,
+    isStackable,
+    dragDisabled,
+    isDragging,
+  ]);
 
   return (
     <>
@@ -407,7 +421,7 @@ function ProjectSvg({
               cursor: "inherit",
               outline: isSelected
                 ? "2px solid rgba(66, 133, 244, 1)"
-                : isStackable && isHovered
+                : (isStackable || isAltKeyPressed) && isHovered
                   ? "2px solid rgba(255, 255, 255, 0.9)"
                   : showContextMenu
                     ? "1px solid rgba(255, 255, 255, 0.175)"
@@ -479,7 +493,7 @@ export function DraggableProjectImg({
 }: DraggableProjectImg) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
     return calculateTransformedBounds(meta);
   }, [meta]);
@@ -769,7 +783,7 @@ export function DraggableProjectImg({
         { x: meta.scale_x, y: meta.scale_y },
         contextMenuConfig,
       );
-      if (metaKey && uiState.tool.type === "marquee" && uiState.tool.select) {
+      if (isAltKeyPressed && uiState.tool.type !== "marquee") {
         setSelectedImgKeys((prev) => {
           const next = new Set(prev);
           if (next.has(mediaKey)) {
@@ -841,12 +855,13 @@ export function DraggableProjectImg({
     },
     [
       uiState.projectContextMenus,
-      uiState.tool,
       uiState.filledForwards,
+      uiState.tool,
       mediaKey,
       meta,
       coreState.project.canvas_width,
       coreState.project.canvas_height,
+      isAltKeyPressed,
       setSelectedImgKeys,
       uiDispatch,
       onImgStackDrop,
@@ -909,7 +924,7 @@ export function DraggableProjectSvg({
 }: DraggableProjectSvg) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
     return calculateTransformedBounds(meta);
   }, [meta]);
@@ -1199,7 +1214,7 @@ export function DraggableProjectSvg({
         { x: meta.scale_x, y: meta.scale_y },
         contextMenuConfig,
       );
-      if (metaKey && uiState.tool.type === "marquee" && uiState.tool.select) {
+      if (isAltKeyPressed && uiState.tool.type !== "marquee") {
         setSelectedSvgKeys((prev) => {
           const next = new Set(prev);
           if (next.has(mediaKey)) {
@@ -1280,6 +1295,7 @@ export function DraggableProjectSvg({
       setSelectedSvgKeys,
       uiDispatch,
       onSvgStackDrop,
+      isAltKeyPressed,
     ],
   );
 

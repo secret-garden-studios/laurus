@@ -334,7 +334,8 @@ export function Subtitlebar() {
           container: {
             height: 45,
             fontSize: 14,
-            padding: "0px 18px",
+            paddingLeft: 18,
+            paddingRight: 6,
             letterSpacing: 0,
           },
         };
