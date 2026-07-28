@@ -54,7 +54,7 @@ export enum CoreActionType {
 
 export type CoreAction =
   | { type: CoreActionType.SetCoreState; value: CoreState }
-  | { type: CoreActionType.SetProject; value: LaurusProjectResult }
+  | { type: CoreActionType.SetProject; value: LaurusProjectResult; preserveCache?: boolean }
   | { type: CoreActionType.SetCanvasImg; key: string; value: LaurusImgResult }
   | { type: CoreActionType.DeleteCanvasImg; key: string }
   | { type: CoreActionType.SetCanvasImgs; value: Map<string, LaurusImgResult> }
@@ -88,7 +88,7 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         project: { ...action.value },
-        inputsToRender: new Set(state.inputsToRender),
+        inputsToRender: action.preserveCache === false ? new Set<string>(["*"]) : new Set(state.inputsToRender),
       };
     }
     case CoreActionType.SetCanvasImg: {

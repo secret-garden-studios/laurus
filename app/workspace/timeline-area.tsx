@@ -1389,7 +1389,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
       if (!newProject.project_id) {
         const created = await createProject(coreState.apiOrigin, coreState.accessToken, newProject);
         if (created) {
-          dispatch({ type: CoreActionType.SetProject, value: created });
+          dispatch({ type: CoreActionType.SetProject, value: created, preserveCache: false });
         } else {
           rollback();
         }
@@ -1401,7 +1401,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
           newProject,
         );
         if (updated) {
-          dispatch({ type: CoreActionType.SetProject, value: newProject });
+          dispatch({ type: CoreActionType.SetProject, value: newProject, preserveCache: false });
         } else {
           rollback();
         }
