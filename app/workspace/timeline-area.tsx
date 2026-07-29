@@ -632,7 +632,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
             />
           ) : (
             <SvgRepo
-              svg={circle("rgba(255, 255, 255, 0)")}
+              svg={addCircle("rgb(67, 67, 67)")}
               containerStyle={{
                 width: dynamicSizes.timelineAreaContent.svg.width,
                 height: dynamicSizes.timelineAreaContent.svg.height,
