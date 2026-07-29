@@ -198,7 +198,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
-  const selected = useMemo<boolean>(() => {
+  const active = useMemo<boolean>(() => {
     return (uiState.activeElement?.key ?? "") == media.key;
   }, [uiState.activeElement?.key, media.key]);
   const [isAltPressed, setIsAltPressed] = useState(false);
@@ -956,15 +956,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 >
                   <span
                     style={{
-                      textShadow: selected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                      textShadow: active ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                     }}
                   >
-                    {"selected"}
+                    {"active"}
                   </span>
                   <Toggle
-                    value={selected}
+                    value={active}
                     onClick={() => {
-                      if (selected) {
+                      if (active) {
                         uiDispatch({
                           type: UIActionType.SetActiveElement,
                           value: undefined,

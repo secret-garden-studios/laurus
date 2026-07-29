@@ -28,7 +28,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
           router.push(!guest ? "/" : "/?guest=true");
         }}
         resolution={resolution}
-        title="landing page"
+        title="landing"
       />
       <ToolbarButton
         selected={pathname == "/projects"}
@@ -42,7 +42,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
           router.push(!guest ? "/projects" : "/projects?guest=true");
         }}
         resolution={resolution}
-        title="projects page"
+        title="projects"
       />
       <ToolbarButton
         selected={pathname == "/workspace"}

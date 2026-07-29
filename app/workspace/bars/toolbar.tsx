@@ -64,6 +64,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
           width: "min-content",
           height: "100%",
           justifyContent: "center",
+          cursor: "default",
         }}
       >
         <Navbar resolution={{ ...uiState.resolution }} guest={!me} />
@@ -139,8 +140,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   Marquee Tool
                 </h4>
                 <p>
-                  Select existing media on the canvas, or drop new media from the <strong>browser</strong> into an area
-                  on the canvas.
+                  Drop media from the <strong>browser</strong> into an area on the canvas, or select existing media on
+                  the canvas.
                 </p>
               </div>
             )}
@@ -351,7 +352,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                     fontSize: dynamicSizes.tooltipFont,
                   }}
                 >
-                  Mix Tool
+                  Composite Tool
                 </h4>
                 <p>
                   Render a composite of individual animations of the same type that are set to run at the same time.
@@ -396,7 +397,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   });
                 }}
                 resolution={{ ...uiState.resolution }}
-                title="browse images"
+                title="images"
               />
               <ToolbarButton
                 selected={uiState.mediaBrowserFilter == "svg"}
@@ -412,7 +413,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   });
                 }}
                 resolution={{ ...uiState.resolution }}
-                title="browse svgs"
+                title="vectors"
               />
               <ToolbarButton
                 selected={uiState.mediaBrowserFilter == "frame"}
@@ -428,7 +429,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   });
                 }}
                 resolution={{ ...uiState.resolution }}
-                title="browse frames"
+                title="frames"
               />
               <ToolbarButton
                 selected={uiState.mediaBrowserFilter == "group"}
@@ -444,7 +445,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   });
                 }}
                 resolution={{ ...uiState.resolution }}
-                title="browse groups"
+                title="media groups"
               />
             </div>
           </>

@@ -623,7 +623,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                   <div
                     style={{
                       display: "grid",
-                      alignContent: "start",
+                      alignContent: coreState.mediaGroups.size == 0 ? "center" : "start",
                       width: "100%",
                     }}
                   >

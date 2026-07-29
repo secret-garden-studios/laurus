@@ -177,7 +177,6 @@ function ProjectImg({
     return uiState.tool.type === "marquee" && uiState.tool.stack;
   }, [uiState.tool]);
   const {
-    attributes,
     listeners,
     setNodeRef,
     transform: dndTransform,
@@ -231,7 +230,6 @@ function ProjectImg({
       <div>
         <div
           {...listeners}
-          {...attributes}
           title={title}
           style={{
             ...(transform && { ...transform.cssProps }),
@@ -337,7 +335,6 @@ function ProjectSvg({
     return uiState.tool.type === "marquee" && uiState.tool.stack;
   }, [uiState.tool]);
   const {
-    attributes,
     listeners,
     setNodeRef,
     transform: dndTransform,
@@ -397,7 +394,6 @@ function ProjectSvg({
       >
         <div
           {...listeners}
-          {...attributes}
           title={title}
           onClick={(e) => onClick(e.metaKey)}
           onMouseEnter={() => {

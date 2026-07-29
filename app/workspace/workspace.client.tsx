@@ -1168,6 +1168,9 @@ export default function Workspace({
     const handleKey = (e: KeyboardEvent) => {
       setIsMetaKeyPressed(e.metaKey);
       setIsAltKeyPressed(e.altKey);
+      if (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) {
+        uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      }
     };
     const handleBlur = () => {
       setIsMetaKeyPressed(false);
@@ -1181,7 +1184,7 @@ export default function Workspace({
       window.removeEventListener("keyup", handleKey);
       window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [uiState.tool.type, uiDispatch]);
 
   useEffect(() => {
     if (hasInitiatedFrameDownloadRef.current) return;

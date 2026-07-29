@@ -14,7 +14,7 @@ interface CameraDragOverlay {
   disabled?: boolean;
 }
 function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDragOverlay) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+  const { listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
   const dndCss = {
     left: position.x,
     top: position.y,
@@ -28,7 +28,6 @@ function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDrag
     <div
       ref={setNodeRef}
       {...listeners}
-      {...attributes}
       style={{
         ...dndCss,
         cursor: disabled ? "" : isDragging ? "grabbing" : "grab",

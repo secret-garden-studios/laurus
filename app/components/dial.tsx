@@ -106,7 +106,7 @@ interface BlurryCapProps {
 }
 
 function BlurryCap({ resolution, id, rotation, size, disabled, title, liveTitleRef }: BlurryCapProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const { listeners, setNodeRef, isDragging } = useDraggable({
     id,
     disabled,
   });
@@ -243,7 +243,6 @@ function BlurryCap({ resolution, id, rotation, size, disabled, title, liveTitleR
         <div
           ref={setNodeRef}
           {...listeners}
-          {...attributes}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           style={{
@@ -268,7 +267,6 @@ function BlurryCap({ resolution, id, rotation, size, disabled, title, liveTitleR
           ref={setNodeRef}
           title={title}
           {...listeners}
-          {...attributes}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           style={{

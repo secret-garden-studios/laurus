@@ -138,6 +138,7 @@ export default function TimelineArea() {
   const selectionPanelVisible = useMemo(() => {
     return selectedEffectUnitKeys.size > 0 || showSelectionPanel;
   }, [selectedEffectUnitKeys.size, showSelectionPanel]);
+  const [isTimelineAreaHovered, setIsTimelineAreaHovered] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -164,6 +165,8 @@ export default function TimelineArea() {
           gridTemplateColumns: "auto 1fr",
           gridTemplateRows: `min-content auto min-content`,
         }}
+        onMouseEnter={() => setIsTimelineAreaHovered(true)}
+        onMouseLeave={() => setIsTimelineAreaHovered(false)}
       >
         <TimelineRuler
           containerStyle={{
@@ -200,6 +203,7 @@ export default function TimelineArea() {
                         effectGroupId={effectGroupId}
                         effectGroupResult={effectGroup}
                         maxWidth={dynamicSizes.width}
+                        isTimelineAreaHovered={isTimelineAreaHovered}
                       />
                     </div>
                   );
@@ -408,8 +412,9 @@ interface EffectGroup {
   effectGroupId: string;
   effectGroupResult: LaurusEffectGroupResult;
   maxWidth: number;
+  isTimelineAreaHovered: boolean;
 }
-function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup) {
+function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAreaHovered }: EffectGroup) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { setMostRecentlyEnteredEffectUnitKey, setSelectedEffectUnitKeys, selectedEffectUnitKeys, isAltKeyPressed } =
@@ -612,7 +617,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
             cursor: updating ? "wait" : "",
           }}
         >
-          {!isAltKeyPressed && !updating ? (
+          {!isAltKeyPressed && !updating && isTimelineAreaHovered ? (
             <SvgRepo
               title={`${showEffectsBrowser ? "close effects browser" : selectedEffectUnitKeys.size > 0 ? "add to group" : "open effects browser"}`}
               svg={showEffectsBrowser ? closeIcon("rgba(204, 204, 204, 0.8)") : addCircle("rgba(204, 204, 204, 0.8)")}
@@ -735,6 +740,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
+  const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -904,6 +910,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
   );
 
   const deleteEffectGroupClick = useCallback(async () => {
+    setIsTitleBarHovered(false);
     if (!isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
     const confirmed = confirm("are you sure you want to delete this effect group?");
     if (!confirmed) return;
@@ -979,15 +986,17 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         borderRadius: 0,
         ...dynamicSizes.flex,
       }}
+      onMouseEnter={() => setIsTitleBarHovered(true)}
+      onMouseLeave={() => setIsTitleBarHovered(false)}
     >
       <SvgRepo
         title={"delete effect group"}
-        svg={isAltKeyPressed ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
+        svg={isAltKeyPressed && isTitleBarHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
         scale={0.4}
         scaleToContaier={true}
         onContainerClick={deleteEffectGroupClick}
         style={{
-          cursor: isAltKeyPressed && uiState.playbackMode.type == "stopped" ? "pointer" : "",
+          cursor: isAltKeyPressed && isTitleBarHovered && uiState.playbackMode.type == "stopped" ? "pointer" : "",
         }}
         containerStyle={{
           cursor: "",
@@ -1333,6 +1342,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
     useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+  const [isControlPanelHovered, setIsControlPanelHovered] = useState(false);
   const [playbackRate] = useState(10);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -1440,6 +1450,8 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
         alignItems: "center",
         ...containerStyle,
       }}
+      onMouseEnter={() => setIsControlPanelHovered(true)}
+      onMouseLeave={() => setIsControlPanelHovered(false)}
     >
       <div title={"frame rate"} style={{ display: "flex", gap: dynamicSizes.fpsInputGap }}>
         <input
@@ -1580,8 +1592,8 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
           }
         />
       </div>
-      <div title={isAltKeyPressed ? "switch to selection panel" : "light"}>
-        {isAltKeyPressed ? (
+      <div title={isAltKeyPressed && isControlPanelHovered ? "switch to selection panel" : "light"}>
+        {isAltKeyPressed && isControlPanelHovered ? (
           <SvgRepo
             title={"switch to selection panel"}
             svg={adjust()}
