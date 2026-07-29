@@ -40,6 +40,10 @@ import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
 import { CoreActionType } from "./states/core-state";
+import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 function reindexEffectGroups(effectGroups: Map<string, LaurusEffectGroupResult>): LaurusEffectGroupResult[] {
   return Array.from(effectGroups.values())
@@ -516,6 +520,51 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
     updating,
   ]);
 
+  const groupEffects = useMemo(() => {
+    return coreState.effects
+      .filter((e) => e.value.effect_group_id === effectGroupId)
+      .sort((a, b) => {
+        if (a.value.order !== b.value.order) {
+          return a.value.order - b.value.order;
+        }
+        return new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime();
+      });
+  }, [coreState.effects, effectGroupId]);
+
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  const onEffectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id || uiState.playbackMode.type !== "stopped") return;
+      const oldIndex = groupEffects.findIndex((e) => e.key === active.id);
+      const newIndex = groupEffects.findIndex((e) => e.key === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reorderedGroupEffects = arrayMove(groupEffects, oldIndex, newIndex).map(
+        (e, i) => ({ ...e, value: { ...e.value, order: i } }) as LaurusEffect,
+      );
+      const snapshot = [...coreState.effects];
+      const mergedEffects = snapshot.map((e) => reorderedGroupEffects.find((re) => re.key === e.key) ?? e);
+      const reindexedEffects = reindexEffects(mergedEffects, coreState.effectGroups);
+      persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexedEffects, snapshot).then(
+        (updated) => {
+          if (updated) {
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+          }
+        },
+      );
+    },
+    [
+      groupEffects,
+      coreState.effects,
+      coreState.effectGroups,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      uiState.playbackMode.type,
+    ],
+  );
+
   return (
     <div
       style={{
@@ -543,69 +592,36 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
           minHeight: dynamicSizes.timelineAreaContent.height,
         }}
       >
-        {coreState.effects
-          .filter((e) => e.value.effect_group_id === effectGroupId)
-          .sort((a, b) => {
-            if (a.value.order !== b.value.order) {
-              return a.value.order - b.value.order;
-            }
-            return new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime();
-          })
-          .map((effect) => {
-            const isSelected = selectedEffectUnitKeys.has(effect.key);
-            return (
-              <div
+        <DndContext
+          sensors={dragSensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onEffectDragEnd}
+        >
+          <SortableContext items={groupEffects.map((e) => e.key)} strategy={verticalListSortingStrategy}>
+            {groupEffects.map((effect, index) => (
+              <EffectGroupRow
                 key={effect.key}
-                onClick={(e) => {
-                  if (e.altKey) {
-                    setSelectedEffectUnitKeys((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(effect.key)) next.delete(effect.key);
-                      else next.add(effect.key);
-                      return next;
-                    });
-                  }
-                }}
-                onMouseEnter={(e) => {
-                  setMostRecentlyEnteredEffectUnitKey(effect.key);
-                  e.currentTarget.style.background = isSelected
-                    ? "rgba(255, 255, 255, 0.08)"
-                    : "rgba(255, 255, 255, 0.05)";
-                  e.currentTarget.style.border = isSelected
-                    ? "1px solid rgba(255, 255, 255, 0.2)"
-                    : "1px solid rgba(255, 255, 255, 0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = isSelected
-                    ? "rgba(255, 255, 255, 0.08)"
-                    : "rgba(255, 255, 255, 0.0275)";
-                  e.currentTarget.style.border = isSelected
-                    ? "1px solid rgba(255, 255, 255, 0.2)"
-                    : "1px solid rgba(0, 0, 0, 0)";
-                }}
-                style={{
-                  border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
-                  background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
-                  display: "flex",
-                  borderRadius: 0,
-                  cursor: isAltKeyPressed ? "crosshair" : "",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    background: "rgba(22, 22, 22, 0.9)",
-                    display: "grid",
-                    placeContent: "center",
-                    ...dynamicSizes.indexColumn,
-                  }}
-                >
-                  {(effect.value.order + 1).toFixed()}
-                </div>
-                <EffectUnit effect={effect} showUnitControlsInit={!effectGroupResult.disabled} />
-              </div>
-            );
-          })}
+                effect={effect}
+                index={index}
+                isSelected={selectedEffectUnitKeys.has(effect.key)}
+                isAltKeyPressed={isAltKeyPressed}
+                dragDisabled={uiState.playbackMode.type !== "stopped"}
+                indexColumnStyle={dynamicSizes.indexColumn}
+                effectGroupResult={effectGroupResult}
+                onToggleSelect={() =>
+                  setSelectedEffectUnitKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(effect.key)) next.delete(effect.key);
+                    else next.add(effect.key);
+                    return next;
+                  })
+                }
+                onEnter={() => setMostRecentlyEnteredEffectUnitKey(effect.key)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
         <div
           style={{
             width: "100%",
@@ -646,6 +662,84 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
           <EffectsBrowser onAddClick={() => setEffectsBrowserToggle(false)} effect_group_id={effectGroupId} />
         )}
       </div>
+    </div>
+  );
+}
+
+interface EffectGroupRow {
+  effect: LaurusEffect;
+  index: number;
+  isSelected: boolean;
+  isAltKeyPressed: boolean;
+  dragDisabled: boolean;
+  indexColumnStyle: { width: string; fontSize: number };
+  effectGroupResult: LaurusEffectGroupResult;
+  onToggleSelect: () => void;
+  onEnter: () => void;
+}
+function EffectGroupRow({
+  effect,
+  index,
+  isSelected,
+  isAltKeyPressed,
+  dragDisabled,
+  indexColumnStyle,
+  effectGroupResult,
+  onToggleSelect,
+  onEnter,
+}: EffectGroupRow) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: effect.key,
+    disabled: dragDisabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={(e) => {
+        if (e.altKey) onToggleSelect();
+      }}
+      onMouseEnter={(e) => {
+        onEnter();
+        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.05)";
+        e.currentTarget.style.border = isSelected
+          ? "1px solid rgba(255, 255, 255, 0.2)"
+          : "1px solid rgba(255, 255, 255, 0.05)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)";
+        e.currentTarget.style.border = isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)";
+      }}
+      style={{
+        border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
+        background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
+        display: "flex",
+        borderRadius: 0,
+        cursor: isAltKeyPressed ? "crosshair" : "",
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        position: "relative",
+        zIndex: isDragging ? 1 : undefined,
+      }}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          height: "100%",
+          background: "rgba(22, 22, 22, 0.9)",
+          display: "grid",
+          placeContent: "center",
+          cursor: dragDisabled ? "" : "grab",
+          touchAction: "none",
+          width: indexColumnStyle.width,
+          fontSize: indexColumnStyle.fontSize,
+        }}
+      >
+        {(index + 1).toFixed()}
+      </div>
+      <EffectUnit effect={effect} showUnitControlsInit={!effectGroupResult.disabled} />
     </div>
   );
 }
