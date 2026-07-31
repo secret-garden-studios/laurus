@@ -3,7 +3,7 @@ import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import { addCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
+import { addCircle, checkCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
@@ -285,6 +285,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     setSelectedSvgKeys,
   ]);
 
+  const onSelectAllInGroupClick = useCallback(() => {
+    if (groupItems.length === 0) return;
+    setSelectedImgKeys(new Set(groupItems.filter((item) => item.type === "img").map((item) => item.key)));
+    setSelectedSvgKeys(new Set(groupItems.filter((item) => item.type === "svg").map((item) => item.key)));
+  }, [groupItems, setSelectedImgKeys, setSelectedSvgKeys]);
+
   const deleteMediaGroupClick = useCallback(async () => {
     setIsTitleBarHovered(false);
     if (!isAltKeyPressed) return;
@@ -467,6 +473,20 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
           type="text"
           autoComplete="off"
           onChange={(e) => onMediaGroupDescriptionChange(e.target.value)}
+        />
+        <SvgRepo
+          title={groupItems.length > 0 ? "select all media in group" : "no media in group"}
+          svg={checkCircle(groupItems.length > 0 ? "rgba(204, 204, 204, 0.8)" : "rgba(204, 204, 204, 0.2)")}
+          scale={0.4}
+          scaleToContaier={true}
+          onContainerClick={onSelectAllInGroupClick}
+          style={{
+            cursor: groupItems.length > 0 ? "pointer" : "",
+          }}
+          containerStyle={{
+            cursor: "",
+            ...dynamicSizes.delete.container,
+          }}
         />
       </div>
       {groupItems.length > 0 && (
