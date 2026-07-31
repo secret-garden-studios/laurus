@@ -3,7 +3,7 @@ import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import { addCircle, cancelCircle, circle, SvgRepo } from "../../svg-repo";
+import { addCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
@@ -33,8 +33,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   const { isAltKeyPressed, selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
   const [adding, setAdding] = useState(false);
-  const [hoveredItemKey, setHoveredItemKey] = useState<string | null>(null);
-  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
   const hasSelection = useMemo(
     () => selectedImgKeys.size > 0 || selectedSvgKeys.size > 0,
@@ -72,7 +70,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             paddingLeft: 0,
           },
           input: {
-            fontSize: 10,
+            fontSize: 11,
+            letterSpacing: 3,
           },
           toggle: {
             div: {
@@ -104,18 +103,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             padding: "0px 8px",
             svg: { width: 20, height: 40 },
           },
-          groupItem: {
-            height: 70,
-            gap: 0,
-            padding: 0,
-          },
           indexColumn: {
             width: "4ch",
             fontSize: 9,
           },
           removeOverlay: {
             size: 16,
-            inset: 0,
           },
         };
       case "midhigh":
@@ -125,7 +118,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             paddingLeft: 0,
           },
           input: {
-            fontSize: 8,
+            fontSize: 10,
+            letterSpacing: 3,
           },
           toggle: {
             div: {
@@ -157,18 +151,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             padding: "0px 6px",
             svg: { width: 16, height: 32 },
           },
-          groupItem: {
-            height: 56,
-            gap: 0,
-            padding: 0,
-          },
           indexColumn: {
             width: "4ch",
             fontSize: 7,
           },
           removeOverlay: {
             size: 18,
-            inset: 3,
           },
         };
       case "midlow":
@@ -179,7 +167,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             paddingLeft: 0,
           },
           input: {
-            fontSize: 8,
+            fontSize: 9,
+            letterSpacing: 3,
           },
           toggle: {
             div: {
@@ -211,18 +200,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             padding: "0px 6px",
             svg: { width: 16, height: 32 },
           },
-          groupItem: {
-            height: 48,
-            gap: 0,
-            padding: 0,
-          },
           indexColumn: {
             width: "4ch",
             fontSize: 7,
           },
           removeOverlay: {
             size: 16,
-            inset: 3,
           },
         };
     }
@@ -318,7 +301,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const onRemoveImgFromGroupClick = useCallback(
     async (key: string) => {
-      if (!isAltKeyPressed || !coreState.project.project_id) return;
+      if (!coreState.project.project_id) return;
       const entry = coreState.project.imgs.get(key);
       if (!entry) return;
       const newImgs = new Map(coreState.project.imgs);
@@ -331,12 +314,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [isAltKeyPressed, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
   );
 
   const onRemoveSvgFromGroupClick = useCallback(
     async (key: string) => {
-      if (!isAltKeyPressed || !coreState.project.project_id) return;
+      if (!coreState.project.project_id) return;
       const entry = coreState.project.svgs.get(key);
       if (!entry) return;
       const newSvgs = new Map(coreState.project.svgs);
@@ -349,7 +332,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [isAltKeyPressed, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
   );
 
   const onImgContextMenuClick = useCallback(
@@ -431,6 +414,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         maxWidth,
         display: "grid",
         width: "100%",
+        border: "1px solid rgba(255,255,255,0.1)",
+        boxShadow: "5px 5px 12px rgba(11, 11, 11, 0.6)",
+        borderRadius: 10,
       }}
     >
       <div
@@ -439,9 +425,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
           display: "flex",
           alignItems: "center",
           background: "linear-gradient(10deg, rgb(25, 25, 25), rgb(23, 23, 23))",
-          borderTop: "1px solid rgba(255, 255, 255, 0.05)",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.025)",
-          borderRadius: 0,
+          borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+          borderTopRightRadius: 10,
+          borderTopLeftRadius: 10,
           ...dynamicSizes.flex,
         }}
         onMouseEnter={() => setIsTitleBarHovered(true)}
@@ -470,12 +456,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
           placeholder="name me..."
           style={{
             textAlign: "center",
-            letterSpacing: "3px",
             background: "none",
             color: "rgb(227, 227, 227)",
             border: "none",
             outline: "none",
             width: "100%",
+            fontWeight: "bold",
             ...dynamicSizes.input,
           }}
           type="text"
@@ -489,7 +475,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             display: "flex",
             flexDirection: "column",
             width: "100%",
-            gap: dynamicSizes.groupItem.gap,
           }}
         >
           <DndContext
@@ -505,18 +490,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                   item={item}
                   index={index}
                   isEven={index % 2 === 0}
-                  groupItemHeight={dynamicSizes.groupItem.height}
-                  groupItemPadding={dynamicSizes.groupItem.padding}
                   indexColumnStyle={dynamicSizes.indexColumn}
                   removeOverlaySize={dynamicSizes.removeOverlay.size}
-                  removeOverlayInset={dynamicSizes.removeOverlay.inset}
-                  isAltKeyPressed={isAltKeyPressed}
-                  isRowHovered={hoveredRowKey === item.key}
-                  isItemHovered={hoveredItemKey === item.key}
-                  onRowMouseEnter={() => setHoveredRowKey(item.key)}
-                  onRowMouseLeave={() => setHoveredRowKey(null)}
-                  onItemMouseEnter={() => setHoveredItemKey(item.key)}
-                  onItemMouseLeave={() => setHoveredItemKey(null)}
                   onRemoveFromGroupClick={() =>
                     item.type === "img" ? onRemoveImgFromGroupClick(item.key) : onRemoveSvgFromGroupClick(item.key)
                   }
@@ -559,18 +534,8 @@ interface MediaGroupRow {
   item: MediaGroupItem;
   index: number;
   isEven: boolean;
-  groupItemHeight: number;
-  groupItemPadding: number;
   indexColumnStyle: { width: string; fontSize: number };
   removeOverlaySize: number;
-  removeOverlayInset: number;
-  isAltKeyPressed: boolean;
-  isRowHovered: boolean;
-  isItemHovered: boolean;
-  onRowMouseEnter: () => void;
-  onRowMouseLeave: () => void;
-  onItemMouseEnter: () => void;
-  onItemMouseLeave: () => void;
   onRemoveFromGroupClick: () => void;
   onContextMenuClick: () => void;
 }
@@ -578,22 +543,78 @@ function MediaGroupRow({
   item,
   index,
   isEven,
-  groupItemHeight,
-  groupItemPadding,
   indexColumnStyle,
   removeOverlaySize,
-  removeOverlayInset,
-  isAltKeyPressed,
-  isRowHovered,
-  isItemHovered,
-  onRowMouseEnter,
-  onRowMouseLeave,
-  onItemMouseEnter,
-  onItemMouseLeave,
   onRemoveFromGroupClick,
   onContextMenuClick,
 }: MediaGroupRow) {
+  const { uiState } = useContext(UIContext);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.key });
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          filename: {
+            margin: 24,
+            filename: {
+              fontSize: 11,
+              letterSpacing: 1,
+            },
+          },
+
+          groupItem: {
+            height: 70,
+          },
+        };
+      case "midhigh":
+        return {
+          filename: {
+            margin: 24,
+            filename: {
+              fontSize: 10,
+              letterSpacing: 2,
+            },
+          },
+          groupItem: {
+            height: 56,
+          },
+        };
+      case "midlow":
+      case "low":
+        return {
+          filename: {
+            margin: 24,
+            filename: {
+              fontSize: 10,
+              letterSpacing: 2,
+            },
+          },
+          groupItem: {
+            height: 48,
+          },
+        };
+    }
+  });
+  const [isItemHovered, setIsItemHovered] = useState<boolean>(false);
+  const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
+
+  const display = useMemo(() => {
+    if (item.type !== "img") return undefined;
+    const containerSize = dynamicSizes.groupItem.height;
+    const aspectRatio = item.img.width / item.img.height;
+    const isSquareish = aspectRatio >= 0.9 && aspectRatio <= 1.1;
+    let displayWidth, displayHeight;
+    if (isSquareish) {
+      displayWidth = containerSize;
+      displayHeight = containerSize;
+    } else {
+      const targetSize = containerSize * 1.33;
+      const scale = Math.max(targetSize / item.img.width, targetSize / item.img.height);
+      displayWidth = Math.round(item.img.width * scale);
+      displayHeight = Math.round(item.img.height * scale);
+    }
+    return { isSquareish, displayWidth, displayHeight };
+  }, [dynamicSizes.groupItem.height, item]);
 
   return (
     <div
@@ -601,17 +622,15 @@ function MediaGroupRow({
       style={{
         width: "100%",
         display: "flex",
-        padding: groupItemPadding,
         background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
-        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0)"}`,
+        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
-        position: "relative",
         zIndex: isDragging ? 1 : undefined,
       }}
-      onMouseEnter={onRowMouseEnter}
-      onMouseLeave={onRowMouseLeave}
+      onMouseEnter={() => setIsRowHovered(true)}
+      onMouseLeave={() => setIsRowHovered(false)}
     >
       <div
         {...attributes}
@@ -629,98 +648,161 @@ function MediaGroupRow({
       >
         {(index + 1).toFixed()}
       </div>
-      {item.type === "img" ? (
-        <div
-          className={styles["transparent-checkerboard-background"]}
-          style={{
-            width: groupItemHeight,
-            height: groupItemHeight,
-            position: "relative",
-            overflow: "hidden",
-          }}
-          onMouseEnter={onItemMouseEnter}
-          onMouseLeave={onItemMouseLeave}
-        >
-          <LaurusImage
-            title={item.img.media_key}
-            draggable={false}
-            alt={item.img.media_key}
-            src={item.img.src}
-            fill
-            onClick={onContextMenuClick}
-            style={{
-              objectFit: "cover",
-              cursor: "pointer",
-            }}
-          />
-          {isAltKeyPressed && isItemHovered && (
-            <SvgRepo
-              title={"remove from group"}
-              svg={cancelCircle()}
-              scale={1}
-              scaleToContaier={true}
-              onContainerClick={onRemoveFromGroupClick}
-              style={{
-                cursor: "pointer",
-              }}
-              containerStyle={{
-                position: "absolute",
-                top: removeOverlayInset,
-                right: removeOverlayInset,
-                width: removeOverlaySize,
-                height: removeOverlaySize,
-                cursor: "pointer",
-              }}
-            />
-          )}
-        </div>
-      ) : (
-        <div
-          className={styles["transparent-checkerboard-background"]}
-          style={{
-            width: groupItemHeight,
-            height: groupItemHeight,
-            position: "relative",
-            display: "grid",
-            placeContent: "center",
-          }}
-          onMouseEnter={onItemMouseEnter}
-          onMouseLeave={onItemMouseLeave}
-        >
-          <SvgRepo
-            title={item.svg.media_key}
-            svg={item.svg}
-            onContainerClick={onContextMenuClick}
-            containerStyle={{
-              width: groupItemHeight * 0.7,
-              height: groupItemHeight * 0.7,
-              cursor: "pointer",
-            }}
-            scale={1}
-            scaleToContaier={true}
-          />
-          {isAltKeyPressed && isItemHovered && (
-            <SvgRepo
-              title={"remove from group"}
-              svg={cancelCircle()}
-              scale={1}
-              scaleToContaier={true}
-              onContainerClick={onRemoveFromGroupClick}
-              style={{
-                cursor: "pointer",
-              }}
-              containerStyle={{
-                position: "absolute",
-                top: removeOverlayInset,
-                right: removeOverlayInset,
-                width: removeOverlaySize,
-                height: removeOverlaySize,
-                cursor: "pointer",
-              }}
-            />
-          )}
-        </div>
-      )}
+      {(() => {
+        switch (item.type) {
+          case "img": {
+            if (!display) return <></>;
+            return (
+              <div
+                onMouseEnter={() => setIsItemHovered(true)}
+                onMouseLeave={() => setIsItemHovered(false)}
+                style={{
+                  display: "grid",
+                  alignItems: "center",
+                  height: dynamicSizes.groupItem.height,
+                  paddingLeft: 5,
+                  width: "100%",
+                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+                  gridTemplateRows: "1fr",
+                }}
+              >
+                <div
+                  className={styles["transparent-checkerboard-background"]}
+                  style={{
+                    width: dynamicSizes.groupItem.height - 10,
+                    height: dynamicSizes.groupItem.height - 10,
+                    overflow: display.isSquareish ? "none" : "auto",
+                  }}
+                >
+                  <LaurusImage
+                    title={item.img.media_key}
+                    draggable={false}
+                    alt={item.img.media_key}
+                    src={item.img.src}
+                    onClick={onContextMenuClick}
+                    width={display.displayWidth - 10}
+                    height={display.displayHeight - 10}
+                    style={{
+                      display: "block",
+                      objectFit: display.isSquareish ? "cover" : "unset",
+                      cursor: "pointer",
+                    }}
+                  />
+                </div>
+                <div />
+                <div
+                  style={{
+                    overflowX: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      whiteSpace: "nowrap",
+                      textAlign: "center",
+                      color: "rgb(220, 220, 220)",
+                      ...dynamicSizes.filename.filename,
+                    }}
+                  >
+                    {item.img.media_key}
+                  </div>
+                </div>
+                <div />
+                <div style={{ padding: "5px 5px 0px 0px", height: "100%", width: "min-content" }}>
+                  <SvgRepo
+                    title={"remove from group"}
+                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                    scale={0.9}
+                    scaleToContaier={true}
+                    onContainerClick={onRemoveFromGroupClick}
+                    style={{
+                      cursor: "pointer",
+                    }}
+                    containerStyle={{
+                      cursor: "pointer",
+                      width: removeOverlaySize,
+                      height: removeOverlaySize,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
+          case "svg":
+            return (
+              <div
+                onMouseEnter={() => setIsItemHovered(true)}
+                onMouseLeave={() => setIsItemHovered(false)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+                  gridTemplateRows: "1fr",
+                  alignItems: "center",
+                  height: dynamicSizes.groupItem.height,
+                  paddingLeft: 5,
+                  width: "100%",
+                }}
+              >
+                <div
+                  className={styles["transparent-checkerboard-background"]}
+                  style={{
+                    width: dynamicSizes.groupItem.height - 10,
+                    height: dynamicSizes.groupItem.height - 10,
+                    display: "grid",
+                    placeContent: "center",
+                  }}
+                >
+                  <SvgRepo
+                    title={item.svg.media_key}
+                    svg={item.svg}
+                    onContainerClick={onContextMenuClick}
+                    containerStyle={{
+                      width: (dynamicSizes.groupItem.height - 10) * 0.7,
+                      height: (dynamicSizes.groupItem.height - 10) * 0.7,
+                      cursor: "pointer",
+                    }}
+                    scale={0.7}
+                    scaleToContaier={true}
+                  />
+                </div>
+                <div />
+                <div
+                  style={{
+                    overflowX: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      whiteSpace: "normal",
+                      textAlign: "center",
+                      color: "rgb(220, 220, 220)",
+                      ...dynamicSizes.filename.filename,
+                    }}
+                  >
+                    {item.svg.media_key}
+                  </div>
+                </div>
+                <div />
+                <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+                  <SvgRepo
+                    title={"remove from group"}
+                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                    scale={0.9}
+                    scaleToContaier={true}
+                    onContainerClick={onRemoveFromGroupClick}
+                    style={{
+                      cursor: "pointer",
+                    }}
+                    containerStyle={{
+                      cursor: "pointer",
+                      width: removeOverlaySize,
+                      height: removeOverlaySize,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+        }
+      })()}
     </div>
   );
 }

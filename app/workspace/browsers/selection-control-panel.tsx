@@ -23,7 +23,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           selectedInputFontSize: 16,
           selectedLabelFontSize: 15,
           selectedInputGap: 2,
-          mainSvg: 50,
+          mainSvg: 22,
           recordingLightSize: 15,
           input: {
             fontSize: 12,
@@ -37,7 +37,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           selectedInputFontSize: 14,
           selectedLabelFontSize: 13,
           selectedInputGap: 2,
-          mainSvg: 40,
+          mainSvg: 18,
           recordingLightSize: 12,
           input: {
             fontSize: 10,
@@ -52,7 +52,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           selectedInputFontSize: 12,
           selectedLabelFontSize: 11,
           selectedInputGap: 2,
-          mainSvg: 38,
+          mainSvg: 18,
           recordingLightSize: 11,
           input: {
             fontSize: 10,
@@ -117,15 +117,11 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
   return (
     <div
       style={{
-        borderTop: "1px solid rgba(255, 255, 255, 0.05)",
-        borderLeft: "1px solid rgba(255, 255, 255, 0.05)",
-        borderRight: "1px solid rgba(255, 255, 255, 0.05)",
-        borderTopRightRadius: 0,
-        borderTopLeftRadius: 0,
         background: "rgba(23, 23, 23, 1)",
         padding: dynamicSizes.padding,
         display: "flex",
         width: "100%",
+        height: "100%",
         justifyContent: "space-between",
         alignItems: "center",
         ...containerStyle,
@@ -192,8 +188,8 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
       />
       <SvgRepo
         title={"create media group"}
-        svg={addCircle()}
-        scale={1.25}
+        svg={addCircle("rgba(200,200,200,1)")}
+        scale={1}
         scaleToContaier={true}
         onContainerClick={onCreateMediaGroupClick}
         style={{
@@ -201,7 +197,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
         }}
         containerStyle={{
           cursor: "",
-          width: dynamicSizes.recordingLightSize,
+          width: dynamicSizes.mainSvg,
           height: dynamicSizes.mainSvg,
         }}
       />

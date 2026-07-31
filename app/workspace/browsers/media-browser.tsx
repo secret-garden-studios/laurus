@@ -198,6 +198,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               height: 60,
             },
           },
+          mediaGroup: {
+            container: {
+              padding: 30,
+              gap: 30,
+            },
+          },
         };
       case "midhigh":
         return {
@@ -232,6 +238,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
             svg: {
               width: 45,
               height: 45,
+            },
+          },
+          mediaGroup: {
+            container: {
+              padding: 30,
+              gap: 30,
             },
           },
         };
@@ -269,6 +281,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
             svg: {
               width: 40,
               height: 40,
+            },
+          },
+          mediaGroup: {
+            container: {
+              padding: 30,
+              gap: 30,
             },
           },
         };
@@ -625,6 +643,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                       display: "grid",
                       alignContent: coreState.mediaGroups.size == 0 ? "center" : "start",
                       width: "100%",
+                      ...dynamicSizes.mediaGroup.container,
                     }}
                   >
                     {coreState.mediaGroups.size == 0 ? (
