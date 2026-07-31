@@ -13,7 +13,7 @@ export interface ImgBrowser {
 export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
   const { coreState } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isMetaKeyPressed } = useContext(HoverContext);
+  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -70,13 +70,16 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
         });
       } else {
         if (showContextMenu) setShowContextMenu(false);
+        setSelectedImgKeys(new Set());
+        setSelectedSvgKeys(new Set());
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
         if (uiState.playbackMode.type == "stopped") {
           const currentTool = { ...uiState.tool };
-          const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
+          const newTool: LaurusTool =
+            currentTool.type == "marquee" ? { ...currentTool, duplicate: false } : defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
             value: newTool,
@@ -84,7 +87,15 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
         }
       }
     },
-    [browserElementMediaId, showContextMenu, uiDispatch, uiState.playbackMode.type, uiState.tool],
+    [
+      browserElementMediaId,
+      showContextMenu,
+      uiDispatch,
+      uiState.playbackMode.type,
+      uiState.tool,
+      setSelectedImgKeys,
+      setSelectedSvgKeys,
+    ],
   );
 
   const display = useMemo(() => {

@@ -6,17 +6,26 @@ interface Toggle {
   trackStyles?: CSSProperties;
   buttonStyles?: CSSProperties;
   translateX?: number;
+  disabled?: boolean;
 }
-export default function Toggle({ value, onClick, trackStyles, buttonStyles, translateX = 15 }: Toggle) {
+export default function Toggle({
+  value,
+  onClick,
+  trackStyles,
+  buttonStyles,
+  translateX = 15,
+  disabled = false,
+}: Toggle) {
   return (
     <>
       <div
-        onClick={onClick}
+        onClick={disabled ? undefined : onClick}
         style={{
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
           position: "relative",
           display: "flex",
           alignItems: "center",
+          opacity: disabled ? 0.4 : 1,
           transition: "background 0.3s, border 0.3s, box-shadow 0.3s",
           background: value ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.05)",
           border: value ? "1px solid rgba(255,255,255, 0.5)" : "1px solid rgba(255,255,255,0.2)",

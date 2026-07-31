@@ -1120,6 +1120,9 @@ export default function Workspace({
         setSelectedEffectUnitKeys(new Set<string>());
         setSelectedImgKeys(new Set<string>());
         setSelectedSvgKeys(new Set<string>());
+        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
+          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+        }
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key === " " && !isInput) {
         event.preventDefault();
@@ -1162,7 +1165,7 @@ export default function Workspace({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool.type]);
+  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

@@ -789,6 +789,7 @@ export function DraggableProjectImg({
           }
           return next;
         });
+        uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
       } else if (metaKey && !uiState.filledForwards) {
         uiDispatch({
           type: UIActionType.SetProjectContextMenu,
@@ -797,12 +798,11 @@ export function DraggableProjectImg({
           contextMenuConfig: newContextMenuConfig,
         });
       } else {
-        if (uiState.tool.type === "marquee" && uiState.tool.stack) {
-          onImgStackDrop();
-          return;
-        }
         switch (uiState.tool.type) {
           case "marquee": {
+            if (uiState.tool.stack) {
+              onImgStackDrop();
+            }
             break;
           }
           case "none": {
@@ -833,6 +833,7 @@ export function DraggableProjectImg({
               }
               return next;
             });
+            uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
             break;
           }
           case "rotate": {
@@ -1220,6 +1221,7 @@ export function DraggableProjectSvg({
           }
           return next;
         });
+        uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
       } else if (metaKey && !uiState.filledForwards) {
         uiDispatch({
           type: UIActionType.SetProjectContextMenu,
@@ -1228,12 +1230,11 @@ export function DraggableProjectSvg({
           contextMenuConfig: newContextMenuConfig,
         });
       } else {
-        if (uiState.tool.type === "marquee" && uiState.tool.stack) {
-          onSvgStackDrop();
-          return;
-        }
         switch (uiState.tool.type) {
           case "marquee": {
+            if (uiState.tool.stack) {
+              onSvgStackDrop();
+            }
             break;
           }
           case "none": {
@@ -1264,6 +1265,7 @@ export function DraggableProjectSvg({
               }
               return next;
             });
+            uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
             break;
           }
           case "rotate": {

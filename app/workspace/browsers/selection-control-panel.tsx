@@ -6,13 +6,14 @@ import { addCircle, SvgRepo } from "../../svg-repo";
 import { createMediaGroup, LaurusMediaGroup } from "../workspace.server";
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
+import { UIActionType } from "../states/ui-state";
 
 export interface SelectionControlPanel {
   containerStyle?: CSSProperties;
 }
 export default function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -98,6 +99,9 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           dispatch({ type: CoreActionType.SetProject, value: newProject });
           setSelectedImgKeys(new Set());
           setSelectedSvgKeys(new Set());
+          if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
+            uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+          }
         }
       }
     }
@@ -112,6 +116,8 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
     selectedSvgKeys,
     setSelectedImgKeys,
     setSelectedSvgKeys,
+    uiState.tool,
+    uiDispatch,
   ]);
 
   return (

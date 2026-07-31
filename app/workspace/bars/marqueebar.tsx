@@ -1,5 +1,5 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
-import { UIContext } from "../workspace.client";
+import { HoverContext, UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
@@ -7,6 +7,7 @@ import { UIActionType } from "../states/ui-state";
 
 export default function Marqueebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -147,6 +148,17 @@ export default function Marqueebar() {
   const wInputRef = useRef<HTMLInputElement | null>(null);
   const hInputRef = useRef<HTMLInputElement | null>(null);
 
+  const hasSelection = useMemo(() => {
+    return selectedImgKeys.size > 0 || selectedSvgKeys.size > 0;
+  }, [selectedImgKeys, selectedSvgKeys]);
+  const isDuplicateOn = useMemo(() => {
+    return uiState.tool.type === "marquee" ? uiState.tool.duplicate : false;
+  }, [uiState.tool]);
+  const hasBrowserElement = useMemo(() => {
+    return Boolean(uiState.browserElement);
+  }, [uiState.browserElement]);
+  const isSizeDisabled = !hasBrowserElement;
+  const isPositionDisabled = !hasBrowserElement && !isDuplicateOn;
   const isPositionOn = useMemo(() => {
     return uiState.tool.type === "marquee" ? uiState.tool.position.value : false;
   }, [uiState.tool]);
@@ -258,6 +270,11 @@ export default function Marqueebar() {
           }}
         >
           <div
+            title={
+              isPositionDisabled
+                ? "select a browser item, or enable duplicate, to set an exact drop position"
+                : "drop at an exact x/y position instead of the marquee's center"
+            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -291,11 +308,16 @@ export default function Marqueebar() {
                       ...(newPositionValue && { stack: false, select: false }),
                     },
                   });
+                  if (newPositionValue && !uiState.tool.duplicate) {
+                    setSelectedImgKeys(new Set());
+                    setSelectedSvgKeys(new Set());
+                  }
                 }
               }}
               trackStyles={{ ...dynamicSizes.toggle.track }}
               buttonStyles={{ ...dynamicSizes.toggle.button }}
               translateX={dynamicSizes.toggle.translateX}
+              disabled={isPositionDisabled}
             />
           </div>
           <div
@@ -351,6 +373,11 @@ export default function Marqueebar() {
           }}
         >
           <div
+            title={
+              isSizeDisabled
+                ? "select a browser item to set an exact drop size"
+                : "drop at an exact width/height instead of the marquee's size"
+            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -381,14 +408,19 @@ export default function Marqueebar() {
                         width: newSizeValue && !isNaN(newWidth) ? newWidth : undefined,
                         height: newSizeValue && !isNaN(newHeight) ? newHeight : undefined,
                       },
-                      ...(newSizeValue && { stack: false, select: false }),
+                      ...(newSizeValue && { stack: false, select: false, duplicate: false }),
                     },
                   });
+                  if (newSizeValue) {
+                    setSelectedImgKeys(new Set());
+                    setSelectedSvgKeys(new Set());
+                  }
                 }
               }}
               trackStyles={{ ...dynamicSizes.toggle.track }}
               buttonStyles={{ ...dynamicSizes.toggle.button }}
               translateX={dynamicSizes.toggle.translateX}
+              disabled={isSizeDisabled}
             />
           </div>
           <div
@@ -435,6 +467,7 @@ export default function Marqueebar() {
           />
         </div>
         <div
+          title="click existing canvas media to stack the browser item on top of it"
           style={{
             display: "flex",
             alignItems: "center",
@@ -462,6 +495,7 @@ export default function Marqueebar() {
                       ...currentTool,
                       stack: newStack,
                       select: false,
+                      duplicate: false,
                       position: {
                         value: false,
                         x: undefined,
@@ -481,6 +515,10 @@ export default function Marqueebar() {
                   type: UIActionType.SetTool,
                   value: newValue,
                 });
+                if (newStack) {
+                  setSelectedImgKeys(new Set());
+                  setSelectedSvgKeys(new Set());
+                }
               }
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -489,6 +527,7 @@ export default function Marqueebar() {
           />
         </div>
         <div
+          title="drag the marquee circle to select the media inside it, instead of dropping"
           style={{
             display: "flex",
             alignItems: "center",
@@ -516,6 +555,7 @@ export default function Marqueebar() {
                       ...currentTool,
                       select: newSelect,
                       stack: false,
+                      duplicate: false,
                       position: {
                         value: false,
                         x: undefined,
@@ -535,11 +575,68 @@ export default function Marqueebar() {
                   type: UIActionType.SetTool,
                   value: newValue,
                 });
+                if (newSelect) {
+                  setSelectedImgKeys(new Set());
+                  setSelectedSvgKeys(new Set());
+                }
               }
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
+          />
+        </div>
+        <div
+          title={hasSelection ? "drop a copy of the current selection" : "select media to enable duplicate"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span
+            style={{
+              color: hasSelection ? "inherit" : "rgb(67,67,67)",
+              textShadow:
+                uiState.tool.type === "marquee" && uiState.tool.duplicate ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+            }}
+          >
+            {"duplicate"}
+          </span>
+          <Toggle
+            value={uiState.tool.type === "marquee" ? uiState.tool.duplicate : false}
+            onClick={() => {
+              const currentTool = { ...uiState.tool };
+              if (currentTool.type === "marquee") {
+                const newDuplicate = !currentTool.duplicate;
+                const newValue = newDuplicate
+                  ? {
+                      ...currentTool,
+                      duplicate: newDuplicate,
+                      stack: false,
+                      select: false,
+                      size: {
+                        value: false,
+                        width: undefined,
+                        height: undefined,
+                      },
+                    }
+                  : {
+                      ...currentTool,
+                      duplicate: newDuplicate,
+                    };
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: newValue,
+                });
+              }
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+            disabled={!hasSelection}
           />
         </div>
       </div>

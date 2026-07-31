@@ -267,6 +267,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
+        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
+          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+        }
       }
     } finally {
       setAdding(false);
@@ -283,13 +286,16 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     dispatch,
     setSelectedImgKeys,
     setSelectedSvgKeys,
+    uiState.tool,
+    uiDispatch,
   ]);
 
   const onSelectAllInGroupClick = useCallback(() => {
     if (groupItems.length === 0) return;
     setSelectedImgKeys(new Set(groupItems.filter((item) => item.type === "img").map((item) => item.key)));
     setSelectedSvgKeys(new Set(groupItems.filter((item) => item.type === "svg").map((item) => item.key)));
-  }, [groupItems, setSelectedImgKeys, setSelectedSvgKeys]);
+    uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
+  }, [groupItems, setSelectedImgKeys, setSelectedSvgKeys, uiDispatch]);
 
   const deleteMediaGroupClick = useCallback(async () => {
     setIsTitleBarHovered(false);
