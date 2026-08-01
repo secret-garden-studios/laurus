@@ -186,7 +186,6 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
             onCreateMediaGroupClick();
           }
         }}
-        autoFocus
         value={mediaGroupDescription}
         onChange={(e) => {
           setMediaGroupDescription(e.target.value);
