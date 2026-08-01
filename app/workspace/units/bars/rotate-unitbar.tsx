@@ -4,6 +4,7 @@ import {
   SvgRepo,
   add2,
   autorenew,
+  bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
@@ -142,6 +143,56 @@ export default function RotateUnitbar({
     const currentFactor = rotate.math.get(carouselEntryKey)?.limit_factor ?? defaultRotateEquation.limit_factor;
     return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
   }, [carouselEntryKey, rotate.math]);
+
+  const mediaGroupId = useMemo(() => {
+    const imgMeta = coreState.project.imgs.get(carouselEntryKey);
+    if (imgMeta) return imgMeta.media_group_id;
+    const svgMeta = coreState.project.svgs.get(carouselEntryKey);
+    return svgMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const otherGroupKeys = useMemo(() => {
+    if (!mediaGroupId) return [];
+    const imgKeys = Array.from(coreState.project.imgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    const svgKeys = Array.from(coreState.project.svgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    return [...imgKeys, ...svgKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const onPasteToGroupClick = useCallback(async () => {
+    if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+    if (otherGroupKeys.length === 0) return;
+    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "rotate") return;
+    const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
+    if (!clipboardEquation) return;
+    const snapshot: LaurusRotateResult = { ...rotate };
+    const newMath = new Map(snapshot.math);
+    otherGroupKeys.forEach((key) => {
+      newMath.set(key, { ...clipboardEquation, input_id: key });
+    });
+    const newRotate: LaurusRotateResult = { ...snapshot, math: newMath };
+    const updated = await updateRotate(coreState.apiOrigin, coreState.accessToken, snapshot.rotate_id, {
+      ...newRotate,
+    });
+    if (updated) {
+      dispatch({
+        type: CoreActionType.SetEffect,
+        value: { type: "rotate", value: { ...newRotate }, key: newRotate.rotate_id },
+      });
+    }
+  }, [
+    isAltKeyPressed,
+    uiState.playbackMode.type,
+    uiState.effectClipboard,
+    otherGroupKeys,
+    rotate,
+    dispatch,
+    coreState.apiOrigin,
+    coreState.accessToken,
+  ]);
 
   return (
     <>
@@ -506,6 +557,34 @@ export default function RotateUnitbar({
               cursor: isAltKeyPressed
                 ? "crosshair"
                 : rotate.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.9}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
+          title={"paste to group"}
+          onClick={onPasteToGroupClick}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title="paste to group"
+            svg={
+              uiState.effectClipboard?.type == "rotate" && otherGroupKeys.length > 0
+                ? bookmarkStacks300()
+                : bookmarkStacks300("rgb(67, 67, 67)")
+            }
+            containerStyle={{
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : otherGroupKeys.length > 0 && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,

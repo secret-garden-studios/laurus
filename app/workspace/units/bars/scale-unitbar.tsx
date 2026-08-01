@@ -4,6 +4,7 @@ import {
   SvgRepo,
   add2,
   autorenew,
+  bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
@@ -141,6 +142,54 @@ export default function ScaleUnitbar({
     const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
     return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
   }, [carouselEntryKey, scale.math]);
+
+  const mediaGroupId = useMemo(() => {
+    const imgMeta = coreState.project.imgs.get(carouselEntryKey);
+    if (imgMeta) return imgMeta.media_group_id;
+    const svgMeta = coreState.project.svgs.get(carouselEntryKey);
+    return svgMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const otherGroupKeys = useMemo(() => {
+    if (!mediaGroupId) return [];
+    const imgKeys = Array.from(coreState.project.imgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    const svgKeys = Array.from(coreState.project.svgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    return [...imgKeys, ...svgKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const onPasteToGroupClick = useCallback(async () => {
+    if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+    if (otherGroupKeys.length === 0) return;
+    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "scale") return;
+    const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
+    if (!clipboardEquation) return;
+    const snapshot: LaurusScaleResult = { ...scale };
+    const newMath = new Map(snapshot.math);
+    otherGroupKeys.forEach((key) => {
+      newMath.set(key, { ...clipboardEquation, input_id: key });
+    });
+    const newScale: LaurusScaleResult = { ...snapshot, math: newMath };
+    const updated = await updateScale(coreState.apiOrigin, coreState.accessToken, snapshot.scale_id, { ...newScale });
+    if (!updated) {
+      dispatch({
+        type: CoreActionType.SetEffect,
+        value: { type: "scale", value: { ...newScale }, key: newScale.scale_id },
+      });
+    }
+  }, [
+    isAltKeyPressed,
+    uiState.playbackMode.type,
+    uiState.effectClipboard,
+    otherGroupKeys,
+    scale,
+    dispatch,
+    coreState.apiOrigin,
+    coreState.accessToken,
+  ]);
 
   return (
     <>
@@ -487,6 +536,34 @@ export default function ScaleUnitbar({
               ...dynamicSizes.paramButton,
             }}
             scale={0.9}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
+          title={"paste to group"}
+          onClick={onPasteToGroupClick}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={"paste to group"}
+            svg={
+              uiState.effectClipboard?.type == "scale" && otherGroupKeys.length > 0
+                ? bookmarkStacks300()
+                : bookmarkStacks300("rgb(67, 67, 67)")
+            }
+            containerStyle={{
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : otherGroupKeys.length > 0 && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={1}
             scaleToContaier={true}
           />
         </div>
