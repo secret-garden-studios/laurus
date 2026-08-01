@@ -40,6 +40,10 @@ import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
 import { CoreActionType } from "./states/core-state";
+import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 function reindexEffectGroups(effectGroups: Map<string, LaurusEffectGroupResult>): LaurusEffectGroupResult[] {
   return Array.from(effectGroups.values())
@@ -138,6 +142,7 @@ export default function TimelineArea() {
   const selectionPanelVisible = useMemo(() => {
     return selectedEffectUnitKeys.size > 0 || showSelectionPanel;
   }, [selectedEffectUnitKeys.size, showSelectionPanel]);
+  const [isTimelineAreaHovered, setIsTimelineAreaHovered] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -164,6 +169,8 @@ export default function TimelineArea() {
           gridTemplateColumns: "auto 1fr",
           gridTemplateRows: `min-content auto min-content`,
         }}
+        onMouseEnter={() => setIsTimelineAreaHovered(true)}
+        onMouseLeave={() => setIsTimelineAreaHovered(false)}
       >
         <TimelineRuler
           containerStyle={{
@@ -200,6 +207,7 @@ export default function TimelineArea() {
                         effectGroupId={effectGroupId}
                         effectGroupResult={effectGroup}
                         maxWidth={dynamicSizes.width}
+                        isTimelineAreaHovered={isTimelineAreaHovered}
                       />
                     </div>
                   );
@@ -408,8 +416,9 @@ interface EffectGroup {
   effectGroupId: string;
   effectGroupResult: LaurusEffectGroupResult;
   maxWidth: number;
+  isTimelineAreaHovered: boolean;
 }
-function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup) {
+function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAreaHovered }: EffectGroup) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { setMostRecentlyEnteredEffectUnitKey, setSelectedEffectUnitKeys, selectedEffectUnitKeys, isAltKeyPressed } =
@@ -511,6 +520,51 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
     updating,
   ]);
 
+  const groupEffects = useMemo(() => {
+    return coreState.effects
+      .filter((e) => e.value.effect_group_id === effectGroupId)
+      .sort((a, b) => {
+        if (a.value.order !== b.value.order) {
+          return a.value.order - b.value.order;
+        }
+        return new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime();
+      });
+  }, [coreState.effects, effectGroupId]);
+
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  const onEffectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id || uiState.playbackMode.type !== "stopped") return;
+      const oldIndex = groupEffects.findIndex((e) => e.key === active.id);
+      const newIndex = groupEffects.findIndex((e) => e.key === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reorderedGroupEffects = arrayMove(groupEffects, oldIndex, newIndex).map(
+        (e, i) => ({ ...e, value: { ...e.value, order: i } }) as LaurusEffect,
+      );
+      const snapshot = [...coreState.effects];
+      const mergedEffects = snapshot.map((e) => reorderedGroupEffects.find((re) => re.key === e.key) ?? e);
+      const reindexedEffects = reindexEffects(mergedEffects, coreState.effectGroups);
+      persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexedEffects, snapshot).then(
+        (updated) => {
+          if (updated) {
+            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+          }
+        },
+      );
+    },
+    [
+      groupEffects,
+      coreState.effects,
+      coreState.effectGroups,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      uiState.playbackMode.type,
+    ],
+  );
+
   return (
     <div
       style={{
@@ -538,69 +592,36 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
           minHeight: dynamicSizes.timelineAreaContent.height,
         }}
       >
-        {coreState.effects
-          .filter((e) => e.value.effect_group_id === effectGroupId)
-          .sort((a, b) => {
-            if (a.value.order !== b.value.order) {
-              return a.value.order - b.value.order;
-            }
-            return new Date(a.value.timestamp).getTime() - new Date(b.value.timestamp).getTime();
-          })
-          .map((effect) => {
-            const isSelected = selectedEffectUnitKeys.has(effect.key);
-            return (
-              <div
+        <DndContext
+          sensors={dragSensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onEffectDragEnd}
+        >
+          <SortableContext items={groupEffects.map((e) => e.key)} strategy={verticalListSortingStrategy}>
+            {groupEffects.map((effect, index) => (
+              <EffectGroupRow
                 key={effect.key}
-                onClick={(e) => {
-                  if (e.altKey) {
-                    setSelectedEffectUnitKeys((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(effect.key)) next.delete(effect.key);
-                      else next.add(effect.key);
-                      return next;
-                    });
-                  }
-                }}
-                onMouseEnter={(e) => {
-                  setMostRecentlyEnteredEffectUnitKey(effect.key);
-                  e.currentTarget.style.background = isSelected
-                    ? "rgba(255, 255, 255, 0.08)"
-                    : "rgba(255, 255, 255, 0.05)";
-                  e.currentTarget.style.border = isSelected
-                    ? "1px solid rgba(255, 255, 255, 0.2)"
-                    : "1px solid rgba(255, 255, 255, 0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = isSelected
-                    ? "rgba(255, 255, 255, 0.08)"
-                    : "rgba(255, 255, 255, 0.0275)";
-                  e.currentTarget.style.border = isSelected
-                    ? "1px solid rgba(255, 255, 255, 0.2)"
-                    : "1px solid rgba(0, 0, 0, 0)";
-                }}
-                style={{
-                  border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
-                  background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
-                  display: "flex",
-                  borderRadius: 0,
-                  cursor: isAltKeyPressed ? "crosshair" : "",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    background: "rgba(22, 22, 22, 0.9)",
-                    display: "grid",
-                    placeContent: "center",
-                    ...dynamicSizes.indexColumn,
-                  }}
-                >
-                  {(effect.value.order + 1).toFixed()}
-                </div>
-                <EffectUnit effect={effect} showUnitControlsInit={!effectGroupResult.disabled} />
-              </div>
-            );
-          })}
+                effect={effect}
+                index={index}
+                isSelected={selectedEffectUnitKeys.has(effect.key)}
+                isAltKeyPressed={isAltKeyPressed}
+                dragDisabled={uiState.playbackMode.type !== "stopped"}
+                indexColumnStyle={dynamicSizes.indexColumn}
+                effectGroupResult={effectGroupResult}
+                onToggleSelect={() =>
+                  setSelectedEffectUnitKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(effect.key)) next.delete(effect.key);
+                    else next.add(effect.key);
+                    return next;
+                  })
+                }
+                onEnter={() => setMostRecentlyEnteredEffectUnitKey(effect.key)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
         <div
           style={{
             width: "100%",
@@ -612,7 +633,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
             cursor: updating ? "wait" : "",
           }}
         >
-          {!isAltKeyPressed && !updating ? (
+          {!isAltKeyPressed && !updating && isTimelineAreaHovered ? (
             <SvgRepo
               title={`${showEffectsBrowser ? "close effects browser" : selectedEffectUnitKeys.size > 0 ? "add to group" : "open effects browser"}`}
               svg={showEffectsBrowser ? closeIcon("rgba(204, 204, 204, 0.8)") : addCircle("rgba(204, 204, 204, 0.8)")}
@@ -627,7 +648,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
             />
           ) : (
             <SvgRepo
-              svg={circle("rgba(255, 255, 255, 0)")}
+              svg={addCircle("rgb(67, 67, 67)")}
               containerStyle={{
                 width: dynamicSizes.timelineAreaContent.svg.width,
                 height: dynamicSizes.timelineAreaContent.svg.height,
@@ -641,6 +662,84 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth }: EffectGroup
           <EffectsBrowser onAddClick={() => setEffectsBrowserToggle(false)} effect_group_id={effectGroupId} />
         )}
       </div>
+    </div>
+  );
+}
+
+interface EffectGroupRow {
+  effect: LaurusEffect;
+  index: number;
+  isSelected: boolean;
+  isAltKeyPressed: boolean;
+  dragDisabled: boolean;
+  indexColumnStyle: { width: string; fontSize: number };
+  effectGroupResult: LaurusEffectGroupResult;
+  onToggleSelect: () => void;
+  onEnter: () => void;
+}
+function EffectGroupRow({
+  effect,
+  index,
+  isSelected,
+  isAltKeyPressed,
+  dragDisabled,
+  indexColumnStyle,
+  effectGroupResult,
+  onToggleSelect,
+  onEnter,
+}: EffectGroupRow) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: effect.key,
+    disabled: dragDisabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={(e) => {
+        if (e.altKey) onToggleSelect();
+      }}
+      onMouseEnter={(e) => {
+        onEnter();
+        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.05)";
+        e.currentTarget.style.border = isSelected
+          ? "1px solid rgba(255, 255, 255, 0.2)"
+          : "1px solid rgba(255, 255, 255, 0.05)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)";
+        e.currentTarget.style.border = isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)";
+      }}
+      style={{
+        border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
+        background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
+        display: "flex",
+        borderRadius: 0,
+        cursor: isAltKeyPressed ? "crosshair" : "",
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        position: "relative",
+        zIndex: isDragging ? 1 : undefined,
+      }}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          height: "100%",
+          background: "rgba(22, 22, 22, 0.9)",
+          display: "grid",
+          placeContent: "center",
+          cursor: dragDisabled ? "" : "grab",
+          touchAction: "none",
+          width: indexColumnStyle.width,
+          fontSize: indexColumnStyle.fontSize,
+        }}
+      >
+        {(index + 1).toFixed()}
+      </div>
+      <EffectUnit effect={effect} showUnitControlsInit={!effectGroupResult.disabled} />
     </div>
   );
 }
@@ -735,6 +834,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed, setSelectedEffectUnitKeys } = useContext(HoverContext);
+  const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -904,6 +1004,7 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
   );
 
   const deleteEffectGroupClick = useCallback(async () => {
+    setIsTitleBarHovered(false);
     if (!isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
     const confirmed = confirm("are you sure you want to delete this effect group?");
     if (!confirmed) return;
@@ -979,15 +1080,17 @@ function EffectGroupTitlebar({ effectGroupId, effectGroupResult }: EffectGroupTi
         borderRadius: 0,
         ...dynamicSizes.flex,
       }}
+      onMouseEnter={() => setIsTitleBarHovered(true)}
+      onMouseLeave={() => setIsTitleBarHovered(false)}
     >
       <SvgRepo
         title={"delete effect group"}
-        svg={isAltKeyPressed ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
+        svg={isAltKeyPressed && isTitleBarHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")}
         scale={0.4}
         scaleToContaier={true}
         onContainerClick={deleteEffectGroupClick}
         style={{
-          cursor: isAltKeyPressed && uiState.playbackMode.type == "stopped" ? "pointer" : "",
+          cursor: isAltKeyPressed && isTitleBarHovered && uiState.playbackMode.type == "stopped" ? "pointer" : "",
         }}
         containerStyle={{
           cursor: "",
@@ -1333,6 +1436,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
     useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+  const [isControlPanelHovered, setIsControlPanelHovered] = useState(false);
   const [playbackRate] = useState(10);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -1440,6 +1544,8 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
         alignItems: "center",
         ...containerStyle,
       }}
+      onMouseEnter={() => setIsControlPanelHovered(true)}
+      onMouseLeave={() => setIsControlPanelHovered(false)}
     >
       <div title={"frame rate"} style={{ display: "flex", gap: dynamicSizes.fpsInputGap }}>
         <input
@@ -1580,8 +1686,8 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
           }
         />
       </div>
-      <div title={isAltKeyPressed ? "switch to selection panel" : "light"}>
-        {isAltKeyPressed ? (
+      <div title={isAltKeyPressed && isControlPanelHovered ? "switch to selection panel" : "light"}>
+        {isAltKeyPressed && isControlPanelHovered ? (
           <SvgRepo
             title={"switch to selection panel"}
             svg={adjust()}
@@ -1776,7 +1882,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
       <input
         id={`new-effect-group-description-input`}
         className={dellaRespira.className}
-        placeholder="new group name..."
+        placeholder="new fx group name..."
         disabled={uiState.playbackMode.type !== "stopped" ? true : false}
         style={{
           textAlign: "center",

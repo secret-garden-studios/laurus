@@ -15,18 +15,21 @@ import {
 import styles from "../app.module.css";
 import {
   getFrames,
-  getImgDiscoveryPage,
-  getSvgDiscoveryPage,
   LaurusEffect,
   LaurusEffectGroupResult,
   LaurusFrame,
   LaurusImgResult,
+  LaurusMediaGroupResult,
   LaurusMixState,
   LaurusSvgResult,
+  searchImgs,
+  LaurusImgPageSearch,
+  LaurusSvgPageSearch,
+  searchSvgs,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
-import MediaBrowser from "./media-browser";
+import MediaBrowser from "./browsers/media-browser";
 import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
 import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
@@ -247,6 +250,7 @@ interface InitReducer {
   arg7: WorkspaceResolution;
   arg8: string | undefined;
   arg9: string[];
+  arg10: LaurusMediaGroupResult[];
 }
 
 function initReducer({
@@ -259,6 +263,7 @@ function initReducer({
   arg7: resolution,
   arg8: accessToken,
   arg9: mixableEffects,
+  arg10: mediaGroups,
 }: InitReducer): { core: CoreState; ui: UIState } {
   const newEffects: LaurusEffect[] = [];
   if (projectDependencies) {
@@ -302,6 +307,11 @@ function initReducer({
       newEffectGroups.set(e.effect_group_id, e);
     });
   }
+
+  const newMediaGroups: Map<string, LaurusMediaGroupResult> = new Map();
+  mediaGroups.forEach((e) => {
+    newMediaGroups.set(e.media_group_id, e);
+  });
 
   const newProjectDefault: LaurusProjectResult = {
     ...defaultProject,
@@ -428,6 +438,7 @@ function initReducer({
       project: newProject,
       effects: newEffects,
       effectGroups: newEffectGroups,
+      mediaGroups: newMediaGroups,
       canvasImgs: newCanvasImgs,
       canvasSvgs: newCanvasSvgs,
       apiOrigin: apiOrigin,
@@ -460,6 +471,7 @@ interface Workspace {
   effectNamesInitPromise: Promise<string[] | undefined>;
   projectInitPromise: Promise<ProjectDependencies | undefined>;
   browserInitPromise: Promise<BrowserDependencies>;
+  mediaGroupsInitPromise: Promise<LaurusMediaGroupResult[]>;
   resolutionInit: WorkspaceResolution;
   me: MeDependencies;
 }
@@ -473,12 +485,14 @@ export default function Workspace({
   effectNamesInitPromise,
   projectInitPromise,
   browserInitPromise,
+  mediaGroupsInitPromise,
   resolutionInit,
   me,
 }: Workspace) {
   const effectNamesInit = use(effectNamesInitPromise);
   const projectInit = use(projectInitPromise);
   const browserInit = use(browserInitPromise);
+  const mediaGroupsInit = use(mediaGroupsInitPromise);
   const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false);
   const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(
@@ -543,6 +557,7 @@ export default function Workspace({
       arg7: resolutionInit,
       arg8: me.accessToken,
       arg9: mixableEffectsInit,
+      arg10: mediaGroupsInit,
     });
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
@@ -608,11 +623,11 @@ export default function Workspace({
   const handleImgPageRequest = useCallback(async () => {
     const mediaArray = Array.from(uiState.browserImgs.values());
     startRefreshAnimaiton();
-    const response = await getImgDiscoveryPage(
-      coreState.apiOrigin,
-      mediaPageSize,
-      mediaArray.flatMap((m) => m.img_media_id),
-    );
+    const imgSearch: LaurusImgPageSearch = {
+      size: mediaPageSize,
+      exlusions: mediaArray.flatMap((m) => m.img_media_id),
+    };
+    const response = await searchImgs(coreState.apiOrigin, imgSearch);
     if (response && response.length > 0) {
       for (let i = 0; i < response.length; i++) {
         uiDispatch({
@@ -632,11 +647,11 @@ export default function Workspace({
   const handleSvgPageRequest = useCallback(async () => {
     const mediaArray = Array.from(uiState.browserSvgs.values());
     startRefreshAnimaiton();
-    const response = await getSvgDiscoveryPage(
-      coreState.apiOrigin,
-      mediaPageSize,
-      mediaArray.flatMap((m) => m.svg_media_id),
-    );
+    const svgSearch: LaurusSvgPageSearch = {
+      size: mediaPageSize,
+      exlusions: mediaArray.flatMap((m) => m.svg_media_id),
+    };
+    const response = await searchSvgs(coreState.apiOrigin, svgSearch);
     if (response && response.length > 0) {
       for (let i = 0; i < response.length; i++) {
         uiDispatch({
@@ -1070,14 +1085,14 @@ export default function Workspace({
   );
 
   const canvasCursor = useMemo(() => {
-    return isMetaKeyPressed && uiState.tool.type === "marquee" && uiState.tool.select
+    return isAltKeyPressed && uiState.tool.type !== "marquee"
       ? "crosshair"
       : isMetaKeyPressed && uiState.tool.type !== "viewport"
         ? "context-menu"
         : uiState.tool.type === "scale"
           ? "crosshair"
           : "";
-  }, [uiState.tool, isMetaKeyPressed]);
+  }, [isAltKeyPressed, isMetaKeyPressed, uiState.tool.type]);
 
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
@@ -1105,6 +1120,9 @@ export default function Workspace({
         setSelectedEffectUnitKeys(new Set<string>());
         setSelectedImgKeys(new Set<string>());
         setSelectedSvgKeys(new Set<string>());
+        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
+          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+        }
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key === " " && !isInput) {
         event.preventDefault();
@@ -1147,12 +1165,15 @@ export default function Workspace({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool.type]);
+  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       setIsMetaKeyPressed(e.metaKey);
       setIsAltKeyPressed(e.altKey);
+      if (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) {
+        uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      }
     };
     const handleBlur = () => {
       setIsMetaKeyPressed(false);
@@ -1166,7 +1187,7 @@ export default function Workspace({
       window.removeEventListener("keyup", handleKey);
       window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [uiState.tool.type, uiDispatch]);
 
   useEffect(() => {
     if (hasInitiatedFrameDownloadRef.current) return;

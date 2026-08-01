@@ -129,7 +129,7 @@ function CoarsePointer({
   title,
   liveTitleRef,
 }: CoarsePointerProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+  const { listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
   const [dynamicSizes] = useState(() => {
     switch (resolution.type) {
       case "high":
@@ -235,7 +235,6 @@ function CoarsePointer({
       <div
         ref={setNodeRef}
         {...listeners}
-        {...attributes}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
@@ -262,7 +261,6 @@ function CoarsePointer({
         ref={setNodeRef}
         title={title}
         {...listeners}
-        {...attributes}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{

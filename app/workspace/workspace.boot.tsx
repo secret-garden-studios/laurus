@@ -6,6 +6,7 @@ import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import { BrowserDependencies } from "./page";
 import { MeDependencies, ProjectDependencies } from "../page";
+import { LaurusMediaGroupResult } from "./workspace.server";
 
 function Skeleton() {
   return (
@@ -69,6 +70,7 @@ interface WorkspaceBoot {
   effectsEnum: Promise<string[] | undefined>;
   projectDependencies: Promise<ProjectDependencies | undefined>;
   browserDependencies: Promise<BrowserDependencies>;
+  mediaGroupsDependencies: Promise<LaurusMediaGroupResult[]>;
   mePromise: Promise<MeDependencies>;
 }
 export default function WorkspaceBoot({
@@ -77,6 +79,7 @@ export default function WorkspaceBoot({
   effectsEnum,
   projectDependencies,
   browserDependencies,
+  mediaGroupsDependencies,
   mePromise,
 }: WorkspaceBoot) {
   const [resolution, setResolution] = useState<WorkspaceResolution | undefined>(undefined);
@@ -96,20 +99,19 @@ export default function WorkspaceBoot({
   return resolution !== undefined ? (
     resolution.type != "low" ? (
       <Suspense fallback={<Skeleton />}>
-        <>
-          <Workspace
-            apiOriginInit={laurusApi}
-            mediaPageSizeInit={mediaPageSizeInit}
-            effectNamesInitPromise={effectsEnum}
-            timelineValuesInit={timelineValues}
-            timelineUnitsInit={timelineUnits}
-            mixableEffectsInit={mixableEffects}
-            projectInitPromise={projectDependencies}
-            browserInitPromise={browserDependencies}
-            resolutionInit={resolution}
-            me={me}
-          />
-        </>
+        <Workspace
+          apiOriginInit={laurusApi}
+          mediaPageSizeInit={mediaPageSizeInit}
+          effectNamesInitPromise={effectsEnum}
+          timelineValuesInit={timelineValues}
+          timelineUnitsInit={timelineUnits}
+          mixableEffectsInit={mixableEffects}
+          projectInitPromise={projectDependencies}
+          browserInitPromise={browserDependencies}
+          mediaGroupsInitPromise={mediaGroupsDependencies}
+          resolutionInit={resolution}
+          me={me}
+        />
       </Suspense>
     ) : (
       <Forbidden resolution={resolution} />

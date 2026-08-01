@@ -980,7 +980,7 @@ export function upload(
   };
 }
 
-export function bookmarkStacks(
+export function bookmarkStacks300(
   fill: string = "rgba(227, 227, 227, 1)",
   width: number = 24,
   height: number = 24,
@@ -2536,6 +2536,25 @@ export function desktopMac300(
     stroke_width: 0,
     markup: base64Encode(
       `<path d="M423.08-253.08H172.31q-30.31 0-51.31-21-21-21-21-51.31v-422.3Q100-778 121-799q21-21 51.31-21h615.38Q818-820 839-799q21 21 21 51.31v422.3q0 30.31-21 51.31-21 21-51.31 21H536.92l72.46 72.46q2 2 5.23 12.46v10.47q0 7.23-5.23 12.46T596.92-140H357.85q-5.23 0-8.85-3.62-3.61-3.61-3.61-8.84v-17.7q0-2 3.61-8.84l74.08-74.08ZM160-403.07h640v-344.62q0-4.62-3.85-8.46-3.84-3.85-8.46-3.85H172.31q-4.62 0-8.46 3.85-3.85 3.84-3.85 8.46v344.62Zm0 0V-760v356.93Z"/>`,
+    ),
+  };
+}
+
+export function bookmarkStacks200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/bookmark_stacks_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M480-272.31 103.77-467.77l41.69-22.92L480-317.92l335.31-172.77L857-467.77 480-272.31ZM480-120 103.77-315.46l41.69-22.92L480-165.62l335.31-172.76L857-315.46 480-120Zm0-304.62L80.77-632.31 480-840l20 10.46v177.23h342.38l37.62 20-400 207.69Zm0-45.61 279.23-142.08H460v-171.61L163.92-632.31 480-470.23Zm-20-142.08Z"/>`,
     ),
   };
 }

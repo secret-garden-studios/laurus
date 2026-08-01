@@ -130,7 +130,7 @@ export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
 
@@ -195,6 +195,7 @@ export default function Canvas() {
       }
       const projectSvg: LaurusProjectSvg = {
         svg_media_id: svgData.svg_media_id,
+        media_group_id: "",
         width: newFrame.width,
         height: newFrame.height,
         top: newFrame.y,
@@ -296,6 +297,7 @@ export default function Canvas() {
         height: newFrame.height,
         media_key: imgData.media_key,
         img_media_id: imgData.img_media_id,
+        media_group_id: "",
         top: newFrame.y,
         left: newFrame.x,
         order: Array.from(coreState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
@@ -379,6 +381,130 @@ export default function Canvas() {
     ],
   );
 
+  const handleDuplicateDrop = useCallback(
+    async (dropArea: ProjectCircle) => {
+      const snapshot = coreState.project;
+      const selectedImgEntries = Array.from(selectedImgKeys)
+        .map((key) => ({ key, meta: snapshot.imgs.get(key) }))
+        .filter((entry): entry is { key: string; meta: LaurusProjectImg } => Boolean(entry.meta));
+      const selectedSvgEntries = Array.from(selectedSvgKeys)
+        .map((key) => ({ key, meta: snapshot.svgs.get(key) }))
+        .filter((entry): entry is { key: string; meta: LaurusProjectSvg } => Boolean(entry.meta));
+      if (selectedImgEntries.length === 0 && selectedSvgEntries.length === 0) return;
+
+      const allMetas = [...selectedImgEntries.map((e) => e.meta), ...selectedSvgEntries.map((e) => e.meta)];
+      const minX = Math.min(...allMetas.map((m) => m.left));
+      const minY = Math.min(...allMetas.map((m) => m.top));
+      const maxX = Math.max(...allMetas.map((m) => m.left + m.width * m.scale_x));
+      const maxY = Math.max(...allMetas.map((m) => m.top + m.height * m.scale_y));
+      let deltaX = dropArea.cx - (minX + maxX) / 2;
+      let deltaY = dropArea.cy - (minY + maxY) / 2;
+      if (uiState.tool.type === "marquee" && uiState.tool.position.value) {
+        if (uiState.tool.position.x !== undefined) {
+          deltaX = uiState.tool.position.x - minX;
+        }
+        if (uiState.tool.position.y !== undefined) {
+          deltaY = uiState.tool.position.y - minY;
+        }
+      }
+
+      const groupFrame = { x: minX + deltaX, y: minY + deltaY, width: maxX - minX, height: maxY - minY };
+      if (isBadFrame(groupFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
+        return;
+      }
+
+      let maxOrder = Math.max(
+        -1,
+        ...Array.from(snapshot.imgs.values()).map((i) => i.order),
+        ...Array.from(snapshot.svgs.values()).map((s) => s.order),
+      );
+
+      const newImgs = new Map(snapshot.imgs);
+      const newSvgs = new Map(snapshot.svgs);
+      const newImgKeys = new Set<string>();
+      const newSvgKeys = new Set<string>();
+      const newCanvasImgEntries: { key: string; value: LaurusImgResult }[] = [];
+      const newCanvasSvgEntries: { key: string; value: LaurusSvgResult }[] = [];
+
+      selectedImgEntries.forEach(({ key, meta }) => {
+        const newKey = newUUID();
+        maxOrder += 1;
+        newImgs.set(newKey, {
+          ...meta,
+          media_group_id: "",
+          left: Math.round(meta.left + deltaX),
+          top: Math.round(meta.top + deltaY),
+          order: maxOrder,
+        });
+        const canvasImg = coreState.canvasImgs.get(key);
+        if (canvasImg) newCanvasImgEntries.push({ key: newKey, value: canvasImg });
+        newImgKeys.add(newKey);
+      });
+
+      selectedSvgEntries.forEach(({ key, meta }) => {
+        const newKey = newUUID();
+        maxOrder += 1;
+        newSvgs.set(newKey, {
+          ...meta,
+          media_group_id: "",
+          left: Math.round(meta.left + deltaX),
+          top: Math.round(meta.top + deltaY),
+          order: maxOrder,
+        });
+        const canvasSvg = coreState.canvasSvgs.get(key);
+        if (canvasSvg) newCanvasSvgEntries.push({ key: newKey, value: canvasSvg });
+        newSvgKeys.add(newKey);
+      });
+
+      const newProject: LaurusProjectResult = { ...snapshot, imgs: newImgs, svgs: newSvgs };
+      if (!newProject.project_id) return;
+
+      const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+        ...newProject,
+      });
+      if (!updated) return;
+
+      dispatch({ type: CoreActionType.SetProject, value: newProject });
+      newCanvasImgEntries.forEach(({ key, value }) => {
+        dispatch({ type: CoreActionType.SetCanvasImg, key, value });
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "img", key } });
+        uiDispatch({
+          type: UIActionType.SetProjectContextMenu,
+          key,
+          showContextMenu: false,
+          contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+        });
+      });
+      newCanvasSvgEntries.forEach(({ key, value }) => {
+        dispatch({ type: CoreActionType.SetCanvasSvg, key, value });
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "svg", key } });
+        uiDispatch({
+          type: UIActionType.SetProjectContextMenu,
+          key,
+          showContextMenu: false,
+          contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+        });
+      });
+      setSelectedImgKeys(newImgKeys);
+      setSelectedSvgKeys(newSvgKeys);
+      uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
+    },
+    [
+      selectedImgKeys,
+      selectedSvgKeys,
+      coreState.project,
+      coreState.canvasImgs,
+      coreState.canvasSvgs,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      uiDispatch,
+      setSelectedImgKeys,
+      setSelectedSvgKeys,
+      uiState.tool,
+    ],
+  );
+
   const handleMouseUp = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!anchor) return;
@@ -418,6 +544,14 @@ export default function Canvas() {
 
             setSelectedImgKeys(foundImgKeys);
             setSelectedSvgKeys(foundSvgKeys);
+            uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
+            break;
+          }
+
+          if (uiState.tool.duplicate) {
+            if (selectedImgKeys.size > 0 || selectedSvgKeys.size > 0) {
+              handleDuplicateDrop(dropArea);
+            }
             break;
           }
 
@@ -456,10 +590,14 @@ export default function Canvas() {
       minRadius,
       coreState.project.imgs,
       coreState.project.svgs,
+      selectedImgKeys,
+      selectedSvgKeys,
       setSelectedImgKeys,
       setSelectedSvgKeys,
       handleSvgDrop,
       handleImgDrop,
+      handleDuplicateDrop,
+      uiDispatch,
     ],
   );
 

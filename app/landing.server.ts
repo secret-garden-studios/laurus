@@ -13,17 +13,23 @@ export interface AuthResponse {
 export async function authFetch(
   baseUrl: string | undefined,
   accessToken: string | undefined,
-  body: string | undefined,
+  body: BodyInit | null | undefined,
   url: string,
   method: string,
 ): Promise<AuthResponse> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+
+  if (!(body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(url, {
     method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body,
+    credentials: "include",
   });
   if (response.status == 401) {
     const newToken = await refreshAccessToken(baseUrl);

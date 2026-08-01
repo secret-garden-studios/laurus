@@ -1,5 +1,11 @@
 import { LaurusProjectResult } from "../../projects/projects.server";
-import { LaurusEffect, LaurusEffectGroupResult, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
+import {
+  LaurusEffect,
+  LaurusEffectGroupResult,
+  LaurusImgResult,
+  LaurusMediaGroupResult,
+  LaurusSvgResult,
+} from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 
 export interface CoreState {
@@ -10,6 +16,7 @@ export interface CoreState {
   canvasSvgs: Map<string, LaurusSvgResult>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
+  mediaGroups: Map<string, LaurusMediaGroupResult>;
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
@@ -23,6 +30,7 @@ export const defaultCoreState: CoreState = {
   canvasSvgs: new Map(),
   effects: [],
   effectGroups: new Map(),
+  mediaGroups: new Map(),
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
@@ -47,6 +55,8 @@ export enum CoreActionType {
   DeleteEffect,
   SetEffectGroup,
   DeleteEffectGroup,
+  SetMediaGroup,
+  DeleteMediaGroup,
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
@@ -72,6 +82,8 @@ export type CoreAction =
   | { type: CoreActionType.DeleteEffect; key: string }
   | { type: CoreActionType.SetEffectGroup; value: LaurusEffectGroupResult; preserveCache?: boolean }
   | { type: CoreActionType.DeleteEffectGroup; key: string }
+  | { type: CoreActionType.SetMediaGroup; value: LaurusMediaGroupResult; preserveCache?: boolean }
+  | { type: CoreActionType.DeleteMediaGroup; key: string }
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> };
@@ -222,6 +234,25 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         effectGroups: newEffectGroups,
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.SetMediaGroup: {
+      const newMediaGroups = new Map(state.mediaGroups);
+      newMediaGroups.set(action.value.media_group_id, action.value);
+      const newCacheNeedsRefreshInputs = action.preserveCache ? new Set(state.inputsToRender) : new Set<string>(["*"]);
+      return {
+        ...state,
+        mediaGroups: newMediaGroups,
+        inputsToRender: newCacheNeedsRefreshInputs,
+      };
+    }
+    case CoreActionType.DeleteMediaGroup: {
+      const newMediaGroups = new Map(state.mediaGroups);
+      newMediaGroups.delete(action.key);
+      return {
+        ...state,
+        mediaGroups: newMediaGroups,
         inputsToRender: new Set<string>(["*"]),
       };
     }

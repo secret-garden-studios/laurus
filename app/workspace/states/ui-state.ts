@@ -26,6 +26,7 @@ export type LaurusTool =
         y: number | undefined;
       };
       select: boolean;
+      duplicate: boolean;
     }
   | { type: "none" }
   | { type: "contextmenu" }
@@ -41,9 +42,10 @@ export const defaultMarqueeTool: LaurusTool = {
   size: { value: false, width: undefined, height: undefined },
   position: { value: false, x: undefined, y: undefined },
   select: false,
+  duplicate: false,
 };
 
-export type MediaBrowserFilter = "img" | "svg" | "frame";
+export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 

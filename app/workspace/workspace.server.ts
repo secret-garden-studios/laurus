@@ -16,27 +16,28 @@ const onNotOk = (status: number, message?: string) => {
 
 const getOnNotOkMessage = (
   action: "creating" | "updating" | "deleting",
-  type: "scale" | "move" | "rotate" | "effect_group",
+  type: "scale" | "move" | "rotate" | "effect_group" | "media_group",
   description?: string,
 ) => {
   return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
 };
 
 /* /discover */
+interface ImgPageSearch_V1_0 {
+  exlusions: string[];
+  size: number;
+}
+export type LaurusImgPageSearch = ImgPageSearch_V1_0;
+interface SvgPageSearch_V1_0 {
+  exlusions: string[];
+  size: number;
+}
+export type LaurusSvgPageSearch = SvgPageSearch_V1_0;
 
-export async function getImgDiscoveryPage(
-  baseUrl: string | undefined,
-  size: number = 10,
-  exclusion?: string[],
-  offset?: string,
-) {
+export async function downloadImgs(baseUrl: string | undefined, size: number = 10, offset?: string) {
   try {
     let url = `${baseUrl}/discover/img?&size=${size}`;
-    if (exclusion) {
-      exclusion.forEach((e) => {
-        url += `&x=${e}`;
-      });
-    } else if (offset) {
+    if (offset) {
       url += `&offset=${offset}`;
     }
     const raw_response = await fetch(url, {
@@ -55,19 +56,31 @@ export async function getImgDiscoveryPage(
     return undefined;
   }
 }
-export async function getSvgDiscoveryPage(
-  baseUrl: string | undefined,
-  size: number = 10,
-  exclusion?: string[],
-  offset?: string,
-) {
+export async function searchImgs(baseUrl: string | undefined, search: ImgPageSearch_V1_0) {
+  try {
+    const url = `${baseUrl}/discover/img/search`;
+    const body = JSON.stringify(search);
+    const raw_response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: ImgMediaResult_V1_0[] = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function downloadSvgs(baseUrl: string | undefined, size: number = 10, offset?: string) {
   try {
     let url = `${baseUrl}/discover/svg?&size=${size}`;
-    if (exclusion) {
-      exclusion.forEach((e) => {
-        url += `&x=${e}`;
-      });
-    } else if (offset) {
+    if (offset) {
       url += `&offset=${offset}`;
     }
     const raw_response = await fetch(url, {
@@ -86,8 +99,29 @@ export async function getSvgDiscoveryPage(
     return undefined;
   }
 }
+export async function searchSvgs(baseUrl: string | undefined, search: SvgPageSearch_V1_0) {
+  try {
+    const url = `${baseUrl}/discover/svg/search`;
+    const body = JSON.stringify(search);
+    const raw_response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: SvgMediaResult_V1_0[] = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
 
-/* /media */
+/* /media/img */
 
 export interface ImgMedia_V1_0 {
   media_uri: string;
@@ -108,6 +142,8 @@ export interface ImgMediaResult_V1_0 {
   height: number;
   categories: string[];
   src: string;
+  creator: string;
+  last_editor: string;
 }
 export type LaurusImgResult = ImgMediaResult_V1_0;
 export async function getImg(baseUrl: string | undefined, imgMediaId: string, filename?: string) {
@@ -132,26 +168,27 @@ export async function getImg(baseUrl: string | undefined, imgMediaId: string, fi
     return undefined;
   }
 }
-export async function createImg(baseUrl: string | undefined, img: File) {
-  const formData = new FormData();
-  formData.append("img", img);
+export async function createImg(baseUrl: string | undefined, accessToken: string | undefined, img: File) {
   const url = `${baseUrl}/media/img`;
-
   try {
-    const raw_response = await fetch(url, {
-      method: "POST",
-      body: formData,
-    });
-    if (!raw_response.ok) {
+    const formData = new FormData();
+    formData.append("img", img);
+    const authResponse = await authFetch(baseUrl, accessToken, formData, url, "POST");
+    const response = authResponse.newToken
+      ? (await authFetch(baseUrl, authResponse.newToken, formData, url, "POST")).response
+      : authResponse.response;
+    if (!response.ok) {
       return undefined;
     }
-    const response: ImgMediaResult_V1_0 = await raw_response.json();
-    return response;
+    const created: ImgMediaResult_V1_0 = await response.json();
+    return created;
   } catch (error) {
     console.log({ error });
     return undefined;
   }
 }
+
+/* /media/svg */
 
 export interface SvgMedia_V1_0 {
   media_uri: string;
@@ -179,6 +216,8 @@ export interface SvgMediaResult_V1_0 {
   order: number;
   categories: string[];
   markup: string;
+  creator: string;
+  last_editor: string;
 }
 export type LaurusSvgResult = SvgMediaResult_V1_0;
 export async function getSvg(baseUrl: string | undefined, svgMediaId: string, filename?: string) {
@@ -203,48 +242,176 @@ export async function getSvg(baseUrl: string | undefined, svgMediaId: string, fi
     return undefined;
   }
 }
-export async function createSvg(baseUrl: string | undefined, files: { svg: File; raster: File }) {
-  const formData = new FormData();
-  formData.append("svg", files.svg);
-  formData.append("raster", files.raster);
+export async function createSvg(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  files: { svg: File; raster: File },
+) {
   const url = `${baseUrl}/media/svg`;
-
   try {
-    const raw_response = await fetch(url, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!raw_response.ok) {
+    const formData = new FormData();
+    formData.append("svg", files.svg);
+    formData.append("raster", files.raster);
+    const authResponse = await authFetch(baseUrl, accessToken, formData, url, "POST");
+    const response = authResponse.newToken
+      ? (await authFetch(baseUrl, authResponse.newToken, formData, url, "POST")).response
+      : authResponse.response;
+    if (!response.ok) {
       return undefined;
     }
-    const response: SvgMediaResult_V1_0 = await raw_response.json();
-    return response;
+    const created: SvgMediaResult_V1_0 = await response.json();
+    return created;
   } catch (error) {
     console.log({ error });
     return undefined;
   }
 }
 
-/* /effects */
+/* /media/groups */
 
-export interface EffectGroup_V1_0 {
+interface MediaGroup_V1_0 {
   project_id: string;
   description: string;
   order: number;
   disabled: boolean;
 }
-export interface EffectGroupResult_V1_0 {
+
+export type LaurusMediaGroup = MediaGroup_V1_0;
+
+interface MediaGroupResult_V1_0 {
   timestamp: string;
   last_active: string;
-  effect_group_id: string;
+  media_group_id: string;
   project_id: string;
   description: string;
   order: number;
   disabled: boolean;
 }
-export type LaurusEffectGroup = EffectGroup_V1_0;
-export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
+export type LaurusMediaGroupResult = MediaGroupResult_V1_0;
+export async function getMediaGroups(baseUrl: string | undefined, projectId: string) {
+  try {
+    const url = `${baseUrl}/media/groups?project_id=${projectId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: MediaGroupResult_V1_0[] = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function getMediaGroup(baseUrl: string | undefined, mediaGroupId: string) {
+  try {
+    const url = `${baseUrl}/media/groups/${mediaGroupId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: MediaGroupResult_V1_0 = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function createMediaGroup(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  mediaGroup: MediaGroup_V1_0,
+) {
+  try {
+    const url = `${baseUrl}/media/groups`;
+    const body = JSON.stringify(mediaGroup);
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "POST");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("creating", "media_group", mediaGroup.description));
+      return undefined;
+    }
+
+    const result: MediaGroupResult_V1_0 = await response.json();
+    return result;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function updateMediaGroup(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  mediaGroupId: string,
+  mediaGroup: MediaGroup_V1_0,
+): Promise<boolean> {
+  try {
+    const body = JSON.stringify(mediaGroup);
+    const url = `${baseUrl}/media/groups/${mediaGroupId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "media_group", mediaGroup.description));
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const result: MediaGroupResult_V1_0 = await response.json();
+    return true;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+export async function deleteMediaGroup(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  mediaGroupId: string,
+  description?: string,
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/media/groups/${mediaGroupId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "DELETE");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "DELETE");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("deleting", "media_group", description));
+    }
+    return response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+
+/* /effects */
+
 export async function getEffects(baseUrl: string | undefined) {
   try {
     const url = `${baseUrl}/effects`;
@@ -265,6 +432,25 @@ export async function getEffects(baseUrl: string | undefined) {
   }
 }
 
+/* /effects/groups */
+
+export interface EffectGroup_V1_0 {
+  project_id: string;
+  description: string;
+  order: number;
+  disabled: boolean;
+}
+export interface EffectGroupResult_V1_0 {
+  timestamp: string;
+  last_active: string;
+  effect_group_id: string;
+  project_id: string;
+  description: string;
+  order: number;
+  disabled: boolean;
+}
+export type LaurusEffectGroup = EffectGroup_V1_0;
+export type LaurusEffectGroupResult = EffectGroupResult_V1_0;
 export async function getEffectGroups(baseUrl: string | undefined, projectId: string) {
   try {
     const url = `${baseUrl}/effects/groups?project_id=${projectId}`;
@@ -385,20 +571,6 @@ export async function deleteEffectGroup(
     console.log({ error });
     return false;
   }
-}
-
-export enum LaurusLoopType {
-  none = "none",
-  loop = "loop",
-  loop_infinite = "loop_infinite",
-  loop_reverse_infinite = "loop_reverse_infinite",
-  loop_reverse = "loop_reverse",
-}
-
-export enum LaurusShapeType {
-  wave = "wave",
-  circle = "circle",
-  ellipse = "ellipse",
 }
 
 /* /scales */
@@ -1107,3 +1279,17 @@ export type LaurusEffect =
   | { type: "scale"; key: string; value: LaurusScaleResult }
   | { type: "move"; key: string; value: LaurusMoveResult }
   | { type: "rotate"; key: string; value: LaurusRotateResult };
+
+export enum LaurusLoopType {
+  none = "none",
+  loop = "loop",
+  loop_infinite = "loop_infinite",
+  loop_reverse_infinite = "loop_reverse_infinite",
+  loop_reverse = "loop_reverse",
+}
+
+export enum LaurusShapeType {
+  wave = "wave",
+  circle = "circle",
+  ellipse = "ellipse",
+}

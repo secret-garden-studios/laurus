@@ -18,7 +18,7 @@ import { ScreensResolution } from "./screens-resolution";
 import { MeDependencies } from "../page";
 import { VideoOrigin, VideoOriginType, YouTubeVideoOrigin } from "./video-origin";
 import { dellaRespira } from "../fonts";
-import { bookmarkStacks, pause, SvgRepo } from "../svg-repo";
+import { bookmarkStacks300, pause, SvgRepo } from "../svg-repo";
 
 export interface VideoMediaResult extends VideoMediaResult_V1_0 {
   filter: string;
@@ -404,7 +404,7 @@ export default function Screens({ apiOrigin, resolution, videoMediaPromise, vide
                   cursor: "pointer",
                 }}
               >
-                <SvgRepo svg={bookmarkStacks()} scale={1} />
+                <SvgRepo svg={bookmarkStacks300()} scale={1} />
               </div>
               <input
                 id={`laurus-screens-statusbar-secret-input`}

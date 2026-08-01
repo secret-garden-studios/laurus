@@ -4,6 +4,7 @@ import {
   SvgRepo,
   add2,
   autorenew,
+  bookmarkStacks300,
   cancelCircle,
   circleFillZero,
   contentPaste,
@@ -173,6 +174,54 @@ export default function MoveUnitbar({
       }
     }
   }, [carouselEntryKey, move.math]);
+
+  const mediaGroupId = useMemo(() => {
+    const imgMeta = coreState.project.imgs.get(carouselEntryKey);
+    if (imgMeta) return imgMeta.media_group_id;
+    const svgMeta = coreState.project.svgs.get(carouselEntryKey);
+    return svgMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const otherGroupKeys = useMemo(() => {
+    if (!mediaGroupId) return [];
+    const imgKeys = Array.from(coreState.project.imgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    const svgKeys = Array.from(coreState.project.svgs.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    return [...imgKeys, ...svgKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+
+  const onPasteToGroupClick = useCallback(async () => {
+    if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+    if (otherGroupKeys.length === 0) return;
+    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "move") return;
+    const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
+    if (!clipboardEquation) return;
+    const snapshot: LaurusMoveResult = { ...move };
+    const newMath = new Map(snapshot.math);
+    otherGroupKeys.forEach((key) => {
+      newMath.set(key, { ...clipboardEquation, input_id: key });
+    });
+    const newMove: LaurusMoveResult = { ...snapshot, math: newMath };
+    const updated = await updateMove(coreState.apiOrigin, coreState.accessToken, snapshot.move_id, { ...newMove });
+    if (updated) {
+      dispatch({
+        type: CoreActionType.SetEffect,
+        value: { type: "move", value: { ...newMove }, key: newMove.move_id },
+      });
+    }
+  }, [
+    isAltKeyPressed,
+    uiState.playbackMode.type,
+    uiState.effectClipboard,
+    otherGroupKeys,
+    move,
+    dispatch,
+    coreState.apiOrigin,
+    coreState.accessToken,
+  ]);
 
   return (
     <>
@@ -521,6 +570,34 @@ export default function MoveUnitbar({
               cursor: isAltKeyPressed
                 ? "crosshair"
                 : move.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                  ? "pointer"
+                  : "",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.9}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
+          title={"paste to group"}
+          onClick={onPasteToGroupClick}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={"paste to group"}
+            svg={
+              uiState.effectClipboard?.type == "move" && otherGroupKeys.length > 0
+                ? bookmarkStacks300()
+                : bookmarkStacks300("rgb(67, 67, 67)")
+            }
+            containerStyle={{
+              cursor: isAltKeyPressed
+                ? "crosshair"
+                : otherGroupKeys.length > 0 && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
