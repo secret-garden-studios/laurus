@@ -235,6 +235,7 @@ export async function updateProject(
   project: Project_V1_0,
 ): Promise<boolean> {
   try {
+    console.log("debug");
     const url = `${baseUrl}/projects/${projectId}`;
     const body = JSON.stringify({
       ...project,
