@@ -267,8 +267,9 @@ export async function createSvg(
   }
 }
 
-/* /media/polygon */
+/* /media/vector */
 
+/** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
@@ -277,10 +278,63 @@ export interface PolygonPath_V1_0 {
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
-export interface PolygonMediaResult_V1_0 {
+/**
+ * One sample of a silhouette's outward alpha falloff: `offset` pixels outside
+ * the curve, the source is `opacity` opaque. Reproduced by stroking the curve
+ * at `lineWidth = offset * 2` -- a stroke is centred on its path, so
+ * half-width `offset` reaches exactly that far out.
+ */
+export interface GlowStop_V1_0 {
+  offset: number;
+  opacity: number;
+}
+export type LaurusGlowStop = GlowStop_V1_0;
+
+/**
+ * One closed, smoothly curved silhouette region, as cubic Bezier path data
+ * (`M ... C ... Z`, one subpath per ring: the outer ring first, then any
+ * holes, wound for the default nonzero fill rule).
+ *
+ * A triangle mesh's boundary is a chain of straight chords, so a curved edge
+ * comes out visibly faceted no matter how many triangles are spent on it.
+ * This is that same edge described smoothly. Fill it as a backing, then clip
+ * the mesh to it -- on a 2d context that is `ctx.clip(new Path2D(curve.d))`;
+ * on WebGL there is no clip, so rasterize it into a mask instead (see
+ * webgl-shader-preview).
+ *
+ * `glow` is the soft falloff living outside that clip -- a glow, a drop
+ * shadow, any alpha the hard silhouette edge cuts off -- measured off the
+ * source rather than assumed, since the profile's shape is the whole
+ * character of the effect. Empty when there was none worth reproducing.
+ * `glow_color` is the colour of the light actually spilling out, which is
+ * often nothing like the subject's own (a shadow is dark, a neon glow
+ * saturated), so it is carried separately. Draw the bands widest first,
+ * before the fill, compensating for the overlap between them:
+ *
+ *     ctx.lineJoin = "round";        // or big offsets spike at corners
+ *     ctx.strokeStyle = curve.glow_color;
+ *     let covered = 0;
+ *     for (const stop of [...curve.glow].sort((a, b) => b.offset - a.offset)) {
+ *       ctx.globalAlpha = (stop.opacity - covered) / (1 - covered);
+ *       ctx.lineWidth = stop.offset * 2;
+ *       ctx.stroke(outline);
+ *       covered = stop.opacity;
+ *     }
+ */
+export interface CurvePath_V1_0 {
+  d: string;
+  fill: string;
+  stroke: string;
+  stroke_width: number;
+  glow: GlowStop_V1_0[];
+  glow_color: string;
+}
+export type LaurusCurvePath = CurvePath_V1_0;
+
+export interface VectorMediaResult_V1_0 {
   timestamp: string;
   last_active: string;
-  polygon_media_id: string;
+  vector_media_id: string;
   source_img_media_id: string;
   width: number;
   height: number;
@@ -290,14 +344,15 @@ export interface PolygonMediaResult_V1_0 {
   order: number;
   categories: string[];
   polygons: PolygonPath_V1_0[];
+  curves: CurvePath_V1_0[];
   creator: string;
   last_editor: string;
 }
-export type LaurusPolygonResult = PolygonMediaResult_V1_0;
+export type LaurusVectorResult = VectorMediaResult_V1_0;
 
-export async function getPolygon(baseUrl: string | undefined, polygonMediaId: string) {
+export async function getVector(baseUrl: string | undefined, vectorMediaId: string) {
   try {
-    const url = `${baseUrl}/media/polygon/${polygonMediaId}`;
+    const url = `${baseUrl}/media/vector/${vectorMediaId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -307,7 +362,7 @@ export async function getPolygon(baseUrl: string | undefined, polygonMediaId: st
     if (!raw_response.ok) {
       return undefined;
     }
-    const response: PolygonMediaResult_V1_0 = await raw_response.json();
+    const response: VectorMediaResult_V1_0 = await raw_response.json();
     return response;
   } catch (error) {
     console.log({ error });
@@ -315,7 +370,7 @@ export async function getPolygon(baseUrl: string | undefined, polygonMediaId: st
   }
 }
 
-/* /media/polygon/vectorize (websocket) */
+/* /media/vector/vectorize (websocket) */
 
 export interface VectorizeRequest_V1_0 {
   img_media_id: string;
@@ -324,6 +379,17 @@ export interface VectorizeRequest_V1_0 {
   detail_points?: number;
   canny_low?: number;
   canny_high?: number;
+  /**
+   * Alpha at or above which a pixel is inside the silhouette the curves trace.
+   * 128 puts the outline down the middle of an antialiased edge.
+   */
+  alpha_threshold?: number;
+  /**
+   * How tightly the curves hug the traced silhouette, as a fraction of its
+   * perimeter. Lower means more, shorter Bezier segments and a closer fit;
+   * higher means a smoother, looser outline.
+   */
+  curve_tolerance?: number;
 }
 export type LaurusVectorizeRequest = VectorizeRequest_V1_0;
 
@@ -332,6 +398,17 @@ export interface VectorizeGroupStart_V1_0 {
   color: string;
   group_index: number;
   group_count: number;
+}
+/** See CurvePath_V1_0. Always streamed before any triangle. */
+export interface VectorizeCurve_V1_0 {
+  type: "curve";
+  color: string;
+  fill: string;
+  d: string;
+  glow: GlowStop_V1_0[];
+  glow_color: string;
+  curve_index: number;
+  curve_count: number;
 }
 export interface VectorizeTriangle_V1_0 {
   type: "triangle";
@@ -342,14 +419,18 @@ export interface VectorizeTriangle_V1_0 {
 }
 export interface VectorizeComplete_V1_0 {
   type: "complete";
-  result: PolygonMediaResult_V1_0;
+  result: VectorMediaResult_V1_0;
 }
 export interface VectorizeError_V1_0 {
   type: "error";
   message: string;
 }
 export type VectorizeMessage_V1_0 =
-  VectorizeGroupStart_V1_0 | VectorizeTriangle_V1_0 | VectorizeComplete_V1_0 | VectorizeError_V1_0;
+  | VectorizeGroupStart_V1_0
+  | VectorizeCurve_V1_0
+  | VectorizeTriangle_V1_0
+  | VectorizeComplete_V1_0
+  | VectorizeError_V1_0;
 
 function toWebSocketUrl(baseUrl: string): string {
   return baseUrl.replace(/^http/, "ws");
@@ -357,16 +438,24 @@ function toWebSocketUrl(baseUrl: string): string {
 
 export interface VectorizeImageHandlers {
   onGroupStart?: (event: VectorizeGroupStart_V1_0) => void;
+  onCurve?: (event: VectorizeCurve_V1_0) => void;
   onTriangle?: (event: VectorizeTriangle_V1_0) => void;
   onComplete?: (event: VectorizeComplete_V1_0) => void;
   onError?: (message: string) => void;
 }
 
 /**
- * Opens a websocket to /media/polygon/vectorize and streams the triangle
- * mesh for img_media_id back through the given handlers as it's produced.
- * Returns the underlying WebSocket so the caller can close it early (e.g.
- * on unmount); it closes itself once a "complete" message is received.
+ * Opens a websocket to /media/vector/vectorize and streams the silhouette
+ * curves and triangle mesh for img_media_id back through the given handlers
+ * as they're produced. Returns the underlying WebSocket so the caller can
+ * close it early (e.g. on unmount); it closes itself once a "complete"
+ * message is received.
+ *
+ * onCurve always fires before the first onTriangle, because that is the order
+ * the two have to be drawn in: the curves define the silhouette the mesh is
+ * clipped to, so they have to be in hand before anything is painted inside
+ * them. An image with no alpha channel has no silhouette to trace and so
+ * produces no curves at all -- just the mesh.
  */
 export function vectorizeImage(
   baseUrl: string | undefined,
@@ -378,7 +467,7 @@ export function vectorizeImage(
     handlers.onError?.("missing api origin or access token");
     return undefined;
   }
-  const url = `${toWebSocketUrl(baseUrl)}/media/polygon/vectorize?token=${encodeURIComponent(accessToken)}`;
+  const url = `${toWebSocketUrl(baseUrl)}/media/vector/vectorize?token=${encodeURIComponent(accessToken)}`;
   let socket: WebSocket;
   try {
     socket = new WebSocket(url);
@@ -403,6 +492,9 @@ export function vectorizeImage(
     switch (message.type) {
       case "group_start":
         handlers.onGroupStart?.(message);
+        break;
+      case "curve":
+        handlers.onCurve?.(message);
         break;
       case "triangle":
         handlers.onTriangle?.(message);

@@ -3,8 +3,9 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext } from "./workspace.client";
 import {
   LaurusImgResult,
-  LaurusPolygonResult,
+  LaurusVectorResult,
   VectorizeComplete_V1_0,
+  VectorizeCurve_V1_0,
   VectorizeError_V1_0,
   VectorizeTriangle_V1_0,
   vectorizeImage,
@@ -52,6 +53,22 @@ uniform sampler2D u_texture;
 // 0 = flat server-shaded triangle color, 1 = source-image texture.
 uniform float u_textureMix;
 
+// The silhouette curves, rasterized to a coverage mask. WebGL has no
+// equivalent of a 2d context's ctx.clip(), so the clip becomes a multiply on
+// alpha here: this is what gives the shape its smooth curved edge instead of
+// the mesh's faceted one. Its own antialiasing comes free, since the mask is
+// filled on a 2d canvas. 0 when the source had no alpha channel and so no
+// silhouette to trace, in which case nothing is clipped away.
+//
+// .a is coverage, including the glow's soft falloff outside the silhouette.
+// .r says how much of that coverage is glow rather than subject: 1 out in the
+// falloff, 0 within the shape. The glow is its own colour -- a drop shadow is
+// dark, a neon glow saturated, neither is the subject's mean -- so it can't
+// just inherit whatever the mesh underneath happens to be.
+uniform sampler2D u_mask;
+uniform float u_maskActive;
+uniform vec3 u_glowColor;
+
 void main() {
   float edgeDist = min(min(v_barycentric.x, v_barycentric.y), v_barycentric.z);
   // Fades out with u_textureMix -- it reads as a helpful wireframe over the flat vectorized
@@ -65,7 +82,10 @@ void main() {
 
   vec3 shaded = base + sheen * 0.45;
   vec3 withEdge = mix(shaded, vec3(1.0), edge * 0.18);
-  gl_FragColor = vec4(withEdge, 1.0);
+
+  vec4 mask = texture2D(u_mask, v_uv);
+  vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
+  gl_FragColor = vec4(withGlow, mix(1.0, mask.a, u_maskActive));
 }
 `;
 
@@ -119,6 +139,9 @@ interface GLState {
   sheenActiveLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
   textureMixLoc: WebGLUniformLocation;
+  maskLoc: WebGLUniformLocation;
+  maskActiveLoc: WebGLUniformLocation;
+  glowColorLoc: WebGLUniformLocation;
 }
 
 function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
@@ -143,6 +166,9 @@ function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const sheenActiveLoc = gl.getUniformLocation(program, "u_sheenActive");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
+  const maskLoc = gl.getUniformLocation(program, "u_mask");
+  const maskActiveLoc = gl.getUniformLocation(program, "u_maskActive");
+  const glowColorLoc = gl.getUniformLocation(program, "u_glowColor");
   if (
     positionLoc < 0 ||
     colorLoc < 0 ||
@@ -153,7 +179,10 @@ function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !sheenRadiusLoc ||
     !sheenActiveLoc ||
     !textureLoc ||
-    !textureMixLoc
+    !textureMixLoc ||
+    !maskLoc ||
+    !maskActiveLoc ||
+    !glowColorLoc
   )
     return undefined;
 
@@ -174,6 +203,9 @@ function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     sheenActiveLoc,
     textureLoc,
     textureMixLoc,
+    maskLoc,
+    maskActiveLoc,
+    glowColorLoc,
   };
 }
 
@@ -187,23 +219,112 @@ function colorToRGB01(ctx: CanvasRenderingContext2D, color: string): [number, nu
   return [data[0] / 255, data[1] / 255, data[2] / 255];
 }
 
+/**
+ * Rasterize the silhouette curves, and the glow outside them, into the mask
+ * texture the fragment shader reads -- the WebGL stand-in for ctx.clip(),
+ * which has no GL equivalent.
+ *
+ * Filling on a 2d context rather than tessellating the Beziers into GL
+ * geometry is deliberate: Path2D already understands cubic path data and the
+ * nonzero winding rule that makes each curve's holes punch through, and its
+ * fill is antialiased, so the clipped edge lands smooth for free. The mask is
+ * only rebuilt when a curve arrives (a handful of times per image), so the 2d
+ * round-trip never touches the per-frame path.
+ *
+ * The glow is drawn as concentric strokes, widest first, one per measured
+ * band. A stroke is centred on its path, so half-width `offset` reaches
+ * exactly that far out and the solid fill afterwards covers the half that
+ * fell inward. Strokes rather than a shadowBlur because the measured falloff
+ * is not Gaussian -- it drops far faster right at the edge than any blur
+ * does, and shadowBlur would render it as a flat haze.
+ *
+ * Red marks glow and black marks subject, giving the shader its .r channel.
+ * Hue survives the un-premultiply on upload even where alpha is tiny, which a
+ * brightness ramp would not.
+ */
+function uploadCurveMask(
+  gl: WebGLRenderingContext,
+  canvas: HTMLCanvasElement,
+  curves: { d: string; glow: { offset: number; opacity: number }[] }[],
+  existing: WebGLTexture | undefined,
+): WebGLTexture | undefined {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return existing;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Round joins: at these stroke widths a default miter would throw long
+  // spikes off every corner of the outline.
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#ff0000";
+
+  for (const curve of curves) {
+    const path = new Path2D(curve.d);
+    let covered = 0;
+    for (const stop of [...curve.glow].sort((a, b) => b.offset - a.offset)) {
+      // Each stroke lands on top of the wider ones already drawn, so painting
+      // this band's opacity directly would stack on what's underneath and run
+      // the falloff dark. Solve instead for the alpha that takes the
+      // accumulated coverage from where it is to where this band wants it.
+      const alpha = (stop.opacity - covered) / (1 - covered);
+      if (!(alpha > 0)) continue;
+      ctx.globalAlpha = Math.min(alpha, 1);
+      ctx.lineWidth = stop.offset * 2;
+      ctx.stroke(path);
+      covered = stop.opacity;
+    }
+  }
+
+  ctx.globalAlpha = 1;
+  // Opaque black over the top: full coverage for the subject, and .r back to
+  // 0 so the shader stops treating it as glow.
+  ctx.fillStyle = "#000000";
+  for (const curve of curves) ctx.fill(new Path2D(curve.d));
+
+  const texture = existing ?? gl.createTexture();
+  if (!texture) return undefined;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  // Same y-flip as the source-image texture, so the mask lines up with the
+  // UVs the mesh's vertices already carry. Un-premultiplied on purpose: the
+  // shader reads .r as a ratio independent of .a, which only holds if the
+  // colour hasn't been scaled by alpha.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  // LINEAR + CLAMP_TO_EDGE and no mipmaps: required for a non-power-of-two
+  // texture in WebGL1, which an arbitrary image size usually is.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
+
 export interface WebGLShaderPreview {
   img: LaurusImgResult;
 }
 
 /**
- * Same trigger + streaming setup as VectorizePreview -- opens the /media/polygon/vectorize
- * websocket and consumes the same triangle stream -- but rendered on a WebGL canvas instead of
- * drawing Path2D fills on a 2d context. Each triangle's server-shaded color becomes a flat vertex
- * color, and each vertex also gets a UV derived straight from its image-space point; the source
- * image loads into a texture on the side, and the "texture" slider mixes between the flat vectorized
- * color and the real photo sampled through the mesh. The fragment shader also adds a
- * barycentric-coordinate wireframe outline and a sheen -- a soft ~50x50px highlight dropped wherever
- * you click the canvas -- none of which is practical to redo per-frame on a 2d canvas at this
- * triangle count. The GL context and texture upload are both deferred to the first Vectorize
- * click rather than created on mount, so a page full of these (e.g. a media list) doesn't burn
- * through the browser's WebGL context limit before the user ever asks to vectorize anything. Not
- * wired into the project/tool/drag-drop system -- a rendering-technique proof, same as its sibling.
+ * Opens the /media/vector/vectorize websocket and renders the shapes it streams back on a WebGL
+ * canvas rather than by drawing Path2D fills on a 2d context. Each triangle's server-shaded color
+ * becomes a flat vertex color, and each vertex also gets a UV derived straight from its image-space
+ * point; the source image loads into a texture on the side, and the "texture" slider mixes between
+ * the flat vectorized color and the real photo sampled through the mesh. The fragment shader also
+ * adds a barycentric-coordinate wireframe outline and a sheen -- a soft ~50x50px highlight dropped
+ * wherever you click the canvas -- none of which is practical to redo per-frame on a 2d canvas at
+ * this triangle count.
+ *
+ * The stream carries two kinds of shape, because a triangle mesh cannot represent a smooth
+ * silhouette: its boundary is a chain of straight chords, so a curved edge comes out faceted
+ * however many triangles are spent on it. The curves arrive first and describe that edge exactly;
+ * they become a coverage mask the shader multiplies alpha by, which is this renderer's stand-in for
+ * ctx.clip() (see uploadCurveMask). The mesh then fills the interior, where flat triangles are the
+ * right tool and their straight edges are invisible against each other.
+ *
+ * The GL context and texture upload are both deferred to the first Vectorize click rather than
+ * created on mount, so a page full of these (e.g. a media list) doesn't burn through the browser's
+ * WebGL context limit before the user ever asks to vectorize anything. Not wired into the
+ * project/tool/drag-drop system -- a rendering-technique proof.
  */
 export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
   const { coreState } = useContext(CoreContext);
@@ -216,6 +337,13 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
   // can hand it straight to the shader. radius 0 == nothing clicked yet.
   const sheenRef = useRef<{ x: number; y: number; radius: number }>({ x: 0, y: 0, radius: 0 });
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
+  // The silhouette curves, and the mask they're rasterized into. Kept as refs
+  // because the render loop reads them every frame but nothing about them
+  // needs to trigger a React render.
+  const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
+  const maskCanvasRef = useRef<HTMLCanvasElement | undefined>(undefined);
+  const curvesRef = useRef<VectorizeCurve_V1_0[]>([]);
+  const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   // Mirrors the textureMix state into a ref so the render loop (set up once, on the first
   // Vectorize click) can read the live slider value without needing to be re-created every time it moves.
   const textureMixRef = useRef(0);
@@ -229,7 +357,7 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
 
   const [status, setStatus] = useState<VectorizeStatus>("idle");
   const [triangleCount, setTriangleCount] = useState(0);
-  const [result, setResult] = useState<LaurusPolygonResult | undefined>(undefined);
+  const [result, setResult] = useState<LaurusVectorResult | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const [textureMix, setTextureMix] = useState(0);
   const [textureReady, setTextureReady] = useState(false);
@@ -244,6 +372,7 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
       state.gl.deleteBuffer(state.barycentricBuffer);
       state.gl.deleteBuffer(state.uvBuffer);
       if (textureRef.current) state.gl.deleteTexture(textureRef.current);
+      if (maskTextureRef.current) state.gl.deleteTexture(maskTextureRef.current);
     }
     socketRef.current?.close();
   }, []);
@@ -279,6 +408,9 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
         sheenActiveLoc,
         textureLoc,
         textureMixLoc,
+        maskLoc,
+        maskActiveLoc,
+        glowColorLoc,
       } = state;
 
       if (dirtyRef.current) {
@@ -309,6 +441,12 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
         gl.bindTexture(gl.TEXTURE_2D, textureRef.current ?? null);
         gl.uniform1i(textureLoc, 0);
         gl.uniform1f(textureMixLoc, textureRef.current ? textureMixRef.current : 0);
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, maskTextureRef.current ?? null);
+        gl.uniform1i(maskLoc, 1);
+        gl.uniform1f(maskActiveLoc, maskTextureRef.current ? 1 : 0);
+        gl.uniform3fv(glowColorLoc, glowColorRef.current);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.enableVertexAttribArray(positionLoc);
@@ -399,6 +537,15 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
     uvsRef.current = [];
     vertexCountRef.current = 0;
     dirtyRef.current = true;
+    curvesRef.current = [];
+    glowColorRef.current = [1, 1, 1];
+    // Drop the previous run's mask rather than leaving it bound: re-vectorizing
+    // at different settings can produce a different silhouette, and a stale
+    // mask would clip the new mesh to the old shape.
+    if (maskTextureRef.current) {
+      glStateRef.current?.gl.deleteTexture(maskTextureRef.current);
+      maskTextureRef.current = undefined;
+    }
     setTriangleCount(0);
     setResult(undefined);
     setErrorMessage(undefined);
@@ -412,6 +559,59 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
       {
         onGroupStart: () => {
           setStatus("streaming");
+        },
+        onCurve: (event: VectorizeCurve_V1_0) => {
+          const state = glStateRef.current;
+          if (!state) return;
+
+          if (!maskCanvasRef.current) {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            maskCanvasRef.current = canvas;
+          }
+          curvesRef.current.push(event);
+          if (event.glow_color) {
+            const colorCtx = getColorCtx();
+            // One glow colour for the image: the server measures the falloff
+            // across the whole alpha channel, so every curve reports the same
+            // one and the shader only needs a uniform.
+            if (colorCtx) glowColorRef.current = colorToRGB01(colorCtx, event.glow_color);
+          }
+          maskTextureRef.current = uploadCurveMask(
+            state.gl,
+            maskCanvasRef.current,
+            curvesRef.current,
+            maskTextureRef.current,
+          );
+
+          // A backing quad over the whole image, pushed before any triangle
+          // arrives so the mesh paints on top of it. The mask trims it to the
+          // silhouette, and what's left visible is only the sliver between the
+          // mesh's straight boundary chords and the curve they're inscribed in
+          // -- without it that sliver would read as a transparent fringe
+          // nibbling the smooth edge we just went to the trouble of making.
+          if (curvesRef.current.length === 1) {
+            const colorCtx = getColorCtx();
+            const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
+            const corners: [number, number][] = [
+              [0, 0],
+              [img.width, 0],
+              [0, img.height],
+              [img.width, 0],
+              [img.width, img.height],
+              [0, img.height],
+            ];
+            for (const [x, y] of corners) {
+              positionsRef.current.push(x, y);
+              colorsRef.current.push(r, g, b);
+              uvsRef.current.push(x / img.width, 1 - y / img.height);
+              // All-ones barycentrics keep edgeDist at 1 across the quad, so
+              // the wireframe doesn't draw an outline around the backing.
+              barycentricsRef.current.push(1, 1, 1);
+            }
+            dirtyRef.current = true;
+          }
         },
         onTriangle: (event: VectorizeTriangle_V1_0) => {
           const colorCtx = getColorCtx();
@@ -515,7 +715,8 @@ export default function WebGLShaderPreview({ img }: WebGLShaderPreview) {
       {status === "streaming" && <span style={{ fontSize: 11, opacity: 0.7 }}>{triangleCount} triangles…</span>}
       {status === "done" && result && (
         <span style={{ fontSize: 11, opacity: 0.7 }}>
-          done — {result.polygons.length} triangles, saved as {result.polygon_media_id}
+          done — {result.polygons.length} triangles, {result.curves.length} curves, saved as{" "}
+          {result.vector_media_id}
         </span>
       )}
       {status === "error" && errorMessage && (
