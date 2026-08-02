@@ -267,6 +267,162 @@ export async function createSvg(
   }
 }
 
+/* /media/polygon */
+
+export interface PolygonPath_V1_0 {
+  d: string;
+  fill: string;
+  stroke: string;
+  stroke_width: number;
+}
+export type LaurusPolygonPath = PolygonPath_V1_0;
+
+export interface PolygonMediaResult_V1_0 {
+  timestamp: string;
+  last_active: string;
+  polygon_media_id: string;
+  source_img_media_id: string;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
+  stroke_width: number;
+  order: number;
+  categories: string[];
+  polygons: PolygonPath_V1_0[];
+  creator: string;
+  last_editor: string;
+}
+export type LaurusPolygonResult = PolygonMediaResult_V1_0;
+
+export async function getPolygon(baseUrl: string | undefined, polygonMediaId: string) {
+  try {
+    const url = `${baseUrl}/media/polygon/${polygonMediaId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: PolygonMediaResult_V1_0 = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+/* /media/polygon/vectorize (websocket) */
+
+export interface VectorizeRequest_V1_0 {
+  img_media_id: string;
+  max_triangle_area?: number;
+  /** vertex budget -- higher means finer triangles and a closer match to the source image. */
+  detail_points?: number;
+  canny_low?: number;
+  canny_high?: number;
+}
+export type LaurusVectorizeRequest = VectorizeRequest_V1_0;
+
+export interface VectorizeGroupStart_V1_0 {
+  type: "group_start";
+  color: string;
+  group_index: number;
+  group_count: number;
+}
+export interface VectorizeTriangle_V1_0 {
+  type: "triangle";
+  color: string;
+  shaded: string;
+  d: string;
+  points: [number, number][];
+}
+export interface VectorizeComplete_V1_0 {
+  type: "complete";
+  result: PolygonMediaResult_V1_0;
+}
+export interface VectorizeError_V1_0 {
+  type: "error";
+  message: string;
+}
+export type VectorizeMessage_V1_0 =
+  VectorizeGroupStart_V1_0 | VectorizeTriangle_V1_0 | VectorizeComplete_V1_0 | VectorizeError_V1_0;
+
+function toWebSocketUrl(baseUrl: string): string {
+  return baseUrl.replace(/^http/, "ws");
+}
+
+export interface VectorizeImageHandlers {
+  onGroupStart?: (event: VectorizeGroupStart_V1_0) => void;
+  onTriangle?: (event: VectorizeTriangle_V1_0) => void;
+  onComplete?: (event: VectorizeComplete_V1_0) => void;
+  onError?: (message: string) => void;
+}
+
+/**
+ * Opens a websocket to /media/polygon/vectorize and streams the triangle
+ * mesh for img_media_id back through the given handlers as it's produced.
+ * Returns the underlying WebSocket so the caller can close it early (e.g.
+ * on unmount); it closes itself once a "complete" message is received.
+ */
+export function vectorizeImage(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  request: VectorizeRequest_V1_0,
+  handlers: VectorizeImageHandlers,
+): WebSocket | undefined {
+  if (!baseUrl || !accessToken) {
+    handlers.onError?.("missing api origin or access token");
+    return undefined;
+  }
+  const url = `${toWebSocketUrl(baseUrl)}/media/polygon/vectorize?token=${encodeURIComponent(accessToken)}`;
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(url);
+  } catch (error) {
+    console.log({ error });
+    handlers.onError?.("failed to open websocket");
+    return undefined;
+  }
+
+  socket.onopen = () => {
+    socket.send(JSON.stringify(request));
+  };
+  socket.onmessage = (event: MessageEvent<string>) => {
+    let message: VectorizeMessage_V1_0;
+    try {
+      message = JSON.parse(event.data);
+    } catch (error) {
+      console.log({ error });
+      handlers.onError?.("received malformed message from server");
+      return;
+    }
+    switch (message.type) {
+      case "group_start":
+        handlers.onGroupStart?.(message);
+        break;
+      case "triangle":
+        handlers.onTriangle?.(message);
+        break;
+      case "complete":
+        handlers.onComplete?.(message);
+        socket.close();
+        break;
+      case "error":
+        handlers.onError?.(message.message);
+        break;
+    }
+  };
+  socket.onerror = () => {
+    handlers.onError?.("websocket connection error");
+  };
+
+  return socket;
+}
+
 /* /media/groups */
 
 interface MediaGroup_V1_0 {

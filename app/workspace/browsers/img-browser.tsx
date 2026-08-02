@@ -5,6 +5,7 @@ import styles from "../../app.module.css";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { LaurusTool, UIActionType, defaultMarqueeTool } from "../states/ui-state";
+import WebGLShaderPreview from "../webgl-shader-preview";
 
 export interface ImgBrowser {
   img: LaurusImgResult;
@@ -147,7 +148,8 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       style={{
         padding: dynamicSizes.mediaItemSize.padding,
         display: "flex",
-        justifyContent: "center",
+        flexDirection: "column",
+        alignItems: "center",
       }}
     >
       <div
@@ -208,6 +210,11 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
           />
         )}
       </div>
+      {img.src && (
+        <div style={{ marginTop: 8 }}>
+          <WebGLShaderPreview img={img} />
+        </div>
+      )}
     </div>
   );
 }
