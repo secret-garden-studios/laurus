@@ -1,4 +1,4 @@
-import { VectorizeCurve_V1_0 } from "./workspace.server";
+import { MaskCurve_V1_0 } from "./workspace.server";
 
 /** Width/height of the click sheen, in on-screen (CSS) pixels -- converted to buffer pixels per click. */
 export const SHEEN_SIZE_CSS_PX = 50;
@@ -61,7 +61,7 @@ uniform vec3 u_glowColor;
 
 void main() {
   float edgeDist = min(min(v_barycentric.x, v_barycentric.y), v_barycentric.z);
-  // Fades out with u_textureMix -- it reads as a helpful wireframe over the flat vectorized
+  // Fades out with u_textureMix -- it reads as a helpful wireframe over the flat masked
   // colors, but as white strokes cutting across the real photo once the texture takes over.
   float edge = (1.0 - smoothstep(0.0, 0.025, edgeDist)) * (1.0 - u_textureMix);
 
@@ -196,7 +196,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   };
 }
 
-export interface DrawVectorMeshOptions {
+export interface DrawMaskMeshOptions {
   vertexCount: number;
   sheen: { x: number; y: number; radius: number };
   texture: WebGLTexture | undefined;
@@ -206,12 +206,12 @@ export interface DrawVectorMeshOptions {
 }
 
 /**
- * Draws one frame of a vectorized mesh -- the uniform-setting and draw-call boilerplate shared by
+ * Draws one frame of a masked mesh -- the uniform-setting and draw-call boilerplate shared by
  * every WebGL renderer in this file's family (the live streaming preview and the static,
  * already-complete one both feed the same shader the same way; they only differ in how the
  * buffers they draw get filled).
  */
-export function drawVectorMesh(state: GLState, options: DrawVectorMeshOptions): void {
+export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void {
   const { gl } = state;
 
   gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -228,7 +228,7 @@ export function drawVectorMesh(state: GLState, options: DrawVectorMeshOptions): 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, options.texture ?? null);
   gl.uniform1i(state.textureLoc, 0);
-  // Falls back to the flat vectorized colors if the source image never made it into a texture
+  // Falls back to the flat masked colors if the source image never made it into a texture
   // (cross-origin, deleted, decode failure), regardless of where the slider sits.
   gl.uniform1f(state.textureMixLoc, options.texture ? options.textureMix : 0);
 
@@ -381,8 +381,8 @@ export function loadImageTexture(
 }
 
 // Pulls the vertex coordinates back out of a path's `d` string ("M x,y L x,y L x,y Z") --
-// PolygonPath_V1_0 (the persisted, post-vectorize format) only keeps `d`, unlike the live
-// streaming VectorizeTriangle_V1_0 which also carries a raw `points` array alongside it.
+// PolygonPath_V1_0 (the persisted, post-mask format) only keeps `d`, unlike the live
+// streaming MaskTriangle_V1_0 which also carries a raw `points` array alongside it.
 export function parsePathPoints(d: string): [number, number][] {
   const points: [number, number][] = [];
   const re = /(-?\d*\.?\d+(?:e[-+]?\d+)?)[,\s]+(-?\d*\.?\d+(?:e[-+]?\d+)?)/gi;
@@ -394,14 +394,14 @@ export function parsePathPoints(d: string): [number, number][] {
 }
 
 /**
- * Builds the static position/color/barycentric/uv buffers for an already-complete vectorize
+ * Builds the static position/color/barycentric/uv buffers for an already-complete mask
  * result (see ProjectMaskItem's "static" source in draggables/project-mask-item.tsx) -- the persisted
  * counterpart to that same component's "live" source, which builds the buffers incrementally as
  * curves/triangles stream in instead. Since the whole mesh is in hand up front here, it's built
  * once rather than incrementally.
  */
-export function buildStaticVectorMesh(
-  vectorData: {
+export function buildStaticMaskMesh(
+  maskData: {
     width: number;
     height: number;
     polygons: { d: string; fill: string }[];
@@ -417,30 +417,30 @@ export function buildStaticVectorMesh(
   // A backing quad under the mesh, trimmed to the silhouette by the curve mask (see
   // uploadCurveMask) -- without it, the sliver between the mesh's straight boundary chords and
   // the smooth curve it's inscribed in would read as a transparent fringe around the shape.
-  if (vectorData.curves.length > 0) {
-    const [r, g, b] = colorToRGB01(colorCtx, vectorData.curves[0].fill);
+  if (maskData.curves.length > 0) {
+    const [r, g, b] = colorToRGB01(colorCtx, maskData.curves[0].fill);
     const corners: [number, number][] = [
       [0, 0],
-      [vectorData.width, 0],
-      [0, vectorData.height],
-      [vectorData.width, 0],
-      [vectorData.width, vectorData.height],
-      [0, vectorData.height],
+      [maskData.width, 0],
+      [0, maskData.height],
+      [maskData.width, 0],
+      [maskData.width, maskData.height],
+      [0, maskData.height],
     ];
     for (const [x, y] of corners) {
       positions.push(x, y);
       colors.push(r, g, b);
-      uvs.push(x / vectorData.width, 1 - y / vectorData.height);
+      uvs.push(x / maskData.width, 1 - y / maskData.height);
       barycentrics.push(1, 1, 1);
     }
   }
 
-  for (const polygon of vectorData.polygons) {
+  for (const polygon of maskData.polygons) {
     const [r, g, b] = colorToRGB01(colorCtx, polygon.fill);
     for (const [x, y] of parsePathPoints(polygon.d)) {
       positions.push(x, y);
       colors.push(r, g, b);
-      uvs.push(x / vectorData.width, 1 - y / vectorData.height);
+      uvs.push(x / maskData.width, 1 - y / maskData.height);
     }
     barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
   }
@@ -448,13 +448,13 @@ export function buildStaticVectorMesh(
   return { positions, colors, barycentrics, uvs, vertexCount: positions.length / 2 };
 }
 
-export type VectorizeMeshRefs = {
+export type MaskMeshRefs = {
   positionsRef: React.RefObject<number[]>;
   colorsRef: React.RefObject<number[]>;
   barycentricsRef: React.RefObject<number[]>;
   uvsRef: React.RefObject<number[]>;
   vertexCountRef: React.RefObject<number>;
   dirtyRef: React.RefObject<boolean>;
-  curvesRef: React.RefObject<VectorizeCurve_V1_0[]>;
+  curvesRef: React.RefObject<MaskCurve_V1_0[]>;
   glowColorRef: React.RefObject<[number, number, number]>;
 };

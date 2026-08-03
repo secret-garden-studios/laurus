@@ -1,18 +1,18 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useEffect } from "react";
-import { CoreContext, HoverContext, UIContext, VectorizeContext } from "../workspace.client";
+import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { checkCircle, SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
-import { LaurusVectorResult } from "../workspace.server";
+import { LaurusMaskResult } from "../workspace.server";
 import { v4 as newUUID } from "uuid";
 
-export default function Vectorizebar() {
+export default function Maskbar() {
   const { uiState } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
   const { selectedImgKeys, selectedMaskKeys, maskTextureMix, setMaskTextureMix } = useContext(HoverContext);
-  const vectorize = useContext(VectorizeContext);
+  const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -153,11 +153,11 @@ export default function Vectorizebar() {
   const wInputRef = useRef<HTMLInputElement | null>(null);
   const hInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Where/how big the generated vector should land, overriding the default of overlaying it
+  // Where/how big the generated mask should land, overriding the default of overlaying it
   // directly on top of the source image at the image's own frame. Lives in the shared
-  // useVectorizePreview instance (not local state) so the live preview in canvas.tsx can read the
+  // useMaskPreview instance (not local state) so the live preview in canvas.tsx can read the
   // same values and match, instead of only jumping to the override once persisted.
-  const { position, setPosition, size, setSize } = vectorize;
+  const { position, setPosition, size, setSize } = mask;
 
   const isPositionOn = position.value;
   const isSizeOn = size.value;
@@ -206,7 +206,7 @@ export default function Vectorizebar() {
   const imgData = selectedImgKey ? coreState.canvasImgs.get(selectedImgKey) : undefined;
   const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
   // The source image's own on-canvas aspect ratio -- width/height stay locked to it so resizing
-  // the vector output can't distort it relative to the image it was traced from.
+  // the mask output can't distort it relative to the image it was traced from.
   const sourceAspectRatio = useMemo(() => {
     if (!imgMeta || imgMeta.height * imgMeta.scale_y <= 0) return undefined;
     return (imgMeta.width * imgMeta.scale_x) / (imgMeta.height * imgMeta.scale_y);
@@ -230,19 +230,18 @@ export default function Vectorizebar() {
     }));
   }, [sourceAspectRatio, setSize]);
 
-  const isVectorizeBusy = vectorize.status === "connecting" || vectorize.status === "streaming";
-  const isVectorizeDisabled = !imgData || isVectorizeBusy;
+  const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
+  const isMaskDisabled = !imgData || isMaskBusy;
   const isPositionDisabled = !imgData;
   const isSizeDisabled = !imgData;
   // There's only something to blend once geometry is actually on screen.
-  const hasMesh = vectorize.status === "streaming" || vectorize.status === "done";
+  const hasMesh = mask.status === "streaming" || mask.status === "done";
   // A selected placed mask takes priority over the live in-flight preview -- picking a specific
   // result to adjust should always win over whatever's still streaming in, and the two only
   // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const showTextureSlider = selectedMaskKey !== undefined || hasMesh;
-  const textureMixValue =
-    selectedMaskKey !== undefined ? (maskTextureMix.get(selectedMaskKey) ?? 0) : vectorize.textureMix;
+  const textureMixValue = selectedMaskKey !== undefined ? (maskTextureMix.get(selectedMaskKey) ?? 0) : mask.textureMix;
   const handleTextureMixChange = useCallback(
     (value: number) => {
       if (selectedMaskKey !== undefined) {
@@ -252,12 +251,12 @@ export default function Vectorizebar() {
           return next;
         });
       } else {
-        vectorize.setTextureMix(value);
+        mask.setTextureMix(value);
       }
     },
-    [selectedMaskKey, setMaskTextureMix, vectorize],
+    [selectedMaskKey, setMaskTextureMix, mask],
   );
-  const maskTitle = isVectorizeBusy
+  const maskTitle = isMaskBusy
     ? "masking…"
     : selectedImgKeys.size === 0
       ? "select an image to mask"
@@ -266,13 +265,13 @@ export default function Vectorizebar() {
         : "mask the selected image";
 
   // Called directly off the websocket's one and only "complete" message (see
-  // useVectorizePreview's start()) rather than watched for via a useEffect on vectorize.status --
-  // an effect would re-fire this every time Vectorizebar remounts (e.g. switching tools away and
+  // useMaskPreview's start()) rather than watched for via a useEffect on mask.status --
+  // an effect would re-fire this every time Maskbar remounts (e.g. switching tools away and
   // back) and finds status still "done" from a prior run, with no reliable way to tell "already
   // saved" from "new" short of extra bookkeeping. Calling it once, tied to the one real event,
   // needs none.
   const persistMask = useCallback(
-    (result: LaurusVectorResult) => {
+    (result: LaurusMaskResult) => {
       if (!imgMeta) return;
       const newKey = newUUID();
       const order =
@@ -283,7 +282,7 @@ export default function Vectorizebar() {
           ...Array.from(coreState.project.masks.values()).map((v) => v.order),
         ) + 1;
       const projectMask: LaurusProjectMask = {
-        media_id: result.vector_media_id,
+        media_id: result.mask_media_id,
         media_group_id: "",
         // Defaults to the source image's own frame, so the result lands exactly on top of the
         // image it came from -- overridden by the position/size toggles above when they're on.
@@ -335,15 +334,15 @@ export default function Vectorizebar() {
     [imgMeta, position, size, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
   );
 
-  const handleVectorizeClick = useCallback(() => {
-    if (isVectorizeDisabled || !imgData) return;
-    vectorize.start(imgData, persistMask);
-  }, [isVectorizeDisabled, imgData, vectorize, persistMask]);
+  const handleMaskClick = useCallback(() => {
+    if (isMaskDisabled || !imgData) return;
+    mask.start(imgData, persistMask);
+  }, [isMaskDisabled, imgData, mask, persistMask]);
 
   // Starting fresh whenever the selected image changes, rather than leaving a stale mesh/status
-  // or position/size override from whatever was last vectorized (vectorize.reset() clears both).
+  // or position/size override from whatever was last masked (mask.reset() clears both).
   useEffect(() => {
-    vectorize.reset();
+    mask.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImgKey]);
 
@@ -379,8 +378,8 @@ export default function Vectorizebar() {
           <div
             title={
               isPositionDisabled
-                ? "select an image to vectorize to set an exact position for the result"
-                : "place the generated vector at an exact x/y position instead of overlaying the source image"
+                ? "select an image to mask to set an exact position for the result"
+                : "place the generated mask at an exact x/y position instead of overlaying the source image"
             }
             style={{
               display: "flex",
@@ -426,7 +425,7 @@ export default function Vectorizebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "vectorizebar"}|input|x`}
+            id={`${selectedImgKey ?? "maskbar"}|input|x`}
             disabled={!isPositionOn}
             ref={xInputRef}
             onChange={updateToolPosition}
@@ -447,7 +446,7 @@ export default function Vectorizebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "vectorizebar"}|input|y`}
+            id={`${selectedImgKey ?? "maskbar"}|input|y`}
             disabled={!isPositionOn}
             ref={yInputRef}
             onChange={updateToolPosition}
@@ -469,8 +468,8 @@ export default function Vectorizebar() {
           <div
             title={
               isSizeDisabled
-                ? "select an image to vectorize to set an exact size for the result"
-                : "size the generated vector to an exact width/height instead of matching the source image"
+                ? "select an image to mask to set an exact size for the result"
+                : "size the generated mask to an exact width/height instead of matching the source image"
             }
             style={{
               display: "flex",
@@ -521,7 +520,7 @@ export default function Vectorizebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "vectorizebar"}|input|w`}
+            id={`${selectedImgKey ?? "maskbar"}|input|w`}
             disabled={!isSizeOn}
             ref={wInputRef}
             onChange={updateToolWidth}
@@ -542,7 +541,7 @@ export default function Vectorizebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "vectorizebar"}|input|h`}
+            id={`${selectedImgKey ?? "maskbar"}|input|h`}
             disabled={!isSizeOn}
             ref={hInputRef}
             onChange={updateToolHeight}
@@ -563,15 +562,15 @@ export default function Vectorizebar() {
         >
           <span
             style={{
-              color: isVectorizeDisabled ? "rgb(67,67,67)" : "inherit",
+              color: isMaskDisabled ? "rgb(67,67,67)" : "inherit",
             }}
           >
             {"mask"}
           </span>
           <SvgRepo
             title={maskTitle}
-            svg={isVectorizeDisabled ? checkCircle("rgb(67,67,67)") : checkCircle()}
-            onContainerClick={isVectorizeDisabled ? undefined : handleVectorizeClick}
+            svg={isMaskDisabled ? checkCircle("rgb(67,67,67)") : checkCircle()}
+            onContainerClick={isMaskDisabled ? undefined : handleMaskClick}
             containerStyle={{
               width: dynamicSizes.svgSize.width,
               height: dynamicSizes.svgSize.height,
@@ -582,7 +581,7 @@ export default function Vectorizebar() {
         </div>
         {showTextureSlider && (
           <div
-            title="blend between the flat vectorized color and the source image sampled through the mesh"
+            title="blend between the flat masked color and the source image sampled through the mesh"
             style={{
               display: "flex",
               alignItems: "center",

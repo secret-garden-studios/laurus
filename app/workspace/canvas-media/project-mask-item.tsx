@@ -4,22 +4,21 @@ import { CSS } from "@dnd-kit/utilities";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import {
-  buildStaticVectorMesh,
+  buildStaticMaskMesh,
   colorToRGB01,
-  drawVectorMesh,
+  drawMaskMesh,
   GLState,
   initGLState,
   loadImageTexture,
   SHEEN_SIZE_CSS_PX,
   uploadCurveMask,
 } from "../mask-gl";
-import { UseVectorizePreview } from "../hooks/useMaskPreview";
+import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
-import { LaurusImgResult, LaurusVectorResult } from "../workspace.server";
+import { LaurusImgResult, LaurusMaskResult } from "../workspace.server";
 
 export type ProjectMaskItemSource =
-  | { kind: "static"; vectorData: LaurusVectorResult }
-  | { kind: "live"; vectorize: UseVectorizePreview; sourceImg: LaurusImgResult };
+  { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
 
 interface ProjectMaskItem {
   dndId: string;
@@ -31,7 +30,7 @@ interface ProjectMaskItem {
   title?: string;
 }
 /**
- * Renders a vectorize result on a WebGL canvas -- either the already-complete, persisted result
+ * Renders a mask result on a WebGL canvas -- either the already-complete, persisted result
  * (`source.kind === "static"`) or the mesh still streaming in over the websocket
  * (`source.kind === "live"`, polling a dirty-flagged ref every animation frame since triangles
  * arrive outside React's render cycle). Both share the same GL context setup, curve-mask clip,
@@ -59,15 +58,15 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
     source.kind === "static"
-      ? { width: source.vectorData.width, height: source.vectorData.height }
+      ? { width: source.maskData.width, height: source.maskData.height }
       : { width: source.sourceImg.width, height: source.sourceImg.height };
-  // The image this vector was traced from, if it's still on the canvas -- imgs are keyed by
+  // The image this mask was traced from, if it's still on the canvas -- imgs are keyed by
   // project element key here, not by img_media_id, so this has to search by value. A live preview
   // already has its source image handed to it directly.
   const sourceImgSrc = useMemo(() => {
     if (source.kind !== "static") return source.sourceImg.src;
     for (const [key, img] of coreState.project.imgs) {
-      if (img.img_media_id === source.vectorData.source_img_media_id) {
+      if (img.img_media_id === source.maskData.source_img_media_id) {
         return coreState.canvasImgs.get(key)?.src;
       }
     }
@@ -103,7 +102,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
   const render = useCallback(() => {
     const state = glStateRef.current;
     if (!state) return;
-    drawVectorMesh(state, {
+    drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       sheen: sheenRef.current,
       texture: textureRef.current,
@@ -116,7 +115,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
   // The static mesh: built once from the already-complete result.
   useEffect(() => {
     if (source.kind !== "static") return;
-    const vectorData = source.vectorData;
+    const maskData = source.maskData;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const state = initGLState(canvas);
@@ -129,7 +128,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     colorCanvas.height = 1;
     const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
     const mesh = colorCtx
-      ? buildStaticVectorMesh(vectorData, colorCtx)
+      ? buildStaticMaskMesh(maskData, colorCtx)
       : { positions: [], colors: [], barycentrics: [], uvs: [], vertexCount: 0 };
     vertexCountRef.current = mesh.vertexCount;
 
@@ -142,13 +141,13 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
 
-    if (vectorData.curves.length > 0 && colorCtx) {
-      const glowSource = vectorData.curves.find((c) => c.glow_color)?.glow_color;
+    if (maskData.curves.length > 0 && colorCtx) {
+      const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
       if (glowSource) glowColorRef.current = colorToRGB01(colorCtx, glowSource);
       const maskCanvas = document.createElement("canvas");
-      maskCanvas.width = vectorData.width;
-      maskCanvas.height = vectorData.height;
-      maskTextureRef.current = uploadCurveMask(gl, maskCanvas, vectorData.curves, undefined);
+      maskCanvas.width = maskData.width;
+      maskCanvas.height = maskData.height;
+      maskTextureRef.current = uploadCurveMask(gl, maskCanvas, maskData.curves, undefined);
     }
 
     if (sourceImgSrc) {
@@ -159,7 +158,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
           textureRef.current = texture;
           render();
         },
-        (error) => console.log("failed to load/upload source image for vector texture blend", { error }),
+        (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
       );
     }
 
@@ -180,12 +179,12 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     };
   }, [source, sourceImgSrc, render]);
 
-  // The live mesh: polled every animation frame off vectorize.meshRefs' dirty-flagged refs, since
+  // The live mesh: polled every animation frame off mask.meshRefs' dirty-flagged refs, since
   // triangles arrive over the websocket outside React's render cycle and nothing about them needs
   // to trigger a React re-render.
   useEffect(() => {
     if (source.kind !== "live") return;
-    const { vectorize, sourceImg } = source;
+    const { mask, sourceImg } = source;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const state = initGLState(canvas);
@@ -201,7 +200,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       (texture) => {
         textureRef.current = texture;
       },
-      (error) => console.log("failed to load/upload vectorize preview source image", { src: sourceImg.src, error }),
+      (error) => console.log("failed to load/upload mask preview source image", { src: sourceImg.src, error }),
     );
 
     const loop = () => {
@@ -213,7 +212,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
         dirtyRef,
         curvesRef,
         glowColorRef: liveGlowColorRef,
-      } = vectorize.meshRefs;
+      } = mask.meshRefs;
 
       if (dirtyRef.current) {
         gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
@@ -239,7 +238,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
         maskTextureRef.current = uploadCurveMask(gl, maskCanvas, curvesRef.current, maskTextureRef.current);
       }
       glowColorRef.current = liveGlowColorRef.current;
-      textureMixRef.current = vectorize.textureMixRef.current;
+      textureMixRef.current = mask.textureMixRef.current;
 
       render();
       rafRef.current = requestAnimationFrame(loop);
@@ -260,13 +259,13 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       textureRef.current = undefined;
     };
     // This is remounted (React `key`'d by the source image, see canvas.tsx) whenever the
-    // vectorize target changes, so the GL context is only ever created once per mount.
+    // mask target changes, so the GL context is only ever created once per mount.
   }, [source, render]);
 
   // Keeps the slider's live value in a ref so render() (called on demand, not in a loop) can read
   // it without needing to be re-created -- and re-renders immediately so moving the slider shows
   // up without waiting for some other interaction. Only applies to placed (static) masks; a live
-  // preview's mix is driven straight off vectorize.textureMixRef in its own frame loop above.
+  // preview's mix is driven straight off mask.textureMixRef in its own frame loop above.
   useEffect(() => {
     if (source.kind !== "static") return;
     textureMixRef.current = maskTextureMix.get(mediaKey) ?? 0;

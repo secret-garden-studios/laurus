@@ -5,7 +5,7 @@ import {
   LaurusImgResult,
   LaurusMediaGroupResult,
   LaurusSvgResult,
-  LaurusVectorResult,
+  LaurusMaskResult,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 
@@ -15,7 +15,7 @@ export interface CoreState {
   project: LaurusProjectResult;
   canvasImgs: Map<string, LaurusImgResult>;
   canvasSvgs: Map<string, LaurusSvgResult>;
-  canvasMasks: Map<string, LaurusVectorResult>;
+  canvasMasks: Map<string, LaurusMaskResult>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
   mediaGroups: Map<string, LaurusMediaGroupResult>;
@@ -78,9 +78,9 @@ export type CoreAction =
   | { type: CoreActionType.SetCanvasSvg; key: string; value: LaurusSvgResult }
   | { type: CoreActionType.DeleteCanvasSvg; key: string }
   | { type: CoreActionType.SetCanvasSvgs; value: Map<string, LaurusSvgResult> }
-  | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusVectorResult }
+  | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusMaskResult }
   | { type: CoreActionType.DeleteCanvasMask; key: string }
-  | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusVectorResult> }
+  | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusMaskResult> }
   | { type: CoreActionType.DeleteProjectImg; key: string }
   | { type: CoreActionType.DeleteProjectSvg; key: string }
   | { type: CoreActionType.DeleteProjectMask; key: string }

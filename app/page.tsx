@@ -9,14 +9,14 @@ import {
   EffectGroupResult_V1_0,
   ImgMediaResult_V1_0,
   SvgMediaResult_V1_0,
-  VectorMediaResult_V1_0,
+  MaskMediaResult_V1_0,
   getScales,
   getMoves,
   getRotates,
   getEffectGroups,
   getSvg,
   getImg,
-  getVectorsByIds,
+  getMasksByIds,
 } from "./workspace/workspace.server";
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,7 @@ export interface ProjectDependencies {
   effectGroups: EffectGroupResult_V1_0[];
   canvasImgs: ImgMediaResult_V1_0[];
   canvasSvgs: SvgMediaResult_V1_0[];
-  canvasMasks: VectorMediaResult_V1_0[];
+  canvasMasks: MaskMediaResult_V1_0[];
 }
 export async function fetchProject(
   laurusApi: string | undefined,
@@ -109,10 +109,10 @@ export async function fetchProject(
       }
     }
     const masksArray = Array.from(newProject.masks.values());
-    let canvasMasks: VectorMediaResult_V1_0[] = [];
+    let canvasMasks: MaskMediaResult_V1_0[] = [];
     if (fetchMedia) {
       const maskMediaIds = masksArray.map((m) => m.media_id);
-      canvasMasks = (await getVectorsByIds(laurusApi, maskMediaIds)) ?? [];
+      canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
     }
     return {
       project: newProject,

@@ -21,7 +21,7 @@ import {
   SvgRepo,
 } from "@/app/svg-repo";
 import { UIActionType } from "../states/ui-state";
-import Vectorizebar from "./maskbar";
+import Maskbar from "./maskbar";
 
 export default function Titlebar() {
   const { coreState, dispatch } = useContext(CoreContext);
@@ -394,7 +394,7 @@ export function Subtitlebar() {
             case "mix":
               return <Mixbar />;
             case "mask":
-              return <Vectorizebar />;
+              return <Maskbar />;
           }
         })()}
       </div>

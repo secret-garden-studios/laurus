@@ -51,10 +51,10 @@ export interface ProjectSvg_V1_0 {
   stroke_width: number;
   description: string;
 }
-// No media_key -- unlike imgs/svgs, LaurusVectorResult (the vectorize websocket's output) doesn't
+// No media_key -- unlike imgs/svgs, LaurusMaskResult (the mask websocket's output) doesn't
 // have one; this stores placement/cosmetic fields plus a reference to it, mirroring how
 // ProjectImg_V1_0 references img_media_id rather than embedding pixel data. media_id is the pk of
-// the RedisVectorMedia (LaurusVectorResult) it places on the canvas.
+// the RedisMaskMedia (LaurusMaskResult) it places on the canvas.
 export interface ProjectMask_V1_0 {
   media_id: string;
   media_group_id: string;
@@ -69,9 +69,9 @@ export interface ProjectMask_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
-  // Denormalized from the hydrated LaurusVectorResult at persist time for convenience -- the
+  // Denormalized from the hydrated LaurusMaskResult at persist time for convenience -- the
   // server's ProjectMask doesn't store these (rendering already reads them off the hydrated
-  // vector data, see ProjectMaskItem), so they're stripped before the project is sent back to the
+  // mask data, see ProjectMaskItem), so they're stripped before the project is sent back to the
   // server (see maskToWire) and re-populated on read from whatever canvasMasks resolves to.
   fill: string;
   stroke: string;

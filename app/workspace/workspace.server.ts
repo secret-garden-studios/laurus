@@ -267,7 +267,7 @@ export async function createSvg(
   }
 }
 
-/* /media/vector */
+/* /media/masks */
 
 /** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`. */
 export interface PolygonPath_V1_0 {
@@ -300,7 +300,7 @@ export type LaurusGlowStop = GlowStop_V1_0;
  * This is that same edge described smoothly. Fill it as a backing, then clip
  * the mesh to it -- on a 2d context that is `ctx.clip(new Path2D(curve.d))`;
  * on WebGL there is no clip, so rasterize it into a mask instead (see
- * uploadCurveMask in vectorize-gl.ts).
+ * uploadCurveMask in mask-gl.ts).
  *
  * `glow` is the soft falloff living outside that clip -- a glow, a drop
  * shadow, any alpha the hard silhouette edge cuts off -- measured off the
@@ -331,10 +331,10 @@ export interface CurvePath_V1_0 {
 }
 export type LaurusCurvePath = CurvePath_V1_0;
 
-export interface VectorMediaResult_V1_0 {
+export interface MaskMediaResult_V1_0 {
   timestamp: string;
   last_active: string;
-  vector_media_id: string;
+  mask_media_id: string;
   source_img_media_id: string;
   width: number;
   height: number;
@@ -348,11 +348,11 @@ export interface VectorMediaResult_V1_0 {
   creator: string;
   last_editor: string;
 }
-export type LaurusVectorResult = VectorMediaResult_V1_0;
+export type LaurusMaskResult = MaskMediaResult_V1_0;
 
-export async function getVector(baseUrl: string | undefined, vectorId: string) {
+export async function getMask(baseUrl: string | undefined, maskId: string) {
   try {
-    const url = `${baseUrl}/media/vector/${vectorId}`;
+    const url = `${baseUrl}/media/masks/${maskId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -362,7 +362,7 @@ export async function getVector(baseUrl: string | undefined, vectorId: string) {
     if (!raw_response.ok) {
       return undefined;
     }
-    const response: VectorMediaResult_V1_0 = await raw_response.json();
+    const response: MaskMediaResult_V1_0 = await raw_response.json();
     return response;
   } catch (error) {
     console.log({ error });
@@ -370,9 +370,9 @@ export async function getVector(baseUrl: string | undefined, vectorId: string) {
   }
 }
 
-export async function getVectors(baseUrl: string | undefined, mediaId: string) {
+export async function getMasks(baseUrl: string | undefined, mediaId: string) {
   try {
-    const url = `${baseUrl}/media/vector?media_id=${mediaId}`;
+    const url = `${baseUrl}/media/masks?media_id=${mediaId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -382,7 +382,7 @@ export async function getVectors(baseUrl: string | undefined, mediaId: string) {
     if (!raw_response.ok) {
       return undefined;
     }
-    const response: VectorMediaResult_V1_0[] = await raw_response.json();
+    const response: MaskMediaResult_V1_0[] = await raw_response.json();
     return response;
   } catch (error) {
     console.log({ error });
@@ -391,13 +391,13 @@ export async function getVectors(baseUrl: string | undefined, mediaId: string) {
 }
 
 /** Bulk hydration for a project's masks dict -- one round trip for every mask's
- * vector_media_id, instead of one getVector call per mask. */
-export async function getVectorsByIds(baseUrl: string | undefined, vectorMediaIds: string[]) {
-  if (vectorMediaIds.length === 0) return [];
+ * mask_media_id, instead of one getMask call per mask. */
+export async function getMasksByIds(baseUrl: string | undefined, maskMediaIds: string[]) {
+  if (maskMediaIds.length === 0) return [];
   try {
     const params = new URLSearchParams();
-    vectorMediaIds.forEach((id) => params.append("ids", id));
-    const url = `${baseUrl}/media/vector/by-ids?${params.toString()}`;
+    maskMediaIds.forEach((id) => params.append("ids", id));
+    const url = `${baseUrl}/media/masks/by-ids?${params.toString()}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -407,7 +407,7 @@ export async function getVectorsByIds(baseUrl: string | undefined, vectorMediaId
     if (!raw_response.ok) {
       return undefined;
     }
-    const response: VectorMediaResult_V1_0[] = await raw_response.json();
+    const response: MaskMediaResult_V1_0[] = await raw_response.json();
     return response;
   } catch (error) {
     console.log({ error });
@@ -415,9 +415,9 @@ export async function getVectorsByIds(baseUrl: string | undefined, vectorMediaId
   }
 }
 
-/* /media/vector/vectorize (websocket) */
+/* /media/masks/mask (websocket) */
 
-export interface VectorizeRequest_V1_0 {
+export interface MaskRequest_V1_0 {
   img_media_id: string;
   max_triangle_area?: number;
   /** vertex budget -- higher means finer triangles and a closer match to the source image. */
@@ -436,16 +436,16 @@ export interface VectorizeRequest_V1_0 {
    */
   curve_tolerance?: number;
 }
-export type LaurusVectorizeRequest = VectorizeRequest_V1_0;
+export type LaurusMaskRequest = MaskRequest_V1_0;
 
-export interface VectorizeGroupStart_V1_0 {
+export interface MaskGroupStart_V1_0 {
   type: "group_start";
   color: string;
   group_index: number;
   group_count: number;
 }
 /** See CurvePath_V1_0. Always streamed before any triangle. */
-export interface VectorizeCurve_V1_0 {
+export interface MaskCurve_V1_0 {
   type: "curve";
   color: string;
   fill: string;
@@ -455,42 +455,38 @@ export interface VectorizeCurve_V1_0 {
   curve_index: number;
   curve_count: number;
 }
-export interface VectorizeTriangle_V1_0 {
+export interface MaskTriangle_V1_0 {
   type: "triangle";
   color: string;
   shaded: string;
   d: string;
   points: [number, number][];
 }
-export interface VectorizeComplete_V1_0 {
+export interface MaskComplete_V1_0 {
   type: "complete";
-  result: VectorMediaResult_V1_0;
+  result: MaskMediaResult_V1_0;
 }
-export interface VectorizeError_V1_0 {
+export interface MaskError_V1_0 {
   type: "error";
   message: string;
 }
-export type VectorizeMessage_V1_0 =
-  | VectorizeGroupStart_V1_0
-  | VectorizeCurve_V1_0
-  | VectorizeTriangle_V1_0
-  | VectorizeComplete_V1_0
-  | VectorizeError_V1_0;
+export type MaskMessage_V1_0 =
+  MaskGroupStart_V1_0 | MaskCurve_V1_0 | MaskTriangle_V1_0 | MaskComplete_V1_0 | MaskError_V1_0;
 
 function toWebSocketUrl(baseUrl: string): string {
   return baseUrl.replace(/^http/, "ws");
 }
 
-export interface VectorizeImageHandlers {
-  onGroupStart?: (event: VectorizeGroupStart_V1_0) => void;
-  onCurve?: (event: VectorizeCurve_V1_0) => void;
-  onTriangle?: (event: VectorizeTriangle_V1_0) => void;
-  onComplete?: (event: VectorizeComplete_V1_0) => void;
+export interface MaskImageHandlers {
+  onGroupStart?: (event: MaskGroupStart_V1_0) => void;
+  onCurve?: (event: MaskCurve_V1_0) => void;
+  onTriangle?: (event: MaskTriangle_V1_0) => void;
+  onComplete?: (event: MaskComplete_V1_0) => void;
   onError?: (message: string) => void;
 }
 
 /**
- * Opens a websocket to /media/vector/vectorize and streams the silhouette
+ * Opens a websocket to /media/masks/mask and streams the silhouette
  * curves and triangle mesh for img_media_id back through the given handlers
  * as they're produced. Returns the underlying WebSocket so the caller can
  * close it early (e.g. on unmount); it closes itself once a "complete"
@@ -502,17 +498,17 @@ export interface VectorizeImageHandlers {
  * them. An image with no alpha channel has no silhouette to trace and so
  * produces no curves at all -- just the mesh.
  */
-export function vectorizeImage(
+export function maskImage(
   baseUrl: string | undefined,
   accessToken: string | undefined,
-  request: VectorizeRequest_V1_0,
-  handlers: VectorizeImageHandlers,
+  request: MaskRequest_V1_0,
+  handlers: MaskImageHandlers,
 ): WebSocket | undefined {
   if (!baseUrl || !accessToken) {
     handlers.onError?.("missing api origin or access token");
     return undefined;
   }
-  const url = `${toWebSocketUrl(baseUrl)}/media/vector/vectorize?token=${encodeURIComponent(accessToken)}`;
+  const url = `${toWebSocketUrl(baseUrl)}/media/masks/mask?token=${encodeURIComponent(accessToken)}`;
   let socket: WebSocket;
   try {
     socket = new WebSocket(url);
@@ -526,7 +522,7 @@ export function vectorizeImage(
     socket.send(JSON.stringify(request));
   };
   socket.onmessage = (event: MessageEvent<string>) => {
-    let message: VectorizeMessage_V1_0;
+    let message: MaskMessage_V1_0;
     try {
       message = JSON.parse(event.data);
     } catch (error) {

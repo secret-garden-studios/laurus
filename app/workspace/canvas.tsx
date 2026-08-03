@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreContext, HoverContext, UIContext, VectorizeContext } from "./workspace.client";
+import { CoreContext, HoverContext, UIContext, MaskContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import {
   updateProject,
@@ -132,14 +132,14 @@ export default function Canvas() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
-  const vectorize = useContext(VectorizeContext);
+  const mask = useContext(MaskContext);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
 
-  // Keyed off selectedImgKeys rather than activeElement -- that's what Vectorizebar actually
-  // vectorizes (see its selectedImgKey), so the live preview needs to watch the same thing or it
+  // Keyed off selectedImgKeys rather than activeElement -- that's what Maskbar actually
+  // masks (see its selectedImgKey), so the live preview needs to watch the same thing or it
   // silently never shows up for an image that was only ever alt-selected, not plain-clicked.
-  const activeVectorizeImg = useMemo(() => {
+  const activeMaskImg = useMemo(() => {
     if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1) return undefined;
     const key = Array.from(selectedImgKeys)[0];
     const meta = coreState.project.imgs.get(key);
@@ -148,42 +148,42 @@ export default function Canvas() {
     return { key, meta, imgData };
   }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs]);
 
-  // Mirrors Vectorizebar's persistMask defaulting exactly, so the live preview lands at the
+  // Mirrors Maskbar's persistMask defaulting exactly, so the live preview lands at the
   // same place/size the placed result will -- without this, the preview always sits on the
-  // source image and only jumps to the position/size override once vectorization finishes.
-  const liveVectorizeFrame = useMemo(() => {
-    if (!activeVectorizeImg) return undefined;
-    const meta = activeVectorizeImg.meta;
+  // source image and only jumps to the position/size override once masking finishes.
+  const liveMaskFrame = useMemo(() => {
+    if (!activeMaskImg) return undefined;
+    const meta = activeMaskImg.meta;
     return {
-      width: vectorize.size.value && vectorize.size.width !== undefined ? vectorize.size.width : meta.width,
-      height: vectorize.size.value && vectorize.size.height !== undefined ? vectorize.size.height : meta.height,
+      width: mask.size.value && mask.size.width !== undefined ? mask.size.width : meta.width,
+      height: mask.size.value && mask.size.height !== undefined ? mask.size.height : meta.height,
       scale_x: meta.scale_x,
       scale_y: meta.scale_y,
     };
-  }, [activeVectorizeImg, vectorize.size]);
+  }, [activeMaskImg, mask.size]);
 
-  const liveVectorizeDndPosition = useMemo(() => {
-    if (!activeVectorizeImg) return undefined;
-    const meta = activeVectorizeImg.meta;
+  const liveMaskDndPosition = useMemo(() => {
+    if (!activeMaskImg) return undefined;
+    const meta = activeMaskImg.meta;
     return {
-      x: vectorize.position.value && vectorize.position.x !== undefined ? vectorize.position.x : meta.left,
-      y: vectorize.position.value && vectorize.position.y !== undefined ? vectorize.position.y : meta.top,
+      x: mask.position.value && mask.position.x !== undefined ? mask.position.x : meta.left,
+      y: mask.position.value && mask.position.y !== undefined ? mask.position.y : meta.top,
     };
-  }, [activeVectorizeImg, vectorize.position]);
+  }, [activeMaskImg, mask.position]);
 
-  // Deliberately not re-created every time `vectorize` itself changes reference -- it does, on
-  // every single triangle/status update, because useVectorizePreview's provider re-renders and
+  // Deliberately not re-created every time `mask` itself changes reference -- it does, on
+  // every single triangle/status update, because useMaskPreview's provider re-renders and
   // hands out a fresh wrapper object each time. What ProjectMaskItem's live GL effect actually
   // reads off it (meshRefs, textureMixRef) are refs that stay the same underlying objects
   // regardless, so a "stale" wrapper is functionally identical to a fresh one here. Without this
   // memo, ProjectMaskItem saw a "new" source prop on every triangle and tore down + rebuilt its
   // entire WebGL context (including a fresh async texture reload) each time -- the actual cause of
   // the streaming flicker and the "reverts to the plain image, pauses" glitch right at completion.
-  const liveVectorizeSource = useMemo<ProjectMaskItemSource | undefined>(() => {
-    if (!activeVectorizeImg) return undefined;
-    return { kind: "live", vectorize, sourceImg: activeVectorizeImg.imgData };
+  const liveMaskSource = useMemo<ProjectMaskItemSource | undefined>(() => {
+    if (!activeMaskImg) return undefined;
+    return { kind: "live", mask, sourceImg: activeMaskImg.imgData };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeVectorizeImg]);
+  }, [activeMaskImg]);
 
   useLayoutEffect(() => {
     const c = drawingCanvasRef.current;
@@ -681,17 +681,17 @@ export default function Canvas() {
           onMouseDown={handleMouseDown}
         />
       </div>
-      {activeVectorizeImg && liveVectorizeFrame && liveVectorizeDndPosition && liveVectorizeSource && (
+      {activeMaskImg && liveMaskFrame && liveMaskDndPosition && liveMaskSource && (
         <ProjectMaskItem
-          key={activeVectorizeImg.key}
-          dndId={`dnd-node-live-vectorize-${activeVectorizeImg.key}`}
-          dndPosition={liveVectorizeDndPosition}
+          key={activeMaskImg.key}
+          dndId={`dnd-node-live-mask-${activeMaskImg.key}`}
+          dndPosition={liveMaskDndPosition}
           // Only needs to sit above the marquee drawing canvas it's a sibling of here -- placed
           // masks' own stacking (by project order) is handled where they're actually rendered.
           zIndex={1}
-          mediaKey={activeVectorizeImg.key}
-          frame={liveVectorizeFrame}
-          source={liveVectorizeSource}
+          mediaKey={activeMaskImg.key}
+          frame={liveMaskFrame}
+          source={liveMaskSource}
         />
       )}
     </>

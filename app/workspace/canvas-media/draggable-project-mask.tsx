@@ -3,7 +3,7 @@ import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core"
 import { CoreContext, UIContext } from "../workspace.client";
 import { useCallback, useContext, useMemo } from "react";
 import { updateProject, LaurusProjectMask, LaurusProjectResult } from "../../projects/projects.server";
-import { LaurusVectorResult } from "../workspace.server";
+import { LaurusMaskResult } from "../workspace.server";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
@@ -11,7 +11,7 @@ import { ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
 interface DraggableProjectMask {
   mediaKey: string;
   meta: LaurusProjectMask;
-  vectorData: LaurusVectorResult;
+  maskData: LaurusMaskResult;
   zIndex: number;
 }
 /**
@@ -19,7 +19,7 @@ interface DraggableProjectMask {
  * still no marquee-select, duplicate-drop, or group-paste support. Full parity with
  * DraggableProjectImg/Svg is future work.
  */
-export function DraggableProjectMask({ mediaKey, meta, vectorData, zIndex }: DraggableProjectMask) {
+export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: DraggableProjectMask) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
 
@@ -49,7 +49,7 @@ export function DraggableProjectMask({ mediaKey, meta, vectorData, zIndex }: Dra
     () => ({ width: meta.width, height: meta.height, scale_x: meta.scale_x, scale_y: meta.scale_y }),
     [meta.width, meta.height, meta.scale_x, meta.scale_y],
   );
-  const source = useMemo<ProjectMaskItemSource>(() => ({ kind: "static", vectorData }), [vectorData]);
+  const source = useMemo<ProjectMaskItemSource>(() => ({ kind: "static", maskData }), [maskData]);
 
   const sensors = useSensors(useSensor(PointerSensor));
 

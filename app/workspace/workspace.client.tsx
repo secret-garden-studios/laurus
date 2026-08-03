@@ -22,7 +22,7 @@ import {
   LaurusMediaGroupResult,
   LaurusMixState,
   LaurusSvgResult,
-  LaurusVectorResult,
+  LaurusMaskResult,
   searchImgs,
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
@@ -41,7 +41,7 @@ import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
-import { useVectorizePreview, UseVectorizePreview } from "./hooks/useMaskPreview";
+import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
 import {
   ProjectResult_V1_0,
   updateProject,
@@ -157,7 +157,7 @@ export interface HoverContextProps {
   setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectedMaskKeys: Set<string>;
   setSelectedMaskKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
-  // Per-mask texture-mix slider value (see Vectorizebar's "texture" slider and
+  // Per-mask texture-mix slider value (see Maskbar's "texture" slider and
   // ProjectMaskItem) -- ephemeral view state, not part of the persisted project, so it lives
   // here alongside the other cross-component UI state rather than in CoreState.
   maskTextureMix: Map<string, number>;
@@ -213,10 +213,10 @@ export const UIContext = createContext<UIContextProps>({
   uiDispatch: () => {},
 });
 
-// A single shared vectorize-preview instance, so the "Vectorize" trigger button (in
-// VectorizeUnitbar, mounted from Titlebar) and the live WebGL mesh preview (layered into Canvas)
+// A single shared mask-preview instance, so the "Mask" trigger button (in
+// Maskbar, mounted from Titlebar) and the live WebGL mesh preview (layered into Canvas)
 // read/drive the same in-flight websocket + mesh buffers instead of each starting their own.
-const defaultVectorizePreview: UseVectorizePreview = {
+const defaultMaskPreview: UseMaskPreview = {
   status: "idle",
   triangleCount: 0,
   result: undefined,
@@ -242,11 +242,11 @@ const defaultVectorizePreview: UseVectorizePreview = {
   },
 };
 
-export const VectorizeContext = createContext<UseVectorizePreview>(defaultVectorizePreview);
+export const MaskContext = createContext<UseMaskPreview>(defaultMaskPreview);
 
-function VectorizePreviewProvider({ children }: { children: React.ReactNode }) {
-  const vectorizePreview = useVectorizePreview();
-  return <VectorizeContext value={vectorizePreview}>{children}</VectorizeContext>;
+function MaskPreviewProvider({ children }: { children: React.ReactNode }) {
+  const maskPreview = useMaskPreview();
+  return <MaskContext value={maskPreview}>{children}</MaskContext>;
 }
 
 function initProject(p: ProjectResult_V1_0) {
@@ -400,14 +400,20 @@ function initReducer({
       )
     : new Map();
 
-  const newCanvasMasks: Map<string, LaurusVectorResult> = projectDependencies
+  const newCanvasMasks: Map<string, LaurusMaskResult> = projectDependencies
     ? new Map(
-        (projectDependencies.project.masks ?? new Map<string, LaurusProjectMask>()).entries().map((e) => [
-          e[0],
-          {
-            ...projectDependencies.canvasMasks.find((v) => v.vector_media_id == e[1].media_id),
-          },
-        ]),
+        (projectDependencies.project.masks ?? new Map<string, LaurusProjectMask>())
+          .entries()
+          .map((e): [string, LaurusMaskResult | undefined] => [
+            e[0],
+            projectDependencies.canvasMasks.find((v) => v.mask_media_id == e[1].media_id),
+          ])
+          // A project mask can outlive the mask media it points at (e.g. deleted, or -- since the
+          // mask feature was renamed from "vector" to "mask" -- saved under the old Redis key
+          // namespace and no longer resolvable). Skipping unresolved entries here, rather than
+          // spreading `undefined` into a hollow placeholder object, is what keeps
+          // ProjectMaskItem/buildStaticMaskMesh from crashing on a `curves` that was never there.
+          .filter((e): e is [string, LaurusMaskResult] => e[1] !== undefined),
       )
     : new Map();
 
@@ -1305,7 +1311,7 @@ export default function Workspace({
         <HoverContext value={hoverContextValue}>
           <CoreContext value={coreContextValue}>
             <UIContext value={uiContextValue}>
-              <VectorizePreviewProvider>
+              <MaskPreviewProvider>
                 <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
                   <div
                     style={{
@@ -1564,14 +1570,14 @@ export default function Workspace({
                     {Array.from(coreState.project.masks.entries()).map((e) => {
                       const [key, meta] = e;
                       if (meta.top < 0 || meta.left < 0 || uiState.tool.type === "viewport") return;
-                      const vectorData = coreState.canvasMasks.get(key);
-                      if (!vectorData) return;
+                      const maskData = coreState.canvasMasks.get(key);
+                      if (!maskData) return;
                       return (
                         <div key={key}>
                           <DraggableProjectMask
                             mediaKey={key}
                             meta={meta}
-                            vectorData={vectorData}
+                            maskData={maskData}
                             zIndex={
                               uiState.tool.type === "marquee" && uiState.tool.stack
                                 ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
@@ -1630,7 +1636,7 @@ export default function Workspace({
                 >
                   <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
                 </div>
-              </VectorizePreviewProvider>
+              </MaskPreviewProvider>
             </UIContext>
           </CoreContext>
         </HoverContext>

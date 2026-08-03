@@ -2,37 +2,37 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext } from "../workspace.client";
 import {
   LaurusImgResult,
-  LaurusVectorResult,
-  VectorizeComplete_V1_0,
-  VectorizeCurve_V1_0,
-  VectorizeError_V1_0,
-  VectorizeTriangle_V1_0,
-  vectorizeImage,
+  LaurusMaskResult,
+  MaskComplete_V1_0,
+  MaskCurve_V1_0,
+  MaskError_V1_0,
+  MaskTriangle_V1_0,
+  maskImage,
 } from "../workspace.server";
 import { colorToRGB01 } from "../mask-gl";
 
-export type VectorizeStatus = "idle" | "connecting" | "streaming" | "done" | "error";
+export type MaskStatus = "idle" | "connecting" | "streaming" | "done" | "error";
 
-export interface VectorizePositionOverride {
+export interface MaskPositionOverride {
   value: boolean;
   x: number | undefined;
   y: number | undefined;
 }
-export interface VectorizeSizeOverride {
+export interface MaskSizeOverride {
   value: boolean;
   width: number | undefined;
   height: number | undefined;
 }
 
 /**
- * Owns the /media/vector/vectorize websocket and the mesh data it streams back, independent of
+ * Owns the /media/masks/mask websocket and the mesh data it streams back, independent of
  * any specific <canvas>/GL context -- the GL rendering itself lives in canvas.tsx (see
- * VectorizeUnitbar and Canvas), which reads the refs this hook exposes on every animation frame.
- * Splitting it this way lets the "Vectorize" trigger button (in the unitbar) and the WebGL
+ * MaskUnitbar and Canvas), which reads the refs this hook exposes on every animation frame.
+ * Splitting it this way lets the "Mask" trigger button (in the unitbar) and the WebGL
  * preview (layered into the main canvas) live in different parts of the tree while sharing one
- * in-flight vectorization.
+ * in-flight masking.
  */
-export function useVectorizePreview() {
+export function useMaskPreview() {
   const { coreState } = useContext(CoreContext);
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
@@ -43,12 +43,12 @@ export function useVectorizePreview() {
   const uvsRef = useRef<number[]>([]);
   const vertexCountRef = useRef(0);
   const dirtyRef = useRef(false);
-  const curvesRef = useRef<VectorizeCurve_V1_0[]>([]);
+  const curvesRef = useRef<MaskCurve_V1_0[]>([]);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
 
-  const [status, setStatus] = useState<VectorizeStatus>("idle");
+  const [status, setStatus] = useState<MaskStatus>("idle");
   const [triangleCount, setTriangleCount] = useState(0);
-  const [result, setResult] = useState<LaurusVectorResult | undefined>(undefined);
+  const [result, setResult] = useState<LaurusMaskResult | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   // Mirrored into a ref so the GL render loop (set up once per overlay mount) can read the live
   // slider value every frame without being torn down and re-created each time it moves.
@@ -60,17 +60,17 @@ export function useVectorizePreview() {
     setTextureMixState(value);
   }, []);
 
-  // Where/how big the generated vector should land, overriding the default of overlaying it
+  // Where/how big the generated mask should land, overriding the default of overlaying it
   // directly on top of the source image at the image's own frame. Lives here (rather than as
-  // local state in Vectorizebar) so the live preview in canvas.tsx can read the same values and
+  // local state in Maskbar) so the live preview in canvas.tsx can read the same values and
   // match, instead of always showing the un-overridden overlay while streaming and only jumping
   // to the override once the result is persisted.
-  const [position, setPosition] = useState<VectorizePositionOverride>({
+  const [position, setPosition] = useState<MaskPositionOverride>({
     value: false,
     x: undefined,
     y: undefined,
   });
-  const [size, setSize] = useState<VectorizeSizeOverride>({
+  const [size, setSize] = useState<MaskSizeOverride>({
     value: false,
     width: undefined,
     height: undefined,
@@ -114,11 +114,11 @@ export function useVectorizePreview() {
 
   const start = useCallback(
     // onComplete fires exactly once, straight off the websocket's one and only "complete"
-    // message -- callers that need to act on the finished result (e.g. Vectorizebar persisting
+    // message -- callers that need to act on the finished result (e.g. Maskbar persisting
     // it) should hook this rather than watching `status`/`result` in a useEffect, which re-fires
     // on every remount that still finds status "done" from a previous run with no way to tell
     // "already handled" from "new" without extra bookkeeping.
-    (img: LaurusImgResult, onComplete?: (result: LaurusVectorResult) => void) => {
+    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void) => {
       positionsRef.current = [];
       colorsRef.current = [];
       barycentricsRef.current = [];
@@ -134,7 +134,7 @@ export function useVectorizePreview() {
       setTextureMix(0);
 
       socketRef.current?.close();
-      socketRef.current = vectorizeImage(
+      socketRef.current = maskImage(
         coreState.apiOrigin,
         coreState.accessToken,
         { img_media_id: img.img_media_id },
@@ -142,7 +142,7 @@ export function useVectorizePreview() {
           onGroupStart: () => {
             setStatus("streaming");
           },
-          onCurve: (event: VectorizeCurve_V1_0) => {
+          onCurve: (event: MaskCurve_V1_0) => {
             curvesRef.current.push(event);
             if (event.glow_color) {
               const colorCtx = getColorCtx();
@@ -180,7 +180,7 @@ export function useVectorizePreview() {
               dirtyRef.current = true;
             }
           },
-          onTriangle: (event: VectorizeTriangle_V1_0) => {
+          onTriangle: (event: MaskTriangle_V1_0) => {
             const colorCtx = getColorCtx();
             const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.shaded) : [1, 1, 1];
             for (const [x, y] of event.points) {
@@ -192,12 +192,12 @@ export function useVectorizePreview() {
             dirtyRef.current = true;
             setTriangleCount((n) => n + 1);
           },
-          onComplete: (event: VectorizeComplete_V1_0) => {
+          onComplete: (event: MaskComplete_V1_0) => {
             setStatus("done");
             setResult(event.result);
             onComplete?.(event.result);
           },
-          onError: (message: VectorizeError_V1_0["message"]) => {
+          onError: (message: MaskError_V1_0["message"]) => {
             setStatus("error");
             setErrorMessage(message);
           },
@@ -234,4 +234,4 @@ export function useVectorizePreview() {
   };
 }
 
-export type UseVectorizePreview = ReturnType<typeof useVectorizePreview>;
+export type UseMaskPreview = ReturnType<typeof useMaskPreview>;
