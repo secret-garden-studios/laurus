@@ -51,6 +51,54 @@ export interface ProjectSvg_V1_0 {
   stroke_width: number;
   description: string;
 }
+// No media_key -- unlike imgs/svgs, LaurusVectorResult (the vectorize websocket's output) doesn't
+// have one; this stores placement/cosmetic fields plus a reference to it, mirroring how
+// ProjectImg_V1_0 references img_media_id rather than embedding pixel data. media_id is the pk of
+// the RedisVectorMedia (LaurusVectorResult) it places on the canvas.
+export interface ProjectMask_V1_0 {
+  media_id: string;
+  media_group_id: string;
+  width: number;
+  height: number;
+  top: number;
+  left: number;
+  order: number;
+  scale_x: number;
+  scale_y: number;
+  rotate_x: number;
+  rotate_y: number;
+  rotate_z: number;
+  rotate_angle: number;
+  // Denormalized from the hydrated LaurusVectorResult at persist time for convenience -- the
+  // server's ProjectMask doesn't store these (rendering already reads them off the hydrated
+  // vector data, see ProjectMaskItem), so they're stripped before the project is sent back to the
+  // server (see maskToWire) and re-populated on read from whatever canvasMasks resolves to.
+  fill: string;
+  stroke: string;
+  stroke_width: number;
+  description: string;
+}
+/** The server's on-the-wire shape for a mask -- no fill/stroke/stroke_width, see ProjectMask_V1_0. */
+type ProjectMaskWire_V1_0 = Omit<ProjectMask_V1_0, "fill" | "stroke" | "stroke_width">;
+function maskToWire(mask: ProjectMask_V1_0): ProjectMaskWire_V1_0 {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { fill: _fill, stroke: _stroke, stroke_width: _stroke_width, ...wire } = mask;
+  return wire;
+}
+function masksToWire(masks: Map<string, ProjectMask_V1_0>): Record<string, ProjectMaskWire_V1_0> {
+  return Object.fromEntries(Array.from(masks.entries()).map(([k, v]) => [k, maskToWire(v)]));
+}
+// Typed loosely (matching how imgs/svgs are read elsewhere in this file) because the actual
+// runtime value here is a plain JSON object straight off the wire -- ProjectResult_V1_0.masks
+// only claims to be a Map for the sake of code that runs after this conversion.
+function masksFromWire(raw: object | undefined): Map<string, ProjectMask_V1_0> {
+  return new Map(
+    Object.entries(raw ?? {}).map(([k, v]) => [
+      k,
+      { ...(v as ProjectMaskWire_V1_0), fill: "", stroke: "", stroke_width: 0 },
+    ]),
+  );
+}
 export interface Project_V1_0 {
   name: string;
   canvas_width: number;
@@ -68,6 +116,7 @@ export interface Project_V1_0 {
   fps: number;
   imgs: Map<string, ProjectImg_V1_0>;
   svgs: Map<string, ProjectSvg_V1_0>;
+  masks: Map<string, ProjectMask_V1_0>;
   browse_public_imgs: boolean;
   browse_public_svgs: boolean;
 }
@@ -91,6 +140,7 @@ export interface ProjectResult_V1_0 {
   last_active: string;
   imgs: Map<string, ProjectImg_V1_0>;
   svgs: Map<string, ProjectSvg_V1_0>;
+  masks: Map<string, ProjectMask_V1_0>;
   browse_public_imgs: boolean;
   browse_public_svgs: boolean;
   creator: string;
@@ -130,13 +180,16 @@ export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = {
 };
 export type LaurusProjectImg = ProjectImg_V1_0;
 export type LaurusProjectSvg = ProjectSvg_V1_0;
+export type LaurusProjectMask = ProjectMask_V1_0;
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
   imgs: Map<string, LaurusProjectImg>;
   svgs: Map<string, LaurusProjectSvg>;
+  masks: Map<string, LaurusProjectMask>;
 }
 export interface LaurusProject extends Project_V1_0 {
   imgs: Map<string, LaurusProjectImg>;
   svgs: Map<string, LaurusProjectSvg>;
+  masks: Map<string, LaurusProjectMask>;
 }
 export type LaurusProjectSearch = ProjectSearch_V1_0;
 export type LaurusPin = Pin_V1_0;
@@ -160,6 +213,7 @@ export async function getProjects(baseUrl: string | undefined) {
         ...r,
         imgs: new Map(Object.entries(r.imgs)),
         svgs: new Map(Object.entries(r.svgs)),
+        masks: masksFromWire(r.masks),
       };
     });
   } catch (error) {
@@ -185,6 +239,7 @@ export async function getProject(baseUrl: string | undefined, projectId: string)
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: masksFromWire(result.masks),
     };
   } catch (error) {
     console.log({ error });
@@ -203,6 +258,7 @@ export async function createProject(
       ...project,
       imgs: Object.fromEntries(project.imgs),
       svgs: Object.fromEntries(project.svgs),
+      masks: masksToWire(project.masks),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
@@ -221,6 +277,7 @@ export async function createProject(
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: masksFromWire(result.masks),
     };
   } catch (error) {
     console.log({ error });
@@ -240,6 +297,7 @@ export async function updateProject(
       ...project,
       imgs: Object.fromEntries(project.imgs),
       svgs: Object.fromEntries(project.svgs),
+      masks: masksToWire(project.masks),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
@@ -492,6 +550,7 @@ export async function duplicateProject(
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: masksFromWire(result.masks),
     };
   } catch (error) {
     console.log({ error });
@@ -522,6 +581,7 @@ export async function searchProjects(
         ...r,
         imgs: new Map(Object.entries(r.imgs)),
         svgs: new Map(Object.entries(r.svgs)),
+        masks: masksFromWire(r.masks),
       };
     });
   } catch (error) {

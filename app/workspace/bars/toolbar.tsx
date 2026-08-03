@@ -14,6 +14,7 @@ import {
   lassoSelect300,
   browse,
   bookmarkStacks200,
+  texture200,
 } from "../../svg-repo";
 import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
 import ToolbarButton from "@/app/components/toolbar-button";
@@ -145,6 +146,32 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 </p>
               </div>
             )}
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "mask"}
+            svg={{
+              svg: texture200(),
+              scale: 0.55,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              if (uiState.tool.type == "mask") {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "none" },
+                });
+              } else {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "mask" },
+                });
+              }
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            title="mask tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "contextmenu"}

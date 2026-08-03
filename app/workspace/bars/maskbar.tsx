@@ -1,0 +1,609 @@
+import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useEffect } from "react";
+import { CoreContext, HoverContext, UIContext, VectorizeContext } from "../workspace.client";
+import { checkCircle, SvgRepo, texture300 } from "@/app/svg-repo";
+import Toggle from "@/app/components/toggle";
+import styles from "@/app/app.module.css";
+import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
+import { CoreActionType } from "../states/core-state";
+import { LaurusVectorResult } from "../workspace.server";
+import { v4 as newUUID } from "uuid";
+
+export default function Vectorizebar() {
+  const { uiState } = useContext(UIContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { selectedImgKeys, selectedMaskKeys, maskTextureMix, setMaskTextureMix } = useContext(HoverContext);
+  const vectorize = useContext(VectorizeContext);
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          flex: {
+            gap: 0,
+          },
+          svgSize: {
+            width: 22,
+            height: 22,
+          },
+          toggle: {
+            div: {
+              paddingLeft: 20,
+              paddingRight: 20,
+              gap: 12,
+              fontSize: 13,
+            },
+            track: {
+              width: 26,
+              height: 12,
+              borderRadius: 10,
+              padding: 1,
+            },
+            button: {
+              width: 8,
+              height: 8,
+            },
+            translateX: 14,
+          },
+          input: {
+            container: {
+              gap: 10,
+              paddingRight: 20,
+            },
+            label: {
+              fontSize: 12,
+            },
+            input: {
+              fontSize: 12,
+              padding: 4,
+              letterSpacing: 1,
+            },
+          },
+        };
+      case "midhigh":
+        return {
+          flex: {
+            gap: 0,
+          },
+          svgSize: {
+            width: 18,
+            height: 18,
+          },
+          toggle: {
+            div: {
+              paddingLeft: 14,
+              paddingRight: 14,
+              gap: 8,
+              fontSize: 12,
+            },
+            track: {
+              width: 22,
+              height: 10,
+              borderRadius: 10,
+              padding: 1,
+            },
+            button: {
+              width: 6,
+              height: 6,
+            },
+            translateX: 12,
+          },
+          input: {
+            container: {
+              gap: 10,
+              paddingRight: 14,
+            },
+            label: {
+              fontSize: 11,
+            },
+            input: {
+              fontSize: 11,
+              padding: 4,
+              letterSpacing: 1,
+            },
+          },
+        };
+      case "low":
+      case "midlow":
+        return {
+          flex: {
+            gap: 0,
+          },
+          svgSize: {
+            width: 20,
+            height: 20,
+          },
+          toggle: {
+            div: {
+              paddingLeft: 16,
+              paddingRight: 16,
+              gap: 12,
+              fontSize: 12,
+            },
+            track: {
+              width: 20,
+              height: 9,
+              borderRadius: 10,
+              padding: 1,
+            },
+            button: {
+              width: 6,
+              height: 6,
+            },
+            translateX: 10,
+          },
+          input: {
+            container: {
+              gap: 10,
+              paddingRight: 16,
+            },
+            label: {
+              fontSize: 11,
+            },
+            input: {
+              fontSize: 11,
+              padding: 4,
+              letterSpacing: 1,
+            },
+          },
+        };
+    }
+  });
+
+  const xInputRef = useRef<HTMLInputElement | null>(null);
+  const yInputRef = useRef<HTMLInputElement | null>(null);
+  const wInputRef = useRef<HTMLInputElement | null>(null);
+  const hInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Where/how big the generated vector should land, overriding the default of overlaying it
+  // directly on top of the source image at the image's own frame. Lives in the shared
+  // useVectorizePreview instance (not local state) so the live preview in canvas.tsx can read the
+  // same values and match, instead of only jumping to the override once persisted.
+  const { position, setPosition, size, setSize } = vectorize;
+
+  const isPositionOn = position.value;
+  const isSizeOn = size.value;
+  const xValue = position.x?.toString() ?? "0";
+  const yValue = position.y?.toString() ?? "0";
+  const widthValue = size.width?.toString() ?? "0";
+  const heightValue = size.height?.toString() ?? "0";
+  const positionInputStyle = useMemo<CSSProperties>(() => {
+    return {
+      textAlign: "center",
+      background: "none",
+      color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+      border: "none",
+      outline: "none",
+      display: "inline-block",
+      overflowX: "scroll",
+      width: "6ch",
+      ...dynamicSizes.input.input,
+    };
+  }, [dynamicSizes.input.input, isPositionOn]);
+  const sizeInputStyle = useMemo<CSSProperties>(() => {
+    return {
+      textAlign: "center",
+      background: "none",
+      color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+      border: "none",
+      outline: "none",
+      display: "inline-block",
+      overflowX: "scroll",
+      width: "6ch",
+      ...dynamicSizes.input.input,
+    };
+  }, [dynamicSizes.input.input, isSizeOn]);
+
+  const updateToolPosition = useCallback(() => {
+    const newX = parseFloat(xInputRef.current?.value || "");
+    const newY = parseFloat(yInputRef.current?.value || "");
+    setPosition((prev) => ({
+      ...prev,
+      x: isNaN(newX) ? undefined : newX,
+      y: isNaN(newY) ? undefined : newY,
+    }));
+  }, [setPosition]);
+
+  const selectedImgKey = selectedImgKeys.size === 1 ? Array.from(selectedImgKeys)[0] : undefined;
+  const imgData = selectedImgKey ? coreState.canvasImgs.get(selectedImgKey) : undefined;
+  const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
+  // The source image's own on-canvas aspect ratio -- width/height stay locked to it so resizing
+  // the vector output can't distort it relative to the image it was traced from.
+  const sourceAspectRatio = useMemo(() => {
+    if (!imgMeta || imgMeta.height * imgMeta.scale_y <= 0) return undefined;
+    return (imgMeta.width * imgMeta.scale_x) / (imgMeta.height * imgMeta.scale_y);
+  }, [imgMeta]);
+
+  const updateToolWidth = useCallback(() => {
+    const newWidth = parseFloat(wInputRef.current?.value || "");
+    setSize((prev) => ({
+      ...prev,
+      width: isNaN(newWidth) ? undefined : newWidth,
+      height: isNaN(newWidth) || !sourceAspectRatio ? prev.height : newWidth / sourceAspectRatio,
+    }));
+  }, [sourceAspectRatio, setSize]);
+
+  const updateToolHeight = useCallback(() => {
+    const newHeight = parseFloat(hInputRef.current?.value || "");
+    setSize((prev) => ({
+      ...prev,
+      height: isNaN(newHeight) ? undefined : newHeight,
+      width: isNaN(newHeight) || !sourceAspectRatio ? prev.width : newHeight * sourceAspectRatio,
+    }));
+  }, [sourceAspectRatio, setSize]);
+
+  const isVectorizeBusy = vectorize.status === "connecting" || vectorize.status === "streaming";
+  const isVectorizeDisabled = !imgData || isVectorizeBusy;
+  const isPositionDisabled = !imgData;
+  const isSizeDisabled = !imgData;
+  // There's only something to blend once geometry is actually on screen.
+  const hasMesh = vectorize.status === "streaming" || vectorize.status === "done";
+  // A selected placed mask takes priority over the live in-flight preview -- picking a specific
+  // result to adjust should always win over whatever's still streaming in, and the two only
+  // overlap in the rare case both happen to be true at once.
+  const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
+  const showTextureSlider = selectedMaskKey !== undefined || hasMesh;
+  const textureMixValue =
+    selectedMaskKey !== undefined ? (maskTextureMix.get(selectedMaskKey) ?? 0) : vectorize.textureMix;
+  const handleTextureMixChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        setMaskTextureMix((prev) => {
+          const next = new Map(prev);
+          next.set(selectedMaskKey, value);
+          return next;
+        });
+      } else {
+        vectorize.setTextureMix(value);
+      }
+    },
+    [selectedMaskKey, setMaskTextureMix, vectorize],
+  );
+  const maskTitle = isVectorizeBusy
+    ? "masking…"
+    : selectedImgKeys.size === 0
+      ? "select an image to mask"
+      : selectedImgKeys.size > 1
+        ? "select a single image to mask"
+        : "mask the selected image";
+
+  // Called directly off the websocket's one and only "complete" message (see
+  // useVectorizePreview's start()) rather than watched for via a useEffect on vectorize.status --
+  // an effect would re-fire this every time Vectorizebar remounts (e.g. switching tools away and
+  // back) and finds status still "done" from a prior run, with no reliable way to tell "already
+  // saved" from "new" short of extra bookkeeping. Calling it once, tied to the one real event,
+  // needs none.
+  const persistMask = useCallback(
+    (result: LaurusVectorResult) => {
+      if (!imgMeta) return;
+      const newKey = newUUID();
+      const order =
+        Math.max(
+          -1,
+          ...Array.from(coreState.project.imgs.values()).map((i) => i.order),
+          ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
+          ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+        ) + 1;
+      const projectMask: LaurusProjectMask = {
+        media_id: result.vector_media_id,
+        media_group_id: "",
+        // Defaults to the source image's own frame, so the result lands exactly on top of the
+        // image it came from -- overridden by the position/size toggles above when they're on.
+        width: size.value && size.width !== undefined ? size.width : imgMeta.width,
+        height: size.value && size.height !== undefined ? size.height : imgMeta.height,
+        top: position.value && position.y !== undefined ? position.y : imgMeta.top,
+        left: position.value && position.x !== undefined ? position.x : imgMeta.left,
+        order,
+        scale_x: imgMeta.scale_x,
+        scale_y: imgMeta.scale_y,
+        rotate_x: 0,
+        rotate_y: 0,
+        rotate_z: 0,
+        rotate_angle: 0,
+        fill: result.fill,
+        stroke: result.stroke,
+        stroke_width: result.stroke_width,
+        description: "",
+      };
+
+      const rollback: LaurusProjectResult = { ...coreState.project };
+      const newMasks = new Map(coreState.project.masks);
+      newMasks.set(newKey, projectMask);
+      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
+
+      dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
+      dispatch({ type: CoreActionType.SetProject, value: newProject });
+
+      (async () => {
+        if (newProject.project_id) {
+          const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+            ...newProject,
+          });
+          if (!updated) {
+            dispatch({ type: CoreActionType.SetProject, value: rollback });
+            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
+          }
+        } else {
+          const created = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
+          if (created) {
+            dispatch({ type: CoreActionType.SetProject, value: { ...created } });
+          } else {
+            dispatch({ type: CoreActionType.SetProject, value: rollback });
+            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
+          }
+        }
+      })();
+    },
+    [imgMeta, position, size, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+  );
+
+  const handleVectorizeClick = useCallback(() => {
+    if (isVectorizeDisabled || !imgData) return;
+    vectorize.start(imgData, persistMask);
+  }, [isVectorizeDisabled, imgData, vectorize, persistMask]);
+
+  // Starting fresh whenever the selected image changes, rather than leaving a stale mesh/status
+  // or position/size override from whatever was last vectorized (vectorize.reset() clears both).
+  useEffect(() => {
+    vectorize.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedImgKey]);
+
+  return (
+    <>
+      <div
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          overflowX: "auto",
+          ...dynamicSizes.flex,
+        }}
+      >
+        <SvgRepo
+          svg={texture300()}
+          containerStyle={{
+            width: dynamicSizes.svgSize.width,
+            height: dynamicSizes.svgSize.height,
+          }}
+          scale={1}
+          scaleToContaier={true}
+        />
+        <div
+          style={{
+            display: "flex",
+            height: "100%",
+            alignItems: "center",
+            ...dynamicSizes.input.container,
+          }}
+        >
+          <div
+            title={
+              isPositionDisabled
+                ? "select an image to vectorize to set an exact position for the result"
+                : "place the generated vector at an exact x/y position instead of overlaying the source image"
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              style={{
+                textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              }}
+            >
+              {"position"}
+            </span>
+            <Toggle
+              value={isPositionOn}
+              onClick={() => {
+                const newPositionValue = !isPositionOn;
+                const newX = parseFloat(xInputRef.current?.value || "");
+                const newY = parseFloat(yInputRef.current?.value || "");
+                setPosition({
+                  value: newPositionValue,
+                  x: newPositionValue && !isNaN(newX) ? newX : undefined,
+                  y: newPositionValue && !isNaN(newY) ? newY : undefined,
+                });
+              }}
+              trackStyles={{ ...dynamicSizes.toggle.track }}
+              buttonStyles={{ ...dynamicSizes.toggle.button }}
+              translateX={dynamicSizes.toggle.translateX}
+              disabled={isPositionDisabled}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+              ...dynamicSizes.input.label,
+            }}
+          >
+            {"x"}
+          </div>
+          <input
+            className={styles["numberInput"]}
+            id={`${selectedImgKey ?? "vectorizebar"}|input|x`}
+            disabled={!isPositionOn}
+            ref={xInputRef}
+            onChange={updateToolPosition}
+            type="text"
+            value={xValue}
+            autoComplete="off"
+            style={positionInputStyle}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+              ...dynamicSizes.input.label,
+            }}
+          >
+            {"y"}
+          </div>
+          <input
+            className={styles["numberInput"]}
+            id={`${selectedImgKey ?? "vectorizebar"}|input|y`}
+            disabled={!isPositionOn}
+            ref={yInputRef}
+            onChange={updateToolPosition}
+            type="text"
+            value={yValue}
+            autoComplete="off"
+            style={positionInputStyle}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.input.container,
+          }}
+        >
+          <div
+            title={
+              isSizeDisabled
+                ? "select an image to vectorize to set an exact size for the result"
+                : "size the generated vector to an exact width/height instead of matching the source image"
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              style={{
+                textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              }}
+            >
+              {"size"}
+            </span>
+            <Toggle
+              value={isSizeOn}
+              onClick={() => {
+                const newSizeValue = !isSizeOn;
+                setSize(
+                  newSizeValue && imgMeta
+                    ? {
+                        value: true,
+                        // Seeded from the source image's current on-canvas size, so turning the
+                        // toggle on doesn't jump to some other size -- from here, editing either
+                        // field scales the other to keep this same ratio.
+                        width: imgMeta.width * imgMeta.scale_x,
+                        height: imgMeta.height * imgMeta.scale_y,
+                      }
+                    : { value: newSizeValue, width: undefined, height: undefined },
+                );
+              }}
+              trackStyles={{ ...dynamicSizes.toggle.track }}
+              buttonStyles={{ ...dynamicSizes.toggle.button }}
+              translateX={dynamicSizes.toggle.translateX}
+              disabled={isSizeDisabled}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+              ...dynamicSizes.input.label,
+            }}
+          >
+            {"width"}
+          </div>
+          <input
+            className={styles["numberInput"]}
+            id={`${selectedImgKey ?? "vectorizebar"}|input|w`}
+            disabled={!isSizeOn}
+            ref={wInputRef}
+            onChange={updateToolWidth}
+            type="text"
+            value={widthValue}
+            autoComplete="off"
+            style={sizeInputStyle}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+              ...dynamicSizes.input.label,
+            }}
+          >
+            {"height"}
+          </div>
+          <input
+            className={styles["numberInput"]}
+            id={`${selectedImgKey ?? "vectorizebar"}|input|h`}
+            disabled={!isSizeOn}
+            ref={hInputRef}
+            onChange={updateToolHeight}
+            type="text"
+            value={heightValue}
+            autoComplete="off"
+            style={sizeInputStyle}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span
+            style={{
+              color: isVectorizeDisabled ? "rgb(67,67,67)" : "inherit",
+            }}
+          >
+            {"mask"}
+          </span>
+          <SvgRepo
+            title={maskTitle}
+            svg={isVectorizeDisabled ? checkCircle("rgb(67,67,67)") : checkCircle()}
+            onContainerClick={isVectorizeDisabled ? undefined : handleVectorizeClick}
+            containerStyle={{
+              width: dynamicSizes.svgSize.width,
+              height: dynamicSizes.svgSize.height,
+            }}
+            scale={0.7}
+            scaleToContaier={true}
+          />
+        </div>
+        {showTextureSlider && (
+          <div
+            title="blend between the flat vectorized color and the source image sampled through the mesh"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>{"texture"}</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={textureMixValue}
+              onChange={(e) => handleTextureMixChange(parseFloat(e.target.value))}
+            />
+            <span style={{ opacity: 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

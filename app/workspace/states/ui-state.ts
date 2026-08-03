@@ -34,7 +34,8 @@ export type LaurusTool =
   | { type: "move" }
   | { type: "scale" }
   | { type: "rotate" }
-  | { type: "mix" };
+  | { type: "mix" }
+  | { type: "mask" };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",

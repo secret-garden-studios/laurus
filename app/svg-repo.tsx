@@ -2558,3 +2558,41 @@ export function bookmarkStacks200(
     ),
   };
 }
+
+export function texture200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/texture_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M188.31-160q-9.77-3.23-17.43-10.88-7.65-7.66-10.88-17.43L771.69-800q10.23 3.46 17.54 10.88 7.31 7.43 11 17.43L188.31-160ZM160-418.92v-56.62L484.46-800h56.62L160-418.92Zm0-287.23v-29.23q0-27.62 18.5-46.12Q197-800 224.62-800h29.23L160-706.15ZM706.15-160 800-253.85v29.23q0 27.62-18.5 46.12Q763-160 735.38-160h-29.23Zm-287.23 0L800-541.08v56.62L475.54-160h-56.62Z"/>`,
+    ),
+  };
+}
+
+export function texture300(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/texture_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M182.15-140q-14.38-3.62-26.46-15.69-12.07-12.08-15.69-26.46L777.85-820q15.61 4.23 26.76 15.69 11.16 11.46 16 26.46L182.15-140ZM140-395.46v-84.31L480.23-820h84.31L140-395.46Zm0-297.62v-54.61Q140-778 161-799q21-21 51.31-21h54.61L140-693.08ZM693.08-140 820-266.92v54.61Q820-182 799-161q-21 21-51.31 21h-54.61Zm-297.62 0L820-564.54v84.31L479.77-140h-84.31Z"/>`,
+    ),
+  };
+}

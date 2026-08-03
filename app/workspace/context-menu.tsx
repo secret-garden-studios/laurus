@@ -30,6 +30,7 @@ import {
   lassoSelect,
   SvgRepo,
   cycle400,
+  polyline200,
 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
@@ -1101,6 +1102,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             return cycle400();
                           case "mix":
                             return experiment();
+                          case "mask":
+                            return polyline200();
                         }
                       })()}
                       containerStyle={{

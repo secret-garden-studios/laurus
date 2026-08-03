@@ -1,0 +1,117 @@
+import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectMask } from "../../projects/projects.server";
+
+interface Point2D {
+  x: number;
+  y: number;
+}
+interface CornerTravel {
+  topLeft: Point2D;
+  topRight: Point2D;
+  bottomLeft: Point2D;
+  bottomRight: Point2D;
+}
+function calculate3DTravelWithPerspective(
+  meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask,
+  perspective: number = Infinity,
+): CornerTravel {
+  const { width, height, scale_x, scale_y, rotate_x: rx, rotate_y: ry, rotate_z: rz, rotate_angle } = meta;
+  const theta = rotate_angle * (Math.PI / 180);
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const omc = 1 - cosT;
+
+  const len = Math.sqrt(rx * rx + ry * ry + rz * rz);
+  if (len === 0) {
+    const zero = { x: 0, y: 0 };
+    return {
+      topLeft: zero,
+      topRight: zero,
+      bottomLeft: zero,
+      bottomRight: zero,
+    };
+  }
+
+  const ux = rx / len;
+  const uy = ry / len;
+  const uz = rz / len;
+  const r11 = cosT + ux * ux * omc;
+  const r12 = ux * uy * omc - uz * sinT;
+  const r13 = ux * uz * omc + uy * sinT;
+  const r21 = uy * ux * omc + uz * sinT;
+  const r22 = cosT + uy * uy * omc;
+  const r23 = uy * uz * omc - ux * sinT;
+  const r31 = uz * ux * omc - uy * sinT;
+  const r32 = uz * uy * omc + ux * sinT;
+  const r33 = cosT + uz * uz * omc;
+  const scaledW = width * scale_x;
+  const scaledH = height * scale_y;
+
+  const getTravel = (origX: number, origY: number, origZ: number): Point2D => {
+    const rotX = r11 * origX + r12 * origY + r13 * origZ;
+    const rotY = r21 * origX + r22 * origY + r23 * origZ;
+    const rotZ = r31 * origX + r32 * origY + r33 * origZ;
+    const f = perspective === Infinity ? 1 : perspective / (perspective - rotZ);
+    const projX = rotX * f;
+    const projY = rotY * f;
+    return {
+      x: projX - origX,
+      y: projY - origY,
+    };
+  };
+
+  return {
+    topLeft: getTravel(0, 0, 0),
+    topRight: getTravel(scaledW, 0, 0),
+    bottomLeft: getTravel(0, scaledH, 0),
+    bottomRight: getTravel(scaledW, scaledH, 0),
+  };
+}
+
+function calculateBoundingDeltas(meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  const { width, height, scale_x, scale_y } = meta;
+  const travel = calculate3DTravelWithPerspective(meta);
+  const scaledW = width * scale_x;
+  const scaledH = height * scale_y;
+  const newX = [
+    0 + travel.topLeft.x,
+    scaledW + travel.topRight.x,
+    0 + travel.bottomLeft.x,
+    scaledW + travel.bottomRight.x,
+  ];
+  const newY = [
+    0 + travel.topLeft.y,
+    0 + travel.topRight.y,
+    scaledH + travel.bottomLeft.y,
+    scaledH + travel.bottomRight.y,
+  ];
+  return {
+    top: Math.min(...newY),
+    right: Math.max(...newX) - width,
+    bottom: Math.max(...newY) - height,
+    left: Math.min(...newX),
+  };
+}
+
+export function calculateTransformedBounds(meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask): {
+  width: number;
+  height: number;
+  deltas: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+} {
+  const { width, height } = meta;
+  const deltas = calculateBoundingDeltas(meta);
+  return {
+    width: width + deltas.right - deltas.left,
+    height: height + deltas.bottom - deltas.top,
+    deltas,
+  };
+}

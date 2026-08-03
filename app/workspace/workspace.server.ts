@@ -300,7 +300,7 @@ export type LaurusGlowStop = GlowStop_V1_0;
  * This is that same edge described smoothly. Fill it as a backing, then clip
  * the mesh to it -- on a 2d context that is `ctx.clip(new Path2D(curve.d))`;
  * on WebGL there is no clip, so rasterize it into a mask instead (see
- * webgl-shader-preview).
+ * uploadCurveMask in vectorize-gl.ts).
  *
  * `glow` is the soft falloff living outside that clip -- a glow, a drop
  * shadow, any alpha the hard silhouette edge cuts off -- measured off the
@@ -350,9 +350,9 @@ export interface VectorMediaResult_V1_0 {
 }
 export type LaurusVectorResult = VectorMediaResult_V1_0;
 
-export async function getVector(baseUrl: string | undefined, vectorMediaId: string) {
+export async function getVector(baseUrl: string | undefined, vectorId: string) {
   try {
-    const url = `${baseUrl}/media/vector/${vectorMediaId}`;
+    const url = `${baseUrl}/media/vector/${vectorId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -363,6 +363,51 @@ export async function getVector(baseUrl: string | undefined, vectorMediaId: stri
       return undefined;
     }
     const response: VectorMediaResult_V1_0 = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+export async function getVectors(baseUrl: string | undefined, mediaId: string) {
+  try {
+    const url = `${baseUrl}/media/vector?media_id=${mediaId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: VectorMediaResult_V1_0[] = await raw_response.json();
+    return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+/** Bulk hydration for a project's masks dict -- one round trip for every mask's
+ * vector_media_id, instead of one getVector call per mask. */
+export async function getVectorsByIds(baseUrl: string | undefined, vectorMediaIds: string[]) {
+  if (vectorMediaIds.length === 0) return [];
+  try {
+    const params = new URLSearchParams();
+    vectorMediaIds.forEach((id) => params.append("ids", id));
+    const url = `${baseUrl}/media/vector/by-ids?${params.toString()}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: VectorMediaResult_V1_0[] = await raw_response.json();
     return response;
   } catch (error) {
     console.log({ error });

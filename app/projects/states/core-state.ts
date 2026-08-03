@@ -11,6 +11,7 @@ export const defaultProject: LaurusProjectResult = {
   frame_height: RESOLUTION.FRAME_HEIGHT_4_5,
   imgs: new Map(),
   svgs: new Map(),
+  masks: new Map(),
   frame_rotate_x: 0,
   frame_rotate_y: 0,
   frame_rotate_z: 0,

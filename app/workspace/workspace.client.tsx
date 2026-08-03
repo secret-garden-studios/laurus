@@ -22,6 +22,7 @@ import {
   LaurusMediaGroupResult,
   LaurusMixState,
   LaurusSvgResult,
+  LaurusVectorResult,
   searchImgs,
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
@@ -31,13 +32,16 @@ import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
 import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
-import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
+import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
+import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
+import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
+import { useVectorizePreview, UseVectorizePreview } from "./hooks/useMaskPreview";
 import {
   ProjectResult_V1_0,
   updateProject,
@@ -48,6 +52,7 @@ import {
   LaurusProjectImg,
   LaurusProjectResult,
   LaurusProjectSvg,
+  LaurusProjectMask,
 } from "../projects/projects.server";
 import { MeDependencies, ProjectDependencies } from "../page";
 import {
@@ -150,6 +155,13 @@ export interface HoverContextProps {
   setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectedSvgKeys: Set<string>;
   setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+  selectedMaskKeys: Set<string>;
+  setSelectedMaskKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+  // Per-mask texture-mix slider value (see Vectorizebar's "texture" slider and
+  // ProjectMaskItem) -- ephemeral view state, not part of the persisted project, so it lives
+  // here alongside the other cross-component UI state rather than in CoreState.
+  maskTextureMix: Map<string, number>;
+  setMaskTextureMix: React.Dispatch<React.SetStateAction<Map<string, number>>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -163,6 +175,10 @@ export const HoverContext = createContext<HoverContextProps>({
   setSelectedImgKeys: () => {},
   selectedSvgKeys: new Set<string>(),
   setSelectedSvgKeys: () => {},
+  selectedMaskKeys: new Set<string>(),
+  setSelectedMaskKeys: () => {},
+  maskTextureMix: new Map<string, number>(),
+  setMaskTextureMix: () => {},
 });
 
 export interface CoreContextProps {
@@ -197,15 +213,56 @@ export const UIContext = createContext<UIContextProps>({
   uiDispatch: () => {},
 });
 
+// A single shared vectorize-preview instance, so the "Vectorize" trigger button (in
+// VectorizeUnitbar, mounted from Titlebar) and the live WebGL mesh preview (layered into Canvas)
+// read/drive the same in-flight websocket + mesh buffers instead of each starting their own.
+const defaultVectorizePreview: UseVectorizePreview = {
+  status: "idle",
+  triangleCount: 0,
+  result: undefined,
+  errorMessage: undefined,
+  textureMix: 0,
+  setTextureMix: () => {},
+  textureMixRef: { current: 0 },
+  position: { value: false, x: undefined, y: undefined },
+  setPosition: () => {},
+  size: { value: false, width: undefined, height: undefined },
+  setSize: () => {},
+  start: () => {},
+  reset: () => {},
+  meshRefs: {
+    positionsRef: { current: [] },
+    colorsRef: { current: [] },
+    barycentricsRef: { current: [] },
+    uvsRef: { current: [] },
+    vertexCountRef: { current: 0 },
+    dirtyRef: { current: false },
+    curvesRef: { current: [] },
+    glowColorRef: { current: [1, 1, 1] },
+  },
+};
+
+export const VectorizeContext = createContext<UseVectorizePreview>(defaultVectorizePreview);
+
+function VectorizePreviewProvider({ children }: { children: React.ReactNode }) {
+  const vectorizePreview = useVectorizePreview();
+  return <VectorizeContext value={vectorizePreview}>{children}</VectorizeContext>;
+}
+
 function initProject(p: ProjectResult_V1_0) {
   const projectImgsInit: Map<string, LaurusProjectImg> = new Map(p.imgs.entries().map((e) => [e[0], { ...e[1] }]));
 
   const projectSvgsInit: Map<string, LaurusProjectSvg> = new Map(p.svgs.entries().map((e) => [e[0], { ...e[1] }]));
 
+  const projectMasksInit: Map<string, LaurusProjectMask> = new Map(
+    (p.masks ?? new Map()).entries().map((e) => [e[0], { ...e[1] }]),
+  );
+
   return {
     ...p,
     imgs: projectImgsInit,
     svgs: projectSvgsInit,
+    masks: projectMasksInit,
     frame_width: p.frame_width > 0 && p.frame_width <= p.canvas_width ? p.frame_width : defaultProject.frame_width,
     frame_height:
       p.frame_height > 0 && p.frame_height <= p.canvas_height ? p.frame_height : defaultProject.frame_height,
@@ -343,6 +400,17 @@ function initReducer({
       )
     : new Map();
 
+  const newCanvasMasks: Map<string, LaurusVectorResult> = projectDependencies
+    ? new Map(
+        (projectDependencies.project.masks ?? new Map<string, LaurusProjectMask>()).entries().map((e) => [
+          e[0],
+          {
+            ...projectDependencies.canvasMasks.find((v) => v.vector_media_id == e[1].media_id),
+          },
+        ]),
+      )
+    : new Map();
+
   const browserImgIds = new Set(browserDependencies.browserImgs.map((i) => i.img_media_id));
   const browserSvgIds = new Set(browserDependencies.browserSvgs.map((s) => s.svg_media_id));
 
@@ -441,6 +509,7 @@ function initReducer({
       mediaGroups: newMediaGroups,
       canvasImgs: newCanvasImgs,
       canvasSvgs: newCanvasSvgs,
+      canvasMasks: newCanvasMasks,
       apiOrigin: apiOrigin,
       timelineUnit: timelineUnits[0],
       timelineMaxValue: timelineValues[1],
@@ -501,6 +570,8 @@ export default function Workspace({
   const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
   const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
+  const [selectedMaskKeys, setSelectedMaskKeys] = useState<Set<string>>(new Set<string>());
+  const [maskTextureMix, setMaskTextureMix] = useState<Map<string, number>>(new Map<string, number>());
   const [mediaPageSize] = useState(mediaPageSizeInit);
 
   const [minifiedControlsSize] = useState(() => {
@@ -1039,6 +1110,10 @@ export default function Workspace({
       setSelectedImgKeys,
       selectedSvgKeys,
       setSelectedSvgKeys,
+      selectedMaskKeys,
+      setSelectedMaskKeys,
+      maskTextureMix,
+      setMaskTextureMix,
     }),
     [
       mostRecentlyEnteredEffectUnitKey,
@@ -1047,6 +1122,8 @@ export default function Workspace({
       selectedEffectUnitKeys,
       selectedImgKeys,
       selectedSvgKeys,
+      selectedMaskKeys,
+      maskTextureMix,
     ],
   );
 
@@ -1120,6 +1197,7 @@ export default function Workspace({
         setSelectedEffectUnitKeys(new Set<string>());
         setSelectedImgKeys(new Set<string>());
         setSelectedSvgKeys(new Set<string>());
+        setSelectedMaskKeys(new Set<string>());
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
         }
@@ -1157,6 +1235,10 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "x" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mix" ? { type: "none" } : { type: "mix" };
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "t" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : { type: "mask" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       }
@@ -1223,308 +1305,332 @@ export default function Workspace({
         <HoverContext value={hoverContextValue}>
           <CoreContext value={coreContextValue}>
             <UIContext value={uiContextValue}>
-              <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
-                <div
-                  style={{
-                    width: "100%",
-                    height: 1,
-                    background: "rgba(255,255,255,0.1)",
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  gridRow: "3 / span 2",
-                  gridColumn: "1",
-                  overflowY: "auto",
-                }}
-              >
-                {uiState.showTimeline ? (
-                  <TimelineArea />
-                ) : (
-                  <>
-                    <div
-                      style={{
-                        zIndex: Z_INDEX.FLOATING_CONTROLS,
-                        position: "fixed",
-                        bottom: minifiedControlsSize.playBottom,
-                        left: minifiedControlsSize.playLeft,
-                        width: minifiedControlsSize.playContainer,
-                        height: minifiedControlsSize.playContainer,
-                        borderRadius: "50%",
-                        border: "1px solid rgba(255, 255, 255, 0.1)",
-                        background: "rgb(32, 32, 32)",
-                        boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
-                      }}
-                    >
-                      <SvgRepo
-                        svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
-                        containerStyle={{
-                          width: minifiedControlsSize.playSvg,
-                          height: minifiedControlsSize.playSvg,
-                          cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
-                        }}
-                        scale={0.5}
-                        scaleToContaier={true}
-                        onContainerClick={handlePlayAll}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        zIndex: Z_INDEX.FLOATING_CONTROLS,
-                        position: "fixed",
-                        bottom: minifiedControlsSize.recordingBottom,
-                        right: uiState.showMediaBrowser
-                          ? minifiedControlsSize.recordingRight1
-                          : minifiedControlsSize.recordingRight2,
-                        width: minifiedControlsSize.recordingWidth,
-                        height: minifiedControlsSize.recordingHeight,
-                        borderRadius: "50%",
-                        border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
-                        background: uiState.recordingLight
-                          ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
-                          : "none",
-                        boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
-                      }}
-                    />
-                  </>
-                )}
-              </div>
-              <div
-                style={{
-                  gridRow: "2",
-                  gridColumn: "1 / -1",
-                  width: "100%",
-                }}
-              >
-                <Titlebar />
-              </div>
-              <div
-                style={{
-                  gridRow: "3",
-                  gridColumn: "2",
-                  width: "100%",
-                }}
-              >
-                <Subtitlebar />
-              </div>
-              {/* canvas area */}
-              <div
-                ref={canvasAreaRef}
-                style={{
-                  gridRow: "4",
-                  gridColumn: "2",
-                  overflowY: "auto",
-                  position: "relative",
-                  width: "100%",
-                  height: "100%",
-                  cursor: canvasCursor,
-                }}
-              >
-                <div
-                  className={
-                    styles[
-                      `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
-                    ]
-                  }
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: coreState.project.canvas_width,
-                    height: coreState.project.canvas_height,
-                    zIndex: Z_INDEX.CANVAS_BG,
-                  }}
-                />
-                {uiState.tool.type === "marquee" && (
+              <VectorizePreviewProvider>
+                <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
                   <div
+                    style={{
+                      width: "100%",
+                      height: 1,
+                      background: "rgba(255,255,255,0.1)",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    gridRow: "3 / span 2",
+                    gridColumn: "1",
+                    overflowY: "auto",
+                  }}
+                >
+                  {uiState.showTimeline ? (
+                    <TimelineArea />
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          zIndex: Z_INDEX.FLOATING_CONTROLS,
+                          position: "fixed",
+                          bottom: minifiedControlsSize.playBottom,
+                          left: minifiedControlsSize.playLeft,
+                          width: minifiedControlsSize.playContainer,
+                          height: minifiedControlsSize.playContainer,
+                          borderRadius: "50%",
+                          border: "1px solid rgba(255, 255, 255, 0.1)",
+                          background: "rgb(32, 32, 32)",
+                          boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
+                        }}
+                      >
+                        <SvgRepo
+                          svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
+                          containerStyle={{
+                            width: minifiedControlsSize.playSvg,
+                            height: minifiedControlsSize.playSvg,
+                            cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
+                          }}
+                          scale={0.5}
+                          scaleToContaier={true}
+                          onContainerClick={handlePlayAll}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          zIndex: Z_INDEX.FLOATING_CONTROLS,
+                          position: "fixed",
+                          bottom: minifiedControlsSize.recordingBottom,
+                          right: uiState.showMediaBrowser
+                            ? minifiedControlsSize.recordingRight1
+                            : minifiedControlsSize.recordingRight2,
+                          width: minifiedControlsSize.recordingWidth,
+                          height: minifiedControlsSize.recordingHeight,
+                          borderRadius: "50%",
+                          border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
+                          background: uiState.recordingLight
+                            ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
+                            : "none",
+                          boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+                <div
+                  style={{
+                    gridRow: "2",
+                    gridColumn: "1 / -1",
+                    width: "100%",
+                  }}
+                >
+                  <Titlebar />
+                </div>
+                <div
+                  style={{
+                    gridRow: "3",
+                    gridColumn: "2",
+                    width: "100%",
+                  }}
+                >
+                  <Subtitlebar />
+                </div>
+                {/* canvas area */}
+                <div
+                  ref={canvasAreaRef}
+                  style={{
+                    gridRow: "4",
+                    gridColumn: "2",
+                    overflowY: "auto",
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
+                    cursor: canvasCursor,
+                  }}
+                >
+                  <div
+                    className={
+                      styles[
+                        `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
+                      ]
+                    }
                     style={{
                       position: "absolute",
                       top: 0,
                       left: 0,
-                      width: "min-content",
-                      height: "min-content",
-                      zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                      pointerEvents: isMetaKeyPressed ? "none" : "auto",
+                      width: coreState.project.canvas_width,
+                      height: coreState.project.canvas_height,
+                      zIndex: Z_INDEX.CANVAS_BG,
                     }}
-                  >
-                    <Canvas />
-                  </div>
-                )}
-                {/* camera frame */}
-                <DraggableCamera
-                  contextId={"draggable-camera-context-id"}
-                  nodeId={"draggable-camera-node-id"}
-                  svgElementsRef={svgElementsRef}
-                  imgElementsRef={imgElementsRef}
-                  framesCacheRef={framesCacheRef}
-                  zIndex={Z_INDEX.CAMERA_FRAME}
-                  onNewPosition={async function (newPosition: { x: number; y: number }) {
-                    const rollback: LaurusProjectResult = {
-                      ...coreState.project,
-                    };
-                    const newProject: LaurusProjectResult = {
-                      ...coreState.project,
-                      frame_left: newPosition.x,
-                      frame_top: newPosition.y,
-                    };
-                    if (coreState.project.project_id) {
-                      dispatch({
-                        type: CoreActionType.SetProject,
-                        value: newProject,
-                      });
-                      const updated = await updateProject(
-                        coreState.apiOrigin,
-                        coreState.accessToken,
-                        newProject.project_id,
-                        { ...newProject },
-                      );
-                      if (!updated) {
+                  />
+                  {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "min-content",
+                        height: "min-content",
+                        zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
+                        pointerEvents: uiState.tool.type === "mask" ? "none" : isMetaKeyPressed ? "none" : "auto",
+                      }}
+                    >
+                      <Canvas />
+                    </div>
+                  )}
+                  {/* camera frame */}
+                  <DraggableCamera
+                    contextId={"draggable-camera-context-id"}
+                    nodeId={"draggable-camera-node-id"}
+                    svgElementsRef={svgElementsRef}
+                    imgElementsRef={imgElementsRef}
+                    framesCacheRef={framesCacheRef}
+                    zIndex={Z_INDEX.CAMERA_FRAME}
+                    onNewPosition={async function (newPosition: { x: number; y: number }) {
+                      const rollback: LaurusProjectResult = {
+                        ...coreState.project,
+                      };
+                      const newProject: LaurusProjectResult = {
+                        ...coreState.project,
+                        frame_left: newPosition.x,
+                        frame_top: newPosition.y,
+                      };
+                      if (coreState.project.project_id) {
                         dispatch({
                           type: CoreActionType.SetProject,
-                          value: rollback,
+                          value: newProject,
                         });
-                      }
-                    } else {
-                      dispatch({
-                        type: CoreActionType.SetProject,
-                        value: newProject,
-                      });
-                      const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
-                        ...newProject,
-                      });
-                      if (created) {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: { ...created },
-                        });
+                        const updated = await updateProject(
+                          coreState.apiOrigin,
+                          coreState.accessToken,
+                          newProject.project_id,
+                          { ...newProject },
+                        );
+                        if (!updated) {
+                          dispatch({
+                            type: CoreActionType.SetProject,
+                            value: rollback,
+                          });
+                        }
                       } else {
                         dispatch({
                           type: CoreActionType.SetProject,
-                          value: { ...rollback },
+                          value: newProject,
                         });
-                      }
-                    }
-                  }}
-                  disabled={uiState.tool.type != "move"}
-                />
-                <>
-                  {Array.from(coreState.project.imgs.entries()).map((e) => {
-                    const [key, meta] = e;
-                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
-                    const imgData = coreState.canvasImgs.get(key);
-                    if (imgData) {
-                      return (
-                        <div key={key}>
-                          <DraggableProjectImg
-                            mediaKey={key}
-                            data={imgData}
-                            meta={meta}
-                            zIndex={
-                              uiState.tool.type === "marquee" && uiState.tool.stack
-                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                            }
-                            imgElementsRef={imgElementsRef}
-                            framesCacheRef={framesCacheRef}
-                            refKey={key}
-                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                          />
-                        </div>
-                      );
-                    }
-                  })}
-                  {Array.from(coreState.project.svgs.entries()).map((e) => {
-                    const [key, meta] = e;
-                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
-                    const svgData = coreState.canvasSvgs.get(key);
-                    if (!svgData) return;
-                    let decodedString = "";
-                    try {
-                      decodedString = decodeURIComponent(
-                        atob(svgData.markup)
-                          .split("")
-                          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-                          .join(""),
-                      );
-                    } catch (error) {
-                      console.log("Failed to decode svg markup", {
-                        media_key: meta.media_key,
-                        error,
-                      });
-                    }
-                    if (decodedString) {
-                      return (
-                        <div key={key}>
-                          <DraggableProjectSvg
-                            mediaKey={key}
-                            decodedString={decodedString}
-                            meta={meta}
-                            zIndex={
-                              uiState.tool.type === "marquee" && uiState.tool.stack
-                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                            }
-                            svgElementsRef={svgElementsRef}
-                            framesCacheRef={framesCacheRef}
-                            refKey={key}
-                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                          />
-                        </div>
-                      );
-                    }
-                  })}
-                </>
-              </div>
-              {uiState.showMediaBrowser && (
-                <div
-                  style={{
-                    gridRow: "3 / span 2",
-                    gridColumn: "3",
-                    width: "100%",
-                    height: "100%",
-                  }}
-                >
-                  <MediaBrowser
-                    framesCacheRef={framesCacheRef}
-                    refreshIconRef={refreshIconRef}
-                    onNextPage={async () => {
-                      switch (uiState.mediaBrowserFilter) {
-                        case "img": {
-                          await handleImgPageRequest();
-                          break;
-                        }
-                        case "svg": {
-                          await handleSvgPageRequest();
-                          break;
+                        const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
+                          ...newProject,
+                        });
+                        if (created) {
+                          dispatch({
+                            type: CoreActionType.SetProject,
+                            value: { ...created },
+                          });
+                        } else {
+                          dispatch({
+                            type: CoreActionType.SetProject,
+                            value: { ...rollback },
+                          });
                         }
                       }
                     }}
+                    disabled={uiState.tool.type != "move"}
                   />
+                  <>
+                    {Array.from(coreState.project.imgs.entries()).map((e) => {
+                      const [key, meta] = e;
+                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                        return;
+                      const imgData = coreState.canvasImgs.get(key);
+                      if (imgData) {
+                        return (
+                          <div key={key}>
+                            <DraggableProjectImg
+                              mediaKey={key}
+                              data={imgData}
+                              meta={meta}
+                              zIndex={
+                                uiState.tool.type === "marquee" && uiState.tool.stack
+                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                              }
+                              imgElementsRef={imgElementsRef}
+                              framesCacheRef={framesCacheRef}
+                              refKey={key}
+                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                            />
+                          </div>
+                        );
+                      }
+                    })}
+                    {Array.from(coreState.project.svgs.entries()).map((e) => {
+                      const [key, meta] = e;
+                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                        return;
+                      const svgData = coreState.canvasSvgs.get(key);
+                      if (!svgData) return;
+                      let decodedString = "";
+                      try {
+                        decodedString = decodeURIComponent(
+                          atob(svgData.markup)
+                            .split("")
+                            .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                            .join(""),
+                        );
+                      } catch (error) {
+                        console.log("Failed to decode svg markup", {
+                          media_key: meta.media_key,
+                          error,
+                        });
+                      }
+                      if (decodedString) {
+                        return (
+                          <div key={key}>
+                            <DraggableProjectSvg
+                              mediaKey={key}
+                              decodedString={decodedString}
+                              meta={meta}
+                              zIndex={
+                                uiState.tool.type === "marquee" && uiState.tool.stack
+                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                              }
+                              svgElementsRef={svgElementsRef}
+                              framesCacheRef={framesCacheRef}
+                              refKey={key}
+                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                            />
+                          </div>
+                        );
+                      }
+                    })}
+                    {Array.from(coreState.project.masks.entries()).map((e) => {
+                      const [key, meta] = e;
+                      if (meta.top < 0 || meta.left < 0 || uiState.tool.type === "viewport") return;
+                      const vectorData = coreState.canvasMasks.get(key);
+                      if (!vectorData) return;
+                      return (
+                        <div key={key}>
+                          <DraggableProjectMask
+                            mediaKey={key}
+                            meta={meta}
+                            vectorData={vectorData}
+                            zIndex={
+                              uiState.tool.type === "marquee" && uiState.tool.stack
+                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </>
                 </div>
-              )}
-              {/* right panel */}
-              <div
-                style={{
-                  gridRow: "3 / span 2",
-                  gridColumn: "4",
-                }}
-              >
-                <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
-              </div>
-              {/* mediabar */}
-              <div
-                style={{
-                  gridRow: "5",
-                  gridColumn: "span 4",
-                  display: "grid",
-                  ...dynamicSizes.statusbar.container,
-                }}
-              >
-                <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
-              </div>
+                {uiState.showMediaBrowser && (
+                  <div
+                    style={{
+                      gridRow: "3 / span 2",
+                      gridColumn: "3",
+                      width: "100%",
+                      height: "100%",
+                    }}
+                  >
+                    <MediaBrowser
+                      framesCacheRef={framesCacheRef}
+                      refreshIconRef={refreshIconRef}
+                      onNextPage={async () => {
+                        switch (uiState.mediaBrowserFilter) {
+                          case "img": {
+                            await handleImgPageRequest();
+                            break;
+                          }
+                          case "svg": {
+                            await handleSvgPageRequest();
+                            break;
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+                {/* right panel */}
+                <div
+                  style={{
+                    gridRow: "3 / span 2",
+                    gridColumn: "4",
+                  }}
+                >
+                  <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
+                </div>
+                {/* mediabar */}
+                <div
+                  style={{
+                    gridRow: "5",
+                    gridColumn: "span 4",
+                    display: "grid",
+                    ...dynamicSizes.statusbar.container,
+                  }}
+                >
+                  <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
+                </div>
+              </VectorizePreviewProvider>
             </UIContext>
           </CoreContext>
         </HoverContext>

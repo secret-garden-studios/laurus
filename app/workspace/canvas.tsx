@@ -1,5 +1,5 @@
-import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { CoreContext, HoverContext, UIContext } from "./workspace.client";
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CoreContext, HoverContext, UIContext, VectorizeContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import {
   updateProject,
@@ -12,6 +12,7 @@ import {
 import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
+import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
@@ -131,8 +132,58 @@ export default function Canvas() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const vectorize = useContext(VectorizeContext);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
+
+  // Keyed off selectedImgKeys rather than activeElement -- that's what Vectorizebar actually
+  // vectorizes (see its selectedImgKey), so the live preview needs to watch the same thing or it
+  // silently never shows up for an image that was only ever alt-selected, not plain-clicked.
+  const activeVectorizeImg = useMemo(() => {
+    if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1) return undefined;
+    const key = Array.from(selectedImgKeys)[0];
+    const meta = coreState.project.imgs.get(key);
+    const imgData = coreState.canvasImgs.get(key);
+    if (!meta || !imgData) return undefined;
+    return { key, meta, imgData };
+  }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs]);
+
+  // Mirrors Vectorizebar's persistMask defaulting exactly, so the live preview lands at the
+  // same place/size the placed result will -- without this, the preview always sits on the
+  // source image and only jumps to the position/size override once vectorization finishes.
+  const liveVectorizeFrame = useMemo(() => {
+    if (!activeVectorizeImg) return undefined;
+    const meta = activeVectorizeImg.meta;
+    return {
+      width: vectorize.size.value && vectorize.size.width !== undefined ? vectorize.size.width : meta.width,
+      height: vectorize.size.value && vectorize.size.height !== undefined ? vectorize.size.height : meta.height,
+      scale_x: meta.scale_x,
+      scale_y: meta.scale_y,
+    };
+  }, [activeVectorizeImg, vectorize.size]);
+
+  const liveVectorizeDndPosition = useMemo(() => {
+    if (!activeVectorizeImg) return undefined;
+    const meta = activeVectorizeImg.meta;
+    return {
+      x: vectorize.position.value && vectorize.position.x !== undefined ? vectorize.position.x : meta.left,
+      y: vectorize.position.value && vectorize.position.y !== undefined ? vectorize.position.y : meta.top,
+    };
+  }, [activeVectorizeImg, vectorize.position]);
+
+  // Deliberately not re-created every time `vectorize` itself changes reference -- it does, on
+  // every single triangle/status update, because useVectorizePreview's provider re-renders and
+  // hands out a fresh wrapper object each time. What ProjectMaskItem's live GL effect actually
+  // reads off it (meshRefs, textureMixRef) are refs that stay the same underlying objects
+  // regardless, so a "stale" wrapper is functionally identical to a fresh one here. Without this
+  // memo, ProjectMaskItem saw a "new" source prop on every triangle and tore down + rebuilt its
+  // entire WebGL context (including a fresh async texture reload) each time -- the actual cause of
+  // the streaming flicker and the "reverts to the plain image, pauses" glitch right at completion.
+  const liveVectorizeSource = useMemo<ProjectMaskItemSource | undefined>(() => {
+    if (!activeVectorizeImg) return undefined;
+    return { kind: "live", vectorize, sourceImg: activeVectorizeImg.imgData };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVectorizeImg]);
 
   useLayoutEffect(() => {
     const c = drawingCanvasRef.current;
@@ -200,7 +251,12 @@ export default function Canvas() {
         height: newFrame.height,
         top: newFrame.y,
         left: newFrame.x,
-        order: Array.from(coreState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
+        order:
+          Math.max(
+            -1,
+            ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
+            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+          ) + 1,
         media_key: svgData.media_key,
         viewbox: svgData.viewbox,
         fill: svgData.fill,
@@ -300,7 +356,12 @@ export default function Canvas() {
         media_group_id: "",
         top: newFrame.y,
         left: newFrame.x,
-        order: Array.from(coreState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
+        order:
+          Math.max(
+            -1,
+            ...Array.from(coreState.project.imgs.values()).map((i) => i.order),
+            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+          ) + 1,
         rotate_x: 0,
         rotate_y: 0,
         rotate_z: 0,
@@ -417,6 +478,7 @@ export default function Canvas() {
         -1,
         ...Array.from(snapshot.imgs.values()).map((i) => i.order),
         ...Array.from(snapshot.svgs.values()).map((s) => s.order),
+        ...Array.from(snapshot.masks.values()).map((v) => v.order),
       );
 
       const newImgs = new Map(snapshot.imgs);
@@ -619,6 +681,19 @@ export default function Canvas() {
           onMouseDown={handleMouseDown}
         />
       </div>
+      {activeVectorizeImg && liveVectorizeFrame && liveVectorizeDndPosition && liveVectorizeSource && (
+        <ProjectMaskItem
+          key={activeVectorizeImg.key}
+          dndId={`dnd-node-live-vectorize-${activeVectorizeImg.key}`}
+          dndPosition={liveVectorizeDndPosition}
+          // Only needs to sit above the marquee drawing canvas it's a sibling of here -- placed
+          // masks' own stacking (by project order) is handled where they're actually rendered.
+          zIndex={1}
+          mediaKey={activeVectorizeImg.key}
+          frame={liveVectorizeFrame}
+          source={liveVectorizeSource}
+        />
+      )}
     </>
   );
 }

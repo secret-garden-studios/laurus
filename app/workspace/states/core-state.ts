@@ -5,6 +5,7 @@ import {
   LaurusImgResult,
   LaurusMediaGroupResult,
   LaurusSvgResult,
+  LaurusVectorResult,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 
@@ -14,6 +15,7 @@ export interface CoreState {
   project: LaurusProjectResult;
   canvasImgs: Map<string, LaurusImgResult>;
   canvasSvgs: Map<string, LaurusSvgResult>;
+  canvasMasks: Map<string, LaurusVectorResult>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
   mediaGroups: Map<string, LaurusMediaGroupResult>;
@@ -28,6 +30,7 @@ export const defaultCoreState: CoreState = {
   project: defaultProject,
   canvasImgs: new Map(),
   canvasSvgs: new Map(),
+  canvasMasks: new Map(),
   effects: [],
   effectGroups: new Map(),
   mediaGroups: new Map(),
@@ -45,10 +48,14 @@ export enum CoreActionType {
   SetCanvasSvg,
   DeleteCanvasSvg,
   SetCanvasSvgs,
+  SetCanvasMask,
+  DeleteCanvasMask,
+  SetCanvasMasks,
   SetProjectImg,
   SetProjectSvg,
   DeleteProjectImg,
   DeleteProjectSvg,
+  DeleteProjectMask,
   SetLightFrameBackground,
   SetEffects,
   SetEffect,
@@ -71,8 +78,12 @@ export type CoreAction =
   | { type: CoreActionType.SetCanvasSvg; key: string; value: LaurusSvgResult }
   | { type: CoreActionType.DeleteCanvasSvg; key: string }
   | { type: CoreActionType.SetCanvasSvgs; value: Map<string, LaurusSvgResult> }
+  | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusVectorResult }
+  | { type: CoreActionType.DeleteCanvasMask; key: string }
+  | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusVectorResult> }
   | { type: CoreActionType.DeleteProjectImg; key: string }
   | { type: CoreActionType.DeleteProjectSvg; key: string }
+  | { type: CoreActionType.DeleteProjectMask; key: string }
   | {
       type: CoreActionType.SetEffects;
       value: LaurusEffect[];
@@ -150,6 +161,44 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasSvgs: new Map(action.value),
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.SetCanvasMask: {
+      const newMasks = new Map(state.canvasMasks);
+      newMasks.set(action.key, action.value);
+      return {
+        ...state,
+        canvasMasks: newMasks,
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.DeleteCanvasMask: {
+      const newMasks = new Map(state.canvasMasks);
+      newMasks.delete(action.key);
+      return {
+        ...state,
+        canvasMasks: newMasks,
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.SetCanvasMasks: {
+      return {
+        ...state,
+        canvasMasks: new Map(action.value),
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.DeleteProjectMask: {
+      const newMasks = new Map(state.project.masks);
+      newMasks.delete(action.key);
+      const newProject: LaurusProjectResult = {
+        ...state.project,
+        masks: newMasks,
+      };
+      return {
+        ...state,
+        project: newProject,
         inputsToRender: new Set<string>(["*"]),
       };
     }

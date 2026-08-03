@@ -3,7 +3,8 @@ import { RefObject, useContext } from "react";
 import { UIContext, CoreContext } from "./workspace.client";
 import { CSS as DndCss } from "@dnd-kit/utilities";
 import styles from "../app.module.css";
-import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
+import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
+import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { Z_INDEX } from "./workspace.config";
 import { LaurusFrame } from "./workspace.server";
 
