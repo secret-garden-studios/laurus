@@ -9,7 +9,13 @@ import {
   MaskTriangle_V1_0,
   maskImage,
 } from "../workspace.server";
-import { colorToRGB01 } from "../mask-gl";
+import {
+  colorToRGB01,
+  SHEEN_DARKNESS_DEFAULT,
+  SHEEN_FALLOFF_CSS_PX_DEFAULT,
+  SHEEN_INTENSITY_DEFAULT,
+  SHEEN_SIZE_CSS_PX_DEFAULT,
+} from "../mask-gl";
 
 export type MaskStatus = "idle" | "connecting" | "streaming" | "done" | "error";
 
@@ -41,6 +47,7 @@ export function useMaskPreview() {
   const colorsRef = useRef<number[]>([]);
   const barycentricsRef = useRef<number[]>([]);
   const uvsRef = useRef<number[]>([]);
+  const centroidsRef = useRef<number[]>([]);
   const vertexCountRef = useRef(0);
   const dirtyRef = useRef(false);
   const curvesRef = useRef<MaskCurve_V1_0[]>([]);
@@ -58,6 +65,39 @@ export function useMaskPreview() {
   const setTextureMix = useCallback((value: number) => {
     textureMixRef.current = value;
     setTextureMixState(value);
+  }, []);
+
+  // Same mirrored state+ref pattern as textureMix, for Maskbar's epicenter size/intensity sliders.
+  const [sheenSize, setSheenSizeState] = useState(SHEEN_SIZE_CSS_PX_DEFAULT);
+  const sheenSizeRef = useRef(SHEEN_SIZE_CSS_PX_DEFAULT);
+
+  const setSheenSize = useCallback((value: number) => {
+    sheenSizeRef.current = value;
+    setSheenSizeState(value);
+  }, []);
+
+  const [sheenIntensity, setSheenIntensityState] = useState(SHEEN_INTENSITY_DEFAULT);
+  const sheenIntensityRef = useRef(SHEEN_INTENSITY_DEFAULT);
+
+  const setSheenIntensity = useCallback((value: number) => {
+    sheenIntensityRef.current = value;
+    setSheenIntensityState(value);
+  }, []);
+
+  const [sheenFalloff, setSheenFalloffState] = useState(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+  const sheenFalloffRef = useRef(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+
+  const setSheenFalloff = useCallback((value: number) => {
+    sheenFalloffRef.current = value;
+    setSheenFalloffState(value);
+  }, []);
+
+  const [sheenDarkness, setSheenDarknessState] = useState(SHEEN_DARKNESS_DEFAULT);
+  const sheenDarknessRef = useRef(SHEEN_DARKNESS_DEFAULT);
+
+  const setSheenDarkness = useCallback((value: number) => {
+    sheenDarknessRef.current = value;
+    setSheenDarknessState(value);
   }, []);
 
   // Where/how big the generated mask should land, overriding the default of overlaying it
@@ -99,6 +139,7 @@ export function useMaskPreview() {
     colorsRef.current = [];
     barycentricsRef.current = [];
     uvsRef.current = [];
+    centroidsRef.current = [];
     vertexCountRef.current = 0;
     dirtyRef.current = true;
     curvesRef.current = [];
@@ -108,9 +149,13 @@ export function useMaskPreview() {
     setErrorMessage(undefined);
     setStatus("idle");
     setTextureMix(0);
+    setSheenSize(SHEEN_SIZE_CSS_PX_DEFAULT);
+    setSheenIntensity(SHEEN_INTENSITY_DEFAULT);
+    setSheenFalloff(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+    setSheenDarkness(SHEEN_DARKNESS_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setTextureMix]);
+  }, [setTextureMix, setSheenSize, setSheenIntensity, setSheenFalloff, setSheenDarkness]);
 
   const start = useCallback(
     // onComplete fires exactly once, straight off the websocket's one and only "complete"
@@ -132,6 +177,10 @@ export function useMaskPreview() {
       setErrorMessage(undefined);
       setStatus("connecting");
       setTextureMix(0);
+      setSheenSize(SHEEN_SIZE_CSS_PX_DEFAULT);
+      setSheenIntensity(SHEEN_INTENSITY_DEFAULT);
+      setSheenFalloff(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+      setSheenDarkness(SHEEN_DARKNESS_DEFAULT);
 
       socketRef.current?.close();
       socketRef.current = maskImage(
@@ -169,10 +218,15 @@ export function useMaskPreview() {
                 [img.width, img.height],
                 [0, img.height],
               ];
+              // One shared centroid (the image's own center) for the whole quad -- see the
+              // matching comment in buildStaticMaskMesh (mask-gl.ts) for why it isn't split
+              // per-triangle like the real mesh triangles below.
+              const center: [number, number] = [img.width / 2, img.height / 2];
               for (const [x, y] of corners) {
                 positionsRef.current.push(x, y);
                 colorsRef.current.push(r, g, b);
                 uvsRef.current.push(x / img.width, 1 - y / img.height);
+                centroidsRef.current.push(...center);
                 // All-ones barycentrics keep edgeDist at 1 across the quad, so
                 // the wireframe doesn't draw an outline around the backing.
                 barycentricsRef.current.push(1, 1, 1);
@@ -183,10 +237,15 @@ export function useMaskPreview() {
           onTriangle: (event: MaskTriangle_V1_0) => {
             const colorCtx = getColorCtx();
             const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.shaded) : [1, 1, 1];
+            const centroid: [number, number] = [
+              event.points.reduce((sum, [x]) => sum + x, 0) / event.points.length,
+              event.points.reduce((sum, [, y]) => sum + y, 0) / event.points.length,
+            ];
             for (const [x, y] of event.points) {
               positionsRef.current.push(x, y);
               colorsRef.current.push(r, g, b);
               uvsRef.current.push(x / img.width, 1 - y / img.height);
+              centroidsRef.current.push(...centroid);
             }
             barycentricsRef.current.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
             dirtyRef.current = true;
@@ -204,7 +263,16 @@ export function useMaskPreview() {
         },
       );
     },
-    [coreState.apiOrigin, coreState.accessToken, getColorCtx, setTextureMix],
+    [
+      coreState.apiOrigin,
+      coreState.accessToken,
+      getColorCtx,
+      setTextureMix,
+      setSheenSize,
+      setSheenIntensity,
+      setSheenFalloff,
+      setSheenDarkness,
+    ],
   );
 
   return {
@@ -215,6 +283,18 @@ export function useMaskPreview() {
     textureMix,
     setTextureMix,
     textureMixRef,
+    sheenSize,
+    setSheenSize,
+    sheenSizeRef,
+    sheenIntensity,
+    setSheenIntensity,
+    sheenIntensityRef,
+    sheenFalloff,
+    setSheenFalloff,
+    sheenFalloffRef,
+    sheenDarkness,
+    setSheenDarkness,
+    sheenDarknessRef,
     position,
     setPosition,
     size,
@@ -226,6 +306,7 @@ export function useMaskPreview() {
       colorsRef,
       barycentricsRef,
       uvsRef,
+      centroidsRef,
       vertexCountRef,
       dirtyRef,
       curvesRef,

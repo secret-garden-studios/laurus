@@ -43,6 +43,12 @@ import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
 import {
+  SHEEN_DARKNESS_DEFAULT,
+  SHEEN_FALLOFF_CSS_PX_DEFAULT,
+  SHEEN_INTENSITY_DEFAULT,
+  SHEEN_SIZE_CSS_PX_DEFAULT,
+} from "./mask-gl";
+import {
   ProjectResult_V1_0,
   updateProject,
   createProject,
@@ -162,6 +168,16 @@ export interface HoverContextProps {
   // here alongside the other cross-component UI state rather than in CoreState.
   maskTextureMix: Map<string, number>;
   setMaskTextureMix: React.Dispatch<React.SetStateAction<Map<string, number>>>;
+  // Per-mask sheen size/intensity slider values (see Maskbar's "sheen" sliders and
+  // ProjectMaskItem) -- same ephemeral-view-state rationale as maskTextureMix above.
+  maskSheenSize: Map<string, number>;
+  setMaskSheenSize: React.Dispatch<React.SetStateAction<Map<string, number>>>;
+  maskSheenIntensity: Map<string, number>;
+  setMaskSheenIntensity: React.Dispatch<React.SetStateAction<Map<string, number>>>;
+  maskSheenFalloff: Map<string, number>;
+  setMaskSheenFalloff: React.Dispatch<React.SetStateAction<Map<string, number>>>;
+  maskSheenDarkness: Map<string, number>;
+  setMaskSheenDarkness: React.Dispatch<React.SetStateAction<Map<string, number>>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -179,6 +195,14 @@ export const HoverContext = createContext<HoverContextProps>({
   setSelectedMaskKeys: () => {},
   maskTextureMix: new Map<string, number>(),
   setMaskTextureMix: () => {},
+  maskSheenSize: new Map<string, number>(),
+  setMaskSheenSize: () => {},
+  maskSheenIntensity: new Map<string, number>(),
+  setMaskSheenIntensity: () => {},
+  maskSheenFalloff: new Map<string, number>(),
+  setMaskSheenFalloff: () => {},
+  maskSheenDarkness: new Map<string, number>(),
+  setMaskSheenDarkness: () => {},
 });
 
 export interface CoreContextProps {
@@ -224,6 +248,18 @@ const defaultMaskPreview: UseMaskPreview = {
   textureMix: 0,
   setTextureMix: () => {},
   textureMixRef: { current: 0 },
+  sheenSize: SHEEN_SIZE_CSS_PX_DEFAULT,
+  setSheenSize: () => {},
+  sheenSizeRef: { current: SHEEN_SIZE_CSS_PX_DEFAULT },
+  sheenIntensity: SHEEN_INTENSITY_DEFAULT,
+  setSheenIntensity: () => {},
+  sheenIntensityRef: { current: SHEEN_INTENSITY_DEFAULT },
+  sheenFalloff: SHEEN_FALLOFF_CSS_PX_DEFAULT,
+  setSheenFalloff: () => {},
+  sheenFalloffRef: { current: SHEEN_FALLOFF_CSS_PX_DEFAULT },
+  sheenDarkness: SHEEN_DARKNESS_DEFAULT,
+  setSheenDarkness: () => {},
+  sheenDarknessRef: { current: SHEEN_DARKNESS_DEFAULT },
   position: { value: false, x: undefined, y: undefined },
   setPosition: () => {},
   size: { value: false, width: undefined, height: undefined },
@@ -235,6 +271,7 @@ const defaultMaskPreview: UseMaskPreview = {
     colorsRef: { current: [] },
     barycentricsRef: { current: [] },
     uvsRef: { current: [] },
+    centroidsRef: { current: [] },
     vertexCountRef: { current: 0 },
     dirtyRef: { current: false },
     curvesRef: { current: [] },
@@ -578,6 +615,10 @@ export default function Workspace({
   const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedMaskKeys, setSelectedMaskKeys] = useState<Set<string>>(new Set<string>());
   const [maskTextureMix, setMaskTextureMix] = useState<Map<string, number>>(new Map<string, number>());
+  const [maskSheenSize, setMaskSheenSize] = useState<Map<string, number>>(new Map<string, number>());
+  const [maskSheenIntensity, setMaskSheenIntensity] = useState<Map<string, number>>(new Map<string, number>());
+  const [maskSheenFalloff, setMaskSheenFalloff] = useState<Map<string, number>>(new Map<string, number>());
+  const [maskSheenDarkness, setMaskSheenDarkness] = useState<Map<string, number>>(new Map<string, number>());
   const [mediaPageSize] = useState(mediaPageSizeInit);
 
   const [minifiedControlsSize] = useState(() => {
@@ -1120,6 +1161,14 @@ export default function Workspace({
       setSelectedMaskKeys,
       maskTextureMix,
       setMaskTextureMix,
+      maskSheenSize,
+      setMaskSheenSize,
+      maskSheenIntensity,
+      setMaskSheenIntensity,
+      maskSheenFalloff,
+      setMaskSheenFalloff,
+      maskSheenDarkness,
+      setMaskSheenDarkness,
     }),
     [
       mostRecentlyEnteredEffectUnitKey,
@@ -1130,6 +1179,10 @@ export default function Workspace({
       selectedSvgKeys,
       selectedMaskKeys,
       maskTextureMix,
+      maskSheenSize,
+      maskSheenIntensity,
+      maskSheenFalloff,
+      maskSheenDarkness,
     ],
   );
 

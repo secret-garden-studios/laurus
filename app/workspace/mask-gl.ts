@@ -1,19 +1,42 @@
 import { MaskCurve_V1_0 } from "./workspace.server";
 
-/** Width/height of the click sheen, in on-screen (CSS) pixels -- converted to buffer pixels per click. */
-export const SHEEN_SIZE_CSS_PX = 50;
+/** Default width/height of the sheen's bright core, in on-screen (CSS) pixels -- converted to buffer pixels per frame. Adjustable via Maskbar's sheen-size slider. */
+export const SHEEN_SIZE_CSS_PX_DEFAULT = 50;
 
-export const VERTEX_SHADER_SOURCE = `
+/** Default brightness of the sheen's core, 0-1 -- 1 mixes the epicenter fully to white. Adjustable via Maskbar's sheen-intensity slider. */
+export const SHEEN_INTENSITY_DEFAULT = 0.45;
+
+/** Default distance, in on-screen (CSS) pixels, over which the darkening ramps up beyond the core -- independent of canvas size. Adjustable via Maskbar's sheen-spread slider. */
+export const SHEEN_FALLOFF_CSS_PX_DEFAULT = 250;
+
+/** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's sheen-darkness slider. */
+export const SHEEN_DARKNESS_DEFAULT = 0.35;
+
+/** A vertex/fragment GLSL pair, compiled and linked together into one WebGLProgram by createProgram. */
+export interface Shader {
+  vertex: string;
+  fragment: string;
+}
+
+export const SHEEN_SHADER: Shader = {
+  vertex: `
 attribute vec2 a_position;
 attribute vec3 a_color;
 attribute vec3 a_barycentric;
 attribute vec2 a_uv;
+// Every vertex of a triangle carries the same value here (its parent triangle's centroid, in
+// the same space as a_position) -- see a_color for the same trick. Since all 3 corners agree,
+// interpolating it across the triangle's interior can't produce anything but that one constant
+// value, which is what lets the fragment shader treat a whole triangle as one sheen facet
+// instead of a continuous per-pixel gradient.
+attribute vec2 a_centroid;
 
 uniform vec2 u_resolution;
 
 varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
+varying vec2 v_sheenPos;
 
 void main() {
   vec2 zeroToOne = a_position / u_resolution;
@@ -22,21 +45,35 @@ void main() {
   v_color = a_color;
   v_barycentric = a_barycentric;
   v_uv = a_uv;
+  // a_centroid arrives in the same top-left/y-down space as a_position; flip it to match
+  // gl_FragCoord's bottom-left origin, which is the space u_sheenCenter is given in.
+  v_sheenPos = vec2(a_centroid.x, u_resolution.y - a_centroid.y);
 }
-`;
-
-export const FRAGMENT_SHADER_SOURCE = `
+`,
+  fragment: `
 precision mediump float;
 
 varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
+varying vec2 v_sheenPos;
 
 // Sheen center is in gl_FragCoord space (drawing-buffer pixels, origin bottom-left);
-// radius is likewise in drawing-buffer pixels so it survives the canvas being displayed
-// at a different size than its backing resolution.
+// radius/falloff are likewise in drawing-buffer pixels so they survive the canvas being
+// displayed at a different size than its backing resolution.
+//
+// The cursor is a light source for the whole mesh, not just a local glow: triangles
+// inside u_sheenRadius sit in its bright core, and everything further out darkens smoothly
+// over the next u_sheenFalloff pixels, giving the flat-shaded mesh a 3D relief instead of an
+// isolated highlight. u_sheenFalloff is a distance, not a canvas-relative fraction, so the
+// darkening's "spread" is tunable independent of how big the mesh happens to be on screen.
 uniform vec2 u_sheenCenter;
 uniform float u_sheenRadius;
+uniform float u_sheenFalloff;
+// Brightness of the core, 0-1 -- 1.0 mixes the epicenter fully to white rather than just tinting it.
+uniform float u_sheenIntensity;
+// Strength of the darkening at the far edge of the spread, 0-1 -- 1.0 drives it fully to black.
+uniform float u_sheenDarkness;
 uniform float u_sheenActive;
 
 uniform sampler2D u_texture;
@@ -67,17 +104,28 @@ void main() {
 
   vec3 base = mix(v_color, texture2D(u_texture, v_uv).rgb, u_textureMix);
 
-  float dist = distance(gl_FragCoord.xy, u_sheenCenter);
-  float sheen = (1.0 - smoothstep(u_sheenRadius * 0.35, u_sheenRadius, dist)) * u_sheenActive;
+  // v_sheenPos is constant across a triangle's interior (see a_centroid), so dist -- and
+  // everything derived from it below -- is one flat value per triangle, not a smooth per-pixel
+  // gradient. That's what makes the mesh's facets themselves read as the shading delimiters.
+  float dist = distance(v_sheenPos, u_sheenCenter);
+  // Bright core: same falloff as before, full strength within the inner 35% of the radius.
+  float highlight = (1.0 - smoothstep(u_sheenRadius * 0.35, u_sheenRadius, dist)) * u_sheenActive;
+  // Beyond the core, darken smoothly over the next u_sheenFalloff pixels -- this is what makes
+  // the whole mesh read as lit from one point instead of just the disc.
+  float shadow = smoothstep(u_sheenRadius, u_sheenRadius + u_sheenFalloff, dist) * u_sheenActive;
 
-  vec3 shaded = base + sheen * 0.45;
+  // mix (not additive) so u_sheenIntensity at 1.0 reaches pure white at the epicenter instead of
+  // just an oversaturated tint.
+  vec3 lit = mix(base, vec3(1.0), highlight * u_sheenIntensity);
+  vec3 shaded = lit - shadow * u_sheenDarkness;
   vec3 withEdge = mix(shaded, vec3(1.0), edge * 0.18);
 
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
   gl_FragColor = vec4(withGlow, mix(1.0, mask.a, u_maskActive));
 }
-`;
+`,
+};
 
 export function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | undefined {
   const shader = gl.createShader(type);
@@ -92,9 +140,9 @@ export function compileShader(gl: WebGLRenderingContext, type: number, source: s
   return shader;
 }
 
-export function createProgram(gl: WebGLRenderingContext): WebGLProgram | undefined {
-  const vertexShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
-  const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE);
+export function createProgram(gl: WebGLRenderingContext, shader: Shader): WebGLProgram | undefined {
+  const vertexShader = compileShader(gl, gl.VERTEX_SHADER, shader.vertex);
+  const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, shader.fragment);
   if (!vertexShader || !fragmentShader) return undefined;
   const program = gl.createProgram();
   if (!program) return undefined;
@@ -116,13 +164,18 @@ export interface GLState {
   colorBuffer: WebGLBuffer;
   barycentricBuffer: WebGLBuffer;
   uvBuffer: WebGLBuffer;
+  centroidBuffer: WebGLBuffer;
   positionLoc: number;
   colorLoc: number;
   barycentricLoc: number;
   uvLoc: number;
+  centroidLoc: number;
   resolutionLoc: WebGLUniformLocation;
   sheenCenterLoc: WebGLUniformLocation;
   sheenRadiusLoc: WebGLUniformLocation;
+  sheenFalloffLoc: WebGLUniformLocation;
+  sheenIntensityLoc: WebGLUniformLocation;
+  sheenDarknessLoc: WebGLUniformLocation;
   sheenActiveLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
   textureMixLoc: WebGLUniformLocation;
@@ -134,22 +187,27 @@ export interface GLState {
 export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const gl = canvas.getContext("webgl", { premultipliedAlpha: false });
   if (!gl) return undefined;
-  const program = createProgram(gl);
+  const program = createProgram(gl, SHEEN_SHADER);
   if (!program) return undefined;
 
   const positionBuffer = gl.createBuffer();
   const colorBuffer = gl.createBuffer();
   const barycentricBuffer = gl.createBuffer();
   const uvBuffer = gl.createBuffer();
-  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer) return undefined;
+  const centroidBuffer = gl.createBuffer();
+  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer || !centroidBuffer) return undefined;
 
   const positionLoc = gl.getAttribLocation(program, "a_position");
   const colorLoc = gl.getAttribLocation(program, "a_color");
   const barycentricLoc = gl.getAttribLocation(program, "a_barycentric");
   const uvLoc = gl.getAttribLocation(program, "a_uv");
+  const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
   const sheenCenterLoc = gl.getUniformLocation(program, "u_sheenCenter");
   const sheenRadiusLoc = gl.getUniformLocation(program, "u_sheenRadius");
+  const sheenFalloffLoc = gl.getUniformLocation(program, "u_sheenFalloff");
+  const sheenIntensityLoc = gl.getUniformLocation(program, "u_sheenIntensity");
+  const sheenDarknessLoc = gl.getUniformLocation(program, "u_sheenDarkness");
   const sheenActiveLoc = gl.getUniformLocation(program, "u_sheenActive");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
@@ -161,9 +219,13 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     colorLoc < 0 ||
     barycentricLoc < 0 ||
     uvLoc < 0 ||
+    centroidLoc < 0 ||
     !resolutionLoc ||
     !sheenCenterLoc ||
     !sheenRadiusLoc ||
+    !sheenFalloffLoc ||
+    !sheenIntensityLoc ||
+    !sheenDarknessLoc ||
     !sheenActiveLoc ||
     !textureLoc ||
     !textureMixLoc ||
@@ -180,13 +242,18 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     colorBuffer,
     barycentricBuffer,
     uvBuffer,
+    centroidBuffer,
     positionLoc,
     colorLoc,
     barycentricLoc,
     uvLoc,
+    centroidLoc,
     resolutionLoc,
     sheenCenterLoc,
     sheenRadiusLoc,
+    sheenFalloffLoc,
+    sheenIntensityLoc,
+    sheenDarknessLoc,
     sheenActiveLoc,
     textureLoc,
     textureMixLoc,
@@ -198,7 +265,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
 
 export interface DrawMaskMeshOptions {
   vertexCount: number;
-  sheen: { x: number; y: number; radius: number };
+  sheen: { x: number; y: number; radius: number; falloff: number };
+  sheenIntensity: number;
+  sheenDarkness: number;
   texture: WebGLTexture | undefined;
   textureMix: number;
   maskTexture: WebGLTexture | undefined;
@@ -223,6 +292,9 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.uniform2f(state.resolutionLoc, gl.drawingBufferWidth, gl.drawingBufferHeight);
   gl.uniform2f(state.sheenCenterLoc, options.sheen.x, options.sheen.y);
   gl.uniform1f(state.sheenRadiusLoc, Math.max(options.sheen.radius, 1));
+  gl.uniform1f(state.sheenFalloffLoc, Math.max(options.sheen.falloff, 1));
+  gl.uniform1f(state.sheenIntensityLoc, options.sheenIntensity);
+  gl.uniform1f(state.sheenDarknessLoc, options.sheenDarkness);
   gl.uniform1f(state.sheenActiveLoc, options.sheen.radius > 0 ? 1 : 0);
 
   gl.activeTexture(gl.TEXTURE0);
@@ -253,6 +325,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
   gl.enableVertexAttribArray(state.uvLoc);
   gl.vertexAttribPointer(state.uvLoc, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
+  gl.enableVertexAttribArray(state.centroidLoc);
+  gl.vertexAttribPointer(state.centroidLoc, 2, gl.FLOAT, false, 0, 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
 }
@@ -408,11 +484,19 @@ export function buildStaticMaskMesh(
     curves: { d: string; fill: string }[];
   },
   colorCtx: CanvasRenderingContext2D,
-): { positions: number[]; colors: number[]; barycentrics: number[]; uvs: number[]; vertexCount: number } {
+): {
+  positions: number[];
+  colors: number[];
+  barycentrics: number[];
+  uvs: number[];
+  centroids: number[];
+  vertexCount: number;
+} {
   const positions: number[] = [];
   const colors: number[] = [];
   const barycentrics: number[] = [];
   const uvs: number[] = [];
+  const centroids: number[] = [];
 
   // A backing quad under the mesh, trimmed to the silhouette by the curve mask (see
   // uploadCurveMask) -- without it, the sliver between the mesh's straight boundary chords and
@@ -427,25 +511,36 @@ export function buildStaticMaskMesh(
       [maskData.width, maskData.height],
       [0, maskData.height],
     ];
+    // One shared centroid (the image's own center) for the whole quad rather than one per its
+    // two triangles -- it's a rendering trick to fill the curve-clipped sliver, not real mesh
+    // geometry, so splitting its sheen facet in two would just show a seam along its diagonal.
+    const center: [number, number] = [maskData.width / 2, maskData.height / 2];
     for (const [x, y] of corners) {
       positions.push(x, y);
       colors.push(r, g, b);
       uvs.push(x / maskData.width, 1 - y / maskData.height);
       barycentrics.push(1, 1, 1);
+      centroids.push(...center);
     }
   }
 
   for (const polygon of maskData.polygons) {
     const [r, g, b] = colorToRGB01(colorCtx, polygon.fill);
-    for (const [x, y] of parsePathPoints(polygon.d)) {
+    const points = parsePathPoints(polygon.d);
+    const centroid: [number, number] = [
+      points.reduce((sum, [x]) => sum + x, 0) / points.length,
+      points.reduce((sum, [, y]) => sum + y, 0) / points.length,
+    ];
+    for (const [x, y] of points) {
       positions.push(x, y);
       colors.push(r, g, b);
       uvs.push(x / maskData.width, 1 - y / maskData.height);
+      centroids.push(...centroid);
     }
     barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
   }
 
-  return { positions, colors, barycentrics, uvs, vertexCount: positions.length / 2 };
+  return { positions, colors, barycentrics, uvs, centroids, vertexCount: positions.length / 2 };
 }
 
 export type MaskMeshRefs = {
@@ -453,6 +548,7 @@ export type MaskMeshRefs = {
   colorsRef: React.RefObject<number[]>;
   barycentricsRef: React.RefObject<number[]>;
   uvsRef: React.RefObject<number[]>;
+  centroidsRef: React.RefObject<number[]>;
   vertexCountRef: React.RefObject<number>;
   dirtyRef: React.RefObject<boolean>;
   curvesRef: React.RefObject<MaskCurve_V1_0[]>;

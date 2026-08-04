@@ -7,11 +7,30 @@ import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } 
 import { CoreActionType } from "../states/core-state";
 import { LaurusMaskResult } from "../workspace.server";
 import { v4 as newUUID } from "uuid";
+import {
+  SHEEN_DARKNESS_DEFAULT,
+  SHEEN_FALLOFF_CSS_PX_DEFAULT,
+  SHEEN_INTENSITY_DEFAULT,
+  SHEEN_SIZE_CSS_PX_DEFAULT,
+} from "../mask-gl";
 
 export default function Maskbar() {
   const { uiState } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  const { selectedImgKeys, selectedMaskKeys, maskTextureMix, setMaskTextureMix } = useContext(HoverContext);
+  const {
+    selectedImgKeys,
+    selectedMaskKeys,
+    maskTextureMix,
+    setMaskTextureMix,
+    maskSheenSize,
+    setMaskSheenSize,
+    maskSheenIntensity,
+    setMaskSheenIntensity,
+    maskSheenFalloff,
+    setMaskSheenFalloff,
+    maskSheenDarkness,
+    setMaskSheenDarkness,
+  } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -241,6 +260,9 @@ export default function Maskbar() {
   // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const showTextureSlider = selectedMaskKey !== undefined || hasMesh;
+  // Same visibility rule as the texture slider -- both only make sense once there's a mesh
+  // (placed or still streaming) to tune.
+  const showSheenControls = showTextureSlider;
   const textureMixValue = selectedMaskKey !== undefined ? (maskTextureMix.get(selectedMaskKey) ?? 0) : mask.textureMix;
   const handleTextureMixChange = useCallback(
     (value: number) => {
@@ -255,6 +277,76 @@ export default function Maskbar() {
       }
     },
     [selectedMaskKey, setMaskTextureMix, mask],
+  );
+  const sheenSizeValue =
+    selectedMaskKey !== undefined ? (maskSheenSize.get(selectedMaskKey) ?? SHEEN_SIZE_CSS_PX_DEFAULT) : mask.sheenSize;
+  const handleSheenSizeChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        setMaskSheenSize((prev) => {
+          const next = new Map(prev);
+          next.set(selectedMaskKey, value);
+          return next;
+        });
+      } else {
+        mask.setSheenSize(value);
+      }
+    },
+    [selectedMaskKey, setMaskSheenSize, mask],
+  );
+  const sheenIntensityValue =
+    selectedMaskKey !== undefined
+      ? (maskSheenIntensity.get(selectedMaskKey) ?? SHEEN_INTENSITY_DEFAULT)
+      : mask.sheenIntensity;
+  const handleSheenIntensityChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        setMaskSheenIntensity((prev) => {
+          const next = new Map(prev);
+          next.set(selectedMaskKey, value);
+          return next;
+        });
+      } else {
+        mask.setSheenIntensity(value);
+      }
+    },
+    [selectedMaskKey, setMaskSheenIntensity, mask],
+  );
+  const sheenFalloffValue =
+    selectedMaskKey !== undefined
+      ? (maskSheenFalloff.get(selectedMaskKey) ?? SHEEN_FALLOFF_CSS_PX_DEFAULT)
+      : mask.sheenFalloff;
+  const handleSheenFalloffChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        setMaskSheenFalloff((prev) => {
+          const next = new Map(prev);
+          next.set(selectedMaskKey, value);
+          return next;
+        });
+      } else {
+        mask.setSheenFalloff(value);
+      }
+    },
+    [selectedMaskKey, setMaskSheenFalloff, mask],
+  );
+  const sheenDarknessValue =
+    selectedMaskKey !== undefined
+      ? (maskSheenDarkness.get(selectedMaskKey) ?? SHEEN_DARKNESS_DEFAULT)
+      : mask.sheenDarkness;
+  const handleSheenDarknessChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        setMaskSheenDarkness((prev) => {
+          const next = new Map(prev);
+          next.set(selectedMaskKey, value);
+          return next;
+        });
+      } else {
+        mask.setSheenDarkness(value);
+      }
+    },
+    [selectedMaskKey, setMaskSheenDarkness, mask],
   );
   const maskTitle = isMaskBusy
     ? "masking…"
@@ -600,6 +692,98 @@ export default function Maskbar() {
               onChange={(e) => handleTextureMixChange(parseFloat(e.target.value))}
             />
             <span style={{ opacity: 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
+          </div>
+        )}
+        {showSheenControls && (
+          <div
+            title="size of the epicenter's bright core, in on-screen pixels"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>{"sheen size"}</span>
+            <input
+              type="range"
+              min={10}
+              max={300}
+              step={1}
+              value={sheenSizeValue}
+              onChange={(e) => handleSheenSizeChange(parseFloat(e.target.value))}
+            />
+            <span style={{ opacity: 0.7, width: "4ch" }}>{Math.round(sheenSizeValue)}</span>
+          </div>
+        )}
+        {showSheenControls && (
+          <div
+            title="brightness of the epicenter's core -- 100% is pure white"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>{"sheen intensity"}</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={sheenIntensityValue}
+              onChange={(e) => handleSheenIntensityChange(parseFloat(e.target.value))}
+            />
+            <span style={{ opacity: 0.7, width: "4ch" }}>{`${Math.round(sheenIntensityValue * 100)}%`}</span>
+          </div>
+        )}
+        {showSheenControls && (
+          <div
+            title="distance the darkening takes to spread out beyond the core, in on-screen pixels -- independent of canvas size"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>{"sheen spread"}</span>
+            <input
+              type="range"
+              min={20}
+              max={1000}
+              step={5}
+              value={sheenFalloffValue}
+              onChange={(e) => handleSheenFalloffChange(parseFloat(e.target.value))}
+            />
+            <span style={{ opacity: 0.7, width: "4ch" }}>{Math.round(sheenFalloffValue)}</span>
+          </div>
+        )}
+        {showSheenControls && (
+          <div
+            title="strength of the darkening at the far edge of the spread -- 100% drives it fully to black"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: 0.7 }}>{"sheen darkness"}</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={sheenDarknessValue}
+              onChange={(e) => handleSheenDarknessChange(parseFloat(e.target.value))}
+            />
+            <span style={{ opacity: 0.7, width: "4ch" }}>{`${Math.round(sheenDarknessValue * 100)}%`}</span>
           </div>
         )}
       </div>

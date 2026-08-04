@@ -10,7 +10,10 @@ import {
   GLState,
   initGLState,
   loadImageTexture,
-  SHEEN_SIZE_CSS_PX,
+  SHEEN_DARKNESS_DEFAULT,
+  SHEEN_FALLOFF_CSS_PX_DEFAULT,
+  SHEEN_INTENSITY_DEFAULT,
+  SHEEN_SIZE_CSS_PX_DEFAULT,
   uploadCurveMask,
 } from "../mask-gl";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
@@ -34,26 +37,44 @@ interface ProjectMaskItem {
  * (`source.kind === "static"`) or the mesh still streaming in over the websocket
  * (`source.kind === "live"`, polling a dirty-flagged ref every animation frame since triangles
  * arrive outside React's render cycle). Both share the same GL context setup, curve-mask clip,
- * click sheen, and texture blend against the source image -- they only differ in where the mesh
+ * cursor-follow sheen, and texture blend against the source image -- they only differ in where the mesh
  * buffers come from and how often they change. A live preview isn't draggable or selectable:
  * there's no persisted mediaKey yet to attach that state to.
  */
 export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, source, title }: ProjectMaskItem) {
   const { uiState } = useContext(UIContext);
   const { coreState } = useContext(CoreContext);
-  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, maskTextureMix } = useContext(HoverContext);
+  const {
+    selectedMaskKeys,
+    setSelectedMaskKeys,
+    isAltKeyPressed,
+    maskTextureMix,
+    maskSheenSize,
+    maskSheenIntensity,
+    maskSheenFalloff,
+    maskSheenDarkness,
+  } = useContext(HoverContext);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(0);
+  const sheenSizeRef = useRef(SHEEN_SIZE_CSS_PX_DEFAULT);
+  const sheenIntensityRef = useRef(SHEEN_INTENSITY_DEFAULT);
+  const sheenFalloffRef = useRef(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+  const sheenDarknessRef = useRef(SHEEN_DARKNESS_DEFAULT);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
-  // Where the last click landed, already converted to gl_FragCoord space. radius 0 == nothing
-  // clicked yet.
-  const sheenRef = useRef<{ x: number; y: number; radius: number }>({ x: 0, y: 0, radius: 0 });
+  // Where the mouse last was over the mesh, already converted to gl_FragCoord space. radius 0 ==
+  // not currently hovering.
+  const sheenRef = useRef<{ x: number; y: number; radius: number; falloff: number }>({
+    x: 0,
+    y: 0,
+    radius: 0,
+    falloff: 0,
+  });
 
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
@@ -105,6 +126,8 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       sheen: sheenRef.current,
+      sheenIntensity: sheenIntensityRef.current,
+      sheenDarkness: sheenDarknessRef.current,
       texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
@@ -129,7 +152,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
     const mesh = colorCtx
       ? buildStaticMaskMesh(maskData, colorCtx)
-      : { positions: [], colors: [], barycentrics: [], uvs: [], vertexCount: 0 };
+      : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0 };
     vertexCountRef.current = mesh.vertexCount;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
@@ -140,6 +163,8 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.barycentrics), gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.centroids), gl.STATIC_DRAW);
 
     if (maskData.curves.length > 0 && colorCtx) {
       const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
@@ -162,7 +187,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       );
     }
 
-    sheenRef.current = { x: 0, y: 0, radius: 0 };
+    sheenRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
     render();
 
     return () => {
@@ -171,6 +196,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       gl.deleteBuffer(state.colorBuffer);
       gl.deleteBuffer(state.barycentricBuffer);
       gl.deleteBuffer(state.uvBuffer);
+      gl.deleteBuffer(state.centroidBuffer);
       if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
       if (textureRef.current) gl.deleteTexture(textureRef.current);
       glStateRef.current = undefined;
@@ -209,6 +235,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
         colorsRef,
         barycentricsRef,
         uvsRef,
+        centroidsRef,
         dirtyRef,
         curvesRef,
         glowColorRef: liveGlowColorRef,
@@ -223,6 +250,8 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(barycentricsRef.current), gl.DYNAMIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvsRef.current), gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(centroidsRef.current), gl.DYNAMIC_DRAW);
         vertexCountRef.current = positionsRef.current.length / 2;
         dirtyRef.current = false;
       }
@@ -239,6 +268,10 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       }
       glowColorRef.current = liveGlowColorRef.current;
       textureMixRef.current = mask.textureMixRef.current;
+      sheenSizeRef.current = mask.sheenSizeRef.current;
+      sheenIntensityRef.current = mask.sheenIntensityRef.current;
+      sheenFalloffRef.current = mask.sheenFalloffRef.current;
+      sheenDarknessRef.current = mask.sheenDarknessRef.current;
 
       render();
       rafRef.current = requestAnimationFrame(loop);
@@ -252,6 +285,7 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
       gl.deleteBuffer(state.colorBuffer);
       gl.deleteBuffer(state.barycentricBuffer);
       gl.deleteBuffer(state.uvBuffer);
+      gl.deleteBuffer(state.centroidBuffer);
       if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
       if (textureRef.current) gl.deleteTexture(textureRef.current);
       glStateRef.current = undefined;
@@ -262,15 +296,28 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
     // mask target changes, so the GL context is only ever created once per mount.
   }, [source, render]);
 
-  // Keeps the slider's live value in a ref so render() (called on demand, not in a loop) can read
-  // it without needing to be re-created -- and re-renders immediately so moving the slider shows
+  // Keeps the sliders' live values in refs so render() (called on demand, not in a loop) can read
+  // them without needing to be re-created -- and re-renders immediately so moving a slider shows
   // up without waiting for some other interaction. Only applies to placed (static) masks; a live
-  // preview's mix is driven straight off mask.textureMixRef in its own frame loop above.
+  // preview's values are driven straight off mask.*Ref in its own frame loop above.
   useEffect(() => {
     if (source.kind !== "static") return;
     textureMixRef.current = maskTextureMix.get(mediaKey) ?? 0;
+    sheenSizeRef.current = maskSheenSize.get(mediaKey) ?? SHEEN_SIZE_CSS_PX_DEFAULT;
+    sheenIntensityRef.current = maskSheenIntensity.get(mediaKey) ?? SHEEN_INTENSITY_DEFAULT;
+    sheenFalloffRef.current = maskSheenFalloff.get(mediaKey) ?? SHEEN_FALLOFF_CSS_PX_DEFAULT;
+    sheenDarknessRef.current = maskSheenDarkness.get(mediaKey) ?? SHEEN_DARKNESS_DEFAULT;
     render();
-  }, [source, maskTextureMix, mediaKey, render]);
+  }, [
+    source,
+    maskTextureMix,
+    maskSheenSize,
+    maskSheenIntensity,
+    maskSheenFalloff,
+    maskSheenDarkness,
+    mediaKey,
+    render,
+  ]);
 
   return (
     <div
@@ -287,10 +334,9 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
           ref={canvasRef}
           width={canvasSize.width}
           height={canvasSize.height}
-          onClick={(e) => {
+          onClick={() => {
             // Alt-click toggles selection, same as images/svgs (see DraggableProjectImg's
-            // onImgClick) -- it doesn't also drop a sheen, matching that click not doing anything
-            // else either. Not available on a live preview -- there's no persisted mediaKey yet.
+            // onImgClick). Not available on a live preview -- there's no persisted mediaKey yet.
             if (isAltKeyPressed && source.kind === "static") {
               setSelectedMaskKeys((prev) => {
                 const next = new Set(prev);
@@ -301,13 +347,13 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
                 }
                 return next;
               });
-              return;
             }
-
+          }}
+          onMouseMove={(e) => {
             const canvas = e.currentTarget;
             const rect = canvas.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return;
-            // The canvas is displayed smaller than its backing resolution, so scale the click
+            // The canvas is displayed smaller than its backing resolution, so scale the cursor
             // (and the sheen's on-screen size) from CSS pixels into drawing-buffer pixels.
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
@@ -317,8 +363,13 @@ export function ProjectMaskItem({ dndId, dndPosition, zIndex, mediaKey, frame, s
               x: bufferX,
               // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
               y: canvas.height - bufferY,
-              radius: (SHEEN_SIZE_CSS_PX / 2) * scaleX,
+              radius: (sheenSizeRef.current / 2) * scaleX,
+              falloff: sheenFalloffRef.current * scaleX,
             };
+            render();
+          }}
+          onMouseLeave={() => {
+            sheenRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
             render();
           }}
           style={{
