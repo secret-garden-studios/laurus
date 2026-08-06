@@ -13,6 +13,7 @@ import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
+import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
@@ -131,7 +132,8 @@ export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
+    useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
@@ -139,14 +141,23 @@ export default function Canvas() {
   // Keyed off selectedImgKeys rather than activeElement -- that's what Maskbar actually
   // masks (see its selectedImgKey), so the live preview needs to watch the same thing or it
   // silently never shows up for an image that was only ever alt-selected, not plain-clicked.
+  //
+  // Hidden once mask.status reaches "done": Maskbar's persistMask runs synchronously off that
+  // same "complete" event (see useMaskPreview's onComplete), placing a real static mask at the
+  // exact same frame/position liveMaskFrame/liveMaskDndPosition already mirror. Leaving this live
+  // overlay mounted after that point meant two WebGL canvases -- this one and the freshly-placed
+  // static one, which still has to open its own GL context and async-load its own texture --
+  // rendering on top of each other at the same spot, which is what read as a flicker on the mask
+  // right as masking finished. mask.start() flips status back to "connecting" immediately if the
+  // user re-masks the same image, so this comes right back for another streaming pass.
   const activeMaskImg = useMemo(() => {
-    if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1) return undefined;
+    if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1 || mask.status === "done") return undefined;
     const key = Array.from(selectedImgKeys)[0];
     const meta = coreState.project.imgs.get(key);
     const imgData = coreState.canvasImgs.get(key);
     if (!meta || !imgData) return undefined;
     return { key, meta, imgData };
-  }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs]);
+  }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs, mask.status]);
 
   // Mirrors Maskbar's persistMask defaulting exactly, so the live preview lands at the
   // same place/size the placed result will -- without this, the preview always sits on the
@@ -212,9 +223,17 @@ export default function Canvas() {
           setAnchor({ x: p.x, y: p.y });
           break;
         }
+        case "mask": {
+          if (!uiState.tool.capturingMeshSection) break;
+          const canvas = drawingCanvasRef.current;
+          if (!canvas) return;
+          const p = calcMousePosition(canvas, event);
+          setAnchor({ x: p.x, y: p.y });
+          break;
+        }
       }
     },
-    [uiState.tool.type],
+    [uiState.tool],
   );
 
   const handleMouseMove = useCallback(
@@ -233,9 +252,18 @@ export default function Canvas() {
           ctx.stroke();
           break;
         }
+        case "mask": {
+          if (!uiState.tool.capturingMeshSection) break;
+          const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
       }
     },
-    [anchor, uiState.tool.type],
+    [anchor, uiState.tool],
   );
 
   const handleSvgDrop = useCallback(
@@ -442,6 +470,63 @@ export default function Canvas() {
     ],
   );
 
+  // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle as
+  // a *pending* candidate -- no upload yet (see CoreActionType.SetPendingLightSourceCapture,
+  // core-state.ts). The tool stays in mask mode with capturingMeshSection on so the user can redraw as many times
+  // as they like (each drag just overwrites the pending candidate, previewed as a mesh highlight
+  // in project-mask-item.tsx) at zero server cost, and only commits to a real svg once they
+  // explicitly confirm (Maskbar's "confirm light source" button -> workspace.client.tsx's
+  // confirmLightSourceCapture).
+  //
+  // The circle arrives in main-canvas space (same space `anchor`/dropArea already live in, and
+  // the same space this drawing canvas's own getBoundingClientRect() lives in). Rather than
+  // re-derive the mask's on-screen rect from project placement metadata (top/left/scale/frame
+  // offsets -- several assumptions that can silently drift out of sync with what's actually
+  // rendered), this measures the mask's real DOM canvas directly (found via the data-mask-key
+  // attribute project-mask-item.tsx sets on it), the same way that component's own onMouseMove
+  // handler already converts screen coordinates into mesh-buffer-pixel space for the
+  // mouse-driven light source.
+  const handleLightSourceCapture = useCallback(
+    (dropArea: ProjectCircle) => {
+      if (selectedMaskKeys.size !== 1) return;
+      const maskKey = Array.from(selectedMaskKeys)[0];
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!maskData || !drawingCanvas) return;
+
+      const maskCanvasEl = document.querySelector<HTMLCanvasElement>(`canvas[data-mask-key="${CSS.escape(maskKey)}"]`);
+      if (!maskCanvasEl) return;
+
+      const drawingRect = drawingCanvas.getBoundingClientRect();
+      const maskRect = maskCanvasEl.getBoundingClientRect();
+      if (maskRect.width === 0 || maskRect.height === 0) return;
+
+      // dropArea.cx/cy are relative to the drawing canvas's own top-left (see
+      // calcMousePosition) -- reconstruct a viewport-relative position and re-express it
+      // relative to the mask canvas's own top-left instead.
+      const localX = dropArea.cx + drawingRect.left - maskRect.left;
+      const localY = dropArea.cy + drawingRect.top - maskRect.top;
+
+      const scaleX = maskCanvasEl.width / maskRect.width;
+      const scaleY = maskCanvasEl.height / maskRect.height;
+
+      const meshCircle = {
+        cx: localX * scaleX,
+        cy: localY * scaleY,
+        radius: dropArea.radius * scaleX,
+      };
+
+      const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
+      if (polygonIndices.size === 0) return;
+
+      dispatch({
+        type: CoreActionType.SetPendingLightSourceCapture,
+        value: { maskKey, polygonIndices: Array.from(polygonIndices) },
+      });
+    },
+    [selectedMaskKeys, coreState.canvasMasks, dispatch],
+  );
+
   const handleDuplicateDrop = useCallback(
     async (dropArea: ProjectCircle) => {
       const snapshot = coreState.project;
@@ -639,6 +724,13 @@ export default function Canvas() {
           }
           break;
         }
+        case "mask": {
+          if (!uiState.tool.capturingMeshSection) break;
+          const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          if (newRadius < minRadius) break;
+          handleLightSourceCapture({ cx: anchor.x, cy: anchor.y, radius: newRadius });
+          break;
+        }
       }
       setAnchor(undefined);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -652,6 +744,7 @@ export default function Canvas() {
       minRadius,
       coreState.project.imgs,
       coreState.project.svgs,
+      handleLightSourceCapture,
       selectedImgKeys,
       selectedSvgKeys,
       setSelectedImgKeys,

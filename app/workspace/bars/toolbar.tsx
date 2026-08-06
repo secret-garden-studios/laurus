@@ -15,8 +15,9 @@ import {
   browse,
   bookmarkStacks200,
   texture200,
+  asterisk200,
 } from "../../svg-repo";
-import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
+import { defaultMarqueeTool, defaultMaskTool, UIActionType } from "../states/ui-state";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
 import Navbar from "@/app/navbar";
@@ -165,7 +166,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
-                  value: { type: "mask" },
+                  value: defaultMaskTool,
                 });
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
@@ -330,6 +331,32 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
             resolution={{ ...uiState.resolution }}
             title="rotate tool"
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "light_source"}
+            svg={{
+              svg: asterisk200(),
+              scale: 0.55,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              if (uiState.tool.type == "light_source") {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "none" },
+                });
+              } else {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "light_source" },
+                });
+              }
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            title="light source tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "mix"}

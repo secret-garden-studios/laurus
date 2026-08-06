@@ -5,6 +5,7 @@ import { UIContext, CoreContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
 import {
   LaurusEffect,
+  LaurusLightSourceResult,
   LaurusMixState,
   LaurusMoveResult,
   LaurusRotateResult,
@@ -436,13 +437,11 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
   const { uiState } = useContext(UIContext);
   const selectList = useMemo(() => {
     const prioritySet = new Set<string>(uiState.mixableEffects);
-    const effectNames = uiState.effectNames
-      .filter((e) => e != "skew")
-      .sort((a, b) => {
-        const hasA = prioritySet.has(a) ? 1 : 0;
-        const hasB = prioritySet.has(b) ? 1 : 0;
-        return hasB - hasA;
-      });
+    const effectNames = uiState.effectNames.sort((a, b) => {
+      const hasA = prioritySet.has(a) ? 1 : 0;
+      const hasB = prioritySet.has(b) ? 1 : 0;
+      return hasB - hasA;
+    });
     return [selectHeader, ...effectNames];
   }, [uiState.effectNames, uiState.mixableEffects, selectHeader]);
 
@@ -541,6 +540,14 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                               ...e.value,
                               mixState: newMixState,
                             } as LaurusScaleResult,
+                          };
+                        case "light_source":
+                          return {
+                            ...e,
+                            value: {
+                              ...e.value,
+                              mixState: newMixState,
+                            } as LaurusLightSourceResult,
                           };
                       }
                     })();

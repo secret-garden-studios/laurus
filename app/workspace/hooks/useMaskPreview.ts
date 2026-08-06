@@ -11,10 +11,11 @@ import {
 } from "../workspace.server";
 import {
   colorToRGB01,
-  SHEEN_DARKNESS_DEFAULT,
-  SHEEN_FALLOFF_CSS_PX_DEFAULT,
-  SHEEN_INTENSITY_DEFAULT,
-  SHEEN_SIZE_CSS_PX_DEFAULT,
+  LIGHT_SOURCE_DARKNESS_DEFAULT,
+  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_SOURCE_INTENSITY_DEFAULT,
+  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  TEXTURE_MIX_DEFAULT,
 } from "../mask-gl";
 
 export type MaskStatus = "idle" | "connecting" | "streaming" | "done" | "error";
@@ -59,8 +60,8 @@ export function useMaskPreview() {
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   // Mirrored into a ref so the GL render loop (set up once per overlay mount) can read the live
   // slider value every frame without being torn down and re-created each time it moves.
-  const [textureMix, setTextureMixState] = useState(0);
-  const textureMixRef = useRef(0);
+  const [textureMix, setTextureMixState] = useState(TEXTURE_MIX_DEFAULT);
+  const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
 
   const setTextureMix = useCallback((value: number) => {
     textureMixRef.current = value;
@@ -68,36 +69,36 @@ export function useMaskPreview() {
   }, []);
 
   // Same mirrored state+ref pattern as textureMix, for Maskbar's epicenter size/intensity sliders.
-  const [sheenSize, setSheenSizeState] = useState(SHEEN_SIZE_CSS_PX_DEFAULT);
-  const sheenSizeRef = useRef(SHEEN_SIZE_CSS_PX_DEFAULT);
+  const [lightSourceSize, setLightSourceSizeState] = useState(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
+  const lightSourceSizeRef = useRef(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
 
-  const setSheenSize = useCallback((value: number) => {
-    sheenSizeRef.current = value;
-    setSheenSizeState(value);
+  const setLightSourceSize = useCallback((value: number) => {
+    lightSourceSizeRef.current = value;
+    setLightSourceSizeState(value);
   }, []);
 
-  const [sheenIntensity, setSheenIntensityState] = useState(SHEEN_INTENSITY_DEFAULT);
-  const sheenIntensityRef = useRef(SHEEN_INTENSITY_DEFAULT);
+  const [lightSourceIntensity, setLightSourceIntensityState] = useState(LIGHT_SOURCE_INTENSITY_DEFAULT);
+  const lightSourceIntensityRef = useRef(LIGHT_SOURCE_INTENSITY_DEFAULT);
 
-  const setSheenIntensity = useCallback((value: number) => {
-    sheenIntensityRef.current = value;
-    setSheenIntensityState(value);
+  const setLightSourceIntensity = useCallback((value: number) => {
+    lightSourceIntensityRef.current = value;
+    setLightSourceIntensityState(value);
   }, []);
 
-  const [sheenFalloff, setSheenFalloffState] = useState(SHEEN_FALLOFF_CSS_PX_DEFAULT);
-  const sheenFalloffRef = useRef(SHEEN_FALLOFF_CSS_PX_DEFAULT);
+  const [lightSourceFalloff, setLightSourceFalloffState] = useState(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
+  const lightSourceFalloffRef = useRef(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
 
-  const setSheenFalloff = useCallback((value: number) => {
-    sheenFalloffRef.current = value;
-    setSheenFalloffState(value);
+  const setLightSourceFalloff = useCallback((value: number) => {
+    lightSourceFalloffRef.current = value;
+    setLightSourceFalloffState(value);
   }, []);
 
-  const [sheenDarkness, setSheenDarknessState] = useState(SHEEN_DARKNESS_DEFAULT);
-  const sheenDarknessRef = useRef(SHEEN_DARKNESS_DEFAULT);
+  const [lightSourceDarkness, setLightSourceDarknessState] = useState(LIGHT_SOURCE_DARKNESS_DEFAULT);
+  const lightSourceDarknessRef = useRef(LIGHT_SOURCE_DARKNESS_DEFAULT);
 
-  const setSheenDarkness = useCallback((value: number) => {
-    sheenDarknessRef.current = value;
-    setSheenDarknessState(value);
+  const setLightSourceDarkness = useCallback((value: number) => {
+    lightSourceDarknessRef.current = value;
+    setLightSourceDarknessState(value);
   }, []);
 
   // Where/how big the generated mask should land, overriding the default of overlaying it
@@ -148,14 +149,14 @@ export function useMaskPreview() {
     setResult(undefined);
     setErrorMessage(undefined);
     setStatus("idle");
-    setTextureMix(0);
-    setSheenSize(SHEEN_SIZE_CSS_PX_DEFAULT);
-    setSheenIntensity(SHEEN_INTENSITY_DEFAULT);
-    setSheenFalloff(SHEEN_FALLOFF_CSS_PX_DEFAULT);
-    setSheenDarkness(SHEEN_DARKNESS_DEFAULT);
+    setTextureMix(TEXTURE_MIX_DEFAULT);
+    setLightSourceSize(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
+    setLightSourceIntensity(LIGHT_SOURCE_INTENSITY_DEFAULT);
+    setLightSourceFalloff(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
+    setLightSourceDarkness(LIGHT_SOURCE_DARKNESS_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setTextureMix, setSheenSize, setSheenIntensity, setSheenFalloff, setSheenDarkness]);
+  }, [setTextureMix, setLightSourceSize, setLightSourceIntensity, setLightSourceFalloff, setLightSourceDarkness]);
 
   const start = useCallback(
     // onComplete fires exactly once, straight off the websocket's one and only "complete"
@@ -176,11 +177,11 @@ export function useMaskPreview() {
       setResult(undefined);
       setErrorMessage(undefined);
       setStatus("connecting");
-      setTextureMix(0);
-      setSheenSize(SHEEN_SIZE_CSS_PX_DEFAULT);
-      setSheenIntensity(SHEEN_INTENSITY_DEFAULT);
-      setSheenFalloff(SHEEN_FALLOFF_CSS_PX_DEFAULT);
-      setSheenDarkness(SHEEN_DARKNESS_DEFAULT);
+      setTextureMix(TEXTURE_MIX_DEFAULT);
+      setLightSourceSize(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
+      setLightSourceIntensity(LIGHT_SOURCE_INTENSITY_DEFAULT);
+      setLightSourceFalloff(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
+      setLightSourceDarkness(LIGHT_SOURCE_DARKNESS_DEFAULT);
 
       socketRef.current?.close();
       socketRef.current = maskImage(
@@ -268,10 +269,10 @@ export function useMaskPreview() {
       coreState.accessToken,
       getColorCtx,
       setTextureMix,
-      setSheenSize,
-      setSheenIntensity,
-      setSheenFalloff,
-      setSheenDarkness,
+      setLightSourceSize,
+      setLightSourceIntensity,
+      setLightSourceFalloff,
+      setLightSourceDarkness,
     ],
   );
 
@@ -283,18 +284,18 @@ export function useMaskPreview() {
     textureMix,
     setTextureMix,
     textureMixRef,
-    sheenSize,
-    setSheenSize,
-    sheenSizeRef,
-    sheenIntensity,
-    setSheenIntensity,
-    sheenIntensityRef,
-    sheenFalloff,
-    setSheenFalloff,
-    sheenFalloffRef,
-    sheenDarkness,
-    setSheenDarkness,
-    sheenDarknessRef,
+    lightSourceSize,
+    setLightSourceSize,
+    lightSourceSizeRef,
+    lightSourceIntensity,
+    setLightSourceIntensity,
+    lightSourceIntensityRef,
+    lightSourceFalloff,
+    setLightSourceFalloff,
+    lightSourceFalloffRef,
+    lightSourceDarkness,
+    setLightSourceDarkness,
+    lightSourceDarknessRef,
     position,
     setPosition,
     size,

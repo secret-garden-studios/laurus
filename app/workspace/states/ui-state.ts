@@ -35,7 +35,8 @@ export type LaurusTool =
   | { type: "scale" }
   | { type: "rotate" }
   | { type: "mix" }
-  | { type: "mask" };
+  | { type: "mask"; capturingMeshSection: boolean }
+  | { type: "light_source" };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
@@ -46,13 +47,18 @@ export const defaultMarqueeTool: LaurusTool = {
   duplicate: false,
 };
 
+export const defaultMaskTool: LaurusTool = {
+  type: "mask",
+  capturingMeshSection: false,
+};
+
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 
 export type LaurusActiveElement = {
   key: string;
-  type: "svg" | "img";
+  type: "svg" | "img" | "mask";
   locallyActivatedEffectKey?: string;
 };
 
@@ -83,6 +89,10 @@ export interface UIState {
   showMediaBrowser: boolean;
   showTimeline: boolean;
   mediaBrowserFilter: MediaBrowserFilter;
+  // Whether mousing over a mask's WebGL canvas drives its light source epicenter -- off by
+  // default (see Lightsourcebar's "preview" toggle) so hovering over masks while working doesn't
+  // constantly trigger the animation.
+  lightSourcePreview: boolean;
 }
 
 export const defaultUIState: UIState = {
@@ -112,6 +122,7 @@ export const defaultUIState: UIState = {
   showMediaBrowser: true,
   showTimeline: true,
   mediaBrowserFilter: "img",
+  lightSourcePreview: false,
 };
 
 export enum UIActionType {
@@ -145,6 +156,7 @@ export enum UIActionType {
   SetShowMediaBrowser,
   SetShowTimeline,
   SetMediaBrowserFilter,
+  SetLightSourcePreview,
 }
 
 export type UIAction =
@@ -191,7 +203,8 @@ export type UIAction =
     }
   | { type: UIActionType.SetShowMediaBrowser; value: boolean }
   | { type: UIActionType.SetShowTimeline; value: boolean }
-  | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter };
+  | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter }
+  | { type: UIActionType.SetLightSourcePreview; value: boolean };
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
@@ -351,6 +364,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetMediaBrowserFilter: {
       return { ...state, mediaBrowserFilter: action.value };
+    }
+    case UIActionType.SetLightSourcePreview: {
+      return { ...state, lightSourcePreview: action.value };
     }
   }
 }

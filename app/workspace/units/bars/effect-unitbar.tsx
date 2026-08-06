@@ -1,7 +1,19 @@
-import { SvgRepo, allOut, circle, earthquake, experiment, lock, lockOpenRight, cycle400, tune } from "@/app/svg-repo";
+import {
+  SvgRepo,
+  allOut,
+  circle,
+  earthquake,
+  experiment,
+  lock,
+  lockOpenRight,
+  cycle400,
+  tune,
+  asterisk300,
+} from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
+  deleteLightSource,
   deleteMove,
   deleteRotate,
   deleteScale,
@@ -21,6 +33,7 @@ interface EffectUnitbar {
   setMoveCarouselIndex: Dispatch<SetStateAction<number>>;
   setRotateCarouselIndex: Dispatch<SetStateAction<number>>;
   setScaleCarouselIndex: Dispatch<SetStateAction<number>>;
+  setLightSourceCarouselIndex: Dispatch<SetStateAction<number>>;
   saveEffect: (effect: LaurusEffect, rollback: LaurusEffect) => Promise<void>;
 }
 export default function EffectUnitbar({
@@ -31,6 +44,7 @@ export default function EffectUnitbar({
   setMoveCarouselIndex,
   setRotateCarouselIndex,
   setScaleCarouselIndex,
+  setLightSourceCarouselIndex,
 }: EffectUnitbar) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
@@ -93,6 +107,17 @@ export default function EffectUnitbar({
           }
           break;
         }
+        case "light_source": {
+          const deleted = await deleteLightSource(
+            coreState.apiOrigin,
+            coreState.accessToken,
+            effect.value.light_source_id,
+          );
+          if (deleted) {
+            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
+          }
+          break;
+        }
       }
     },
     [coreState.accessToken, coreState.apiOrigin, dispatch],
@@ -117,6 +142,8 @@ export default function EffectUnitbar({
               return earthquake();
             case "rotate":
               return cycle400();
+            case "light_source":
+              return asterisk300();
           }
         })()}
         scale={0.6}
@@ -162,6 +189,14 @@ export default function EffectUnitbar({
                   setScaleCarouselIndex(newIndex);
                   break;
                 }
+                case "light_source": {
+                  const eqKeys = Array.from(effect.value.math.keys());
+                  const keys = uiState.carouselEntries;
+                  const k = keys.findIndex((k) => eqKeys.includes(k.key));
+                  const newIndex = k > -1 ? k : 0;
+                  setLightSourceCarouselIndex(newIndex);
+                  break;
+                }
               }
             } else if (uiState.activeElement.locallyActivatedEffectKey == undefined) {
               const activeKey = uiState.activeElement.key;
@@ -170,6 +205,7 @@ export default function EffectUnitbar({
                 setScaleCarouselIndex(initialIndex);
                 setMoveCarouselIndex(initialIndex);
                 setRotateCarouselIndex(initialIndex);
+                setLightSourceCarouselIndex(initialIndex);
               }
             }
             setShowUnitControls(true);
@@ -311,6 +347,12 @@ export default function EffectUnitbar({
                 value: { ...effect.value, locked: !effect.value.locked },
               };
               break;
+            case "light_source":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, locked: !effect.value.locked },
+              };
+              break;
           }
           await saveEffect(newEffect, rollback);
         }}
@@ -346,6 +388,12 @@ export default function EffectUnitbar({
               };
               break;
             case "rotate":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, disabled: !effect.value.disabled },
+              };
+              break;
+            case "light_source":
               newEffect = {
                 ...effect,
                 value: { ...effect.value, disabled: !effect.value.disabled },

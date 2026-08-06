@@ -16,7 +16,7 @@ const onNotOk = (status: number, message?: string) => {
 
 const getOnNotOkMessage = (
   action: "creating" | "updating" | "deleting",
-  type: "scale" | "move" | "rotate" | "effect_group" | "media_group",
+  type: "scale" | "move" | "rotate" | "light_source" | "effect_group" | "media_group" | "svg",
   description?: string,
 ) => {
   return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
@@ -264,6 +264,31 @@ export async function createSvg(
   } catch (error) {
     console.log({ error });
     return undefined;
+  }
+}
+export async function deleteSvg(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  svgMediaId: string,
+  description?: string,
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/media/svg/${svgMediaId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "DELETE");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "DELETE");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("deleting", "svg", description));
+    }
+    return response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
   }
 }
 
@@ -1452,6 +1477,221 @@ export async function deleteRotate(
   }
 }
 
+/* /light_sources */
+
+export interface LightSourceSolution_V1_0 {
+  light_source_size: number;
+  light_source_intensity: number;
+  light_source_falloff: number;
+  light_source_darkness: number;
+}
+export interface LightSourceEquation_V1_0 {
+  input_id: string;
+  /**
+   * ms
+   */
+  time: number;
+  light_source_size: number;
+  light_source_intensity: number;
+  light_source_falloff: number;
+  light_source_darkness: number;
+  loop: LaurusLoopType;
+  solution: LightSourceSolution_V1_0[];
+  limit_factor: number;
+}
+export interface LightSource_V1_0 {
+  /**
+   * s
+   */
+  start: number;
+  /**
+   * s
+   */
+  end: number;
+  project_id: string;
+  effect_group_id: string;
+  order: number;
+  fps: number;
+  locked: boolean;
+  disabled: boolean;
+  description: string;
+  mix: boolean;
+  math: Map<string, LightSourceEquation_V1_0>;
+}
+export interface LightSourceResult_V1_0 {
+  timestamp: string;
+  last_active: string;
+  light_source_id: string;
+  /**
+   * s
+   */
+  start: number;
+  /**
+   * s
+   */
+  end: number;
+  project_id: string;
+  effect_group_id: string;
+  order: number;
+  fps: number;
+  locked: boolean;
+  disabled: boolean;
+  description: string;
+  mix: boolean;
+  math: Map<string, LightSourceEquation_V1_0>;
+  creator: string;
+  last_editor: string;
+}
+export type LaurusLightSourceEquation = LightSourceEquation_V1_0;
+export interface LaurusLightSource extends LightSource_V1_0 {
+  math: Map<string, LaurusLightSourceEquation>;
+}
+export interface LaurusLightSourceResult extends LightSourceResult_V1_0 {
+  math: Map<string, LaurusLightSourceEquation>;
+  mixState: LaurusMixState;
+}
+export async function getLightSources(baseUrl: string | undefined, projectId: string) {
+  try {
+    const url = `${baseUrl}/light_sources?project_id=${projectId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: LightSourceResult_V1_0[] = await raw_response.json();
+    return response.map((r) => {
+      return {
+        ...r,
+        math: new Map(Object.entries(r.math)),
+      };
+    });
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function getLightSource(baseUrl: string | undefined, lightSourceId: string, inputId: string | undefined) {
+  try {
+    let url = `${baseUrl}/light_sources/${lightSourceId}`;
+    if (inputId) {
+      url += `?input_id=${inputId}`;
+    }
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: LightSourceResult_V1_0 = await raw_response.json();
+    return {
+      ...response,
+      math: new Map(Object.entries(response.math)),
+    };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function createLightSource(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  lightSource: LightSource_V1_0,
+) {
+  try {
+    const url = `${baseUrl}/light_sources`;
+    const body = JSON.stringify({
+      ...lightSource,
+      math: Object.fromEntries(lightSource.math),
+    });
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "POST");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("creating", "light_source", lightSource.description));
+      return undefined;
+    }
+
+    const result: LightSourceResult_V1_0 = await response.json();
+    return {
+      ...result,
+      math: new Map(Object.entries(result.math)),
+    };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function updateLightSource(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  lightSourceId: string,
+  lightSource: LightSource_V1_0,
+): Promise<boolean> {
+  try {
+    const body = JSON.stringify({
+      ...lightSource,
+      math: Object.fromEntries(lightSource.math),
+    });
+    const url = `${baseUrl}/light_sources/${lightSourceId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "light_source", lightSource.description));
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const result: LightSourceResult_V1_0 = await response.json();
+    return true;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+export async function deleteLightSource(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  lightSourceId: string,
+  description?: string,
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/light_sources/${lightSourceId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "DELETE");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "DELETE");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("deleting", "light_source", description));
+    }
+    return response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+
 /* /frames */
 export type LaurusFrame = Frame_V1_0;
 interface Frame_V1_0 {
@@ -1463,6 +1703,10 @@ interface Frame_V1_0 {
   ry: number;
   rz: number;
   rangle: number;
+  light_source_size: number;
+  light_source_intensity: number;
+  light_source_falloff: number;
+  light_source_darkness: number;
   input_id: string;
 }
 export async function getScaleFrames(
@@ -1483,6 +1727,10 @@ export async function getScaleFrames(
     rx: 0,
     ry: 0,
     rz: 0,
+    light_source_size: 0,
+    light_source_intensity: 0,
+    light_source_falloff: 0,
+    light_source_darkness: 0,
     input_id: inputId,
   }));
 }
@@ -1503,6 +1751,10 @@ export async function getMoveFrames(
     rx: 0,
     ry: 0,
     rz: 0,
+    light_source_size: 0,
+    light_source_intensity: 0,
+    light_source_falloff: 0,
+    light_source_darkness: 0,
     input_id: inputId,
   }));
 }
@@ -1524,6 +1776,32 @@ export async function getRotateFrames(
     y: 0,
     sx: 1,
     sy: 1,
+    light_source_size: 0,
+    light_source_intensity: 0,
+    light_source_falloff: 0,
+    light_source_darkness: 0,
+    input_id: inputId,
+  }));
+}
+export async function getLightSourceFrames(
+  baseUrl: string | undefined,
+  lightSourceId: string,
+  inputId: string,
+): Promise<LaurusFrame[] | undefined> {
+  const lightSourceResult = await getLightSource(baseUrl, lightSourceId, inputId);
+  if (!lightSourceResult) return undefined;
+  const eq: LightSourceEquation_V1_0 | undefined = lightSourceResult.math.get(inputId);
+  if (!eq) return undefined;
+  return eq.solution.map((frame) => ({
+    ...frame,
+    x: 0,
+    y: 0,
+    sx: 1,
+    sy: 1,
+    rangle: 0,
+    rx: 0,
+    ry: 0,
+    rz: 0,
     input_id: inputId,
   }));
 }
@@ -1567,7 +1845,8 @@ export enum LaurusMixState {
 export type LaurusEffect =
   | { type: "scale"; key: string; value: LaurusScaleResult }
   | { type: "move"; key: string; value: LaurusMoveResult }
-  | { type: "rotate"; key: string; value: LaurusRotateResult };
+  | { type: "rotate"; key: string; value: LaurusRotateResult }
+  | { type: "light_source"; key: string; value: LaurusLightSourceResult };
 
 export enum LaurusLoopType {
   none = "none",

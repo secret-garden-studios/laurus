@@ -3,27 +3,18 @@ import {
   updateProject,
   LaurusProjectImg,
   LaurusProjectSvg,
+  LaurusProjectMask,
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
 import { CoreContext, LaurusTransform, UIContext } from "./workspace.client";
-import {
-  updateScale,
-  updateMove,
-  updateRotate,
-  LaurusFrame,
-  LaurusImgResult,
-  LaurusMoveResult,
-  LaurusRotateResult,
-  LaurusScaleResult,
-  LaurusSvgResult,
-  LaurusEffect,
-} from "./workspace.server";
+import { LaurusFrame, LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import {
   allOut,
   browse,
+  circle,
   earthquake,
   experiment,
   keyboardCommandKey,
@@ -31,6 +22,7 @@ import {
   SvgRepo,
   cycle400,
   polyline200,
+  asterisk200,
 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
@@ -42,69 +34,9 @@ import {
   defaultUIState,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
+import { deleteEffects } from "./effects-utils";
 
-async function deleteEffects(
-  mediaKey: string,
-  apiOrigin: string | undefined,
-  accessToken: string | undefined,
-  effects: LaurusEffect[],
-  dispatch: Dispatch<CoreAction>,
-) {
-  for (let i = 0; i < effects.length; i++) {
-    const effect = effects[i];
-    if (!effect.value.math.has(mediaKey)) continue;
-    switch (effect.type) {
-      case "scale": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newScale: LaurusScaleResult = { ...effect.value, math: newMath };
-        const updated = await updateScale(apiOrigin, accessToken, effect.key, newScale);
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "scale", key: effect.key, value: { ...newScale } },
-          });
-        }
-        break;
-      }
-      case "move": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newMove: LaurusMoveResult = { ...effect.value, math: newMath };
-        const updated = await updateMove(apiOrigin, accessToken, effect.key, {
-          ...newMove,
-        });
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "move", key: effect.key, value: { ...newMove } },
-          });
-        }
-        break;
-      }
-      case "rotate": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newRotate: LaurusRotateResult = {
-          ...effect.value,
-          math: newMath,
-        };
-        const updated = await updateRotate(apiOrigin, accessToken, effect.key, {
-          ...newRotate,
-        });
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "rotate", key: effect.key, value: { ...newRotate } },
-          });
-        }
-        break;
-      }
-    }
-  }
-}
-
-function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch: Dispatch<CoreAction>) {
+function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
   switch (mediaType) {
     case "img": {
       dispatch({ type: CoreActionType.DeleteCanvasImg, key: mediaKey });
@@ -114,11 +46,15 @@ function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch
       dispatch({ type: CoreActionType.DeleteCanvasSvg, key: mediaKey });
       break;
     }
+    case "mask": {
+      dispatch({ type: CoreActionType.DeleteCanvasMask, key: mediaKey });
+      break;
+    }
   }
 }
 
 function cleanUpMediaBrowser(
-  mediaType: "img" | "svg",
+  mediaType: "img" | "svg" | "mask",
   mediaId: string,
   project: LaurusProjectResult,
   uiDispatch: Dispatch<UIAction>,
@@ -136,6 +72,11 @@ function cleanUpMediaBrowser(
       if (!project.browse_public_svgs && !stillExists) {
         uiDispatch({ type: UIActionType.DeleteBrowserSvg, value: mediaId });
       }
+      break;
+    }
+    // No mask media browser exists (masks aren't reusable browsable assets the way imgs/svgs
+    // are -- each is generated fresh per source image), so there's nothing to dedupe here.
+    case "mask": {
       break;
     }
   }
@@ -187,8 +128,18 @@ function projectImgIsTransformed(img: LaurusProjectImg) {
   }
 }
 
+function projectMaskIsTransformed(mask: LaurusProjectMask) {
+  if (mask.scale_x == 1 && mask.scale_y == 1 && mask.rotate_x == 0 && mask.rotate_y == 0 && mask.rotate_z == 0) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
 export type ContextMenuMedia =
-  { type: "img"; key: string; meta: LaurusProjectImg } | { type: "svg"; key: string; meta: LaurusProjectSvg };
+  | { type: "img"; key: string; meta: LaurusProjectImg }
+  | { type: "svg"; key: string; meta: LaurusProjectSvg }
+  | { type: "mask"; key: string; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -457,11 +408,13 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       mediaId: string,
       newSvgs: Map<string, LaurusProjectSvg> | undefined,
       newImgs: Map<string, LaurusProjectImg> | undefined,
+      newMasks: Map<string, LaurusProjectMask> | undefined,
     ) => {
       const newProject: LaurusProjectResult = {
         ...snapshot,
         ...(newSvgs !== undefined && { svgs: newSvgs }),
         ...(newImgs !== undefined && { imgs: newImgs }),
+        ...(newMasks !== undefined && { masks: newMasks }),
       };
       if (newProject.project_id) {
         dispatch({ type: CoreActionType.SetProject, value: newProject });
@@ -722,9 +675,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       const snapshot = { ...coreState.project };
       const newImgs = new Map(Array.from(snapshot.imgs, ([k, v]) => [k, { ...v }]));
       const newSvgs = new Map(Array.from(snapshot.svgs, ([k, v]) => [k, { ...v }]));
-      const targetItem = newImgs.get(media.key) || newSvgs.get(media.key);
+      const newMasks = new Map(Array.from(snapshot.masks, ([k, v]) => [k, { ...v }]));
+      const targetItem = newImgs.get(media.key) || newSvgs.get(media.key) || newMasks.get(media.key);
       if (!targetItem) return;
-      const allItems = [...newImgs.values(), ...newSvgs.values()];
+      const allItems = [...newImgs.values(), ...newSvgs.values(), ...newMasks.values()];
       const maxOrder = allItems.length - 1;
 
       if (direction === "decrement") {
@@ -750,6 +704,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         ...snapshot,
         imgs: newImgs,
         svgs: newSvgs,
+        masks: newMasks,
       };
       const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
         ...newProject,
@@ -773,13 +728,19 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectSvgIsTransformed(m);
       }
+      case "mask": {
+        const m = coreState.project.masks.get(media.key);
+        if (!m) return false;
+        return projectMaskIsTransformed(m);
+      }
     }
-  }, [coreState.project.imgs, coreState.project.svgs, media.key, media.type]);
+  }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks, media.key, media.type]);
 
   const revertMedia = useCallback(async () => {
     const snapshot: LaurusProjectResult = { ...coreState.project };
     const newImgs = new Map(snapshot.imgs);
     const newSvgs = new Map(snapshot.svgs);
+    const newMasks = new Map(snapshot.masks);
     switch (media.type) {
       case "img": {
         const m = newImgs.get(media.key);
@@ -815,11 +776,29 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         }
         break;
       }
+      case "mask": {
+        const m = newMasks.get(media.key);
+        if (!m) return;
+        if (projectMaskIsTransformed(m)) {
+          const newMask: LaurusProjectMask = {
+            ...m,
+            scale_x: 1,
+            scale_y: 1,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+          };
+          newMasks.set(media.key, newMask);
+        }
+        break;
+      }
     }
     const newProject: LaurusProjectResult = {
       ...coreState.project,
       imgs: newImgs,
       svgs: newSvgs,
+      masks: newMasks,
     };
     const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
       ...newProject,
@@ -918,7 +897,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {media.meta.media_key}
+                  {media.type === "mask" ? media.meta.media_id : media.meta.media_key}
                 </div>
                 <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
                   <div>
@@ -995,6 +974,17 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           break;
                         }
+                        case "mask": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "mask",
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          break;
+                        }
                       }
                     }}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -1002,9 +992,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
-                  {"swap"}
-                </div>
+                {media.type !== "mask" && (
+                  <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
+                    {"swap"}
+                  </div>
+                )}
                 <div
                   style={{ ...cellStyle }}
                   className={styles["animated-nav-dark"]}
@@ -1047,13 +1039,19 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                       case "img": {
                         const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
                         newImgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs);
+                        deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs, undefined);
                         break;
                       }
                       case "svg": {
                         const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
                         newSvgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined);
+                        deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined, undefined);
+                        break;
+                      }
+                      case "mask": {
+                        const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
+                        newMasks.delete(media.key);
+                        deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
                         break;
                       }
                     }
@@ -1104,6 +1102,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             return experiment();
                           case "mask":
                             return polyline200();
+                          case "light_source":
+                            return asterisk200();
                         }
                       })()}
                       containerStyle={{

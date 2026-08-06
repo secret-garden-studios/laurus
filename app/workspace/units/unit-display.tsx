@@ -36,11 +36,17 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          uiDispatch({
-            type: UIActionType.SetProjectContextMenu,
-            key: entry.key,
-            showContextMenu: true,
-          });
+          // A light source (see project-mask-item.tsx) has no on-screen presence of its own to
+          // anchor a context menu to -- becoming the active element highlights the mesh triangles
+          // it covers instead (project-mask-item.tsx's highlightedPolygonIndices).
+          const isLightSource = coreState.project.svgs.get(entry.key)?.target_mask_key !== undefined;
+          if (!isLightSource) {
+            uiDispatch({
+              type: UIActionType.SetProjectContextMenu,
+              key: entry.key,
+              showContextMenu: true,
+            });
+          }
           break;
         }
         case "img": {
@@ -62,7 +68,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
         }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch],
+    [uiState.carouselEntries, effectKey, uiDispatch, coreState.project.svgs],
   );
 
   const hideContextMenu = useCallback(

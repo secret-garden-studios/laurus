@@ -140,6 +140,11 @@ export default function Rotatebar() {
         if (!img) return [0, 0, 0, 0];
         return [img.rotate_x, img.rotate_y, img.rotate_z, img.rotate_angle];
       }
+      case "mask": {
+        const mask = snapshot.masks.get(activeElement.key);
+        if (!mask) return [0, 0, 0, 0];
+        return [mask.rotate_x, mask.rotate_y, mask.rotate_z, mask.rotate_angle];
+      }
     }
   }, [uiState.activeElement, coreState.project]);
 
@@ -221,6 +226,42 @@ export default function Rotatebar() {
               dispatch({
                 type: CoreActionType.SetProject,
                 value: { ...snapshot, imgs: rollbackImgs },
+              });
+            }
+          }
+          break;
+        }
+        case "mask": {
+          const newMask = snapshot.masks.get(key);
+          if (newMask) {
+            const rollbackMasks = new Map(snapshot.masks);
+            const newMasks = new Map(snapshot.masks);
+            newMasks.set(key, {
+              ...newMask,
+              ...(rX !== undefined && { rotate_x: rX }),
+              ...(rY !== undefined && { rotate_y: rY }),
+              ...(rZ !== undefined && { rotate_z: rZ }),
+              ...(rAngle !== undefined && { rotate_angle: rAngle }),
+            });
+            const newProject: LaurusProjectResult = {
+              ...snapshot,
+              masks: newMasks,
+            };
+            const saved = await updateProject(
+              coreState.apiOrigin,
+              coreState.accessToken,
+              newProject.project_id,
+              newProject,
+            );
+            if (saved) {
+              dispatch({
+                type: CoreActionType.SetProject,
+                value: { ...newProject },
+              });
+            } else {
+              dispatch({
+                type: CoreActionType.SetProject,
+                value: { ...snapshot, masks: rollbackMasks },
               });
             }
           }

@@ -14,6 +14,7 @@ import {
 } from "react";
 import styles from "../app.module.css";
 import {
+  deleteSvg,
   getFrames,
   LaurusEffect,
   LaurusEffectGroupResult,
@@ -28,6 +29,10 @@ import {
   LaurusSvgPageSearch,
   searchSvgs,
 } from "./workspace.server";
+import { v4 as newUUID } from "uuid";
+import { deleteEffects } from "./effects-utils";
+import { createAndRegisterSvg } from "./svg-upload-utils";
+import { trianglesFromIndices, trianglesToSvgMarkup } from "./canvas-media/light-source-capture";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
@@ -35,6 +40,7 @@ import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-re
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
+import { MaskLightSourcePlayer } from "./canvas-media/project-mask-item";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -43,10 +49,11 @@ import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
 import {
-  SHEEN_DARKNESS_DEFAULT,
-  SHEEN_FALLOFF_CSS_PX_DEFAULT,
-  SHEEN_INTENSITY_DEFAULT,
-  SHEEN_SIZE_CSS_PX_DEFAULT,
+  LIGHT_SOURCE_DARKNESS_DEFAULT,
+  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_SOURCE_INTENSITY_DEFAULT,
+  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  TEXTURE_MIX_DEFAULT,
 } from "./mask-gl";
 import {
   ProjectResult_V1_0,
@@ -68,6 +75,7 @@ import {
   UIActionType,
   UIState,
   defaultMarqueeTool,
+  defaultMaskTool,
   defaultUIState,
   ProjectMediaContextMenu,
   LaurusTool,
@@ -163,21 +171,6 @@ export interface HoverContextProps {
   setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectedMaskKeys: Set<string>;
   setSelectedMaskKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
-  // Per-mask texture-mix slider value (see Maskbar's "texture" slider and
-  // ProjectMaskItem) -- ephemeral view state, not part of the persisted project, so it lives
-  // here alongside the other cross-component UI state rather than in CoreState.
-  maskTextureMix: Map<string, number>;
-  setMaskTextureMix: React.Dispatch<React.SetStateAction<Map<string, number>>>;
-  // Per-mask sheen size/intensity slider values (see Maskbar's "sheen" sliders and
-  // ProjectMaskItem) -- same ephemeral-view-state rationale as maskTextureMix above.
-  maskSheenSize: Map<string, number>;
-  setMaskSheenSize: React.Dispatch<React.SetStateAction<Map<string, number>>>;
-  maskSheenIntensity: Map<string, number>;
-  setMaskSheenIntensity: React.Dispatch<React.SetStateAction<Map<string, number>>>;
-  maskSheenFalloff: Map<string, number>;
-  setMaskSheenFalloff: React.Dispatch<React.SetStateAction<Map<string, number>>>;
-  maskSheenDarkness: Map<string, number>;
-  setMaskSheenDarkness: React.Dispatch<React.SetStateAction<Map<string, number>>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
@@ -193,16 +186,6 @@ export const HoverContext = createContext<HoverContextProps>({
   setSelectedSvgKeys: () => {},
   selectedMaskKeys: new Set<string>(),
   setSelectedMaskKeys: () => {},
-  maskTextureMix: new Map<string, number>(),
-  setMaskTextureMix: () => {},
-  maskSheenSize: new Map<string, number>(),
-  setMaskSheenSize: () => {},
-  maskSheenIntensity: new Map<string, number>(),
-  setMaskSheenIntensity: () => {},
-  maskSheenFalloff: new Map<string, number>(),
-  setMaskSheenFalloff: () => {},
-  maskSheenDarkness: new Map<string, number>(),
-  setMaskSheenDarkness: () => {},
 });
 
 export interface CoreContextProps {
@@ -214,6 +197,8 @@ export interface CoreContextProps {
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
   cancelFrameDownload: () => void;
+  confirmLightSourceCapture: () => void;
+  cancelLightSourceCapture: () => void;
 }
 
 export const CoreContext = createContext<CoreContextProps>({
@@ -225,6 +210,8 @@ export const CoreContext = createContext<CoreContextProps>({
   handlePlayTarget: () => {},
   handleStopAll: () => {},
   cancelFrameDownload: () => {},
+  confirmLightSourceCapture: () => {},
+  cancelLightSourceCapture: () => {},
 });
 
 export interface UIContextProps {
@@ -245,21 +232,21 @@ const defaultMaskPreview: UseMaskPreview = {
   triangleCount: 0,
   result: undefined,
   errorMessage: undefined,
-  textureMix: 0,
+  textureMix: TEXTURE_MIX_DEFAULT,
   setTextureMix: () => {},
-  textureMixRef: { current: 0 },
-  sheenSize: SHEEN_SIZE_CSS_PX_DEFAULT,
-  setSheenSize: () => {},
-  sheenSizeRef: { current: SHEEN_SIZE_CSS_PX_DEFAULT },
-  sheenIntensity: SHEEN_INTENSITY_DEFAULT,
-  setSheenIntensity: () => {},
-  sheenIntensityRef: { current: SHEEN_INTENSITY_DEFAULT },
-  sheenFalloff: SHEEN_FALLOFF_CSS_PX_DEFAULT,
-  setSheenFalloff: () => {},
-  sheenFalloffRef: { current: SHEEN_FALLOFF_CSS_PX_DEFAULT },
-  sheenDarkness: SHEEN_DARKNESS_DEFAULT,
-  setSheenDarkness: () => {},
-  sheenDarknessRef: { current: SHEEN_DARKNESS_DEFAULT },
+  textureMixRef: { current: TEXTURE_MIX_DEFAULT },
+  lightSourceSize: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  setLightSourceSize: () => {},
+  lightSourceSizeRef: { current: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT },
+  lightSourceIntensity: LIGHT_SOURCE_INTENSITY_DEFAULT,
+  setLightSourceIntensity: () => {},
+  lightSourceIntensityRef: { current: LIGHT_SOURCE_INTENSITY_DEFAULT },
+  lightSourceFalloff: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
+  setLightSourceFalloff: () => {},
+  lightSourceFalloffRef: { current: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT },
+  lightSourceDarkness: LIGHT_SOURCE_DARKNESS_DEFAULT,
+  setLightSourceDarkness: () => {},
+  lightSourceDarknessRef: { current: LIGHT_SOURCE_DARKNESS_DEFAULT },
   position: { value: false, x: undefined, y: undefined },
   setPosition: () => {},
   size: { value: false, width: undefined, height: undefined },
@@ -387,6 +374,17 @@ function initReducer({
       newEffects.push({
         type: "rotate",
         key: e.rotate_id,
+        value: {
+          ...e,
+          locked: e.locked,
+          mixState: e.mix ? LaurusMixState.Active : LaurusMixState.None,
+        },
+      });
+    });
+    projectDependencies?.lightSources.forEach((e) => {
+      newEffects.push({
+        type: "light_source",
+        key: e.light_source_id,
         value: {
           ...e,
           locked: e.locked,
@@ -614,11 +612,6 @@ export default function Workspace({
   const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedMaskKeys, setSelectedMaskKeys] = useState<Set<string>>(new Set<string>());
-  const [maskTextureMix, setMaskTextureMix] = useState<Map<string, number>>(new Map<string, number>());
-  const [maskSheenSize, setMaskSheenSize] = useState<Map<string, number>>(new Map<string, number>());
-  const [maskSheenIntensity, setMaskSheenIntensity] = useState<Map<string, number>>(new Map<string, number>());
-  const [maskSheenFalloff, setMaskSheenFalloff] = useState<Map<string, number>>(new Map<string, number>());
-  const [maskSheenDarkness, setMaskSheenDarkness] = useState<Map<string, number>>(new Map<string, number>());
   const [mediaPageSize] = useState(mediaPageSizeInit);
 
   const [minifiedControlsSize] = useState(() => {
@@ -711,6 +704,11 @@ export default function Workspace({
   });
   const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
   const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
+  // Masks have no DOM element to animate via WAAPI (they render to a WebGL canvas), so unlike
+  // img/svg's element refs, this holds MaskLightSourcePlayer.play/stop callbacks instead -- registered
+  // by ProjectMaskItem, keyed by the same source-image project key as imgElementsRef, and a Set
+  // per key since more than one mask can trace from the same image.
+  const maskLightSourcePlayersRef = useRef<Map<string, Set<MaskLightSourcePlayer>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
@@ -949,6 +947,147 @@ export default function Workspace({
     frameDownloadAbortControllerRef.current?.abort();
   }, []);
 
+  // Places a just-confirmed light source svg directly onto the mask it was captured from -- there's no
+  // manual drag/drop step for light sources (see confirmLightSourceCapture below); this replaces whatever
+  // light source previously targeted that mask (a mask only ever consumes the first one, see
+  // project-mask-item.tsx) and makes the new one the active element immediately, so its
+  // mesh-highlight (project-mask-item.tsx) and effect-wiring are ready to use right away.
+  // Replaced light sources are fully deleted -- not just unlinked from the project -- to avoid piling up
+  // orphaned svg media/S3 objects every time a light source gets redone (see deleteSvg below; the server
+  // has no upsert-on-replace semantics of its own, see workspace.server.ts's createSvg comment).
+  const placeLightSourceOnMask = useCallback(
+    async (svgData: LaurusSvgResult, maskKey: string) => {
+      const projectSvg: LaurusProjectSvg = {
+        svg_media_id: svgData.svg_media_id,
+        media_group_id: "",
+        width: svgData.width,
+        height: svgData.height,
+        top: 0,
+        left: 0,
+        order:
+          Math.max(
+            -1,
+            ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
+            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+          ) + 1,
+        media_key: svgData.media_key,
+        viewbox: svgData.viewbox,
+        fill: svgData.fill,
+        stroke: svgData.stroke,
+        stroke_width: svgData.stroke_width,
+        rotate_x: 0,
+        rotate_y: 0,
+        rotate_z: 0,
+        rotate_angle: 0,
+        scale_x: 1,
+        scale_y: 1,
+        description: "",
+        target_mask_key: maskKey,
+      };
+
+      const newSvgs: Map<string, LaurusProjectSvg> = new Map(coreState.project.svgs);
+      const staleLightSources: { key: string; svg_media_id: string }[] = [];
+      newSvgs.forEach((meta, key) => {
+        if (meta.target_mask_key === maskKey) staleLightSources.push({ key, svg_media_id: meta.svg_media_id });
+      });
+      staleLightSources.forEach(({ key }) => newSvgs.delete(key));
+
+      const newKey = newUUID();
+      newSvgs.set(newKey, projectSvg);
+      const newProject: LaurusProjectResult = { ...coreState.project, svgs: newSvgs };
+
+      const activateNewLightSource = () => {
+        dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...svgData } });
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "svg", key: newKey } });
+        uiDispatch({
+          type: UIActionType.SetProjectContextMenu,
+          key: newKey,
+          showContextMenu: false,
+          contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
+        });
+        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: newKey, type: "svg" } });
+      };
+      const cleanupStaleLightSources = async (effects: LaurusEffect[]) => {
+        for (const stale of staleLightSources) {
+          dispatch({ type: CoreActionType.DeleteCanvasSvg, key: stale.key });
+          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: stale.key });
+          await deleteEffects(stale.key, coreState.apiOrigin, coreState.accessToken, effects, dispatch);
+          await deleteSvg(coreState.apiOrigin, coreState.accessToken, stale.svg_media_id);
+        }
+      };
+
+      if (coreState.project.project_id) {
+        dispatch({ type: CoreActionType.SetProject, value: newProject });
+        const projectUpdated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+          ...newProject,
+        });
+        if (projectUpdated) {
+          activateNewLightSource();
+          await cleanupStaleLightSources(coreState.effects);
+        }
+      } else {
+        const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
+        if (projectCreated) {
+          const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs };
+          dispatch({ type: CoreActionType.SetProject, value: newProject2 });
+          activateNewLightSource();
+          await cleanupStaleLightSources(coreState.effects);
+        }
+      }
+    },
+    [coreState.project, coreState.effects, coreState.apiOrigin, coreState.accessToken, dispatch, uiDispatch],
+  );
+
+  // Turns a pending light-source-capture candidate (canvas.tsx's handleLightSourceCapture, redrawable with
+  // zero server calls) into a real, saved svg only once the user explicitly confirms -- this is
+  // the one point where an upload actually happens, so testing out different capture shapes
+  // never leaves wasted assets behind.
+  const confirmLightSourceCapture = useCallback(async () => {
+    const pending = coreState.pendingLightSourceCapture;
+    if (!pending) return;
+    const maskData = coreState.canvasMasks.get(pending.maskKey);
+    if (!maskData) return;
+    const triangles = trianglesFromIndices(maskData.polygons, pending.polygonIndices);
+    if (triangles.length === 0) return;
+
+    const { markup, width, height } = trianglesToSvgMarkup(triangles);
+    // The server derives an svg's media_key verbatim from the uploaded filename -- see
+    // workspace.server.ts's createSvg -- so a fixed filename would make every capture collide.
+    // svg_media_id itself isn't known until the server responds to this same request, so a fresh
+    // client-generated id ("drop id") is the closest equivalent available beforehand.
+    const lightSourceFilenameBase = newUUID();
+    const svgFile = new File([markup], `${lightSourceFilenameBase}.svg`, { type: "image/svg+xml" });
+    const created = await createAndRegisterSvg(
+      coreState.apiOrigin,
+      coreState.accessToken,
+      uiState,
+      uiDispatch,
+      svgFile,
+      markup,
+      width,
+      height,
+      lightSourceFilenameBase,
+      false,
+    );
+    if (!created) return;
+    await placeLightSourceOnMask(created, pending.maskKey);
+    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+    uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
+  }, [
+    coreState.pendingLightSourceCapture,
+    coreState.canvasMasks,
+    coreState.apiOrigin,
+    coreState.accessToken,
+    uiState,
+    uiDispatch,
+    dispatch,
+    placeLightSourceOnMask,
+  ]);
+
+  const cancelLightSourceCapture = useCallback(() => {
+    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+  }, [dispatch]);
+
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
       if (uiState.playbackMode.type !== "stopped" || !uiState.filledForwards) return;
@@ -1010,7 +1149,19 @@ export default function Workspace({
     }
 
     const newAnimations = await getNewAnimations("none", false, true);
-    if (newAnimations.length == 0) {
+
+    // Every registered mask light source player -- each decides for itself whether it actually has a
+    // wired move/light_source effect to play, resolving immediately if not (see
+    // MaskLightSourcePlayer). Triggered (and awaited) before the newAnimations bail-out below: a
+    // light-source-svg has no DOM element of its own (see workspace.client.tsx's render-skip), so
+    // getNewAnimations never produces a WAAPI Animation for it -- newAnimations can be
+    // legitimately empty while there's still a light source to play.
+    const lightSourceFinished: Promise<void>[] = [];
+    maskLightSourcePlayersRef.current?.forEach((players) => {
+      players.forEach((player) => lightSourceFinished.push(player.play()));
+    });
+
+    if (newAnimations.length == 0 && lightSourceFinished.length == 0) {
       uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
@@ -1019,7 +1170,8 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
       return;
     }
-    Promise.all(newAnimations.map((animation) => animation.finished))
+
+    Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
       .then(() => {
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({
@@ -1052,7 +1204,25 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
       const newAnimations = await getNewAnimationsByTarget("none", false, target);
-      if (newAnimations.length == 0) {
+
+      // Only the masks wired to this specific light source key, and only for a "move" or "light_source"
+      // effect -- the only kinds ProjectMaskItem's wiring reacts to. A Scale/Rotate preview on
+      // the same element shares this same target.inputKey but has nothing for a mask to play.
+      // Computed (and triggered) before the newAnimations bail-out below: a light-source-svg has no DOM
+      // element of its own (see workspace.client.tsx's render-skip), so getNewAnimationsByTarget
+      // never produces a WAAPI Animation for it -- newAnimations can be legitimately empty while
+      // there's still a light source to play.
+      const targetDrivesLightSource = coreState.effects.some(
+        (effect) => effect.key === target.effectKey && (effect.type === "move" || effect.type === "light_source"),
+      );
+      const lightSourceFinished: Promise<void>[] = [];
+      if (targetDrivesLightSource) {
+        maskLightSourcePlayersRef.current
+          ?.get(target.inputKey)
+          ?.forEach((player) => lightSourceFinished.push(player.play(target.effectKey)));
+      }
+
+      if (newAnimations.length == 0 && lightSourceFinished.length == 0) {
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({
           type: UIActionType.SetPlaybackMode,
@@ -1060,7 +1230,8 @@ export default function Workspace({
         });
         return;
       }
-      Promise.all(newAnimations.map((animation) => animation.finished))
+
+      Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
         .then(() => {
           uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
           uiDispatch({
@@ -1080,7 +1251,7 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackMode.type],
+    [closeContextMenus, coreState.effects, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackMode.type],
   );
 
   const handleFastForwardAll = useCallback(
@@ -1137,6 +1308,7 @@ export default function Workspace({
     if (imgElementsRef.current) {
       imgElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
     }
+    maskLightSourcePlayersRef.current?.forEach((players) => players.forEach((player) => player.stop()));
     uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
     uiDispatch({
       type: UIActionType.SetPlaybackMode,
@@ -1159,16 +1331,6 @@ export default function Workspace({
       setSelectedSvgKeys,
       selectedMaskKeys,
       setSelectedMaskKeys,
-      maskTextureMix,
-      setMaskTextureMix,
-      maskSheenSize,
-      setMaskSheenSize,
-      maskSheenIntensity,
-      setMaskSheenIntensity,
-      maskSheenFalloff,
-      setMaskSheenFalloff,
-      maskSheenDarkness,
-      setMaskSheenDarkness,
     }),
     [
       mostRecentlyEnteredEffectUnitKey,
@@ -1178,11 +1340,6 @@ export default function Workspace({
       selectedImgKeys,
       selectedSvgKeys,
       selectedMaskKeys,
-      maskTextureMix,
-      maskSheenSize,
-      maskSheenIntensity,
-      maskSheenFalloff,
-      maskSheenDarkness,
     ],
   );
 
@@ -1198,6 +1355,8 @@ export default function Workspace({
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
+      confirmLightSourceCapture,
+      cancelLightSourceCapture,
     }),
     [
       coreState,
@@ -1209,6 +1368,8 @@ export default function Workspace({
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
+      confirmLightSourceCapture,
+      cancelLightSourceCapture,
     ],
   );
 
@@ -1297,7 +1458,11 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "t" && !isInput && uiState.playbackMode.type === "stopped") {
-        const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : { type: "mask" };
+        const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : defaultMaskTool;
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       }
@@ -1487,7 +1652,12 @@ export default function Workspace({
                         width: "min-content",
                         height: "min-content",
                         zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                        pointerEvents: uiState.tool.type === "mask" ? "none" : isMetaKeyPressed ? "none" : "auto",
+                        pointerEvents:
+                          uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection
+                            ? "none"
+                            : isMetaKeyPressed
+                              ? "none"
+                              : "auto",
                       }}
                     >
                       <Canvas />
@@ -1580,6 +1750,11 @@ export default function Workspace({
                     })}
                     {Array.from(coreState.project.svgs.entries()).map((e) => {
                       const [key, meta] = e;
+                      // A light source wired to a mask (see canvas.tsx's handleSvgDrop) is a wiring key
+                      // only, not an independently visible element -- see project-mask-item.tsx,
+                      // which reads it directly off coreState.project.svgs to drive the target
+                      // mask's WebGL light source highlight instead.
+                      if (meta.target_mask_key !== undefined) return;
                       const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
                       if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
                         return;
@@ -1622,7 +1797,9 @@ export default function Workspace({
                     })}
                     {Array.from(coreState.project.masks.entries()).map((e) => {
                       const [key, meta] = e;
-                      if (meta.top < 0 || meta.left < 0 || uiState.tool.type === "viewport") return;
+                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                        return;
                       const maskData = coreState.canvasMasks.get(key);
                       if (!maskData) return;
                       return (
@@ -1636,6 +1813,9 @@ export default function Workspace({
                                 ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
                                 : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
                             }
+                            maskLightSourcePlayersRef={maskLightSourcePlayersRef}
+                            framesCacheRef={framesCacheRef}
+                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
                           />
                         </div>
                       );

@@ -8,6 +8,49 @@ import {
   LaurusMaskResult,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
+import {
+  LIGHT_SOURCE_DARKNESS_DEFAULT,
+  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_SOURCE_INTENSITY_DEFAULT,
+  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+} from "../mask-gl";
+
+// A mesh-geometry-adjacent render setting -- how a mesh's own data gets sampled (flat
+// server-shaded color vs. its UV-mapped source texture), not a shader effect layered on top.
+// Room to grow toward real topology config (subdivision, triangle density, etc.) once that work
+// starts.
+export interface Topology {
+  textureMix: number;
+}
+
+// One mesh's light source parameters -- the shape of ProjectMask_V1_0's own
+// light_source_size/intensity/falloff/darkness fields (the mask's persisted starting appearance,
+// see LightSourcebar/Scalebar), and of the live in-flight useMaskPreview values before a mask
+// exists yet to persist to.
+export interface LightSourceValue {
+  size: number;
+  intensity: number;
+  falloff: number;
+  darkness: number;
+}
+
+export const DEFAULT_LIGHT_SOURCE_VALUE: LightSourceValue = {
+  size: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  intensity: LIGHT_SOURCE_INTENSITY_DEFAULT,
+  falloff: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
+  darkness: LIGHT_SOURCE_DARKNESS_DEFAULT,
+};
+
+// A light-source-capture drag that's been drawn but not yet uploaded -- lets the user redraw as
+// many times as they like (each new drag just overwrites this) before committing to one, so
+// testing out different shapes doesn't create a wasted svg/S3 asset per attempt (see
+// canvas.tsx's handleLightSourceCapture and workspace.client.tsx's confirmLightSourceCapture/
+// cancelLightSourceCapture). `polygonIndices` are indices into the target mask's own
+// `LaurusMaskResult.polygons` array, not yet-uploaded triangle data.
+export interface PendingLightSourceCapture {
+  maskKey: string;
+  polygonIndices: number[];
+}
 
 export interface CoreState {
   apiOrigin: string | undefined;
@@ -22,6 +65,11 @@ export interface CoreState {
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
+  // Per-mesh WebGL preview state -- ephemeral view state, not part of the persisted project, but
+  // centralized here alongside the rest of the cross-component state rather than in a separate
+  // context. See Topology above for why it's shaped the way it is.
+  topology: Map<string, Topology>;
+  pendingLightSourceCapture: PendingLightSourceCapture | undefined;
 }
 
 export const defaultCoreState: CoreState = {
@@ -37,6 +85,8 @@ export const defaultCoreState: CoreState = {
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
+  topology: new Map(),
+  pendingLightSourceCapture: undefined,
 };
 
 export enum CoreActionType {
@@ -67,6 +117,8 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
+  SetTopology,
+  SetPendingLightSourceCapture,
 }
 
 export type CoreAction =
@@ -97,7 +149,9 @@ export type CoreAction =
   | { type: CoreActionType.DeleteMediaGroup; key: string }
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
-  | { type: CoreActionType.SetInputsToRender; value: Set<string> };
+  | { type: CoreActionType.SetInputsToRender; value: Set<string> }
+  | { type: CoreActionType.SetTopology; key: string; value: Topology }
+  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
   switch (action.type) {
@@ -324,6 +378,19 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         ...state,
         inputsToRender: action.value,
       };
+    }
+    // Drives WebGL preview-only mesh state (Maskbar's texture slider) that fires continuously on
+    // every mousemove/drag tick. Unlike every other case above, it deliberately leaves
+    // inputsToRender untouched (via the ...state spread) instead of invalidating to "*" -- this
+    // value never reaches the server or the exported/persisted frames, so there's nothing for the
+    // frame cache to need re-fetching over.
+    case CoreActionType.SetTopology: {
+      const newTopology = new Map(state.topology);
+      newTopology.set(action.key, action.value);
+      return { ...state, topology: newTopology };
+    }
+    case CoreActionType.SetPendingLightSourceCapture: {
+      return { ...state, pendingLightSourceCapture: action.value };
     }
   }
 }

@@ -1,29 +1,52 @@
 "use client";
 import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { CoreContext, UIContext } from "../workspace.client";
-import { useCallback, useContext, useMemo } from "react";
-import { updateProject, LaurusProjectMask, LaurusProjectResult } from "../../projects/projects.server";
-import { LaurusMaskResult } from "../workspace.server";
+import { CoreContext, getNewContextMenuConfig, LaurusTransform, UIContext } from "../workspace.client";
+import { RefObject, useCallback, useContext, useMemo } from "react";
+import {
+  DEFAULT_CONTEXT_MENU_CONFIG,
+  updateProject,
+  LaurusProjectMask,
+  LaurusProjectResult,
+} from "../../projects/projects.server";
+import { LaurusFrame, LaurusMaskResult } from "../workspace.server";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
-import { ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
+import { MaskLightSourcePlayer, ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
 
 interface DraggableProjectMask {
   mediaKey: string;
   meta: LaurusProjectMask;
   maskData: LaurusMaskResult;
   zIndex: number;
+  framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
+  maskLightSourcePlayersRef?: RefObject<Map<string, Set<MaskLightSourcePlayer>> | null>;
+  forceAbsolutePosition?: boolean;
 }
 /**
- * Move-tool dragging plus alt-click selection (via `selectedMaskKeys`, ProjectMaskItem) --
- * still no marquee-select, duplicate-drop, or group-paste support. Full parity with
- * DraggableProjectImg/Svg is future work.
+ * Move-tool dragging, alt-click multi-select (via `selectedMaskKeys`, ProjectMaskItem), and now
+ * metaKey/"contextmenu"-tool context-menu opening -- full parity with DraggableProjectImg/Svg,
+ * mirroring the same click/transform/context-menu wiring for a mask instead of an img/svg.
  */
-export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: DraggableProjectMask) {
+export function DraggableProjectMask({
+  mediaKey,
+  meta,
+  maskData,
+  zIndex,
+  framesCacheRef,
+  maskLightSourcePlayersRef,
+  forceAbsolutePosition,
+}: DraggableProjectMask) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
 
   const dndPosition = useMemo(() => {
+    if (forceAbsolutePosition) {
+      return {
+        x: Math.max(0, meta.left),
+        y: Math.max(0, meta.top),
+      };
+    }
     switch (uiState.tool.type) {
       case "viewport": {
         return {
@@ -38,7 +61,41 @@ export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: Dragg
         };
       }
     }
-  }, [uiState.tool.type, meta.left, meta.top, coreState.project.frame_left, coreState.project.frame_top]);
+  }, [
+    forceAbsolutePosition,
+    uiState.tool.type,
+    meta.left,
+    meta.top,
+    coreState.project.frame_left,
+    coreState.project.frame_top,
+  ]);
+
+  const transformedBounds = useMemo(() => {
+    return calculateTransformedBounds(meta);
+  }, [meta]);
+  const laurusTransform = useMemo<LaurusTransform>(() => {
+    return {
+      cssProps: {
+        perspective: 750,
+        width: meta.width * meta.scale_x,
+        height: meta.height * meta.scale_y,
+        transform: `rotate3d(${meta.rotate_x},${meta.rotate_y},${meta.rotate_z},${meta.rotate_angle}deg)`,
+        transition: "transform 0.25s ease-out",
+        transformOrigin: "top left",
+      },
+      bounds: { ...transformedBounds },
+    };
+  }, [
+    meta.height,
+    meta.rotate_angle,
+    meta.rotate_x,
+    meta.rotate_y,
+    meta.rotate_z,
+    meta.scale_x,
+    meta.scale_y,
+    meta.width,
+    transformedBounds,
+  ]);
 
   // Memoized rather than passed as inline object literals -- ProjectMaskItem's GL-context
   // setup effect keys off `source` (and ends up re-running whenever it sees a "new" one), so a
@@ -76,7 +133,25 @@ export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: Dragg
       if (xMaxActual > coreState.project.canvas_width) newLeft -= xMaxActual - coreState.project.canvas_width;
       if (yMinActual < 0) newTop += Math.abs(yMinActual);
       if (xMinActual < 0) newLeft += Math.abs(xMinActual);
+
+      const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
+      const newContextMenuConfig = getNewContextMenuConfig(
+        { left: newLeft, top: newTop },
+        {
+          width: coreState.project.canvas_width,
+          height: coreState.project.canvas_height,
+        },
+        { ...itemMeta },
+        { x: itemMeta.scale_x, y: itemMeta.scale_y },
+        itemContextMenu?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG,
+      );
       newMasks.set(mediaKey, { ...itemMeta, left: newLeft, top: newTop });
+      uiDispatch({
+        type: UIActionType.SetProjectContextMenu,
+        key: mediaKey,
+        showContextMenu: itemContextMenu?.showContextMenu ?? false,
+        contextMenuConfig: newContextMenuConfig,
+      });
 
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
@@ -89,7 +164,78 @@ export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: Dragg
         }
       }
     },
-    [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, mediaKey],
+    [
+      coreState.accessToken,
+      coreState.apiOrigin,
+      coreState.project,
+      dispatch,
+      mediaKey,
+      uiState.projectContextMenus,
+      uiDispatch,
+    ],
+  );
+
+  // Mirrors DraggableProjectImg's onImgClick -- metaKey (cmd/ctrl-click) or the dedicated
+  // "contextmenu" tool both toggle the context menu; alt-click multi-select is handled inside
+  // ProjectMaskItem itself (it owns selectedMaskKeys) and stays untouched here.
+  const onMaskClick = useCallback(
+    (metaKey: boolean) => {
+      const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
+      const showContextMenu = itemContextMenu?.showContextMenu ?? false;
+      const contextMenuConfig = itemContextMenu?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
+
+      const newContextMenuConfig = getNewContextMenuConfig(
+        { ...meta },
+        {
+          width: coreState.project.canvas_width,
+          height: coreState.project.canvas_height,
+        },
+        { ...meta },
+        { x: meta.scale_x, y: meta.scale_y },
+        contextMenuConfig,
+      );
+      if (metaKey && !uiState.filledForwards) {
+        uiDispatch({
+          type: UIActionType.SetProjectContextMenu,
+          key: mediaKey,
+          showContextMenu: !showContextMenu,
+          contextMenuConfig: newContextMenuConfig,
+        });
+        return;
+      }
+      switch (uiState.tool.type) {
+        case "contextmenu": {
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: mediaKey,
+            showContextMenu: !showContextMenu,
+            contextMenuConfig: newContextMenuConfig,
+          });
+          break;
+        }
+        case "rotate": {
+          const newActiveElement: LaurusActiveElement = {
+            key: mediaKey,
+            type: "mask",
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+      }
+    },
+    [
+      uiState.projectContextMenus,
+      uiState.filledForwards,
+      uiState.tool.type,
+      mediaKey,
+      meta,
+      coreState.project.canvas_width,
+      coreState.project.canvas_height,
+      uiDispatch,
+    ],
   );
 
   return (
@@ -111,6 +257,10 @@ export function DraggableProjectMask({ mediaKey, meta, maskData, zIndex }: Dragg
         mediaKey={mediaKey}
         frame={frame}
         source={source}
+        maskLightSourcePlayersRef={maskLightSourcePlayersRef}
+        transform={laurusTransform}
+        framesCacheRef={framesCacheRef}
+        onClick={onMaskClick}
       />
     </DndContext>
   );

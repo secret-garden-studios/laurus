@@ -10,6 +10,10 @@ export const MOVE_WAVELENGTH_MAX = 1000;
 export const MOVE_DISTANCE_MAX = 3000;
 export const ROTATE_AXIS_MAX = 1;
 export const SCALE_MAX = 15;
+export const LIGHT_SOURCE_SIZE_MAX = 200;
+export const LIGHT_SOURCE_INTENSITY_MAX = 1;
+export const LIGHT_SOURCE_FALLOFF_MAX = 500;
+export const LIGHT_SOURCE_DARKNESS_MAX = 1;
 export const Z_INDEX = {
   CANVAS_BG: 0,
   CAMERA_FRAME: 1,

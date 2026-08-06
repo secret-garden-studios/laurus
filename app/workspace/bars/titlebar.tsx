@@ -22,6 +22,7 @@ import {
 } from "@/app/svg-repo";
 import { UIActionType } from "../states/ui-state";
 import Maskbar from "./maskbar";
+import LightSourcebar from "./lightsourcebar";
 
 export default function Titlebar() {
   const { coreState, dispatch } = useContext(CoreContext);
@@ -391,6 +392,8 @@ export function Subtitlebar() {
               return <Scalebar />;
             case "rotate":
               return <Rotatebar />;
+            case "light_source":
+              return <LightSourcebar />;
             case "mix":
               return <Mixbar />;
             case "mask":

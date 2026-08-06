@@ -2596,3 +2596,41 @@ export function texture300(
     ),
   };
 }
+
+export function asterisk200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/asterisk_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M460-160v-271.69L267.85-239.31l-28.54-28.54L431.69-460H160v-40h271.69L239.31-692.15l28.54-27.77L460-527.54V-800h40v272.46l192.15-192.38 27.77 27.77L527.54-500H800v40H527.54l192.38 192.15-27.77 28.54L500-431.69V-160h-40Z"/>`,
+    ),
+  };
+}
+
+export function asterisk300(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/asterisk_24dp_E3E3E3_FILL0_wght300_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M450-140v-267.85L260.92-218.16l-42.76-42.76L407.85-450H140v-60h267.85L218.16-699.08l42.76-42.38L450-551.77V-820h60v268.23l189.08-189.69 42.38 42.38L551.77-510H820v60H551.77l189.69 189.08-42.38 42.76L510-407.85V-140h-60Z"/>`,
+    ),
+  };
+}

@@ -15,10 +15,12 @@ import {
   stopIcon,
   SvgRepo,
   cycle400,
+  asterisk300,
 } from "../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "./workspace.client";
 import {
   createEffectGroup,
+  createLightSource,
   createMove,
   createRotate,
   createScale,
@@ -26,11 +28,13 @@ import {
   LaurusEffect,
   LaurusEffectGroup,
   LaurusEffectGroupResult,
+  LaurusLightSource,
   LaurusMixState,
   LaurusMove,
   LaurusRotate,
   LaurusScale,
   updateEffectGroup,
+  updateLightSource,
   updateMove,
   updateRotate,
   updateScale,
@@ -115,6 +119,11 @@ async function persistReindexedEffects(
       case "rotate": {
         const updatedRotate = await updateRotate(apiOrigin, accessToken, effect.key, effect.value);
         if (updatedRotate) updateCount++;
+        break;
+      }
+      case "light_source": {
+        const updatedLightSource = await updateLightSource(apiOrigin, accessToken, effect.key, effect.value);
+        if (updatedLightSource) updateCount++;
         break;
       }
     }
@@ -1329,6 +1338,36 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
           }
           break;
         }
+        case "light_source": {
+          const newLightSource: LaurusLightSource = {
+            math: new Map(),
+            start: 0,
+            end: 0,
+            project_id: newProjectIdAck,
+            effect_group_id: newEffectGroupIdAck,
+            fps: coreState.project.fps,
+            locked: false,
+            order: newOrder,
+            mix: false,
+            description: "",
+            disabled: false,
+          };
+          const created = await createLightSource(coreState.apiOrigin, coreState.accessToken, newLightSource);
+          if (created) {
+            const newEffect: LaurusEffect = {
+              type: "light_source",
+              key: created.light_source_id,
+              value: { ...created, mixState: LaurusMixState.None },
+            };
+            const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
+            await persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexed, [
+              ...effectsSnapshot,
+              newEffect,
+            ]);
+            dispatch({ type: CoreActionType.SetEffects, value: reindexed, preserveCache: true });
+          }
+          break;
+        }
       }
     },
     [
@@ -1376,50 +1415,48 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
               border: "1px solid rgba(0, 0, 0, 0)",
               padding: effectBrowserSize.itemPadding,
               background: i % 2 == 0 ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.01)",
-              color: effectName == "skew" ? "rgba(255, 255, 255, 0.3)" : "rgb(227,227,227)",
+              color: "rgb(227,227,227)",
             }}
           >
-            <div>{`${effectName}${effectName == "skew" ? " · coming soon" : ""}`}</div>
-            {effectName != "skew" && (
-              <SvgRepo
-                svg={(() => {
-                  switch (effectName) {
-                    case "scale":
-                      return allOut();
-                    case "move":
-                      return earthquake();
-                    case "rotate":
-                      return cycle400();
-                    default:
-                      return circle("rgba(0,0,0,0)");
-                  }
-                })()}
-                containerStyle={{
-                  width: effectBrowserSize.svg,
-                  height: effectBrowserSize.svg,
-                }}
-                scale={0.7}
-                scaleToContaier={true}
-              />
-            )}
+            <div>{`${effectName.replaceAll("_", " ")}`}</div>
+            <SvgRepo
+              svg={(() => {
+                switch (effectName) {
+                  case "scale":
+                    return allOut();
+                  case "move":
+                    return earthquake();
+                  case "rotate":
+                    return cycle400();
+                  case "light_source":
+                    return asterisk300();
+                  default:
+                    return circle("rgba(0,0,0,0)");
+                }
+              })()}
+              containerStyle={{
+                width: effectBrowserSize.svg,
+                height: effectBrowserSize.svg,
+              }}
+              scale={0.7}
+              scaleToContaier={true}
+            />
             <div style={{ marginLeft: "auto" }} />
-            {effectName != "skew" && (
-              <SvgRepo
-                svg={addCircle("rgba(204, 204, 204, 0.8)")}
-                containerStyle={{
-                  width: effectBrowserSize.svg,
-                  height: effectBrowserSize.svg,
-                  cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
-                }}
-                scale={1}
-                scaleToContaier={true}
-                onContainerClick={async () => {
-                  if (uiState.playbackMode.type !== "stopped") return;
-                  await onAddEffectClick(effectName);
-                  onAddClick();
-                }}
-              />
-            )}
+            <SvgRepo
+              svg={addCircle("rgba(204, 204, 204, 0.8)")}
+              containerStyle={{
+                width: effectBrowserSize.svg,
+                height: effectBrowserSize.svg,
+                cursor: uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              }}
+              scale={1}
+              scaleToContaier={true}
+              onContainerClick={async () => {
+                if (uiState.playbackMode.type !== "stopped") return;
+                await onAddEffectClick(effectName);
+                onAddClick();
+              }}
+            />
           </div>
         );
       })}

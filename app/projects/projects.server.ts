@@ -50,6 +50,14 @@ export interface ProjectSvg_V1_0 {
   stroke: string;
   stroke_width: number;
   description: string;
+  // Set when this placed svg was dropped onto a mask (a "light source"): the key (into this same
+  // project's `masks` map) of the mask it's wired to. A light source carries no independent
+  // on-screen presence of its own once dropped -- see workspace.client.tsx's project.svgs render
+  // loop, which skips mounting a DraggableProjectSvg for any entry with this set -- it exists
+  // purely as a project element key that move/light_source effects can target, driving that
+  // mask's WebGL light source highlight (project-mask-item.tsx) instead of rendering as its own
+  // element. undefined for every ordinary svg.
+  target_mask_key?: string;
 }
 // No media_key -- unlike imgs/svgs, LaurusMaskResult (the mask websocket's output) doesn't
 // have one; this stores placement/cosmetic fields plus a reference to it, mirroring how
@@ -69,6 +77,16 @@ export interface ProjectMask_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
+  // The mask's own starting light source appearance -- what a wired "light_source" effect's
+  // equation ramps from, the same way scale_x/scale_y above is the starting point a "scale"
+  // effect ramps from (see Scalebar). Independent of any effect: LightSourcebar's sliders read
+  // and write these fields directly via updateProject, same as Scalebar does for scale_x/scale_y,
+  // and project-mask-item.tsx renders them as the mesh's baseline sheen whether or not a
+  // light_source effect is wired.
+  light_source_size: number;
+  light_source_intensity: number;
+  light_source_falloff: number;
+  light_source_darkness: number;
   // Denormalized from the hydrated LaurusMaskResult at persist time for convenience -- the
   // server's ProjectMask doesn't store these (rendering already reads them off the hydrated
   // mask data, see ProjectMaskItem), so they're stripped before the project is sent back to the

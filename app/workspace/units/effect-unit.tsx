@@ -3,9 +3,11 @@ import ScaleUnit from "../units/scale-unit";
 import { convertTime, CoreContext, HoverContext, UIContext } from "../workspace.client";
 import {
   LaurusEffect,
+  LaurusLightSourceResult,
   LaurusMoveResult,
   LaurusRotateResult,
   LaurusScaleResult,
+  updateLightSource,
   updateMove,
   updateRotate,
   updateScale,
@@ -14,6 +16,7 @@ import { useTrackpadState } from "../../hooks/useTrackpadState";
 import MoveUnit from "../units/move-unit";
 import TimelineSlider from "../../components/timeline-slider";
 import RotateUnit from "../units/rotate-unit";
+import LightSourceUnit from "../units/light-source-unit";
 import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
 import EffectUnitbar from "./bars/effect-unitbar";
@@ -30,6 +33,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
   const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
   const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
   const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
+  const [lightSourceCarouselIndex, setLightSourceCarouselIndex] = useState(0);
   const [showUnitControls, setShowUnitControls] = useState(() => {
     const keys = uiState.carouselEntries;
     const activeElementIndex = uiState.activeElement ? keys.findIndex((k) => k.key === uiState.activeElement?.key) : -1;
@@ -53,6 +57,13 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
         const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setScaleCarouselIndex(newIndex);
+        break;
+      }
+      case "light_source": {
+        const eqKeys = Array.from(effect.value.math.keys());
+        const k = keys.findIndex((k) => eqKeys.includes(k.key));
+        const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
+        setLightSourceCarouselIndex(newIndex);
         break;
       }
     }
@@ -240,6 +251,15 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
             coreState.accessToken,
             effect.key,
             effect.value as LaurusRotateResult,
+          );
+          break;
+        }
+        case "light_source": {
+          updated = await updateLightSource(
+            coreState.apiOrigin,
+            coreState.accessToken,
+            effect.key,
+            effect.value as LaurusLightSourceResult,
           );
           break;
         }
@@ -522,6 +542,9 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
               case "rotate": {
                 return <RotateUnit rotate={effect.value} carouselIndexInit={rotateCarouselIndex} />;
               }
+              case "light_source": {
+                return <LightSourceUnit lightSource={effect.value} carouselIndexInit={lightSourceCarouselIndex} />;
+              }
             }
           })()}
       </div>
@@ -533,6 +556,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
         setMoveCarouselIndex={setMoveCarouselIndex}
         setRotateCarouselIndex={setRotateCarouselIndex}
         setScaleCarouselIndex={setScaleCarouselIndex}
+        setLightSourceCarouselIndex={setLightSourceCarouselIndex}
       />
     </div>
   );
@@ -625,6 +649,30 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
             }
             break;
           }
+          case "light_source": {
+            const newLightSource: LaurusLightSourceResult = {
+              ...effect.value,
+              description: effectDescriptionHook,
+            };
+            const updated = await updateLightSource(
+              coreState.apiOrigin,
+              coreState.accessToken,
+              effect.key,
+              newLightSource,
+            );
+            if (updated) {
+              const newEffect: LaurusEffect = {
+                ...effect,
+                value: {
+                  ...newLightSource,
+                },
+              };
+              dispatch({ type: CoreActionType.SetEffect, value: newEffect, preserveCache: true });
+            } else {
+              effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
+            }
+            break;
+          }
         }
       }
     })();
@@ -656,6 +704,15 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
         }
         case "rotate": {
           const newEffect: LaurusRotateResult = {
+            ...effect.value,
+            description: e.target.value,
+          };
+          dependenciesRef.current = { ...effect, value: { ...newEffect } };
+          setEffectDescription(e.target.value);
+          break;
+        }
+        case "light_source": {
+          const newEffect: LaurusLightSourceResult = {
             ...effect.value,
             description: e.target.value,
           };

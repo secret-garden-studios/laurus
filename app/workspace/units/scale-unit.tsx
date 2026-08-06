@@ -243,6 +243,11 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         if (!img) return [1, 1];
         return [img.scale_x, img.scale_y];
       }
+      case "mask": {
+        const mask = snapshot.masks.get(activeElement.key);
+        if (!mask) return [1, 1];
+        return [mask.scale_x, mask.scale_y];
+      }
     }
   }, [uiState.activeElement, coreState.project]);
 

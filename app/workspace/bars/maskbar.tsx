@@ -5,32 +5,25 @@ import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
-import { LaurusMaskResult } from "../workspace.server";
+import { deleteSvg, LaurusMaskResult } from "../workspace.server";
 import { v4 as newUUID } from "uuid";
-import {
-  SHEEN_DARKNESS_DEFAULT,
-  SHEEN_FALLOFF_CSS_PX_DEFAULT,
-  SHEEN_INTENSITY_DEFAULT,
-  SHEEN_SIZE_CSS_PX_DEFAULT,
-} from "../mask-gl";
+import { UIActionType } from "../states/ui-state";
+import { deleteEffects } from "../effects-utils";
+import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
 
 export default function Maskbar() {
-  const { uiState } = useContext(UIContext);
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
+  // Aliased locally -- Maskbar itself has no notion of what a captured mesh subsection becomes
+  // (a light source, or something else down the line); it just hands the drag off to whoever
+  // does via these two callbacks.
   const {
-    selectedImgKeys,
-    selectedMaskKeys,
-    maskTextureMix,
-    setMaskTextureMix,
-    maskSheenSize,
-    setMaskSheenSize,
-    maskSheenIntensity,
-    setMaskSheenIntensity,
-    maskSheenFalloff,
-    setMaskSheenFalloff,
-    maskSheenDarkness,
-    setMaskSheenDarkness,
-  } = useContext(HoverContext);
+    coreState,
+    dispatch,
+    confirmLightSourceCapture: confirmCapture,
+    cancelLightSourceCapture: cancelCapture,
+  } = useContext(CoreContext);
+  const { topology } = coreState;
+  const { selectedImgKeys, selectedMaskKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -259,95 +252,69 @@ export default function Maskbar() {
   // result to adjust should always win over whatever's still streaming in, and the two only
   // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const showTextureSlider = selectedMaskKey !== undefined || hasMesh;
-  // Same visibility rule as the texture slider -- both only make sense once there's a mesh
-  // (placed or still streaming) to tune.
-  const showSheenControls = showTextureSlider;
-  const textureMixValue = selectedMaskKey !== undefined ? (maskTextureMix.get(selectedMaskKey) ?? 0) : mask.textureMix;
+  // Media wired to this mask (see canvas.tsx's handleSvgDrop, project-mask-item.tsx) -- only the
+  // first is ever actually consumed, but a manual way to clear them out is still needed since
+  // they render nothing of their own and can't be selected/deleted through the normal canvas UI
+  // otherwise. Maskbar doesn't need to know what this wired media actually represents.
+  const capturesForSelectedMask = useMemo(() => {
+    if (selectedMaskKey === undefined) return [];
+    const found: { key: string; svg_media_id: string }[] = [];
+    coreState.project.svgs.forEach((meta, key) => {
+      if (meta.target_mask_key === selectedMaskKey) found.push({ key, svg_media_id: meta.svg_media_id });
+    });
+    return found;
+  }, [selectedMaskKey, coreState.project.svgs]);
+  const handleClearCaptures = useCallback(async () => {
+    if (capturesForSelectedMask.length === 0) return;
+    const confirmed = confirm(
+      capturesForSelectedMask.length === 1
+        ? "are you sure you want to clear the capture wired to this mesh?"
+        : `are you sure you want to clear the ${capturesForSelectedMask.length} captures wired to this mesh?`,
+    );
+    if (!confirmed) return;
+    const newSvgs = new Map(coreState.project.svgs);
+    capturesForSelectedMask.forEach(({ key }) => newSvgs.delete(key));
+    const newProject: LaurusProjectResult = { ...coreState.project, svgs: newSvgs };
+    const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+      ...newProject,
+    });
+    if (!updated) return;
+    dispatch({ type: CoreActionType.SetProject, value: newProject });
+    for (const { key, svg_media_id } of capturesForSelectedMask) {
+      dispatch({ type: CoreActionType.DeleteCanvasSvg, key });
+      uiDispatch({ type: UIActionType.DeleteCarouselEntry, key });
+      await deleteEffects(key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
+      await deleteSvg(coreState.apiOrigin, coreState.accessToken, svg_media_id);
+    }
+  }, [
+    capturesForSelectedMask,
+    coreState.project,
+    coreState.apiOrigin,
+    coreState.accessToken,
+    coreState.effects,
+    dispatch,
+    uiDispatch,
+  ]);
+  const pendingCaptureForSelectedMask =
+    selectedMaskKey !== undefined && coreState.pendingLightSourceCapture?.maskKey === selectedMaskKey;
+  const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh);
+  const isCaptureDisabled = selectedMaskKey === undefined;
+  const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
+  const textureMixValue =
+    selectedMaskKey !== undefined
+      ? (topology.get(selectedMaskKey)?.textureMix ?? TEXTURE_MIX_DEFAULT)
+      : mask.textureMix;
   const handleTextureMixChange = useCallback(
     (value: number) => {
       if (selectedMaskKey !== undefined) {
-        setMaskTextureMix((prev) => {
-          const next = new Map(prev);
-          next.set(selectedMaskKey, value);
-          return next;
-        });
+        dispatch({ type: CoreActionType.SetTopology, key: selectedMaskKey, value: { textureMix: value } });
       } else {
         mask.setTextureMix(value);
       }
     },
-    [selectedMaskKey, setMaskTextureMix, mask],
+    [selectedMaskKey, dispatch, mask],
   );
-  const sheenSizeValue =
-    selectedMaskKey !== undefined ? (maskSheenSize.get(selectedMaskKey) ?? SHEEN_SIZE_CSS_PX_DEFAULT) : mask.sheenSize;
-  const handleSheenSizeChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        setMaskSheenSize((prev) => {
-          const next = new Map(prev);
-          next.set(selectedMaskKey, value);
-          return next;
-        });
-      } else {
-        mask.setSheenSize(value);
-      }
-    },
-    [selectedMaskKey, setMaskSheenSize, mask],
-  );
-  const sheenIntensityValue =
-    selectedMaskKey !== undefined
-      ? (maskSheenIntensity.get(selectedMaskKey) ?? SHEEN_INTENSITY_DEFAULT)
-      : mask.sheenIntensity;
-  const handleSheenIntensityChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        setMaskSheenIntensity((prev) => {
-          const next = new Map(prev);
-          next.set(selectedMaskKey, value);
-          return next;
-        });
-      } else {
-        mask.setSheenIntensity(value);
-      }
-    },
-    [selectedMaskKey, setMaskSheenIntensity, mask],
-  );
-  const sheenFalloffValue =
-    selectedMaskKey !== undefined
-      ? (maskSheenFalloff.get(selectedMaskKey) ?? SHEEN_FALLOFF_CSS_PX_DEFAULT)
-      : mask.sheenFalloff;
-  const handleSheenFalloffChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        setMaskSheenFalloff((prev) => {
-          const next = new Map(prev);
-          next.set(selectedMaskKey, value);
-          return next;
-        });
-      } else {
-        mask.setSheenFalloff(value);
-      }
-    },
-    [selectedMaskKey, setMaskSheenFalloff, mask],
-  );
-  const sheenDarknessValue =
-    selectedMaskKey !== undefined
-      ? (maskSheenDarkness.get(selectedMaskKey) ?? SHEEN_DARKNESS_DEFAULT)
-      : mask.sheenDarkness;
-  const handleSheenDarknessChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        setMaskSheenDarkness((prev) => {
-          const next = new Map(prev);
-          next.set(selectedMaskKey, value);
-          return next;
-        });
-      } else {
-        mask.setSheenDarkness(value);
-      }
-    },
-    [selectedMaskKey, setMaskSheenDarkness, mask],
-  );
+
   const maskTitle = isMaskBusy
     ? "masking…"
     : selectedImgKeys.size === 0
@@ -389,6 +356,12 @@ export default function Maskbar() {
         rotate_y: 0,
         rotate_z: 0,
         rotate_angle: 0,
+        // Seeded from whatever the live preview was dialed to while streaming, so persisting
+        // doesn't reset the look back to some unrelated default.
+        light_source_size: mask.lightSourceSize,
+        light_source_intensity: mask.lightSourceIntensity,
+        light_source_falloff: mask.lightSourceFalloff,
+        light_source_darkness: mask.lightSourceDarkness,
         fill: result.fill,
         stroke: result.stroke,
         stroke_width: result.stroke_width,
@@ -402,6 +375,11 @@ export default function Maskbar() {
 
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
+      // Selects the just-placed mask immediately -- otherwise selectedMaskKey stays whatever it
+      // was before masking (usually nothing), and the capture toggle/texture slider above (both
+      // gated on selectedMaskKey) stay disabled until the user manually alt-clicks the new mask
+      // on canvas.
+      setSelectedMaskKeys(new Set([newKey]));
 
       (async () => {
         if (newProject.project_id) {
@@ -423,7 +401,20 @@ export default function Maskbar() {
         }
       })();
     },
-    [imgMeta, position, size, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [
+      imgMeta,
+      position,
+      size,
+      coreState.project,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      setSelectedMaskKeys,
+      mask.lightSourceSize,
+      mask.lightSourceIntensity,
+      mask.lightSourceFalloff,
+      mask.lightSourceDarkness,
+    ],
   );
 
   const handleMaskClick = useCallback(() => {
@@ -437,6 +428,15 @@ export default function Maskbar() {
     mask.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImgKey]);
+
+  // The toggle is disabled with no mask selected, but its underlying tool state can still be
+  // left on from before the deselect -- turn it off so the toggle doesn't render as on while
+  // disabled, and canvas.tsx stops treating drags as mesh-section captures.
+  useEffect(() => {
+    if (selectedMaskKey !== undefined) return;
+    if (uiState.tool.type !== "mask" || !uiState.tool.capturingMeshSection) return;
+    uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
+  }, [selectedMaskKey, uiState.tool, uiDispatch]);
 
   return (
     <>
@@ -671,120 +671,115 @@ export default function Maskbar() {
             scaleToContaier={true}
           />
         </div>
-        {showTextureSlider && (
+        <div
+          title={
+            isTextureDisabled
+              ? "select or generate a mesh to blend between its flat color and the source image"
+              : "blend between the flat masked color and the source image sampled through the mesh"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7 }}>{"texture"}</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={textureMixValue}
+            disabled={isTextureDisabled}
+            onChange={(e) => handleTextureMixChange(parseFloat(e.target.value))}
+          />
+          <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
+        </div>
+        <div
+          title={
+            isCaptureDisabled
+              ? "select a mesh to capture a subsection of it"
+              : "drag a circle over this mesh to capture a subsection of its triangles"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span
+            style={{
+              textShadow: isCaptureOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+            }}
+          >
+            {"capture"}
+          </span>
+          <Toggle
+            value={isCaptureOn}
+            onClick={() => {
+              if (uiState.tool.type !== "mask") return;
+              uiDispatch({
+                type: UIActionType.SetTool,
+                value: { type: "mask", capturingMeshSection: !uiState.tool.capturingMeshSection },
+              });
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+            disabled={isCaptureDisabled}
+          />
+        </div>
+        {capturesForSelectedMask.length > 0 && (
           <div
-            title="blend between the flat masked color and the source image sampled through the mesh"
+            title="remove the capture(s) wired to this mesh"
+            onClick={handleClearCaptures}
             style={{
               display: "flex",
               alignItems: "center",
               height: "100%",
               borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              cursor: "pointer",
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: 0.7 }}>{"texture"}</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={textureMixValue}
-              onChange={(e) => handleTextureMixChange(parseFloat(e.target.value))}
-            />
-            <span style={{ opacity: 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
+            <span style={{ opacity: 0.7 }}>{`clear capture${capturesForSelectedMask.length > 1 ? "s" : ""}`}</span>
           </div>
         )}
-        {showSheenControls && (
-          <div
-            title="size of the epicenter's bright core, in on-screen pixels"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: 0.7 }}>{"sheen size"}</span>
-            <input
-              type="range"
-              min={10}
-              max={300}
-              step={1}
-              value={sheenSizeValue}
-              onChange={(e) => handleSheenSizeChange(parseFloat(e.target.value))}
-            />
-            <span style={{ opacity: 0.7, width: "4ch" }}>{Math.round(sheenSizeValue)}</span>
-          </div>
-        )}
-        {showSheenControls && (
-          <div
-            title="brightness of the epicenter's core -- 100% is pure white"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: 0.7 }}>{"sheen intensity"}</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={sheenIntensityValue}
-              onChange={(e) => handleSheenIntensityChange(parseFloat(e.target.value))}
-            />
-            <span style={{ opacity: 0.7, width: "4ch" }}>{`${Math.round(sheenIntensityValue * 100)}%`}</span>
-          </div>
-        )}
-        {showSheenControls && (
-          <div
-            title="distance the darkening takes to spread out beyond the core, in on-screen pixels -- independent of canvas size"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: 0.7 }}>{"sheen spread"}</span>
-            <input
-              type="range"
-              min={20}
-              max={1000}
-              step={5}
-              value={sheenFalloffValue}
-              onChange={(e) => handleSheenFalloffChange(parseFloat(e.target.value))}
-            />
-            <span style={{ opacity: 0.7, width: "4ch" }}>{Math.round(sheenFalloffValue)}</span>
-          </div>
-        )}
-        {showSheenControls && (
-          <div
-            title="strength of the darkening at the far edge of the spread -- 100% drives it fully to black"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: 0.7 }}>{"sheen darkness"}</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={sheenDarknessValue}
-              onChange={(e) => handleSheenDarknessChange(parseFloat(e.target.value))}
-            />
-            <span style={{ opacity: 0.7, width: "4ch" }}>{`${Math.round(sheenDarknessValue * 100)}%`}</span>
-          </div>
+        {pendingCaptureForSelectedMask && (
+          <>
+            <div
+              title="drag another circle to redraw, or confirm to save this capture"
+              onClick={confirmCapture}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: "100%",
+                borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                cursor: "pointer",
+                ...dynamicSizes.toggle.div,
+              }}
+            >
+              <span style={{ opacity: 0.7 }}>{"confirm capture"}</span>
+            </div>
+            <div
+              title="discard this capture without uploading anything"
+              onClick={cancelCapture}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: "100%",
+                borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                cursor: "pointer",
+                ...dynamicSizes.toggle.div,
+              }}
+            >
+              <span style={{ opacity: 0.7 }}>{"cancel"}</span>
+            </div>
+          </>
         )}
       </div>
     </>
