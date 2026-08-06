@@ -5,6 +5,7 @@ import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { parsePathPoints } from "../mask-gl";
 
 interface UnitDisplay {
   carouselIndex: number;
@@ -36,17 +37,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          // A light source (see project-mask-item.tsx) has no on-screen presence of its own to
-          // anchor a context menu to -- becoming the active element highlights the mesh triangles
-          // it covers instead (project-mask-item.tsx's highlightedPolygonIndices).
-          const isLightSource = coreState.project.svgs.get(entry.key)?.target_mask_key !== undefined;
-          if (!isLightSource) {
-            uiDispatch({
-              type: UIActionType.SetProjectContextMenu,
-              key: entry.key,
-              showContextMenu: true,
-            });
-          }
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
           break;
         }
         case "img": {
@@ -66,9 +61,24 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           });
           break;
         }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "mask",
+            locallyActivatedEffectKey: effectKey,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
+          // anchor a context menu to beyond the mask's own -- becoming the active element
+          // highlights the mesh triangles it covers instead (highlightedPolygonIndices).
+          break;
+        }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch, coreState.project.svgs],
+    [uiState.carouselEntries, effectKey, uiDispatch],
   );
 
   const hideContextMenu = useCallback(
@@ -197,6 +207,60 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         scale={1}
                         scaleToContaier={true}
                       />
+                    );
+                  }
+                  case "mask": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
+                    // No separate media of its own to show a thumbnail of -- reconstructed
+                    // straight from the mask's own captured polygons (same `d` path data the
+                    // mesh itself renders with, see mask-gl.ts) rather than a stand-in icon.
+                    const capturedPolygons = coreState.canvasMasks.get(c.key)?.polygons.filter((p) => p.captured);
+                    if (!capturedPolygons || capturedPolygons.length === 0) break;
+                    const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
+                    if (capturedPoints.length === 0) break;
+                    const xs = capturedPoints.map(([x]) => x);
+                    const ys = capturedPoints.map(([, y]) => y);
+                    const minX = Math.min(...xs);
+                    const minY = Math.min(...ys);
+                    const boundsWidth = Math.max(1, Math.max(...xs) - minX);
+                    const boundsHeight = Math.max(1, Math.max(...ys) - minY);
+                    return (
+                      <div
+                        key={c.key}
+                        title="mesh capture"
+                        onClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
+                          inactives.forEach((ce) => {
+                            hideContextMenu(ce);
+                          });
+                        }}
+                        style={{
+                          ...dynamicSizes.displaySvg,
+                          display: "grid",
+                          placeContent: "center",
+                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                        }}
+                      >
+                        <svg
+                          width="100%"
+                          height="100%"
+                          viewBox={`${minX} ${minY} ${boundsWidth} ${boundsHeight}`}
+                        >
+                          {capturedPolygons.map((p, polygonIndex) => (
+                            <path
+                              key={polygonIndex}
+                              d={p.d}
+                              fill="none"
+                              stroke="rgb(235, 235, 235)"
+                              strokeWidth={1}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          ))}
+                        </svg>
+                      </div>
                     );
                   }
                 }

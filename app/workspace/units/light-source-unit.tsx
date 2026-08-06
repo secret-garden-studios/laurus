@@ -81,11 +81,14 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        case "mask": {
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
   // param 1: light_source_size
   const sizeTrackRef = useRef<HTMLDivElement | null>(null);
@@ -180,6 +183,18 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "img",
+            locallyActivatedEffectKey: lightSource.light_source_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
             locallyActivatedEffectKey: lightSource.light_source_id,
           };
           uiDispatch({

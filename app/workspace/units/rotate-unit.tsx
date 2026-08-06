@@ -106,6 +106,11 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        // Masks aren't wireable to rotate through this mechanism -- kept only for switch
+        // exhaustiveness now that CarouselEntry has a "mask" variant (see light-source-unit.tsx).
+        case "mask": {
+          return "";
+        }
       }
     } else {
       return "";
@@ -196,6 +201,18 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "img",
+            locallyActivatedEffectKey: rotate.rotate_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
             locallyActivatedEffectKey: rotate.rotate_id,
           };
           uiDispatch({

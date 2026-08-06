@@ -62,7 +62,10 @@ export type LaurusActiveElement = {
   locallyActivatedEffectKey?: string;
 };
 
-export type CarouselEntry = { type: "svg"; key: string } | { type: "img"; key: string };
+export type CarouselEntry =
+  | { type: "svg"; key: string }
+  | { type: "img"; key: string }
+  | { type: "mask"; key: string };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 

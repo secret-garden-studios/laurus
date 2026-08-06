@@ -16,7 +16,7 @@ const onNotOk = (status: number, message?: string) => {
 
 const getOnNotOkMessage = (
   action: "creating" | "updating" | "deleting",
-  type: "scale" | "move" | "rotate" | "light_source" | "effect_group" | "media_group" | "svg",
+  type: "scale" | "move" | "rotate" | "light_source" | "effect_group" | "media_group" | "svg" | "mask",
   description?: string,
 ) => {
   return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
@@ -294,12 +294,16 @@ export async function deleteSvg(
 
 /* /media/masks */
 
-/** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`. */
+/** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`.
+ * `captured` flags whether this triangle is part of the mask's current
+ * "capture" (a client-selected subsection of the mesh, e.g. a light source
+ * region) -- see updateMaskCapture. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
   stroke: string;
   stroke_width: number;
+  captured: boolean;
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
@@ -434,6 +438,38 @@ export async function getMasksByIds(baseUrl: string | undefined, maskMediaIds: s
     }
     const response: MaskMediaResult_V1_0[] = await raw_response.json();
     return response;
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+/** Full-replace which of a mask's own polygons (by array index) are flagged
+ * "captured" -- e.g. a light source region selected by dragging a circle
+ * over the mesh. An empty polygonIndices array clears it. */
+export async function updateMaskCapture(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  polygonIndices: number[],
+): Promise<LaurusMaskResult | undefined> {
+  try {
+    const body = JSON.stringify({ polygon_indices: polygonIndices });
+    const url = `${baseUrl}/media/masks/${maskMediaId}/capture`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "mask", maskMediaId));
+      return undefined;
+    }
+    const result: MaskMediaResult_V1_0 = await response.json();
+    return result;
   } catch (error) {
     console.log({ error });
     return undefined;

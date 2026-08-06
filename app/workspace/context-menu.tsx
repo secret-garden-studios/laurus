@@ -8,7 +8,7 @@ import {
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
 import { CoreContext, LaurusTransform, UIContext } from "./workspace.client";
-import { LaurusFrame, LaurusImgResult, LaurusSvgResult } from "./workspace.server";
+import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, updateMaskCapture } from "./workspace.server";
 import styles from "../app.module.css";
 import { RiToolsLine } from "react-icons/ri";
 import {
@@ -139,7 +139,12 @@ function projectMaskIsTransformed(mask: LaurusProjectMask) {
 export type ContextMenuMedia =
   | { type: "img"; key: string; meta: LaurusProjectImg }
   | { type: "svg"; key: string; meta: LaurusProjectSvg }
-  | { type: "mask"; key: string; meta: LaurusProjectMask };
+  | { type: "mask"; key: string; meta: LaurusProjectMask }
+  // A mesh's captured region (see maskbar.tsx's "capture"/"clear capture", project-mask-item.tsx's
+  // meta-click hit-test) -- reuses the owning mask's own key/meta (there's no separate entity),
+  // just a different, much smaller menu: only "active" and "delete" are wired up; every other row
+  // still renders for visual parity with img/svg/mask but is inert.
+  | { type: "capture"; key: string; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -435,8 +440,13 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             key: media.key,
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
-          cleanUpCanvasMedia(media.type, media.key, dispatch);
-          cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          // deleteProjectMedia is never actually invoked for a "capture" (see the delete cell's
+          // onClick below, which calls updateMaskCapture directly instead) -- narrowed here only
+          // to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
+          if (media.type !== "capture") {
+            cleanUpCanvasMedia(media.type, media.key, dispatch);
+            cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          }
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -733,6 +743,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectMaskIsTransformed(m);
       }
+      // Not implemented for a capture yet -- always shown, always disabled.
+      case "capture": {
+        return false;
+      }
     }
   }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks, media.key, media.type]);
 
@@ -807,6 +821,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       dispatch({ type: CoreActionType.SetProject, value: newProject });
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
+
+  // Only "active" and "delete" are wired up for a capture -- everything else below (swap, move
+  // up/down, revert) renders for visual parity with img/svg/mask but stays inert.
+  const isCapture = media.type === "capture";
+  const disabledCellStyle: CSSProperties = { color: "rgba(127,127,127, 1)", cursor: "default" };
 
   const cellStyle: CSSProperties = {
     display: "flex",
@@ -897,7 +916,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {media.type === "mask" ? media.meta.media_id : media.meta.media_key}
+                  {media.type === "mask" || media.type === "capture" ? media.meta.media_id : media.meta.media_key}
                 </div>
                 <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
                   <div>
@@ -974,7 +993,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           break;
                         }
-                        case "mask": {
+                        case "mask":
+                        case "capture": {
+                          // A capture has no active-element identity of its own -- "activating"
+                          // it just activates the mask it belongs to (same as maskbar.tsx's
+                          // "activate capture" toggle).
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
                             type: "mask",
@@ -992,24 +1015,26 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                {media.type !== "mask" && (
+                {media.type !== "mask" && media.type !== "capture" && (
                   <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                     {"swap"}
                   </div>
                 )}
                 <div
-                  style={{ ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
+                  style={{ ...cellStyle, ...(isCapture && disabledCellStyle) }}
+                  className={isCapture ? "" : styles["animated-nav-dark"]}
                   onClick={() => {
+                    if (isCapture) return;
                     updateMediaOrder(isAltPressed ? "top" : "increment");
                   }}
                 >
                   {isAltPressed ? "move to top" : "move up"}
                 </div>
                 <div
-                  style={{ ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
+                  style={{ ...cellStyle, ...(isCapture && disabledCellStyle) }}
+                  className={isCapture ? "" : styles["animated-nav-dark"]}
                   onClick={() => {
+                    if (isCapture) return;
                     updateMediaOrder(isAltPressed ? "bottom" : "decrement");
                   }}
                 >
@@ -1052,6 +1077,25 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
                         newMasks.delete(media.key);
                         deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
+                        break;
+                      }
+                      case "capture": {
+                        // Same as maskbar.tsx's "clear capture" -- there's no separate media
+                        // entity to remove, only the flag on the mask's own polygons, so this
+                        // re-PUTs an empty polygon-index list instead of going through
+                        // deleteProjectMedia.
+                        const updated: LaurusMaskResult | undefined = await updateMaskCapture(
+                          coreState.apiOrigin,
+                          coreState.accessToken,
+                          media.meta.media_id,
+                          [],
+                        );
+                        if (!updated) break;
+                        dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+                        if (uiState.activeElement?.key == media.key) {
+                          uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+                        }
+                        uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: media.key });
                         break;
                       }
                     }

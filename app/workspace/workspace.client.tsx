@@ -14,7 +14,6 @@ import {
 } from "react";
 import styles from "../app.module.css";
 import {
-  deleteSvg,
   getFrames,
   LaurusEffect,
   LaurusEffectGroupResult,
@@ -28,11 +27,8 @@ import {
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
   searchSvgs,
+  updateMaskCapture,
 } from "./workspace.server";
-import { v4 as newUUID } from "uuid";
-import { deleteEffects } from "./effects-utils";
-import { createAndRegisterSvg } from "./svg-upload-utils";
-import { trianglesFromIndices, trianglesToSvgMarkup } from "./canvas-media/light-source-capture";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
@@ -293,7 +289,10 @@ function initProject(p: ProjectResult_V1_0) {
   };
 }
 
-function initCarouselEntries(project: LaurusProjectResult): CarouselEntry[] {
+function initCarouselEntries(
+  project: LaurusProjectResult,
+  canvasMasks: Map<string, LaurusMaskResult>,
+): CarouselEntry[] {
   const temp: { entry: CarouselEntry; distance: number }[] = [];
   project.imgs.entries().forEach((projectImg) => {
     if (projectImg[1].left < 0 || projectImg[1].top < 0) return;
@@ -313,6 +312,21 @@ function initCarouselEntries(project: LaurusProjectResult): CarouselEntry[] {
       entry: {
         type: "svg",
         key: projectSvg[0],
+      },
+      distance,
+    });
+  });
+  // A mask only earns a carousel entry once it actually has a capture -- otherwise every mask
+  // in a project would clutter every effect unit's carousel with nothing to wire.
+  project.masks.entries().forEach((projectMask) => {
+    if (projectMask[1].left < 0 || projectMask[1].top < 0) return;
+    const hasCapture = canvasMasks.get(projectMask[0])?.polygons.some((p) => p.captured) ?? false;
+    if (!hasCapture) return;
+    const distance = Math.sqrt(projectMask[1].top ** 2 + projectMask[1].left ** 2);
+    temp.push({
+      entry: {
+        type: "mask",
+        key: projectMask[0],
       },
       distance,
     });
@@ -539,7 +553,7 @@ function initReducer({
     });
   }
 
-  const newCarouselEntries = initCarouselEntries(newProject);
+  const newCarouselEntries = initCarouselEntries(newProject, newCanvasMasks);
 
   return {
     core: {
@@ -947,130 +961,33 @@ export default function Workspace({
     frameDownloadAbortControllerRef.current?.abort();
   }, []);
 
-  // Places a just-confirmed light source svg directly onto the mask it was captured from -- there's no
-  // manual drag/drop step for light sources (see confirmLightSourceCapture below); this replaces whatever
-  // light source previously targeted that mask (a mask only ever consumes the first one, see
-  // project-mask-item.tsx) and makes the new one the active element immediately, so its
-  // mesh-highlight (project-mask-item.tsx) and effect-wiring are ready to use right away.
-  // Replaced light sources are fully deleted -- not just unlinked from the project -- to avoid piling up
-  // orphaned svg media/S3 objects every time a light source gets redone (see deleteSvg below; the server
-  // has no upsert-on-replace semantics of its own, see workspace.server.ts's createSvg comment).
-  const placeLightSourceOnMask = useCallback(
-    async (svgData: LaurusSvgResult, maskKey: string) => {
-      const projectSvg: LaurusProjectSvg = {
-        svg_media_id: svgData.svg_media_id,
-        media_group_id: "",
-        width: svgData.width,
-        height: svgData.height,
-        top: 0,
-        left: 0,
-        order:
-          Math.max(
-            -1,
-            ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
-            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
-          ) + 1,
-        media_key: svgData.media_key,
-        viewbox: svgData.viewbox,
-        fill: svgData.fill,
-        stroke: svgData.stroke,
-        stroke_width: svgData.stroke_width,
-        rotate_x: 0,
-        rotate_y: 0,
-        rotate_z: 0,
-        rotate_angle: 0,
-        scale_x: 1,
-        scale_y: 1,
-        description: "",
-        target_mask_key: maskKey,
-      };
-
-      const newSvgs: Map<string, LaurusProjectSvg> = new Map(coreState.project.svgs);
-      const staleLightSources: { key: string; svg_media_id: string }[] = [];
-      newSvgs.forEach((meta, key) => {
-        if (meta.target_mask_key === maskKey) staleLightSources.push({ key, svg_media_id: meta.svg_media_id });
-      });
-      staleLightSources.forEach(({ key }) => newSvgs.delete(key));
-
-      const newKey = newUUID();
-      newSvgs.set(newKey, projectSvg);
-      const newProject: LaurusProjectResult = { ...coreState.project, svgs: newSvgs };
-
-      const activateNewLightSource = () => {
-        dispatch({ type: CoreActionType.SetCanvasSvg, key: newKey, value: { ...svgData } });
-        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "svg", key: newKey } });
-        uiDispatch({
-          type: UIActionType.SetProjectContextMenu,
-          key: newKey,
-          showContextMenu: false,
-          contextMenuConfig: { ...DEFAULT_CONTEXT_MENU_CONFIG },
-        });
-        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: newKey, type: "svg" } });
-      };
-      const cleanupStaleLightSources = async (effects: LaurusEffect[]) => {
-        for (const stale of staleLightSources) {
-          dispatch({ type: CoreActionType.DeleteCanvasSvg, key: stale.key });
-          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: stale.key });
-          await deleteEffects(stale.key, coreState.apiOrigin, coreState.accessToken, effects, dispatch);
-          await deleteSvg(coreState.apiOrigin, coreState.accessToken, stale.svg_media_id);
-        }
-      };
-
-      if (coreState.project.project_id) {
-        dispatch({ type: CoreActionType.SetProject, value: newProject });
-        const projectUpdated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
-          ...newProject,
-        });
-        if (projectUpdated) {
-          activateNewLightSource();
-          await cleanupStaleLightSources(coreState.effects);
-        }
-      } else {
-        const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
-        if (projectCreated) {
-          const newProject2: LaurusProjectResult = { ...projectCreated, svgs: newSvgs };
-          dispatch({ type: CoreActionType.SetProject, value: newProject2 });
-          activateNewLightSource();
-          await cleanupStaleLightSources(coreState.effects);
-        }
-      }
-    },
-    [coreState.project, coreState.effects, coreState.apiOrigin, coreState.accessToken, dispatch, uiDispatch],
-  );
-
-  // Turns a pending light-source-capture candidate (canvas.tsx's handleLightSourceCapture, redrawable with
-  // zero server calls) into a real, saved svg only once the user explicitly confirms -- this is
-  // the one point where an upload actually happens, so testing out different capture shapes
-  // never leaves wasted assets behind.
+  // Turns a pending capture (canvas.tsx's handleLightSourceCapture, redrawable with zero server
+  // calls) into a persisted one only once the user explicitly confirms -- this is the one point
+  // where a network call actually happens, so testing out different capture shapes costs nothing.
+  // The captured flag lives directly on the mask's own polygons server-side (see
+  // updateMaskCapture), so confirming just swaps the mask's data in place -- no second entity to
+  // create, no stale-previous-capture cleanup, and (per the mask's own key being the wiring
+  // identity now, see project-mask-item.tsx) no effect rewiring needed on re-capture either.
   const confirmLightSourceCapture = useCallback(async () => {
     const pending = coreState.pendingLightSourceCapture;
     if (!pending) return;
     const maskData = coreState.canvasMasks.get(pending.maskKey);
     if (!maskData) return;
-    const triangles = trianglesFromIndices(maskData.polygons, pending.polygonIndices);
-    if (triangles.length === 0) return;
+    const hadCapture = maskData.polygons.some((p) => p.captured);
 
-    const { markup, width, height } = trianglesToSvgMarkup(triangles);
-    // The server derives an svg's media_key verbatim from the uploaded filename -- see
-    // workspace.server.ts's createSvg -- so a fixed filename would make every capture collide.
-    // svg_media_id itself isn't known until the server responds to this same request, so a fresh
-    // client-generated id ("drop id") is the closest equivalent available beforehand.
-    const lightSourceFilenameBase = newUUID();
-    const svgFile = new File([markup], `${lightSourceFilenameBase}.svg`, { type: "image/svg+xml" });
-    const created = await createAndRegisterSvg(
+    const updated = await updateMaskCapture(
       coreState.apiOrigin,
       coreState.accessToken,
-      uiState,
-      uiDispatch,
-      svgFile,
-      markup,
-      width,
-      height,
-      lightSourceFilenameBase,
-      false,
+      maskData.mask_media_id,
+      pending.polygonIndices,
     );
-    if (!created) return;
-    await placeLightSourceOnMask(created, pending.maskKey);
+    if (!updated) return;
+
+    dispatch({ type: CoreActionType.SetCanvasMask, key: pending.maskKey, value: updated });
+    if (!hadCapture) {
+      uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: pending.maskKey } });
+    }
+    uiDispatch({ type: UIActionType.SetActiveElement, value: { key: pending.maskKey, type: "mask" } });
     dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
     uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
   }, [
@@ -1078,10 +995,8 @@ export default function Workspace({
     coreState.canvasMasks,
     coreState.apiOrigin,
     coreState.accessToken,
-    uiState,
-    uiDispatch,
     dispatch,
-    placeLightSourceOnMask,
+    uiDispatch,
   ]);
 
   const cancelLightSourceCapture = useCallback(() => {
