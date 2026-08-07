@@ -42,7 +42,9 @@ export function captureTriangleIndicesInCircle(
  * captureTriangleIndicesInCircle, so this is a faithful reconstruction rather than an
  * approximation of some arbitrary shape -- used to re-run that same circle test from a new
  * center point while dragging an existing capture to relocate it (project-mask-item.tsx). */
-export function capturedRegionCircle(polygons: LaurusPolygonPath[]): { cx: number; cy: number; radius: number } | undefined {
+export function capturedRegionCircle(
+  polygons: LaurusPolygonPath[],
+): { cx: number; cy: number; radius: number } | undefined {
   const centroids = polygons
     .filter((p) => p.captured)
     .map((p) => parsePathPoints(p.d))

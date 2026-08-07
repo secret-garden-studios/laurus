@@ -183,9 +183,9 @@ export function ProjectMaskItem({
   // a drag that starts after the mesh's capture changed some other way (a fresh circle-drawn
   // capture, a clear, page load) detects the mismatch and falls back to a single one-time
   // capturedRegionCircle estimate instead of trusting a stale circle.
-  const lastKnownCaptureRef = useRef<{ indices: Set<number>; circle: { cx: number; cy: number; radius: number } } | undefined>(
-    undefined,
-  );
+  const lastKnownCaptureRef = useRef<
+    { indices: Set<number>; circle: { cx: number; cy: number; radius: number } } | undefined
+  >(undefined);
   // Mirrors captureDragRef's presence in state (rather than being read off the ref directly) so
   // the "grabbing" cursor below can react to it -- dnd-kit's own `isDragging` never turns on for
   // this gesture, since onPointerDown claims it via stopPropagation before dnd-kit's sensor ever
@@ -277,9 +277,7 @@ export function ProjectMaskItem({
   // light source was actually drawn.
   const lightSourceRestPosition = useMemo(() => {
     if (source.kind !== "static") return undefined;
-    const allPoints = source.maskData.polygons
-      .filter((p) => p.captured)
-      .flatMap((p) => parsePathPoints(p.d));
+    const allPoints = source.maskData.polygons.filter((p) => p.captured).flatMap((p) => parsePathPoints(p.d));
     if (allPoints.length === 0) return undefined;
     return {
       x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
@@ -771,7 +769,15 @@ export function ProjectMaskItem({
         session.rafId = requestAnimationFrame(loop);
       });
     },
-    [source, mediaKey, lightSourceRestPosition, coreState.effects, coreState.apiOrigin, render, stopLightSourceAnimation],
+    [
+      source,
+      mediaKey,
+      lightSourceRestPosition,
+      coreState.effects,
+      coreState.apiOrigin,
+      render,
+      stopLightSourceAnimation,
+    ],
   );
 
   // Registers this mask's play()/stop() into the shared map handlePlayAll/handlePlayTarget read
@@ -990,7 +996,11 @@ export function ProjectMaskItem({
                   // let the radius creep up over successive relocations. See lastKnownCaptureRef.
                   lastKnownCaptureRef.current = {
                     indices: finalIndices,
-                    circle: { cx: drag.originalCircle.cx + dx, cy: drag.originalCircle.cy + dy, radius: drag.originalCircle.radius },
+                    circle: {
+                      cx: drag.originalCircle.cx + dx,
+                      cy: drag.originalCircle.cy + dy,
+                      radius: drag.originalCircle.radius,
+                    },
                   };
                 } else {
                   // Request failed -- the server-side capture is still whatever it was before this

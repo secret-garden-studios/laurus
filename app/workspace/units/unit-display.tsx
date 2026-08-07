@@ -244,11 +244,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                           cursor: isAltKeyPressed ? "crosshair" : "pointer",
                         }}
                       >
-                        <svg
-                          width="100%"
-                          height="100%"
-                          viewBox={`${minX} ${minY} ${boundsWidth} ${boundsHeight}`}
-                        >
+                        <svg width="100%" height="100%" viewBox={`${minX} ${minY} ${boundsWidth} ${boundsHeight}`}>
                           {capturedPolygons.map((p, polygonIndex) => (
                             <path
                               key={polygonIndex}

@@ -14,7 +14,6 @@ import { RiToolsLine } from "react-icons/ri";
 import {
   allOut,
   browse,
-  circle,
   earthquake,
   experiment,
   keyboardCommandKey,

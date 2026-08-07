@@ -7,7 +7,6 @@ import {
   allOut,
   autorenew,
   browse,
-  circle,
   contentPaste,
   earthquake,
   experiment,
