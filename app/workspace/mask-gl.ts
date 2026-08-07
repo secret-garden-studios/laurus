@@ -6,7 +6,7 @@ export const LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT = 150;
 /** Default brightness of the light source's core, 0-1 -- 1 mixes the epicenter fully to white. Adjustable via Maskbar's light source intensity slider. */
 export const LIGHT_SOURCE_INTENSITY_DEFAULT = 0.05;
 
-/** Default distance, in on-screen (CSS) pixels, over which the darkening ramps up beyond the core -- independent of canvas size. Adjustable via Maskbar's light source spread slider. */
+/** Default distance, in on-screen (CSS) pixels, over which the darkening ramps up beyond the core -- independent of canvas size. Adjustable via Maskbar's light source falloff slider. */
 export const LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT = 350;
 
 /** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's light source darkness slider. */
@@ -33,6 +33,10 @@ attribute vec2 a_uv;
 // value, which is what lets the fragment shader treat a whole triangle as one light source facet
 // instead of a continuous per-pixel gradient.
 attribute vec2 a_centroid;
+// 1.0 for every vertex of a triangle the app wants outlined (an active capture's own triangles --
+// see ProjectMaskItem's recolorHighlight), 0.0 otherwise. A per-vertex float rather than a
+// uniform flag so a single draw call can outline an arbitrary subset of the mesh's triangles.
+attribute float a_highlight;
 
 uniform vec2 u_resolution;
 
@@ -40,6 +44,7 @@ varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
+varying float v_highlight;
 
 void main() {
   vec2 zeroToOne = a_position / u_resolution;
@@ -51,6 +56,7 @@ void main() {
   // a_centroid arrives in the same top-left/y-down space as a_position; flip it to match
   // gl_FragCoord's bottom-left origin, which is the space u_lightSourceCenter is given in.
   v_lightSourcePos = vec2(a_centroid.x, u_resolution.y - a_centroid.y);
+  v_highlight = a_highlight;
 }
 `,
   fragment: `
@@ -60,6 +66,12 @@ varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
+varying float v_highlight;
+
+// Sky blue -- the active capture's own outline (see a_highlight/v_highlight), drawn as a stroke
+// along the highlighted triangles' edges with no fill tint, so the capture's original colors
+// stay untouched underneath it.
+const vec3 CAPTURE_STROKE_COLOR = vec3(0.529, 0.808, 0.922);
 
 // Light source center is in gl_FragCoord space (drawing-buffer pixels, origin bottom-left);
 // radius/falloff are likewise in drawing-buffer pixels so they survive the canvas being
@@ -69,7 +81,7 @@ varying vec2 v_lightSourcePos;
 // inside u_lightSourceRadius sit in its bright core, and everything further out darkens smoothly
 // over the next u_lightSourceFalloff pixels, giving the flat-shaded mesh a 3D relief instead of an
 // isolated highlight. u_lightSourceFalloff is a distance, not a canvas-relative fraction, so the
-// darkening's "spread" is tunable independent of how big the mesh happens to be on screen.
+// darkening's "falloff" is tunable independent of how big the mesh happens to be on screen.
 uniform vec2 u_lightSourceCenter;
 uniform float u_lightSourceRadius;
 uniform float u_lightSourceFalloff;
@@ -125,7 +137,14 @@ void main() {
 
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
-  gl_FragColor = vec4(withGlow, mix(1.0, mask.a, u_maskActive));
+
+  // A thicker, always-visible edge (independent of u_textureMix, unlike the subtle facet
+  // wireframe above) around whichever triangles a_highlight marks -- outline only, the fill
+  // underneath is left exactly as shaded above.
+  float captureEdge = (1.0 - smoothstep(0.0, 0.08, edgeDist)) * v_highlight;
+  vec3 withCaptureStroke = mix(withGlow, CAPTURE_STROKE_COLOR, captureEdge);
+
+  gl_FragColor = vec4(withCaptureStroke, mix(1.0, mask.a, u_maskActive));
 }
 `,
 };
@@ -168,11 +187,13 @@ export interface GLState {
   barycentricBuffer: WebGLBuffer;
   uvBuffer: WebGLBuffer;
   centroidBuffer: WebGLBuffer;
+  highlightBuffer: WebGLBuffer;
   positionLoc: number;
   colorLoc: number;
   barycentricLoc: number;
   uvLoc: number;
   centroidLoc: number;
+  highlightLoc: number;
   resolutionLoc: WebGLUniformLocation;
   lightSourceCenterLoc: WebGLUniformLocation;
   lightSourceRadiusLoc: WebGLUniformLocation;
@@ -198,13 +219,16 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const barycentricBuffer = gl.createBuffer();
   const uvBuffer = gl.createBuffer();
   const centroidBuffer = gl.createBuffer();
-  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer || !centroidBuffer) return undefined;
+  const highlightBuffer = gl.createBuffer();
+  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer || !centroidBuffer || !highlightBuffer)
+    return undefined;
 
   const positionLoc = gl.getAttribLocation(program, "a_position");
   const colorLoc = gl.getAttribLocation(program, "a_color");
   const barycentricLoc = gl.getAttribLocation(program, "a_barycentric");
   const uvLoc = gl.getAttribLocation(program, "a_uv");
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
+  const highlightLoc = gl.getAttribLocation(program, "a_highlight");
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
   const lightSourceCenterLoc = gl.getUniformLocation(program, "u_lightSourceCenter");
   const lightSourceRadiusLoc = gl.getUniformLocation(program, "u_lightSourceRadius");
@@ -223,6 +247,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     barycentricLoc < 0 ||
     uvLoc < 0 ||
     centroidLoc < 0 ||
+    highlightLoc < 0 ||
     !resolutionLoc ||
     !lightSourceCenterLoc ||
     !lightSourceRadiusLoc ||
@@ -246,11 +271,13 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     barycentricBuffer,
     uvBuffer,
     centroidBuffer,
+    highlightBuffer,
     positionLoc,
     colorLoc,
     barycentricLoc,
     uvLoc,
     centroidLoc,
+    highlightLoc,
     resolutionLoc,
     lightSourceCenterLoc,
     lightSourceRadiusLoc,
@@ -332,6 +359,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
   gl.enableVertexAttribArray(state.centroidLoc);
   gl.vertexAttribPointer(state.centroidLoc, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
+  gl.enableVertexAttribArray(state.highlightLoc);
+  gl.vertexAttribPointer(state.highlightLoc, 1, gl.FLOAT, false, 0, 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
 }

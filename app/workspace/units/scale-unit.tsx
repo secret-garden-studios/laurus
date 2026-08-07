@@ -36,7 +36,7 @@ interface ScaleUnit {
   carouselIndexInit: number;
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -214,6 +214,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -226,6 +227,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -238,11 +240,19 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
       }
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, scale.scale_id, uiDispatch]);
+  }, [
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    scale.scale_id,
+    uiDispatch,
+    notifyMaskActiveElementChanged,
+  ]);
 
   const getActiveScale = useCallback((): [number, number] => {
     if (!uiState.activeElement) return [1, 1];

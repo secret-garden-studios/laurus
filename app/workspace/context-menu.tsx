@@ -22,6 +22,9 @@ import {
   cycle400,
   polyline200,
   asterisk200,
+  asterisk300,
+  texture300,
+  image200,
 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
@@ -150,7 +153,13 @@ interface ContextMenu {
   transform?: LaurusTransform;
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskActiveElementChanged,
+    notifyMaskSourceImageRemoved,
+    notifyMaskCaptureUpdated,
+  } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
@@ -433,6 +442,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               type: UIActionType.SetActiveElement,
               value: undefined,
             });
+            notifyMaskActiveElementChanged(undefined);
           }
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
@@ -445,6 +455,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (media.type !== "capture") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+            // Any mask whose source_img_media_id pointed at this image is now orphaned -- drops
+            // its GL texture instead of leaving it built against a deleted image.
+            if (media.type === "img") notifyMaskSourceImageRemoved(mediaId);
           }
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
@@ -466,6 +479,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       media.type,
       uiDispatch,
       framesCacheRef,
+      notifyMaskActiveElementChanged,
+      notifyMaskSourceImageRemoved,
     ],
   );
 
@@ -665,6 +680,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       dispatch({ type: CoreActionType.SetCanvasImgs, value: newCanvasImgs });
       dispatch({ type: CoreActionType.SetCanvasSvgs, value: newCanvasSvgs });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
+      // Whatever image was at this project slot before the swap is gone now (replaced in place,
+      // or turned into an svg) -- any mask whose source_img_media_id pointed at it is orphaned.
+      if (media.type === "img") notifyMaskSourceImageRemoved(media.meta.img_media_id);
     }
   }, [
     coreState.accessToken,
@@ -676,6 +694,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     media.key,
     media.meta,
     media.type,
+    notifyMaskSourceImageRemoved,
     uiState.browserElement,
   ]);
 
@@ -967,6 +986,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           type: UIActionType.SetActiveElement,
                           value: undefined,
                         });
+                        notifyMaskActiveElementChanged(undefined);
                         return;
                       }
                       switch (media.type) {
@@ -979,6 +999,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
+                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                         case "svg": {
@@ -990,13 +1011,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
+                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                         case "mask":
                         case "capture": {
-                          // A capture has no active-element identity of its own -- "activating"
-                          // it just activates the mask it belongs to (same as maskbar.tsx's
-                          // "activate capture" toggle).
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
                             type: "mask",
@@ -1005,6 +1024,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
+                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                       }
@@ -1079,10 +1099,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         break;
                       }
                       case "capture": {
-                        // Same as maskbar.tsx's "clear capture" -- there's no separate media
-                        // entity to remove, only the flag on the mask's own polygons, so this
-                        // re-PUTs an empty polygon-index list instead of going through
-                        // deleteProjectMedia.
                         const updated: LaurusMaskResult | undefined = await updateMaskCapture(
                           coreState.apiOrigin,
                           coreState.accessToken,
@@ -1091,8 +1107,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         );
                         if (!updated) break;
                         dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+                        notifyMaskCaptureUpdated(media.key, updated);
                         if (uiState.activeElement?.key == media.key) {
                           uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+                          notifyMaskActiveElementChanged(undefined);
                         }
                         uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: media.key });
                         break;
@@ -1112,50 +1130,26 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.footer.div,
                   }}
                 >
-                  {uiState.tool.type == "none" ? (
-                    <div
-                      title="active tool"
-                      style={{
-                        display: "grid",
-                        placeContent: "center",
-                        width: dynamicSizes.footer.svgSize,
-                        height: dynamicSizes.footer.svgSize,
-                      }}
-                    >
-                      <RiToolsLine size={dynamicSizes.footer.svgSize} color="rgb(62, 62, 62)" />
-                    </div>
-                  ) : (
-                    <SvgRepo
-                      title="active tool"
-                      svg={(() => {
-                        switch (uiState.tool.type) {
-                          case "marquee":
-                            return lassoSelect();
-                          case "contextmenu":
-                            return keyboardCommandKey();
-                          case "viewport":
-                            return browse();
-                          case "move":
-                            return earthquake();
-                          case "scale":
-                            return allOut();
-                          case "rotate":
-                            return cycle400();
-                          case "mix":
-                            return experiment();
-                          case "mask":
-                            return polyline200();
-                          case "light_source":
-                            return asterisk200();
-                        }
-                      })()}
-                      containerStyle={{
-                        width: dynamicSizes.footer.svgSize,
-                        height: dynamicSizes.footer.svgSize,
-                      }}
-                      scale={1}
-                    />
-                  )}
+                  <SvgRepo
+                    title="media type"
+                    svg={(() => {
+                      switch (media.type) {
+                        case "capture":
+                          return polyline200();
+                        case "img":
+                          return image200();
+                        case "mask":
+                          return texture300();
+                        case "svg":
+                          return polyline200();
+                      }
+                    })()}
+                    containerStyle={{
+                      width: dynamicSizes.footer.svgSize,
+                      height: dynamicSizes.footer.svgSize,
+                    }}
+                    scale={1}
+                  />
                 </div>
               </div>
             </div>
@@ -1174,7 +1168,7 @@ interface BrowserContextMenu {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserContextMenu) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskSourceImageRemoved } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -1276,6 +1270,7 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
               type: UIActionType.SetActiveElement,
               value: undefined,
             });
+            notifyMaskActiveElementChanged(undefined);
           }
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
@@ -1284,6 +1279,8 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
           cleanUpCanvasMedia(media.type, media.key, dispatch);
           cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          // Any mask whose source_img_media_id pointed at this image is now orphaned.
+          if (media.type === "img") notifyMaskSourceImageRemoved(mediaId);
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -1304,6 +1301,8 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
       media.type,
       uiDispatch,
       framesCacheRef,
+      notifyMaskActiveElementChanged,
+      notifyMaskSourceImageRemoved,
     ],
   );
 

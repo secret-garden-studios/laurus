@@ -14,11 +14,10 @@ function centroidOf(points: [number, number][]): [number, number] {
  * codebase (e.g. the marquee's own select-mode test in canvas.tsx). `circle` is in the same
  * coordinate space as the polygons' own `d` strings (a mask's local mesh space, 0..width/0..height).
  *
- * Returns indices rather than the triangle points themselves so a capture can be held as a
- * pending, not-yet-persisted candidate (see PendingLightSourceCapture, core-state.ts) -- the user
- * can redraw as many times as they like with zero server calls, and the indices only get sent to
- * the server once they actually confirm (workspace.client.tsx's confirmLightSourceCapture), where
- * they're written directly onto the mask's own polygons as a `captured` flag.
+ * Returns indices rather than the triangle points themselves so a capture can be shown
+ * optimistically while it's in flight (see PendingLightSourceCapture, core-state.ts) -- drawing a
+ * circle immediately sends its indices to the server (workspace.client.tsx's captureMeshSection),
+ * where they're written directly onto the mask's own polygons as a `captured` flag.
  */
 export function captureTriangleIndicesInCircle(
   polygons: LaurusPolygonPath[],

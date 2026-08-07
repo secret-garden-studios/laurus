@@ -15,7 +15,7 @@ const LIGHT_SOURCE_SIZE_MAX = 300;
 const LIGHT_SOURCE_FALLOFF_MIN = 20;
 const LIGHT_SOURCE_FALLOFF_MAX = 1000;
 
-// Houses the four dials (size/intensity/spread/darkness) that used to live in Maskbar -- moved
+// Houses the four dials (size/intensity/falloff/darkness) that used to live in Maskbar -- moved
 // out into their own tool/subtitlebar so they're reachable without the mask tool's
 // position/size/capture controls crowding the same bar.
 //
@@ -30,10 +30,10 @@ const LIGHT_SOURCE_FALLOFF_MAX = 1000;
 // before there's a project mask entry to seed from (see Maskbar's persistMask).
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskAppearanceChanged, notifyMaskLightSourcePreviewToggled } =
+    useContext(CoreContext);
   const { selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
-  const [isSaving, setIsSaving] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -160,35 +160,66 @@ export default function LightSourcebar() {
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
   const isLightSourceControlsDisabled = !(selectedMaskKey !== undefined || hasMesh);
 
+  // The latest not-yet-sent project state, plus whether a save is currently in flight -- refs, not
+  // state, so a burst of drag events can coalesce onto the newest value without waiting on a
+  // render. Persisting used to gate new edits behind `isSaving` and drop whatever slider events
+  // arrived while a save was in flight; a fast drag fires far more onNewCursor events than the
+  // network round-trip can keep up with, so most of a drag's updates -- including its final,
+  // released-mouse value -- got silently discarded, leaving the preview parked on an earlier
+  // value. Now every edit always applies locally (see saveLightSourceField below) and only the
+  // network persistence coalesces: whichever value is newest when a save completes goes out next.
+  const pendingLightSourceSaveRef = useRef<LaurusProjectResult | null>(null);
+  const isPersistingLightSourceRef = useRef(false);
+  const persistLightSourceQueue = useCallback(async () => {
+    if (isPersistingLightSourceRef.current) return;
+    isPersistingLightSourceRef.current = true;
+    try {
+      while (pendingLightSourceSaveRef.current) {
+        const projectToSave = pendingLightSourceSaveRef.current;
+        pendingLightSourceSaveRef.current = null;
+        const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, projectToSave.project_id, {
+          ...projectToSave,
+        });
+        if (!saved) {
+          console.error("failed to save light source change", { project_id: projectToSave.project_id });
+        }
+      }
+    } finally {
+      isPersistingLightSourceRef.current = false;
+    }
+  }, [coreState.apiOrigin, coreState.accessToken]);
+
   const saveLightSourceField = useCallback(
-    async (
+    (
       field: "light_source_size" | "light_source_intensity" | "light_source_falloff" | "light_source_darkness",
       value: number,
     ) => {
-      if (isSaving || selectedMaskKey === undefined) return;
-      const snapshot: LaurusProjectResult = { ...coreState.project };
-      const maskMeta = snapshot.masks.get(selectedMaskKey);
+      if (selectedMaskKey === undefined) return;
+      const maskMeta = coreState.project.masks.get(selectedMaskKey);
       if (!maskMeta) return;
-      setIsSaving(true);
 
-      const newMasks = new Map(snapshot.masks);
+      const newMasks = new Map(coreState.project.masks);
       const newMaskMeta: LaurusProjectMask = { ...maskMeta, [field]: value };
       newMasks.set(selectedMaskKey, newMaskMeta);
-      const newProject: LaurusProjectResult = { ...snapshot, masks: newMasks };
+      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
+      // Passed directly rather than left for the mesh to re-read off coreState: this fires
+      // synchronously, before React has re-rendered ProjectMaskItem with the just-dispatched
+      // project, so a re-read here would still see the previous value (see
+      // MaskAppearanceOverride's own comment in project-mask-item.tsx).
+      notifyMaskAppearanceChanged(selectedMaskKey, {
+        lightSource: {
+          size: newMaskMeta.light_source_size,
+          intensity: newMaskMeta.light_source_intensity,
+          falloff: newMaskMeta.light_source_falloff,
+          darkness: newMaskMeta.light_source_darkness,
+        },
+      });
 
-      try {
-        const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
-          ...newProject,
-        });
-        if (!saved) {
-          dispatch({ type: CoreActionType.SetProject, value: snapshot });
-        }
-      } finally {
-        setIsSaving(false);
-      }
+      pendingLightSourceSaveRef.current = newProject;
+      void persistLightSourceQueue();
     },
-    [isSaving, selectedMaskKey, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistLightSourceQueue],
   );
 
   const lightSourceSizeValue = selectedMaskMeta ? selectedMaskMeta.light_source_size : mask.lightSourceSize;
@@ -332,6 +363,7 @@ export default function LightSourcebar() {
           value={uiState.lightSourcePreview}
           onClick={() => {
             uiDispatch({ type: UIActionType.SetLightSourcePreview, value: !uiState.lightSourcePreview });
+            notifyMaskLightSourcePreviewToggled(!uiState.lightSourcePreview);
           }}
           trackStyles={{ ...dynamicSizes.toggle.track }}
           buttonStyles={{ ...dynamicSizes.toggle.button }}
@@ -406,8 +438,8 @@ export default function LightSourcebar() {
       <div
         title={
           isLightSourceControlsDisabled
-            ? "select or generate a mesh to set how far its darkening spreads out beyond the core"
-            : "distance the darkening takes to spread out beyond the core, in on-screen pixels -- independent of canvas size"
+            ? "select or generate a mesh to set how far its darkening falloffs out beyond the core"
+            : "distance the darkening takes to falloff out beyond the core, in on-screen pixels -- independent of canvas size"
         }
         style={{
           display: "flex",
@@ -417,10 +449,10 @@ export default function LightSourcebar() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"spread"}</span>
+        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"falloff"}</span>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${selectedMaskKey ?? "lightsourcebar"}|spread`}
+          hash={`${selectedMaskKey ?? "lightsourcebar"}|falloff`}
           size={dynamicSizes.paramSize}
           containerRef={falloffTrackRef}
           cursor={falloffCursor}
@@ -440,8 +472,8 @@ export default function LightSourcebar() {
       <div
         title={
           isLightSourceControlsDisabled
-            ? "select or generate a mesh to set the strength of its darkening at the far edge of the spread"
-            : "strength of the darkening at the far edge of the spread -- 100% drives it fully to black"
+            ? "select or generate a mesh to set the strength of its darkening at the far edge of the falloff"
+            : "strength of the darkening at the far edge of the falloff -- 100% drives it fully to black"
         }
         style={{
           display: "flex",

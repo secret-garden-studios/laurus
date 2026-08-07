@@ -18,7 +18,7 @@ import { UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 
 export default function Mixbar() {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -404,6 +404,7 @@ export default function Mixbar() {
                         type: UIActionType.SetTool,
                         value: { type: "none" },
                       });
+                      notifyMaskToolChanged("none");
                     }
                   }}
                 />

@@ -117,7 +117,7 @@ interface MediaBrowser {
   onPrevPage?: () => void;
 }
 export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPage }: MediaBrowser) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -289,6 +289,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                 coreState.accessToken,
                 uiState,
                 uiDispatch,
+                notifyMaskToolChanged,
                 file,
                 svgString,
                 width,
@@ -331,6 +332,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               const currentTool = { ...uiState.tool };
               const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
               uiDispatch({ type: UIActionType.SetTool, value: newTool });
+              notifyMaskToolChanged(newTool.type);
               if (++actualImgUploads == expectedImgUploads) {
                 setMediaUploading(false);
               }
@@ -344,7 +346,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
         }
       }
     },
-    [coreState.apiOrigin, coreState.accessToken, uiState, uiDispatch],
+    [coreState.apiOrigin, coreState.accessToken, uiState, uiDispatch, notifyMaskToolChanged],
   );
 
   const onPublicImgToggle = useCallback(async () => {

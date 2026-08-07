@@ -65,6 +65,10 @@ export async function createAndRegisterSvg(
   accessToken: string | undefined,
   uiState: Pick<UIState, "browserSvgs" | "tool">,
   uiDispatch: Dispatch<UIAction>,
+  // Called immediately after any SetTool dispatch so every mounted mask can react to the tool
+  // change imperatively (see project-mask-item.tsx) -- media-browser.tsx passes its
+  // CoreContext.notifyMaskToolChanged through here.
+  notifyMaskToolChanged: (toolType: string) => void,
   svgFile: File,
   svgString: string,
   width: number,
@@ -90,6 +94,7 @@ export async function createAndRegisterSvg(
       const currentTool = { ...uiState.tool };
       const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
       uiDispatch({ type: UIActionType.SetTool, value: newTool });
+      notifyMaskToolChanged(newTool.type);
     }
     return created;
   } catch (err) {

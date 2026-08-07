@@ -12,7 +12,7 @@ export interface SelectionControlPanel {
   containerStyle?: CSSProperties;
 }
 export default function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
@@ -100,7 +100,9 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           setSelectedImgKeys(new Set());
           setSelectedSvgKeys(new Set());
           if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-            uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+            const newTool = { ...uiState.tool, duplicate: false };
+            uiDispatch({ type: UIActionType.SetTool, value: newTool });
+            notifyMaskToolChanged(newTool.type);
           }
         }
       }
@@ -118,6 +120,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
     setSelectedSvgKeys,
     uiState.tool,
     uiDispatch,
+    notifyMaskToolChanged,
   ]);
 
   return (

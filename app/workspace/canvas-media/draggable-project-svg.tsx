@@ -36,7 +36,7 @@ export function DraggableProjectSvg({
   refKey,
   forceAbsolutePosition,
 }: DraggableProjectSvg) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
@@ -398,6 +398,7 @@ export function DraggableProjectSvg({
               type: UIActionType.SetActiveElement,
               value: newActiveElement,
             });
+            notifyMaskActiveElementChanged(newActiveElement.key);
             break;
           }
         }
@@ -415,6 +416,7 @@ export function DraggableProjectSvg({
       uiDispatch,
       onSvgStackDrop,
       isAltKeyPressed,
+      notifyMaskActiveElementChanged,
     ],
   );
 

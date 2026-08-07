@@ -49,7 +49,7 @@ interface MoveUnit {
   carouselIndexInit: number;
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -207,6 +207,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -219,6 +220,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -231,11 +233,19 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
       }
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, move.move_id, uiDispatch]);
+  }, [
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    move.move_id,
+    uiDispatch,
+    notifyMaskActiveElementChanged,
+  ]);
 
   const saveNewEquation = useCallback(
     async (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => {

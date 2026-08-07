@@ -38,7 +38,7 @@ interface RotateUnit {
   carouselIndexInit: number;
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -195,6 +195,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -207,6 +208,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -219,11 +221,19 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
       }
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, rotate.rotate_id, uiDispatch]);
+  }, [
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    rotate.rotate_id,
+    uiDispatch,
+    notifyMaskActiveElementChanged,
+  ]);
 
   const saveNewEquation = useCallback(
     async (rollback: LaurusRotateResult, newEquation: LaurusRotateEquation) => {

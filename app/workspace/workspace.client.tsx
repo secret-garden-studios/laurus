@@ -36,7 +36,7 @@ import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-re
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
-import { MaskLightSourcePlayer } from "./canvas-media/project-mask-item";
+import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -193,8 +193,21 @@ export interface CoreContextProps {
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
   cancelFrameDownload: () => void;
-  confirmLightSourceCapture: () => void;
-  cancelLightSourceCapture: () => void;
+  captureMeshSection: (maskKey: string, polygonIndices: number[]) => Promise<void>;
+  // The following notifyMask* functions are how every file that changes state a mask mesh's own
+  // appearance depends on reaches into maskHandlesRef and drives it directly, imperatively --
+  // ProjectMaskItem has no useEffect watching any of this reactively (see its own file comment).
+  // Each is a thin broadcast/targeted iteration over maskHandlesRef.current, called right after
+  // the dispatch that actually changed the underlying value, mirroring how handlePlayAll/
+  // handleStopAll above already reach into the same map for play()/stop().
+  notifyMaskToolChanged: (toolType: string) => void;
+  notifyMaskActiveElementChanged: (key: string | undefined) => void;
+  notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>) => void;
+  notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
+  notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+  notifyMaskSourceImageRemoved: (mediaId: string) => void;
+  notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
+  notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
 }
 
 export const CoreContext = createContext<CoreContextProps>({
@@ -206,8 +219,15 @@ export const CoreContext = createContext<CoreContextProps>({
   handlePlayTarget: () => {},
   handleStopAll: () => {},
   cancelFrameDownload: () => {},
-  confirmLightSourceCapture: () => {},
-  cancelLightSourceCapture: () => {},
+  captureMeshSection: async () => {},
+  notifyMaskToolChanged: () => {},
+  notifyMaskActiveElementChanged: () => {},
+  notifyMaskPendingCaptureSet: () => {},
+  notifyMaskPendingCaptureCleared: () => {},
+  notifyMaskCaptureUpdated: () => {},
+  notifyMaskSourceImageRemoved: () => {},
+  notifyMaskAppearanceChanged: () => {},
+  notifyMaskLightSourcePreviewToggled: () => {},
 });
 
 export interface UIContextProps {
@@ -719,10 +739,14 @@ export default function Workspace({
   const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
   const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
   // Masks have no DOM element to animate via WAAPI (they render to a WebGL canvas), so unlike
-  // img/svg's element refs, this holds MaskLightSourcePlayer.play/stop callbacks instead -- registered
-  // by ProjectMaskItem, keyed by the same source-image project key as imgElementsRef, and a Set
-  // per key since more than one mask can trace from the same image.
-  const maskLightSourcePlayersRef = useRef<Map<string, Set<MaskLightSourcePlayer>>>(null);
+  // img/svg's element refs, this holds MaskImperativeHandle instances instead -- registered
+  // by ProjectMaskItem's own mount ref-callback, keyed by the mask's own project key, one Set
+  // per key since more than one mounted instance can share a mediaKey. Also doubles as the one
+  // place every notifyMask* broadcast/targeted call below reaches into to imperatively drive a
+  // mask's WebGL state -- ProjectMaskItem has no useEffect of its own reacting to tool/active
+  // element/topology/etc. changes; the file dispatching each of those calls the matching
+  // notifyMask* function right after, instead.
+  const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
@@ -961,47 +985,90 @@ export default function Workspace({
     frameDownloadAbortControllerRef.current?.abort();
   }, []);
 
-  // Turns a pending capture (canvas.tsx's handleLightSourceCapture, redrawable with zero server
-  // calls) into a persisted one only once the user explicitly confirms -- this is the one point
-  // where a network call actually happens, so testing out different capture shapes costs nothing.
-  // The captured flag lives directly on the mask's own polygons server-side (see
-  // updateMaskCapture), so confirming just swaps the mask's data in place -- no second entity to
-  // create, no stale-previous-capture cleanup, and (per the mask's own key being the wiring
-  // identity now, see project-mask-item.tsx) no effect rewiring needed on re-capture either.
-  const confirmLightSourceCapture = useCallback(async () => {
-    const pending = coreState.pendingLightSourceCapture;
-    if (!pending) return;
-    const maskData = coreState.canvasMasks.get(pending.maskKey);
-    if (!maskData) return;
-    const hadCapture = maskData.polygons.some((p) => p.captured);
+  // See CoreContextProps' own comment -- these all reach directly into maskHandlesRef instead of
+  // being watched for reactively by ProjectMaskItem, so every dispatch site that changes one of
+  // these values also calls the matching one of these right after. Stable (empty deps, closing
+  // only over the ref) -- never need to be listed as a dependency anywhere else in this file.
+  const notifyMaskToolChanged = useCallback((toolType: string) => {
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.abortCaptureDragForToolChange(toolType)));
+  }, []);
+  const notifyMaskActiveElementChanged = useCallback((key: string | undefined) => {
+    maskHandlesRef.current?.forEach((handles, maskKey) =>
+      handles.forEach((h) => h.setActiveHighlighted(maskKey === key)),
+    );
+  }, []);
+  const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices));
+  }, []);
+  const notifyMaskPendingCaptureCleared = useCallback((maskKey: string | undefined) => {
+    if (maskKey === undefined) return;
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingCapture());
+  }, []);
+  const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
+  }, []);
+  const notifyMaskSourceImageRemoved = useCallback((mediaId: string) => {
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.notifySourceImageRemoved(mediaId)));
+  }, []);
+  const notifyMaskAppearanceChanged = useCallback((maskKey: string, override?: MaskAppearanceOverride) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.applyMaskAppearanceDefaults(override));
+  }, []);
+  const notifyMaskLightSourcePreviewToggled = useCallback((enabled: boolean) => {
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.onLightSourcePreviewToggled(enabled)));
+  }, []);
 
-    const updated = await updateMaskCapture(
+  // Persists a drawn/redrawn mesh-section capture immediately -- selecting a capture (canvas.tsx's
+  // handleLightSourceCapture) is taken as confirmation to save it, no separate confirm step. Shown
+  // optimistically via the pending-capture notifies below while the request is in flight (mirrors
+  // project-mask-item.tsx's own relocate-drag commit in onPointerUp), then reconciled with the
+  // server response. The captured flag lives directly on the mask's own polygons server-side (see
+  // updateMaskCapture), so this just swaps the mask's data in place -- no second entity to create,
+  // no stale-previous-capture cleanup, and (per the mask's own key being the wiring identity now,
+  // see project-mask-item.tsx) no effect rewiring needed on re-capture either.
+  const captureMeshSection = useCallback(
+    async (maskKey: string, polygonIndices: number[]) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData) return;
+      const hadCapture = maskData.polygons.some((p) => p.captured);
+
+      dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: { maskKey, polygonIndices } });
+      notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices));
+
+      const updated = await updateMaskCapture(
+        coreState.apiOrigin,
+        coreState.accessToken,
+        maskData.mask_media_id,
+        polygonIndices,
+      );
+      if (updated) {
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+        // Before the notifies below, which recolor off this mask's own captured-indices ref -- see
+        // MaskImperativeHandle.syncCapturedIndices' own comment for why that ref, not `source`.
+        notifyMaskCaptureUpdated(maskKey, updated);
+        if (!hadCapture) {
+          uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: maskKey } });
+        }
+        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+        notifyMaskActiveElementChanged(maskKey);
+      }
+      dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+      notifyMaskPendingCaptureCleared(maskKey);
+      uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
+      notifyMaskToolChanged("mask");
+    },
+    [
+      coreState.canvasMasks,
       coreState.apiOrigin,
       coreState.accessToken,
-      maskData.mask_media_id,
-      pending.polygonIndices,
-    );
-    if (!updated) return;
-
-    dispatch({ type: CoreActionType.SetCanvasMask, key: pending.maskKey, value: updated });
-    if (!hadCapture) {
-      uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: pending.maskKey } });
-    }
-    uiDispatch({ type: UIActionType.SetActiveElement, value: { key: pending.maskKey, type: "mask" } });
-    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-    uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
-  }, [
-    coreState.pendingLightSourceCapture,
-    coreState.canvasMasks,
-    coreState.apiOrigin,
-    coreState.accessToken,
-    dispatch,
-    uiDispatch,
-  ]);
-
-  const cancelLightSourceCapture = useCallback(() => {
-    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-  }, [dispatch]);
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingCaptureSet,
+      notifyMaskActiveElementChanged,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskToolChanged,
+    ],
+  );
 
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
@@ -1061,18 +1128,19 @@ export default function Workspace({
 
     if (uiState.tool.type !== "viewport" && uiState.tool.type !== "none") {
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      notifyMaskToolChanged("none");
     }
 
     const newAnimations = await getNewAnimations("none", false, true);
 
-    // Every registered mask light source player -- each decides for itself whether it actually has a
+    // Every registered mask handle -- each decides for itself whether it actually has a
     // wired move/light_source effect to play, resolving immediately if not (see
-    // MaskLightSourcePlayer). Triggered (and awaited) before the newAnimations bail-out below: a
+    // MaskImperativeHandle). Triggered (and awaited) before the newAnimations bail-out below: a
     // light-source-svg has no DOM element of its own (see workspace.client.tsx's render-skip), so
     // getNewAnimations never produces a WAAPI Animation for it -- newAnimations can be
     // legitimately empty while there's still a light source to play.
     const lightSourceFinished: Promise<void>[] = [];
-    maskLightSourcePlayersRef.current?.forEach((players) => {
+    maskHandlesRef.current?.forEach((players) => {
       players.forEach((player) => lightSourceFinished.push(player.play()));
     });
 
@@ -1083,6 +1151,7 @@ export default function Workspace({
         value: { type: "stopped" },
       });
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      notifyMaskToolChanged("none");
       return;
     }
 
@@ -1105,7 +1174,14 @@ export default function Workspace({
       type: UIActionType.SetPlaybackMode,
       value: { type: "playing" },
     });
-  }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type, uiState.tool.type]);
+  }, [
+    closeContextMenus,
+    getNewAnimations,
+    handleMixRestoration,
+    uiState.playbackMode.type,
+    uiState.tool.type,
+    notifyMaskToolChanged,
+  ]);
 
   const handlePlayTarget = useCallback(
     async (target: AnimationTarget) => {
@@ -1132,7 +1208,7 @@ export default function Workspace({
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
-        maskLightSourcePlayersRef.current
+        maskHandlesRef.current
           ?.get(target.inputKey)
           ?.forEach((player) => lightSourceFinished.push(player.play(target.effectKey)));
       }
@@ -1223,7 +1299,7 @@ export default function Workspace({
     if (imgElementsRef.current) {
       imgElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
     }
-    maskLightSourcePlayersRef.current?.forEach((players) => players.forEach((player) => player.stop()));
+    maskHandlesRef.current?.forEach((players) => players.forEach((player) => player.stop()));
     uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
     uiDispatch({
       type: UIActionType.SetPlaybackMode,
@@ -1270,8 +1346,15 @@ export default function Workspace({
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
-      confirmLightSourceCapture,
-      cancelLightSourceCapture,
+      captureMeshSection,
+      notifyMaskToolChanged,
+      notifyMaskActiveElementChanged,
+      notifyMaskPendingCaptureSet,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskSourceImageRemoved,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
     }),
     [
       coreState,
@@ -1283,8 +1366,15 @@ export default function Workspace({
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
-      confirmLightSourceCapture,
-      cancelLightSourceCapture,
+      captureMeshSection,
+      notifyMaskToolChanged,
+      notifyMaskActiveElementChanged,
+      notifyMaskPendingCaptureSet,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskSourceImageRemoved,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
     ],
   );
 
@@ -1335,6 +1425,7 @@ export default function Workspace({
         setSelectedMaskKeys(new Set<string>());
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+          notifyMaskToolChanged(uiState.tool.type);
         }
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key === " " && !isInput) {
@@ -1352,33 +1443,41 @@ export default function Workspace({
       } else if (event.key.toLowerCase() === "m" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "move" ? { type: "none" } : { type: "move" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "r" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "rotate" ? { type: "none" } : { type: "rotate" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "s" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "scale" ? { type: "none" } : { type: "scale" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "v" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "viewport" ? { type: "none" } : { type: "viewport" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
       } else if (event.key.toLowerCase() === "d" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "marquee" ? { type: "none" } : defaultMarqueeTool;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "x" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mix" ? { type: "none" } : { type: "mix" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "t" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : defaultMaskTool;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       }
     };
@@ -1386,7 +1485,7 @@ export default function Workspace({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool]);
+  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool, notifyMaskToolChanged]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -1394,6 +1493,7 @@ export default function Workspace({
       setIsAltKeyPressed(e.altKey);
       if (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) {
         uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+        notifyMaskToolChanged("none");
       }
     };
     const handleBlur = () => {
@@ -1408,7 +1508,7 @@ export default function Workspace({
       window.removeEventListener("keyup", handleKey);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [uiState.tool.type, uiDispatch]);
+  }, [uiState.tool.type, uiDispatch, notifyMaskToolChanged]);
 
   useEffect(() => {
     if (hasInitiatedFrameDownloadRef.current) return;
@@ -1728,7 +1828,7 @@ export default function Workspace({
                                 ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
                                 : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
                             }
-                            maskLightSourcePlayersRef={maskLightSourcePlayersRef}
+                            maskHandlesRef={maskHandlesRef}
                             framesCacheRef={framesCacheRef}
                             forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
                           />

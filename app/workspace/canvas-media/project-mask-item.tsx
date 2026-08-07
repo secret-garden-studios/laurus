@@ -2,7 +2,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CoreContext, HoverContext, LaurusTransform, UIContext } from "../workspace.client";
-import { RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   buildStaticMaskMesh,
   colorToRGB01,
@@ -54,19 +54,59 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
   return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
 }
 
-// A mask whose light source epicenter is wired to a "move" effect (see the registration effect below)
-// exposes itself this way so handlePlayAll/handlePlayTarget (workspace.client.tsx) can trigger
-// its playback imperatively, the same way they call `.play()` on the WAAPI Animations they build
-// for img/svg elements -- masks have no such Animation (they render to a WebGL canvas, not a CSS
-// transform), so this is the non-WAAPI equivalent.
-export interface MaskLightSourcePlayer {
-  // Resolves once playback finishes and the canvas has been reset back to its original state (or
-  // immediately, if nothing is wired) -- foldable into the same Promise.all(...) used to detect
-  // when to flip playbackMode back to "stopped". An effectKey restricts playback to just that one
-  // effect (a single-effect preview, e.g. LightSourceUnitbar's "preview" button) -- omitted
-  // (handlePlayAll) plays every wired move/light_source effect together, mixed.
+// A mask whose light source epicenter is wired to a "move" effect (see the mount ref-callback
+// below) exposes itself this way so handlePlayAll/handlePlayTarget (workspace.client.tsx) can
+// trigger its playback imperatively, the same way they call `.play()` on the WAAPI Animations
+// they build for img/svg elements -- masks have no such Animation (they render to a WebGL
+// canvas, not a CSS transform), so this is the non-WAAPI equivalent.
+//
+// This file has no useEffect: every one of this mask's own GL-affecting state changes is driven
+// either by this component's own event handlers (pointer/click), or -- for state that changes
+// elsewhere in the app (active element, tool, topology, a deleted source image, ...) -- by the
+// file that actually dispatches that change calling straight through one of CoreContext's
+// notifyMask* functions, which reach into workspace.client.tsx's maskHandlesRef and invoke the
+// matching method below directly. That's what every method past play/stop on this interface is
+// for. Two earlier attempts at reacting to this via useEffect dependency arrays (mesh geometry
+// torn down and rebuilt whenever the source image changed, then a texture reload firing on every
+// capture-relocate commit) each fixed one bug and reintroduced another -- getting a dependency
+// array to rerun on exactly the changes that matter and nothing else proved fragile. Pushing the
+// update from the exact call site that caused it removes that whole class of bug instead of
+// tuning it away.
+export interface MaskImperativeHandle {
   play: (effectKey?: string) => Promise<void>;
   stop: () => void;
+  // Mirrors the old tool-change effect: aborts a capture-relocate drag in progress on this mesh
+  // (if any) the moment the tool stops being "move" elsewhere in the app.
+  abortCaptureDragForToolChange: (newToolType: string) => void;
+  // Whether this mask is the app's current active element -- recolors its captured triangles
+  // in/out of the highlight accordingly (folded with any pending capture preview, see
+  // recolorHighlight).
+  setActiveHighlighted: (active: boolean) => void;
+  setPendingCapture: (indices: Set<number>) => void;
+  clearPendingCapture: () => void;
+  // The server's response to a just-committed capture change (a relocate drag, a fresh
+  // circle-drawn capture, or a clear) -- updates this mask's own idea of which polygons are
+  // captured directly off that response rather than off `source`, which is still last render's
+  // stale data at the exact point every one of those flows calls this (right after dispatching
+  // SetCanvasMask, before React has re-rendered with the new prop). See capturedIndicesRef.
+  syncCapturedIndices: (updated: LaurusMaskResult) => void;
+  // A source image (matched by media id) was deleted or replaced out from under this mask --
+  // drops the GL texture so drawMaskMesh falls back to flat colors instead of leaving a mesh
+  // built against a now-invalid texture.
+  notifySourceImageRemoved: (mediaId: string) => void;
+  // Re-applies this mask's texture-mix (topology) and resting light-source dial values. Reads
+  // from coreState/topology by default, but a caller that just dispatched a change and knows
+  // the fresh value can pass it directly via `override` -- necessary because this fires
+  // synchronously right after that dispatch, before React has re-rendered this component with
+  // the new coreState/topology prop (same stale-closure hazard syncCapturedIndices avoids above
+  // by taking `updated` directly instead of re-reading `source`).
+  applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
+  onLightSourcePreviewToggled: (enabled: boolean) => void;
+}
+
+export interface MaskAppearanceOverride {
+  textureMix?: number;
+  lightSource?: { size: number; intensity: number; falloff: number; darkness: number };
 }
 
 interface ProjectMaskItem {
@@ -77,14 +117,14 @@ interface ProjectMaskItem {
   frame: { width: number; height: number; scale_x: number; scale_y: number };
   source: ProjectMaskItemSource;
   title?: string;
-  // Only meaningful for placed (static) masks -- see the registration effect below. Omitted by
+  // Only meaningful for placed (static) masks -- see the mount ref-callback below. Omitted by
   // the live-preview call site in canvas.tsx, which has nothing to register (no persisted
   // mediaKey/lightSourceKey yet).
-  maskLightSourcePlayersRef?: RefObject<Map<string, Set<MaskLightSourcePlayer>> | null>;
+  maskHandlesRef?: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
   // The following three are only meaningful for placed (static) masks too -- they exist purely
   // to mount <ContextMenu> with parity to ProjectImg/ProjectSvg (see DraggableProjectMask's
   // onMaskClick). Omitted by the live-preview call site in canvas.tsx for the same reason as
-  // maskLightSourcePlayersRef above.
+  // maskHandlesRef above.
   transform?: LaurusTransform;
   framesCacheRef?: RefObject<Map<string, LaurusFrame[]>>;
   onClick?: (metaKey: boolean) => void;
@@ -106,14 +146,20 @@ export function ProjectMaskItem({
   frame,
   source,
   title,
-  maskLightSourcePlayersRef,
+  maskHandlesRef,
   transform,
   framesCacheRef,
   onClick,
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { coreState, dispatch } = useContext(CoreContext);
-  const { topology } = coreState;
+  const {
+    coreState,
+    dispatch,
+    notifyMaskActiveElementChanged,
+    notifyMaskPendingCaptureSet,
+    notifyMaskPendingCaptureCleared,
+    notifyMaskCaptureUpdated,
+  } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
   // Which flavor of <ContextMenu> a meta-click should open -- "capture" when the click lands on
   // the mesh's own captured triangles, "mask" otherwise (the existing general mask menu). Both
@@ -121,7 +167,7 @@ export function ProjectMaskItem({
   // onClick below) and the same on-screen anchor (transform); this only decides which `media`
   // gets handed to the one <ContextMenu> mount.
   const [contextMenuVariant, setContextMenuVariant] = useState<"mask" | "capture">("mask");
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
@@ -131,10 +177,6 @@ export function ProjectMaskItem({
   const lightSourceFalloffRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.falloff);
   const lightSourceDarknessRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.darkness);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
-  // The mesh's own per-vertex colors as built by buildStaticMaskMesh, kept around so the
-  // highlight effect below can blend from the real base color instead of whatever the previous
-  // highlight pass left in colorBuffer -- see the highlight effect's comment.
-  const baseColorsRef = useRef<number[]>([]);
   const vertexCountRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
@@ -155,9 +197,10 @@ export function ProjectMaskItem({
   // A capture-relocate drag in progress (move tool, grabbed directly on the mesh's own captured
   // triangles rather than its body -- see the canvas's onPointerDown below). A ref, not state:
   // nothing about the drag needs to trigger a re-render, since the live preview already comes
-  // free from pendingCaptureIndices/highlightedPolygonIndices once SetPendingLightSourceCapture is
-  // dispatched. originalIndices lets a true zero-movement drag snap back to exactly what it
-  // started as instead of picking up boundary noise from re-deriving the circle at every tick.
+  // free from pendingCaptureRef/recolorHighlight once setPendingCapture is called (locally or via
+  // notifyMaskPendingCaptureSet). originalIndices lets a true zero-movement drag snap back to
+  // exactly what it started as instead of picking up boundary noise from re-deriving the circle
+  // at every tick.
   const captureDragRef = useRef<
     | {
         pointerId: number;
@@ -191,6 +234,25 @@ export function ProjectMaskItem({
   // this gesture, since onPointerDown claims it via stopPropagation before dnd-kit's sensor ever
   // sees the pointer.
   const [isDraggingCapture, setIsDraggingCapture] = useState(false);
+  // This mesh's own current highlight inputs -- mirrors what the old highlightedPolygonIndices
+  // memo derived reactively, but pushed imperatively instead: pendingCaptureRef is set/cleared
+  // both locally (this file's own pointer handlers) and externally (canvas.tsx's circle-draw
+  // capture flow, via notifyMaskPendingCaptureSet/Cleared) and always wins when present;
+  // activeHighlightRef mirrors whether this mask is uiState.activeElement, kept in sync by
+  // setActiveHighlighted below. capturedIndicesRef is what activeHighlightRef actually paints --
+  // deliberately NOT re-derived from source.maskData.polygons on every recolor: a capture commit
+  // (this file's onPointerUp, captureMeshSection, maskbar/context-menu's clear-capture)
+  // dispatches SetCanvasMask and then immediately wants the new indices to paint, but dispatch()
+  // doesn't apply synchronously -- `source` is still last render's stale polygons at that exact
+  // point, so deriving from it right there would (and did) paint the *previous* capture for one
+  // render's worth of time, which is what a mesh with a wired move effect briefly recentering
+  // on the old spot -- or a whole relocate drag appearing to snap back -- actually was. Every one
+  // of those call sites instead calls notifyMaskCaptureUpdated with the LaurusMaskResult it just
+  // got back from the server, which updates this ref directly off the real response instead of
+  // waiting on a re-render. See recolorHighlight.
+  const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
+  const activeHighlightRef = useRef(false);
+  const capturedIndicesRef = useRef<Set<number>>(new Set());
 
   // Which of this mesh's own polygon indices a capture-relocate drag would land on if released
   // `dx`/`dy` (buffer pixels) away from where it started -- shared by the rAF-throttled live
@@ -211,7 +273,7 @@ export function ProjectMaskItem({
 
   // Throttled to one recompute per frame (rAF, mirrors rafRef's playback loop above) -- an
   // unthrottled per-pointermove recompute would re-hit-test and fully re-upload the mesh's color
-  // buffer (the highlight effect above) synchronously on every raw pointer event.
+  // buffer (recolorHighlight below) synchronously on every raw pointer event.
   const recomputeCaptureDrag = useCallback(() => {
     const drag = captureDragRef.current;
     if (!drag) return;
@@ -221,12 +283,12 @@ export function ProjectMaskItem({
       type: CoreActionType.SetPendingLightSourceCapture,
       value: { maskKey: mediaKey, polygonIndices: [...indices] },
     });
-  }, [captureIndicesAtOffset, mediaKey, dispatch]);
+    notifyMaskPendingCaptureSet(mediaKey, indices);
+  }, [captureIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingCaptureSet]);
 
   // Abandons an in-progress capture-relocate drag without persisting anything -- used both by a
-  // browser-interrupted gesture (onPointerCancel) and by the tool-change safety net below (Alt-key
-  // auto-exit and other tool shortcuts can fire mid-drag; without this the gesture would run to
-  // completion and commit on release regardless).
+  // browser-interrupted gesture (onPointerCancel), the tool-change safety net (now
+  // abortCaptureDragForToolChange, called via notifyMaskToolChanged), and onPointerCancel below.
   const abortCaptureDrag = useCallback(() => {
     const drag = captureDragRef.current;
     if (!drag) return;
@@ -235,39 +297,14 @@ export function ProjectMaskItem({
     captureDragRef.current = undefined;
     setIsDraggingCapture(false);
     dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-  }, [dispatch]);
-
-  // Not theoretical: holding Alt while the move tool is active force-resets the tool to "none"
-  // globally (workspace.client.tsx), and other single-key tool shortcuts can fire mid-drag too.
-  // Left uncaught, a mid-drag tool change would let the gesture commit anyway, and could race with
-  // maskbar's own confirm/cancel buttons reading this same pendingLightSourceCapture slot.
-  useEffect(() => {
-    if (uiState.tool.type === "move") return;
-    if (captureDragRef.current) abortCaptureDrag();
-  }, [uiState.tool.type, abortCaptureDrag]);
+    notifyMaskPendingCaptureCleared(mediaKey);
+  }, [dispatch, mediaKey, notifyMaskPendingCaptureCleared]);
 
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
     source.kind === "static"
       ? { width: source.maskData.width, height: source.maskData.height }
       : { width: source.sourceImg.width, height: source.sourceImg.height };
-  // The source image's own project key, if it's still on the canvas -- imgs are keyed by
-  // project element key here, not by img_media_id, so this has to search by value. A live
-  // preview has no project key of its own yet (its source image is handed to it directly,
-  // not placed as an element), so this is undefined for it. Also doubles as the key a "move"
-  // effect wiring the light source epicenter (see the wiring effect below) would need to be animating.
-  const sourceImgKey = useMemo(() => {
-    if (source.kind !== "static") return undefined;
-    for (const [key, img] of coreState.project.imgs) {
-      if (img.img_media_id === source.maskData.source_img_media_id) return key;
-    }
-    return undefined;
-  }, [source, coreState.project.imgs]);
-
-  const sourceImgSrc = useMemo(() => {
-    if (source.kind !== "static") return source.sourceImg.src;
-    return sourceImgKey ? coreState.canvasImgs.get(sourceImgKey)?.src : undefined;
-  }, [source, sourceImgKey, coreState.canvasImgs]);
 
   // Where the light source actually sits in the mesh (the centroid of its own captured triangles, in
   // the same top-left-origin mesh space as maskData.polygons) -- this is the epicenter's "home"
@@ -275,45 +312,27 @@ export function ProjectMaskItem({
   // meaning they have as a CSS `translate`) get added to. Without this, playLightSourceAnimation had
   // no better option than the mesh's geometric center, which is only coincidentally where a
   // light source was actually drawn.
-  const lightSourceRestPosition = useMemo(() => {
+  //
+  // Reads pendingCaptureRef/capturedIndicesRef (see their comments above) rather than
+  // source.maskData.polygons' own `captured` flags: those refs are updated the instant a
+  // capture-relocate drag commits, while `source` only catches up once updateMaskCapture's
+  // response round-trips and SetCanvasMask has been dispatched *and* re-rendered. Deriving from
+  // `source` directly meant Play All, clicked in that window, would animate from the capture's
+  // previous location -- the geometry (p.d) a polygon index maps to doesn't change when a
+  // capture moves, only which indices count as captured, so this still needs `source` for the
+  // shapes themselves, just not for which ones are currently captured.
+  const computeLightSourceRestPosition = useCallback(() => {
     if (source.kind !== "static") return undefined;
-    const allPoints = source.maskData.polygons.filter((p) => p.captured).flatMap((p) => parsePathPoints(p.d));
+    const indices = pendingCaptureRef.current ?? capturedIndicesRef.current;
+    const allPoints = source.maskData.polygons
+      .filter((_, i) => indices.has(i))
+      .flatMap((p) => parsePathPoints(p.d));
     if (allPoints.length === 0) return undefined;
     return {
       x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
       y: allPoints.reduce((sum, [, py]) => sum + py, 0) / allPoints.length,
     };
   }, [source]);
-
-  // Piggybacks on the same "active element" mechanism svg/img already use (unit-display.tsx's
-  // chevrons, and being freshly dropped) -- a captured region has no on-screen presence of its
-  // own to anchor a context menu to (see unit-display.tsx's setActiveElement, which skips showing
-  // one for a mask entry), so becoming the active element highlights the mesh triangles it covers
-  // instead.
-  const activeLightSourceKey = useMemo(() => {
-    if (source.kind !== "static") return undefined;
-    if (uiState.activeElement?.type !== "mask") return undefined;
-    return uiState.activeElement.key === mediaKey ? mediaKey : undefined;
-  }, [source, uiState.activeElement, mediaKey]);
-
-  // A not-yet-persisted capture candidate targeting this mask (see PendingLightSourceCapture,
-  // core-state.ts) previews the same way an already-confirmed, active capture does -- letting the
-  // user see exactly what they're about to commit to before it's ever sent to the server.
-  const pendingCaptureIndices = useMemo(() => {
-    if (source.kind !== "static" || coreState.pendingLightSourceCapture?.maskKey !== mediaKey) return undefined;
-    return new Set(coreState.pendingLightSourceCapture.polygonIndices);
-  }, [source, coreState.pendingLightSourceCapture, mediaKey]);
-
-  const highlightedPolygonIndices = useMemo(() => {
-    if (source.kind !== "static") return undefined;
-    if (pendingCaptureIndices) return pendingCaptureIndices;
-    if (activeLightSourceKey === undefined) return undefined;
-    const indices = new Set<number>();
-    source.maskData.polygons.forEach((p, i) => {
-      if (p.captured) indices.add(i);
-    });
-    return indices;
-  }, [source, pendingCaptureIndices, activeLightSourceKey]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -359,227 +378,50 @@ export function ProjectMaskItem({
     });
   }, []);
 
-  // The static mesh: built once from the already-complete result.
-  useEffect(() => {
-    if (source.kind !== "static") return;
-    const maskData = source.maskData;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const state = initGLState(canvas);
-    if (!state) return;
-    glStateRef.current = state;
-    const { gl } = state;
-
-    const colorCanvas = document.createElement("canvas");
-    colorCanvas.width = 1;
-    colorCanvas.height = 1;
-    const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
-    const mesh = colorCtx
-      ? buildStaticMaskMesh(maskData, colorCtx)
-      : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0 };
-    vertexCountRef.current = mesh.vertexCount;
-    baseColorsRef.current = mesh.colors;
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.positions), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.colors), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.barycentricBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.barycentrics), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.centroids), gl.STATIC_DRAW);
-
-    if (maskData.curves.length > 0 && colorCtx) {
-      const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
-      if (glowSource) glowColorRef.current = colorToRGB01(colorCtx, glowSource);
-      const maskCanvas = document.createElement("canvas");
-      maskCanvas.width = maskData.width;
-      maskCanvas.height = maskData.height;
-      maskTextureRef.current = uploadCurveMask(gl, maskCanvas, maskData.curves, undefined);
-    }
-
-    if (sourceImgSrc) {
-      loadImageTexture(
-        gl,
-        sourceImgSrc,
-        (texture) => {
-          textureRef.current = texture;
-          render();
-        },
-        (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
-      );
-    }
-
-    lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-    render();
-
-    return () => {
-      gl.deleteProgram(state.program);
-      gl.deleteBuffer(state.positionBuffer);
-      gl.deleteBuffer(state.colorBuffer);
-      gl.deleteBuffer(state.barycentricBuffer);
-      gl.deleteBuffer(state.uvBuffer);
-      gl.deleteBuffer(state.centroidBuffer);
-      if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
-      if (textureRef.current) gl.deleteTexture(textureRef.current);
-      glStateRef.current = undefined;
-      maskTextureRef.current = undefined;
-      textureRef.current = undefined;
-    };
-    // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
-    // flow that updates an *existing* mask's polygons this session (confirmLightSourceCapture,
-    // maskbar's clear-capture, the capture context-menu's delete, and this file's own
-    // capture-relocate drag) only ever flips `captured` booleans via updateMaskCapture -- shape,
-    // fill, stroke, and curves are untouched, so nothing this effect builds (positions, base
-    // colors, the source-image texture) is actually stale. Depending on `source` directly used to
-    // force this whole effect (full GL teardown, plus an async source-image texture
-    // discard-and-reload) to re-run on every capture save even though only the separate, much
-    // cheaper highlight-recolor effect below needed to react -- the discarded texture took a beat
-    // to reload, which is what showed up as a visible color flicker right after dropping a
-    // relocated capture. mask_media_id is stable across all of those flows and only ever changes
-    // when this is genuinely a different mesh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source.kind === "static" ? source.maskData.mask_media_id : source, sourceImgSrc, render]);
-
-  // Recolors the mesh's covered triangles when its wired light source is the active element (see
-  // highlightedPolygonIndices above), by re-uploading a blended copy of colorBuffer -- reuses
-  // the existing shader/render path entirely rather than adding a new attribute/uniform for
-  // this. Vertex layout mirrors buildStaticMaskMesh exactly: an optional 6-vertex backing quad
-  // (only when the mask has curves), then 3 vertices per polygon in maskData.polygons order.
-  useEffect(() => {
-    if (source.kind !== "static") return;
+  // Marks the mesh's covered triangles to reflect pendingCaptureRef/activeHighlightRef (see
+  // their own comment) by re-uploading the shader's a_highlight buffer -- a 1.0/0.0 flag per
+  // vertex that the fragment shader (mask-gl.ts) uses to draw a sky-blue stroke along those
+  // triangles' edges, leaving colorBuffer -- and so the mesh's own fill -- untouched. Vertex
+  // layout mirrors buildStaticMaskMesh exactly: an optional 6-vertex backing quad (only when the
+  // mask has curves), then 3 vertices per polygon in maskData.polygons order. Stable (empty deps,
+  // reads everything through refs, including source via latestRef below) -- called both from this
+  // file's own local handlers and from the mount-created MaskImperativeHandle's methods, which
+  // may run long after the render that created them.
+  const recolorHighlight = useCallback(() => {
     const state = glStateRef.current;
     if (!state) return;
-    const baseColors = baseColorsRef.current;
-    if (baseColors.length === 0) return;
+    const vertexCount = vertexCountRef.current;
+    if (vertexCount === 0) return;
+    const latestSource = latestRef.current.source;
+    if (latestSource.kind !== "static") return;
     const { gl } = state;
 
-    if (!highlightedPolygonIndices || highlightedPolygonIndices.size === 0) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseColors), gl.STATIC_DRAW);
-      render();
-      return;
+    const indices = pendingCaptureRef.current ?? (activeHighlightRef.current ? capturedIndicesRef.current : undefined);
+    const highlights = new Float32Array(vertexCount);
+
+    if (indices && indices.size > 0) {
+      const quadVertexCount = latestSource.maskData.curves.length > 0 ? 6 : 0;
+      indices.forEach((polygonIndex) => {
+        const startVertex = quadVertexCount + polygonIndex * 3;
+        for (let v = 0; v < 3; v++) {
+          const vertex = startVertex + v;
+          if (vertex >= vertexCount) continue;
+          highlights[vertex] = 1;
+        }
+      });
     }
 
-    const HIGHLIGHT_COLOR: [number, number, number] = [66 / 255, 133 / 255, 244 / 255];
-    const HIGHLIGHT_MIX = 0.75;
-    const quadVertexCount = source.maskData.curves.length > 0 ? 6 : 0;
-    const highlighted = [...baseColors];
-    highlightedPolygonIndices.forEach((polygonIndex) => {
-      const startVertex = quadVertexCount + polygonIndex * 3;
-      for (let v = 0; v < 3; v++) {
-        const base = (startVertex + v) * 3;
-        if (base + 2 >= highlighted.length) continue;
-        highlighted[base] = highlighted[base] * (1 - HIGHLIGHT_MIX) + HIGHLIGHT_COLOR[0] * HIGHLIGHT_MIX;
-        highlighted[base + 1] = highlighted[base + 1] * (1 - HIGHLIGHT_MIX) + HIGHLIGHT_COLOR[1] * HIGHLIGHT_MIX;
-        highlighted[base + 2] = highlighted[base + 2] * (1 - HIGHLIGHT_MIX) + HIGHLIGHT_COLOR[2] * HIGHLIGHT_MIX;
-      }
-    });
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(highlighted), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, highlights, gl.STATIC_DRAW);
     render();
-  }, [source, highlightedPolygonIndices, render]);
-
-  // The live mesh: polled every animation frame off mask.meshRefs' dirty-flagged refs, since
-  // triangles arrive over the websocket outside React's render cycle and nothing about them needs
-  // to trigger a React re-render.
-  useEffect(() => {
-    if (source.kind !== "live") return;
-    const { mask, sourceImg } = source;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const state = initGLState(canvas);
-    if (!state) return;
-    glStateRef.current = state;
-    const { gl } = state;
-
-    let maskCanvas: HTMLCanvasElement | undefined;
-
-    loadImageTexture(
-      gl,
-      sourceImg.src,
-      (texture) => {
-        textureRef.current = texture;
-      },
-      (error) => console.log("failed to load/upload mask preview source image", { src: sourceImg.src, error }),
-    );
-
-    const loop = () => {
-      const {
-        positionsRef,
-        colorsRef,
-        barycentricsRef,
-        uvsRef,
-        centroidsRef,
-        dirtyRef,
-        curvesRef,
-        glowColorRef: liveGlowColorRef,
-      } = mask.meshRefs;
-
-      if (dirtyRef.current) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionsRef.current), gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colorsRef.current), gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.barycentricBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(barycentricsRef.current), gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvsRef.current), gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(centroidsRef.current), gl.DYNAMIC_DRAW);
-        vertexCountRef.current = positionsRef.current.length / 2;
-        dirtyRef.current = false;
-      }
-
-      // The curve mask only needs rebuilding when a new curve has streamed in, not every frame.
-      if (curvesRef.current.length !== lastCurveCountRef.current) {
-        lastCurveCountRef.current = curvesRef.current.length;
-        if (!maskCanvas) {
-          maskCanvas = document.createElement("canvas");
-          maskCanvas.width = sourceImg.width;
-          maskCanvas.height = sourceImg.height;
-        }
-        maskTextureRef.current = uploadCurveMask(gl, maskCanvas, curvesRef.current, maskTextureRef.current);
-      }
-      glowColorRef.current = liveGlowColorRef.current;
-      textureMixRef.current = mask.textureMixRef.current;
-      lightSourceSizeRef.current = mask.lightSourceSizeRef.current;
-      lightSourceIntensityRef.current = mask.lightSourceIntensityRef.current;
-      lightSourceFalloffRef.current = mask.lightSourceFalloffRef.current;
-      lightSourceDarknessRef.current = mask.lightSourceDarknessRef.current;
-
-      render();
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-
-    return () => {
-      if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current);
-      gl.deleteProgram(state.program);
-      gl.deleteBuffer(state.positionBuffer);
-      gl.deleteBuffer(state.colorBuffer);
-      gl.deleteBuffer(state.barycentricBuffer);
-      gl.deleteBuffer(state.uvBuffer);
-      gl.deleteBuffer(state.centroidBuffer);
-      if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
-      if (textureRef.current) gl.deleteTexture(textureRef.current);
-      glStateRef.current = undefined;
-      maskTextureRef.current = undefined;
-      textureRef.current = undefined;
-    };
-    // This is remounted (React `key`'d by the source image, see canvas.tsx) whenever the
-    // mask target changes, so the GL context is only ever created once per mount.
-  }, [source, render]);
+  }, [render]);
 
   // Resets the light source dials (size/intensity/falloff/darkness) to this mask's own starting
   // appearance (ProjectMask_V1_0.light_source_*, set via LightSourcebar/Maskbar and persisted the
-  // same way scale_x/scale_y are) -- shared by the sync effect below and by
-  // stopLightSourceAnimation, so leaving mouse control or finishing a wired-effect playback both
-  // land back on the same static baseline instead of stranding the dials at whatever a played
-  // frame last set them to.
+  // same way scale_x/scale_y are) -- shared by applyMaskAppearanceDefaults (below, via latestRef)
+  // and by stopLightSourceAnimation, so leaving mouse control or finishing a wired-effect
+  // playback both land back on the same static baseline instead of stranding the dials at
+  // whatever a played frame last set them to.
   const applyDefaultLightSourceValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
@@ -588,26 +430,6 @@ export function ProjectMaskItem({
     lightSourceFalloffRef.current = maskMeta?.light_source_falloff ?? DEFAULT_LIGHT_SOURCE_VALUE.falloff;
     lightSourceDarknessRef.current = maskMeta?.light_source_darkness ?? DEFAULT_LIGHT_SOURCE_VALUE.darkness;
   }, [source, coreState.project.masks, mediaKey]);
-
-  // Keeps the sliders' live values in refs so render() (called on demand, not in a loop) can read
-  // them without needing to be re-created -- and re-renders immediately so moving a slider shows
-  // up without waiting for some other interaction. Only applies to placed (static) masks; a live
-  // preview's values are driven straight off mask.*Ref in its own frame loop above.
-  useEffect(() => {
-    if (source.kind !== "static") return;
-    textureMixRef.current = topology.get(mediaKey)?.textureMix ?? TEXTURE_MIX_DEFAULT;
-    applyDefaultLightSourceValue();
-    render();
-  }, [source, topology, mediaKey, render, applyDefaultLightSourceValue]);
-
-  // Clears a mouse-driven epicenter left over from before the "preview" toggle (Lightsourcebar)
-  // was switched off -- otherwise a mesh the mouse happens to be sitting on when it's toggled off
-  // stays lit until the next mousemove/mouseleave instead of going dark immediately.
-  useEffect(() => {
-    if (uiState.lightSourcePreview || wiredMoveRef.current) return;
-    lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-    render();
-  }, [uiState.lightSourcePreview, render]);
 
   // Cancels whatever playLightSourceAnimation() session is currently running (if any), resolving its
   // promise so callers awaiting it don't hang, and returns the epicenter to mouse control --
@@ -635,7 +457,7 @@ export function ProjectMaskItem({
   // have only one, the other, or both wired -- and share one timeline (taken from whichever is
   // present; move's own start/end/fps wins if both are wired, since position is the primary
   // consumer of "duration" here). Resolves immediately if neither is wired -- see
-  // MaskLightSourcePlayer.
+  // MaskImperativeHandle.
   //
   // An effectKey (passed by handlePlayTarget's single-effect preview, e.g. LightSourceUnitbar's
   // "preview" button) restricts this to just the one effect the button belongs to -- otherwise a
@@ -649,8 +471,8 @@ export function ProjectMaskItem({
   // is taken from the timing effect's declared start/end rather than frames.length, since that's
   // the authoritative duration; frames.length only bounds the array read (it should match
   // fps * (end - start), but isn't trusted to). Not called on its own -- triggered by
-  // handlePlayAll/handlePlayTarget via the registration effect below, same as every other
-  // effect's playback.
+  // handlePlayAll/handlePlayTarget via the mount ref-callback below, same as every other effect's
+  // playback.
   const playLightSourceAnimation = useCallback(
     (effectKey?: string): Promise<void> => {
       stopLightSourceAnimation();
@@ -671,6 +493,9 @@ export function ProjectMaskItem({
       if (!wiredMove && !wiredLightSource) return Promise.resolve();
 
       wiredMoveRef.current = true;
+      // Read once, right before playback starts, not memoized on `source` -- see
+      // computeLightSourceRestPosition's comment.
+      const restPosition = computeLightSourceRestPosition();
 
       return new Promise<void>((resolve) => {
         let moveFrames: LaurusFrame[] | undefined;
@@ -737,12 +562,12 @@ export function ProjectMaskItem({
             // point.x/y are a pixel-space delta from the mesh's own resting position -- the same
             // meaning they have applied as a CSS `translate` on the real element (see
             // toKeyframes). Reinterpreted here as a delta from the light source's own captured position
-            // in the mesh (lightSourceRestPosition) instead, converted into buffer-pixel space the same
+            // in the mesh (restPosition) instead, converted into buffer-pixel space the same
             // way mouse coordinates are below. Falls back to the mesh's geometric center only if
             // the light source's own position couldn't be recovered. No move wired -> epicenter just
             // stays at rest, so the dials alone can still be previewed.
-            const restX = lightSourceRestPosition?.x ?? canvas.width / 2;
-            const restY = lightSourceRestPosition?.y ?? canvas.height / 2;
+            const restX = restPosition?.x ?? canvas.width / 2;
+            const restY = restPosition?.y ?? canvas.height / 2;
             const pointX = movePoint?.x ?? 0;
             const pointY = movePoint?.y ?? 0;
             const bufferX = restX + pointX * scaleX;
@@ -772,7 +597,7 @@ export function ProjectMaskItem({
     [
       source,
       mediaKey,
-      lightSourceRestPosition,
+      computeLightSourceRestPosition,
       coreState.effects,
       coreState.apiOrigin,
       render,
@@ -780,27 +605,320 @@ export function ProjectMaskItem({
     ],
   );
 
-  // Registers this mask's play()/stop() into the shared map handlePlayAll/handlePlayTarget read
-  // from (workspace.client.tsx), keyed by mediaKey -- the same key those handlers already use for
-  // img/svg's imgElementsRef/svgElementsRef, and the mask's own stable project key (rather than a
-  // synthetic per-capture svg key) so a wired effect stays valid across re-captures. Registered
-  // unconditionally from mount (not gated on having an active capture) since an effect can stay
-  // wired to a mask's key even after its capture is cleared -- Play All still needs to find it.
-  useEffect(() => {
-    if (source.kind !== "static" || !maskLightSourcePlayersRef) return;
-    if (!maskLightSourcePlayersRef.current) maskLightSourcePlayersRef.current = new Map();
-    const players = maskLightSourcePlayersRef.current;
-    const player: MaskLightSourcePlayer = { play: playLightSourceAnimation, stop: stopLightSourceAnimation };
-    const forThisKey = players.get(mediaKey) ?? new Set<MaskLightSourcePlayer>();
-    forThisKey.add(player);
-    players.set(mediaKey, forThisKey);
+  // "Always latest" indirection: the mount ref-callback below (and the MaskImperativeHandle it
+  // builds) is only created once per mount/mask identity -- not every render -- but a few of its
+  // methods need this render's `source`/`coreState`/play-stop rather than whatever was current
+  // when it was built. Reassigned every render (plain ref mutation, not a side effect on any
+  // external system, so this is safe to do directly in the render body); read only from inside
+  // callbacks invoked later, never during render itself.
+  const latestRef = useRef({
+    source,
+    coreState,
+    applyDefaultLightSourceValue,
+    playLightSourceAnimation,
+    stopLightSourceAnimation,
+  });
+  latestRef.current = {
+    source,
+    coreState,
+    applyDefaultLightSourceValue,
+    playLightSourceAnimation,
+    stopLightSourceAnimation,
+  };
 
-    return () => {
-      forThisKey.delete(player);
-      if (forThisKey.size === 0) players.delete(mediaKey);
-      stopLightSourceAnimation();
-    };
-  }, [source, mediaKey, maskLightSourcePlayersRef, playLightSourceAnimation, stopLightSourceAnimation]);
+  // Builds this mesh's GL state once per mount (or when mask_media_id genuinely changes -- see
+  // the dependency comment below) via React 19's ref-callback cleanup, and registers a
+  // MaskImperativeHandle for the lifetime of that same mount into maskHandlesRef, if given one.
+  // Replaces what used to be four separate useEffects (geometry setup, source-image texture load,
+  // the live-mesh rAF loop, and play/stop registration) -- see this file's own top-of-file
+  // comment for why none of this reacts to state via effects anymore.
+  const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
+  const setupCanvas = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      canvasRef.current = canvas;
+      if (!canvas) return;
+
+      if (source.kind === "static") {
+        const maskData = source.maskData;
+        const state = initGLState(canvas);
+        if (!state) return;
+        glStateRef.current = state;
+        const { gl } = state;
+
+        const colorCanvas = document.createElement("canvas");
+        colorCanvas.width = 1;
+        colorCanvas.height = 1;
+        const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
+        const mesh = colorCtx
+          ? buildStaticMaskMesh(maskData, colorCtx)
+          : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0 };
+        vertexCountRef.current = mesh.vertexCount;
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.positions), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.colors), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.barycentricBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.barycentrics), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.centroids), gl.STATIC_DRAW);
+        // Zeroed here; recolorHighlight (called below, once the capture/active state is seeded)
+        // uploads the real pattern.
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount), gl.STATIC_DRAW);
+
+        if (maskData.curves.length > 0 && colorCtx) {
+          const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
+          if (glowSource) glowColorRef.current = colorToRGB01(colorCtx, glowSource);
+          const maskCanvas = document.createElement("canvas");
+          maskCanvas.width = maskData.width;
+          maskCanvas.height = maskData.height;
+          maskTextureRef.current = uploadCurveMask(gl, maskCanvas, maskData.curves, undefined);
+        }
+
+        // Source image's own project key, if it's still on the canvas -- imgs are keyed by
+        // project element key here, not by img_media_id, so this has to search by value. Only
+        // consulted here, at mount, for the initial texture load: a source image deleted or
+        // swapped out later is handled by notifySourceImageRemoved instead (see
+        // MaskImperativeHandle), not by watching this reactively.
+        let sourceImgSrc: string | undefined;
+        for (const [key, img] of coreState.project.imgs) {
+          if (img.img_media_id === maskData.source_img_media_id) {
+            sourceImgSrc = coreState.canvasImgs.get(key)?.src;
+            break;
+          }
+        }
+        if (sourceImgSrc) {
+          loadImageTexture(
+            gl,
+            sourceImgSrc,
+            (texture) => {
+              textureRef.current = texture;
+              render();
+            },
+            (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
+          );
+        }
+
+        lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+        pendingCaptureRef.current =
+          coreState.pendingLightSourceCapture?.maskKey === mediaKey
+            ? new Set(coreState.pendingLightSourceCapture.polygonIndices)
+            : undefined;
+        activeHighlightRef.current = uiState.activeElement?.type === "mask" && uiState.activeElement.key === mediaKey;
+        capturedIndicesRef.current = new Set(
+          maskData.polygons.reduce<number[]>((acc, p, i) => {
+            if (p.captured) acc.push(i);
+            return acc;
+          }, []),
+        );
+
+        const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
+          const latest = latestRef.current;
+          if (latest.source.kind !== "static") return;
+          textureMixRef.current =
+            override?.textureMix ?? latest.coreState.topology.get(mediaKey)?.textureMix ?? TEXTURE_MIX_DEFAULT;
+          if (override?.lightSource) {
+            lightSourceSizeRef.current = override.lightSource.size;
+            lightSourceIntensityRef.current = override.lightSource.intensity;
+            lightSourceFalloffRef.current = override.lightSource.falloff;
+            lightSourceDarknessRef.current = override.lightSource.darkness;
+          } else {
+            latest.applyDefaultLightSourceValue();
+          }
+          render();
+        };
+        applyMaskAppearanceDefaults();
+        render();
+        recolorHighlight();
+
+        const handle: MaskImperativeHandle = {
+          play: (effectKey) => latestRef.current.playLightSourceAnimation(effectKey),
+          stop: () => latestRef.current.stopLightSourceAnimation(),
+          abortCaptureDragForToolChange: (newToolType) => {
+            if (newToolType === "move") return;
+            if (captureDragRef.current) abortCaptureDrag();
+          },
+          setActiveHighlighted: (active) => {
+            activeHighlightRef.current = active;
+            recolorHighlight();
+          },
+          setPendingCapture: (indices) => {
+            pendingCaptureRef.current = indices;
+            recolorHighlight();
+          },
+          clearPendingCapture: () => {
+            pendingCaptureRef.current = undefined;
+            recolorHighlight();
+          },
+          syncCapturedIndices: (updated) => {
+            const latestSource = latestRef.current.source;
+            if (latestSource.kind !== "static") return;
+            if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
+            capturedIndicesRef.current = new Set(
+              updated.polygons.reduce<number[]>((acc, p, i) => {
+                if (p.captured) acc.push(i);
+                return acc;
+              }, []),
+            );
+            recolorHighlight();
+          },
+          notifySourceImageRemoved: (removedMediaId) => {
+            const latestSource = latestRef.current.source;
+            if (latestSource.kind !== "static") return;
+            if (latestSource.maskData.source_img_media_id !== removedMediaId) return;
+            if (textureRef.current) {
+              gl.deleteTexture(textureRef.current);
+              textureRef.current = undefined;
+            }
+            render();
+          },
+          applyMaskAppearanceDefaults,
+          onLightSourcePreviewToggled: (enabled) => {
+            if (enabled || wiredMoveRef.current) return;
+            lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+            render();
+          },
+        };
+
+        if (maskHandlesRef) {
+          if (!maskHandlesRef.current) maskHandlesRef.current = new Map();
+          const handles = maskHandlesRef.current;
+          const forThisKey = handles.get(mediaKey) ?? new Set<MaskImperativeHandle>();
+          forThisKey.add(handle);
+          handles.set(mediaKey, forThisKey);
+        }
+
+        return () => {
+          gl.deleteProgram(state.program);
+          gl.deleteBuffer(state.positionBuffer);
+          gl.deleteBuffer(state.colorBuffer);
+          gl.deleteBuffer(state.barycentricBuffer);
+          gl.deleteBuffer(state.uvBuffer);
+          gl.deleteBuffer(state.centroidBuffer);
+          gl.deleteBuffer(state.highlightBuffer);
+          if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
+          if (textureRef.current) gl.deleteTexture(textureRef.current);
+          glStateRef.current = undefined;
+          maskTextureRef.current = undefined;
+          textureRef.current = undefined;
+          const handles = maskHandlesRef?.current;
+          if (handles) {
+            const forThisKey = handles.get(mediaKey);
+            forThisKey?.delete(handle);
+            if (forThisKey && forThisKey.size === 0) handles.delete(mediaKey);
+          }
+          latestRef.current.stopLightSourceAnimation();
+        };
+      }
+
+      // The live mesh: polled every animation frame off mask.meshRefs' dirty-flagged refs, since
+      // triangles arrive over the websocket outside React's render cycle and nothing about them
+      // needs to trigger a React re-render. No MaskImperativeHandle is registered for a live
+      // preview -- it has no persisted mediaKey, drag, or highlight state of its own.
+      const { mask, sourceImg } = source;
+      const state = initGLState(canvas);
+      if (!state) return;
+      glStateRef.current = state;
+      const { gl } = state;
+
+      let maskCanvas: HTMLCanvasElement | undefined;
+
+      loadImageTexture(
+        gl,
+        sourceImg.src,
+        (texture) => {
+          textureRef.current = texture;
+        },
+        (error) => console.log("failed to load/upload mask preview source image", { src: sourceImg.src, error }),
+      );
+
+      const loop = () => {
+        const {
+          positionsRef,
+          colorsRef,
+          barycentricsRef,
+          uvsRef,
+          centroidsRef,
+          dirtyRef,
+          curvesRef,
+          glowColorRef: liveGlowColorRef,
+        } = mask.meshRefs;
+
+        if (dirtyRef.current) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positionsRef.current), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colorsRef.current), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.barycentricBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(barycentricsRef.current), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvsRef.current), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(centroidsRef.current), gl.DYNAMIC_DRAW);
+          vertexCountRef.current = positionsRef.current.length / 2;
+          // A live preview has no capture/highlight of its own -- always zero, just kept sized to
+          // match vertexCount so the shader's a_highlight reads stay in bounds.
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current), gl.DYNAMIC_DRAW);
+          dirtyRef.current = false;
+        }
+
+        // The curve mask only needs rebuilding when a new curve has streamed in, not every frame.
+        if (curvesRef.current.length !== lastCurveCountRef.current) {
+          lastCurveCountRef.current = curvesRef.current.length;
+          if (!maskCanvas) {
+            maskCanvas = document.createElement("canvas");
+            maskCanvas.width = sourceImg.width;
+            maskCanvas.height = sourceImg.height;
+          }
+          maskTextureRef.current = uploadCurveMask(gl, maskCanvas, curvesRef.current, maskTextureRef.current);
+        }
+        glowColorRef.current = liveGlowColorRef.current;
+        textureMixRef.current = mask.textureMixRef.current;
+        lightSourceSizeRef.current = mask.lightSourceSizeRef.current;
+        lightSourceIntensityRef.current = mask.lightSourceIntensityRef.current;
+        lightSourceFalloffRef.current = mask.lightSourceFalloffRef.current;
+        lightSourceDarknessRef.current = mask.lightSourceDarknessRef.current;
+
+        render();
+        rafRef.current = requestAnimationFrame(loop);
+      };
+      rafRef.current = requestAnimationFrame(loop);
+
+      return () => {
+        if (rafRef.current !== undefined) cancelAnimationFrame(rafRef.current);
+        gl.deleteProgram(state.program);
+        gl.deleteBuffer(state.positionBuffer);
+        gl.deleteBuffer(state.colorBuffer);
+        gl.deleteBuffer(state.barycentricBuffer);
+        gl.deleteBuffer(state.uvBuffer);
+        gl.deleteBuffer(state.centroidBuffer);
+        gl.deleteBuffer(state.highlightBuffer);
+        if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
+        if (textureRef.current) gl.deleteTexture(textureRef.current);
+        glStateRef.current = undefined;
+        maskTextureRef.current = undefined;
+        textureRef.current = undefined;
+      };
+      // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
+      // flow that updates an *existing* mask's polygons this session (captureMeshSection,
+      // maskbar's clear-capture, the capture context-menu's delete, and this file's own
+      // capture-relocate drag) only ever flips `captured` booleans via updateMaskCapture -- shape,
+      // fill, stroke, and curves are untouched, so nothing this callback builds (positions, base
+      // colors, the source-image texture) is actually stale; those flows reach any mask-specific
+      // GL state that *does* need to react (the highlight) through the registered handle's own
+      // methods instead, called via notifyMask* right at the point something actually changed.
+      // Depending on `source` directly would force a full GL teardown/rebuild (plus an async
+      // source-image texture discard-and-reload) on every capture save even though only the
+      // highlight needed to react -- the discarded texture took a beat to reload, which is what
+      // showed up as a visible color flicker right after dropping a relocated capture.
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [meshIdentityKey, render, recolorHighlight, abortCaptureDrag, maskHandlesRef, mediaKey],
+  );
 
   // Only meaningful for placed (static) masks -- a live preview has no persisted mediaKey to
   // key uiState.projectContextMenus by, and never gets a transform/framesCacheRef/onClick from
@@ -831,7 +949,7 @@ export function ProjectMaskItem({
           }}
         >
           <canvas
-            ref={canvasRef}
+            ref={setupCanvas}
             width={canvasSize.width}
             height={canvasSize.height}
             // Lets canvas.tsx's light-source-capture tool find this exact DOM canvas (via
@@ -856,9 +974,10 @@ export function ProjectMaskItem({
                     next.add(mediaKey);
                     // Selecting a mesh that already has a capture activates it immediately, the
                     // same way alt-clicking a wired svg used to -- no extra step to see/wire what
-                    // it covers (highlightedPolygonIndices above).
+                    // it covers (recolorHighlight above).
                     if (source.maskData.polygons.some((p) => p.captured)) {
                       uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
+                      notifyMaskActiveElementChanged(mediaKey);
                     }
                   }
                   return next;
@@ -946,6 +1065,7 @@ export function ProjectMaskItem({
                 type: CoreActionType.SetPendingLightSourceCapture,
                 value: { maskKey: mediaKey, polygonIndices: [...originalIndices] },
               });
+              notifyMaskPendingCaptureSet(mediaKey, originalIndices);
             }}
             onPointerMove={(e) => {
               const drag = captureDragRef.current;
@@ -976,6 +1096,7 @@ export function ProjectMaskItem({
                 // leaving it stale, since nothing about the actual captured set changed.
                 lastKnownCaptureRef.current = { indices: drag.originalIndices, circle: drag.originalCircle };
                 dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+                notifyMaskPendingCaptureCleared(mediaKey);
                 return;
               }
               // Left showing the dragged-to preview until the request resolves -- clearing it
@@ -985,12 +1106,19 @@ export function ProjectMaskItem({
                 type: CoreActionType.SetPendingLightSourceCapture,
                 value: { maskKey: mediaKey, polygonIndices: [...finalIndices] },
               });
+              notifyMaskPendingCaptureSet(mediaKey, finalIndices);
               updateMaskCapture(coreState.apiOrigin, coreState.accessToken, source.maskData.mask_media_id, [
                 ...finalIndices,
               ]).then((updated) => {
                 if (updated) {
                   dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
+                  // Before the active-element/pending-capture notifies below, which recolor off
+                  // this mask's own captured-indices ref -- `source` is still last render's stale
+                  // polygons at this exact point (dispatch() doesn't apply synchronously), so
+                  // recoloring off it here would briefly repaint the *previous* capture position.
+                  notifyMaskCaptureUpdated(mediaKey, updated);
                   uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
+                  notifyMaskActiveElementChanged(mediaKey);
                   // Cache the circle actually used, translated by this drag's own delta -- not
                   // re-derived from the resulting triangles (capturedRegionCircle), which is what
                   // let the radius creep up over successive relocations. See lastKnownCaptureRef.
@@ -1008,6 +1136,7 @@ export function ProjectMaskItem({
                   lastKnownCaptureRef.current = { indices: drag.originalIndices, circle: drag.originalCircle };
                 }
                 dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+                notifyMaskPendingCaptureCleared(mediaKey);
               });
             }}
             onPointerCancel={(e) => {
@@ -1022,8 +1151,8 @@ export function ProjectMaskItem({
               // depth on top of onPointerDown's preventDefault (which should already suppress the
               // compatibility mousemove for this pointer).
               if (captureDragRef.current) return;
-              // A wired move effect (see the effect above) owns the epicenter instead -- the
-              // mouse no longer drives it for this mesh. Same when the "preview" toggle
+              // A wired move effect (see the mount ref-callback above) owns the epicenter instead
+              // -- the mouse no longer drives it for this mesh. Same when the "preview" toggle
               // (Lightsourcebar) is off -- hovering shouldn't run the animation at all.
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
               const canvas = e.currentTarget;

@@ -10,7 +10,7 @@ export interface SvgBrowser {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
-  const { coreState } = useContext(CoreContext);
+  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
@@ -83,6 +83,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
             type: UIActionType.SetTool,
             value: newTool,
           });
+          notifyMaskToolChanged(newTool.type);
         }
       }
     },
@@ -94,6 +95,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       uiState.tool,
       setSelectedImgKeys,
       setSelectedSvgKeys,
+      notifyMaskToolChanged,
     ],
   );
 

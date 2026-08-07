@@ -130,7 +130,7 @@ function isBadFrame(
 
 export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, captureMeshSection } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
@@ -470,13 +470,10 @@ export default function Canvas() {
     ],
   );
 
-  // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle as
-  // a *pending* candidate -- no upload yet (see CoreActionType.SetPendingLightSourceCapture,
-  // core-state.ts). The tool stays in mask mode with capturingMeshSection on so the user can redraw as many times
-  // as they like (each drag just overwrites the pending candidate, previewed as a mesh highlight
-  // in project-mask-item.tsx) at zero server cost, and only commits to a real svg once they
-  // explicitly confirm (Maskbar's "confirm light source" button -> workspace.client.tsx's
-  // confirmLightSourceCapture).
+  // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle and
+  // immediately persists them -- drawing the circle *is* the confirmation, no separate confirm
+  // step (see workspace.client.tsx's captureMeshSection). Shown optimistically as a mesh highlight
+  // in project-mask-item.tsx while the request is in flight.
   //
   // The circle arrives in main-canvas space (same space `anchor`/dropArea already live in, and
   // the same space this drawing canvas's own getBoundingClientRect() lives in). Rather than
@@ -519,12 +516,9 @@ export default function Canvas() {
       const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
       if (polygonIndices.size === 0) return;
 
-      dispatch({
-        type: CoreActionType.SetPendingLightSourceCapture,
-        value: { maskKey, polygonIndices: Array.from(polygonIndices) },
-      });
+      captureMeshSection(maskKey, Array.from(polygonIndices));
     },
-    [selectedMaskKeys, coreState.canvasMasks, dispatch],
+    [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
   );
 
   const handleDuplicateDrop = useCallback(

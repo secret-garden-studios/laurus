@@ -41,12 +41,11 @@ export const DEFAULT_LIGHT_SOURCE_VALUE: LightSourceValue = {
   darkness: LIGHT_SOURCE_DARKNESS_DEFAULT,
 };
 
-// A light-source-capture drag that's been drawn but not yet uploaded -- lets the user redraw as
-// many times as they like (each new drag just overwrites this) before committing to one, so
-// testing out different shapes doesn't create a wasted svg/S3 asset per attempt (see
-// canvas.tsx's handleLightSourceCapture and workspace.client.tsx's confirmLightSourceCapture/
-// cancelLightSourceCapture). `polygonIndices` are indices into the target mask's own
-// `LaurusMaskResult.polygons` array, not yet-uploaded triangle data.
+// A light-source-capture drag that's mid-flight to the server -- drawing/redrawing a capture
+// persists it immediately (see canvas.tsx's handleLightSourceCapture and workspace.client.tsx's
+// captureMeshSection), and this holds the optimistic preview while that request is outstanding.
+// `polygonIndices` are indices into the target mask's own `LaurusMaskResult.polygons` array, not
+// yet-uploaded triangle data.
 export interface PendingLightSourceCapture {
   maskKey: string;
   polygonIndices: number[];

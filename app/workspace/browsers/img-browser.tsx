@@ -11,7 +11,7 @@ export interface ImgBrowser {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
-  const { coreState } = useContext(CoreContext);
+  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
@@ -84,6 +84,7 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
             type: UIActionType.SetTool,
             value: newTool,
           });
+          notifyMaskToolChanged(newTool.type);
         }
       }
     },
@@ -95,6 +96,7 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       uiState.tool,
       setSelectedImgKeys,
       setSelectedSvgKeys,
+      notifyMaskToolChanged,
     ],
   );
 

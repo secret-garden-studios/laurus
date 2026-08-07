@@ -14,7 +14,7 @@ interface UnitDisplay {
   onNewLocalIndex: (v: number) => void;
 }
 export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
-  const { coreState } = useContext(CoreContext);
+  const { coreState, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
@@ -37,6 +37,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -54,6 +55,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -71,14 +73,16 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(newActiveElement.key);
           // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
           // anchor a context menu to beyond the mask's own -- becoming the active element
-          // highlights the mesh triangles it covers instead (highlightedPolygonIndices).
+          // highlights the mesh triangles it covers instead (see project-mask-item.tsx's
+          // recolorHighlight, driven by notifyMaskActiveElementChanged above).
           break;
         }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch],
+    [uiState.carouselEntries, effectKey, uiDispatch, notifyMaskActiveElementChanged],
   );
 
   const hideContextMenu = useCallback(

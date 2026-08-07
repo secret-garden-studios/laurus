@@ -12,7 +12,7 @@ import { LaurusFrame, LaurusMaskResult } from "../workspace.server";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
-import { MaskLightSourcePlayer, ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
+import { MaskImperativeHandle, ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
 
 interface DraggableProjectMask {
   mediaKey: string;
@@ -20,7 +20,7 @@ interface DraggableProjectMask {
   maskData: LaurusMaskResult;
   zIndex: number;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
-  maskLightSourcePlayersRef?: RefObject<Map<string, Set<MaskLightSourcePlayer>> | null>;
+  maskHandlesRef?: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
   forceAbsolutePosition?: boolean;
 }
 /**
@@ -34,10 +34,10 @@ export function DraggableProjectMask({
   maskData,
   zIndex,
   framesCacheRef,
-  maskLightSourcePlayersRef,
+  maskHandlesRef,
   forceAbsolutePosition,
 }: DraggableProjectMask) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
 
   const dndPosition = useMemo(() => {
@@ -222,6 +222,7 @@ export function DraggableProjectMask({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          notifyMaskActiveElementChanged(mediaKey);
           break;
         }
       }
@@ -235,6 +236,7 @@ export function DraggableProjectMask({
       coreState.project.canvas_width,
       coreState.project.canvas_height,
       uiDispatch,
+      notifyMaskActiveElementChanged,
     ],
   );
 
@@ -257,7 +259,7 @@ export function DraggableProjectMask({
         mediaKey={mediaKey}
         frame={frame}
         source={source}
-        maskLightSourcePlayersRef={maskLightSourcePlayersRef}
+        maskHandlesRef={maskHandlesRef}
         transform={laurusTransform}
         framesCacheRef={framesCacheRef}
         onClick={onMaskClick}

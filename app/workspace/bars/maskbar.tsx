@@ -7,7 +7,7 @@ import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
-import { LaurusMaskResult, updateMaskCapture } from "../workspace.server";
+import { LaurusMaskResult } from "../workspace.server";
 import { v4 as newUUID } from "uuid";
 import { UIActionType } from "../states/ui-state";
 import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
@@ -17,12 +17,7 @@ export default function Maskbar() {
   // Aliased locally -- Maskbar itself has no notion of what a captured mesh subsection becomes
   // (a light source, or something else down the line); it just hands the drag off to whoever
   // does via these two callbacks.
-  const {
-    coreState,
-    dispatch,
-    confirmLightSourceCapture: confirmCapture,
-    cancelLightSourceCapture: cancelCapture,
-  } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
   const { topology } = coreState;
   const { selectedImgKeys, selectedMaskKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
@@ -286,44 +281,9 @@ export default function Maskbar() {
   // result to adjust should always win over whatever's still streaming in, and the two only
   // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  // Whether the selected mask currently has a captured region -- a flag directly on its own
-  // polygons (see updateMaskCapture), not a separate wired entity. Maskbar doesn't need to know
-  // what a capture actually represents.
-  const hasCaptureForSelectedMask = useMemo(() => {
-    if (selectedMaskKey === undefined) return false;
-    return coreState.canvasMasks.get(selectedMaskKey)?.polygons.some((p) => p.captured) ?? false;
-  }, [selectedMaskKey, coreState.canvasMasks]);
-  const handleClearCaptures = useCallback(async () => {
-    if (!hasCaptureForSelectedMask || selectedMaskKey === undefined) return;
-    const confirmed = confirm("are you sure you want to clear the capture on this mesh?");
-    if (!confirmed) return;
-    const maskData = coreState.canvasMasks.get(selectedMaskKey);
-    if (!maskData) return;
-    const updated = await updateMaskCapture(coreState.apiOrigin, coreState.accessToken, maskData.mask_media_id, []);
-    if (!updated) return;
-    dispatch({ type: CoreActionType.SetCanvasMask, key: selectedMaskKey, value: updated });
-    uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: selectedMaskKey });
-  }, [
-    hasCaptureForSelectedMask,
-    selectedMaskKey,
-    coreState.canvasMasks,
-    coreState.apiOrigin,
-    coreState.accessToken,
-    dispatch,
-    uiDispatch,
-  ]);
-  const pendingCaptureForSelectedMask =
-    selectedMaskKey !== undefined && coreState.pendingLightSourceCapture?.maskKey === selectedMaskKey;
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh);
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
-  // Mirrors what alt-clicking a mesh with an existing capture already does (project-mask-item.tsx)
-  // -- a manual way to (re)activate it without having to deselect and reselect the mesh.
-  const isActivateCaptureDisabled = !hasCaptureForSelectedMask;
-  const isActivateCaptureOn =
-    selectedMaskKey !== undefined &&
-    uiState.activeElement?.type === "mask" &&
-    uiState.activeElement.key === selectedMaskKey;
   const textureMixValue =
     selectedMaskKey !== undefined
       ? (topology.get(selectedMaskKey)?.textureMix ?? TEXTURE_MIX_DEFAULT)
@@ -332,11 +292,15 @@ export default function Maskbar() {
     (value: number) => {
       if (selectedMaskKey !== undefined) {
         dispatch({ type: CoreActionType.SetTopology, key: selectedMaskKey, value: { textureMix: value } });
+        // Passed directly rather than left for the mesh to re-read off topology: this fires
+        // synchronously, before React has re-rendered with the just-dispatched topology (see
+        // MaskAppearanceOverride's comment in project-mask-item.tsx).
+        notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
       } else {
         mask.setTextureMix(value);
       }
     },
-    [selectedMaskKey, dispatch, mask],
+    [selectedMaskKey, dispatch, mask, notifyMaskAppearanceChanged],
   );
 
   const textureTrackRef = useRef<HTMLDivElement | null>(null);
@@ -473,7 +437,8 @@ export default function Maskbar() {
     if (selectedMaskKey !== undefined) return;
     if (uiState.tool.type !== "mask" || !uiState.tool.capturingMeshSection) return;
     uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
-  }, [selectedMaskKey, uiState.tool, uiDispatch]);
+    notifyMaskToolChanged("mask");
+  }, [selectedMaskKey, uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
   return (
     <>
@@ -768,6 +733,7 @@ export default function Maskbar() {
                 type: UIActionType.SetTool,
                 value: { type: "mask", capturingMeshSection: !uiState.tool.capturingMeshSection },
               });
+              notifyMaskToolChanged("mask");
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
@@ -775,92 +741,6 @@ export default function Maskbar() {
             disabled={isCaptureDisabled}
           />
         </div>
-        <div
-          title={
-            isActivateCaptureDisabled
-              ? "select a mesh with an existing capture to activate it"
-              : "activate this mesh's capture -- same as alt-clicking it on canvas"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              textShadow: isActivateCaptureOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"activate capture"}
-          </span>
-          <Toggle
-            value={isActivateCaptureOn}
-            onClick={() => {
-              if (selectedMaskKey === undefined) return;
-              uiDispatch({
-                type: UIActionType.SetActiveElement,
-                value: isActivateCaptureOn ? undefined : { key: selectedMaskKey, type: "mask" },
-              });
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isActivateCaptureDisabled}
-          />
-        </div>
-        <div
-          title={
-            hasCaptureForSelectedMask
-              ? "clear the capture on this mesh"
-              : "select a mesh with an existing capture to clear it"
-          }
-          onClick={hasCaptureForSelectedMask ? handleClearCaptures : undefined}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            cursor: hasCaptureForSelectedMask ? "pointer" : "default",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ opacity: hasCaptureForSelectedMask ? 0.7 : 0.3 }}>{"clear capture"}</span>
-        </div>
-        {pendingCaptureForSelectedMask && (
-          <>
-            <div
-              title="drag another circle to redraw, or confirm to save this capture"
-              onClick={confirmCapture}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                height: "100%",
-                borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-                cursor: "pointer",
-                ...dynamicSizes.toggle.div,
-              }}
-            >
-              <span style={{ opacity: 0.7 }}>{"confirm capture"}</span>
-            </div>
-            <div
-              title="discard this capture without uploading anything"
-              onClick={cancelCapture}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                height: "100%",
-                borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-                cursor: "pointer",
-                ...dynamicSizes.toggle.div,
-              }}
-            >
-              <span style={{ opacity: 0.7 }}>{"cancel"}</span>
-            </div>
-          </>
-        )}
       </div>
     </>
   );

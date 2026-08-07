@@ -28,7 +28,7 @@ export interface MediaGroupBrowser {
   maxWidth: number;
 }
 export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
-  const { coreState, dispatch } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed, selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
@@ -268,7 +268,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+          const newTool = { ...uiState.tool, duplicate: false };
+          uiDispatch({ type: UIActionType.SetTool, value: newTool });
+          notifyMaskToolChanged(newTool.type);
         }
       }
     } finally {
@@ -288,6 +290,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     setSelectedSvgKeys,
     uiState.tool,
     uiDispatch,
+    notifyMaskToolChanged,
   ]);
 
   const onSelectAllInGroupClick = useCallback(() => {
