@@ -2,6 +2,8 @@ import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useE
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { checkCircle, SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
+import { ParameterSliderX } from "@/app/components/parameter-slider";
+import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
@@ -68,6 +70,17 @@ export default function Maskbar() {
               letterSpacing: 1,
             },
           },
+          paramSize: {
+            containerHeight: 38,
+            containerWidth: 190,
+            capWidth: 17,
+            capHeight: 17,
+            capBorderOffset: 0,
+            trackHeight: 1,
+            tickHeight: 0,
+            tickLeft: 2,
+            svgSize: { width: 24, height: 24 },
+          },
         };
       case "midhigh":
         return {
@@ -110,6 +123,17 @@ export default function Maskbar() {
               padding: 4,
               letterSpacing: 1,
             },
+          },
+          paramSize: {
+            capWidth: 13,
+            capHeight: 13,
+            capBorderOffset: 0,
+            containerWidth: 170,
+            containerHeight: 36,
+            trackHeight: 1,
+            tickHeight: 20,
+            tickLeft: 1,
+            svgSize: { width: 20, height: 20 },
           },
         };
       case "low":
@@ -154,6 +178,17 @@ export default function Maskbar() {
               padding: 4,
               letterSpacing: 1,
             },
+          },
+          paramSize: {
+            capWidth: 13,
+            capHeight: 13,
+            capBorderOffset: 0,
+            containerWidth: 170,
+            containerHeight: 36,
+            trackHeight: 1,
+            tickHeight: 20,
+            tickLeft: 1,
+            svgSize: { width: 20, height: 20 },
           },
         };
     }
@@ -303,6 +338,19 @@ export default function Maskbar() {
     },
     [selectedMaskKey, dispatch, mask],
   );
+
+  const textureTrackRef = useRef<HTMLDivElement | null>(null);
+  const [textureCursor, setTextureCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getTextureValue, getTrackCursor: getTextureCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+
+  useEffect(() => {
+    if (!textureTrackRef.current) return;
+    const newCursor = getTextureCursor(textureMixValue, textureTrackRef.current.clientWidth);
+    setTextureCursor({ x: newCursor, y: 0 });
+  }, [textureMixValue, getTextureCursor]);
 
   const maskTitle = isMaskBusy
     ? "masking…"
@@ -675,14 +723,19 @@ export default function Maskbar() {
           }}
         >
           <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7 }}>{"texture"}</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={textureMixValue}
+          <ParameterSliderX
+            resolution={{ ...uiState.resolution }}
+            hash={`${selectedMaskKey ?? "maskbar"}|texture`}
+            size={dynamicSizes.paramSize}
+            containerRef={textureTrackRef}
+            cursor={textureCursor}
+            onNewCursor={(newCursor) => {
+              setTextureCursor({ ...newCursor, y: 0 });
+              if (!textureTrackRef.current) return;
+              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
+              handleTextureMixChange(newValue);
+            }}
             disabled={isTextureDisabled}
-            onChange={(e) => handleTextureMixChange(parseFloat(e.target.value))}
           />
           <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
         </div>

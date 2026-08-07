@@ -1,10 +1,19 @@
-import { useCallback, useContext, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { SvgRepo, asterisk300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
+import { ParameterSliderX } from "@/app/components/parameter-slider";
+import { useTrackpadState } from "@/app/hooks/useTrackpadState";
+
+// Fixed baseline dial ranges (independent of any wired "light_source" effect's own math, which
+// has its own separate max constants -- see LIGHT_SOURCE_SIZE_MAX etc. in workspace.config.ts).
+const LIGHT_SOURCE_SIZE_MIN = 10;
+const LIGHT_SOURCE_SIZE_MAX = 300;
+const LIGHT_SOURCE_FALLOFF_MIN = 20;
+const LIGHT_SOURCE_FALLOFF_MAX = 1000;
 
 // Houses the four dials (size/intensity/spread/darkness) that used to live in Maskbar -- moved
 // out into their own tool/subtitlebar so they're reachable without the mask tool's
@@ -52,6 +61,17 @@ export default function LightSourcebar() {
             },
             translateX: 14,
           },
+          paramSize: {
+            containerHeight: 38,
+            containerWidth: 190,
+            capWidth: 17,
+            capHeight: 17,
+            capBorderOffset: 0,
+            trackHeight: 1,
+            tickHeight: 0,
+            tickLeft: 2,
+            svgSize: { width: 24, height: 24 },
+          },
         };
       case "midhigh":
         return {
@@ -77,6 +97,17 @@ export default function LightSourcebar() {
               height: 6,
             },
             translateX: 12,
+          },
+          paramSize: {
+            capWidth: 13,
+            capHeight: 13,
+            capBorderOffset: 0,
+            containerWidth: 170,
+            containerHeight: 36,
+            trackHeight: 1,
+            tickHeight: 20,
+            tickLeft: 1,
+            svgSize: { width: 20, height: 20 },
           },
         };
       case "low":
@@ -104,6 +135,17 @@ export default function LightSourcebar() {
               height: 6,
             },
             translateX: 10,
+          },
+          paramSize: {
+            capWidth: 13,
+            capHeight: 13,
+            capBorderOffset: 0,
+            containerWidth: 170,
+            containerHeight: 36,
+            trackHeight: 1,
+            tickHeight: 20,
+            tickLeft: 1,
+            svgSize: { width: 20, height: 20 },
           },
         };
     }
@@ -196,6 +238,57 @@ export default function LightSourcebar() {
     [selectedMaskMeta, saveLightSourceField, mask],
   );
 
+  const sizeTrackRef = useRef<HTMLDivElement | null>(null);
+  const [sizeCursor, setSizeCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getSizeValue, getTrackCursor: getSizeCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    LIGHT_SOURCE_SIZE_MAX - LIGHT_SOURCE_SIZE_MIN,
+  );
+  useEffect(() => {
+    if (!sizeTrackRef.current) return;
+    const newCursor = getSizeCursor(lightSourceSizeValue - LIGHT_SOURCE_SIZE_MIN, sizeTrackRef.current.clientWidth);
+    setSizeCursor({ x: newCursor, y: 0 });
+  }, [lightSourceSizeValue, getSizeCursor]);
+
+  const intensityTrackRef = useRef<HTMLDivElement | null>(null);
+  const [intensityCursor, setIntensityCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getIntensityValue, getTrackCursor: getIntensityCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  useEffect(() => {
+    if (!intensityTrackRef.current) return;
+    const newCursor = getIntensityCursor(lightSourceIntensityValue, intensityTrackRef.current.clientWidth);
+    setIntensityCursor({ x: newCursor, y: 0 });
+  }, [lightSourceIntensityValue, getIntensityCursor]);
+
+  const falloffTrackRef = useRef<HTMLDivElement | null>(null);
+  const [falloffCursor, setFalloffCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getFalloffValue, getTrackCursor: getFalloffCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    LIGHT_SOURCE_FALLOFF_MAX - LIGHT_SOURCE_FALLOFF_MIN,
+  );
+  useEffect(() => {
+    if (!falloffTrackRef.current) return;
+    const newCursor = getFalloffCursor(
+      lightSourceFalloffValue - LIGHT_SOURCE_FALLOFF_MIN,
+      falloffTrackRef.current.clientWidth,
+    );
+    setFalloffCursor({ x: newCursor, y: 0 });
+  }, [lightSourceFalloffValue, getFalloffCursor]);
+
+  const darknessTrackRef = useRef<HTMLDivElement | null>(null);
+  const [darknessCursor, setDarknessCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getDarknessValue, getTrackCursor: getDarknessCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  useEffect(() => {
+    if (!darknessTrackRef.current) return;
+    const newCursor = getDarknessCursor(lightSourceDarknessValue, darknessTrackRef.current.clientWidth);
+    setDarknessCursor({ x: newCursor, y: 0 });
+  }, [lightSourceDarknessValue, getDarknessCursor]);
+
   return (
     <div
       style={{
@@ -259,14 +352,19 @@ export default function LightSourcebar() {
         }}
       >
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"size"}</span>
-        <input
-          type="range"
-          min={10}
-          max={300}
-          step={1}
-          value={lightSourceSizeValue}
+        <ParameterSliderX
+          resolution={{ ...uiState.resolution }}
+          hash={`${selectedMaskKey ?? "lightsourcebar"}|size`}
+          size={dynamicSizes.paramSize}
+          containerRef={sizeTrackRef}
+          cursor={sizeCursor}
+          onNewCursor={(newCursor) => {
+            setSizeCursor({ ...newCursor, y: 0 });
+            if (!sizeTrackRef.current) return;
+            const newValue = getSizeValue(newCursor.x, sizeTrackRef.current.clientWidth, 0) + LIGHT_SOURCE_SIZE_MIN;
+            handleLightSourceSizeChange(newValue);
+          }}
           disabled={isLightSourceControlsDisabled}
-          onChange={(e) => handleLightSourceSizeChange(parseFloat(e.target.value))}
         />
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>
           {Math.round(lightSourceSizeValue)}
@@ -287,14 +385,19 @@ export default function LightSourcebar() {
         }}
       >
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"intensity"}</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={lightSourceIntensityValue}
+        <ParameterSliderX
+          resolution={{ ...uiState.resolution }}
+          hash={`${selectedMaskKey ?? "lightsourcebar"}|intensity`}
+          size={dynamicSizes.paramSize}
+          containerRef={intensityTrackRef}
+          cursor={intensityCursor}
+          onNewCursor={(newCursor) => {
+            setIntensityCursor({ ...newCursor, y: 0 });
+            if (!intensityTrackRef.current) return;
+            const newValue = getIntensityValue(newCursor.x, intensityTrackRef.current.clientWidth, 0);
+            handleLightSourceIntensityChange(newValue);
+          }}
           disabled={isLightSourceControlsDisabled}
-          onChange={(e) => handleLightSourceIntensityChange(parseFloat(e.target.value))}
         />
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>{`${Math.round(
           lightSourceIntensityValue * 100,
@@ -315,14 +418,20 @@ export default function LightSourcebar() {
         }}
       >
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"spread"}</span>
-        <input
-          type="range"
-          min={20}
-          max={1000}
-          step={5}
-          value={lightSourceFalloffValue}
+        <ParameterSliderX
+          resolution={{ ...uiState.resolution }}
+          hash={`${selectedMaskKey ?? "lightsourcebar"}|spread`}
+          size={dynamicSizes.paramSize}
+          containerRef={falloffTrackRef}
+          cursor={falloffCursor}
+          onNewCursor={(newCursor) => {
+            setFalloffCursor({ ...newCursor, y: 0 });
+            if (!falloffTrackRef.current) return;
+            const newValue =
+              getFalloffValue(newCursor.x, falloffTrackRef.current.clientWidth, 0) + LIGHT_SOURCE_FALLOFF_MIN;
+            handleLightSourceFalloffChange(newValue);
+          }}
           disabled={isLightSourceControlsDisabled}
-          onChange={(e) => handleLightSourceFalloffChange(parseFloat(e.target.value))}
         />
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>
           {Math.round(lightSourceFalloffValue)}
@@ -343,14 +452,19 @@ export default function LightSourcebar() {
         }}
       >
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"darkness"}</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={lightSourceDarknessValue}
+        <ParameterSliderX
+          resolution={{ ...uiState.resolution }}
+          hash={`${selectedMaskKey ?? "lightsourcebar"}|darkness`}
+          size={dynamicSizes.paramSize}
+          containerRef={darknessTrackRef}
+          cursor={darknessCursor}
+          onNewCursor={(newCursor) => {
+            setDarknessCursor({ ...newCursor, y: 0 });
+            if (!darknessTrackRef.current) return;
+            const newValue = getDarknessValue(newCursor.x, darknessTrackRef.current.clientWidth, 0);
+            handleLightSourceDarknessChange(newValue);
+          }}
           disabled={isLightSourceControlsDisabled}
-          onChange={(e) => handleLightSourceDarknessChange(parseFloat(e.target.value))}
         />
         <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>{`${Math.round(
           lightSourceDarknessValue * 100,
