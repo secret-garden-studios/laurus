@@ -28,10 +28,14 @@ export const useCarouselIndex = (
 
   const shouldSync = !mostRecentlyEnteredEffectUnitKey || mostRecentlyEnteredEffectUnitKey === effectKey;
 
-  // Sync local carousels on selection from the canvas area
+  // Sync local carousels on selection from the canvas area. Gated on activeKey !== undefined --
+  // handlePlayAll/handlePlayTarget (workspace.client.tsx) clear activeElement before every
+  // playback to drop the canvas highlight, which would otherwise look like "selection moved to
+  // nothing" here and snap this carousel back to carouselIndexInit (whichever entry happened to
+  // match first at mount), discarding whatever capture/element the user had actually navigated to.
   if (activeKey !== prevKey) {
     setPrevKey(activeKey);
-    if (locallyActivatedKey === undefined && shouldSync) {
+    if (activeKey !== undefined && locallyActivatedKey === undefined && shouldSync) {
       setLocalIndex(baseIndex);
     }
   }
