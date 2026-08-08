@@ -27,7 +27,6 @@ import {
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
   searchSvgs,
-  updateMaskCapture,
   nextCaptureId,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
@@ -46,6 +45,7 @@ import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
+import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
 import {
   LIGHT_SOURCE_DARKNESS_DEFAULT,
   LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
@@ -196,6 +196,13 @@ export interface CoreContextProps {
   handleStopAll: () => void;
   cancelFrameDownload: () => void;
   captureMeshSection: (maskKey: string, polygonIndices: number[]) => Promise<void>;
+  sendMaskCaptureUpdate: (
+    maskMediaId: string,
+    captureId: number,
+    name: string,
+    polygonIndices: number[],
+  ) => Promise<LaurusMaskResult | undefined>;
+  closeMaskCaptureSocket: (maskMediaId: string) => void;
   // The following notifyMask* functions are how every file that changes state a mask mesh's own
   // appearance depends on reaches into maskHandlesRef and drives it directly, imperatively --
   // ProjectMaskItem has no useEffect watching any of this reactively (see its own file comment).
@@ -226,6 +233,8 @@ export const CoreContext = createContext<CoreContextProps>({
   handleStopAll: () => {},
   cancelFrameDownload: () => {},
   captureMeshSection: async () => {},
+  sendMaskCaptureUpdate: async () => undefined,
+  closeMaskCaptureSocket: () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskActiveElementChanged: () => {},
   notifyMaskActiveCaptureChanged: () => {},
@@ -717,6 +726,10 @@ export default function Workspace({
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
   const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
+  const { sendCaptureUpdate: sendMaskCaptureUpdate, closeSocket: closeMaskCaptureSocket } = useMaskCaptureSockets(
+    coreState.apiOrigin,
+    coreState.accessToken,
+  );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -1050,14 +1063,7 @@ export default function Workspace({
       });
       notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices));
 
-      const updated = await updateMaskCapture(
-        coreState.apiOrigin,
-        coreState.accessToken,
-        maskData.mask_media_id,
-        captureId,
-        name,
-        polygonIndices,
-      );
+      const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, captureId, name, polygonIndices);
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
         // Before the notifies below, which recolor off this mask's own captured-indices ref -- see
@@ -1080,8 +1086,7 @@ export default function Workspace({
     },
     [
       coreState.canvasMasks,
-      coreState.apiOrigin,
-      coreState.accessToken,
+      sendMaskCaptureUpdate,
       dispatch,
       uiDispatch,
       notifyMaskPendingCaptureSet,
@@ -1393,6 +1398,8 @@ export default function Workspace({
       handleStopAll,
       cancelFrameDownload,
       captureMeshSection,
+      sendMaskCaptureUpdate,
+      closeMaskCaptureSocket,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
       notifyMaskActiveCaptureChanged,
@@ -1413,6 +1420,8 @@ export default function Workspace({
       handleStopAll,
       cancelFrameDownload,
       captureMeshSection,
+      sendMaskCaptureUpdate,
+      closeMaskCaptureSocket,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
       notifyMaskActiveCaptureChanged,

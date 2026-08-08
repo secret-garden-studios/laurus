@@ -9,14 +9,7 @@ import {
 } from "../projects/projects.server";
 import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspace.client";
 import { useMaskPersist } from "./hooks/useMaskPersist";
-import {
-  LaurusFrame,
-  LaurusImgResult,
-  LaurusMaskResult,
-  LaurusSvgResult,
-  deleteMask,
-  deleteMaskCapture,
-} from "./workspace.server";
+import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -152,6 +145,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     notifyMaskActiveElementChanged,
     notifyMaskActiveCaptureChanged,
     notifyMaskCaptureUpdated,
+    sendMaskCaptureUpdate,
+    closeMaskCaptureSocket,
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { setSelectedImgKeys } = useContext(HoverContext);
@@ -455,8 +450,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
           // deleteProjectMedia is never actually invoked for a "capture" (see the delete cell's
-          // onClick below, which calls deleteMaskCapture directly instead) -- narrowed here only
-          // to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
+          // onClick below, which calls sendMaskCaptureUpdate directly instead) -- narrowed here
+          // only to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
           if (media.type !== "capture") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
@@ -1128,15 +1123,16 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                       case "mask": {
                         const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
                         newMasks.delete(media.key);
+                        closeMaskCaptureSocket(media.meta.media_id);
                         deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
                         break;
                       }
                       case "capture": {
-                        const updated: LaurusMaskResult | undefined = await deleteMaskCapture(
-                          coreState.apiOrigin,
-                          coreState.accessToken,
+                        const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
                           media.meta.media_id,
                           media.captureId,
+                          "",
+                          [],
                         );
                         if (!updated) break;
                         dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });

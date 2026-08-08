@@ -298,7 +298,7 @@ export async function deleteSvg(
  * `capture_id` is 0 if this triangle isn't part of any of the mask's
  * "captures" (client-selected subsections of the mesh, e.g. light source
  * regions -- see MaskMediaResult_V1_0.captures), otherwise the id of the
- * capture it belongs to -- see updateMaskCapture. */
+ * capture it belongs to -- see MaskCaptureUpdateRequest_V1_0. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
@@ -481,55 +481,6 @@ export async function deleteMask(
   }
 }
 
-/** Full-replace which of a mask's own polygons (by array index) belong to
- * the single capture identified by captureId -- e.g. a light source region
- * selected by dragging a circle over the mesh -- leaving the mask's other
- * captures untouched. Upserts a captures registry entry named `name`.
- * An empty polygonIndices array clears this one capture -- see
- * deleteMaskCapture, which is that call with the bookkeeping baked in. */
-export async function updateMaskCapture(
-  baseUrl: string | undefined,
-  accessToken: string | undefined,
-  maskMediaId: string,
-  captureId: number,
-  name: string,
-  polygonIndices: number[],
-): Promise<LaurusMaskResult | undefined> {
-  try {
-    const body = JSON.stringify({ name, polygon_indices: polygonIndices });
-    const url = `${baseUrl}/media/masks/${maskMediaId}/capture/${captureId}`;
-    let response: Response | undefined = undefined;
-    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
-    if (authResponse.newToken) {
-      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
-      response = authResponse2.response;
-    } else {
-      response = authResponse.response;
-    }
-    if (!response.ok) {
-      onNotOk(response.status, getOnNotOkMessage("updating", "mask", maskMediaId));
-      return undefined;
-    }
-    const result: MaskMediaResult_V1_0 = await response.json();
-    return result;
-  } catch (error) {
-    console.log({ error });
-    return undefined;
-  }
-}
-
-/** Clears one capture entirely -- its triangle membership and its captures
- * registry entry both go away, same as updateMaskCapture with an empty
- * polygonIndices array. */
-export async function deleteMaskCapture(
-  baseUrl: string | undefined,
-  accessToken: string | undefined,
-  maskMediaId: string,
-  captureId: number,
-): Promise<LaurusMaskResult | undefined> {
-  return updateMaskCapture(baseUrl, accessToken, maskMediaId, captureId, "", []);
-}
-
 /** Smallest capture id not already used by any of this mask's own captures
  * -- how the client mints a new light source's identity, the same way
  * polygon array indices already stand in for a stable id elsewhere in this
@@ -679,6 +630,31 @@ export function maskImage(
   };
 
   return socket;
+}
+
+/* /media/masks/{mask_media_id}/captures (websocket) */
+
+/** Full-replace which of a mask's own polygons (by array index) belong to
+ * the single capture identified by capture_id -- e.g. a light source region
+ * selected by dragging a circle over the mesh, or relocating one -- leaving
+ * the mask's other captures untouched. Upserts a captures registry entry
+ * named `name`. An empty polygon_indices array clears this one capture.
+ * Sent any number of times over the life of one mask's capture socket --
+ * see useMaskCaptureSockets, which owns that socket and this message's
+ * request/response pairing. */
+export interface MaskCaptureUpdateRequest_V1_0 {
+  capture_id: number;
+  name: string;
+  polygon_indices: number[];
+}
+export interface MaskCaptureUpdateComplete_V1_0 {
+  type: "capture_update_complete";
+  result: MaskMediaResult_V1_0;
+}
+export type MaskCaptureSocketMessage_V1_0 = MaskCaptureUpdateComplete_V1_0 | MaskError_V1_0;
+
+export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
+  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/captures?token=${encodeURIComponent(accessToken)}`;
 }
 
 /* /media/groups */

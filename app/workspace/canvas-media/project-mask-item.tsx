@@ -30,7 +30,6 @@ import {
   LaurusImgResult,
   LaurusMaskResult,
   LaurusPolygonPath,
-  updateMaskCapture,
 } from "../workspace.server";
 import { maskCaptureInputId } from "../effects-utils";
 
@@ -200,6 +199,7 @@ export function ProjectMaskItem({
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskCaptureUpdated,
+    sendMaskCaptureUpdate,
   } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
   // Which flavor of <ContextMenu> a meta-click should open -- "capture" (and which one, by id)
@@ -378,7 +378,7 @@ export function ProjectMaskItem({
   //
   // Reads pendingCaptureRef/capturesRef (see their comments above) rather than
   // source.maskData.polygons' own `capture_id`s: those refs are updated the instant a
-  // capture-relocate drag commits, while `source` only catches up once updateMaskCapture's
+  // capture-relocate drag commits, while `source` only catches up once sendMaskCaptureUpdate's
   // response round-trips and SetCanvasMask has been dispatched *and* re-rendered. Deriving from
   // `source` directly meant Play All, clicked in that window, would animate from the capture's
   // previous location -- the geometry (p.d) a polygon index maps to doesn't change when a
@@ -1093,7 +1093,7 @@ export function ProjectMaskItem({
       // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
       // flow that updates an *existing* mask's polygons this session (captureMeshSection,
       // maskbar's clear-capture, the capture context-menu's delete, and this file's own
-      // capture-relocate drag) only ever flips `capture_id`s via updateMaskCapture -- shape,
+      // capture-relocate drag) only ever flips `capture_id`s via sendMaskCaptureUpdate -- shape,
       // fill, stroke, and curves are untouched, so nothing this callback builds (positions, base
       // colors, the source-image texture) is actually stale; those flows reach any mask-specific
       // GL state that *does* need to react (the highlight) through the registered handle's own
@@ -1319,49 +1319,44 @@ export function ProjectMaskItem({
                 value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
               });
               notifyMaskPendingCaptureSet(mediaKey, finalIndices);
-              updateMaskCapture(
-                coreState.apiOrigin,
-                coreState.accessToken,
-                source.maskData.mask_media_id,
-                captureId,
-                captureName,
-                [...finalIndices],
-              ).then((updated) => {
-                if (updated) {
-                  dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
-                  // Before the active-element/pending-capture notifies below, which recolor off
-                  // this mask's own captured-indices ref -- `source` is still last render's stale
-                  // polygons at this exact point (dispatch() doesn't apply synchronously), so
-                  // recoloring off it here would briefly repaint the *previous* capture position.
-                  notifyMaskCaptureUpdated(mediaKey, updated);
-                  uiDispatch({
-                    type: UIActionType.SetActiveElement,
-                    value: { key: mediaKey, type: "mask", activeCaptureId: captureId },
-                  });
-                  notifyMaskActiveElementChanged(mediaKey);
-                  notifyMaskActiveCaptureChanged(mediaKey, captureId);
-                  // Cache the circle actually used, translated by this drag's own delta -- not
-                  // re-derived from the resulting triangles (capturedRegionCircle), which is what
-                  // let the radius creep up over successive relocations. See lastKnownCaptureRef.
-                  lastKnownCaptureRef.current.set(captureId, {
-                    indices: finalIndices,
-                    circle: {
-                      cx: drag.originalCircle.cx + dx,
-                      cy: drag.originalCircle.cy + dy,
-                      radius: drag.originalCircle.radius,
-                    },
-                  });
-                } else {
-                  // Request failed -- the server-side capture is still whatever it was before this
-                  // drag, so reaffirm that instead of leaving a stale/wrong cache entry behind.
-                  lastKnownCaptureRef.current.set(captureId, {
-                    indices: drag.originalIndices,
-                    circle: drag.originalCircle,
-                  });
-                }
-                dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-                notifyMaskPendingCaptureCleared(mediaKey);
-              });
+              sendMaskCaptureUpdate(source.maskData.mask_media_id, captureId, captureName, [...finalIndices]).then(
+                (updated) => {
+                  if (updated) {
+                    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
+                    // Before the active-element/pending-capture notifies below, which recolor off
+                    // this mask's own captured-indices ref -- `source` is still last render's stale
+                    // polygons at this exact point (dispatch() doesn't apply synchronously), so
+                    // recoloring off it here would briefly repaint the *previous* capture position.
+                    notifyMaskCaptureUpdated(mediaKey, updated);
+                    uiDispatch({
+                      type: UIActionType.SetActiveElement,
+                      value: { key: mediaKey, type: "mask", activeCaptureId: captureId },
+                    });
+                    notifyMaskActiveElementChanged(mediaKey);
+                    notifyMaskActiveCaptureChanged(mediaKey, captureId);
+                    // Cache the circle actually used, translated by this drag's own delta -- not
+                    // re-derived from the resulting triangles (capturedRegionCircle), which is what
+                    // let the radius creep up over successive relocations. See lastKnownCaptureRef.
+                    lastKnownCaptureRef.current.set(captureId, {
+                      indices: finalIndices,
+                      circle: {
+                        cx: drag.originalCircle.cx + dx,
+                        cy: drag.originalCircle.cy + dy,
+                        radius: drag.originalCircle.radius,
+                      },
+                    });
+                  } else {
+                    // Request failed -- the server-side capture is still whatever it was before this
+                    // drag, so reaffirm that instead of leaving a stale/wrong cache entry behind.
+                    lastKnownCaptureRef.current.set(captureId, {
+                      indices: drag.originalIndices,
+                      circle: drag.originalCircle,
+                    });
+                  }
+                  dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+                  notifyMaskPendingCaptureCleared(mediaKey);
+                },
+              );
             }}
             onPointerCancel={(e) => {
               // A browser-interrupted gesture (e.g. window blur) shouldn't commit a possibly
