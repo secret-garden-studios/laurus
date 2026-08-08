@@ -106,6 +106,14 @@ export interface MaskImperativeHandle {
   // built (see maskCaptureInputId/parseMaskCaptureInputId). Omitted by handlePlayAll's bare
   // play(), which still falls back to resolveTargetCaptureId's own guess.
   play: (effectKey?: string, captureId?: number) => Promise<void>;
+  // Fetch-only half of play(): resolves once this mask's own frames are loaded, to a start()
+  // closure that kicks off the actual playback clock -- or to undefined if there's nothing wired
+  // to play, or if a fresher play()/preparePlayback() call superseded this one while it was
+  // loading. Lets a caller juggling several masks at once (handlePlayAll) await every one of
+  // their frames before starting any of their clocks, so a slow fetch on one mask doesn't
+  // visibly stagger its start relative to the others -- see this method's implementation
+  // (preparePlayback) for why play() alone doesn't already do this.
+  preparePlayback: (effectKey?: string, captureId?: number) => Promise<(() => Promise<void>) | undefined>;
   stop: () => void;
   // Mirrors the old tool-change effect: aborts a capture-relocate drag in progress on this mesh
   // (if any) the moment the tool stops being "move" elsewhere in the app.
@@ -577,14 +585,17 @@ export function ProjectMaskItem({
   // for img/svg inputs -- getMoveFrames/getLightSourceFrames only ever solve a single effect's own
   // window and have no notion of siblings sharing this key.
   //
-  // No WAAPI, no live playhead: the server already solved each equation into `frames` (an
-  // ordered point sequence), so there's no timeline left to construct -- just play those points
-  // back at the shared fps. Not called on its own -- triggered by handlePlayAll/handlePlayTarget via
-  // the mount ref-callback below, same as every other effect's playback.
-  const playLightSourceAnimation = useCallback(
-    (effectKey?: string, captureId?: number): Promise<void> => {
+  // Split into a fetch phase (this) and a start phase (the closure it resolves to) so a caller
+  // juggling several of these at once -- handlePlayAll, across several masks -- can await every
+  // target's frames before starting any of their clocks. Starting each clock the instant its own
+  // fetch resolved (the old, single-phase shape) made Play All's masks visibly stagger: each
+  // mask's own getFrames round-trip has independent network/server-solve latency, so nothing
+  // guaranteed they resolved together. Resolves to undefined if nothing's wired to play, or if a
+  // fresher play()/stop() superseded this one while its frames were still in flight.
+  const preparePlayback = useCallback(
+    (effectKey?: string, captureId?: number): Promise<(() => Promise<void>) | undefined> => {
       stopLightSourceAnimation();
-      if (source.kind !== "static") return Promise.resolve();
+      if (source.kind !== "static") return Promise.resolve(undefined);
 
       // Play All (bare play(), neither effectKey nor captureId given -- see
       // MaskImperativeHandle) animates every one of this mesh's own captures that has something
@@ -620,167 +631,167 @@ export function ProjectMaskItem({
         // target resolved above, so a capture's epicenter never anchors on a different capture
         // than the one whose frames are driving it.
         .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.captureId) }));
-      if (targets.length === 0) return Promise.resolve();
+      if (targets.length === 0) return Promise.resolve(undefined);
 
       wiredMoveRef.current = true;
 
-      return new Promise<void>((resolve) => {
-        // Keyed by captureId, same as targets/playbackLightSourcesRef -- playAll fetches one
-        // pre-merged, project-wide frame timeline per target capture (matching how the backend
-        // already solves multiple effects -- including gaps between them -- for img/svg inputs);
-        // a single-target preview instead fetches that one target's own move/light_source frames
-        // directly, each solved only over that one effect's own start/end window.
-        const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
-        const moveFramesByCapture = new Map<number, LaurusFrame[]>();
-        const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
-        const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve };
-        activePlaybackRef.current = session;
+      // Keyed by captureId, same as targets/playbackLightSourcesRef -- playAll fetches one
+      // pre-merged, project-wide frame timeline per target capture (matching how the backend
+      // already solves multiple effects -- including gaps between them -- for img/svg inputs);
+      // a single-target preview instead fetches that one target's own move/light_source frames
+      // directly, each solved only over that one effect's own start/end window.
+      const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
+      const moveFramesByCapture = new Map<number, LaurusFrame[]>();
+      const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
+      const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
+      activePlaybackRef.current = session;
 
-        const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
-        let fps: number;
-        let totalFrames: number;
-        let durationSeconds: number;
+      const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
+      let fps: number;
+      let totalFrames: number;
+      let durationSeconds: number;
+      let ready: Promise<void>;
 
-        if (playAll) {
-          fps = projectFps;
-          // Refined once every target's getFrames resolves below -- until then the loop's "not
-          // loaded yet" gate keeps these from ever being read. Every target shares the exact same
-          // window: the server's own global_limit is computed across every move/scale/rotate/
-          // light_source effect in the whole project, not scoped per input_id.
-          totalFrames = 1;
-          durationSeconds = 0;
-          Promise.all(
-            targets.map((t) =>
-              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps).then((result) => {
-                if (activePlaybackRef.current !== session) return;
-                mergedFramesByCapture.set(t.captureId, result ?? []);
-              }),
-            ),
-          ).then(() => {
-            if (activePlaybackRef.current !== session) return;
-            totalFrames = Math.max(1, ...Array.from(mergedFramesByCapture.values()).map((f) => f.length));
-            durationSeconds = totalFrames / fps;
-          });
-        } else {
-          const target = targets[0];
-          const timingValue = (target.wiredMove ?? target.wiredLightSource)!.value;
-          fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
-          totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
+      if (playAll) {
+        fps = projectFps;
+        // Refined once every target's getFrames resolves below -- read only after `ready`
+        // resolves, so these are never read mid-fetch.
+        totalFrames = 1;
+        durationSeconds = 0;
+        ready = Promise.all(
+          targets.map((t) =>
+            getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps).then((result) => {
+              if (activePlaybackRef.current !== session) return;
+              mergedFramesByCapture.set(t.captureId, result ?? []);
+            }),
+          ),
+        ).then(() => {
+          if (activePlaybackRef.current !== session) return;
+          totalFrames = Math.max(1, ...Array.from(mergedFramesByCapture.values()).map((f) => f.length));
           durationSeconds = totalFrames / fps;
-          if (target.wiredMove) {
+        });
+      } else {
+        const target = targets[0];
+        const timingValue = (target.wiredMove ?? target.wiredLightSource)!.value;
+        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
+        durationSeconds = totalFrames / fps;
+        const fetches: Promise<void>[] = [];
+        if (target.wiredMove) {
+          fetches.push(
             getMoveFrames(coreState.apiOrigin, target.wiredMove.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result) moveFramesByCapture.set(target.captureId, result);
-            });
-          }
-          if (target.wiredLightSource) {
+            }),
+          );
+        }
+        if (target.wiredLightSource) {
+          fetches.push(
             getLightSourceFrames(coreState.apiOrigin, target.wiredLightSource.key, target.inputId).then((result) => {
               if (activePlaybackRef.current === session && result)
                 lightSourceFramesByCapture.set(target.captureId, result);
-            });
-          }
+            }),
+          );
         }
+        ready = Promise.all(fetches).then(() => {});
+      }
 
-        const loopStartMs = performance.now();
+      return ready.then((): (() => Promise<void>) | undefined => {
+        // Superseded by a stop() or another play()/preparePlayback() while frames were in
+        // flight -- don't hand back a start() that would clobber whatever's running now.
+        if (activePlaybackRef.current !== session) return undefined;
 
-        const loop = () => {
-          // Superseded by a stop() or another play() while this tick was in flight.
-          if (activePlaybackRef.current !== session) return;
+        return () =>
+          new Promise<void>((resolve) => {
+            session.resolve = resolve;
+            const loopStartMs = performance.now();
 
-          // Not loaded yet -- keep checking until every target's wired effect(s) resolve.
-          const stillLoading = playAll
-            ? mergedFramesByCapture.size < targets.length
-            : targets.some(
-                (t) =>
-                  (t.wiredMove && !moveFramesByCapture.has(t.captureId)) ||
-                  (t.wiredLightSource && !lightSourceFramesByCapture.has(t.captureId)),
-              );
-          if (stillLoading) {
+            const loop = () => {
+              // Superseded by a stop() or another play() while this tick was in flight.
+              if (activePlaybackRef.current !== session) return;
+
+              const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
+              // Clamped, not wrapped: any repeat/reverse pattern (LaurusLoopType) is already baked
+              // into `frames` by the server's own equation solve, and the real WAAPI playback always
+              // plays it with iterations: 1 (see getNewAnimationsByTarget's animationOptions) -- so
+              // restarting this from frame 0 once elapsed exceeds the duration would invent a loop the
+              // equation never asked for.
+              const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
+
+              const canvas = canvasRef.current;
+              const rect = canvas?.getBoundingClientRect();
+              if (canvas && rect && rect.width > 0 && rect.height > 0) {
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+
+                targets.forEach((t) => {
+                  const mergedFrames = mergedFramesByCapture.get(t.captureId);
+                  const moveFrames = moveFramesByCapture.get(t.captureId);
+                  const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
+
+                  const movePoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : moveFrames && moveFrames.length > 0
+                      ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
+                      : undefined;
+                  // Gated on wiredLightSource even in the merged-frames case: merge_frames
+                  // (server-side) fills light_source_size/intensity/falloff/darkness with 0 whenever
+                  // no light_source effect is wired for this capture, and unlike a move's x/y=0 (a
+                  // legitimate "stay at rest" no-op) a light_source_size/falloff of 0 would actively
+                  // drop this capture's light out of drawMaskMesh's activeLights filter, killing it
+                  // entirely rather than just leaving it unmoved.
+                  const lightSourcePoint = playAll
+                    ? t.wiredLightSource
+                      ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                      : undefined
+                    : lightSourceFrames && lightSourceFrames.length > 0
+                      ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                      : undefined;
+
+                  // point.x/y are a pixel-space delta from the mesh's own resting position -- the
+                  // same meaning they have applied as a CSS `translate` on the real element (see
+                  // toKeyframes). Reinterpreted here as a delta from this capture's own rest position
+                  // in the mesh instead, converted into buffer-pixel space the same way mouse
+                  // coordinates are below. Falls back to the mesh's geometric center only if the
+                  // capture's own position couldn't be recovered. No move wired for this capture ->
+                  // its epicenter just stays at rest, so the dials alone can still be previewed.
+                  const restX = t.restPosition?.x ?? canvas.width / 2;
+                  const restY = t.restPosition?.y ?? canvas.height / 2;
+                  const pointX = movePoint?.x ?? 0;
+                  const pointY = movePoint?.y ?? 0;
+                  const bufferX = restX + pointX * scaleX;
+                  const bufferY = restY + pointY * scaleY;
+                  // Falls back to the mask's own resting dial values whenever this particular capture
+                  // has no light_source effect of its own wired -- same rule the single-epicenter
+                  // version used.
+                  const size = lightSourcePoint?.light_source_size ?? lightSourceSizeRef.current;
+                  const intensity = lightSourcePoint?.light_source_intensity ?? lightSourceIntensityRef.current;
+                  const falloff = lightSourcePoint?.light_source_falloff ?? lightSourceFalloffRef.current;
+                  const darkness = lightSourcePoint?.light_source_darkness ?? lightSourceDarknessRef.current;
+
+                  playbackLightSourcesRef.current.set(t.captureId, {
+                    x: bufferX,
+                    // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
+                    y: canvas.height - bufferY,
+                    radius: (size / 2) * scaleX,
+                    falloff: falloff * scaleX,
+                    intensity,
+                    darkness,
+                  });
+                });
+                render();
+              }
+
+              // Once the duration elapses, resets back to the canvas's original state via
+              // stopLightSourceAnimation (see its comment) rather than holding on the final frame --
+              // fast-forward's fill: "forwards" hold is deliberately out of scope for now.
+              if (elapsedSeconds < durationSeconds) {
+                session.rafId = requestAnimationFrame(loop);
+              } else {
+                stopLightSourceAnimation();
+              }
+            };
             session.rafId = requestAnimationFrame(loop);
-            return;
-          }
-
-          const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
-          // Clamped, not wrapped: any repeat/reverse pattern (LaurusLoopType) is already baked
-          // into `frames` by the server's own equation solve, and the real WAAPI playback always
-          // plays it with iterations: 1 (see getNewAnimationsByTarget's animationOptions) -- so
-          // restarting this from frame 0 once elapsed exceeds the duration would invent a loop the
-          // equation never asked for.
-          const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
-
-          const canvas = canvasRef.current;
-          const rect = canvas?.getBoundingClientRect();
-          if (canvas && rect && rect.width > 0 && rect.height > 0) {
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-
-            targets.forEach((t) => {
-              const mergedFrames = mergedFramesByCapture.get(t.captureId);
-              const moveFrames = moveFramesByCapture.get(t.captureId);
-              const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
-
-              const movePoint = playAll
-                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                : moveFrames && moveFrames.length > 0
-                  ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
-                  : undefined;
-              // Gated on wiredLightSource even in the merged-frames case: merge_frames
-              // (server-side) fills light_source_size/intensity/falloff/darkness with 0 whenever
-              // no light_source effect is wired for this capture, and unlike a move's x/y=0 (a
-              // legitimate "stay at rest" no-op) a light_source_size/falloff of 0 would actively
-              // drop this capture's light out of drawMaskMesh's activeLights filter, killing it
-              // entirely rather than just leaving it unmoved.
-              const lightSourcePoint = playAll
-                ? t.wiredLightSource
-                  ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                  : undefined
-                : lightSourceFrames && lightSourceFrames.length > 0
-                  ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-                  : undefined;
-
-              // point.x/y are a pixel-space delta from the mesh's own resting position -- the
-              // same meaning they have applied as a CSS `translate` on the real element (see
-              // toKeyframes). Reinterpreted here as a delta from this capture's own rest position
-              // in the mesh instead, converted into buffer-pixel space the same way mouse
-              // coordinates are below. Falls back to the mesh's geometric center only if the
-              // capture's own position couldn't be recovered. No move wired for this capture ->
-              // its epicenter just stays at rest, so the dials alone can still be previewed.
-              const restX = t.restPosition?.x ?? canvas.width / 2;
-              const restY = t.restPosition?.y ?? canvas.height / 2;
-              const pointX = movePoint?.x ?? 0;
-              const pointY = movePoint?.y ?? 0;
-              const bufferX = restX + pointX * scaleX;
-              const bufferY = restY + pointY * scaleY;
-              // Falls back to the mask's own resting dial values whenever this particular capture
-              // has no light_source effect of its own wired -- same rule the single-epicenter
-              // version used.
-              const size = lightSourcePoint?.light_source_size ?? lightSourceSizeRef.current;
-              const intensity = lightSourcePoint?.light_source_intensity ?? lightSourceIntensityRef.current;
-              const falloff = lightSourcePoint?.light_source_falloff ?? lightSourceFalloffRef.current;
-              const darkness = lightSourcePoint?.light_source_darkness ?? lightSourceDarknessRef.current;
-
-              playbackLightSourcesRef.current.set(t.captureId, {
-                x: bufferX,
-                // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
-                y: canvas.height - bufferY,
-                radius: (size / 2) * scaleX,
-                falloff: falloff * scaleX,
-                intensity,
-                darkness,
-              });
-            });
-            render();
-          }
-
-          // Once the duration elapses, resets back to the canvas's original state via
-          // stopLightSourceAnimation (see its comment) rather than holding on the final frame --
-          // fast-forward's fill: "forwards" hold is deliberately out of scope for now.
-          if (elapsedSeconds < durationSeconds) {
-            session.rafId = requestAnimationFrame(loop);
-          } else {
-            stopLightSourceAnimation();
-          }
-        };
-        session.rafId = requestAnimationFrame(loop);
+          });
       });
     },
     [
@@ -797,6 +808,15 @@ export function ProjectMaskItem({
     ],
   );
 
+  // Thin play()-shaped wrapper over preparePlayback for callers (handlePlayTarget's single-effect
+  // preview) that don't need to coordinate several of these against each other -- fetch, then
+  // start immediately once this one target's own frames are in.
+  const playLightSourceAnimation = useCallback(
+    (effectKey?: string, captureId?: number): Promise<void> =>
+      preparePlayback(effectKey, captureId).then((start) => start?.()),
+    [preparePlayback],
+  );
+
   // "Always latest" indirection: the mount ref-callback below (and the MaskImperativeHandle it
   // builds) is only created once per mount/mask identity -- not every render -- but a few of its
   // methods need this render's `source`/`coreState`/play-stop rather than whatever was current
@@ -808,6 +828,7 @@ export function ProjectMaskItem({
     coreState,
     applyDefaultLightSourceValue,
     playLightSourceAnimation,
+    preparePlayback,
     stopLightSourceAnimation,
   });
   latestRef.current = {
@@ -815,6 +836,7 @@ export function ProjectMaskItem({
     coreState,
     applyDefaultLightSourceValue,
     playLightSourceAnimation,
+    preparePlayback,
     stopLightSourceAnimation,
   };
 
@@ -933,6 +955,7 @@ export function ProjectMaskItem({
 
         const handle: MaskImperativeHandle = {
           play: (effectKey, captureId) => latestRef.current.playLightSourceAnimation(effectKey, captureId),
+          preparePlayback: (effectKey, captureId) => latestRef.current.preparePlayback(effectKey, captureId),
           stop: () => latestRef.current.stopLightSourceAnimation(),
           abortCaptureDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;

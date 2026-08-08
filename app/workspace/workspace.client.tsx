@@ -1163,20 +1163,28 @@ export default function Workspace({
       notifyMaskActiveElementChanged(undefined);
     }
 
-    const newAnimations = await getNewAnimations("none", false, true);
+    const players: MaskImperativeHandle[] = [];
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
 
-    // Every registered mask handle -- each decides for itself whether it actually has a
-    // wired move/light_source effect to play, resolving immediately if not (see
-    // MaskImperativeHandle). Triggered (and awaited) before the newAnimations bail-out below: a
-    // light-source-svg has no DOM element of its own (see workspace.client.tsx's render-skip), so
-    // getNewAnimations never produces a WAAPI Animation for it -- newAnimations can be
-    // legitimately empty while there's still a light source to play.
-    const lightSourceFinished: Promise<void>[] = [];
-    maskHandlesRef.current?.forEach((players) => {
-      players.forEach((player) => lightSourceFinished.push(player.play()));
-    });
+    // Every registered mask handle -- each decides for itself whether it actually has a wired
+    // move/light_source effect to play, resolving to undefined if not (see MaskImperativeHandle).
+    // Fetched alongside newAnimations, both awaited before anything actually starts: a mask's own
+    // getFrames round-trip has independent network/server-solve latency from every other mask's
+    // (and from the img/svg frames below), so kicking off each one's playback clock the instant
+    // its own fetch resolved -- preparePlayback's single-target play() wrapper does exactly that
+    // -- would visibly stagger their start times against each other. Waiting here for every
+    // target's frames to be in hand first, then starting them all in the same synchronous pass
+    // below, keeps them approximately in sync instead. Also triggered (and awaited) before the
+    // newAnimations bail-out below: a light-source-svg has no DOM element of its own (see
+    // workspace.client.tsx's render-skip), so getNewAnimations never produces a WAAPI Animation
+    // for it -- newAnimations can be legitimately empty while there's still a light source to play.
+    const [newAnimations, preparedStarts] = await Promise.all([
+      getNewAnimations("none", false, true),
+      Promise.all(players.map((player) => player.preparePlayback())),
+    ]);
+    const readyStarts = preparedStarts.filter((start) => start !== undefined);
 
-    if (newAnimations.length == 0 && lightSourceFinished.length == 0) {
+    if (newAnimations.length == 0 && readyStarts.length == 0) {
       uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
@@ -1186,6 +1194,11 @@ export default function Workspace({
       notifyMaskToolChanged("none");
       return;
     }
+
+    // Calling every start() before yielding back to the event loop is what actually keeps the
+    // masks' clocks in sync with each other and with the WAAPI animations played right after --
+    // each one's own loopStartMs is captured synchronously inside this same tick.
+    const lightSourceFinished = readyStarts.map((start) => start());
 
     Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
       .then(() => {
