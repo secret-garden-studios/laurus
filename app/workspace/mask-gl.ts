@@ -133,7 +133,11 @@ void main() {
   // just an oversaturated tint.
   vec3 lit = mix(base, vec3(1.0), highlight * u_lightSourceIntensity);
   vec3 shaded = lit - shadow * u_lightSourceDarkness;
-  vec3 withEdge = mix(shaded, vec3(1.0), edge * 0.18);
+  // The wireframe's own "white stroke" endpoint darkens with the same shadow term as the fill
+  // above, so a triangle sitting deep in the light source's shadow doesn't keep a bright hairline
+  // around it while its interior goes dark.
+  vec3 strokeColor = vec3(1.0) - shadow * u_lightSourceDarkness;
+  vec3 withEdge = mix(shaded, strokeColor, edge * 0.18);
 
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
