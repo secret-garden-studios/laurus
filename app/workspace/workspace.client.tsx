@@ -1125,6 +1125,10 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
       notifyMaskToolChanged("none");
     }
+    if (uiState.activeElement !== undefined) {
+      uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+      notifyMaskActiveElementChanged(undefined);
+    }
 
     const newAnimations = await getNewAnimations("none", false, true);
 
@@ -1175,7 +1179,9 @@ export default function Workspace({
     handleMixRestoration,
     uiState.playbackMode.type,
     uiState.tool.type,
+    uiState.activeElement,
     notifyMaskToolChanged,
+    notifyMaskActiveElementChanged,
   ]);
 
   const handlePlayTarget = useCallback(
@@ -1183,6 +1189,10 @@ export default function Workspace({
       if (uiState.playbackMode.type !== "stopped") return;
       handleMixRestoration();
       closeContextMenus();
+      if (uiState.activeElement !== undefined) {
+        uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+        notifyMaskActiveElementChanged(undefined);
+      }
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
         value: { type: "waiting" },
@@ -1237,7 +1247,15 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, coreState.effects, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackMode.type],
+    [
+      closeContextMenus,
+      coreState.effects,
+      getNewAnimationsByTarget,
+      handleMixRestoration,
+      uiState.playbackMode.type,
+      uiState.activeElement,
+      notifyMaskActiveElementChanged,
+    ],
   );
 
   const handleFastForwardAll = useCallback(
