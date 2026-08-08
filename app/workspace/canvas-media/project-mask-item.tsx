@@ -21,6 +21,7 @@ import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
 import { capturedRegionCircle, captureTriangleIndicesInCircle, isPointInCapturedPolygon } from "./light-source-capture";
 import {
+  getFrames,
   getLightSourceFrames,
   getMoveFrames,
   LaurusEffect,
@@ -455,26 +456,29 @@ export function ProjectMaskItem({
 
   // Plays the light source epicenter/dials through whichever "move" and/or "light_source" effects are
   // wired to this mask's light source key (see lightSourceKey above) instead of the mouse; the mouse handlers
-  // below defer to this once wiredMoveRef is set. The two effects are independent -- a mask can
-  // have only one, the other, or both wired -- and share one timeline (taken from whichever is
-  // present; move's own start/end/fps wins if both are wired, since position is the primary
-  // consumer of "duration" here). Resolves immediately if neither is wired -- see
+  // below defer to this once wiredMoveRef is set. Resolves immediately if neither is wired -- see
   // MaskImperativeHandle.
   //
   // An effectKey (passed by handlePlayTarget's single-effect preview, e.g. LightSourceUnitbar's
   // "preview" button) restricts this to just the one effect the button belongs to -- otherwise a
   // light_source-only preview would also drag the epicenter through a move effect that happens to
-  // share this lightSourceKey, which isn't what "preview this effect" means. handlePlayAll omits it, so
-  // Play All still mixes both together the same as it always has.
+  // share this lightSourceKey, which isn't what "preview this effect" means. In that case the two
+  // effects share one timeline taken from whichever is present (move's own start/end/fps wins if
+  // both are wired, since position is the primary consumer of "duration" here), and each is fetched
+  // by its own id via getMoveFrames/getLightSourceFrames.
+  //
+  // handlePlayAll omits effectKey, and Play All needs every move/light_source effect wired to this
+  // key played in sequence -- not just the first one found -- the same way img/svg's WAAPI playback
+  // does (see getNewAnimations). So the effectKey === undefined case instead fetches one pre-merged,
+  // project-wide frame timeline via getFrames, matching how the backend already solves multiple
+  // effects (including gaps between them, e.g. a move ending at t=2 and the next starting at t=5)
+  // for img/svg inputs -- getMoveFrames/getLightSourceFrames only ever solve a single effect's own
+  // window and have no notion of siblings sharing this key.
   //
   // No WAAPI, no live playhead: the server already solved each equation into `frames` (an
-  // ordered point sequence covering the effect's whole [start, end) window), so there's no
-  // timeline left to construct -- just play those points back at the shared fps. The loop period
-  // is taken from the timing effect's declared start/end rather than frames.length, since that's
-  // the authoritative duration; frames.length only bounds the array read (it should match
-  // fps * (end - start), but isn't trusted to). Not called on its own -- triggered by
-  // handlePlayAll/handlePlayTarget via the mount ref-callback below, same as every other effect's
-  // playback.
+  // ordered point sequence), so there's no timeline left to construct -- just play those points
+  // back at the shared fps. Not called on its own -- triggered by handlePlayAll/handlePlayTarget via
+  // the mount ref-callback below, same as every other effect's playback.
   const playLightSourceAnimation = useCallback(
     (effectKey?: string): Promise<void> => {
       stopLightSourceAnimation();
@@ -502,32 +506,56 @@ export function ProjectMaskItem({
       return new Promise<void>((resolve) => {
         let moveFrames: LaurusFrame[] | undefined;
         let lightSourceFrames: LaurusFrame[] | undefined;
+        let mergedFrames: LaurusFrame[] | undefined;
         const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve };
         activePlaybackRef.current = session;
 
-        if (wiredMove) {
-          getMoveFrames(coreState.apiOrigin, wiredMove.key, mediaKey).then((result) => {
-            if (activePlaybackRef.current === session) moveFrames = result;
+        const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
+        let fps: number;
+        let totalFrames: number;
+        let durationSeconds: number;
+
+        if (effectKey === undefined) {
+          fps = projectFps;
+          // Refined once getFrames resolves below -- until then the loop's "not loaded yet" gate
+          // keeps these from ever being read.
+          totalFrames = 1;
+          durationSeconds = 0;
+          getFrames(coreState.apiOrigin, coreState.project.project_id, mediaKey, fps).then((result) => {
+            if (activePlaybackRef.current !== session) return;
+            mergedFrames = result ?? [];
+            totalFrames = Math.max(mergedFrames.length, 1);
+            durationSeconds = totalFrames / fps;
           });
-        }
-        if (wiredLightSource) {
-          getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, mediaKey).then((result) => {
-            if (activePlaybackRef.current === session) lightSourceFrames = result;
-          });
+        } else {
+          const timingValue = (wiredMove ?? wiredLightSource)!.value;
+          fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+          totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
+          durationSeconds = totalFrames / fps;
+          if (wiredMove) {
+            getMoveFrames(coreState.apiOrigin, wiredMove.key, mediaKey).then((result) => {
+              if (activePlaybackRef.current === session) moveFrames = result;
+            });
+          }
+          if (wiredLightSource) {
+            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, mediaKey).then((result) => {
+              if (activePlaybackRef.current === session) lightSourceFrames = result;
+            });
+          }
         }
 
-        const timingValue = (wiredMove ?? wiredLightSource)!.value;
-        const fps = timingValue.fps > 0 ? timingValue.fps : 30;
-        const totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
-        const durationSeconds = totalFrames / fps;
         const loopStartMs = performance.now();
 
         const loop = () => {
           // Superseded by a stop() or another play() while this tick was in flight.
           if (activePlaybackRef.current !== session) return;
 
-          // Not loaded yet -- keep checking until every wired effect's getFrames resolves.
-          if ((wiredMove && !moveFrames) || (wiredLightSource && !lightSourceFrames)) {
+          // Not loaded yet -- keep checking until every wired effect's frames resolve.
+          const stillLoading =
+            effectKey === undefined
+              ? !mergedFrames
+              : (wiredMove && !moveFrames) || (wiredLightSource && !lightSourceFrames);
+          if (stillLoading) {
             session.rafId = requestAnimationFrame(loop);
             return;
           }
@@ -540,11 +568,24 @@ export function ProjectMaskItem({
           // equation never asked for.
           const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
           const movePoint =
-            moveFrames && moveFrames.length > 0 ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)] : undefined;
+            effectKey === undefined
+              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+              : moveFrames && moveFrames.length > 0
+                ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
+                : undefined;
+          // Gated on wiredLightSource even in the merged-frames case: merge_frames (server-side)
+          // fills light_source_size/intensity/falloff/darkness with 0 whenever no light_source
+          // effect is wired, and unlike a move's x/y=0 (a legitimate "stay at rest" no-op) a
+          // light_source_size/falloff of 0 actively zeroes out u_lightSourceActive below, killing
+          // the light source entirely rather than just leaving it unmoved.
           const lightSourcePoint =
-            lightSourceFrames && lightSourceFrames.length > 0
-              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-              : undefined;
+            effectKey === undefined
+              ? wiredLightSource
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : undefined
+              : lightSourceFrames && lightSourceFrames.length > 0
+                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                : undefined;
 
           // Only overridden when a light_source effect is actually wired -- otherwise these refs
           // keep whatever the mask's own starting appearance (applyDefaultLightSourceValue below)
@@ -602,6 +643,8 @@ export function ProjectMaskItem({
       computeLightSourceRestPosition,
       coreState.effects,
       coreState.apiOrigin,
+      coreState.project.fps,
+      coreState.project.project_id,
       render,
       stopLightSourceAnimation,
     ],
