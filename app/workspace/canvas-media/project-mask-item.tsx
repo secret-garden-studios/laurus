@@ -10,6 +10,7 @@ import {
   GLState,
   initGLState,
   loadImageTexture,
+  MaskLightSource,
   parsePathPoints,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
@@ -19,7 +20,7 @@ import { UIActionType } from "../states/ui-state";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
-import { capturedRegionCircle, captureTriangleIndicesInCircle, isPointInCapturedPolygon } from "./light-source-capture";
+import { capturedRegionCircle, captureTriangleIndicesInCircle, captureIdAtPoint } from "./light-source-capture";
 import {
   getFrames,
   getLightSourceFrames,
@@ -28,11 +29,24 @@ import {
   LaurusFrame,
   LaurusImgResult,
   LaurusMaskResult,
+  LaurusPolygonPath,
   updateMaskCapture,
 } from "../workspace.server";
+import { maskCaptureInputId } from "../effects-utils";
+
+// Intensity written into a_highlight (see recolorHighlight/mask-gl.ts) for every capture on the
+// active mask that *isn't* the selected one -- lets you see where a mesh's other light sources
+// already sit (so a freshly drawn circle doesn't land blindly on top of one) without them reading
+// as equally "selected" as the one actually being edited. The shader mixes this straight into the
+// stroke's opacity (captureEdge = ... * v_highlight), so it degrades gracefully to a fainter
+// outline rather than needing a distinct color.
+const DIM_CAPTURE_HIGHLIGHT = 0.35;
 
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
+
+// Which flavor of <ContextMenu> a meta-click on this mesh should open -- see contextMenuVariant.
+type ContextMenuVariant = { type: "mask" } | { type: "capture"; captureId: number };
 
 // Combined movement (buffer-pixel^2) under which a capture-relocate drag (see captureDragRef
 // below) counts as a no-op and snaps back to its exact starting indices, rather than picking up
@@ -43,6 +57,19 @@ function sameIndices(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
   for (const i of a) if (!b.has(i)) return false;
   return true;
+}
+
+// Groups a mesh's own polygon indices by which capture (if any) they belong to -- capture_id 0
+// means "no capture", so never gets an entry of its own.
+function buildCapturesMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
+  const byCapture = new Map<number, Set<number>>();
+  polygons.forEach((p, i) => {
+    if (p.capture_id === 0) return;
+    const indices = byCapture.get(p.capture_id) ?? new Set<number>();
+    indices.add(i);
+    byCapture.set(p.capture_id, indices);
+  });
+  return byCapture;
 }
 
 // Screen coordinates -> mesh-local buffer-pixel space (top-left origin, unflipped -- matching
@@ -74,7 +101,12 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
 // update from the exact call site that caused it removes that whole class of bug instead of
 // tuning it away.
 export interface MaskImperativeHandle {
-  play: (effectKey?: string) => Promise<void>;
+  // captureId pins playback to one specific capture's own wired equation (see
+  // playLightSourceAnimation's resolveTargetCaptureId comment) -- passed by handlePlayTarget,
+  // which recovers it straight from the AnimationTarget.inputKey a unit's own preview button
+  // built (see maskCaptureInputId/parseMaskCaptureInputId). Omitted by handlePlayAll's bare
+  // play(), which still falls back to resolveTargetCaptureId's own guess.
+  play: (effectKey?: string, captureId?: number) => Promise<void>;
   stop: () => void;
   // Mirrors the old tool-change effect: aborts a capture-relocate drag in progress on this mesh
   // (if any) the moment the tool stops being "move" elsewhere in the app.
@@ -83,13 +115,16 @@ export interface MaskImperativeHandle {
   // in/out of the highlight accordingly (folded with any pending capture preview, see
   // recolorHighlight).
   setActiveHighlighted: (active: boolean) => void;
+  // Which of this (already-active) mask's captures reads as the bright one, dimming the rest --
+  // see DIM_CAPTURE_HIGHLIGHT/recolorHighlight. undefined highlights every capture equally dim.
+  setActiveCapture: (captureId: number | undefined) => void;
   setPendingCapture: (indices: Set<number>) => void;
   clearPendingCapture: () => void;
   // The server's response to a just-committed capture change (a relocate drag, a fresh
   // circle-drawn capture, or a clear) -- updates this mask's own idea of which polygons are
   // captured directly off that response rather than off `source`, which is still last render's
   // stale data at the exact point every one of those flows calls this (right after dispatching
-  // SetCanvasMask, before React has re-rendered with the new prop). See capturedIndicesRef.
+  // SetCanvasMask, before React has re-rendered with the new prop). See capturesRef.
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
   // Re-applies this mask's texture-mix (topology) and resting light-source dial values. Reads
   // from coreState/topology by default, but a caller that just dispatched a change and knows
@@ -161,17 +196,18 @@ export function ProjectMaskItem({
     coreState,
     dispatch,
     notifyMaskActiveElementChanged,
+    notifyMaskActiveCaptureChanged,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskCaptureUpdated,
   } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
-  // Which flavor of <ContextMenu> a meta-click should open -- "capture" when the click lands on
-  // the mesh's own captured triangles, "mask" otherwise (the existing general mask menu). Both
-  // share the same shown/hidden state (uiState.projectContextMenus, toggled via the passed-down
-  // onClick below) and the same on-screen anchor (transform); this only decides which `media`
-  // gets handed to the one <ContextMenu> mount.
-  const [contextMenuVariant, setContextMenuVariant] = useState<"mask" | "capture">("mask");
+  // Which flavor of <ContextMenu> a meta-click should open -- "capture" (and which one, by id)
+  // when the click lands on one of the mesh's own captures, "mask" otherwise (the existing general
+  // mask menu). Both share the same shown/hidden state (uiState.projectContextMenus, toggled via
+  // the passed-down onClick below) and the same on-screen anchor (transform); this only decides
+  // which `media` gets handed to the one <ContextMenu> mount.
+  const [contextMenuVariant, setContextMenuVariant] = useState<ContextMenuVariant>({ type: "mask" });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
@@ -185,10 +221,11 @@ export function ProjectMaskItem({
   const vertexCountRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
-  // Where the epicenter currently is, already converted to gl_FragCoord space. radius 0 == no
-  // light source active. Driven either by the mouse (default) or, while playLightSourceAnimation() is running
-  // (see below), by a wired move effect's saved equation instead -- wiredMoveRef tracks which
-  // source is currently in control so the two don't fight over lightSourceRef.
+  // Where the cursor-driven epicenter currently is, already converted to gl_FragCoord space.
+  // radius 0 == inactive. This is the mouse's own light source (the default, hover-driven mode --
+  // see the canvas's onMouseMove below) and is always exactly one light; it plays no part once
+  // playLightSourceAnimation is running (wiredMoveRef true) -- see playbackLightSourcesRef below
+  // for that case instead, which can hold more than one simultaneously.
   const lightSourceRef = useRef<{ x: number; y: number; radius: number; falloff: number }>({
     x: 0,
     y: 0,
@@ -196,6 +233,13 @@ export function ProjectMaskItem({
     falloff: 0,
   });
   const wiredMoveRef = useRef(false);
+  // One entry per capture playLightSourceAnimation is currently animating, keyed by captureId --
+  // a single-effect preview only ever populates one, but Play All (bare play(), see
+  // MaskImperativeHandle) can populate several at once, one per capture with its own wired
+  // move/light_source effect, all rendered simultaneously (see mask-gl.ts's array uniforms).
+  // render() reads this instead of lightSourceRef/lightSourceSizeRef&co. whenever wiredMoveRef is
+  // true. Cleared by stopLightSourceAnimation.
+  const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
   // The in-flight playLightSourceAnimation() session, if any -- lets stopLightSourceAnimation() (and a
   // fresh play() call) cancel whatever's currently running instead of two loops racing.
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
@@ -209,6 +253,7 @@ export function ProjectMaskItem({
   const captureDragRef = useRef<
     | {
         pointerId: number;
+        captureId: number;
         startX: number;
         startY: number;
         originalCircle: { cx: number; cy: number; radius: number };
@@ -219,21 +264,25 @@ export function ProjectMaskItem({
       }
     | undefined
   >(undefined);
-  // The circle actually behind the mesh's current capture, if a previous relocate drag in this
-  // same component instance is the reason it looks the way it does -- carried forward and only
-  // ever translated (radius untouched) by later drags, rather than re-derived from the resulting
-  // triangles via capturedRegionCircle every time. Re-deriving on every commit was the original
-  // bug here: capturedRegionCircle's circle is centered on the captured centroids' own mean, not
-  // the actual drag circle's center, so re-running the circle test from that slightly-off center
-  // tends to pick up a few extra boundary triangles -- and since each relocation re-derived from
-  // whatever the *previous* one left behind, that error compounded every drag until the capture
-  // ate the whole mesh. `indices` records which captured set this circle is known to produce, so
-  // a drag that starts after the mesh's capture changed some other way (a fresh circle-drawn
-  // capture, a clear, page load) detects the mismatch and falls back to a single one-time
-  // capturedRegionCircle estimate instead of trusting a stale circle.
+  // The circle actually behind each of the mesh's current captures, if a previous relocate drag in
+  // this same component instance is the reason it looks the way it does -- carried forward and
+  // only ever translated (radius untouched) by later drags, rather than re-derived from the
+  // resulting triangles via capturedRegionCircle every time. Re-deriving on every commit was the
+  // original bug here: capturedRegionCircle's circle is centered on the captured centroids' own
+  // mean, not the actual drag circle's center, so re-running the circle test from that
+  // slightly-off center tends to pick up a few extra boundary triangles -- and since each
+  // relocation re-derived from whatever the *previous* one left behind, that error compounded
+  // every drag until the capture ate the whole mesh. Keyed by captureId (not a single slot) since
+  // a mesh can carry more than one capture -- a single-slot version of this cache still hit the
+  // same growth bug whenever two captures were dragged alternately, each drag evicting the other's
+  // cached circle and forcing a fresh capturedRegionCircle reconstruction every time. `indices`
+  // records which captured set a given entry's circle is known to produce, so a drag that starts
+  // after that capture changed some other way (a fresh circle-drawn capture, a clear, page load)
+  // detects the mismatch and falls back to a one-time capturedRegionCircle estimate instead of
+  // trusting a stale circle.
   const lastKnownCaptureRef = useRef<
-    { indices: Set<number>; circle: { cx: number; cy: number; radius: number } } | undefined
-  >(undefined);
+    Map<number, { indices: Set<number>; circle: { cx: number; cy: number; radius: number } }>
+  >(new Map());
   // Mirrors captureDragRef's presence in state (rather than being read off the ref directly) so
   // the "grabbing" cursor below can react to it -- dnd-kit's own `isDragging` never turns on for
   // this gesture, since onPointerDown claims it via stopPropagation before dnd-kit's sensor ever
@@ -244,9 +293,9 @@ export function ProjectMaskItem({
   // both locally (this file's own pointer handlers) and externally (canvas.tsx's circle-draw
   // capture flow, via notifyMaskPendingCaptureSet/Cleared) and always wins when present;
   // activeHighlightRef mirrors whether this mask is uiState.activeElement, kept in sync by
-  // setActiveHighlighted below. capturedIndicesRef is what activeHighlightRef actually paints --
+  // setActiveHighlighted below. capturesRef is what activeHighlightRef actually paints --
   // deliberately NOT re-derived from source.maskData.polygons on every recolor: a capture commit
-  // (this file's onPointerUp, captureMeshSection, maskbar/context-menu's clear-capture)
+  // (this file's onPointerUp, captureMeshSection, the capture context-menu's delete)
   // dispatches SetCanvasMask and then immediately wants the new indices to paint, but dispatch()
   // doesn't apply synchronously -- `source` is still last render's stale polygons at that exact
   // point, so deriving from it right there would (and did) paint the *previous* capture for one
@@ -257,7 +306,16 @@ export function ProjectMaskItem({
   // waiting on a re-render. See recolorHighlight.
   const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
   const activeHighlightRef = useRef(false);
-  const capturedIndicesRef = useRef<Set<number>>(new Set());
+  // Every one of this mesh's own captures, by id -- what activeHighlightRef actually paints (one
+  // bright, the rest dim -- see activeCaptureIdRef/DIM_CAPTURE_HIGHLIGHT/recolorHighlight).
+  // Deliberately NOT re-derived from source.maskData.polygons on every recolor, for the same
+  // staleness reason capturedIndicesRef never was (see the comment above): kept in sync directly
+  // off the server's own response by syncCapturedIndices instead.
+  const capturesRef = useRef<Map<number, Set<number>>>(new Map());
+  // Which capture (if any) reads as the bright one among capturesRef's -- mirrors
+  // uiState.activeElement.activeCaptureId, refreshed on mount/via setActiveCapture below for the
+  // same reason activeHighlightRef mirrors uiState.activeElement itself.
+  const activeCaptureIdRef = useRef<number | undefined>(undefined);
 
   // Which of this mesh's own polygon indices a capture-relocate drag would land on if released
   // `dx`/`dy` (buffer pixels) away from where it started -- shared by the rAF-throttled live
@@ -286,7 +344,7 @@ export function ProjectMaskItem({
     const indices = captureIndicesAtOffset(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
     dispatch({
       type: CoreActionType.SetPendingLightSourceCapture,
-      value: { maskKey: mediaKey, polygonIndices: [...indices] },
+      value: { maskKey: mediaKey, captureId: drag.captureId, polygonIndices: [...indices] },
     });
     notifyMaskPendingCaptureSet(mediaKey, indices);
   }, [captureIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingCaptureSet]);
@@ -318,24 +376,49 @@ export function ProjectMaskItem({
   // no better option than the mesh's geometric center, which is only coincidentally where a
   // light source was actually drawn.
   //
-  // Reads pendingCaptureRef/capturedIndicesRef (see their comments above) rather than
-  // source.maskData.polygons' own `captured` flags: those refs are updated the instant a
+  // Reads pendingCaptureRef/capturesRef (see their comments above) rather than
+  // source.maskData.polygons' own `capture_id`s: those refs are updated the instant a
   // capture-relocate drag commits, while `source` only catches up once updateMaskCapture's
   // response round-trips and SetCanvasMask has been dispatched *and* re-rendered. Deriving from
   // `source` directly meant Play All, clicked in that window, would animate from the capture's
   // previous location -- the geometry (p.d) a polygon index maps to doesn't change when a
   // capture moves, only which indices count as captured, so this still needs `source` for the
   // shapes themselves, just not for which ones are currently captured.
-  const computeLightSourceRestPosition = useCallback(() => {
-    if (source.kind !== "static") return undefined;
-    const indices = pendingCaptureRef.current ?? capturedIndicesRef.current;
-    const allPoints = source.maskData.polygons.filter((_, i) => indices.has(i)).flatMap((p) => parsePathPoints(p.d));
-    if (allPoints.length === 0) return undefined;
-    return {
-      x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
-      y: allPoints.reduce((sum, [, py]) => sum + py, 0) / allPoints.length,
-    };
-  }, [source]);
+  //
+  // A wired move/light_source effect targets one particular capture (its math is keyed by
+  // maskCaptureInputId(mediaKey, captureId), not mediaKey alone -- see effects-utils.ts), so
+  // playback needs to settle on *which* capture before it can look up that effect or anchor on
+  // its rest position: whichever one is currently selected (activeCaptureIdRef), or failing that
+  // the mesh's first capture -- deterministic and, for the common single-capture case, the only
+  // one there is anyway. Shared by computeLightSourceRestPosition (below) and
+  // playLightSourceAnimation, which must agree on the same capture or the epicenter would move
+  // relative to one capture while playing back another's equation.
+  const resolveTargetCaptureId = useCallback((): number | undefined => {
+    if (activeCaptureIdRef.current !== undefined) return activeCaptureIdRef.current;
+    return capturesRef.current.keys().next().value;
+  }, []);
+
+  // captureIdOverride lets a caller that has already settled on a specific capture (playback,
+  // which must anchor on the exact same capture its wired equation was resolved for) skip this
+  // function's own resolveTargetCaptureId guess and hand that capture straight through instead.
+  const computeLightSourceRestPosition = useCallback(
+    (captureIdOverride?: number) => {
+      if (source.kind !== "static") return undefined;
+      const targetCaptureId = captureIdOverride ?? resolveTargetCaptureId();
+      const indices =
+        pendingCaptureRef.current ??
+        (targetCaptureId !== undefined ? capturesRef.current.get(targetCaptureId) : undefined) ??
+        capturesRef.current.values().next().value;
+      if (!indices) return undefined;
+      const allPoints = source.maskData.polygons.filter((_, i) => indices.has(i)).flatMap((p) => parsePathPoints(p.d));
+      if (allPoints.length === 0) return undefined;
+      return {
+        x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
+        y: allPoints.reduce((sum, [, py]) => sum + py, 0) / allPoints.length,
+      };
+    },
+    [source, resolveTargetCaptureId],
+  );
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -369,11 +452,21 @@ export function ProjectMaskItem({
   const render = useCallback(() => {
     const state = glStateRef.current;
     if (!state) return;
+    // Playback (wiredMoveRef) owns however many lights playLightSourceAnimation is currently
+    // animating; otherwise it's just the cursor's own single light, using the mask's resting
+    // dial values (lightSourceIntensityRef&co.) rather than anything per-capture.
+    const lightSources: MaskLightSource[] = wiredMoveRef.current
+      ? Array.from(playbackLightSourcesRef.current.values())
+      : [
+          {
+            ...lightSourceRef.current,
+            intensity: lightSourceIntensityRef.current,
+            darkness: lightSourceDarknessRef.current,
+          },
+        ];
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
-      lightSource: lightSourceRef.current,
-      lightSourceIntensity: lightSourceIntensityRef.current,
-      lightSourceDarkness: lightSourceDarknessRef.current,
+      lightSources,
       texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
@@ -399,18 +492,26 @@ export function ProjectMaskItem({
     if (latestSource.kind !== "static") return;
     const { gl } = state;
 
-    const indices = pendingCaptureRef.current ?? (activeHighlightRef.current ? capturedIndicesRef.current : undefined);
     const highlights = new Float32Array(vertexCount);
-
-    if (indices && indices.size > 0) {
-      const quadVertexCount = latestSource.maskData.curves.length > 0 ? 6 : 0;
+    const quadVertexCount = latestSource.maskData.curves.length > 0 ? 6 : 0;
+    const paint = (indices: Set<number>, intensity: number) => {
       indices.forEach((polygonIndex) => {
         const startVertex = quadVertexCount + polygonIndex * 3;
         for (let v = 0; v < 3; v++) {
           const vertex = startVertex + v;
           if (vertex >= vertexCount) continue;
-          highlights[vertex] = 1;
+          highlights[vertex] = intensity;
         }
+      });
+    };
+
+    const pending = pendingCaptureRef.current;
+    if (pending && pending.size > 0) {
+      paint(pending, 1);
+    } else if (activeHighlightRef.current) {
+      const activeCaptureId = activeCaptureIdRef.current;
+      capturesRef.current.forEach((indices, captureId) => {
+        paint(indices, captureId === activeCaptureId ? 1 : DIM_CAPTURE_HIGHLIGHT);
       });
     }
 
@@ -449,6 +550,7 @@ export function ProjectMaskItem({
       session.resolve();
     }
     wiredMoveRef.current = false;
+    playbackLightSourcesRef.current = new Map();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
     applyDefaultLightSourceValue();
     render();
@@ -480,33 +582,57 @@ export function ProjectMaskItem({
   // back at the shared fps. Not called on its own -- triggered by handlePlayAll/handlePlayTarget via
   // the mount ref-callback below, same as every other effect's playback.
   const playLightSourceAnimation = useCallback(
-    (effectKey?: string): Promise<void> => {
+    (effectKey?: string, captureId?: number): Promise<void> => {
       stopLightSourceAnimation();
       if (source.kind !== "static") return Promise.resolve();
 
-      const wiredMove = coreState.effects.find(
-        (effect): effect is Extract<LaurusEffect, { type: "move" }> =>
-          effect.type === "move" &&
-          effect.value.math.has(mediaKey) &&
-          (effectKey === undefined || effect.key === effectKey),
-      );
-      const wiredLightSource = coreState.effects.find(
-        (effect): effect is Extract<LaurusEffect, { type: "light_source" }> =>
-          effect.type === "light_source" &&
-          effect.value.math.has(mediaKey) &&
-          (effectKey === undefined || effect.key === effectKey),
-      );
-      if (!wiredMove && !wiredLightSource) return Promise.resolve();
+      // Play All (bare play(), neither effectKey nor captureId given -- see
+      // MaskImperativeHandle) animates every one of this mesh's own captures that has something
+      // wired, all at once (see mask-gl.ts's array uniforms). A single-effect preview always
+      // concerns exactly one capture: the one handlePlayTarget recovered from the preview
+      // button's own AnimationTarget.inputKey (captureId), or -- for the rarer case of a caller
+      // that only knows the effectKey -- resolveTargetCaptureId's own guess.
+      const playAll = effectKey === undefined && captureId === undefined;
+      const candidateCaptureIds = playAll
+        ? Array.from(capturesRef.current.keys())
+        : [captureId ?? resolveTargetCaptureId()].filter((id): id is number => id !== undefined);
+
+      const targets = candidateCaptureIds
+        .map((id) => {
+          const inputId = maskCaptureInputId(mediaKey, id);
+          const wiredMove = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "move" }> =>
+              effect.type === "move" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          const wiredLightSource = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "light_source" }> =>
+              effect.type === "light_source" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { captureId: id, inputId, wiredMove, wiredLightSource };
+        })
+        .filter((t) => t.wiredMove || t.wiredLightSource)
+        // Read once, right before playback starts, not memoized on `source` -- see
+        // computeLightSourceRestPosition's comment. Anchored on the exact same capture each
+        // target resolved above, so a capture's epicenter never anchors on a different capture
+        // than the one whose frames are driving it.
+        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.captureId) }));
+      if (targets.length === 0) return Promise.resolve();
 
       wiredMoveRef.current = true;
-      // Read once, right before playback starts, not memoized on `source` -- see
-      // computeLightSourceRestPosition's comment.
-      const restPosition = computeLightSourceRestPosition();
 
       return new Promise<void>((resolve) => {
-        let moveFrames: LaurusFrame[] | undefined;
-        let lightSourceFrames: LaurusFrame[] | undefined;
-        let mergedFrames: LaurusFrame[] | undefined;
+        // Keyed by captureId, same as targets/playbackLightSourcesRef -- playAll fetches one
+        // pre-merged, project-wide frame timeline per target capture (matching how the backend
+        // already solves multiple effects -- including gaps between them -- for img/svg inputs);
+        // a single-target preview instead fetches that one target's own move/light_source frames
+        // directly, each solved only over that one effect's own start/end window.
+        const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
+        const moveFramesByCapture = new Map<number, LaurusFrame[]>();
+        const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
         const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve };
         activePlaybackRef.current = session;
 
@@ -515,31 +641,41 @@ export function ProjectMaskItem({
         let totalFrames: number;
         let durationSeconds: number;
 
-        if (effectKey === undefined) {
+        if (playAll) {
           fps = projectFps;
-          // Refined once getFrames resolves below -- until then the loop's "not loaded yet" gate
-          // keeps these from ever being read.
+          // Refined once every target's getFrames resolves below -- until then the loop's "not
+          // loaded yet" gate keeps these from ever being read. Every target shares the exact same
+          // window: the server's own global_limit is computed across every move/scale/rotate/
+          // light_source effect in the whole project, not scoped per input_id.
           totalFrames = 1;
           durationSeconds = 0;
-          getFrames(coreState.apiOrigin, coreState.project.project_id, mediaKey, fps).then((result) => {
+          Promise.all(
+            targets.map((t) =>
+              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps).then((result) => {
+                if (activePlaybackRef.current !== session) return;
+                mergedFramesByCapture.set(t.captureId, result ?? []);
+              }),
+            ),
+          ).then(() => {
             if (activePlaybackRef.current !== session) return;
-            mergedFrames = result ?? [];
-            totalFrames = Math.max(mergedFrames.length, 1);
+            totalFrames = Math.max(1, ...Array.from(mergedFramesByCapture.values()).map((f) => f.length));
             durationSeconds = totalFrames / fps;
           });
         } else {
-          const timingValue = (wiredMove ?? wiredLightSource)!.value;
+          const target = targets[0];
+          const timingValue = (target.wiredMove ?? target.wiredLightSource)!.value;
           fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
           totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
           durationSeconds = totalFrames / fps;
-          if (wiredMove) {
-            getMoveFrames(coreState.apiOrigin, wiredMove.key, mediaKey).then((result) => {
-              if (activePlaybackRef.current === session) moveFrames = result;
+          if (target.wiredMove) {
+            getMoveFrames(coreState.apiOrigin, target.wiredMove.key, target.inputId).then((result) => {
+              if (activePlaybackRef.current === session && result) moveFramesByCapture.set(target.captureId, result);
             });
           }
-          if (wiredLightSource) {
-            getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, mediaKey).then((result) => {
-              if (activePlaybackRef.current === session) lightSourceFrames = result;
+          if (target.wiredLightSource) {
+            getLightSourceFrames(coreState.apiOrigin, target.wiredLightSource.key, target.inputId).then((result) => {
+              if (activePlaybackRef.current === session && result)
+                lightSourceFramesByCapture.set(target.captureId, result);
             });
           }
         }
@@ -550,11 +686,14 @@ export function ProjectMaskItem({
           // Superseded by a stop() or another play() while this tick was in flight.
           if (activePlaybackRef.current !== session) return;
 
-          // Not loaded yet -- keep checking until every wired effect's frames resolve.
-          const stillLoading =
-            effectKey === undefined
-              ? !mergedFrames
-              : (wiredMove && !moveFrames) || (wiredLightSource && !lightSourceFrames);
+          // Not loaded yet -- keep checking until every target's wired effect(s) resolve.
+          const stillLoading = playAll
+            ? mergedFramesByCapture.size < targets.length
+            : targets.some(
+                (t) =>
+                  (t.wiredMove && !moveFramesByCapture.has(t.captureId)) ||
+                  (t.wiredLightSource && !lightSourceFramesByCapture.has(t.captureId)),
+              );
           if (stillLoading) {
             session.rafId = requestAnimationFrame(loop);
             return;
@@ -567,61 +706,68 @@ export function ProjectMaskItem({
           // restarting this from frame 0 once elapsed exceeds the duration would invent a loop the
           // equation never asked for.
           const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
-          const movePoint =
-            effectKey === undefined
-              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-              : moveFrames && moveFrames.length > 0
-                ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
-                : undefined;
-          // Gated on wiredLightSource even in the merged-frames case: merge_frames (server-side)
-          // fills light_source_size/intensity/falloff/darkness with 0 whenever no light_source
-          // effect is wired, and unlike a move's x/y=0 (a legitimate "stay at rest" no-op) a
-          // light_source_size/falloff of 0 actively zeroes out u_lightSourceActive below, killing
-          // the light source entirely rather than just leaving it unmoved.
-          const lightSourcePoint =
-            effectKey === undefined
-              ? wiredLightSource
-                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                : undefined
-              : lightSourceFrames && lightSourceFrames.length > 0
-                ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-                : undefined;
-
-          // Only overridden when a light_source effect is actually wired -- otherwise these refs
-          // keep whatever the mask's own starting appearance (applyDefaultLightSourceValue below)
-          // already set them to.
-          if (lightSourcePoint) {
-            lightSourceSizeRef.current = lightSourcePoint.light_source_size;
-            lightSourceIntensityRef.current = lightSourcePoint.light_source_intensity;
-            lightSourceFalloffRef.current = lightSourcePoint.light_source_falloff;
-            lightSourceDarknessRef.current = lightSourcePoint.light_source_darkness;
-          }
 
           const canvas = canvasRef.current;
           const rect = canvas?.getBoundingClientRect();
           if (canvas && rect && rect.width > 0 && rect.height > 0) {
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
-            // point.x/y are a pixel-space delta from the mesh's own resting position -- the same
-            // meaning they have applied as a CSS `translate` on the real element (see
-            // toKeyframes). Reinterpreted here as a delta from the light source's own captured position
-            // in the mesh (restPosition) instead, converted into buffer-pixel space the same
-            // way mouse coordinates are below. Falls back to the mesh's geometric center only if
-            // the light source's own position couldn't be recovered. No move wired -> epicenter just
-            // stays at rest, so the dials alone can still be previewed.
-            const restX = restPosition?.x ?? canvas.width / 2;
-            const restY = restPosition?.y ?? canvas.height / 2;
-            const pointX = movePoint?.x ?? 0;
-            const pointY = movePoint?.y ?? 0;
-            const bufferX = restX + pointX * scaleX;
-            const bufferY = restY + pointY * scaleY;
-            lightSourceRef.current = {
-              x: bufferX,
-              // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
-              y: canvas.height - bufferY,
-              radius: (lightSourceSizeRef.current / 2) * scaleX,
-              falloff: lightSourceFalloffRef.current * scaleX,
-            };
+
+            targets.forEach((t) => {
+              const mergedFrames = mergedFramesByCapture.get(t.captureId);
+              const moveFrames = moveFramesByCapture.get(t.captureId);
+              const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
+
+              const movePoint = playAll
+                ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                : moveFrames && moveFrames.length > 0
+                  ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
+                  : undefined;
+              // Gated on wiredLightSource even in the merged-frames case: merge_frames
+              // (server-side) fills light_source_size/intensity/falloff/darkness with 0 whenever
+              // no light_source effect is wired for this capture, and unlike a move's x/y=0 (a
+              // legitimate "stay at rest" no-op) a light_source_size/falloff of 0 would actively
+              // drop this capture's light out of drawMaskMesh's activeLights filter, killing it
+              // entirely rather than just leaving it unmoved.
+              const lightSourcePoint = playAll
+                ? t.wiredLightSource
+                  ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                  : undefined
+                : lightSourceFrames && lightSourceFrames.length > 0
+                  ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                  : undefined;
+
+              // point.x/y are a pixel-space delta from the mesh's own resting position -- the
+              // same meaning they have applied as a CSS `translate` on the real element (see
+              // toKeyframes). Reinterpreted here as a delta from this capture's own rest position
+              // in the mesh instead, converted into buffer-pixel space the same way mouse
+              // coordinates are below. Falls back to the mesh's geometric center only if the
+              // capture's own position couldn't be recovered. No move wired for this capture ->
+              // its epicenter just stays at rest, so the dials alone can still be previewed.
+              const restX = t.restPosition?.x ?? canvas.width / 2;
+              const restY = t.restPosition?.y ?? canvas.height / 2;
+              const pointX = movePoint?.x ?? 0;
+              const pointY = movePoint?.y ?? 0;
+              const bufferX = restX + pointX * scaleX;
+              const bufferY = restY + pointY * scaleY;
+              // Falls back to the mask's own resting dial values whenever this particular capture
+              // has no light_source effect of its own wired -- same rule the single-epicenter
+              // version used.
+              const size = lightSourcePoint?.light_source_size ?? lightSourceSizeRef.current;
+              const intensity = lightSourcePoint?.light_source_intensity ?? lightSourceIntensityRef.current;
+              const falloff = lightSourcePoint?.light_source_falloff ?? lightSourceFalloffRef.current;
+              const darkness = lightSourcePoint?.light_source_darkness ?? lightSourceDarknessRef.current;
+
+              playbackLightSourcesRef.current.set(t.captureId, {
+                x: bufferX,
+                // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
+                y: canvas.height - bufferY,
+                radius: (size / 2) * scaleX,
+                falloff: falloff * scaleX,
+                intensity,
+                darkness,
+              });
+            });
             render();
           }
 
@@ -640,6 +786,7 @@ export function ProjectMaskItem({
     [
       source,
       mediaKey,
+      resolveTargetCaptureId,
       computeLightSourceRestPosition,
       coreState.effects,
       coreState.apiOrigin,
@@ -762,12 +909,8 @@ export function ProjectMaskItem({
             ? new Set(coreState.pendingLightSourceCapture.polygonIndices)
             : undefined;
         activeHighlightRef.current = uiState.activeElement?.type === "mask" && uiState.activeElement.key === mediaKey;
-        capturedIndicesRef.current = new Set(
-          maskData.polygons.reduce<number[]>((acc, p, i) => {
-            if (p.captured) acc.push(i);
-            return acc;
-          }, []),
-        );
+        activeCaptureIdRef.current = activeHighlightRef.current ? uiState.activeElement?.activeCaptureId : undefined;
+        capturesRef.current = buildCapturesMap(maskData.polygons);
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
@@ -789,7 +932,7 @@ export function ProjectMaskItem({
         recolorHighlight();
 
         const handle: MaskImperativeHandle = {
-          play: (effectKey) => latestRef.current.playLightSourceAnimation(effectKey),
+          play: (effectKey, captureId) => latestRef.current.playLightSourceAnimation(effectKey, captureId),
           stop: () => latestRef.current.stopLightSourceAnimation(),
           abortCaptureDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;
@@ -797,6 +940,11 @@ export function ProjectMaskItem({
           },
           setActiveHighlighted: (active) => {
             activeHighlightRef.current = active;
+            if (!active) activeCaptureIdRef.current = undefined;
+            recolorHighlight();
+          },
+          setActiveCapture: (captureId) => {
+            activeCaptureIdRef.current = captureId;
             recolorHighlight();
           },
           setPendingCapture: (indices) => {
@@ -811,12 +959,7 @@ export function ProjectMaskItem({
             const latestSource = latestRef.current.source;
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
-            capturedIndicesRef.current = new Set(
-              updated.polygons.reduce<number[]>((acc, p, i) => {
-                if (p.captured) acc.push(i);
-                return acc;
-              }, []),
-            );
+            capturesRef.current = buildCapturesMap(updated.polygons);
             recolorHighlight();
           },
           applyMaskAppearanceDefaults,
@@ -950,7 +1093,7 @@ export function ProjectMaskItem({
       // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
       // flow that updates an *existing* mask's polygons this session (captureMeshSection,
       // maskbar's clear-capture, the capture context-menu's delete, and this file's own
-      // capture-relocate drag) only ever flips `captured` booleans via updateMaskCapture -- shape,
+      // capture-relocate drag) only ever flips `capture_id`s via updateMaskCapture -- shape,
       // fill, stroke, and curves are untouched, so nothing this callback builds (positions, base
       // colors, the source-image texture) is actually stale; those flows reach any mask-specific
       // GL state that *does* need to react (the highlight) through the registered handle's own
@@ -1018,8 +1161,10 @@ export function ProjectMaskItem({
                     next.add(mediaKey);
                     // Selecting a mesh that already has a capture activates it immediately, the
                     // same way alt-clicking a wired svg used to -- no extra step to see/wire what
-                    // it covers (recolorHighlight above).
-                    if (source.maskData.polygons.some((p) => p.captured)) {
+                    // it covers (recolorHighlight above). No particular capture is singled out by
+                    // this (every capture on the mesh renders its dim, unselected highlight) --
+                    // meta-clicking one specifically (below) is what picks a bright one.
+                    if (source.maskData.captures.length > 0) {
                       uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
                       notifyMaskActiveElementChanged(mediaKey);
                     }
@@ -1028,12 +1173,13 @@ export function ProjectMaskItem({
                 });
                 return;
               }
-              // Meta-clicking directly on the captured triangles opens the capture's own flavor of
-              // the context menu instead of the mesh's general one -- hit-tested in the same
-              // buffer-pixel space onMouseMove already converts screen coordinates into below
-              // (unflipped: polygon.d points, unlike lightSourceRef, are top-left-origin, not
-              // gl_FragCoord's). Both flavors share the same shown/hidden toggle (onClick below).
-              let hitCapture = false;
+              // Meta-clicking directly on one of the mesh's captures opens that capture's own
+              // flavor of the context menu instead of the mesh's general one, and selects it (the
+              // bright highlight, Lightsourcebar's target) -- hit-tested in the same buffer-pixel
+              // space onMouseMove already converts screen coordinates into below (unflipped:
+              // polygon.d points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's).
+              // Both flavors share the same shown/hidden toggle (onClick below).
+              let hitCaptureId: number | undefined;
               if (source.kind === "static" && e.metaKey) {
                 const canvas = e.currentTarget;
                 const rect = canvas.getBoundingClientRect();
@@ -1042,17 +1188,31 @@ export function ProjectMaskItem({
                   const scaleY = canvas.height / rect.height;
                   const bufferX = (e.clientX - rect.left) * scaleX;
                   const bufferY = (e.clientY - rect.top) * scaleY;
-                  hitCapture = isPointInCapturedPolygon(source.maskData.polygons, [bufferX, bufferY]);
+                  hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
                 }
               }
               if (source.kind === "static") {
-                const newVariant = hitCapture ? "capture" : "mask";
+                if (hitCaptureId !== undefined) {
+                  uiDispatch({
+                    type: UIActionType.SetActiveElement,
+                    value: { key: mediaKey, type: "mask", activeCaptureId: hitCaptureId },
+                  });
+                  notifyMaskActiveElementChanged(mediaKey);
+                  notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
+                }
+                const newVariant: ContextMenuVariant =
+                  hitCaptureId !== undefined ? { type: "capture", captureId: hitCaptureId } : { type: "mask" };
                 // Meta-clicking a different part of the mesh while a menu is already showing
                 // switches which flavor is displayed in place, rather than closing it -- the
                 // shown/hidden toggle below (shared with the mask's general menu) only fires when
                 // the variant isn't changing, so a second meta-click on the *same* kind of target
                 // still closes it as expected.
-                const switchingVariantWhileOpen = showContextMenu && newVariant !== contextMenuVariant;
+                const switchingVariantWhileOpen =
+                  showContextMenu &&
+                  (newVariant.type !== contextMenuVariant.type ||
+                    (newVariant.type === "capture" &&
+                      contextMenuVariant.type === "capture" &&
+                      newVariant.captureId !== contextMenuVariant.captureId));
                 setContextMenuVariant(newVariant);
                 if (!switchingVariantWhileOpen) {
                   onClick?.(e.metaKey);
@@ -1061,7 +1221,7 @@ export function ProjectMaskItem({
             }}
             onPointerDown={(e) => {
               // Only the move tool relocates a capture, and only when the gesture actually starts
-              // on the captured triangles themselves -- everywhere else on the mesh (or a mesh with
+              // on one of the mesh's own captures -- everywhere else on the mesh (or a mesh with
               // no capture at all) falls through untouched, letting the wrapper div's own
               // dnd-kit listeners (whole-mask drag) see the event exactly as they do today.
               if (source.kind !== "static" || uiState.tool.type !== "move") return;
@@ -1069,10 +1229,11 @@ export function ProjectMaskItem({
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
               const [bufferX, bufferY] = point;
-              if (!isPointInCapturedPolygon(source.maskData.polygons, [bufferX, bufferY])) return;
+              const captureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
+              if (captureId === undefined) return;
               const originalIndices = new Set<number>();
               source.maskData.polygons.forEach((p, i) => {
-                if (p.captured) originalIndices.add(i);
+                if (p.capture_id === captureId) originalIndices.add(i);
               });
               // Trust the circle a previous relocate drag actually used, if the mesh's captured
               // set still matches what it left behind -- only falling back to reconstructing one
@@ -1080,11 +1241,11 @@ export function ProjectMaskItem({
               // other flow (a fresh circle-drawn capture, a clear) changed the capture out from
               // under this cache. See lastKnownCaptureRef's comment for why re-deriving on every
               // drag, rather than just this once, was the actual growing-capture bug.
-              const known = lastKnownCaptureRef.current;
+              const known = lastKnownCaptureRef.current.get(captureId);
               const circle =
                 known && sameIndices(known.indices, originalIndices)
                   ? known.circle
-                  : capturedRegionCircle(source.maskData.polygons);
+                  : capturedRegionCircle(source.maskData.polygons, captureId);
               if (!circle) return;
               // Claims the gesture before dnd-kit's own onPointerDown (spread as `{...listeners}`
               // on the ancestor wrapper div) gets a chance to see it -- ordinary React synthetic
@@ -1096,6 +1257,7 @@ export function ProjectMaskItem({
               canvas.setPointerCapture(e.pointerId);
               captureDragRef.current = {
                 pointerId: e.pointerId,
+                captureId,
                 startX: bufferX,
                 startY: bufferY,
                 originalCircle: circle,
@@ -1107,7 +1269,7 @@ export function ProjectMaskItem({
               setIsDraggingCapture(true);
               dispatch({
                 type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, polygonIndices: [...originalIndices] },
+                value: { maskKey: mediaKey, captureId, polygonIndices: [...originalIndices] },
               });
               notifyMaskPendingCaptureSet(mediaKey, originalIndices);
             }}
@@ -1131,6 +1293,9 @@ export function ProjectMaskItem({
               // last dispatched pending state was, avoiding a race with an outstanding throttled
               // rAF frame from onPointerMove.
               const finalIndices = captureIndicesAtOffset(drag, dx, dy);
+              const captureId = drag.captureId;
+              const captureName =
+                source.maskData.captures.find((c) => c.id === captureId)?.name ?? `light ${captureId}`;
               captureDragRef.current = undefined;
               setIsDraggingCapture(false);
               if (finalIndices.size === 0) {
@@ -1138,7 +1303,10 @@ export function ProjectMaskItem({
                 // capture completely untouched (mirrors handleLightSourceCapture's own "zero
                 // indices" early-return for the creation flow). Reaffirms the cache rather than
                 // leaving it stale, since nothing about the actual captured set changed.
-                lastKnownCaptureRef.current = { indices: drag.originalIndices, circle: drag.originalCircle };
+                lastKnownCaptureRef.current.set(captureId, {
+                  indices: drag.originalIndices,
+                  circle: drag.originalCircle,
+                });
                 dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
                 notifyMaskPendingCaptureCleared(mediaKey);
                 return;
@@ -1148,12 +1316,17 @@ export function ProjectMaskItem({
               // to the original position for the round trip.
               dispatch({
                 type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, polygonIndices: [...finalIndices] },
+                value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
               });
               notifyMaskPendingCaptureSet(mediaKey, finalIndices);
-              updateMaskCapture(coreState.apiOrigin, coreState.accessToken, source.maskData.mask_media_id, [
-                ...finalIndices,
-              ]).then((updated) => {
+              updateMaskCapture(
+                coreState.apiOrigin,
+                coreState.accessToken,
+                source.maskData.mask_media_id,
+                captureId,
+                captureName,
+                [...finalIndices],
+              ).then((updated) => {
                 if (updated) {
                   dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
                   // Before the active-element/pending-capture notifies below, which recolor off
@@ -1161,23 +1334,30 @@ export function ProjectMaskItem({
                   // polygons at this exact point (dispatch() doesn't apply synchronously), so
                   // recoloring off it here would briefly repaint the *previous* capture position.
                   notifyMaskCaptureUpdated(mediaKey, updated);
-                  uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
+                  uiDispatch({
+                    type: UIActionType.SetActiveElement,
+                    value: { key: mediaKey, type: "mask", activeCaptureId: captureId },
+                  });
                   notifyMaskActiveElementChanged(mediaKey);
+                  notifyMaskActiveCaptureChanged(mediaKey, captureId);
                   // Cache the circle actually used, translated by this drag's own delta -- not
                   // re-derived from the resulting triangles (capturedRegionCircle), which is what
                   // let the radius creep up over successive relocations. See lastKnownCaptureRef.
-                  lastKnownCaptureRef.current = {
+                  lastKnownCaptureRef.current.set(captureId, {
                     indices: finalIndices,
                     circle: {
                       cx: drag.originalCircle.cx + dx,
                       cy: drag.originalCircle.cy + dy,
                       radius: drag.originalCircle.radius,
                     },
-                  };
+                  });
                 } else {
                   // Request failed -- the server-side capture is still whatever it was before this
                   // drag, so reaffirm that instead of leaving a stale/wrong cache entry behind.
-                  lastKnownCaptureRef.current = { indices: drag.originalIndices, circle: drag.originalCircle };
+                  lastKnownCaptureRef.current.set(captureId, {
+                    indices: drag.originalIndices,
+                    circle: drag.originalCircle,
+                  });
                 }
                 dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
                 notifyMaskPendingCaptureCleared(mediaKey);
@@ -1231,11 +1411,11 @@ export function ProjectMaskItem({
         </div>
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
-            media={{
-              key: mediaKey,
-              type: contextMenuVariant,
-              meta: maskMeta,
-            }}
+            media={
+              contextMenuVariant.type === "capture"
+                ? { key: mediaKey, type: "capture", captureId: contextMenuVariant.captureId, meta: maskMeta }
+                : { key: mediaKey, type: "mask", meta: maskMeta }
+            }
             framesCacheRef={framesCacheRef}
             transform={transform}
           />

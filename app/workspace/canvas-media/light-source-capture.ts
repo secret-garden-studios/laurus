@@ -17,7 +17,9 @@ function centroidOf(points: [number, number][]): [number, number] {
  * Returns indices rather than the triangle points themselves so a capture can be shown
  * optimistically while it's in flight (see PendingLightSourceCapture, core-state.ts) -- drawing a
  * circle immediately sends its indices to the server (workspace.client.tsx's captureMeshSection),
- * where they're written directly onto the mask's own polygons as a `captured` flag.
+ * where they're written directly onto the mask's own polygons as a `capture_id`. Membership isn't
+ * exclusive to whichever capture used to own a triangle: a later circle can freely claim triangles
+ * an earlier capture had, since capture_id only ever feeds a UI anchor/highlight, never rendering.
  */
 export function captureTriangleIndicesInCircle(
   polygons: LaurusPolygonPath[],
@@ -35,17 +37,18 @@ export function captureTriangleIndicesInCircle(
   return indices;
 }
 
-/** Reconstructs the circle a mesh's current capture was (or could have been) drawn with --
- * centroid of the captured polygons' own centroids as cx/cy, radius the farthest of them from
- * that center. Every capture that has ever existed through this UI was itself authored via
- * captureTriangleIndicesInCircle, so this is a faithful reconstruction rather than an
- * approximation of some arbitrary shape -- used to re-run that same circle test from a new
- * center point while dragging an existing capture to relocate it (project-mask-item.tsx). */
+/** Reconstructs the circle a given capture was (or could have been) drawn with -- centroid of its
+ * own polygons' centroids as cx/cy, radius the farthest of them from that center. Every capture
+ * that has ever existed through this UI was itself authored via captureTriangleIndicesInCircle,
+ * so this is a faithful reconstruction rather than an approximation of some arbitrary shape --
+ * used to re-run that same circle test from a new center point while dragging an existing capture
+ * to relocate it (project-mask-item.tsx). */
 export function capturedRegionCircle(
   polygons: LaurusPolygonPath[],
+  captureId: number,
 ): { cx: number; cy: number; radius: number } | undefined {
   const centroids = polygons
-    .filter((p) => p.captured)
+    .filter((p) => p.capture_id === captureId)
     .map((p) => parsePathPoints(p.d))
     .filter((points) => points.length > 0)
     .map(centroidOf);
@@ -55,19 +58,37 @@ export function capturedRegionCircle(
   return { cx, cy, radius };
 }
 
-/** Whether `point` (mask-local mesh space, same as the polygons' own `d` strings) falls within
- * the captured region -- used to tell "meta-click on the capture" apart from "meta-click on the
- * mesh in general" (project-mask-item.tsx). Bounding-box over every captured triangle's points,
- * not exact per-triangle hit-testing: individual mesh triangles are typically small relative to
- * how a mask is actually displayed on screen (especially zoomed out), so requiring a click to land
- * inside one specific tiny triangle made this effectively unusable in practice. The bounding box
- * is the same shape unit-display.tsx's reconstructed-capture thumbnail already uses for its
- * viewBox, so "the area the click needs to land in" matches "the area the thumbnail shows". */
-export function isPointInCapturedPolygon(polygons: LaurusPolygonPath[], point: [number, number]): boolean {
-  const capturedPoints = polygons.filter((p) => p.captured).flatMap((p) => parsePathPoints(p.d));
-  if (capturedPoints.length === 0) return false;
+/** Which capture (by id) `point` (mask-local mesh space, same as the polygons' own `d` strings)
+ * falls within, if any -- used to tell "meta-click on a capture" apart from "meta-click on the
+ * mesh in general", and which capture specifically, for both the context menu (project-mask-item.tsx)
+ * and starting a relocate drag. Bounding-box per capture, not exact per-triangle hit-testing:
+ * individual mesh triangles are typically small relative to how a mask is actually displayed on
+ * screen (especially zoomed out), so requiring a click to land inside one specific tiny triangle
+ * made this effectively unusable in practice. If two captures' bounding boxes overlap at the
+ * clicked point, the first one found (mask.polygons order) wins -- capture regions are expected to
+ * sit apart from each other in practice (they're distinct light sources), so this is an edge case,
+ * not the common path. Each capture's bounding box is the same shape unit-display.tsx's
+ * reconstructed-capture thumbnail already uses for its viewBox, so "the area a click needs to land
+ * in" matches "the area the thumbnail shows". */
+export function captureIdAtPoint(polygons: LaurusPolygonPath[], point: [number, number]): number | undefined {
   const [px, py] = point;
-  const xs = capturedPoints.map(([x]) => x);
-  const ys = capturedPoints.map(([, y]) => y);
-  return px >= Math.min(...xs) && px <= Math.max(...xs) && py >= Math.min(...ys) && py <= Math.max(...ys);
+  const orderedCaptureIds: number[] = [];
+  const pointsByCapture = new Map<number, [number, number][]>();
+  polygons.forEach((p) => {
+    if (p.capture_id === 0) return;
+    if (!pointsByCapture.has(p.capture_id)) orderedCaptureIds.push(p.capture_id);
+    const points = pointsByCapture.get(p.capture_id) ?? [];
+    points.push(...parsePathPoints(p.d));
+    pointsByCapture.set(p.capture_id, points);
+  });
+  for (const captureId of orderedCaptureIds) {
+    const points = pointsByCapture.get(captureId) ?? [];
+    if (points.length === 0) continue;
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    if (px >= Math.min(...xs) && px <= Math.max(...xs) && py >= Math.min(...ys) && py <= Math.max(...ys)) {
+      return captureId;
+    }
+  }
+  return undefined;
 }

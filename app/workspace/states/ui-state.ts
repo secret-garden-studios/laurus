@@ -60,9 +60,22 @@ export type LaurusActiveElement = {
   key: string;
   type: "svg" | "img" | "mask";
   locallyActivatedEffectKey?: string;
+  // Only meaningful when type is "mask" -- which of the mask's own LaurusMaskResult.captures is
+  // the one currently selected (meta-clicked, or just drawn/relocated). undefined means the mask
+  // itself is active but no particular capture is singled out: every capture on it renders its
+  // dim, unselected highlight rather than one bright one (see project-mask-item.tsx's
+  // recolorHighlight). Lightsourcebar's dials are still per-mask, not per-capture, so this
+  // doesn't gate them -- see the mask's own light_source_* fields.
+  activeCaptureId?: number;
 };
 
-export type CarouselEntry = { type: "svg"; key: string } | { type: "img"; key: string } | { type: "mask"; key: string };
+export type CarouselEntry =
+  | { type: "svg"; key: string }
+  | { type: "img"; key: string }
+  // One entry per capture, not per mask -- a mask with several captures (see project-mask-item.tsx)
+  // gets that many carousel entries, each wiring one particular capture (see workspace.client.tsx's
+  // initCarouselEntries/captureMeshSection).
+  | { type: "mask"; key: string; captureId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
@@ -182,7 +195,9 @@ export type UIAction =
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
-  | { type: UIActionType.DeleteCarouselEntry; key: string }
+  // captureId narrows this to one particular mask entry (deleting one capture); omitted, every
+  // entry with this key goes (deleting the whole img/svg/mask, all its capture entries included).
+  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
@@ -302,7 +317,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       };
     }
     case UIActionType.DeleteCarouselEntry: {
-      const newEntries = [...state.carouselEntries].filter((m) => m.key != action.key);
+      const newEntries = state.carouselEntries.filter((m) => {
+        if (m.key !== action.key) return true;
+        if (action.captureId === undefined) return false;
+        return !(m.type === "mask" && m.captureId === action.captureId);
+      });
       return { ...state, carouselEntries: newEntries };
     }
     case UIActionType.SetPlaybackMode: {

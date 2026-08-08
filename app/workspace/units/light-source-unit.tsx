@@ -18,6 +18,7 @@ import {
   LIGHT_SOURCE_SIZE_MAX,
 } from "../workspace.config";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { maskCaptureInputId } from "../effects-utils";
 import LightSourceUnitbar from "./bars/light-source-unitbar";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
@@ -49,7 +50,8 @@ interface LightSourceUnit {
   carouselIndexInit: number;
 }
 export default function LightSourceUnit({ lightSource, carouselIndexInit }: LightSourceUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
+    useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -82,7 +84,11 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "mask": {
-          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
+          // math -- keying purely off the mask's element key would collapse every capture on the
+          // same mask onto the same equation. See maskCaptureInputId.
+          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
       }
     } else {
@@ -194,16 +200,27 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           break;
         }
         case "mask": {
+          // activeCaptureId has to travel with the mask key here -- omitting it (as this used to)
+          // leaves uiState.activeElement.activeCaptureId undefined, and useCarouselIndex's own
+          // activeIndex lookup falls back to "any entry with this mask key" whenever that's
+          // unset, i.e. whichever of this mask's captures happens to sit first in the carousel.
+          // Since this callback's whole point is to re-anchor the active element on the capture
+          // the carousel is *already* showing (carouselIndex), leaving activeCaptureId off would
+          // make this component's own next render silently snap back to a different capture than
+          // the one just edited -- see notifyMaskActiveCaptureChanged's sibling call in
+          // unit-display.tsx's own setActiveElement, which this mirrors.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "mask",
             locallyActivatedEffectKey: lightSource.light_source_id,
+            activeCaptureId: carouselEntry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
           notifyMaskActiveElementChanged(newActiveElement.key);
+          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
           break;
         }
       }
@@ -213,6 +230,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     uiState.carouselEntries,
     uiState.activeElement,
     lightSource.light_source_id,
+    notifyMaskActiveCaptureChanged,
     uiDispatch,
     notifyMaskActiveElementChanged,
   ]);

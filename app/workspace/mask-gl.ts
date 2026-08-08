@@ -15,6 +15,11 @@ export const LIGHT_SOURCE_DARKNESS_DEFAULT = 0.2;
 /** Default blend between the flat masked color and the source image sampled through the mesh, 0-1. Adjustable via Maskbar's texture slider. */
 export const TEXTURE_MIX_DEFAULT = 0.5;
 
+/** How many simultaneous light sources one mask's draw call supports -- must match the fragment
+ * shader's own MAX_LIGHT_SOURCES #define below. drawMaskMesh silently drops anything past this
+ * many entries in DrawMaskMeshOptions.lightSources. */
+export const MAX_MASK_LIGHT_SOURCES = 8;
+
 /** A vertex/fragment GLSL pair, compiled and linked together into one WebGLProgram by createProgram. */
 export interface Shader {
   vertex: string;
@@ -74,23 +79,35 @@ varying float v_highlight;
 // no fill tint, so the capture's original colors stay untouched underneath it.
 const vec3 CAPTURE_STROKE_COLOR = vec3(0.258824, 0.521569, 0.956863);
 
-// Light source center is in gl_FragCoord space (drawing-buffer pixels, origin bottom-left);
-// radius/falloff are likewise in drawing-buffer pixels so they survive the canvas being
-// displayed at a different size than its backing resolution.
+// A mesh can carry several captures (see project-mask-item.tsx), each its own light source --
+// Play All animates every one of them at once (project-mask-item.tsx's playLightSourceAnimation),
+// so this can no longer be one scalar epicenter. MAX_LIGHT_SOURCES bounds a GLSL ES 1.00 array's
+// size, which has to be a compile-time constant -- generous relative to how many captures a mask
+// realistically carries; drawMaskMesh (mask-gl.ts) silently drops anything past it.
+#define MAX_LIGHT_SOURCES 8
+
+// Every light source's own center is in gl_FragCoord space (drawing-buffer pixels, origin
+// bottom-left); radius/falloff are likewise in drawing-buffer pixels so they survive the canvas
+// being displayed at a different size than its backing resolution.
 //
-// The cursor is a light source for the whole mesh, not just a local glow: triangles
-// inside u_lightSourceRadius sit in its bright core, and everything further out darkens smoothly
-// over the next u_lightSourceFalloff pixels, giving the flat-shaded mesh a 3D relief instead of an
-// isolated highlight. u_lightSourceFalloff is a distance, not a canvas-relative fraction, so the
-// darkening's "falloff" is tunable independent of how big the mesh happens to be on screen.
-uniform vec2 u_lightSourceCenter;
-uniform float u_lightSourceRadius;
-uniform float u_lightSourceFalloff;
-// Brightness of the core, 0-1 -- 1.0 mixes the epicenter fully to white rather than just tinting it.
-uniform float u_lightSourceIntensity;
-// Strength of the darkening at the far edge of the spread, 0-1 -- 1.0 drives it fully to black.
-uniform float u_lightSourceDarkness;
-uniform float u_lightSourceActive;
+// Each is a light source for the whole mesh, not just a local glow: triangles inside its own
+// u_lightSourceRadii[i] sit in its bright core, and everything further out darkens smoothly over
+// the next u_lightSourceFalloffs[i] pixels, giving the flat-shaded mesh a 3D relief instead of an
+// isolated highlight. The falloff is a distance, not a canvas-relative fraction, so it's tunable
+// independent of how big the mesh happens to be on screen.
+uniform vec2 u_lightSourceCenters[MAX_LIGHT_SOURCES];
+uniform float u_lightSourceRadii[MAX_LIGHT_SOURCES];
+uniform float u_lightSourceFalloffs[MAX_LIGHT_SOURCES];
+// Brightness of each light's own core, 0-1 -- 1.0 mixes its epicenter fully to white rather than
+// just tinting it.
+uniform float u_lightSourceIntensities[MAX_LIGHT_SOURCES];
+// Strength of each light's own darkening at the far edge of its spread, 0-1 -- 1.0 drives it
+// fully to black.
+uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
+// How many of the arrays above are actually populated -- drawMaskMesh only ever fills (and only
+// ever counts) lights with a positive radius, so every index below this is implicitly active;
+// there's no separate "active" flag to check per-light.
+uniform int u_lightSourceCount;
 
 uniform sampler2D u_texture;
 // 0 = flat server-shaded triangle color, 1 = source-image texture.
@@ -123,21 +140,35 @@ void main() {
   // v_lightSourcePos is constant across a triangle's interior (see a_centroid), so dist -- and
   // everything derived from it below -- is one flat value per triangle, not a smooth per-pixel
   // gradient. That's what makes the mesh's facets themselves read as the shading delimiters.
-  float dist = distance(v_lightSourcePos, u_lightSourceCenter);
-  // Bright core: same falloff as before, full strength within the inner 35% of the radius.
-  float highlight = (1.0 - smoothstep(u_lightSourceRadius * 0.35, u_lightSourceRadius, dist)) * u_lightSourceActive;
-  // Beyond the core, darken smoothly over the next u_lightSourceFalloff pixels -- this is what makes
-  // the whole mesh read as lit from one point instead of just the disc.
-  float shadow = smoothstep(u_lightSourceRadius, u_lightSourceRadius + u_lightSourceFalloff, dist) * u_lightSourceActive;
+  //
+  // Each active light contributes its own highlight/shadow at this facet; the brightest light's
+  // highlight wins (mix() saturates past "fully lit" at 1.0, so summing would overshoot into
+  // visible banding once two cores overlap) and the least-shadowed light's darkening wins (a
+  // facet lit by any one nearby light shouldn't still read as fully shadowed just because a
+  // second, farther light also has it inside its own falloff).
+  float bestHighlight = 0.0;
+  float leastShadow = 0.0;
+  for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
+    if (i >= u_lightSourceCount) break;
+    float dist = distance(v_lightSourcePos, u_lightSourceCenters[i]);
+    // Bright core: full strength within the inner 35% of the radius.
+    float highlight = 1.0 - smoothstep(u_lightSourceRadii[i] * 0.35, u_lightSourceRadii[i], dist);
+    // Beyond the core, darken smoothly over the next falloff pixels -- this is what makes the
+    // whole mesh read as lit from one point instead of just the disc.
+    float shadow = smoothstep(u_lightSourceRadii[i], u_lightSourceRadii[i] + u_lightSourceFalloffs[i], dist);
+    float shadowContribution = shadow * u_lightSourceDarknesses[i];
+    bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i]);
+    leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
+  }
 
-  // mix (not additive) so u_lightSourceIntensity at 1.0 reaches pure white at the epicenter instead of
-  // just an oversaturated tint.
-  vec3 lit = mix(base, vec3(1.0), highlight * u_lightSourceIntensity);
-  vec3 shaded = lit - shadow * u_lightSourceDarkness;
+  // mix (not additive) so bestHighlight at 1.0 reaches pure white at an epicenter instead of just
+  // an oversaturated tint.
+  vec3 lit = mix(base, vec3(1.0), bestHighlight);
+  vec3 shaded = lit - leastShadow;
   // The wireframe's own "white stroke" endpoint darkens with the same shadow term as the fill
-  // above, so a triangle sitting deep in the light source's shadow doesn't keep a bright hairline
+  // above, so a triangle sitting deep in a light source's shadow doesn't keep a bright hairline
   // around it while its interior goes dark.
-  vec3 strokeColor = vec3(1.0) - shadow * u_lightSourceDarkness;
+  vec3 strokeColor = vec3(1.0) - leastShadow;
   vec3 withEdge = mix(shaded, strokeColor, edge * 0.18);
 
   vec4 mask = texture2D(u_mask, v_uv);
@@ -200,12 +231,12 @@ export interface GLState {
   centroidLoc: number;
   highlightLoc: number;
   resolutionLoc: WebGLUniformLocation;
-  lightSourceCenterLoc: WebGLUniformLocation;
-  lightSourceRadiusLoc: WebGLUniformLocation;
-  lightSourceFalloffLoc: WebGLUniformLocation;
-  lightSourceIntensityLoc: WebGLUniformLocation;
-  lightSourceDarknessLoc: WebGLUniformLocation;
-  lightSourceActiveLoc: WebGLUniformLocation;
+  lightSourceCentersLoc: WebGLUniformLocation;
+  lightSourceRadiiLoc: WebGLUniformLocation;
+  lightSourceFalloffsLoc: WebGLUniformLocation;
+  lightSourceIntensitiesLoc: WebGLUniformLocation;
+  lightSourceDarknessesLoc: WebGLUniformLocation;
+  lightSourceCountLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
   textureMixLoc: WebGLUniformLocation;
   maskLoc: WebGLUniformLocation;
@@ -235,12 +266,12 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
-  const lightSourceCenterLoc = gl.getUniformLocation(program, "u_lightSourceCenter");
-  const lightSourceRadiusLoc = gl.getUniformLocation(program, "u_lightSourceRadius");
-  const lightSourceFalloffLoc = gl.getUniformLocation(program, "u_lightSourceFalloff");
-  const lightSourceIntensityLoc = gl.getUniformLocation(program, "u_lightSourceIntensity");
-  const lightSourceDarknessLoc = gl.getUniformLocation(program, "u_lightSourceDarkness");
-  const lightSourceActiveLoc = gl.getUniformLocation(program, "u_lightSourceActive");
+  const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
+  const lightSourceRadiiLoc = gl.getUniformLocation(program, "u_lightSourceRadii");
+  const lightSourceFalloffsLoc = gl.getUniformLocation(program, "u_lightSourceFalloffs");
+  const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
+  const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
+  const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const maskLoc = gl.getUniformLocation(program, "u_mask");
@@ -254,12 +285,12 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     centroidLoc < 0 ||
     highlightLoc < 0 ||
     !resolutionLoc ||
-    !lightSourceCenterLoc ||
-    !lightSourceRadiusLoc ||
-    !lightSourceFalloffLoc ||
-    !lightSourceIntensityLoc ||
-    !lightSourceDarknessLoc ||
-    !lightSourceActiveLoc ||
+    !lightSourceCentersLoc ||
+    !lightSourceRadiiLoc ||
+    !lightSourceFalloffsLoc ||
+    !lightSourceIntensitiesLoc ||
+    !lightSourceDarknessesLoc ||
+    !lightSourceCountLoc ||
     !textureLoc ||
     !textureMixLoc ||
     !maskLoc ||
@@ -284,12 +315,12 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     centroidLoc,
     highlightLoc,
     resolutionLoc,
-    lightSourceCenterLoc,
-    lightSourceRadiusLoc,
-    lightSourceFalloffLoc,
-    lightSourceIntensityLoc,
-    lightSourceDarknessLoc,
-    lightSourceActiveLoc,
+    lightSourceCentersLoc,
+    lightSourceRadiiLoc,
+    lightSourceFalloffsLoc,
+    lightSourceIntensitiesLoc,
+    lightSourceDarknessesLoc,
+    lightSourceCountLoc,
     textureLoc,
     textureMixLoc,
     maskLoc,
@@ -298,11 +329,21 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   };
 }
 
+export interface MaskLightSource {
+  x: number;
+  y: number;
+  radius: number;
+  falloff: number;
+  intensity: number;
+  darkness: number;
+}
+
 export interface DrawMaskMeshOptions {
   vertexCount: number;
-  lightSource: { x: number; y: number; radius: number; falloff: number };
-  lightSourceIntensity: number;
-  lightSourceDarkness: number;
+  // One entry per simultaneously-animating light source (see project-mask-item.tsx's
+  // playLightSourceAnimation) -- only entries with a positive radius are actually sent to the
+  // shader (see drawMaskMesh below), and only the first MAX_MASK_LIGHT_SOURCES of those.
+  lightSources: MaskLightSource[];
   texture: WebGLTexture | undefined;
   textureMix: number;
   maskTexture: WebGLTexture | undefined;
@@ -325,12 +366,32 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
 
   gl.useProgram(state.program);
   gl.uniform2f(state.resolutionLoc, gl.drawingBufferWidth, gl.drawingBufferHeight);
-  gl.uniform2f(state.lightSourceCenterLoc, options.lightSource.x, options.lightSource.y);
-  gl.uniform1f(state.lightSourceRadiusLoc, Math.max(options.lightSource.radius, 1));
-  gl.uniform1f(state.lightSourceFalloffLoc, Math.max(options.lightSource.falloff, 1));
-  gl.uniform1f(state.lightSourceIntensityLoc, options.lightSourceIntensity);
-  gl.uniform1f(state.lightSourceDarknessLoc, options.lightSourceDarkness);
-  gl.uniform1f(state.lightSourceActiveLoc, options.lightSource.radius > 0 ? 1 : 0);
+
+  // Only lights with a positive radius count as active -- mirrors the old single-light
+  // u_lightSourceActive gate, just decided client-side now instead of per-fragment, since an
+  // inactive light contributes nothing the shader's loop needs to see at all.
+  const activeLights = options.lightSources.filter((l) => l.radius > 0).slice(0, MAX_MASK_LIGHT_SOURCES);
+  gl.uniform1i(state.lightSourceCountLoc, activeLights.length);
+  if (activeLights.length > 0) {
+    const centers = new Float32Array(activeLights.length * 2);
+    const radii = new Float32Array(activeLights.length);
+    const falloffs = new Float32Array(activeLights.length);
+    const intensities = new Float32Array(activeLights.length);
+    const darknesses = new Float32Array(activeLights.length);
+    activeLights.forEach((light, i) => {
+      centers[i * 2] = light.x;
+      centers[i * 2 + 1] = light.y;
+      radii[i] = Math.max(light.radius, 1);
+      falloffs[i] = Math.max(light.falloff, 1);
+      intensities[i] = light.intensity;
+      darknesses[i] = light.darkness;
+    });
+    gl.uniform2fv(state.lightSourceCentersLoc, centers);
+    gl.uniform1fv(state.lightSourceRadiiLoc, radii);
+    gl.uniform1fv(state.lightSourceFalloffsLoc, falloffs);
+    gl.uniform1fv(state.lightSourceIntensitiesLoc, intensities);
+    gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
+  }
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, options.texture ?? null);

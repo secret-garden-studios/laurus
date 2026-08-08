@@ -28,6 +28,7 @@ import {
   LaurusSvgPageSearch,
   searchSvgs,
   updateMaskCapture,
+  nextCaptureId,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
@@ -37,6 +38,7 @@ import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
+import { parseMaskCaptureInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -202,6 +204,11 @@ export interface CoreContextProps {
   // handleStopAll above already reach into the same map for play()/stop().
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskActiveElementChanged: (key: string | undefined) => void;
+  // Which of an already-active mask's own captures reads as the bright one -- kept separate from
+  // notifyMaskActiveElementChanged (rather than folding captureId into that call) since that one's
+  // shared by every img/svg/mask effect-wiring call site in the app, none of which know or care
+  // about captures.
+  notifyMaskActiveCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
   notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
@@ -221,6 +228,7 @@ export const CoreContext = createContext<CoreContextProps>({
   captureMeshSection: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskActiveElementChanged: () => {},
+  notifyMaskActiveCaptureChanged: () => {},
   notifyMaskPendingCaptureSet: () => {},
   notifyMaskPendingCaptureCleared: () => {},
   notifyMaskCaptureUpdated: () => {},
@@ -334,19 +342,23 @@ function initCarouselEntries(
       distance,
     });
   });
-  // A mask only earns a carousel entry once it actually has a capture -- otherwise every mask
-  // in a project would clutter every effect unit's carousel with nothing to wire.
+  // A mask earns one carousel entry per capture it actually has -- otherwise every mask in a
+  // project would clutter every effect unit's carousel with nothing to wire, and a mask with
+  // several captures would only expose one of them.
   project.masks.entries().forEach((projectMask) => {
     if (projectMask[1].left < 0 || projectMask[1].top < 0) return;
-    const hasCapture = canvasMasks.get(projectMask[0])?.polygons.some((p) => p.captured) ?? false;
-    if (!hasCapture) return;
+    const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
+    if (captures.length === 0) return;
     const distance = Math.sqrt(projectMask[1].top ** 2 + projectMask[1].left ** 2);
-    temp.push({
-      entry: {
-        type: "mask",
-        key: projectMask[0],
-      },
-      distance,
+    captures.forEach((capture) => {
+      temp.push({
+        entry: {
+          type: "mask",
+          key: projectMask[0],
+          captureId: capture.id,
+        },
+        distance,
+      });
     });
   });
   const entries = temp.sort((a, b) => a.distance - b.distance).map((item) => item.entry);
@@ -995,6 +1007,9 @@ export default function Workspace({
       handles.forEach((h) => h.setActiveHighlighted(maskKey === key)),
     );
   }, []);
+  const notifyMaskActiveCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActiveCapture(captureId));
+  }, []);
   const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices));
   }, []);
@@ -1012,27 +1027,35 @@ export default function Workspace({
     maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.onLightSourcePreviewToggled(enabled)));
   }, []);
 
-  // Persists a drawn/redrawn mesh-section capture immediately -- selecting a capture (canvas.tsx's
-  // handleLightSourceCapture) is taken as confirmation to save it, no separate confirm step. Shown
-  // optimistically via the pending-capture notifies below while the request is in flight (mirrors
-  // project-mask-item.tsx's own relocate-drag commit in onPointerUp), then reconciled with the
-  // server response. The captured flag lives directly on the mask's own polygons server-side (see
-  // updateMaskCapture), so this just swaps the mask's data in place -- no second entity to create,
-  // no stale-previous-capture cleanup, and (per the mask's own key being the wiring identity now,
-  // see project-mask-item.tsx) no effect rewiring needed on re-capture either.
+  // Persists a freshly drawn mesh-section capture immediately -- drawing a circle (canvas.tsx's
+  // handleLightSourceCapture) is taken as confirmation to save it, no separate confirm step.
+  // Always creates a *new* capture (the next free id on this mask, auto-named) rather than
+  // replacing an existing one -- moving/resizing an already-drawn capture is a meta-drag directly
+  // on its own highlighted triangles instead (project-mask-item.tsx's onPointerDown/onPointerUp).
+  // Any triangles the new circle overlaps get reassigned from whichever capture owned them before,
+  // which is harmless: capture_id only ever feeds a UI anchor/highlight, never rendering (see
+  // RedisCapture server-side). Shown optimistically via the pending-capture notifies below while
+  // the request is in flight (mirrors project-mask-item.tsx's own relocate-drag commit in
+  // onPointerUp), then reconciled with the server response.
   const captureMeshSection = useCallback(
     async (maskKey: string, polygonIndices: number[]) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
-      const hadCapture = maskData.polygons.some((p) => p.captured);
+      const captureId = nextCaptureId(maskData.captures);
+      const name = `light ${captureId}`;
 
-      dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: { maskKey, polygonIndices } });
+      dispatch({
+        type: CoreActionType.SetPendingLightSourceCapture,
+        value: { maskKey, captureId, polygonIndices },
+      });
       notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices));
 
       const updated = await updateMaskCapture(
         coreState.apiOrigin,
         coreState.accessToken,
         maskData.mask_media_id,
+        captureId,
+        name,
         polygonIndices,
       );
       if (updated) {
@@ -1040,11 +1063,15 @@ export default function Workspace({
         // Before the notifies below, which recolor off this mask's own captured-indices ref -- see
         // MaskImperativeHandle.syncCapturedIndices' own comment for why that ref, not `source`.
         notifyMaskCaptureUpdated(maskKey, updated);
-        if (!hadCapture) {
-          uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: maskKey } });
-        }
-        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+        // Every freshly drawn capture earns its own carousel entry -- see CarouselEntry's own
+        // doc comment on why this is per-capture, not per-mask.
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: maskKey, captureId } });
+        uiDispatch({
+          type: UIActionType.SetActiveElement,
+          value: { key: maskKey, type: "mask", activeCaptureId: captureId },
+        });
         notifyMaskActiveElementChanged(maskKey);
+        notifyMaskActiveCaptureChanged(maskKey, captureId);
       }
       dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
       notifyMaskPendingCaptureCleared(maskKey);
@@ -1059,6 +1086,7 @@ export default function Workspace({
       uiDispatch,
       notifyMaskPendingCaptureSet,
       notifyMaskActiveElementChanged,
+      notifyMaskActiveCaptureChanged,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskToolChanged,
@@ -1213,9 +1241,14 @@ export default function Workspace({
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
+        // maskHandlesRef is keyed by a mask's own element key, not the capture-scoped input_id a
+        // unit's preview button builds (see maskCaptureInputId) -- recover both so playback lands
+        // on the right mesh *and* the exact capture the button was for, rather than letting
+        // playLightSourceAnimation's own resolveTargetCaptureId guess.
+        const { maskKey, captureId } = parseMaskCaptureInputId(target.inputKey);
         maskHandlesRef.current
-          ?.get(target.inputKey)
-          ?.forEach((player) => lightSourceFinished.push(player.play(target.effectKey)));
+          ?.get(maskKey)
+          ?.forEach((player) => lightSourceFinished.push(player.play(target.effectKey, captureId)));
       }
 
       if (newAnimations.length == 0 && lightSourceFinished.length == 0) {
@@ -1362,6 +1395,7 @@ export default function Workspace({
       captureMeshSection,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
+      notifyMaskActiveCaptureChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
@@ -1381,6 +1415,7 @@ export default function Workspace({
       captureMeshSection,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
+      notifyMaskActiveCaptureChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,

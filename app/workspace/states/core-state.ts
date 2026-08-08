@@ -48,6 +48,7 @@ export const DEFAULT_LIGHT_SOURCE_VALUE: LightSourceValue = {
 // yet-uploaded triangle data.
 export interface PendingLightSourceCapture {
   maskKey: string;
+  captureId: number;
   polygonIndices: number[];
 }
 

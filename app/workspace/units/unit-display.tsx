@@ -14,7 +14,7 @@ interface UnitDisplay {
   onNewLocalIndex: (v: number) => void;
 }
 export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
-  const { coreState, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
@@ -68,12 +68,14 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             key: entry.key,
             type: "mask",
             locallyActivatedEffectKey: effectKey,
+            activeCaptureId: entry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
           notifyMaskActiveElementChanged(newActiveElement.key);
+          notifyMaskActiveCaptureChanged(entry.key, entry.captureId);
           // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
           // anchor a context menu to beyond the mask's own -- becoming the active element
           // highlights the mesh triangles it covers instead (see project-mask-item.tsx's
@@ -82,7 +84,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
         }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch, notifyMaskActiveElementChanged],
+    [uiState.carouselEntries, effectKey, uiDispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged],
   );
 
   const hideContextMenu = useCallback(
@@ -217,9 +219,13 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
                     // No separate media of its own to show a thumbnail of -- reconstructed
-                    // straight from the mask's own captured polygons (same `d` path data the
-                    // mesh itself renders with, see mask-gl.ts) rather than a stand-in icon.
-                    const capturedPolygons = coreState.canvasMasks.get(c.key)?.polygons.filter((p) => p.captured);
+                    // straight from this one capture's own polygons (this carousel entry wires a
+                    // single capture, not the whole mask -- see this file's "mask" case in
+                    // setActiveElement above), using the same `d` path data the mesh itself renders
+                    // with (see mask-gl.ts) rather than a stand-in icon.
+                    const capturedPolygons = coreState.canvasMasks
+                      .get(c.key)
+                      ?.polygons.filter((p) => p.capture_id === c.captureId);
                     if (!capturedPolygons || capturedPolygons.length === 0) break;
                     const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
                     if (capturedPoints.length === 0) break;
@@ -231,7 +237,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                     const boundsHeight = Math.max(1, Math.max(...ys) - minY);
                     return (
                       <div
-                        key={c.key}
+                        key={`${c.key}-${c.captureId}`}
                         title="mesh capture"
                         onClick={() => {
                           if (isAltKeyPressed) return;

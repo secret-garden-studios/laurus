@@ -16,7 +16,16 @@ export const useCarouselIndex = (
     if (totalEntries === 0) return 0;
     return Math.max(0, Math.min(index, totalEntries - 1));
   };
-  const activeIndex = carouselEntries.findIndex((c) => c.key === activeKey);
+  // A mask key can now match several entries (one per capture -- see CarouselEntry's own doc
+  // comment), so a capture-specific activeElement needs to land on its own entry, not just
+  // whichever of the mask's entries happens to be first.
+  const activeIndex = carouselEntries.findIndex((c) => {
+    if (c.key !== activeKey) return false;
+    if (c.type === "mask" && activeElement?.type === "mask" && activeElement.activeCaptureId !== undefined) {
+      return c.captureId === activeElement.activeCaptureId;
+    }
+    return true;
+  });
   const baseIndex = clampIndex(activeIndex > -1 ? activeIndex : carouselIndexInit);
   const [localIndex, setLocalIndex] = useState(() => clampIndex(carouselIndexInit));
   const [prevKey, setPrevKey] = useState(activeKey);

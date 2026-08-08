@@ -15,7 +15,7 @@ import {
   LaurusMaskResult,
   LaurusSvgResult,
   deleteMask,
-  updateMaskCapture,
+  deleteMaskCapture,
 } from "./workspace.server";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200 } from "../svg-repo";
@@ -29,7 +29,7 @@ import {
   defaultUIState,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
-import { deleteEffects } from "./effects-utils";
+import { deleteEffects, deleteMaskCaptureEffects } from "./effects-utils";
 
 function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
   switch (mediaType) {
@@ -135,26 +135,36 @@ export type ContextMenuMedia =
   | { type: "img"; key: string; meta: LaurusProjectImg }
   | { type: "svg"; key: string; meta: LaurusProjectSvg }
   | { type: "mask"; key: string; meta: LaurusProjectMask }
-  // A mesh's captured region (see maskbar.tsx's "capture"/"clear capture", project-mask-item.tsx's
+  // One of a mesh's own captures (see maskbar.tsx's "capture" tool, project-mask-item.tsx's
   // meta-click hit-test) -- reuses the owning mask's own key/meta (there's no separate entity),
-  // just a different, much smaller menu: only "active" and "delete" are wired up; every other row
-  // still renders for visual parity with img/svg/mask but is inert.
-  | { type: "capture"; key: string; meta: LaurusProjectMask };
+  // just a different, much smaller menu targeting this one captureId: only "active" and "delete"
+  // are wired up; every other row still renders for visual parity with img/svg/mask but is inert.
+  | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
   transform?: LaurusTransform;
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskCaptureUpdated } = useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskActiveElementChanged,
+    notifyMaskActiveCaptureChanged,
+    notifyMaskCaptureUpdated,
+  } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { setSelectedImgKeys } = useContext(HoverContext);
   const { triggerMask, isMaskBusy } = useMaskPersist();
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const active = useMemo<boolean>(() => {
-    return (uiState.activeElement?.key ?? "") == media.key;
-  }, [uiState.activeElement?.key, media.key]);
+    if (uiState.activeElement?.key !== media.key) return false;
+    if (media.type === "capture") {
+      return uiState.activeElement.type === "mask" && uiState.activeElement.activeCaptureId === media.captureId;
+    }
+    return true;
+  }, [uiState.activeElement, media]);
   const [isAltPressed, setIsAltPressed] = useState(false);
 
   useEffect(() => {
@@ -445,7 +455,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
           // deleteProjectMedia is never actually invoked for a "capture" (see the delete cell's
-          // onClick below, which calls updateMaskCapture directly instead) -- narrowed here only
+          // onClick below, which calls deleteMaskCapture directly instead) -- narrowed here only
           // to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
           if (media.type !== "capture") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
@@ -1015,8 +1025,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           notifyMaskActiveElementChanged(media.key);
                           break;
                         }
-                        case "mask":
-                        case "capture": {
+                        case "mask": {
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
                             type: "mask",
@@ -1026,6 +1035,20 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             value: newActiveElement,
                           });
                           notifyMaskActiveElementChanged(media.key);
+                          break;
+                        }
+                        case "capture": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "mask",
+                            activeCaptureId: media.captureId,
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          notifyMaskActiveElementChanged(media.key);
+                          notifyMaskActiveCaptureChanged(media.key, media.captureId);
                           break;
                         }
                       }
@@ -1109,20 +1132,42 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         break;
                       }
                       case "capture": {
-                        const updated: LaurusMaskResult | undefined = await updateMaskCapture(
+                        const updated: LaurusMaskResult | undefined = await deleteMaskCapture(
                           coreState.apiOrigin,
                           coreState.accessToken,
                           media.meta.media_id,
-                          [],
+                          media.captureId,
                         );
                         if (!updated) break;
                         dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
                         notifyMaskCaptureUpdated(media.key, updated);
-                        if (uiState.activeElement?.key == media.key) {
+                        // The capture itself is gone -- its own move/light_source equations
+                        // (keyed by maskCaptureInputId(media.key, media.captureId), not this
+                        // mask's other captures) are now unreachable through the UI, so clear
+                        // them rather than leaving them stranded in that effect's math map.
+                        await deleteMaskCaptureEffects(
+                          media.key,
+                          media.captureId,
+                          coreState.apiOrigin,
+                          coreState.accessToken,
+                          coreState.effects,
+                          dispatch,
+                        );
+                        if (
+                          uiState.activeElement?.key == media.key &&
+                          uiState.activeElement.type === "mask" &&
+                          uiState.activeElement.activeCaptureId === media.captureId
+                        ) {
                           uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                           notifyMaskActiveElementChanged(undefined);
                         }
-                        uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: media.key });
+                        // Only the deleted capture's own carousel entry goes away -- any others
+                        // this mask still has (see CarouselEntry's own doc comment) are untouched.
+                        uiDispatch({
+                          type: UIActionType.DeleteCarouselEntry,
+                          key: media.key,
+                          captureId: media.captureId,
+                        });
                         break;
                       }
                     }

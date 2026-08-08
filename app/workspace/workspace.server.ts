@@ -295,17 +295,27 @@ export async function deleteSvg(
 /* /media/masks */
 
 /** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`.
- * `captured` flags whether this triangle is part of the mask's current
- * "capture" (a client-selected subsection of the mesh, e.g. a light source
- * region) -- see updateMaskCapture. */
+ * `capture_id` is 0 if this triangle isn't part of any of the mask's
+ * "captures" (client-selected subsections of the mesh, e.g. light source
+ * regions -- see MaskMediaResult_V1_0.captures), otherwise the id of the
+ * capture it belongs to -- see updateMaskCapture. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
   stroke: string;
   stroke_width: number;
-  captured: boolean;
+  capture_id: number;
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
+
+/** One named, client-selected subsection of a mask's mesh (e.g. a light
+ * source region). `id` is referenced by any number of the mask's own
+ * PolygonPath_V1_0.capture_id fields. */
+export interface Capture_V1_0 {
+  id: number;
+  name: string;
+}
+export type LaurusCapture = Capture_V1_0;
 
 /**
  * One sample of a silhouette's outward alpha falloff: `offset` pixels outside
@@ -374,6 +384,7 @@ export interface MaskMediaResult_V1_0 {
   categories: string[];
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
+  captures: Capture_V1_0[];
   creator: string;
   last_editor: string;
 }
@@ -470,18 +481,23 @@ export async function deleteMask(
   }
 }
 
-/** Full-replace which of a mask's own polygons (by array index) are flagged
- * "captured" -- e.g. a light source region selected by dragging a circle
- * over the mesh. An empty polygonIndices array clears it. */
+/** Full-replace which of a mask's own polygons (by array index) belong to
+ * the single capture identified by captureId -- e.g. a light source region
+ * selected by dragging a circle over the mesh -- leaving the mask's other
+ * captures untouched. Upserts a captures registry entry named `name`.
+ * An empty polygonIndices array clears this one capture -- see
+ * deleteMaskCapture, which is that call with the bookkeeping baked in. */
 export async function updateMaskCapture(
   baseUrl: string | undefined,
   accessToken: string | undefined,
   maskMediaId: string,
+  captureId: number,
+  name: string,
   polygonIndices: number[],
 ): Promise<LaurusMaskResult | undefined> {
   try {
-    const body = JSON.stringify({ polygon_indices: polygonIndices });
-    const url = `${baseUrl}/media/masks/${maskMediaId}/capture`;
+    const body = JSON.stringify({ name, polygon_indices: polygonIndices });
+    const url = `${baseUrl}/media/masks/${maskMediaId}/capture/${captureId}`;
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
     if (authResponse.newToken) {
@@ -500,6 +516,28 @@ export async function updateMaskCapture(
     console.log({ error });
     return undefined;
   }
+}
+
+/** Clears one capture entirely -- its triangle membership and its captures
+ * registry entry both go away, same as updateMaskCapture with an empty
+ * polygonIndices array. */
+export async function deleteMaskCapture(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  captureId: number,
+): Promise<LaurusMaskResult | undefined> {
+  return updateMaskCapture(baseUrl, accessToken, maskMediaId, captureId, "", []);
+}
+
+/** Smallest capture id not already used by any of this mask's own captures
+ * -- how the client mints a new light source's identity, the same way
+ * polygon array indices already stand in for a stable id elsewhere in this
+ * feature (see PolygonPath_V1_0's own doc comment): no server-side
+ * allocator needed since a mask's own captures list is always read before
+ * a new one is created. */
+export function nextCaptureId(captures: Capture_V1_0[]): number {
+  return 1 + captures.reduce((max, c) => Math.max(max, c.id), 0);
 }
 
 /* /media/masks/mask (websocket) */
