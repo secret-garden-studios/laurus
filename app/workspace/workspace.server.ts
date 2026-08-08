@@ -444,6 +444,32 @@ export async function getMasksByIds(baseUrl: string | undefined, maskMediaIds: s
   }
 }
 
+export async function deleteMask(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  description?: string,
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/media/masks/${maskMediaId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "DELETE");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "DELETE");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("deleting", "mask", description));
+    }
+    return response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+
 /** Full-replace which of a mask's own polygons (by array index) are flagged
  * "captured" -- e.g. a light source region selected by dragging a circle
  * over the mesh. An empty polygonIndices array clears it. */

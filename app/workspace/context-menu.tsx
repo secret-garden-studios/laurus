@@ -9,7 +9,14 @@ import {
 } from "../projects/projects.server";
 import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspace.client";
 import { useMaskPersist } from "./hooks/useMaskPersist";
-import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, updateMaskCapture } from "./workspace.server";
+import {
+  LaurusFrame,
+  LaurusImgResult,
+  LaurusMaskResult,
+  LaurusSvgResult,
+  deleteMask,
+  updateMaskCapture,
+} from "./workspace.server";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -431,6 +438,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             key: media.key,
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
+          // Project doc no longer references it at this point, so the underlying
+          // MaskMediaResult on the server is now orphaned -- clean it up too, rather than
+          // leaving it behind (as happens for img/svg, whose resources are left alone).
+          if (media.type === "mask") {
+            await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
+          }
           // deleteProjectMedia is never actually invoked for a "capture" (see the delete cell's
           // onClick below, which calls updateMaskCapture directly instead) -- narrowed here only
           // to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
