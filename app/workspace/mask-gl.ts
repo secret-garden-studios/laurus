@@ -68,10 +68,11 @@ varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying float v_highlight;
 
-// Sky blue -- the active capture's own outline (see a_highlight/v_highlight), drawn as a stroke
-// along the highlighted triangles' edges with no fill tint, so the capture's original colors
-// stay untouched underneath it.
-const vec3 CAPTURE_STROKE_COLOR = vec3(0.529, 0.808, 0.922);
+// Matches the rgba(66, 133, 244, 1) selection outline drawn around a selected media item
+// (project-img.tsx/project-svg.tsx/project-mask-item.tsx) -- the active capture's own outline
+// (see a_highlight/v_highlight), drawn as a stroke along the highlighted triangles' edges with
+// no fill tint, so the capture's original colors stay untouched underneath it.
+const vec3 CAPTURE_STROKE_COLOR = vec3(0.258824, 0.521569, 0.956863);
 
 // Light source center is in gl_FragCoord space (drawing-buffer pixels, origin bottom-left);
 // radius/falloff are likewise in drawing-buffer pixels so they survive the canvas being
