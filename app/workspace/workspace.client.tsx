@@ -205,7 +205,6 @@ export interface CoreContextProps {
   notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
-  notifyMaskSourceImageRemoved: (mediaId: string) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
 }
@@ -225,7 +224,6 @@ export const CoreContext = createContext<CoreContextProps>({
   notifyMaskPendingCaptureSet: () => {},
   notifyMaskPendingCaptureCleared: () => {},
   notifyMaskCaptureUpdated: () => {},
-  notifyMaskSourceImageRemoved: () => {},
   notifyMaskAppearanceChanged: () => {},
   notifyMaskLightSourcePreviewToggled: () => {},
 });
@@ -1007,9 +1005,6 @@ export default function Workspace({
   const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
   }, []);
-  const notifyMaskSourceImageRemoved = useCallback((mediaId: string) => {
-    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.notifySourceImageRemoved(mediaId)));
-  }, []);
   const notifyMaskAppearanceChanged = useCallback((maskKey: string, override?: MaskAppearanceOverride) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.applyMaskAppearanceDefaults(override));
   }, []);
@@ -1352,7 +1347,6 @@ export default function Workspace({
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
-      notifyMaskSourceImageRemoved,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
     }),
@@ -1372,7 +1366,6 @@ export default function Workspace({
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
-      notifyMaskSourceImageRemoved,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
     ],
@@ -1668,9 +1661,15 @@ export default function Workspace({
                         height: "min-content",
                         zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
                         pointerEvents:
-                          uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection
+                          uiState.tool.type === "mask" &&
+                          !uiState.tool.capturingMeshSection &&
+                          uiState.browserElement?.type !== "img"
                             ? "none"
-                            : isMetaKeyPressed
+                            : // Alt-click-select (ProjectMaskItem's onClick) needs to reach an
+                              // existing mask underneath -- but only for the mask tool: marquee
+                              // uses the alt key for its own drag-duplicate gesture and needs this
+                              // overlay to keep capturing the drag regardless.
+                              isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
                               ? "none"
                               : "auto",
                       }}

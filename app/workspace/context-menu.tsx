@@ -7,25 +7,11 @@ import {
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
-import { CoreContext, LaurusTransform, UIContext } from "./workspace.client";
+import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspace.client";
+import { useMaskPersist } from "./hooks/useMaskPersist";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, updateMaskCapture } from "./workspace.server";
 import styles from "../app.module.css";
-import { RiToolsLine } from "react-icons/ri";
-import {
-  allOut,
-  browse,
-  earthquake,
-  experiment,
-  keyboardCommandKey,
-  lassoSelect,
-  SvgRepo,
-  cycle400,
-  polyline200,
-  asterisk200,
-  asterisk300,
-  texture300,
-  image200,
-} from "../svg-repo";
+import { SvgRepo, polyline200, texture300, image200 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
   LaurusActiveElement,
@@ -153,14 +139,10 @@ interface ContextMenu {
   transform?: LaurusTransform;
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
-  const {
-    coreState,
-    dispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskSourceImageRemoved,
-    notifyMaskCaptureUpdated,
-  } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskCaptureUpdated } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { setSelectedImgKeys } = useContext(HoverContext);
+  const { triggerMask, isMaskBusy } = useMaskPersist();
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const active = useMemo<boolean>(() => {
@@ -455,9 +437,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (media.type !== "capture") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
-            // Any mask whose source_img_media_id pointed at this image is now orphaned -- drops
-            // its GL texture instead of leaving it built against a deleted image.
-            if (media.type === "img") notifyMaskSourceImageRemoved(mediaId);
           }
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
@@ -480,7 +459,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       uiDispatch,
       framesCacheRef,
       notifyMaskActiveElementChanged,
-      notifyMaskSourceImageRemoved,
     ],
   );
 
@@ -554,6 +532,20 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     leftSide,
     bottomSide,
   ]);
+
+  // Runs the mask tool directly on this project image, using its own placed frame (top/left/
+  // width/height/scale) as the mask's default landing spot -- see useMaskPersist for the
+  // Maskbar position/size toggles that can still override it. Replaces what used to be a
+  // separate "mask" trigger button in Maskbar itself.
+  const handleMaskClick = useCallback(() => {
+    if (media.type !== "img" || isMaskBusy) return;
+    const imgResult = coreState.canvasImgs.get(media.key);
+    if (!imgResult) return;
+    // Selects the image so canvas.tsx's live mesh preview (keyed off selectedImgKeys) picks up
+    // the in-flight stream, matching what alt-selecting it before masking used to give for free.
+    setSelectedImgKeys(new Set([media.key]));
+    triggerMask(imgResult, media.meta);
+  }, [media, isMaskBusy, coreState.canvasImgs, setSelectedImgKeys, triggerMask]);
 
   const swapMedia = useCallback(async () => {
     if (!uiState.browserElement) return;
@@ -680,9 +672,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       dispatch({ type: CoreActionType.SetCanvasImgs, value: newCanvasImgs });
       dispatch({ type: CoreActionType.SetCanvasSvgs, value: newCanvasSvgs });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
-      // Whatever image was at this project slot before the swap is gone now (replaced in place,
-      // or turned into an svg) -- any mask whose source_img_media_id pointed at it is orphaned.
-      if (media.type === "img") notifyMaskSourceImageRemoved(media.meta.img_media_id);
     }
   }, [
     coreState.accessToken,
@@ -694,7 +683,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     media.key,
     media.meta,
     media.type,
-    notifyMaskSourceImageRemoved,
     uiState.browserElement,
   ]);
 
@@ -707,7 +695,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       const targetItem = newImgs.get(media.key) || newSvgs.get(media.key) || newMasks.get(media.key);
       if (!targetItem) return;
       const allItems = [...newImgs.values(), ...newSvgs.values(), ...newMasks.values()];
-      const maxOrder = allItems.length - 1;
+      const maxOrder = Math.max(-1, ...allItems.map((item) => item.order));
 
       if (direction === "decrement") {
         targetItem.order = Math.max(0, targetItem.order - 1);
@@ -1039,6 +1027,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     {"swap"}
                   </div>
                 )}
+                {media.type === "img" && (
+                  <div
+                    style={{ ...cellStyle, ...(isMaskBusy && disabledCellStyle) }}
+                    className={isMaskBusy ? "" : styles["animated-nav-dark"]}
+                    onClick={handleMaskClick}
+                  >
+                    {"mask"}
+                  </div>
+                )}
                 <div
                   style={{ ...cellStyle, ...(isCapture && disabledCellStyle) }}
                   className={isCapture ? "" : styles["animated-nav-dark"]}
@@ -1168,7 +1165,7 @@ interface BrowserContextMenu {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserContextMenu) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskSourceImageRemoved } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -1279,8 +1276,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
           cleanUpCanvasMedia(media.type, media.key, dispatch);
           cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
-          // Any mask whose source_img_media_id pointed at this image is now orphaned.
-          if (media.type === "img") notifyMaskSourceImageRemoved(mediaId);
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -1302,7 +1297,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
       uiDispatch,
       framesCacheRef,
       notifyMaskActiveElementChanged,
-      notifyMaskSourceImageRemoved,
     ],
   );
 

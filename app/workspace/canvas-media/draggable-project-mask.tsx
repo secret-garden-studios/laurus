@@ -108,6 +108,22 @@ export function DraggableProjectMask({
   );
   const source = useMemo<ProjectMaskItemSource>(() => ({ kind: "static", maskData }), [maskData]);
 
+  // Mirrors DraggableProjectImg/Svg's own highestOrder exactly -- see ProjectMaskItem's maxZIndex
+  // comment for why this mask's context menu needs it.
+  const highestOrder = useMemo(() => {
+    let max = 0;
+    for (const img of coreState.project.imgs.values()) {
+      if (img.order > max) max = img.order;
+    }
+    for (const svg of coreState.project.svgs.values()) {
+      if (svg.order > max) max = svg.order;
+    }
+    for (const mask of coreState.project.masks.values()) {
+      if (mask.order > max) max = mask.order;
+    }
+    return max;
+  }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
+
   const sensors = useSensors(useSensor(PointerSensor));
 
   const onNewMaskPosition = useCallback(
@@ -263,6 +279,7 @@ export function DraggableProjectMask({
         transform={laurusTransform}
         framesCacheRef={framesCacheRef}
         onClick={onMaskClick}
+        maxZIndex={highestOrder}
       />
     </DndContext>
   );

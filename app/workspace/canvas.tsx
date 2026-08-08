@@ -14,6 +14,7 @@ import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
 import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
+import { useMaskPersist } from "./hooks/useMaskPersist";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
@@ -135,14 +136,24 @@ export default function Canvas() {
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
   const mask = useContext(MaskContext);
+  const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
 
-  // Keyed off selectedImgKeys rather than activeElement -- that's what Maskbar actually
-  // masks (see its selectedImgKey), so the live preview needs to watch the same thing or it
-  // silently never shows up for an image that was only ever alt-selected, not plain-clicked.
+  // A fresh mask-drop from the img-browser (see handleMaskDrop below) -- a browser image has no
+  // project entry to read a frame off of, so the drop circle's own computed frame is held here
+  // just long enough for the live preview below to render at that exact spot, until triggerMask's
+  // persistMask places the real static mask there (see mask.status === "done" below).
+  const [pendingMaskDrop, setPendingMaskDrop] = useState<
+    { imgData: LaurusImgResult; frame: { width: number; height: number; top: number; left: number } } | undefined
+  >(undefined);
+
+  // Keyed off selectedImgKeys rather than activeElement -- that's what the img context menu's
+  // "mask" cell actually masks (see its handleMaskClick), so the live preview needs to watch the
+  // same thing or it silently never shows up for an image that was only ever alt-selected, not
+  // plain-clicked.
   //
-  // Hidden once mask.status reaches "done": Maskbar's persistMask runs synchronously off that
+  // Hidden once mask.status reaches "done": triggerMask's persistMask runs synchronously off that
   // same "complete" event (see useMaskPreview's onComplete), placing a real static mask at the
   // exact same frame/position liveMaskFrame/liveMaskDndPosition already mirror. Leaving this live
   // overlay mounted after that point meant two WebGL canvases -- this one and the freshly-placed
@@ -159,28 +170,37 @@ export default function Canvas() {
     return { key, meta, imgData };
   }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs, mask.status]);
 
-  // Mirrors Maskbar's persistMask defaulting exactly, so the live preview lands at the
+  // Same idea as activeMaskImg, for a mask dropped straight from the img-browser instead of
+  // triggered off an already-placed project image -- see handleMaskDrop/pendingMaskDrop above.
+  const activeBrowserMaskDrop = useMemo(() => {
+    if (uiState.tool.type !== "mask" || mask.status === "done" || activeMaskImg) return undefined;
+    return pendingMaskDrop;
+  }, [uiState.tool.type, mask.status, activeMaskImg, pendingMaskDrop]);
+
+  // Mirrors triggerMask's persistMask defaulting exactly, so the live preview lands at the
   // same place/size the placed result will -- without this, the preview always sits on the
   // source image and only jumps to the position/size override once masking finishes.
   const liveMaskFrame = useMemo(() => {
-    if (!activeMaskImg) return undefined;
-    const meta = activeMaskImg.meta;
+    const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
+    if (!frame) return undefined;
     return {
-      width: mask.size.value && mask.size.width !== undefined ? mask.size.width : meta.width,
-      height: mask.size.value && mask.size.height !== undefined ? mask.size.height : meta.height,
-      scale_x: meta.scale_x,
-      scale_y: meta.scale_y,
+      width: mask.size.value && mask.size.width !== undefined ? mask.size.width : frame.width,
+      height: mask.size.value && mask.size.height !== undefined ? mask.size.height : frame.height,
+      scale_x: activeMaskImg?.meta.scale_x ?? 1,
+      scale_y: activeMaskImg?.meta.scale_y ?? 1,
     };
-  }, [activeMaskImg, mask.size]);
+  }, [activeMaskImg, activeBrowserMaskDrop, mask.size]);
 
   const liveMaskDndPosition = useMemo(() => {
-    if (!activeMaskImg) return undefined;
-    const meta = activeMaskImg.meta;
+    const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
+    if (!frame) return undefined;
     return {
-      x: mask.position.value && mask.position.x !== undefined ? mask.position.x : meta.left,
-      y: mask.position.value && mask.position.y !== undefined ? mask.position.y : meta.top,
+      x: mask.position.value && mask.position.x !== undefined ? mask.position.x : frame.left,
+      y: mask.position.value && mask.position.y !== undefined ? mask.position.y : frame.top,
     };
-  }, [activeMaskImg, mask.position]);
+  }, [activeMaskImg, activeBrowserMaskDrop, mask.position]);
+
+  const liveMaskKey = activeMaskImg?.key ?? activeBrowserMaskDrop?.imgData.media_key;
 
   // Deliberately not re-created every time `mask` itself changes reference -- it does, on
   // every single triangle/status update, because useMaskPreview's provider re-renders and
@@ -191,10 +211,11 @@ export default function Canvas() {
   // entire WebGL context (including a fresh async texture reload) each time -- the actual cause of
   // the streaming flicker and the "reverts to the plain image, pauses" glitch right at completion.
   const liveMaskSource = useMemo<ProjectMaskItemSource | undefined>(() => {
-    if (!activeMaskImg) return undefined;
-    return { kind: "live", mask, sourceImg: activeMaskImg.imgData };
+    const imgData = activeMaskImg?.imgData ?? activeBrowserMaskDrop?.imgData;
+    if (!imgData) return undefined;
+    return { kind: "live", mask, sourceImg: imgData };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMaskImg]);
+  }, [activeMaskImg, activeBrowserMaskDrop]);
 
   useLayoutEffect(() => {
     const c = drawingCanvasRef.current;
@@ -224,7 +245,9 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          if (!uiState.tool.capturingMeshSection) break;
+          // Capturing a mesh-section (an existing placed mask) takes priority over dropping a
+          // fresh mask in from an armed browser thumbnail -- see handleMouseUp's own comment.
+          if (!uiState.tool.capturingMeshSection && uiState.browserElement?.type !== "img") break;
           const canvas = drawingCanvasRef.current;
           if (!canvas) return;
           const p = calcMousePosition(canvas, event);
@@ -233,7 +256,7 @@ export default function Canvas() {
         }
       }
     },
-    [uiState.tool],
+    [uiState.tool, uiState.browserElement],
   );
 
   const handleMouseMove = useCallback(
@@ -253,7 +276,7 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          if (!uiState.tool.capturingMeshSection) break;
+          if (!uiState.tool.capturingMeshSection && uiState.browserElement?.type !== "img") break;
           const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.beginPath();
@@ -263,7 +286,7 @@ export default function Canvas() {
         }
       }
     },
-    [anchor, uiState.tool],
+    [anchor, uiState.tool, uiState.browserElement],
   );
 
   const handleSvgDrop = useCallback(
@@ -468,6 +491,25 @@ export default function Canvas() {
       dispatch,
       uiDispatch,
     ],
+  );
+
+  // Marquee-drop equivalent for the mask tool -- masks a still-unplaced browser image directly,
+  // landing the result at the drawn circle's frame instead of importing the source image into the
+  // project first (see img-browser's onImgClick, which arms uiState.browserElement without
+  // importing anything).
+  const handleMaskDrop = useCallback(
+    (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
+      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
+      if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
+        return;
+      }
+      const frame = { width: newFrame.width, height: newFrame.height, top: newFrame.y, left: newFrame.x };
+      // Held onto so the live streaming preview (activeBrowserMaskDrop above) knows where to
+      // render before any project mask exists to read a frame off of.
+      setPendingMaskDrop({ imgData, frame });
+      triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 });
+    },
+    [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
   );
 
   // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle and
@@ -719,10 +761,26 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          if (!uiState.tool.capturingMeshSection) break;
           const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
           if (newRadius < minRadius) break;
-          handleLightSourceCapture({ cx: anchor.x, cy: anchor.y, radius: newRadius });
+          const dropArea: ProjectCircle = { cx: anchor.x, cy: anchor.y, radius: newRadius };
+
+          if (uiState.tool.capturingMeshSection) {
+            handleLightSourceCapture(dropArea);
+            break;
+          }
+
+          // Marquee-drag equivalent of the marquee tool's own img drop, straight off an armed
+          // img-browser thumbnail (see img-browser's onImgClick) -- masks the source image
+          // directly, landing it at the drawn circle's frame, without ever creating a project img
+          // entry for it (see useMaskPersist/handleMaskDrop below).
+          if (uiState.browserElement?.type === "img") {
+            const key = uiState.browserElement.value.media_key;
+            const imgData = uiState.browserImgs.find((s) => s.media_key === key);
+            if (imgData) {
+              handleMaskDrop(imgData, dropArea);
+            }
+          }
           break;
         }
       }
@@ -745,6 +803,7 @@ export default function Canvas() {
       setSelectedSvgKeys,
       handleSvgDrop,
       handleImgDrop,
+      handleMaskDrop,
       handleDuplicateDrop,
       uiDispatch,
     ],
@@ -768,15 +827,15 @@ export default function Canvas() {
           onMouseDown={handleMouseDown}
         />
       </div>
-      {activeMaskImg && liveMaskFrame && liveMaskDndPosition && liveMaskSource && (
+      {liveMaskKey && liveMaskFrame && liveMaskDndPosition && liveMaskSource && (
         <ProjectMaskItem
-          key={activeMaskImg.key}
-          dndId={`dnd-node-live-mask-${activeMaskImg.key}`}
+          key={liveMaskKey}
+          dndId={`dnd-node-live-mask-${liveMaskKey}`}
           dndPosition={liveMaskDndPosition}
           // Only needs to sit above the marquee drawing canvas it's a sibling of here -- placed
           // masks' own stacking (by project order) is handled where they're actually rendered.
           zIndex={1}
-          mediaKey={activeMaskImg.key}
+          mediaKey={liveMaskKey}
           frame={liveMaskFrame}
           source={liveMaskSource}
         />

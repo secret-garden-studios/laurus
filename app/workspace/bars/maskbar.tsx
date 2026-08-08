@@ -1,14 +1,11 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useEffect } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
-import { checkCircle, SvgRepo, texture300 } from "@/app/svg-repo";
+import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import { ParameterSliderX } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
-import { LaurusProjectResult, LaurusProjectMask, createProject, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType } from "../states/core-state";
-import { LaurusMaskResult } from "../workspace.server";
-import { v4 as newUUID } from "uuid";
 import { UIActionType } from "../states/ui-state";
 import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
 
@@ -19,7 +16,7 @@ export default function Maskbar() {
   // does via these two callbacks.
   const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
   const { topology } = coreState;
-  const { selectedImgKeys, selectedMaskKeys, setSelectedMaskKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -244,14 +241,23 @@ export default function Maskbar() {
   }, [setPosition]);
 
   const selectedImgKey = selectedImgKeys.size === 1 ? Array.from(selectedImgKeys)[0] : undefined;
-  const imgData = selectedImgKey ? coreState.canvasImgs.get(selectedImgKey) : undefined;
   const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
+  // Armed for a browser-drop (an img-browser thumbnail clicked while the mask tool is active, see
+  // img-browser's onImgClick) -- the source image isn't placed in the project yet, so there's no
+  // imgMeta to read a frame off of, only the still-unplaced thumbnail itself.
+  const isArmedForMaskDrop = uiState.tool.type === "mask" && uiState.browserElement?.type === "img";
+  const armedImg =
+    isArmedForMaskDrop && uiState.browserElement?.type === "img" ? uiState.browserElement.value : undefined;
   // The source image's own on-canvas aspect ratio -- width/height stay locked to it so resizing
-  // the mask output can't distort it relative to the image it was traced from.
+  // the mask output can't distort it relative to the image it was traced from. Falls back to the
+  // armed browser thumbnail's natural size (unplaced, so no on-canvas scale to apply) when there's
+  // no placed image selected.
+  const sourceWidth = imgMeta ? imgMeta.width * imgMeta.scale_x : armedImg?.width;
+  const sourceHeight = imgMeta ? imgMeta.height * imgMeta.scale_y : armedImg?.height;
   const sourceAspectRatio = useMemo(() => {
-    if (!imgMeta || imgMeta.height * imgMeta.scale_y <= 0) return undefined;
-    return (imgMeta.width * imgMeta.scale_x) / (imgMeta.height * imgMeta.scale_y);
-  }, [imgMeta]);
+    if (sourceWidth === undefined || !sourceHeight) return undefined;
+    return sourceWidth / sourceHeight;
+  }, [sourceWidth, sourceHeight]);
 
   const updateToolWidth = useCallback(() => {
     const newWidth = parseFloat(wInputRef.current?.value || "");
@@ -271,17 +277,15 @@ export default function Maskbar() {
     }));
   }, [sourceAspectRatio, setSize]);
 
-  const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
-  const isMaskDisabled = !imgData || isMaskBusy;
-  const isPositionDisabled = !imgData;
-  const isSizeDisabled = !imgData;
+  const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
+  const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
   // There's only something to blend once geometry is actually on screen.
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   // A selected placed mask takes priority over the live in-flight preview -- picking a specific
   // result to adjust should always win over whatever's still streaming in, and the two only
   // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh);
+  const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
   const textureMixValue =
@@ -316,116 +320,14 @@ export default function Maskbar() {
     setTextureCursor({ x: newCursor, y: 0 });
   }, [textureMixValue, getTextureCursor]);
 
-  const maskTitle = isMaskBusy
-    ? "masking…"
-    : selectedImgKeys.size === 0
-      ? "select an image to mask"
-      : selectedImgKeys.size > 1
-        ? "select a single image to mask"
-        : "mask the selected image";
-
-  // Called directly off the websocket's one and only "complete" message (see
-  // useMaskPreview's start()) rather than watched for via a useEffect on mask.status --
-  // an effect would re-fire this every time Maskbar remounts (e.g. switching tools away and
-  // back) and finds status still "done" from a prior run, with no reliable way to tell "already
-  // saved" from "new" short of extra bookkeeping. Calling it once, tied to the one real event,
-  // needs none.
-  const persistMask = useCallback(
-    (result: LaurusMaskResult) => {
-      if (!imgMeta) return;
-      const newKey = newUUID();
-      const order =
-        Math.max(
-          -1,
-          ...Array.from(coreState.project.imgs.values()).map((i) => i.order),
-          ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
-          ...Array.from(coreState.project.masks.values()).map((v) => v.order),
-        ) + 1;
-      const projectMask: LaurusProjectMask = {
-        media_id: result.mask_media_id,
-        media_group_id: "",
-        // Defaults to the source image's own frame, so the result lands exactly on top of the
-        // image it came from -- overridden by the position/size toggles above when they're on.
-        width: size.value && size.width !== undefined ? size.width : imgMeta.width,
-        height: size.value && size.height !== undefined ? size.height : imgMeta.height,
-        top: position.value && position.y !== undefined ? position.y : imgMeta.top,
-        left: position.value && position.x !== undefined ? position.x : imgMeta.left,
-        order,
-        scale_x: imgMeta.scale_x,
-        scale_y: imgMeta.scale_y,
-        rotate_x: 0,
-        rotate_y: 0,
-        rotate_z: 0,
-        rotate_angle: 0,
-        // Seeded from whatever the live preview was dialed to while streaming, so persisting
-        // doesn't reset the look back to some unrelated default.
-        light_source_size: mask.lightSourceSize,
-        light_source_intensity: mask.lightSourceIntensity,
-        light_source_falloff: mask.lightSourceFalloff,
-        light_source_darkness: mask.lightSourceDarkness,
-        fill: result.fill,
-        stroke: result.stroke,
-        stroke_width: result.stroke_width,
-        description: "",
-      };
-
-      const rollback: LaurusProjectResult = { ...coreState.project };
-      const newMasks = new Map(coreState.project.masks);
-      newMasks.set(newKey, projectMask);
-      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
-
-      dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
-      dispatch({ type: CoreActionType.SetProject, value: newProject });
-      // Selects the just-placed mask immediately -- otherwise selectedMaskKey stays whatever it
-      // was before masking (usually nothing), and the capture toggle/texture slider above (both
-      // gated on selectedMaskKey) stay disabled until the user manually alt-clicks the new mask
-      // on canvas.
-      setSelectedMaskKeys(new Set([newKey]));
-
-      (async () => {
-        if (newProject.project_id) {
-          const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
-            ...newProject,
-          });
-          if (!updated) {
-            dispatch({ type: CoreActionType.SetProject, value: rollback });
-            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
-          }
-        } else {
-          const created = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
-          if (created) {
-            dispatch({ type: CoreActionType.SetProject, value: { ...created } });
-          } else {
-            dispatch({ type: CoreActionType.SetProject, value: rollback });
-            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
-          }
-        }
-      })();
-    },
-    [
-      imgMeta,
-      position,
-      size,
-      coreState.project,
-      coreState.apiOrigin,
-      coreState.accessToken,
-      dispatch,
-      setSelectedMaskKeys,
-      mask.lightSourceSize,
-      mask.lightSourceIntensity,
-      mask.lightSourceFalloff,
-      mask.lightSourceDarkness,
-    ],
-  );
-
-  const handleMaskClick = useCallback(() => {
-    if (isMaskDisabled || !imgData) return;
-    mask.start(imgData, persistMask);
-  }, [isMaskDisabled, imgData, mask, persistMask]);
-
   // Starting fresh whenever the selected image changes, rather than leaving a stale mesh/status
-  // or position/size override from whatever was last masked (mask.reset() clears both).
+  // or position/size override from whatever was last masked (mask.reset() clears both). Skipped
+  // while a mask is actively connecting/streaming -- the img context menu's "mask" cell selects
+  // the image and triggers masking in the same click (see its handleMaskClick), so this effect
+  // would otherwise fire right after and mask.reset()'s socketRef.current?.close() would abort
+  // the job it just started.
   useEffect(() => {
+    if (mask.status === "connecting" || mask.status === "streaming") return;
     mask.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImgKey]);
@@ -472,7 +374,7 @@ export default function Maskbar() {
           <div
             title={
               isPositionDisabled
-                ? "select an image to mask to set an exact position for the result"
+                ? "select an image to mask, or arm one from the browser, to set an exact position for the result"
                 : "place the generated mask at an exact x/y position instead of overlaying the source image"
             }
             style={{
@@ -562,7 +464,7 @@ export default function Maskbar() {
           <div
             title={
               isSizeDisabled
-                ? "select an image to mask to set an exact size for the result"
+                ? "select an image to mask, or arm one from the browser, to set an exact size for the result"
                 : "size the generated mask to an exact width/height instead of matching the source image"
             }
             style={{
@@ -584,14 +486,15 @@ export default function Maskbar() {
               onClick={() => {
                 const newSizeValue = !isSizeOn;
                 setSize(
-                  newSizeValue && imgMeta
+                  newSizeValue && sourceWidth !== undefined && sourceHeight !== undefined
                     ? {
                         value: true,
-                        // Seeded from the source image's current on-canvas size, so turning the
-                        // toggle on doesn't jump to some other size -- from here, editing either
-                        // field scales the other to keep this same ratio.
-                        width: imgMeta.width * imgMeta.scale_x,
-                        height: imgMeta.height * imgMeta.scale_y,
+                        // Seeded from the source's current size (the placed image's on-canvas size,
+                        // or the armed browser thumbnail's natural size), so turning the toggle on
+                        // doesn't jump to some other size -- from here, editing either field scales
+                        // the other to keep this same ratio.
+                        width: sourceWidth,
+                        height: sourceHeight,
                       }
                     : { value: newSizeValue, width: undefined, height: undefined },
                 );
@@ -643,34 +546,6 @@ export default function Maskbar() {
             value={heightValue}
             autoComplete="off"
             style={sizeInputStyle}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              color: isMaskDisabled ? "rgb(67,67,67)" : "inherit",
-            }}
-          >
-            {"mask"}
-          </span>
-          <SvgRepo
-            title={maskTitle}
-            svg={isMaskDisabled ? checkCircle("rgb(67,67,67)") : checkCircle()}
-            onContainerClick={isMaskDisabled ? undefined : handleMaskClick}
-            containerStyle={{
-              width: dynamicSizes.svgSize.width,
-              height: dynamicSizes.svgSize.height,
-            }}
-            scale={0.7}
-            scaleToContaier={true}
           />
         </div>
         <div

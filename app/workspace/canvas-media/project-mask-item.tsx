@@ -62,7 +62,7 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
 //
 // This file has no useEffect: every one of this mask's own GL-affecting state changes is driven
 // either by this component's own event handlers (pointer/click), or -- for state that changes
-// elsewhere in the app (active element, tool, topology, a deleted source image, ...) -- by the
+// elsewhere in the app (active element, tool, topology, ...) -- by the
 // file that actually dispatches that change calling straight through one of CoreContext's
 // notifyMask* functions, which reach into workspace.client.tsx's maskHandlesRef and invoke the
 // matching method below directly. That's what every method past play/stop on this interface is
@@ -90,10 +90,6 @@ export interface MaskImperativeHandle {
   // stale data at the exact point every one of those flows calls this (right after dispatching
   // SetCanvasMask, before React has re-rendered with the new prop). See capturedIndicesRef.
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
-  // A source image (matched by media id) was deleted or replaced out from under this mask --
-  // drops the GL texture so drawMaskMesh falls back to flat colors instead of leaving a mesh
-  // built against a now-invalid texture.
-  notifySourceImageRemoved: (mediaId: string) => void;
   // Re-applies this mask's texture-mix (topology) and resting light-source dial values. Reads
   // from coreState/topology by default, but a caller that just dispatched a change and knows
   // the fresh value can pass it directly via `override` -- necessary because this fires
@@ -121,13 +117,20 @@ interface ProjectMaskItem {
   // the live-preview call site in canvas.tsx, which has nothing to register (no persisted
   // mediaKey/lightSourceKey yet).
   maskHandlesRef?: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
-  // The following three are only meaningful for placed (static) masks too -- they exist purely
+  // The following four are only meaningful for placed (static) masks too -- they exist purely
   // to mount <ContextMenu> with parity to ProjectImg/ProjectSvg (see DraggableProjectMask's
-  // onMaskClick). Omitted by the live-preview call site in canvas.tsx for the same reason as
-  // maskHandlesRef above.
+  // onMaskClick and maxZIndex's own comment below). Omitted by the live-preview call site in
+  // canvas.tsx for the same reason as maskHandlesRef above.
   transform?: LaurusTransform;
   framesCacheRef?: RefObject<Map<string, LaurusFrame[]>>;
   onClick?: (metaKey: boolean) => void;
+  // The highest order among every img/svg/mask in the project -- mirrors ProjectImg/ProjectSvg's
+  // own maxZIndex exactly, boosting this mask's zIndex (via Z_INDEX.CONTEXT_MENU_OFFSET) above
+  // every other item, and above the marquee/mask tool's interaction-canvas overlay in
+  // workspace.client.tsx (Z_INDEX.INTERACTION_CANVAS), while its own context menu is open --
+  // otherwise that overlay (pointer-events: auto whenever the mask tool isn't idle) sits on top
+  // and swallows clicks meant for the menu's own buttons.
+  maxZIndex?: number;
 }
 /**
  * Renders a mask result on a WebGL canvas -- either the already-complete, persisted result
@@ -150,6 +153,7 @@ export function ProjectMaskItem({
   transform,
   framesCacheRef,
   onClick,
+  maxZIndex,
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
   const {
@@ -324,9 +328,7 @@ export function ProjectMaskItem({
   const computeLightSourceRestPosition = useCallback(() => {
     if (source.kind !== "static") return undefined;
     const indices = pendingCaptureRef.current ?? capturedIndicesRef.current;
-    const allPoints = source.maskData.polygons
-      .filter((_, i) => indices.has(i))
-      .flatMap((p) => parsePathPoints(p.d));
+    const allPoints = source.maskData.polygons.filter((_, i) => indices.has(i)).flatMap((p) => parsePathPoints(p.d));
     if (allPoints.length === 0) return undefined;
     return {
       x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
@@ -680,15 +682,24 @@ export function ProjectMaskItem({
 
         // Source image's own project key, if it's still on the canvas -- imgs are keyed by
         // project element key here, not by img_media_id, so this has to search by value. Only
-        // consulted here, at mount, for the initial texture load: a source image deleted or
-        // swapped out later is handled by notifySourceImageRemoved instead (see
-        // MaskImperativeHandle), not by watching this reactively.
+        // consulted here, at mount, for the initial texture load: once loaded, the texture is its
+        // own independent GPU resource, so the source image being deleted or swapped out later
+        // has no bearing on it -- this is deliberately not watched reactively.
         let sourceImgSrc: string | undefined;
         for (const [key, img] of coreState.project.imgs) {
           if (img.img_media_id === maskData.source_img_media_id) {
             sourceImgSrc = coreState.canvasImgs.get(key)?.src;
             break;
           }
+        }
+        // Falls back to the media browser's own list -- a mask dropped straight off an armed
+        // img-browser thumbnail (see useMaskPersist/canvas.tsx's handleMaskDrop) never gets a
+        // project.imgs entry of its own, so the loop above always misses for it. Without this,
+        // textureRef.current stays undefined forever for such a mask: drawMaskMesh forces
+        // u_textureMix to 0 whenever there's no texture to blend, so Maskbar's texture slider
+        // would silently do nothing no matter how it's dialed.
+        if (!sourceImgSrc) {
+          sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === maskData.source_img_media_id)?.src;
         }
         if (sourceImgSrc) {
           loadImageTexture(
@@ -764,16 +775,6 @@ export function ProjectMaskItem({
               }, []),
             );
             recolorHighlight();
-          },
-          notifySourceImageRemoved: (removedMediaId) => {
-            const latestSource = latestRef.current.source;
-            if (latestSource.kind !== "static") return;
-            if (latestSource.maskData.source_img_media_id !== removedMediaId) return;
-            if (textureRef.current) {
-              gl.deleteTexture(textureRef.current);
-              textureRef.current = undefined;
-            }
-            render();
           },
           applyMaskAppearanceDefaults,
           onLightSourcePreviewToggled: (enabled) => {
@@ -934,7 +935,7 @@ export function ProjectMaskItem({
         ...dndCss,
         position: "absolute",
         ...containerSize,
-        zIndex,
+        zIndex: showContextMenu && maxZIndex !== undefined ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
       }}
     >
       <div>
