@@ -14,7 +14,14 @@ export interface SelectionControlPanel {
 export default function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
   const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const {
+    selectedImgKeys,
+    selectedSvgKeys,
+    selectedMaskKeys,
+    setSelectedImgKeys,
+    setSelectedSvgKeys,
+    setSelectedMaskKeys,
+  } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -80,7 +87,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
       dispatch({ type: CoreActionType.SetMediaGroup, value: created, preserveCache: true });
       setMediaGroupDescription("");
 
-      if (selectedImgKeys.size > 0 || selectedSvgKeys.size > 0) {
+      if (selectedImgKeys.size > 0 || selectedSvgKeys.size > 0 || selectedMaskKeys.size > 0) {
         const newImgs = new Map(coreState.project.imgs);
         selectedImgKeys.forEach((key) => {
           const img = newImgs.get(key);
@@ -91,7 +98,17 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           const svg = newSvgs.get(key);
           if (svg) newSvgs.set(key, { ...svg, media_group_id: created.media_group_id });
         });
-        const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs };
+        const newMasks = new Map(coreState.project.masks);
+        selectedMaskKeys.forEach((key) => {
+          const mask = newMasks.get(key);
+          if (mask) newMasks.set(key, { ...mask, media_group_id: created.media_group_id });
+        });
+        const newProject: LaurusProjectResult = {
+          ...coreState.project,
+          imgs: newImgs,
+          svgs: newSvgs,
+          masks: newMasks,
+        };
         const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
           ...newProject,
         });
@@ -99,6 +116,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           dispatch({ type: CoreActionType.SetProject, value: newProject });
           setSelectedImgKeys(new Set());
           setSelectedSvgKeys(new Set());
+          setSelectedMaskKeys(new Set());
           if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
             const newTool = { ...uiState.tool, duplicate: false };
             uiDispatch({ type: UIActionType.SetTool, value: newTool });
@@ -116,8 +134,10 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
     mediaGroupDescription,
     selectedImgKeys,
     selectedSvgKeys,
+    selectedMaskKeys,
     setSelectedImgKeys,
     setSelectedSvgKeys,
+    setSelectedMaskKeys,
     uiState.tool,
     uiDispatch,
     notifyMaskToolChanged,
@@ -143,7 +163,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
           type="text"
           disabled
           autoComplete="off"
-          value={(selectedSvgKeys.size + selectedImgKeys.size).toString()}
+          value={(selectedSvgKeys.size + selectedImgKeys.size + selectedMaskKeys.size).toString()}
           style={{
             textAlign: "center",
             background: "none",

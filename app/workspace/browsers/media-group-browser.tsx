@@ -3,10 +3,11 @@ import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import { addCircle, checkCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
+import { addCircle, checkCircle, circle, closeIcon, SvgRepo, texture300 } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
+  LaurusMaskResult,
   LaurusMediaGroupResult,
   LaurusSvgResult,
   updateMediaGroup,
@@ -20,7 +21,9 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 
 type MediaGroupItem =
-  { type: "img"; key: string; img: LaurusImgResult } | { type: "svg"; key: string; svg: LaurusSvgResult };
+  | { type: "img"; key: string; img: LaurusImgResult }
+  | { type: "svg"; key: string; svg: LaurusSvgResult }
+  | { type: "mask"; key: string; mask: LaurusMaskResult };
 
 export interface MediaGroupBrowser {
   mediaGroupId: string;
@@ -30,13 +33,20 @@ export interface MediaGroupBrowser {
 export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
   const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isAltKeyPressed, selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } =
-    useContext(HoverContext);
+  const {
+    isAltKeyPressed,
+    selectedImgKeys,
+    selectedSvgKeys,
+    selectedMaskKeys,
+    setSelectedImgKeys,
+    setSelectedSvgKeys,
+    setSelectedMaskKeys,
+  } = useContext(HoverContext);
   const [adding, setAdding] = useState(false);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
   const hasSelection = useMemo(
-    () => selectedImgKeys.size > 0 || selectedSvgKeys.size > 0,
-    [selectedImgKeys, selectedSvgKeys],
+    () => selectedImgKeys.size > 0 || selectedSvgKeys.size > 0 || selectedMaskKeys.size > 0,
+    [selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
   );
   const groupItems = useMemo<MediaGroupItem[]>(() => {
     const imgItems = Array.from(coreState.project.imgs.entries())
@@ -53,14 +63,31 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         return svg ? { type: "svg" as const, key, svg, order: meta.order } : undefined;
       })
       .filter((entry): entry is { type: "svg"; key: string; svg: LaurusSvgResult; order: number } => Boolean(entry));
-    return [...imgItems, ...svgItems]
+    const maskItems = Array.from(coreState.project.masks.entries())
+      .filter(([, meta]) => meta.media_group_id === mediaGroupId)
+      .map(([key, meta]) => {
+        const mask = coreState.canvasMasks.get(key);
+        return mask ? { type: "mask" as const, key, mask, order: meta.order } : undefined;
+      })
+      .filter((entry): entry is { type: "mask"; key: string; mask: LaurusMaskResult; order: number } => Boolean(entry));
+    return [...imgItems, ...svgItems, ...maskItems]
       .sort((a, b) => a.order - b.order)
       .map((entry) =>
         entry.type === "img"
           ? { type: "img" as const, key: entry.key, img: entry.img }
-          : { type: "svg" as const, key: entry.key, svg: entry.svg },
+          : entry.type === "svg"
+            ? { type: "svg" as const, key: entry.key, svg: entry.svg }
+            : { type: "mask" as const, key: entry.key, mask: entry.mask },
       );
-  }, [coreState.project.imgs, coreState.project.svgs, coreState.canvasImgs, coreState.canvasSvgs, mediaGroupId]);
+  }, [
+    coreState.project.imgs,
+    coreState.project.svgs,
+    coreState.project.masks,
+    coreState.canvasImgs,
+    coreState.canvasSvgs,
+    coreState.canvasMasks,
+    mediaGroupId,
+  ]);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -259,7 +286,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         const svg = newSvgs.get(key);
         if (svg) newSvgs.set(key, { ...svg, media_group_id: mediaGroupId });
       });
-      const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs };
+      const newMasks = new Map(coreState.project.masks);
+      selectedMaskKeys.forEach((key) => {
+        const mask = newMasks.get(key);
+        if (mask) newMasks.set(key, { ...mask, media_group_id: mediaGroupId });
+      });
+      const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs, masks: newMasks };
       const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
         ...newProject,
       });
@@ -267,6 +299,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
+        setSelectedMaskKeys(new Set());
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           const newTool = { ...uiState.tool, duplicate: false };
           uiDispatch({ type: UIActionType.SetTool, value: newTool });
@@ -284,10 +317,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     coreState.accessToken,
     selectedImgKeys,
     selectedSvgKeys,
+    selectedMaskKeys,
     mediaGroupId,
     dispatch,
     setSelectedImgKeys,
     setSelectedSvgKeys,
+    setSelectedMaskKeys,
     uiState.tool,
     uiDispatch,
     notifyMaskToolChanged,
@@ -297,8 +332,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     if (groupItems.length === 0) return;
     setSelectedImgKeys(new Set(groupItems.filter((item) => item.type === "img").map((item) => item.key)));
     setSelectedSvgKeys(new Set(groupItems.filter((item) => item.type === "svg").map((item) => item.key)));
+    setSelectedMaskKeys(new Set(groupItems.filter((item) => item.type === "mask").map((item) => item.key)));
     uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
-  }, [groupItems, setSelectedImgKeys, setSelectedSvgKeys, uiDispatch]);
+  }, [groupItems, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys, uiDispatch]);
 
   const deleteMediaGroupClick = useCallback(async () => {
     setIsTitleBarHovered(false);
@@ -350,6 +386,24 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
   );
 
+  const onRemoveMaskFromGroupClick = useCallback(
+    async (key: string) => {
+      if (!coreState.project.project_id) return;
+      const entry = coreState.project.masks.get(key);
+      if (!entry) return;
+      const newMasks = new Map(coreState.project.masks);
+      newMasks.set(key, { ...entry, media_group_id: "" });
+      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
+      const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
+        ...newProject,
+      });
+      if (updated) {
+        dispatch({ type: CoreActionType.SetProject, value: newProject });
+      }
+    },
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+  );
+
   const onImgContextMenuClick = useCallback(
     (key: string) => {
       uiDispatch({ type: UIActionType.SetProjectContextMenu, key, showContextMenu: true });
@@ -358,6 +412,13 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   );
 
   const onSvgContextMenuClick = useCallback(
+    (key: string) => {
+      uiDispatch({ type: UIActionType.SetProjectContextMenu, key, showContextMenu: true });
+    },
+    [uiDispatch],
+  );
+
+  const onMaskContextMenuClick = useCallback(
     (key: string) => {
       uiDispatch({ type: UIActionType.SetProjectContextMenu, key, showContextMenu: true });
     },
@@ -375,10 +436,11 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
       if (oldIndex === -1 || newIndex === -1) return;
       const reorderedGroup = arrayMove(groupItems, oldIndex, newIndex);
 
-      type AllItem = { type: "img" | "svg"; key: string; order: number };
+      type AllItem = { type: "img" | "svg" | "mask"; key: string; order: number };
       const allItems: AllItem[] = [
         ...Array.from(coreState.project.imgs, ([key, meta]) => ({ type: "img" as const, key, order: meta.order })),
         ...Array.from(coreState.project.svgs, ([key, meta]) => ({ type: "svg" as const, key, order: meta.order })),
+        ...Array.from(coreState.project.masks, ([key, meta]) => ({ type: "mask" as const, key, order: meta.order })),
       ].sort((a, b) => a.order - b.order);
 
       const groupKeySet = new Set(groupItems.map((item) => item.key));
@@ -393,17 +455,21 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
       const snapshot = coreState.project;
       const newImgs = new Map(coreState.project.imgs);
       const newSvgs = new Map(coreState.project.svgs);
+      const newMasks = new Map(coreState.project.masks);
       reorderedAllItems.forEach((item, index) => {
         if (item.type === "img") {
           const existing = newImgs.get(item.key);
           if (existing) newImgs.set(item.key, { ...existing, order: index });
-        } else {
+        } else if (item.type === "svg") {
           const existing = newSvgs.get(item.key);
           if (existing) newSvgs.set(item.key, { ...existing, order: index });
+        } else {
+          const existing = newMasks.get(item.key);
+          if (existing) newMasks.set(item.key, { ...existing, order: index });
         }
       });
 
-      const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs };
+      const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, { ...newProject }).then(
         (updated) => {
@@ -521,12 +587,16 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                   isEven={index % 2 === 0}
                   indexColumnStyle={dynamicSizes.indexColumn}
                   removeOverlaySize={dynamicSizes.removeOverlay.size}
-                  onRemoveFromGroupClick={() =>
-                    item.type === "img" ? onRemoveImgFromGroupClick(item.key) : onRemoveSvgFromGroupClick(item.key)
-                  }
-                  onContextMenuClick={() =>
-                    item.type === "img" ? onImgContextMenuClick(item.key) : onSvgContextMenuClick(item.key)
-                  }
+                  onRemoveFromGroupClick={() => {
+                    if (item.type === "img") onRemoveImgFromGroupClick(item.key);
+                    else if (item.type === "svg") onRemoveSvgFromGroupClick(item.key);
+                    else onRemoveMaskFromGroupClick(item.key);
+                  }}
+                  onContextMenuClick={() => {
+                    if (item.type === "img") onImgContextMenuClick(item.key);
+                    else if (item.type === "svg") onSvgContextMenuClick(item.key);
+                    else onMaskContextMenuClick(item.key);
+                  }}
                 />
               ))}
             </SortableContext>
@@ -808,6 +878,80 @@ function MediaGroupRow({
                     }}
                   >
                     {item.svg.media_key}
+                  </div>
+                </div>
+                <div />
+                <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+                  <SvgRepo
+                    title={"remove from group"}
+                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                    scale={0.9}
+                    scaleToContaier={true}
+                    onContainerClick={onRemoveFromGroupClick}
+                    style={{
+                      cursor: "pointer",
+                    }}
+                    containerStyle={{
+                      cursor: "pointer",
+                      width: removeOverlaySize,
+                      height: removeOverlaySize,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          case "mask":
+            return (
+              <div
+                onMouseEnter={() => setIsItemHovered(true)}
+                onMouseLeave={() => setIsItemHovered(false)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+                  gridTemplateRows: "1fr",
+                  alignItems: "center",
+                  height: dynamicSizes.groupItem.height,
+                  paddingLeft: 5,
+                  width: "100%",
+                }}
+              >
+                <div
+                  className={styles["transparent-checkerboard-background"]}
+                  style={{
+                    width: dynamicSizes.groupItem.height - 10,
+                    height: dynamicSizes.groupItem.height - 10,
+                    display: "grid",
+                    placeContent: "center",
+                  }}
+                >
+                  <SvgRepo
+                    title={item.mask.mask_media_id}
+                    svg={texture300()}
+                    onContainerClick={onContextMenuClick}
+                    containerStyle={{
+                      width: (dynamicSizes.groupItem.height - 10) * 0.7,
+                      height: (dynamicSizes.groupItem.height - 10) * 0.7,
+                      cursor: "pointer",
+                    }}
+                    scale={0.7}
+                    scaleToContaier={true}
+                  />
+                </div>
+                <div />
+                <div
+                  style={{
+                    overflowX: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      whiteSpace: "normal",
+                      textAlign: "center",
+                      color: "rgb(220, 220, 220)",
+                      ...dynamicSizes.filename.filename,
+                    }}
+                  >
+                    {item.mask.mask_media_id}
                   </div>
                 </div>
                 <div />
