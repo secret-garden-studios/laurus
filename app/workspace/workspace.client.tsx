@@ -917,12 +917,25 @@ export default function Workspace({
           ),
         ];
         const eligibleItems = new Set<string>();
+        // A mask capture's own frames (see project-mask-item.tsx's preparePlayback, "playAll"
+        // branch) run through this exact same fetch-and-cache loop below, keyed the same way --
+        // just filtered to move/light_source (the only effect types a mask capture wires up) and
+        // matched against masks instead of imgs/svgs, since a capture's math key is
+        // maskCaptureInputId's "mediaKey:captureId" (or a bare mediaKey, for a mask input_id
+        // predating per-capture math -- parseMaskCaptureInputId's maskKey handles both). Left out
+        // of globalLimit: that duration only feeds the WAAPI animationOptions below, which masks
+        // (no DOM element, see the element lookup below) never use.
         let globalLimit = 0;
         enabledEffects.forEach((e) => {
           e.value.math.forEach((_, inputKey) => {
             if (coreState.project.imgs.has(inputKey) || coreState.project.svgs.has(inputKey)) {
               eligibleItems.add(inputKey);
               globalLimit = Math.max(globalLimit, e.value.end);
+            } else if (
+              (e.type === "move" || e.type === "light_source") &&
+              coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
+            ) {
+              eligibleItems.add(inputKey);
             }
           });
         });
@@ -967,12 +980,15 @@ export default function Workspace({
               framesCacheRef.current.set(inputKey, [...framesFromServer]);
             }
           }
-          if (reverse) {
-            laurusFrames.reverse();
-          }
-          const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
+          // A mask capture's inputKey (eligibleMaskCaptureItems above) never matches either ref --
+          // masks render to a WebGL canvas, not a DOM element -- so it's fetched and cached above
+          // like any other input, but never turned into a WAAPI Animation.
           const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
           if (element) {
+            if (reverse) {
+              laurusFrames.reverse();
+            }
+            const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
             const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
             const animation = new Animation(keyframeEffect, document.timeline);
             newAnimations.push(animation);
@@ -999,6 +1015,7 @@ export default function Workspace({
       coreState.effects,
       coreState.project.fps,
       coreState.project.imgs,
+      coreState.project.masks,
       coreState.project.project_id,
       coreState.project.svgs,
     ],

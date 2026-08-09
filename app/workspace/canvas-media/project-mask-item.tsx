@@ -652,6 +652,28 @@ export function ProjectMaskItem({
       let durationSeconds: number;
       let ready: Promise<void>;
 
+      // Same cache workspace.client.tsx's getNewAnimations already threads through for img/svg
+      // frames (framesCacheRef), and the same invalidation rule: a fetch's own inputId (not the
+      // cacheKey it's stored under, which for move/light_source frames also folds in which kind
+      // -- see below) is only trusted from cache while SetEffect/SetEffects's own reducer logic
+      // hasn't added it to inputsToRender. cacheKey and inputId are the same string for playAll's
+      // merged frames (one entry per capture, just like an img/svg's own inputKey), but diverge
+      // for a single-effect preview -- a capture can have a wired move AND light_source at once,
+      // each with its own frames, sharing that one inputId.
+      const fetchFramesCached = (
+        inputId: string,
+        cacheKey: string,
+        fetcher: () => Promise<LaurusFrame[] | undefined>,
+      ): Promise<LaurusFrame[] | undefined> => {
+        const stale = coreState.inputsToRender.has("*") || coreState.inputsToRender.has(inputId);
+        const cached = !stale ? framesCacheRef?.current?.get(cacheKey) : undefined;
+        if (cached) return Promise.resolve(cached);
+        return fetcher().then((result) => {
+          if (result && framesCacheRef?.current) framesCacheRef.current.set(cacheKey, [...result]);
+          return result;
+        });
+      };
+
       if (playAll) {
         fps = projectFps;
         // Refined once every target's getFrames resolves below -- read only after `ready`
@@ -660,7 +682,9 @@ export function ProjectMaskItem({
         durationSeconds = 0;
         ready = Promise.all(
           targets.map((t) =>
-            getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps).then((result) => {
+            fetchFramesCached(t.inputId, t.inputId, () =>
+              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
+            ).then((result) => {
               if (activePlaybackRef.current !== session) return;
               mergedFramesByCapture.set(t.captureId, result ?? []);
             }),
@@ -678,15 +702,21 @@ export function ProjectMaskItem({
         durationSeconds = totalFrames / fps;
         const fetches: Promise<void>[] = [];
         if (target.wiredMove) {
+          const wiredMove = target.wiredMove;
           fetches.push(
-            getMoveFrames(coreState.apiOrigin, target.wiredMove.key, target.inputId).then((result) => {
+            fetchFramesCached(target.inputId, `move:${target.inputId}`, () =>
+              getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId),
+            ).then((result) => {
               if (activePlaybackRef.current === session && result) moveFramesByCapture.set(target.captureId, result);
             }),
           );
         }
         if (target.wiredLightSource) {
+          const wiredLightSource = target.wiredLightSource;
           fetches.push(
-            getLightSourceFrames(coreState.apiOrigin, target.wiredLightSource.key, target.inputId).then((result) => {
+            fetchFramesCached(target.inputId, `light_source:${target.inputId}`, () =>
+              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId),
+            ).then((result) => {
               if (activePlaybackRef.current === session && result)
                 lightSourceFramesByCapture.set(target.captureId, result);
             }),
@@ -803,6 +833,8 @@ export function ProjectMaskItem({
       coreState.apiOrigin,
       coreState.project.fps,
       coreState.project.project_id,
+      coreState.inputsToRender,
+      framesCacheRef,
       render,
       stopLightSourceAnimation,
     ],
