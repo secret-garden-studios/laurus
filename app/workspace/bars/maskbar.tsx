@@ -347,6 +347,24 @@ export default function Maskbar() {
     [selectedMaskMeta, saveTextureField, mask],
   );
 
+  // Trackpad (see ParameterSliderX/trackpad.tsx) only calls onNewCursor once, on drag *end* --
+  // onCursorMove is the one that fires continuously while the thumb is actually moving. Mirrors
+  // Scalebar's own split: the WebGL canvas updates live on every tick via the same direct-notify
+  // path saveTextureField uses (see its own comment), but skips that function's dispatch/persist
+  // -- committing coreState.project and queuing the network PUT on every mid-drag pixel would
+  // fight the render for the same frame budget for no benefit, since onNewCursor already commits
+  // the settled value the instant the drag ends.
+  const previewTextureMixChange = useCallback(
+    (value: number) => {
+      if (selectedMaskKey !== undefined) {
+        notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
+      } else {
+        mask.setTextureMix(value);
+      }
+    },
+    [selectedMaskKey, mask, notifyMaskAppearanceChanged],
+  );
+
   const textureTrackRef = useRef<HTMLDivElement | null>(null);
   const [textureCursor, setTextureCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getTextureValue, getTrackCursor: getTextureCursor } = useTrackpadState(
@@ -591,8 +609,8 @@ export default function Maskbar() {
         <div
           title={
             isTextureDisabled
-              ? "select or generate a mesh to blend between its flat color and its own baked-in detail"
-              : "blend between the mesh's flat mean color and its own per-triangle color, baked in from the source raster at creation time"
+              ? "select or generate a mesh to blend between the source image and its low-poly mesh"
+              : "0% shows the source image at full resolution, 100% shows the fully faceted low-poly mesh with its triangle strokes drawn in"
           }
           style={{
             display: "flex",
@@ -609,6 +627,11 @@ export default function Maskbar() {
             size={dynamicSizes.paramSize}
             containerRef={textureTrackRef}
             cursor={textureCursor}
+            onCursorMove={(newCursor) => {
+              if (!textureTrackRef.current) return;
+              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
+              previewTextureMixChange(newValue);
+            }}
             onNewCursor={(newCursor) => {
               setTextureCursor({ ...newCursor, y: 0 });
               if (!textureTrackRef.current) return;
@@ -617,7 +640,6 @@ export default function Maskbar() {
             }}
             disabled={isTextureDisabled}
           />
-          <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7, width: "4ch" }}>{textureMixValue.toFixed(2)}</span>
         </div>
         <div
           title={

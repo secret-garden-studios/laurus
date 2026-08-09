@@ -12,17 +12,39 @@ export const LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT = 350;
 /** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's light source darkness slider. */
 export const LIGHT_SOURCE_DARKNESS_DEFAULT = 0.2;
 
-/** Default alpha (0-1) each polygon's own stroke renders at -- 1 fully visible, 0 fully invisible.
- * Persisted server-side as ProjectMask_V1_0.texture (see projects.server.ts), per-placement rather
- * than client-only state; Maskbar's texture slider edits it in place via updateProject, the same
- * way it edits light_source_*. Purely a stroke-opacity knob for now -- will later also
- * reshape/refill the triangles themselves. */
+/** Default blend, 0-1, between the source image at full resolution (0) and the fully faceted
+ * low-poly mesh (1) -- see base/photoOrFlat in the fragment shader below. Independently, the same
+ * value also still drives each triangle's own edge-stroke alpha (0 invisible, 1 fully visible;
+ * see edge/withEdge below), unchanged since that was added. Persisted server-side as
+ * ProjectMask_V1_0.texture (see projects.server.ts), per-placement rather than client-only state;
+ * Maskbar's texture slider edits it in place via updateProject, the same way it edits
+ * light_source_*. */
 export const TEXTURE_MIX_DEFAULT = 0.5;
 
 /** How many simultaneous light sources one mask's draw call supports -- must match the fragment
  * shader's own MAX_LIGHT_SOURCES #define below. drawMaskMesh silently drops anything past this
  * many entries in DrawMaskMeshOptions.lightSources. */
 export const MAX_MASK_LIGHT_SOURCES = 8;
+
+/** Width, in constant screen pixels, of the per-triangle wireframe stroke (see edge/STROKE_WIDTH_PX
+ * in the fragment shader below) -- change this rather than the shader's own #define. */
+export const MASK_STROKE_WIDTH_PX = 1.0;
+
+/** Color (RGB) and max opacity (A) the per-triangle wireframe stroke fades to at full strength --
+ * see STROKE_COLOR/STROKE_ALPHA/strokeColor in the fragment shader below -- change this rather
+ * than the shader's own consts. All 0-1. The color still darkens under a light source's shadow
+ * the same way the rest of the mesh does (see strokeColor's own comment), this is just its lit
+ * baseline; the alpha caps how opaque the stroke can ever get, multiplied in on top of
+ * u_textureMix -- 1 lets u_textureMix alone reach full opacity, lower values mean even
+ * u_textureMix=1 stays partially see-through. */
+export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.0, 0.2];
+
+// GLSL ES 1.00 requires float literals to carry a decimal point (an implicit int->float
+// conversion where this gets spliced in, e.g. STROKE_WIDTH_PX's multiply against a vec3, is a
+// compile error) -- toFixed guarantees one no matter how the JS constants above are written.
+function glFloat(n: number): string {
+  return n.toFixed(6);
+}
 
 /** A vertex/fragment GLSL pair, compiled and linked together into one WebGLProgram by createProgram. */
 export interface Shader {
@@ -69,6 +91,7 @@ void main() {
 }
 `,
   fragment: `
+#extension GL_OES_standard_derivatives : enable
 precision mediump float;
 
 varying vec3 v_color;
@@ -83,12 +106,22 @@ varying float v_highlight;
 // no fill tint, so the capture's original colors stay untouched underneath it.
 const vec3 CAPTURE_STROKE_COLOR = vec3(0.258824, 0.521569, 0.956863);
 
+// The per-triangle wireframe stroke's own lit-baseline color and max opacity -- see strokeColor/
+// withEdge below. Spliced in from MASK_STROKE_COLOR above; change that constant, not these lines.
+const vec3 STROKE_COLOR = vec3(${MASK_STROKE_COLOR.slice(0, 3).map(glFloat).join(", ")});
+const float STROKE_ALPHA = ${glFloat(MASK_STROKE_COLOR[3])};
+
 // A mesh can carry several captures (see project-mask-item.tsx), each its own light source --
 // Play All animates every one of them at once (project-mask-item.tsx's playLightSourceAnimation),
 // so this can no longer be one scalar epicenter. MAX_LIGHT_SOURCES bounds a GLSL ES 1.00 array's
 // size, which has to be a compile-time constant -- generous relative to how many captures a mask
 // realistically carries; drawMaskMesh (mask-gl.ts) silently drops anything past it.
 #define MAX_LIGHT_SOURCES 8
+
+// Target width, in screen pixels, of the per-triangle wireframe stroke below -- see edge's own
+// comment for why this needs fwidth() rather than a fixed barycentric threshold. Spliced in from
+// MASK_STROKE_WIDTH_PX above -- change that constant, not this line.
+#define STROKE_WIDTH_PX ${glFloat(MASK_STROKE_WIDTH_PX)}
 
 // Every light source's own center is in gl_FragCoord space (drawing-buffer pixels, origin
 // bottom-left); radius/falloff are likewise in drawing-buffer pixels so they survive the canvas
@@ -113,9 +146,23 @@ uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
 // there's no separate "active" flag to check per-light.
 uniform int u_lightSourceCount;
 
-// Alpha (0-1) each triangle's own edge stroke renders at -- see edge/withEdge below. 1 fully
-// visible, 0 fully invisible; a straight linear knob, not a color blend.
+// Double duty: (1) 0-1 blend between u_texture (the source image, full resolution) and v_color
+// (this triangle's own flat baked-in color) for the mesh's base fill -- see photoOrFlat/base
+// below; (2) unchanged from before, the alpha (0 invisible, 1 fully visible) each triangle's own
+// edge stroke renders at -- see edge/withEdge below. One slider, two effects, both driven by the
+// same 0-1 value: 0 reads as the untouched photo, 1 as a fully faceted low-poly mesh with its
+// wireframe fully drawn in.
 uniform float u_textureMix;
+// The source image, sampled at this fragment's own UV -- the u_textureMix=0 endpoint of the base
+// fill. Bound but unused (see u_hasTexture) whenever it hasn't loaded yet, or couldn't (a mask
+// dropped from a browser thumbnail with no locally resolvable src at mount, cross-origin failure,
+// etc.) -- see project-mask-item.tsx's own sourceImgSrc resolution.
+uniform sampler2D u_texture;
+// 1 once u_texture has a real image bound, 0 otherwise -- forces the base fill to v_color
+// regardless of u_textureMix while nothing has loaded, rather than sampling an empty/stale
+// texture. Kept separate from u_textureMix itself so a texture load failure never touches the
+// edge-stroke alpha above, which must keep tracking the slider honestly either way.
+uniform float u_hasTexture;
 
 // The silhouette curves, rasterized to a coverage mask. WebGL has no
 // equivalent of a 2d context's ctx.clip(), so the clip becomes a multiply on
@@ -135,12 +182,23 @@ uniform vec3 u_glowColor;
 
 void main() {
   float edgeDist = min(min(v_barycentric.x, v_barycentric.y), v_barycentric.z);
-  // 1 right at a triangle's own edge, fading to 0 over the next 0.025 of barycentric space --
-  // this is the polygon "stroke" texture controls, at u_textureMix's own alpha (see withEdge
-  // below), not the earlier antialiasing-derived coverage this used to represent.
-  float edge = 1.0 - smoothstep(0.0, 0.025, edgeDist);
+  // The polygon "stroke" texture controls (alpha via u_textureMix, see withEdge below) -- 1 right
+  // at a triangle's own edge, fading to 0 over the next STROKE_WIDTH_PX screen pixels. Barycentric
+  // coordinates span 0-1 across a triangle no matter its on-screen size, so a fixed threshold in
+  // that space (edgeDist itself) would read as a thick stroke on big triangles and a thin one on
+  // small ones. fwidth(v_barycentric) is how fast each component changes per screen pixel here,
+  // so dividing by it (via smoothstep's edge1) rescales the falloff into actual pixels -- the
+  // standard single-pass wireframe technique. edgeDist above is left alone; the capture-highlight
+  // outline further down still wants the plain barycentric-space version.
+  vec3 baryDeriv = fwidth(v_barycentric);
+  vec3 edgeFactors = smoothstep(vec3(0.0), baryDeriv * STROKE_WIDTH_PX, v_barycentric);
+  float edge = 1.0 - min(min(edgeFactors.x, edgeFactors.y), edgeFactors.z);
 
-  vec3 base = v_color;
+  // v_color both ways when nothing loaded (mix(v_color, v_color, t) == v_color for any t), so a
+  // missing/failed texture load falls back to the flat low-poly look no matter where the slider
+  // sits, rather than sampling garbage.
+  vec3 photoOrFlat = u_hasTexture > 0.5 ? texture2D(u_texture, v_uv).rgb : v_color;
+  vec3 base = mix(photoOrFlat, v_color, u_textureMix);
 
   // v_lightSourcePos is constant across a triangle's interior (see a_centroid), so dist -- and
   // everything derived from it below -- is one flat value per triangle, not a smooth per-pixel
@@ -170,11 +228,14 @@ void main() {
   // an oversaturated tint.
   vec3 lit = mix(base, vec3(1.0), bestHighlight);
   vec3 shaded = lit - leastShadow;
-  // The wireframe's own "white stroke" endpoint darkens with the same shadow term as the fill
-  // above, so a triangle sitting deep in a light source's shadow doesn't keep a bright hairline
-  // around it while its interior goes dark.
-  vec3 strokeColor = vec3(1.0) - leastShadow;
-  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix);
+  // The wireframe's own stroke endpoint darkens with the same shadow term as the fill above, so a
+  // triangle sitting deep in a light source's shadow doesn't keep a bright hairline around it
+  // while its interior goes dark. STROKE_COLOR (spliced in from MASK_STROKE_COLOR above -- change
+  // that constant, not this line) is its lit baseline before that darkening.
+  vec3 strokeColor = STROKE_COLOR - leastShadow;
+  // STROKE_ALPHA caps how far this can ever reach regardless of u_textureMix -- 1.0 leaves
+  // u_textureMix as the sole ceiling, same as before the alpha channel existed.
+  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
 
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
@@ -243,6 +304,8 @@ export interface GLState {
   lightSourceDarknessesLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
   textureMixLoc: WebGLUniformLocation;
+  textureLoc: WebGLUniformLocation;
+  hasTextureLoc: WebGLUniformLocation;
   maskLoc: WebGLUniformLocation;
   maskActiveLoc: WebGLUniformLocation;
   glowColorLoc: WebGLUniformLocation;
@@ -251,6 +314,13 @@ export interface GLState {
 export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const gl = canvas.getContext("webgl", { premultipliedAlpha: false });
   if (!gl) return undefined;
+  // Needed for the fragment shader's fwidth() calls (constant-pixel-width triangle stroke, see
+  // LIGHT_SOURCE_SHADER's own comment on edge/STROKE_WIDTH_PX) -- WebGL1 only exposes derivative
+  // functions once this extension is requested, and it has to happen before the shader that
+  // references them compiles. Effectively universal on WebGL1 today (it's core, unextended, in
+  // WebGL2); if a browser somehow lacks it, mask rendering bails out the same way it already does
+  // for any other unsupported GL feature below.
+  if (!gl.getExtension("OES_standard_derivatives")) return undefined;
   const program = createProgram(gl, LIGHT_SOURCE_SHADER);
   if (!program) return undefined;
 
@@ -277,6 +347,8 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
+  const textureLoc = gl.getUniformLocation(program, "u_texture");
+  const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
   const maskLoc = gl.getUniformLocation(program, "u_mask");
   const maskActiveLoc = gl.getUniformLocation(program, "u_maskActive");
   const glowColorLoc = gl.getUniformLocation(program, "u_glowColor");
@@ -295,6 +367,8 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceDarknessesLoc ||
     !lightSourceCountLoc ||
     !textureMixLoc ||
+    !textureLoc ||
+    !hasTextureLoc ||
     !maskLoc ||
     !maskActiveLoc ||
     !glowColorLoc
@@ -324,6 +398,8 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceDarknessesLoc,
     lightSourceCountLoc,
     textureMixLoc,
+    textureLoc,
+    hasTextureLoc,
     maskLoc,
     maskActiveLoc,
     glowColorLoc,
@@ -346,6 +422,11 @@ export interface DrawMaskMeshOptions {
   // shader (see drawMaskMesh below), and only the first MAX_MASK_LIGHT_SOURCES of those.
   lightSources: MaskLightSource[];
   textureMix: number;
+  // The source image, already uploaded as a GPU texture -- see loadImageTexture and
+  // project-mask-item.tsx's own sourceImgSrc resolution. undefined whenever it hasn't loaded (yet,
+  // or ever), in which case the shader falls back to the flat low-poly fill regardless of
+  // textureMix (see u_hasTexture's own comment in the fragment shader).
+  texture: WebGLTexture | undefined;
   maskTexture: WebGLTexture | undefined;
   glowColor: [number, number, number];
 }
@@ -396,8 +477,13 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.uniform1f(state.textureMixLoc, options.textureMix);
 
   gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, options.texture ?? null);
+  gl.uniform1i(state.textureLoc, 0);
+  gl.uniform1f(state.hasTextureLoc, options.texture ? 1 : 0);
+
+  gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, options.maskTexture ?? null);
-  gl.uniform1i(state.maskLoc, 0);
+  gl.uniform1i(state.maskLoc, 1);
   gl.uniform1f(state.maskActiveLoc, options.maskTexture ? 1 : 0);
   gl.uniform3fv(state.glowColorLoc, options.glowColor);
 
@@ -517,6 +603,44 @@ export function uploadCurveMask(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;
+}
+
+/**
+ * Loads src as an HTMLImageElement and uploads it as a WebGL texture -- the u_texture endpoint
+ * Maskbar's texture slider blends toward at 0 (see u_hasTexture's own comment in the fragment
+ * shader). Async; onLoaded fires once the upload completes, onError if the image itself fails to
+ * load (network, cross-origin, decode).
+ */
+export function loadImageTexture(
+  gl: WebGLRenderingContext,
+  src: string,
+  onLoaded: (texture: WebGLTexture) => void,
+  onError?: (error: unknown) => void,
+): void {
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.onload = () => {
+    try {
+      const texture = gl.createTexture();
+      if (!texture) return;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      // Image rows come in top-first (DOM convention); flipping here makes v=1 land on the
+      // image's top row, matching the vertex shader's own y-flip for gl_Position.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      onLoaded(texture);
+    } catch (error) {
+      onError?.(error);
+    }
+  };
+  image.onerror = (error) => {
+    onError?.(error);
+  };
+  image.src = src;
 }
 
 // Pulls the vertex coordinates back out of a path's `d` string ("M x,y L x,y L x,y Z") --

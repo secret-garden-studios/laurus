@@ -9,6 +9,7 @@ import {
   drawMaskMesh,
   GLState,
   initGLState,
+  loadImageTexture,
   MaskLightSource,
   parsePathPoints,
   TEXTURE_MIX_DEFAULT,
@@ -22,6 +23,7 @@ import ContextMenu from "../context-menu";
 import { capturedRegionCircle, captureTriangleIndicesInCircle, captureIdAtPoint } from "./light-source-capture";
 import {
   getFrames,
+  getImg,
   getLightSourceFrames,
   getMoveFrames,
   getScaleFrames,
@@ -226,6 +228,7 @@ export function ProjectMaskItem({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
+  const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
   const lightSourceSizeRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.size);
   const lightSourceIntensityRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.intensity);
@@ -481,6 +484,7 @@ export function ProjectMaskItem({
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       lightSources,
+      texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
@@ -931,6 +935,9 @@ export function ProjectMaskItem({
         if (!state) return;
         glStateRef.current = state;
         const { gl } = state;
+        // Cancels the getImg fallback below (see sourceImgSrc) once this mount's cleanup runs, so
+        // a slow response arriving after unmount can't touch gl state that's already torn down.
+        const cleanupFns: (() => void)[] = [];
 
         const colorCanvas = document.createElement("canvas");
         colorCanvas.width = 1;
@@ -963,6 +970,60 @@ export function ProjectMaskItem({
           maskCanvas.width = maskData.width;
           maskCanvas.height = maskData.height;
           maskTextureRef.current = uploadCurveMask(gl, maskCanvas, maskData.curves, undefined);
+        }
+
+        // Source image's own project key, if it's still on the canvas -- imgs are keyed by
+        // project element key here, not by img_media_id, so this has to search by value. Only
+        // consulted here, at mount, for the initial texture load: once loaded, the texture is its
+        // own independent GPU resource, so the source image being deleted or swapped out later
+        // has no bearing on it -- this is deliberately not watched reactively.
+        let sourceImgSrc: string | undefined;
+        for (const [key, img] of coreState.project.imgs) {
+          if (img.img_media_id === maskData.source_img_media_id) {
+            sourceImgSrc = coreState.canvasImgs.get(key)?.src;
+            break;
+          }
+        }
+        // Falls back to the media browser's own list -- a mask dropped straight off an armed
+        // img-browser thumbnail (see useMaskPersist/canvas.tsx's handleMaskDrop) never gets a
+        // project.imgs entry of its own, so the loop above always misses for it.
+        if (!sourceImgSrc) {
+          sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === maskData.source_img_media_id)?.src;
+        }
+        if (sourceImgSrc) {
+          loadImageTexture(
+            gl,
+            sourceImgSrc,
+            (texture) => {
+              textureRef.current = texture;
+              render();
+            },
+            (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
+          );
+        } else {
+          // Both caches above are ephemeral (project.imgs only holds *placed* images, browserImgs
+          // only whatever page/folder the media browser happens to be showing right now) and can
+          // both miss -- e.g. a mask dropped straight from a public-img thumbnail, followed by
+          // toggling "browse public imgs" off, drops that image from browserImgs without it ever
+          // having been placed. getImg resolves the source image directly by id (kept purely for
+          // bookkeeping otherwise -- see MaskMedia's own doc comment), so it works regardless of
+          // what's currently placed or browsed.
+          let cancelled = false;
+          cleanupFns.push(() => {
+            cancelled = true;
+          });
+          getImg(coreState.apiOrigin, maskData.source_img_media_id).then((img) => {
+            if (cancelled || !img) return;
+            loadImageTexture(
+              gl,
+              img.src,
+              (texture) => {
+                textureRef.current = texture;
+                render();
+              },
+              (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
+            );
+          });
         }
 
         lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
@@ -1054,6 +1115,7 @@ export function ProjectMaskItem({
         }
 
         return () => {
+          cleanupFns.forEach((fn) => fn());
           gl.deleteProgram(state.program);
           gl.deleteBuffer(state.positionBuffer);
           gl.deleteBuffer(state.colorBuffer);
@@ -1062,8 +1124,10 @@ export function ProjectMaskItem({
           gl.deleteBuffer(state.centroidBuffer);
           gl.deleteBuffer(state.highlightBuffer);
           if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
+          if (textureRef.current) gl.deleteTexture(textureRef.current);
           glStateRef.current = undefined;
           maskTextureRef.current = undefined;
+          textureRef.current = undefined;
           const handles = maskHandlesRef?.current;
           if (handles) {
             const forThisKey = handles.get(mediaKey);
@@ -1090,6 +1154,18 @@ export function ProjectMaskItem({
       const { gl } = state;
 
       let maskCanvas: HTMLCanvasElement | undefined;
+
+      // sourceImg is already in hand (passed straight from the img the user is masking, unlike
+      // the static branch's sourceImgSrc which has to be resolved after the fact) -- no lookup or
+      // getImg fallback needed here.
+      loadImageTexture(
+        gl,
+        sourceImg.src,
+        (texture) => {
+          textureRef.current = texture;
+        },
+        (error) => console.log("failed to load/upload mask preview source image", { src: sourceImg.src, error }),
+      );
 
       const loop = () => {
         const {
@@ -1154,8 +1230,10 @@ export function ProjectMaskItem({
         gl.deleteBuffer(state.centroidBuffer);
         gl.deleteBuffer(state.highlightBuffer);
         if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
+        if (textureRef.current) gl.deleteTexture(textureRef.current);
         glStateRef.current = undefined;
         maskTextureRef.current = undefined;
+        textureRef.current = undefined;
       };
       // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
       // flow that updates an *existing* mask's polygons this session (captureMeshSection,
