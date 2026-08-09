@@ -390,6 +390,19 @@ export function DraggableProjectSvg({
             break;
           }
           case "rotate": {
+            // Toggles selectedSvgKeys the same way the "scale" case above does, so Rotatebar's
+            // blue-outline highlighting stays consistent no matter which tool made the selection
+            // (see Scalebar). SetActiveElement below is untouched -- other consumers (rotate-unit's
+            // carousel, etc.) still key off it independently of this selection set.
+            setSelectedSvgKeys((prev) => {
+              const next = new Set(prev);
+              if (next.has(mediaKey)) {
+                next.delete(mediaKey);
+              } else {
+                next.add(mediaKey);
+              }
+              return next;
+            });
             const newActiveElement: LaurusActiveElement = {
               key: mediaKey,
               type: "svg",

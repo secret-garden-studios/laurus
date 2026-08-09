@@ -1516,7 +1516,7 @@ export default function Workspace({
       ? "crosshair"
       : isMetaKeyPressed && uiState.tool.type !== "viewport"
         ? "context-menu"
-        : uiState.tool.type === "scale"
+        : uiState.tool.type === "scale" || uiState.tool.type === "rotate"
           ? "crosshair"
           : "";
   }, [isAltKeyPressed, isMetaKeyPressed, uiState.tool.type]);

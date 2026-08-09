@@ -1293,11 +1293,15 @@ export function ProjectMaskItem({
             data-mask-key={source.kind === "static" ? mediaKey : undefined}
             onClick={(e) => {
               // Alt-click toggles selection, same as images/svgs (see DraggableProjectImg's
-              // onImgClick). Not available on a live preview -- there's no persisted mediaKey yet.
-              // Mutually exclusive with the metaKey/tool-driven click below, mirroring how
-              // DraggableProjectImg's onImgClick only falls through to its tool-type switch once
-              // the alt-select branch has already been ruled out.
-              if (isAltKeyPressed && source.kind === "static") {
+              // onImgClick). So does a plain click while the scale tool is active -- mirroring
+              // DraggableProjectImg/Svg's own `case "scale":` in their tool-type switch, which
+              // toggles selectedImgKeys/selectedSvgKeys the same way. Not available on a live
+              // preview -- there's no persisted mediaKey yet. Excluded on a meta-click so that
+              // still falls through to the capture-menu handling below instead of also toggling
+              // selection. Mutually exclusive with the metaKey/tool-driven click below, mirroring
+              // how DraggableProjectImg's onImgClick only falls through to its tool-type switch
+              // once the alt-select branch has already been ruled out.
+              if (source.kind === "static" && (isAltKeyPressed || (uiState.tool.type === "scale" && !e.metaKey))) {
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
@@ -1317,6 +1321,23 @@ export function ProjectMaskItem({
                   return next;
                 });
                 return;
+              }
+              // A plain click while the rotate tool is active also toggles selection, mirroring
+              // the scale-tool branch above -- but doesn't return early, since (unlike scale) the
+              // rotate tool still needs the metaKey/tool-driven onClick below to run so its own
+              // "rotate" case can set uiState.activeElement (DraggableProjectMask's onMaskClick),
+              // which Rotatebar and other activeElement consumers (e.g. the units carousel) still
+              // depend on independently of this selection set.
+              if (source.kind === "static" && uiState.tool.type === "rotate" && !e.metaKey) {
+                setSelectedMaskKeys((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(mediaKey)) {
+                    next.delete(mediaKey);
+                  } else {
+                    next.add(mediaKey);
+                  }
+                  return next;
+                });
               }
               // Meta-clicking directly on one of the mesh's captures opens that capture's own
               // flavor of the context menu instead of the mesh's general one, and selects it (the

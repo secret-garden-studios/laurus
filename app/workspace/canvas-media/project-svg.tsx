@@ -80,7 +80,7 @@ export function ProjectSvg({
           !uiState.filledForwards &&
           uiState.tool.type !== "move"
         ? "context-menu"
-        : isStackable || uiState.tool.type === "scale"
+        : isStackable || uiState.tool.type === "scale" || uiState.tool.type === "rotate"
           ? "crosshair"
           : dragDisabled
             ? ""

@@ -3,13 +3,28 @@ import { ParameterSliderX } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import { LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, cycle400 } from "@/app/svg-repo";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { UIContext, CoreContext } from "../workspace.client";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { UIContext, CoreContext, HoverContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
 
 export default function Rotatebar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
+  // Same selection source of truth as Scalebar -- selectedImgKeys/selectedSvgKeys/selectedMaskKeys
+  // from HoverContext, rather than uiState.activeElement -- so the target here (and its blue-outline
+  // highlight) stays consistent no matter which tool made the selection. Unlike Scalebar, Rotatebar
+  // still only edits a single element at a time: with several items selected, it targets the first
+  // key (same priority order Scalebar uses) rather than applying a relative change to all of them.
+  const target = useMemo(() => {
+    return selectedImgKeys.size > 0
+      ? { key: Array.from(selectedImgKeys)[0], type: "img" as const }
+      : selectedSvgKeys.size > 0
+        ? { key: Array.from(selectedSvgKeys)[0], type: "svg" as const }
+        : selectedMaskKeys.size > 0
+          ? { key: Array.from(selectedMaskKeys)[0], type: "mask" as const }
+          : null;
+  }, [selectedImgKeys, selectedSvgKeys, selectedMaskKeys]);
   const [angle, setAngle] = useState<number>(0);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -125,28 +140,26 @@ export default function Rotatebar() {
   const angleRef = useRef<HTMLInputElement>(null);
 
   const getActiveRotate = useCallback((): [number, number, number, number] => {
-    if (!uiState.activeElement) return [0, 0, 0, 0];
-    const activeElement = { ...uiState.activeElement };
-    if (!activeElement) return [0, 0, 0, 0];
+    if (!target) return [0, 0, 0, 0];
     const snapshot: LaurusProjectResult = { ...coreState.project };
-    switch (activeElement.type) {
+    switch (target.type) {
       case "svg": {
-        const svg = snapshot.svgs.get(activeElement.key);
+        const svg = snapshot.svgs.get(target.key);
         if (!svg) return [0, 0, 0, 0];
         return [svg.rotate_x, svg.rotate_y, svg.rotate_z, svg.rotate_angle];
       }
       case "img": {
-        const img = snapshot.imgs.get(activeElement.key);
+        const img = snapshot.imgs.get(target.key);
         if (!img) return [0, 0, 0, 0];
         return [img.rotate_x, img.rotate_y, img.rotate_z, img.rotate_angle];
       }
       case "mask": {
-        const mask = snapshot.masks.get(activeElement.key);
+        const mask = snapshot.masks.get(target.key);
         if (!mask) return [0, 0, 0, 0];
         return [mask.rotate_x, mask.rotate_y, mask.rotate_z, mask.rotate_angle];
       }
     }
-  }, [uiState.activeElement, coreState.project]);
+  }, [target, coreState.project]);
 
   const saveRotate = useCallback(
     async (
@@ -321,7 +334,7 @@ export default function Rotatebar() {
         <div style={{ paddingLeft: 4 }}>{"x"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${uiState.activeElement?.key ?? "rotatebar"}|rotatex`}
+          hash={`${target?.key ?? "rotatebar"}|rotatex`}
           size={dynamicSizes.paramSize}
           containerRef={xTrackRef}
           cursor={xCursor}
@@ -329,21 +342,14 @@ export default function Rotatebar() {
             setXCursor({ ...newCursor, y: 0 });
             if (!xTrackRef.current) return;
             const newX = getXValue(newCursor.x, xTrackRef.current.clientWidth, 0);
-            saveRotate(
-              uiState.activeElement?.key ?? "",
-              uiState.activeElement?.type ?? "",
-              newX,
-              undefined,
-              undefined,
-              undefined,
-            );
+            saveRotate(target?.key ?? "", target?.type ?? "", newX, undefined, undefined, undefined);
           }}
-          disabled={uiState.activeElement == undefined}
+          disabled={target == undefined}
         />
         <div>{"y"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${uiState.activeElement?.key ?? "rotatebar"}|rotatey`}
+          hash={`${target?.key ?? "rotatebar"}|rotatey`}
           size={dynamicSizes.paramSize}
           containerRef={yTrackRef}
           cursor={yCursor}
@@ -351,21 +357,14 @@ export default function Rotatebar() {
             setYCursor({ ...newCursor, y: 0 });
             if (!yTrackRef.current) return;
             const newY = getYValue(newCursor.x, yTrackRef.current.clientWidth, 0);
-            saveRotate(
-              uiState.activeElement?.key ?? "",
-              uiState.activeElement?.type ?? "",
-              undefined,
-              newY,
-              undefined,
-              undefined,
-            );
+            saveRotate(target?.key ?? "", target?.type ?? "", undefined, newY, undefined, undefined);
           }}
-          disabled={uiState.activeElement == undefined}
+          disabled={target == undefined}
         />
         <div>{"z"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${uiState.activeElement?.key ?? "rotatebar"}|rotatez`}
+          hash={`${target?.key ?? "rotatebar"}|rotatez`}
           size={dynamicSizes.paramSize}
           containerRef={zTrackRef}
           cursor={zCursor}
@@ -373,16 +372,9 @@ export default function Rotatebar() {
             setZCursor({ ...newCursor, y: 0 });
             if (!zTrackRef.current) return;
             const newZ = getZValue(newCursor.x, zTrackRef.current.clientWidth, 0);
-            saveRotate(
-              uiState.activeElement?.key ?? "",
-              uiState.activeElement?.type ?? "",
-              undefined,
-              undefined,
-              newZ,
-              undefined,
-            );
+            saveRotate(target?.key ?? "", target?.type ?? "", undefined, undefined, newZ, undefined);
           }}
-          disabled={uiState.activeElement == undefined}
+          disabled={target == undefined}
         />
         <div style={{}}>
           {/* todo: the main tick mark on this mini dial is not rendered properly */}
@@ -406,14 +398,7 @@ export default function Rotatebar() {
                 const x = Math.round(v) % 360;
                 return x < 0 ? x + 360 : x;
               })(v);
-              saveRotate(
-                uiState.activeElement?.key ?? "",
-                uiState.activeElement?.type ?? "",
-                undefined,
-                undefined,
-                undefined,
-                newAngle,
-              );
+              saveRotate(target?.key ?? "", target?.type ?? "", undefined, undefined, undefined, newAngle);
               setAngle(newAngle);
             }}
             size={{
@@ -423,12 +408,12 @@ export default function Rotatebar() {
               dial: 80 * 0.45,
               dialTick: 11 * 0.45,
             }}
-            disabled={uiState.activeElement == undefined}
+            disabled={target == undefined}
           />
         </div>
         <div style={{}}>
           <input
-            id={`${uiState.activeElement?.key ?? "rotatebar"}|rotateangle`}
+            id={`${target?.key ?? "rotatebar"}|rotateangle`}
             disabled
             ref={angleRef}
             type="text"
