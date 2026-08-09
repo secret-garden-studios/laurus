@@ -147,8 +147,10 @@ export default function ScaleUnitbar({
     const imgMeta = coreState.project.imgs.get(carouselEntryKey);
     if (imgMeta) return imgMeta.media_group_id;
     const svgMeta = coreState.project.svgs.get(carouselEntryKey);
-    return svgMeta?.media_group_id ?? "";
-  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+    if (svgMeta) return svgMeta.media_group_id;
+    const maskMeta = coreState.project.masks.get(carouselEntryKey);
+    return maskMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const otherGroupKeys = useMemo(() => {
     if (!mediaGroupId) return [];
@@ -158,8 +160,11 @@ export default function ScaleUnitbar({
     const svgKeys = Array.from(coreState.project.svgs.entries())
       .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
       .map(([key]) => key);
-    return [...imgKeys, ...svgKeys];
-  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+    const maskKeys = Array.from(coreState.project.masks.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    return [...imgKeys, ...svgKeys, ...maskKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const onPasteToGroupClick = useCallback(async () => {
     if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;

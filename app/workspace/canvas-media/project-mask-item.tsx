@@ -25,6 +25,7 @@ import {
   getFrames,
   getLightSourceFrames,
   getMoveFrames,
+  getScaleFrames,
   LaurusEffect,
   LaurusFrame,
   LaurusImgResult,
@@ -623,9 +624,19 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { captureId: id, inputId, wiredMove, wiredLightSource };
+          // A capture's own "radius" isn't a stored value -- unlike move/light_source, "scale"
+          // doesn't set an absolute epicenter/dial, it multiplies whatever the light glow's radius
+          // would otherwise be (light_source's own size dial, or the mask's resting default if
+          // nothing else is wired) by this equation's resolved sx. See the render loop below.
+          const wiredScale = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "scale" }> =>
+              effect.type === "scale" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { captureId: id, inputId, wiredMove, wiredLightSource, wiredScale };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource)
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale)
         // Read once, right before playback starts, not memoized on `source` -- see
         // computeLightSourceRestPosition's comment. Anchored on the exact same capture each
         // target resolved above, so a capture's epicenter never anchors on a different capture
@@ -643,6 +654,7 @@ export function ProjectMaskItem({
       const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
       const moveFramesByCapture = new Map<number, LaurusFrame[]>();
       const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
+      const scaleFramesByCapture = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
 
@@ -696,7 +708,7 @@ export function ProjectMaskItem({
         });
       } else {
         const target = targets[0];
-        const timingValue = (target.wiredMove ?? target.wiredLightSource)!.value;
+        const timingValue = (target.wiredMove ?? target.wiredLightSource ?? target.wiredScale)!.value;
         fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
@@ -719,6 +731,16 @@ export function ProjectMaskItem({
             ).then((result) => {
               if (activePlaybackRef.current === session && result)
                 lightSourceFramesByCapture.set(target.captureId, result);
+            }),
+          );
+        }
+        if (target.wiredScale) {
+          const wiredScale = target.wiredScale;
+          fetches.push(
+            fetchFramesCached(target.inputId, `scale:${target.inputId}`, () =>
+              getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result) scaleFramesByCapture.set(target.captureId, result);
             }),
           );
         }
@@ -757,6 +779,7 @@ export function ProjectMaskItem({
                   const mergedFrames = mergedFramesByCapture.get(t.captureId);
                   const moveFrames = moveFramesByCapture.get(t.captureId);
                   const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
+                  const scaleFrames = scaleFramesByCapture.get(t.captureId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
@@ -775,6 +798,15 @@ export function ProjectMaskItem({
                       : undefined
                     : lightSourceFrames && lightSourceFrames.length > 0
                       ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+                      : undefined;
+                  // No gating needed here the way lightSourcePoint needs it above: both merge_frames
+                  // (server) and getScaleFrames' own unwired case leave sx at 1 -- already the
+                  // correct "no scale wired" neutral multiplier, not a value that would zero anything
+                  // out.
+                  const scalePoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : scaleFrames && scaleFrames.length > 0
+                      ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
                       : undefined;
 
                   // point.x/y are a pixel-space delta from the mesh's own resting position -- the
@@ -797,12 +829,17 @@ export function ProjectMaskItem({
                   const intensity = lightSourcePoint?.light_source_intensity ?? lightSourceIntensityRef.current;
                   const falloff = lightSourcePoint?.light_source_falloff ?? lightSourceFalloffRef.current;
                   const darkness = lightSourcePoint?.light_source_darkness ?? lightSourceDarknessRef.current;
+                  // "scale" doesn't set the radius outright -- it multiplies whatever `size` above
+                  // already resolved to, the same relative-not-absolute role scale_x/scale_y play
+                  // for an img/svg's own base size. sy is unused: the light glow is a circle, with
+                  // one radius, not an ellipse.
+                  const scaleMultiplier = scalePoint?.sx ?? 1;
 
                   playbackLightSourcesRef.current.set(t.captureId, {
                     x: bufferX,
                     // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
                     y: canvas.height - bufferY,
-                    radius: (size / 2) * scaleX,
+                    radius: (size / 2) * scaleMultiplier * scaleX,
                     falloff: falloff * scaleX,
                     intensity,
                     darkness,

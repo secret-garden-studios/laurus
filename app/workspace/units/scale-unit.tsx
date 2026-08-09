@@ -12,6 +12,7 @@ import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { maskCaptureInputId } from "../effects-utils";
 
 export interface ScaleUnitControls {
   scale_x: number;
@@ -36,7 +37,8 @@ interface ScaleUnit {
   carouselIndexInit: number;
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
+    useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -144,16 +146,18 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        // Masks aren't wireable to scale through this mechanism -- kept only for switch
-        // exhaustiveness now that CarouselEntry has a "mask" variant (see light-source-unit.tsx).
         case "mask": {
-          return "";
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
+          // math -- keying purely off the mask's element key would collapse every capture on the
+          // same mask onto the same equation. See maskCaptureInputId.
+          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
   // param 1
   const timeUpperLimit = useMemo(() => {
@@ -231,16 +235,21 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           break;
         }
         case "mask": {
+          // activeCaptureId has to travel with the mask key here -- see light-source-unit.tsx's
+          // own setActiveElementIfNull for why omitting it would let this component's next render
+          // silently snap the active capture back to whichever one happens to sit first.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "mask",
             locallyActivatedEffectKey: scale.scale_id,
+            activeCaptureId: carouselEntry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
           notifyMaskActiveElementChanged(newActiveElement.key);
+          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
           break;
         }
       }
@@ -252,6 +261,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     scale.scale_id,
     uiDispatch,
     notifyMaskActiveElementChanged,
+    notifyMaskActiveCaptureChanged,
   ]);
 
   const getActiveScale = useCallback((): [number, number] => {

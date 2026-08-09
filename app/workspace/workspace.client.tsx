@@ -919,8 +919,8 @@ export default function Workspace({
         const eligibleItems = new Set<string>();
         // A mask capture's own frames (see project-mask-item.tsx's preparePlayback, "playAll"
         // branch) run through this exact same fetch-and-cache loop below, keyed the same way --
-        // just filtered to move/light_source (the only effect types a mask capture wires up) and
-        // matched against masks instead of imgs/svgs, since a capture's math key is
+        // just filtered to move/light_source/scale (the only effect types a mask capture wires up)
+        // and matched against masks instead of imgs/svgs, since a capture's math key is
         // maskCaptureInputId's "mediaKey:captureId" (or a bare mediaKey, for a mask input_id
         // predating per-capture math -- parseMaskCaptureInputId's maskKey handles both). Left out
         // of globalLimit: that duration only feeds the WAAPI animationOptions below, which masks
@@ -932,7 +932,7 @@ export default function Workspace({
               eligibleItems.add(inputKey);
               globalLimit = Math.max(globalLimit, e.value.end);
             } else if (
-              (e.type === "move" || e.type === "light_source") &&
+              (e.type === "move" || e.type === "light_source" || e.type === "scale") &&
               coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
@@ -1264,15 +1264,17 @@ export default function Workspace({
 
       const newAnimations = await getNewAnimationsByTarget("none", false, target);
 
-      // Only the masks wired to this specific light source key, and only for a "move" or "light_source"
-      // effect -- the only kinds ProjectMaskItem's wiring reacts to. A Scale/Rotate preview on
+      // Only the masks wired to this specific light source key, and only for a "move", "light_source",
+      // or "scale" effect -- the only kinds ProjectMaskItem's wiring reacts to. A Rotate preview on
       // the same element shares this same target.inputKey but has nothing for a mask to play.
       // Computed (and triggered) before the newAnimations bail-out below: a light-source-svg has no DOM
       // element of its own (see workspace.client.tsx's render-skip), so getNewAnimationsByTarget
       // never produces a WAAPI Animation for it -- newAnimations can be legitimately empty while
       // there's still a light source to play.
       const targetDrivesLightSource = coreState.effects.some(
-        (effect) => effect.key === target.effectKey && (effect.type === "move" || effect.type === "light_source"),
+        (effect) =>
+          effect.key === target.effectKey &&
+          (effect.type === "move" || effect.type === "light_source" || effect.type === "scale"),
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {

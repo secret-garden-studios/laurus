@@ -14,9 +14,9 @@ import { CoreAction, CoreActionType } from "./states/core-state";
 
 // A mask's own project key isn't a fine-grained enough `math` input_id on its own: a mask can
 // carry several captures (see project-mask-item.tsx/CarouselEntry), each wireable to its own move/
-// light_source equation, and "move"/"light_source" are the only two effect types masks support
-// (scale/rotate act on a whole element's transform, which a mask's captures don't have -- see
-// move-unit.tsx/light-source-unit.tsx's carouselEntryKey, the only other place this format is
+// light_source/scale equation -- "rotate" is the only effect type masks don't support (it acts on
+// a whole element's transform, which a mask's captures don't have -- see move-unit.tsx/
+// light-source-unit.tsx/scale-unit.tsx's carouselEntryKey, the only other place this format is
 // built). Server-side, input_id is an opaque dict key everywhere except one seed lookup in
 // input_math.py's solve_input, which strips this same ":"-suffix back off before treating it as a
 // literal mask key -- keep that in sync if this format ever changes.
