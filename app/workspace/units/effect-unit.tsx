@@ -21,6 +21,7 @@ import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
 import EffectUnitbar from "./bars/effect-unitbar";
 import { CoreActionType } from "../states/core-state";
+import { carouselEntryMathKey } from "../effects-utils";
 
 interface EffectUnit {
   effect: LaurusEffect;
@@ -40,7 +41,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
     switch (effect.type) {
       case "move": {
         const moveEqautionKeys = Array.from(effect.value.math.keys());
-        const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
+        const k = keys.findIndex((k) => moveEqautionKeys.includes(carouselEntryMathKey(k)));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setMoveCarouselIndex(newIndex);
         break;
@@ -54,14 +55,14 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
       }
       case "scale": {
         const moveEqautionKeys = Array.from(effect.value.math.keys());
-        const k = keys.findIndex((k) => moveEqautionKeys.includes(k.key));
+        const k = keys.findIndex((k) => moveEqautionKeys.includes(carouselEntryMathKey(k)));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setScaleCarouselIndex(newIndex);
         break;
       }
       case "light_source": {
         const eqKeys = Array.from(effect.value.math.keys());
-        const k = keys.findIndex((k) => eqKeys.includes(k.key));
+        const k = keys.findIndex((k) => eqKeys.includes(carouselEntryMathKey(k)));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setLightSourceCarouselIndex(newIndex);
         break;

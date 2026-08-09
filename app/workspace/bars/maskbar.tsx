@@ -7,7 +7,7 @@ import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
-import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
+import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -15,7 +15,6 @@ export default function Maskbar() {
   // (a light source, or something else down the line); it just hands the drag off to whoever
   // does via these two callbacks.
   const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
-  const { topology } = coreState;
   const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
@@ -288,23 +287,64 @@ export default function Maskbar() {
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
-  const textureMixValue =
-    selectedMaskKey !== undefined
-      ? (topology.get(selectedMaskKey)?.textureMix ?? TEXTURE_MIX_DEFAULT)
-      : mask.textureMix;
+  const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
+  const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
+  // Same coalescing-queue persistence as LightSourcebar's own saveLightSourceField -- every edit
+  // applies locally right away (see saveTextureField below), and only the network PUT coalesces:
+  // whichever value is newest when a save completes goes out next, rather than a debounce timer
+  // dropping mid-drag ticks or racing an in-flight request.
+  const pendingTextureSaveRef = useRef<LaurusProjectResult | null>(null);
+  const isPersistingTextureRef = useRef(false);
+  const persistTextureQueue = useCallback(async () => {
+    if (isPersistingTextureRef.current) return;
+    isPersistingTextureRef.current = true;
+    try {
+      while (pendingTextureSaveRef.current) {
+        const projectToSave = pendingTextureSaveRef.current;
+        pendingTextureSaveRef.current = null;
+        const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, projectToSave.project_id, {
+          ...projectToSave,
+        });
+        if (!saved) {
+          console.error("failed to save texture change", { project_id: projectToSave.project_id });
+        }
+      }
+    } finally {
+      isPersistingTextureRef.current = false;
+    }
+  }, [coreState.apiOrigin, coreState.accessToken]);
+
+  const saveTextureField = useCallback(
+    (value: number) => {
+      if (selectedMaskKey === undefined) return;
+      const maskMeta = coreState.project.masks.get(selectedMaskKey);
+      if (!maskMeta) return;
+
+      const newMasks = new Map(coreState.project.masks);
+      const newMaskMeta: LaurusProjectMask = { ...maskMeta, texture: value };
+      newMasks.set(selectedMaskKey, newMaskMeta);
+      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
+      dispatch({ type: CoreActionType.SetProject, value: newProject });
+      // Passed directly rather than left for the mesh to re-read off coreState: this fires
+      // synchronously, before React has re-rendered ProjectMaskItem with the just-dispatched
+      // project (see MaskAppearanceOverride's own comment in project-mask-item.tsx).
+      notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
+
+      pendingTextureSaveRef.current = newProject;
+      void persistTextureQueue();
+    },
+    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistTextureQueue],
+  );
+
   const handleTextureMixChange = useCallback(
     (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        dispatch({ type: CoreActionType.SetTopology, key: selectedMaskKey, value: { textureMix: value } });
-        // Passed directly rather than left for the mesh to re-read off topology: this fires
-        // synchronously, before React has re-rendered with the just-dispatched topology (see
-        // MaskAppearanceOverride's comment in project-mask-item.tsx).
-        notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
+      if (selectedMaskMeta) {
+        saveTextureField(value);
       } else {
         mask.setTextureMix(value);
       }
     },
-    [selectedMaskKey, dispatch, mask, notifyMaskAppearanceChanged],
+    [selectedMaskMeta, saveTextureField, mask],
   );
 
   const textureTrackRef = useRef<HTMLDivElement | null>(null);
@@ -551,8 +591,8 @@ export default function Maskbar() {
         <div
           title={
             isTextureDisabled
-              ? "select or generate a mesh to blend between its flat color and the source image"
-              : "blend between the flat masked color and the source image sampled through the mesh"
+              ? "select or generate a mesh to blend between its flat color and its own baked-in detail"
+              : "blend between the mesh's flat mean color and its own per-triangle color, baked in from the source raster at creation time"
           }
           style={{
             display: "flex",

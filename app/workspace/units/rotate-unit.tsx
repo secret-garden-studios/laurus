@@ -38,7 +38,8 @@ interface RotateUnit {
   carouselIndexInit: number;
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
+    useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
@@ -106,16 +107,22 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        // Masks aren't wireable to rotate through this mechanism -- kept only for switch
-        // exhaustiveness now that CarouselEntry has a "mask" variant (see light-source-unit.tsx).
         case "mask": {
+          // The whole mask, wired the same way an img/svg wires its own bare key -- see
+          // effects-utils.ts's comment. Unlike move/scale, rotate never had a capture-scoped
+          // format to worry about colliding with.
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        // A capture isn't wireable to rotate -- it acts on a whole element's transform, which a
+        // capture doesn't have (see effects-utils.ts's own comment).
+        case "capture": {
           return "";
         }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
   // param 1
   const xTrackRef = useRef<HTMLDivElement | null>(null);
@@ -224,6 +231,25 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
+        case "capture": {
+          // Rotate has no equation for a capture (see this file's carouselEntryKey above), but
+          // the active-element/highlight system still tracks whichever entry is being browsed --
+          // see move-unit.tsx's own setActiveElementIfNull for why activeCaptureId must travel
+          // with the mask key here.
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: rotate.rotate_id,
+            activeCaptureId: carouselEntry.captureId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          break;
+        }
       }
     }
   }, [
@@ -233,6 +259,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     rotate.rotate_id,
     uiDispatch,
     notifyMaskActiveElementChanged,
+    notifyMaskActiveCaptureChanged,
   ]);
 
   const saveNewEquation = useCallback(

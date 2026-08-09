@@ -115,6 +115,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "mask": {
+          // The whole mask, wired the same way an img/svg wires its own bare key -- see
+          // effects-utils.ts's comment on why this never collides with a capture's own
+          // maskCaptureInputId-keyed math below.
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        case "capture": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
           // math -- keying purely off the mask's element key would collapse every capture on the
@@ -230,6 +236,19 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           break;
         }
         case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: move.move_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          break;
+        }
+        case "capture": {
           // activeCaptureId has to travel with the mask key here -- omitting it (as this used to)
           // leaves uiState.activeElement.activeCaptureId undefined, and useCarouselIndex's own
           // activeIndex lookup falls back to "any entry with this mask key" whenever that's

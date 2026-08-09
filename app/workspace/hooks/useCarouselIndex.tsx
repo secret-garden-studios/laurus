@@ -18,11 +18,15 @@ export const useCarouselIndex = (
   };
   // A mask key can now match several entries (one per capture -- see CarouselEntry's own doc
   // comment), so a capture-specific activeElement needs to land on its own entry, not just
-  // whichever of the mask's entries happens to be first.
+  // whichever of the mask's entries happens to be first. When activeCaptureId is set, a "mask"
+  // (whole-element) entry sharing the same key must NOT match here -- it always sits before its
+  // captures in carouselEntries (see workspace.client.tsx's initCarouselEntries), so without this
+  // exclusion findIndex would always land back on that whole-mask entry instead of the specific
+  // capture, making chevron navigation between a mask's own captures a no-op.
   const activeIndex = carouselEntries.findIndex((c) => {
     if (c.key !== activeKey) return false;
-    if (c.type === "mask" && activeElement?.type === "mask" && activeElement.activeCaptureId !== undefined) {
-      return c.captureId === activeElement.activeCaptureId;
+    if (activeElement?.type === "mask" && activeElement.activeCaptureId !== undefined) {
+      return c.type === "capture" && c.captureId === activeElement.activeCaptureId;
     }
     return true;
   });

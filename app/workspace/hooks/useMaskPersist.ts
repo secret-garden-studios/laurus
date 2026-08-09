@@ -1,7 +1,8 @@
 import { useCallback, useContext } from "react";
 import { v4 as newUUID } from "uuid";
-import { CoreContext, HoverContext, MaskContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
+import { UIActionType } from "../states/ui-state";
 import {
   LaurusProjectImg,
   LaurusProjectMask,
@@ -22,6 +23,7 @@ export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" 
  */
 export function useMaskPersist() {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { uiDispatch } = useContext(UIContext);
   const { setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const { position, size } = mask;
@@ -63,9 +65,7 @@ export function useMaskPersist() {
         light_source_intensity: mask.lightSourceIntensity,
         light_source_falloff: mask.lightSourceFalloff,
         light_source_darkness: mask.lightSourceDarkness,
-        fill: result.fill,
-        stroke: result.stroke,
-        stroke_width: result.stroke_width,
+        texture: mask.textureMix,
         description: "",
       };
 
@@ -76,11 +76,11 @@ export function useMaskPersist() {
 
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
-      // Carries the live preview's dialed-in texture mix over to the newly placed mask --
-      // topology is client-only (not part of LaurusProjectMask, unlike light_source_* above), so
-      // without this the mesh would silently revert to TEXTURE_MIX_DEFAULT the instant it's
-      // placed, discarding whatever was dialed in on Maskbar's texture slider while it streamed.
-      dispatch({ type: CoreActionType.SetTopology, key: newKey, value: { textureMix: mask.textureMix } });
+      // The whole mask earns its own carousel entry immediately, exactly like an img/svg does on
+      // drop (see canvas.tsx's handleImgDrop/handleSvgDrop) -- wireable to move/scale/rotate via
+      // maskElementsRef right away, unlike a capture's entry which only appears once first drawn
+      // (captureMeshSection).
+      uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: newKey } });
       // Selects the just-placed mask immediately -- otherwise selectedMaskKey stays whatever it
       // was before masking (usually nothing), and the capture toggle/texture slider in Maskbar
       // (both gated on selectedMaskKey) stay disabled until the user manually alt-clicks the new
@@ -114,6 +114,7 @@ export function useMaskPersist() {
       coreState.apiOrigin,
       coreState.accessToken,
       dispatch,
+      uiDispatch,
       setSelectedMaskKeys,
       mask.lightSourceSize,
       mask.lightSourceIntensity,

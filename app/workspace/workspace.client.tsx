@@ -351,18 +351,26 @@ function initCarouselEntries(
       distance,
     });
   });
-  // A mask earns one carousel entry per capture it actually has -- otherwise every mask in a
-  // project would clutter every effect unit's carousel with nothing to wire, and a mask with
-  // several captures would only expose one of them.
   project.masks.entries().forEach((projectMask) => {
     if (projectMask[1].left < 0 || projectMask[1].top < 0) return;
-    const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
-    if (captures.length === 0) return;
     const distance = Math.sqrt(projectMask[1].top ** 2 + projectMask[1].left ** 2);
+    // The whole mask earns its own carousel entry unconditionally, exactly like an img/svg --
+    // wireable to move/scale/rotate via maskElementsRef regardless of whether it has any
+    // captures at all.
+    temp.push({
+      entry: {
+        type: "mask",
+        key: projectMask[0],
+      },
+      distance,
+    });
+    // Beyond that, a mask earns one more carousel entry per capture it actually has --
+    // otherwise a mask with several captures would only expose one of them to wire up.
+    const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
     captures.forEach((capture) => {
       temp.push({
         entry: {
-          type: "mask",
+          type: "capture",
           key: projectMask[0],
           captureId: capture.id,
         },
@@ -761,14 +769,22 @@ export default function Workspace({
   });
   const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
   const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
-  // Masks have no DOM element to animate via WAAPI (they render to a WebGL canvas), so unlike
-  // img/svg's element refs, this holds MaskImperativeHandle instances instead -- registered
-  // by ProjectMaskItem's own mount ref-callback, keyed by the mask's own project key, one Set
-  // per key since more than one mounted instance can share a mediaKey. Also doubles as the one
-  // place every notifyMask* broadcast/targeted call below reaches into to imperatively drive a
-  // mask's WebGL state -- ProjectMaskItem has no useEffect of its own reacting to tool/active
-  // element/topology/etc. changes; the file dispatching each of those calls the matching
-  // notifyMask* function right after, instead.
+  // A mask's own WebGL <canvas> element, keyed by the mask's own project key -- populated by the
+  // same ProjectMaskItem mount ref-callback that populates maskHandlesRef below, letting a
+  // whole-mask CarouselEntry ("mask", not "capture") drive it through the exact same WAAPI
+  // KeyframeEffect/Animation pipeline img/svg use (see getNewAnimations/getNewAnimationsByTarget),
+  // just targeting a canvas instead of an <img>/<svg>. A capture's own math never resolves an
+  // element here -- maskCaptureInputId's "key:captureId" strings never match a bare mask key.
+  const maskElementsRef = useRef<Map<string, HTMLCanvasElement>>(null);
+  // Beyond that whole-element WAAPI target, masks separately have no DOM element for a
+  // *capture's* own move/light_source/scale to animate (a capture lives inside the WebGL mesh,
+  // not as its own element), so unlike img/svg's element refs, this holds MaskImperativeHandle
+  // instances instead -- registered by ProjectMaskItem's own mount ref-callback, keyed by the
+  // mask's own project key, one Set per key since more than one mounted instance can share a
+  // mediaKey. Also doubles as the one place every notifyMask* broadcast/targeted call below
+  // reaches into to imperatively drive a mask's WebGL state -- ProjectMaskItem has no useEffect
+  // of its own reacting to tool/active element/topology/etc. changes; the file dispatching each
+  // of those calls the matching notifyMask* function right after, instead.
   const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
@@ -891,7 +907,10 @@ export default function Workspace({
           framesFromServer.reverse();
         }
         const keyframes: Keyframe[] = toKeyframes(framesFromServer, false);
-        const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
+        const element =
+          imgElementsRef.current?.get(inputKey) ||
+          svgElementsRef.current?.get(inputKey) ||
+          maskElementsRef.current?.get(inputKey);
         if (element) {
           const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
           const animation = new Animation(keyframeEffect, document.timeline);
@@ -919,12 +938,13 @@ export default function Workspace({
         const eligibleItems = new Set<string>();
         // A mask capture's own frames (see project-mask-item.tsx's preparePlayback, "playAll"
         // branch) run through this exact same fetch-and-cache loop below, keyed the same way --
-        // just filtered to move/light_source/scale (the only effect types a mask capture wires up)
-        // and matched against masks instead of imgs/svgs, since a capture's math key is
-        // maskCaptureInputId's "mediaKey:captureId" (or a bare mediaKey, for a mask input_id
-        // predating per-capture math -- parseMaskCaptureInputId's maskKey handles both). Left out
-        // of globalLimit: that duration only feeds the WAAPI animationOptions below, which masks
-        // (no DOM element, see the element lookup below) never use.
+        // just filtered to move/light_source/scale/rotate (the effect types a mask can wire up,
+        // capture-scoped or whole-element) and matched against masks instead of imgs/svgs, since
+        // a capture's math key is maskCaptureInputId's "mediaKey:captureId" (or a bare mediaKey,
+        // for a mask input_id predating per-capture math -- parseMaskCaptureInputId's maskKey
+        // handles both). A *whole* mask's own bare key (captureId undefined, see the element
+        // lookup below) does drive a real WAAPI Animation now, so -- unlike a capture, which never
+        // does -- it needs to feed globalLimit too, same as img/svg.
         let globalLimit = 0;
         enabledEffects.forEach((e) => {
           e.value.math.forEach((_, inputKey) => {
@@ -932,10 +952,13 @@ export default function Workspace({
               eligibleItems.add(inputKey);
               globalLimit = Math.max(globalLimit, e.value.end);
             } else if (
-              (e.type === "move" || e.type === "light_source" || e.type === "scale") &&
+              (e.type === "move" || e.type === "light_source" || e.type === "scale" || e.type === "rotate") &&
               coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
+              if (parseMaskCaptureInputId(inputKey).captureId === undefined) {
+                globalLimit = Math.max(globalLimit, e.value.end);
+              }
             }
           });
         });
@@ -980,10 +1003,15 @@ export default function Workspace({
               framesCacheRef.current.set(inputKey, [...framesFromServer]);
             }
           }
-          // A mask capture's inputKey (eligibleMaskCaptureItems above) never matches either ref --
-          // masks render to a WebGL canvas, not a DOM element -- so it's fetched and cached above
-          // like any other input, but never turned into a WAAPI Animation.
-          const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
+          // A capture's own inputKey (maskCaptureInputId's "key:captureId") never matches any of
+          // these three refs -- a capture lives inside the WebGL mesh, not as its own element --
+          // so it's fetched and cached above like any other input, but never turned into a WAAPI
+          // Animation. A *whole* mask's own bare key does match maskElementsRef, the same way an
+          // img/svg's bare key matches its own ref.
+          const element =
+            imgElementsRef.current?.get(inputKey) ||
+            svgElementsRef.current?.get(inputKey) ||
+            maskElementsRef.current?.get(inputKey);
           if (element) {
             if (reverse) {
               laurusFrames.reverse();
@@ -1088,7 +1116,7 @@ export default function Workspace({
         notifyMaskCaptureUpdated(maskKey, updated);
         // Every freshly drawn capture earns its own carousel entry -- see CarouselEntry's own
         // doc comment on why this is per-capture, not per-mask.
-        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: maskKey, captureId } });
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
         uiDispatch({
           type: UIActionType.SetActiveElement,
           value: { key: maskKey, type: "mask", activeCaptureId: captureId },
@@ -1270,11 +1298,18 @@ export default function Workspace({
       // Computed (and triggered) before the newAnimations bail-out below: a light-source-svg has no DOM
       // element of its own (see workspace.client.tsx's render-skip), so getNewAnimationsByTarget
       // never produces a WAAPI Animation for it -- newAnimations can be legitimately empty while
-      // there's still a light source to play.
+      // there's still a light source to play. Also requires target.inputKey to actually be
+      // capture-scoped (captureId !== undefined): a *whole* mask's own move/scale preview shares
+      // this same effect.key/effect.type shape (it's the exact same "move"/"scale" effect a
+      // capture might also be wired into) but its bare-key inputKey has no capture of its own to
+      // play -- without this check, resolveTargetCaptureId's fallback-to-first-capture would make
+      // it spuriously re-play whichever capture happens to be selected/first, using an equation
+      // that's meant for a completely different (whole-element) purpose.
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>
           effect.key === target.effectKey &&
-          (effect.type === "move" || effect.type === "light_source" || effect.type === "scale"),
+          (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
+          parseMaskCaptureInputId(target.inputKey).captureId !== undefined,
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
@@ -1381,6 +1416,9 @@ export default function Workspace({
     }
     if (imgElementsRef.current) {
       imgElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+    }
+    if (maskElementsRef.current) {
+      maskElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
     }
     maskHandlesRef.current?.forEach((players) => players.forEach((player) => player.stop()));
     uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
@@ -1922,6 +1960,7 @@ export default function Workspace({
                                 : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
                             }
                             maskHandlesRef={maskHandlesRef}
+                            maskElementsRef={maskElementsRef}
                             framesCacheRef={framesCacheRef}
                             forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
                           />

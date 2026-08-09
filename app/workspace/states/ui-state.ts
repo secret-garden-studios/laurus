@@ -72,10 +72,15 @@ export type LaurusActiveElement = {
 export type CarouselEntry =
   | { type: "svg"; key: string }
   | { type: "img"; key: string }
+  // The whole mask element -- wireable to move/scale/rotate exactly like an img/svg, targeting
+  // the mesh's own WebGL canvas via workspace.client.tsx's maskElementsRef instead of a DOM img/
+  // svg element. Kept distinct from "capture" below (mirrors ContextMenuMedia's own "mask" vs
+  // "capture" split in context-menu.tsx) rather than overloading one variant for both.
+  | { type: "mask"; key: string }
   // One entry per capture, not per mask -- a mask with several captures (see project-mask-item.tsx)
   // gets that many carousel entries, each wiring one particular capture (see workspace.client.tsx's
   // initCarouselEntries/captureMeshSection).
-  | { type: "mask"; key: string; captureId: number };
+  | { type: "capture"; key: string; captureId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
@@ -320,7 +325,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const newEntries = state.carouselEntries.filter((m) => {
         if (m.key !== action.key) return true;
         if (action.captureId === undefined) return false;
-        return !(m.type === "mask" && m.captureId === action.captureId);
+        return !(m.type === "capture" && m.captureId === action.captureId);
       });
       return { ...state, carouselEntries: newEntries };
     }

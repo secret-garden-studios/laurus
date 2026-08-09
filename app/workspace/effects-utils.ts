@@ -11,23 +11,29 @@ import {
   LaurusScaleResult,
 } from "./workspace.server";
 import { CoreAction, CoreActionType } from "./states/core-state";
+import { CarouselEntry } from "./states/ui-state";
 
-// A mask's own project key isn't a fine-grained enough `math` input_id on its own: a mask can
-// carry several captures (see project-mask-item.tsx/CarouselEntry), each wireable to its own move/
-// light_source/scale equation -- "rotate" is the only effect type masks don't support (it acts on
-// a whole element's transform, which a mask's captures don't have -- see move-unit.tsx/
-// light-source-unit.tsx/scale-unit.tsx's carouselEntryKey, the only other place this format is
-// built). Server-side, input_id is an opaque dict key everywhere except one seed lookup in
-// input_math.py's solve_input, which strips this same ":"-suffix back off before treating it as a
-// literal mask key -- keep that in sync if this format ever changes.
+// A mask's own project key isn't a fine-grained enough `math` input_id for a *capture's* own
+// equation: a mask can carry several captures (see project-mask-item.tsx/CarouselEntry), each
+// wireable to its own move/light_source/scale equation -- "rotate" is the one effect type
+// captures don't support (it acts on a whole element's transform, which a capture doesn't have --
+// see move-unit.tsx/scale-unit.tsx/rotate-unit.tsx's carouselEntryKey, the only other place this
+// format is built). The mask's own bare key is reserved for a *different* thing: CarouselEntry's
+// "mask" variant wires the whole element (move/scale/rotate alike) via workspace.client.tsx's
+// maskElementsRef, the same way an img/svg uses its own bare key -- never collides with this
+// format since maskCaptureInputId always has a ":" suffix. Server-side, input_id is an opaque
+// dict key everywhere except one seed lookup in input_math.py's solve_input, which strips this
+// same ":"-suffix back off before treating it as a literal mask key -- keep that in sync if this
+// format ever changes.
 export function maskCaptureInputId(maskKey: string, captureId: number): string {
   return `${maskKey}:${captureId}`;
 }
 
-// Inverse of maskCaptureInputId -- recovers the mask's own element key (what maskHandlesRef is
-// keyed by, see project-mask-item.tsx's mount ref-callback) and the specific capture a caller
-// meant, from an input_id built by the function above. captureId comes back undefined for an
-// img/svg's own bare key (no ":" at all) or a mask input_id predating per-capture math.
+// Inverse of maskCaptureInputId -- recovers the mask's own element key (what maskHandlesRef and
+// maskElementsRef are both keyed by, see project-mask-item.tsx's mount ref-callback) and the
+// specific capture a caller meant, from an input_id built by the function above. captureId comes
+// back undefined for an img/svg's own bare key (no ":" at all), a whole-mask's own bare key
+// (CarouselEntry's "mask" variant), or a mask input_id predating per-capture math.
 export function parseMaskCaptureInputId(inputId: string): { maskKey: string; captureId: number | undefined } {
   const separatorIndex = inputId.indexOf(":");
   if (separatorIndex === -1) return { maskKey: inputId, captureId: undefined };
@@ -36,6 +42,15 @@ export function parseMaskCaptureInputId(inputId: string): { maskKey: string; cap
     maskKey: inputId.slice(0, separatorIndex),
     captureId: Number.isFinite(captureId) ? captureId : undefined,
   };
+}
+
+// The math key a given carousel entry's own equation lives under (see move-unit.tsx's own
+// carouselEntryKey, which this mirrors) -- a "capture" entry's math is keyed by
+// maskCaptureInputId, not the entry's bare mask key, so callers matching entries against
+// LaurusEffect.math.keys() (e.g. effect-unit.tsx's initial carouselIndex pick) need this rather
+// than entry.key directly.
+export function carouselEntryMathKey(entry: CarouselEntry): string {
+  return entry.type === "capture" ? maskCaptureInputId(entry.key, entry.captureId) : entry.key;
 }
 
 // True for `key` if it's this mediaKey's own bare identity (an img/svg, or a mask with no

@@ -12,7 +12,11 @@ export const LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT = 350;
 /** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's light source darkness slider. */
 export const LIGHT_SOURCE_DARKNESS_DEFAULT = 0.2;
 
-/** Default blend between the flat masked color and the source image sampled through the mesh, 0-1. Adjustable via Maskbar's texture slider. */
+/** Default alpha (0-1) each polygon's own stroke renders at -- 1 fully visible, 0 fully invisible.
+ * Persisted server-side as ProjectMask_V1_0.texture (see projects.server.ts), per-placement rather
+ * than client-only state; Maskbar's texture slider edits it in place via updateProject, the same
+ * way it edits light_source_*. Purely a stroke-opacity knob for now -- will later also
+ * reshape/refill the triangles themselves. */
 export const TEXTURE_MIX_DEFAULT = 0.5;
 
 /** How many simultaneous light sources one mask's draw call supports -- must match the fragment
@@ -109,8 +113,8 @@ uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
 // there's no separate "active" flag to check per-light.
 uniform int u_lightSourceCount;
 
-uniform sampler2D u_texture;
-// 0 = flat server-shaded triangle color, 1 = source-image texture.
+// Alpha (0-1) each triangle's own edge stroke renders at -- see edge/withEdge below. 1 fully
+// visible, 0 fully invisible; a straight linear knob, not a color blend.
 uniform float u_textureMix;
 
 // The silhouette curves, rasterized to a coverage mask. WebGL has no
@@ -131,11 +135,12 @@ uniform vec3 u_glowColor;
 
 void main() {
   float edgeDist = min(min(v_barycentric.x, v_barycentric.y), v_barycentric.z);
-  // Fades out with u_textureMix -- it reads as a helpful wireframe over the flat masked
-  // colors, but as white strokes cutting across the real photo once the texture takes over.
-  float edge = (1.0 - smoothstep(0.0, 0.025, edgeDist)) * (1.0 - u_textureMix);
+  // 1 right at a triangle's own edge, fading to 0 over the next 0.025 of barycentric space --
+  // this is the polygon "stroke" texture controls, at u_textureMix's own alpha (see withEdge
+  // below), not the earlier antialiasing-derived coverage this used to represent.
+  float edge = 1.0 - smoothstep(0.0, 0.025, edgeDist);
 
-  vec3 base = mix(v_color, texture2D(u_texture, v_uv).rgb, u_textureMix);
+  vec3 base = v_color;
 
   // v_lightSourcePos is constant across a triangle's interior (see a_centroid), so dist -- and
   // everything derived from it below -- is one flat value per triangle, not a smooth per-pixel
@@ -169,7 +174,7 @@ void main() {
   // above, so a triangle sitting deep in a light source's shadow doesn't keep a bright hairline
   // around it while its interior goes dark.
   vec3 strokeColor = vec3(1.0) - leastShadow;
-  vec3 withEdge = mix(shaded, strokeColor, edge * 0.18);
+  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix);
 
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
@@ -237,7 +242,6 @@ export interface GLState {
   lightSourceIntensitiesLoc: WebGLUniformLocation;
   lightSourceDarknessesLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
-  textureLoc: WebGLUniformLocation;
   textureMixLoc: WebGLUniformLocation;
   maskLoc: WebGLUniformLocation;
   maskActiveLoc: WebGLUniformLocation;
@@ -272,7 +276,6 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
   const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
-  const textureLoc = gl.getUniformLocation(program, "u_texture");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const maskLoc = gl.getUniformLocation(program, "u_mask");
   const maskActiveLoc = gl.getUniformLocation(program, "u_maskActive");
@@ -291,7 +294,6 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceIntensitiesLoc ||
     !lightSourceDarknessesLoc ||
     !lightSourceCountLoc ||
-    !textureLoc ||
     !textureMixLoc ||
     !maskLoc ||
     !maskActiveLoc ||
@@ -321,7 +323,6 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceIntensitiesLoc,
     lightSourceDarknessesLoc,
     lightSourceCountLoc,
-    textureLoc,
     textureMixLoc,
     maskLoc,
     maskActiveLoc,
@@ -344,7 +345,6 @@ export interface DrawMaskMeshOptions {
   // playLightSourceAnimation) -- only entries with a positive radius are actually sent to the
   // shader (see drawMaskMesh below), and only the first MAX_MASK_LIGHT_SOURCES of those.
   lightSources: MaskLightSource[];
-  texture: WebGLTexture | undefined;
   textureMix: number;
   maskTexture: WebGLTexture | undefined;
   glowColor: [number, number, number];
@@ -393,16 +393,11 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
   }
 
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, options.texture ?? null);
-  gl.uniform1i(state.textureLoc, 0);
-  // Falls back to the flat masked colors if the source image never made it into a texture
-  // (cross-origin, deleted, decode failure), regardless of where the slider sits.
-  gl.uniform1f(state.textureMixLoc, options.texture ? options.textureMix : 0);
+  gl.uniform1f(state.textureMixLoc, options.textureMix);
 
-  gl.activeTexture(gl.TEXTURE1);
+  gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, options.maskTexture ?? null);
-  gl.uniform1i(state.maskLoc, 1);
+  gl.uniform1i(state.maskLoc, 0);
   gl.uniform1f(state.maskActiveLoc, options.maskTexture ? 1 : 0);
   gl.uniform3fv(state.glowColorLoc, options.glowColor);
 
@@ -522,38 +517,6 @@ export function uploadCurveMask(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   return texture;
-}
-
-export function loadImageTexture(
-  gl: WebGLRenderingContext,
-  src: string,
-  onLoaded: (texture: WebGLTexture) => void,
-  onError?: (error: unknown) => void,
-): void {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.onload = () => {
-    try {
-      const texture = gl.createTexture();
-      if (!texture) return;
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      // Image rows come in top-first (DOM convention); flipping here makes v=1 land on the
-      // image's top row, matching the vertex shader's own y-flip for gl_Position.
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      onLoaded(texture);
-    } catch (error) {
-      onError?.(error);
-    }
-  };
-  image.onerror = (error) => {
-    onError?.(error);
-  };
-  image.src = src;
 }
 
 // Pulls the vertex coordinates back out of a path's `d` string ("M x,y L x,y L x,y Z") --

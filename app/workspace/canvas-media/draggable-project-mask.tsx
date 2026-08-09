@@ -21,6 +21,7 @@ interface DraggableProjectMask {
   zIndex: number;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
   maskHandlesRef?: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
+  maskElementsRef?: RefObject<Map<string, HTMLCanvasElement> | null>;
   forceAbsolutePosition?: boolean;
 }
 /**
@@ -35,6 +36,7 @@ export function DraggableProjectMask({
   zIndex,
   framesCacheRef,
   maskHandlesRef,
+  maskElementsRef,
   forceAbsolutePosition,
 }: DraggableProjectMask) {
   const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
@@ -276,6 +278,7 @@ export function DraggableProjectMask({
         frame={frame}
         source={source}
         maskHandlesRef={maskHandlesRef}
+        maskElementsRef={maskElementsRef}
         transform={laurusTransform}
         framesCacheRef={framesCacheRef}
         onClick={onMaskClick}

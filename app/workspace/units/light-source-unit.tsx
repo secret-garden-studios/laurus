@@ -83,7 +83,13 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        // A light source is exclusively a capture's own effect -- a whole mask (CarouselEntry's
+        // "mask" variant, wireable to move/scale/rotate instead) has no epicenter/glow of its own
+        // to drive.
         case "mask": {
+          return "";
+        }
+        case "capture": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
           // math -- keying purely off the mask's element key would collapse every capture on the
@@ -200,6 +206,19 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           break;
         }
         case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: lightSource.light_source_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          break;
+        }
+        case "capture": {
           // activeCaptureId has to travel with the mask key here -- omitting it (as this used to)
           // leaves uiState.activeElement.activeCaptureId undefined, and useCarouselIndex's own
           // activeIndex lookup falls back to "any entry with this mask key" whenever that's

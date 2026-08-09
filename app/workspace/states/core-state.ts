@@ -15,14 +15,6 @@ import {
   LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
-// A mesh-geometry-adjacent render setting -- how a mesh's own data gets sampled (flat
-// server-shaded color vs. its UV-mapped source texture), not a shader effect layered on top.
-// Room to grow toward real topology config (subdivision, triangle density, etc.) once that work
-// starts.
-export interface Topology {
-  textureMix: number;
-}
-
 // One mesh's light source parameters -- the shape of ProjectMask_V1_0's own
 // light_source_size/intensity/falloff/darkness fields (the mask's persisted starting appearance,
 // see LightSourcebar/Scalebar), and of the live in-flight useMaskPreview values before a mask
@@ -65,10 +57,6 @@ export interface CoreState {
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
-  // Per-mesh WebGL preview state -- ephemeral view state, not part of the persisted project, but
-  // centralized here alongside the rest of the cross-component state rather than in a separate
-  // context. See Topology above for why it's shaped the way it is.
-  topology: Map<string, Topology>;
   pendingLightSourceCapture: PendingLightSourceCapture | undefined;
 }
 
@@ -85,7 +73,6 @@ export const defaultCoreState: CoreState = {
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
-  topology: new Map(),
   pendingLightSourceCapture: undefined,
 };
 
@@ -117,7 +104,6 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
-  SetTopology,
   SetPendingLightSourceCapture,
 }
 
@@ -150,7 +136,6 @@ export type CoreAction =
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> }
-  | { type: CoreActionType.SetTopology; key: string; value: Topology }
   | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
@@ -378,16 +363,6 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         ...state,
         inputsToRender: action.value,
       };
-    }
-    // Drives WebGL preview-only mesh state (Maskbar's texture slider) that fires continuously on
-    // every mousemove/drag tick. Unlike every other case above, it deliberately leaves
-    // inputsToRender untouched (via the ...state spread) instead of invalidating to "*" -- this
-    // value never reaches the server or the exported/persisted frames, so there's nothing for the
-    // frame cache to need re-fetching over.
-    case CoreActionType.SetTopology: {
-      const newTopology = new Map(state.topology);
-      newTopology.set(action.key, action.value);
-      return { ...state, topology: newTopology };
     }
     case CoreActionType.SetPendingLightSourceCapture: {
       return { ...state, pendingLightSourceCapture: action.value };

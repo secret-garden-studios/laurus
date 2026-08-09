@@ -147,6 +147,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "mask": {
+          // The whole mask, wired the same way an img/svg wires its own bare key -- see
+          // effects-utils.ts's comment on why this never collides with a capture's own
+          // maskCaptureInputId-keyed math below.
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        case "capture": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
           // math -- keying purely off the mask's element key would collapse every capture on the
@@ -235,6 +241,19 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           break;
         }
         case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: scale.scale_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          break;
+        }
+        case "capture": {
           // activeCaptureId has to travel with the mask key here -- see light-source-unit.tsx's
           // own setActiveElementIfNull for why omitting it would let this component's next render
           // silently snap the active capture back to whichever one happens to sit first.

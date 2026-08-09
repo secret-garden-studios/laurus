@@ -377,9 +377,6 @@ export interface MaskMediaResult_V1_0 {
   source_img_media_id: string;
   width: number;
   height: number;
-  fill: string;
-  stroke: string;
-  stroke_width: number;
   order: number;
   categories: string[];
   polygons: PolygonPath_V1_0[];

@@ -1,5 +1,5 @@
 import { useContext, useState, useCallback } from "react";
-import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
+import { SvgRepo, chevronLeft, chevronRight, texture300 } from "../../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
@@ -68,6 +68,28 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
             key: entry.key,
             type: "mask",
             locallyActivatedEffectKey: effectKey,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          // No particular capture is singled out when the whole mask becomes active -- clears
+          // any previously-bright capture highlight (see ui-state.ts's LaurusActiveElement
+          // comment on activeCaptureId undefined meaning exactly this).
+          notifyMaskActiveCaptureChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
+          break;
+        }
+        case "capture": {
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "mask",
+            locallyActivatedEffectKey: effectKey,
             activeCaptureId: entry.captureId,
           };
           uiDispatch({
@@ -96,6 +118,23 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
       });
     },
     [uiDispatch],
+  );
+
+  // uiState.projectContextMenus is keyed by media key alone, and a mask with captures fills
+  // several carouselEntries with that same key (its own "mask" entry plus one "capture" entry per
+  // capture -- see CarouselEntry). Filtering "inactive" entries by index (as this used to) still
+  // caught those same-key siblings, so activating one of a mask's entries and then hiding every
+  // *other index* immediately re-hid the very key setActiveElement had just shown. Filtering by
+  // key instead leaves every entry that shares the newly-active key alone.
+  const hideOtherContextMenus = useCallback(
+    (activeIndex: number) => {
+      if (activeIndex < 0 || activeIndex >= uiState.carouselEntries.length) return;
+      const activeKey = uiState.carouselEntries[activeIndex].key;
+      uiState.carouselEntries.forEach((ce) => {
+        if (ce.key !== activeKey) hideContextMenu(ce);
+      });
+    },
+    [uiState.carouselEntries, hideContextMenu],
   );
 
   return (
@@ -136,10 +175,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 const newLocalIndex = Math.max(localIndex - 1, 0);
                 onNewLocalIndex(newLocalIndex);
                 setActiveElement(newIndex);
-                const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
-                inactives.forEach((ce) => {
-                  hideContextMenu(ce);
-                });
+                hideOtherContextMenus(newIndex);
               }}
             />
           </div>
@@ -166,10 +202,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
-                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
-                          inactives.forEach((ce) => {
-                            hideContextMenu(ce);
-                          });
+                          hideOtherContextMenus(i);
                         }}
                         style={{
                           position: "relative",
@@ -205,10 +238,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         onContainerClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
-                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
-                          inactives.forEach((ce) => {
-                            hideContextMenu(ce);
-                          });
+                          hideOtherContextMenus(i);
                         }}
                         scale={1}
                         scaleToContaier={true}
@@ -218,9 +248,37 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                   case "mask": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
+                    // A placeholder icon rather than reconstructing every polygon the mesh has
+                    // into an outline (as the "capture" case below still does, just for its own
+                    // much smaller per-capture subset) -- this carousel re-renders on every
+                    // trackpad/dial tick while the whole mask is active, so paying a full-mesh
+                    // path rebuild on each of those would make the unit sluggish for anything but
+                    // the simplest meshes. Same icon context-menu.tsx already uses for a whole
+                    // mask's own media-type footer.
+                    return (
+                      <SvgRepo
+                        key={c.key}
+                        svg={texture300()}
+                        containerStyle={{
+                          ...dynamicSizes.displaySvg,
+                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                        }}
+                        onContainerClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          hideOtherContextMenus(i);
+                        }}
+                        scale={1}
+                        scaleToContaier={true}
+                      />
+                    );
+                  }
+                  case "capture": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
                     // No separate media of its own to show a thumbnail of -- reconstructed
                     // straight from this one capture's own polygons (this carousel entry wires a
-                    // single capture, not the whole mask -- see this file's "mask" case in
+                    // single capture, not the whole mask -- see this file's "capture" case in
                     // setActiveElement above), using the same `d` path data the mesh itself renders
                     // with (see mask-gl.ts) rather than a stand-in icon.
                     const capturedPolygons = coreState.canvasMasks
@@ -242,10 +300,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
-                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
-                          inactives.forEach((ce) => {
-                            hideContextMenu(ce);
-                          });
+                          hideOtherContextMenus(i);
                         }}
                         style={{
                           ...dynamicSizes.displaySvg,
@@ -300,10 +355,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                 const newLocalIndex = Math.min(localIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
                 onNewLocalIndex(newLocalIndex);
                 setActiveElement(newIndex);
-                const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
-                inactives.forEach((ce) => {
-                  hideContextMenu(ce);
-                });
+                hideOtherContextMenus(newIndex);
               }}
             />
           </div>

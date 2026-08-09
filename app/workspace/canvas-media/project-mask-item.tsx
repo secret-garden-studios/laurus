@@ -9,7 +9,6 @@ import {
   drawMaskMesh,
   GLState,
   initGLState,
-  loadImageTexture,
   MaskLightSource,
   parsePathPoints,
   TEXTURE_MIX_DEFAULT,
@@ -90,7 +89,7 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
 //
 // This file has no useEffect: every one of this mask's own GL-affecting state changes is driven
 // either by this component's own event handlers (pointer/click), or -- for state that changes
-// elsewhere in the app (active element, tool, topology, ...) -- by the
+// elsewhere in the app (active element, tool, texture, ...) -- by the
 // file that actually dispatches that change calling straight through one of CoreContext's
 // notifyMask* functions, which reach into workspace.client.tsx's maskHandlesRef and invoke the
 // matching method below directly. That's what every method past play/stop on this interface is
@@ -134,12 +133,13 @@ export interface MaskImperativeHandle {
   // stale data at the exact point every one of those flows calls this (right after dispatching
   // SetCanvasMask, before React has re-rendered with the new prop). See capturesRef.
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
-  // Re-applies this mask's texture-mix (topology) and resting light-source dial values. Reads
-  // from coreState/topology by default, but a caller that just dispatched a change and knows
-  // the fresh value can pass it directly via `override` -- necessary because this fires
-  // synchronously right after that dispatch, before React has re-rendered this component with
-  // the new coreState/topology prop (same stale-closure hazard syncCapturedIndices avoids above
-  // by taking `updated` directly instead of re-reading `source`).
+  // Re-applies this mask's own texture value (ProjectMask_V1_0.texture, persisted server-side via
+  // updateProject the same way light_source_* is -- see Maskbar's saveTextureField) and resting
+  // light-source dial values. Reads off coreState.project.masks by default, but a caller that just
+  // optimistically wrote a fresh value (and kicked off persisting it) can pass it directly via
+  // `override` -- necessary because this fires synchronously right after that write, before React
+  // has re-rendered this component with the new `coreState` prop (same stale-closure hazard
+  // syncCapturedIndices avoids above by taking `updated` directly instead of re-reading `source`).
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
 }
@@ -161,6 +161,11 @@ interface ProjectMaskItem {
   // the live-preview call site in canvas.tsx, which has nothing to register (no persisted
   // mediaKey/lightSourceKey yet).
   maskHandlesRef?: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
+  // The mask's own <canvas> element, registered alongside maskHandlesRef in the same mount
+  // ref-callback below -- lets a whole-mask CarouselEntry drive it through workspace.client.tsx's
+  // WAAPI pipeline (getNewAnimations/getNewAnimationsByTarget) the same way img/svg's own element
+  // refs do. Omitted by the live-preview call site for the same reason as maskHandlesRef above.
+  maskElementsRef?: RefObject<Map<string, HTMLCanvasElement> | null>;
   // The following four are only meaningful for placed (static) masks too -- they exist purely
   // to mount <ContextMenu> with parity to ProjectImg/ProjectSvg (see DraggableProjectMask's
   // onMaskClick and maxZIndex's own comment below). Omitted by the live-preview call site in
@@ -194,6 +199,7 @@ export function ProjectMaskItem({
   source,
   title,
   maskHandlesRef,
+  maskElementsRef,
   transform,
   framesCacheRef,
   onClick,
@@ -220,7 +226,6 @@ export function ProjectMaskItem({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
-  const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
   const lightSourceSizeRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.size);
   const lightSourceIntensityRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.intensity);
@@ -476,7 +481,6 @@ export function ProjectMaskItem({
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       lightSources,
-      texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
@@ -961,39 +965,6 @@ export function ProjectMaskItem({
           maskTextureRef.current = uploadCurveMask(gl, maskCanvas, maskData.curves, undefined);
         }
 
-        // Source image's own project key, if it's still on the canvas -- imgs are keyed by
-        // project element key here, not by img_media_id, so this has to search by value. Only
-        // consulted here, at mount, for the initial texture load: once loaded, the texture is its
-        // own independent GPU resource, so the source image being deleted or swapped out later
-        // has no bearing on it -- this is deliberately not watched reactively.
-        let sourceImgSrc: string | undefined;
-        for (const [key, img] of coreState.project.imgs) {
-          if (img.img_media_id === maskData.source_img_media_id) {
-            sourceImgSrc = coreState.canvasImgs.get(key)?.src;
-            break;
-          }
-        }
-        // Falls back to the media browser's own list -- a mask dropped straight off an armed
-        // img-browser thumbnail (see useMaskPersist/canvas.tsx's handleMaskDrop) never gets a
-        // project.imgs entry of its own, so the loop above always misses for it. Without this,
-        // textureRef.current stays undefined forever for such a mask: drawMaskMesh forces
-        // u_textureMix to 0 whenever there's no texture to blend, so Maskbar's texture slider
-        // would silently do nothing no matter how it's dialed.
-        if (!sourceImgSrc) {
-          sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === maskData.source_img_media_id)?.src;
-        }
-        if (sourceImgSrc) {
-          loadImageTexture(
-            gl,
-            sourceImgSrc,
-            (texture) => {
-              textureRef.current = texture;
-              render();
-            },
-            (error) => console.log("failed to load/upload source image for mask texture blend", { error }),
-          );
-        }
-
         lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
         pendingCaptureRef.current =
           coreState.pendingLightSourceCapture?.maskKey === mediaKey
@@ -1007,7 +978,7 @@ export function ProjectMaskItem({
           const latest = latestRef.current;
           if (latest.source.kind !== "static") return;
           textureMixRef.current =
-            override?.textureMix ?? latest.coreState.topology.get(mediaKey)?.textureMix ?? TEXTURE_MIX_DEFAULT;
+            override?.textureMix ?? latest.coreState.project.masks.get(mediaKey)?.texture ?? TEXTURE_MIX_DEFAULT;
           if (override?.lightSource) {
             lightSourceSizeRef.current = override.lightSource.size;
             lightSourceIntensityRef.current = override.lightSource.intensity;
@@ -1037,6 +1008,13 @@ export function ProjectMaskItem({
           },
           setActiveCapture: (captureId) => {
             activeCaptureIdRef.current = captureId;
+            // Keeps contextMenuVariant (set by this canvas's own meta-click handler below, which
+            // notifyMaskActiveCaptureChanged can't reach directly) from going stale: without this,
+            // a mask that was ever meta-clicked into a capture's menu would keep showing that
+            // capture's <ContextMenu> variant even after the whole mask becomes active again (e.g.
+            // via unit-display.tsx's carousel thumbnail, which drives this the same imperative way
+            // -- see this file's own top comment on why nothing here reacts via useEffect instead).
+            if (captureId === undefined) setContextMenuVariant({ type: "mask" });
             recolorHighlight();
           },
           setPendingCapture: (indices) => {
@@ -1070,6 +1048,11 @@ export function ProjectMaskItem({
           handles.set(mediaKey, forThisKey);
         }
 
+        if (maskElementsRef) {
+          if (!maskElementsRef.current) maskElementsRef.current = new Map();
+          maskElementsRef.current.set(mediaKey, canvas);
+        }
+
         return () => {
           gl.deleteProgram(state.program);
           gl.deleteBuffer(state.positionBuffer);
@@ -1079,15 +1062,18 @@ export function ProjectMaskItem({
           gl.deleteBuffer(state.centroidBuffer);
           gl.deleteBuffer(state.highlightBuffer);
           if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
-          if (textureRef.current) gl.deleteTexture(textureRef.current);
           glStateRef.current = undefined;
           maskTextureRef.current = undefined;
-          textureRef.current = undefined;
           const handles = maskHandlesRef?.current;
           if (handles) {
             const forThisKey = handles.get(mediaKey);
             forThisKey?.delete(handle);
             if (forThisKey && forThisKey.size === 0) handles.delete(mediaKey);
+          }
+          // Only remove if this mount's own canvas is still the one registered -- guards against
+          // a fresher mount's registration (see the set() above) racing ahead of this cleanup.
+          if (maskElementsRef?.current?.get(mediaKey) === canvas) {
+            maskElementsRef.current.delete(mediaKey);
           }
           latestRef.current.stopLightSourceAnimation();
         };
@@ -1104,15 +1090,6 @@ export function ProjectMaskItem({
       const { gl } = state;
 
       let maskCanvas: HTMLCanvasElement | undefined;
-
-      loadImageTexture(
-        gl,
-        sourceImg.src,
-        (texture) => {
-          textureRef.current = texture;
-        },
-        (error) => console.log("failed to load/upload mask preview source image", { src: sourceImg.src, error }),
-      );
 
       const loop = () => {
         const {
@@ -1177,10 +1154,8 @@ export function ProjectMaskItem({
         gl.deleteBuffer(state.centroidBuffer);
         gl.deleteBuffer(state.highlightBuffer);
         if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
-        if (textureRef.current) gl.deleteTexture(textureRef.current);
         glStateRef.current = undefined;
         maskTextureRef.current = undefined;
-        textureRef.current = undefined;
       };
       // Deliberately keyed on mask_media_id rather than `source` itself for a static mask: every
       // flow that updates an *existing* mask's polygons this session (captureMeshSection,
@@ -1196,7 +1171,7 @@ export function ProjectMaskItem({
       // showed up as a visible color flicker right after dropping a relocated capture.
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [meshIdentityKey, render, recolorHighlight, abortCaptureDrag, maskHandlesRef, mediaKey],
+    [meshIdentityKey, render, recolorHighlight, abortCaptureDrag, maskHandlesRef, maskElementsRef, mediaKey],
   );
 
   // Only meaningful for placed (static) masks -- a live preview has no persisted mediaKey to
