@@ -158,9 +158,15 @@ export default function UnitDisplay({
           notifyMaskActiveElementChanged(newActiveElement.key);
           notifyMaskActiveCaptureChanged(entry.key, entry.captureId);
           // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
-          // anchor a context menu to beyond the mask's own -- becoming the active element
-          // highlights the mesh triangles it covers instead (see project-mask-item.tsx's
-          // recolorHighlight, driven by notifyMaskActiveElementChanged above).
+          // anchor a context menu to beyond the mask's own -- the menu positions off that shared
+          // anchor regardless of flavor, and project-mask-item.tsx's own <ContextMenu> render
+          // derives "mask" vs "capture" straight from uiState.activeElement (set above), so the
+          // SetActiveElement dispatch above is what picks the flavor here.
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
           break;
         }
       }

@@ -48,9 +48,6 @@ const DIM_CAPTURE_HIGHLIGHT = 0.35;
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
 
-// Which flavor of <ContextMenu> a meta-click on this mesh should open -- see contextMenuVariant.
-type ContextMenuVariant = { type: "mask" } | { type: "capture"; captureId: number };
-
 // Combined movement (buffer-pixel^2) under which a capture-relocate drag (see captureDragRef
 // below) counts as a no-op and snaps back to its exact starting indices, rather than picking up
 // rounding/boundary noise from re-deriving the capture circle at a barely-moved center.
@@ -221,12 +218,6 @@ export function ProjectMaskItem({
     sendMaskCaptureUpdate,
   } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
-  // Which flavor of <ContextMenu> a meta-click should open -- "capture" (and which one, by id)
-  // when the click lands on one of the mesh's own captures, "mask" otherwise (the existing general
-  // mask menu). Both share the same shown/hidden state (uiState.projectContextMenus, toggled below
-  // in this component's own onClick) and the same on-screen anchor (transform); this only decides
-  // which `media` gets handed to the one <ContextMenu> mount.
-  const [contextMenuVariant, setContextMenuVariant] = useState<ContextMenuVariant>({ type: "mask" });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
@@ -1091,13 +1082,6 @@ export function ProjectMaskItem({
           },
           setActiveCapture: (captureId) => {
             activeCaptureIdRef.current = captureId;
-            // Keeps contextMenuVariant (set by this canvas's own meta-click handler below, which
-            // notifyMaskActiveCaptureChanged can't reach directly) from going stale: without this,
-            // a mask that was ever meta-clicked into a capture's menu would keep showing that
-            // capture's <ContextMenu> variant even after the whole mask becomes active again (e.g.
-            // via unit-display.tsx's carousel thumbnail, which drives this the same imperative way
-            // -- see this file's own top comment on why nothing here reacts via useEffect instead).
-            if (captureId === undefined) setContextMenuVariant({ type: "mask" });
             recolorHighlight();
           },
           setPendingCapture: (indices) => {
@@ -1389,6 +1373,10 @@ export function ProjectMaskItem({
                   hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
                 }
               }
+              const previouslyActiveCaptureId =
+                uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
+                  ? uiState.activeElement.captureId
+                  : undefined;
               if (hitCaptureId !== undefined) {
                 uiDispatch({
                   type: UIActionType.SetActiveElement,
@@ -1396,22 +1384,22 @@ export function ProjectMaskItem({
                 });
                 notifyMaskActiveElementChanged(mediaKey);
                 notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
+              } else if (showContextMenu && previouslyActiveCaptureId !== undefined) {
+                // Meta-clicking off the capture while its own menu is still showing switches the
+                // display back to the mesh's general flavor -- the <ContextMenu> render below has
+                // no separate local flavor to flip (it derives "mask" vs "capture" straight from
+                // uiState.activeElement, mirroring the highlight above), so clearing the active
+                // capture here is what makes that switch happen.
+                uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
+                notifyMaskActiveElementChanged(mediaKey);
+                notifyMaskActiveCaptureChanged(mediaKey, undefined);
               }
-              const newVariant: ContextMenuVariant =
-                hitCaptureId !== undefined ? { type: "capture", captureId: hitCaptureId } : { type: "mask" };
               // Meta-clicking a different part of the mesh while a menu is already showing
               // switches which flavor is displayed in place, rather than closing it -- the
               // shown/hidden toggle below (shared with the mask's general menu) only fires when
-              // the variant isn't changing, so a second meta-click on the *same* kind of target
-              // still closes it as expected.
-              const switchingVariantWhileOpen =
-                showContextMenu &&
-                (newVariant.type !== contextMenuVariant.type ||
-                  (newVariant.type === "capture" &&
-                    contextMenuVariant.type === "capture" &&
-                    newVariant.captureId !== contextMenuVariant.captureId));
-              setContextMenuVariant(newVariant);
-              if (switchingVariantWhileOpen) return;
+              // the displayed capture isn't changing, so a second meta-click on the *same* kind of
+              // target still closes it as expected.
+              if (showContextMenu && previouslyActiveCaptureId !== hitCaptureId) return;
               // Mirrors DraggableProjectImg/Svg's own onImgClick metaKey-toggle/tool-switch tail
               // exactly -- the metaKey branch toggles the menu unconditionally; a plain click only
               // toggles it (or moves the active element) for specific tools.
@@ -1653,8 +1641,8 @@ export function ProjectMaskItem({
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
             media={
-              contextMenuVariant.type === "capture"
-                ? { key: mediaKey, type: "capture", captureId: contextMenuVariant.captureId, meta: maskMeta }
+              uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
+                ? { key: mediaKey, type: "capture", captureId: uiState.activeElement.captureId, meta: maskMeta }
                 : { key: mediaKey, type: "mask", meta: maskMeta }
             }
             framesCacheRef={framesCacheRef}
