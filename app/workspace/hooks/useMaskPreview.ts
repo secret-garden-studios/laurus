@@ -219,15 +219,19 @@ export function useMaskPreview() {
                 [img.width, img.height],
                 [0, img.height],
               ];
-              // One shared centroid (the image's own center) for the whole quad -- see the
-              // matching comment in buildStaticMaskMesh (mask-gl.ts) for why it isn't split
-              // per-triangle like the real mesh triangles below.
-              const center: [number, number] = [img.width / 2, img.height / 2];
+              // Each corner carries its own position as its "centroid" rather than one shared
+              // value -- see the matching comment in buildStaticMaskMesh (mask-gl.ts). A single
+              // shared centroid (e.g. the image's own center) reads wrong wherever the fringe's
+              // true position isn't near that center: too bright on whichever side sits farthest
+              // from a light source (the shadow never seems to reach it), and too dark right next
+              // to a light source pushed toward a mask edge (the sliver there lags behind how lit
+              // the real mesh beside it is, since it's being evaluated as if it sat at the image's
+              // center instead of at the edge).
               for (const [x, y] of corners) {
                 positionsRef.current.push(x, y);
                 colorsRef.current.push(r, g, b);
                 uvsRef.current.push(x / img.width, 1 - y / img.height);
-                centroidsRef.current.push(...center);
+                centroidsRef.current.push(x, y);
                 // All-ones barycentrics keep edgeDist at 1 across the quad, so
                 // the wireframe doesn't draw an outline around the backing.
                 barycentricsRef.current.push(1, 1, 1);
