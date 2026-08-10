@@ -61,12 +61,17 @@ interface UnitDisplay {
   // no whole-element transform for rotate to act on, so its unit's carousel must skip past
   // "capture" entries entirely rather than letting the chevrons land on one.
   capturesWireable?: boolean;
+  // True for light source (see light-source-unit.tsx's carouselEntryKey) -- a light source is
+  // exclusively a capture's own effect, so its unit's carousel must skip every "img", "svg", and
+  // whole-"mask" entry and only ever land on "capture" entries.
+  onlyCapturesWireable?: boolean;
 }
 export default function UnitDisplay({
   carouselIndex,
   effectKey,
   onNewLocalIndex,
   capturesWireable = true,
+  onlyCapturesWireable = false,
 }: UnitDisplay) {
   const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -164,19 +169,21 @@ export default function UnitDisplay({
   );
 
   // First index in `direction` from `fromIndex` this carousel is allowed to land on -- skips
-  // "capture" entries when capturesWireable is false (see this file's UnitDisplay props doc
-  // comment). Returns undefined when nothing navigable remains, so callers can both disable a
-  // chevron and no-op its click.
+  // "capture" entries when capturesWireable is false, or skips every non-"capture" entry when
+  // onlyCapturesWireable is true (see this file's UnitDisplay props doc comment). Returns
+  // undefined when nothing navigable remains, so callers can both disable a chevron and no-op its
+  // click.
   const findNavigableIndex = useCallback(
     (fromIndex: number, direction: 1 | -1): number | undefined => {
       let i = fromIndex + direction;
       while (i >= 0 && i < uiState.carouselEntries.length) {
-        if (capturesWireable || uiState.carouselEntries[i].type !== "capture") return i;
+        const entryType = uiState.carouselEntries[i].type;
+        if (onlyCapturesWireable ? entryType === "capture" : capturesWireable || entryType !== "capture") return i;
         i += direction;
       }
       return undefined;
     },
-    [uiState.carouselEntries, capturesWireable],
+    [uiState.carouselEntries, capturesWireable, onlyCapturesWireable],
   );
 
   const hideContextMenu = useCallback(

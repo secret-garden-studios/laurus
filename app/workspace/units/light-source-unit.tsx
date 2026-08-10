@@ -20,7 +20,7 @@ import {
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import { maskCaptureInputId } from "../effects-utils";
 import LightSourceUnitbar from "./bars/light-source-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 
 export interface LightSourceUnitControls {
@@ -45,6 +45,11 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+// A light source is exclusively a capture's own effect (see carouselEntryKey's "mask" case
+// below) -- passed to useCarouselIndex so every index it derives stays off "img"/"svg"/"mask"
+// entries rather than landing on one and only getting corrected once the user next navigates.
+const isCaptureCarouselEntry = (entry: CarouselEntry) => entry.type === "capture";
+
 interface LightSourceUnit {
   lightSource: LaurusLightSourceResult;
   carouselIndexInit: number;
@@ -59,6 +64,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     uiState.carouselEntries,
     carouselIndexInit,
     lightSource.light_source_id,
+    isCaptureCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<LightSourceUnitControls>({
@@ -377,6 +383,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             carouselIndex={carouselIndex}
             effectKey={lightSource.light_source_id}
             onNewLocalIndex={setLocalIndex}
+            onlyCapturesWireable
           />
           <div style={{ display: "grid" }}>
             <div style={{ ...dynamicSizes.param }}>
