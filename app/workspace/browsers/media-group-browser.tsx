@@ -3,7 +3,7 @@ import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import { addCircle, checkCircle, circle, closeIcon, SvgRepo, texture300 } from "../../svg-repo";
+import { addCircle, checkCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
@@ -629,6 +629,55 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   );
 }
 
+// A mask has no thumbnail of its own -- shows the img its mesh was generated from instead. Only
+// resolves it from what's already in memory (a still-placed project img, or the currently-browsed
+// media page) -- same source project-mask-item.tsx checks first before falling back to a network
+// fetch for its own GL texture load. LaurusImage's own "not found" placeholder covers the miss.
+function MaskGroupThumbnail({
+  mask,
+  onContextMenuClick,
+  width,
+  height,
+  isSquareish,
+}: {
+  mask: LaurusMaskResult;
+  onContextMenuClick: () => void;
+  width: number;
+  height: number;
+  isSquareish: boolean;
+}) {
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+
+  let sourceImgSrc: string | undefined;
+  for (const [key, img] of coreState.project.imgs) {
+    if (img.img_media_id === mask.source_img_media_id) {
+      sourceImgSrc = coreState.canvasImgs.get(key)?.src;
+      break;
+    }
+  }
+  if (!sourceImgSrc) {
+    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+  }
+
+  return (
+    <LaurusImage
+      title={mask.mask_media_id}
+      draggable={false}
+      alt={mask.mask_media_id}
+      src={sourceImgSrc ?? ""}
+      onClick={onContextMenuClick}
+      width={width}
+      height={height}
+      style={{
+        display: "block",
+        objectFit: isSquareish ? "cover" : "unset",
+        cursor: "pointer",
+      }}
+    />
+  );
+}
+
 interface MediaGroupRow {
   item: MediaGroupItem;
   index: number;
@@ -698,9 +747,10 @@ function MediaGroupRow({
   const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
 
   const display = useMemo(() => {
-    if (item.type !== "img") return undefined;
+    if (item.type !== "img" && item.type !== "mask") return undefined;
+    const media = item.type === "img" ? item.img : item.mask;
     const containerSize = dynamicSizes.groupItem.height;
-    const aspectRatio = item.img.width / item.img.height;
+    const aspectRatio = media.width / media.height;
     const isSquareish = aspectRatio >= 0.9 && aspectRatio <= 1.1;
     let displayWidth, displayHeight;
     if (isSquareish) {
@@ -708,9 +758,9 @@ function MediaGroupRow({
       displayHeight = containerSize;
     } else {
       const targetSize = containerSize * 1.33;
-      const scale = Math.max(targetSize / item.img.width, targetSize / item.img.height);
-      displayWidth = Math.round(item.img.width * scale);
-      displayHeight = Math.round(item.img.height * scale);
+      const scale = Math.max(targetSize / media.width, targetSize / media.height);
+      displayWidth = Math.round(media.width * scale);
+      displayHeight = Math.round(media.height * scale);
     }
     return { isSquareish, displayWidth, displayHeight };
   }, [dynamicSizes.groupItem.height, item]);
@@ -900,7 +950,8 @@ function MediaGroupRow({
                 </div>
               </div>
             );
-          case "mask":
+          case "mask": {
+            if (!display) return <></>;
             return (
               <div
                 onMouseEnter={() => setIsItemHovered(true)}
@@ -920,21 +971,15 @@ function MediaGroupRow({
                   style={{
                     width: dynamicSizes.groupItem.height - 10,
                     height: dynamicSizes.groupItem.height - 10,
-                    display: "grid",
-                    placeContent: "center",
+                    overflow: display.isSquareish ? "none" : "auto",
                   }}
                 >
-                  <SvgRepo
-                    title={item.mask.mask_media_id}
-                    svg={texture300()}
-                    onContainerClick={onContextMenuClick}
-                    containerStyle={{
-                      width: (dynamicSizes.groupItem.height - 10) * 0.7,
-                      height: (dynamicSizes.groupItem.height - 10) * 0.7,
-                      cursor: "pointer",
-                    }}
-                    scale={0.7}
-                    scaleToContaier={true}
+                  <MaskGroupThumbnail
+                    mask={item.mask}
+                    onContextMenuClick={onContextMenuClick}
+                    width={display.displayWidth - 10}
+                    height={display.displayHeight - 10}
+                    isSquareish={display.isSquareish}
                   />
                 </div>
                 <div />
@@ -974,6 +1019,7 @@ function MediaGroupRow({
                 </div>
               </div>
             );
+          }
         }
       })()}
     </div>

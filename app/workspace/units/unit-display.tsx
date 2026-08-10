@@ -1,11 +1,57 @@
 import { useContext, useState, useCallback } from "react";
-import { SvgRepo, chevronLeft, chevronRight, texture300 } from "../../svg-repo";
+import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { parsePathPoints } from "../mask-gl";
+import { LaurusMaskResult } from "../workspace.server";
+
+// A mask has no thumbnail of its own -- shows the img its mesh was generated from instead. Only
+// resolves it from what's already in memory (a still-placed project img, or the currently-browsed
+// media page) -- same source project-mask-item.tsx checks first before falling back to a network
+// fetch for its own GL texture load. LaurusImage's own "not found" placeholder covers the miss.
+function MaskThumbnail({
+  mediaKey,
+  maskData,
+  isAltKeyPressed,
+  style,
+  onClick,
+}: {
+  mediaKey: string;
+  maskData: LaurusMaskResult;
+  isAltKeyPressed: boolean;
+  style: React.CSSProperties;
+  onClick: () => void;
+}) {
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+
+  let sourceImgSrc: string | undefined;
+  for (const [key, img] of coreState.project.imgs) {
+    if (img.img_media_id === maskData.source_img_media_id) {
+      sourceImgSrc = coreState.canvasImgs.get(key)?.src;
+      break;
+    }
+  }
+  if (!sourceImgSrc) {
+    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === maskData.source_img_media_id)?.src;
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: "relative",
+        cursor: isAltKeyPressed ? "crosshair" : "pointer",
+        ...style,
+      }}
+    >
+      <LaurusImage draggable={false} alt={mediaKey} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+    </div>
+  );
+}
 
 interface UnitDisplay {
   carouselIndex: number;
@@ -270,28 +316,20 @@ export default function UnitDisplay({
                   case "mask": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
-                    // A placeholder icon rather than reconstructing every polygon the mesh has
-                    // into an outline (as the "capture" case below still does, just for its own
-                    // much smaller per-capture subset) -- this carousel re-renders on every
-                    // trackpad/dial tick while the whole mask is active, so paying a full-mesh
-                    // path rebuild on each of those would make the unit sluggish for anything but
-                    // the simplest meshes. Same icon context-menu.tsx already uses for a whole
-                    // mask's own media-type footer.
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    if (!maskData) break;
                     return (
-                      <SvgRepo
+                      <MaskThumbnail
                         key={c.key}
-                        svg={texture300()}
-                        containerStyle={{
-                          ...dynamicSizes.displaySvg,
-                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
-                        }}
-                        onContainerClick={() => {
+                        mediaKey={c.key}
+                        maskData={maskData}
+                        isAltKeyPressed={isAltKeyPressed}
+                        style={dynamicSizes.displayImg}
+                        onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
-                        scale={1}
-                        scaleToContaier={true}
                       />
                     );
                   }
