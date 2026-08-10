@@ -15,6 +15,7 @@ import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { ProjectImg } from "./project-img";
+import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 
 interface DraggableProjectImg {
   mediaKey: string;
@@ -450,11 +451,9 @@ export function DraggableProjectImg({
       <DndContext
         id={`dnd-context-${mediaKey}`}
         sensors={sensors}
-        onDragStart={() => {
-          document.body.style.cursor = "grabbing";
-        }}
+        onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
-          document.body.style.cursor = "";
+          endBodyDragCursor();
           const delta = e.delta;
           onNewImgPosition(delta.x, delta.y);
         }}

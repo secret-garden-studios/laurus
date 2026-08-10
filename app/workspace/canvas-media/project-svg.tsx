@@ -7,6 +7,7 @@ import { LaurusProjectSvg } from "../../projects/projects.server";
 import ContextMenu from "../context-menu";
 import { Z_INDEX } from "../workspace.config";
 import { LaurusFrame } from "../workspace.server";
+import { useToolCursor } from "../hooks/useToolCursor";
 
 interface ProjectSvg {
   dndId: string;
@@ -41,7 +42,7 @@ export function ProjectSvg({
   const { uiState } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(mediaKey);
   const showContextMenu = contextMenuState?.showContextMenu ?? false;
-  const { isMetaKeyPressed, selectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
+  const { selectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const isSelected = selectedSvgKeys.has(mediaKey);
 
   const dragDisabled = useMemo(() => {
@@ -73,29 +74,7 @@ export function ProjectSvg({
     touchAction: "none",
   };
 
-  const svgCursor = useMemo(() => {
-    return isAltKeyPressed && uiState.tool.type !== "marquee"
-      ? "crosshair"
-      : (isMetaKeyPressed || uiState.tool.type === "contextmenu") &&
-          !uiState.filledForwards &&
-          uiState.tool.type !== "move"
-        ? "context-menu"
-        : isStackable || uiState.tool.type === "scale" || uiState.tool.type === "rotate"
-          ? "crosshair"
-          : dragDisabled
-            ? ""
-            : isDragging
-              ? "grabbing"
-              : "grab";
-  }, [
-    isAltKeyPressed,
-    isMetaKeyPressed,
-    uiState.tool.type,
-    uiState.filledForwards,
-    isStackable,
-    dragDisabled,
-    isDragging,
-  ]);
+  const svgCursor = useToolCursor({ target: "svg", dragDisabled, isDragging, isStackable });
 
   return (
     <>

@@ -13,6 +13,7 @@ import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { MaskImperativeHandle, ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
+import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 
 interface DraggableProjectMask {
   mediaKey: string;
@@ -262,11 +263,9 @@ export function DraggableProjectMask({
     <DndContext
       id={`dnd-context-${mediaKey}`}
       sensors={sensors}
-      onDragStart={() => {
-        document.body.style.cursor = "grabbing";
-      }}
+      onDragStart={beginBodyDragCursor}
       onDragEnd={(e) => {
-        document.body.style.cursor = "";
+        endBodyDragCursor();
         onNewMaskPosition(e.delta.x, e.delta.y);
       }}
     >

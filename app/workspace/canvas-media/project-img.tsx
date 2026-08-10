@@ -8,6 +8,7 @@ import { LaurusProjectImg } from "../../projects/projects.server";
 import ContextMenu from "../context-menu";
 import { Z_INDEX } from "../workspace.config";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
+import { useToolCursor } from "../hooks/useToolCursor";
 
 interface ProjectImg {
   dndId: string;
@@ -42,7 +43,7 @@ export function ProjectImg({
   const { uiState } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(mediaKey);
   const showContextMenu = contextMenuState?.showContextMenu ?? false;
-  const { isMetaKeyPressed, selectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
+  const { selectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
   const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedImgKeys.has(mediaKey);
   const dragDisabled = useMemo(() => {
@@ -67,29 +68,7 @@ export function ProjectImg({
     touchAction: "none",
   };
 
-  const imgCursor = useMemo(() => {
-    return isAltKeyPressed && uiState.tool.type !== "marquee"
-      ? "crosshair"
-      : (isMetaKeyPressed || uiState.tool.type === "contextmenu") &&
-          !uiState.filledForwards &&
-          uiState.tool.type !== "move"
-        ? "context-menu"
-        : isStackable || uiState.tool.type === "scale" || uiState.tool.type === "rotate"
-          ? "crosshair"
-          : dragDisabled
-            ? ""
-            : isDragging
-              ? "grabbing"
-              : "grab";
-  }, [
-    isAltKeyPressed,
-    isMetaKeyPressed,
-    uiState.tool.type,
-    uiState.filledForwards,
-    isStackable,
-    dragDisabled,
-    isDragging,
-  ]);
+  const imgCursor = useToolCursor({ target: "img", dragDisabled, isDragging, isStackable });
 
   return (
     <div

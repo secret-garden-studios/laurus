@@ -37,6 +37,7 @@ import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
+import { useToolCursor } from "./hooks/useToolCursor";
 import { parseMaskCaptureInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
@@ -1511,15 +1512,7 @@ export default function Workspace({
     [uiState],
   );
 
-  const canvasCursor = useMemo(() => {
-    return isAltKeyPressed && uiState.tool.type !== "marquee"
-      ? "crosshair"
-      : isMetaKeyPressed && uiState.tool.type !== "viewport"
-        ? "context-menu"
-        : uiState.tool.type === "scale" || uiState.tool.type === "rotate" || uiState.tool.type === "light_source"
-          ? "crosshair"
-          : "";
-  }, [isAltKeyPressed, isMetaKeyPressed, uiState.tool.type]);
+  const canvasCursor = useToolCursor({ target: "canvas" });
 
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {

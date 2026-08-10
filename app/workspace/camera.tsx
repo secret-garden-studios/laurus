@@ -7,6 +7,7 @@ import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { Z_INDEX } from "./workspace.config";
 import { LaurusFrame } from "./workspace.server";
+import { beginBodyDragCursor, dragFallbackCursor, endBodyDragCursor } from "./hooks/useToolCursor";
 
 interface CameraDragOverlay {
   id: string;
@@ -31,7 +32,7 @@ function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDrag
       {...listeners}
       style={{
         ...dndCss,
-        cursor: disabled ? "" : isDragging ? "grabbing" : "grab",
+        cursor: dragFallbackCursor({ dragDisabled: disabled, isDragging }),
         position: "absolute",
         width: containerSize.width,
         height: containerSize.height,
@@ -69,11 +70,9 @@ export default function DraggableCamera({
       <DndContext
         id={contextId}
         sensors={sensors}
-        onDragStart={() => {
-          document.body.style.cursor = "grabbing";
-        }}
+        onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
-          document.body.style.cursor = "";
+          endBodyDragCursor();
           const delta = e.delta;
           const newPosition = {
             x: Math.min(
