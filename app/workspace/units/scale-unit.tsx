@@ -41,7 +41,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
@@ -404,12 +404,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       {mainControls ? (
         <>
           {/* display */}
-          <UnitDisplay
-            carouselIndex={carouselIndex}
-            effectKey={scale.scale_id}
-            localIndex={localIndex}
-            onNewLocalIndex={setLocalIndex}
-          />
+          <UnitDisplay carouselIndex={carouselIndex} effectKey={scale.scale_id} onNewLocalIndex={setLocalIndex} />
           {/* controls */}
           {/* parameters */}
           <div style={{ ...dynamicSizes.param }}>

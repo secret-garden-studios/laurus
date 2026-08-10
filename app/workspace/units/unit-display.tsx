@@ -10,10 +10,18 @@ import { parsePathPoints } from "../mask-gl";
 interface UnitDisplay {
   carouselIndex: number;
   effectKey: string;
-  localIndex: number;
   onNewLocalIndex: (v: number) => void;
+  // False for rotate (see rotate-unit.tsx's carouselEntryKey / effects-utils.ts) -- a capture has
+  // no whole-element transform for rotate to act on, so its unit's carousel must skip past
+  // "capture" entries entirely rather than letting the chevrons land on one.
+  capturesWireable?: boolean;
 }
-export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
+export default function UnitDisplay({
+  carouselIndex,
+  effectKey,
+  onNewLocalIndex,
+  capturesWireable = true,
+}: UnitDisplay) {
   const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -109,6 +117,22 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
     [uiState.carouselEntries, effectKey, uiDispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged],
   );
 
+  // First index in `direction` from `fromIndex` this carousel is allowed to land on -- skips
+  // "capture" entries when capturesWireable is false (see this file's UnitDisplay props doc
+  // comment). Returns undefined when nothing navigable remains, so callers can both disable a
+  // chevron and no-op its click.
+  const findNavigableIndex = useCallback(
+    (fromIndex: number, direction: 1 | -1): number | undefined => {
+      let i = fromIndex + direction;
+      while (i >= 0 && i < uiState.carouselEntries.length) {
+        if (capturesWireable || uiState.carouselEntries[i].type !== "capture") return i;
+        i += direction;
+      }
+      return undefined;
+    },
+    [uiState.carouselEntries, capturesWireable],
+  );
+
   const hideContextMenu = useCallback(
     (entry: CarouselEntry) => {
       uiDispatch({
@@ -160,9 +184,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           >
             <SvgRepo
               title={"select previous"}
-              svg={
-                uiState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft("rgb(67,67,67)") : chevronLeft()
-              }
+              svg={findNavigableIndex(carouselIndex, -1) === undefined ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
               containerStyle={{
                 width: 30,
                 height: 30,
@@ -171,9 +193,9 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
               scale={1}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
-                const newIndex = Math.max(carouselIndex - 1, 0);
-                const newLocalIndex = Math.max(localIndex - 1, 0);
-                onNewLocalIndex(newLocalIndex);
+                const newIndex = findNavigableIndex(carouselIndex, -1);
+                if (newIndex === undefined) return;
+                onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);
               }}
@@ -338,11 +360,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           >
             <SvgRepo
               title={"select next"}
-              svg={
-                uiState.carouselEntries.length == 0 || carouselIndex >= uiState.carouselEntries.length - 1
-                  ? chevronRight("rgb(67,67,67)")
-                  : chevronRight()
-              }
+              svg={findNavigableIndex(carouselIndex, 1) === undefined ? chevronRight("rgb(67,67,67)") : chevronRight()}
               containerStyle={{
                 width: 30,
                 height: 30,
@@ -351,9 +369,9 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
               scale={1}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
-                const newIndex = Math.min(carouselIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
-                const newLocalIndex = Math.min(localIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
-                onNewLocalIndex(newLocalIndex);
+                const newIndex = findNavigableIndex(carouselIndex, 1);
+                if (newIndex === undefined) return;
+                onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);
               }}

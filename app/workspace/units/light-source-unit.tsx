@@ -54,7 +54,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
@@ -376,7 +376,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           <UnitDisplay
             carouselIndex={carouselIndex}
             effectKey={lightSource.light_source_id}
-            localIndex={localIndex}
             onNewLocalIndex={setLocalIndex}
           />
           <div style={{ display: "grid" }}>

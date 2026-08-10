@@ -54,7 +54,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
@@ -379,12 +379,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     >
       {mainControls ? (
         <>
-          <UnitDisplay
-            carouselIndex={carouselIndex}
-            effectKey={move.move_id}
-            localIndex={localIndex}
-            onNewLocalIndex={setLocalIndex}
-          />
+          <UnitDisplay carouselIndex={carouselIndex} effectKey={move.move_id} onNewLocalIndex={setLocalIndex} />
           {/* controls */}
           <div style={{ display: "grid" }}>
             {/* parameters */}

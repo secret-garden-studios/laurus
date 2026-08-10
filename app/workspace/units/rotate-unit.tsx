@@ -42,7 +42,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
@@ -362,8 +362,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           <UnitDisplay
             carouselIndex={carouselIndex}
             effectKey={rotate.rotate_id}
-            localIndex={localIndex}
             onNewLocalIndex={setLocalIndex}
+            capturesWireable={false}
           />
           {/* controls */}
           <div style={{ display: "grid" }}>
