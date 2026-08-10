@@ -234,13 +234,13 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "capture": {
           // Rotate has no equation for a capture (see this file's carouselEntryKey above), but
           // the active-element/highlight system still tracks whichever entry is being browsed --
-          // see move-unit.tsx's own setActiveElementIfNull for why activeCaptureId must travel
-          // with the mask key here.
+          // see move-unit.tsx's own setActiveElementIfNull for why this must be type "capture"
+          // (not "mask") here.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "mask",
+            type: "capture",
             locallyActivatedEffectKey: rotate.rotate_id,
-            activeCaptureId: carouselEntry.captureId,
+            captureId: carouselEntry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,

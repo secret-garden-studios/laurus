@@ -254,14 +254,14 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           break;
         }
         case "capture": {
-          // activeCaptureId has to travel with the mask key here -- see light-source-unit.tsx's
-          // own setActiveElementIfNull for why omitting it would let this component's next render
-          // silently snap the active capture back to whichever one happens to sit first.
+          // Must be type "capture" (not "mask") here -- see light-source-unit.tsx's own
+          // setActiveElementIfNull for why getting this wrong would let this component's next
+          // render silently snap the active capture back to whichever one happens to sit first.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "mask",
+            type: "capture",
             locallyActivatedEffectKey: scale.scale_id,
-            activeCaptureId: carouselEntry.captureId,
+            captureId: carouselEntry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -299,7 +299,11 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         if (!img) return [1, 1];
         return [img.scale_x, img.scale_y];
       }
-      case "mask": {
+      // A capture has no scale of its own -- scale acts on the mesh's own whole-element
+      // transform (see this file's own carouselEntryKey), the same one a "mask"-typed active
+      // element already targets, so both variants share this case.
+      case "mask":
+      case "capture": {
         const mask = snapshot.masks.get(activeElement.key);
         if (!mask) return [1, 1];
         return [mask.scale_x, mask.scale_y];

@@ -225,20 +225,20 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           break;
         }
         case "capture": {
-          // activeCaptureId has to travel with the mask key here -- omitting it (as this used to)
-          // leaves uiState.activeElement.activeCaptureId undefined, and useCarouselIndex's own
-          // activeIndex lookup falls back to "any entry with this mask key" whenever that's
-          // unset, i.e. whichever of this mask's captures happens to sit first in the carousel.
-          // Since this callback's whole point is to re-anchor the active element on the capture
-          // the carousel is *already* showing (carouselIndex), leaving activeCaptureId off would
-          // make this component's own next render silently snap back to a different capture than
-          // the one just edited -- see notifyMaskActiveCaptureChanged's sibling call in
-          // unit-display.tsx's own setActiveElement, which this mirrors.
+          // Must be type "capture" (not "mask") here -- omitting that (as this used to, back when
+          // captureId just qualified a "mask"-typed element) leaves useCarouselIndex's own
+          // activeIndex lookup falling back to "any entry with this mask key" whenever the active
+          // element isn't itself a "capture", i.e. whichever of this mask's captures happens to
+          // sit first in the carousel. Since this callback's whole point is to re-anchor the
+          // active element on the capture the carousel is *already* showing (carouselIndex),
+          // getting this wrong would make this component's own next render silently snap back to
+          // a different capture than the one just edited -- see notifyMaskActiveCaptureChanged's
+          // sibling call in unit-display.tsx's own setActiveElement, which this mirrors.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "mask",
+            type: "capture",
             locallyActivatedEffectKey: lightSource.light_source_id,
-            activeCaptureId: carouselEntry.captureId,
+            captureId: carouselEntry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,

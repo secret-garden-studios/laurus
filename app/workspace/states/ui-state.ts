@@ -56,18 +56,18 @@ export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 
-export type LaurusActiveElement = {
-  key: string;
-  type: "svg" | "img" | "mask";
-  locallyActivatedEffectKey?: string;
-  // Only meaningful when type is "mask" -- which of the mask's own LaurusMaskResult.captures is
-  // the one currently selected (meta-clicked, or just drawn/relocated). undefined means the mask
-  // itself is active but no particular capture is singled out: every capture on it renders its
+export type LaurusActiveElement =
+  | { key: string; type: "svg"; locallyActivatedEffectKey?: string }
+  | { key: string; type: "img"; locallyActivatedEffectKey?: string }
+  // The whole mask active, no particular capture singled out -- every capture on it renders its
   // dim, unselected highlight rather than one bright one (see project-mask-item.tsx's
   // recolorHighlight). Lightsourcebar's dials are still per-mask, not per-capture, so this
-  // doesn't gate them -- see the mask's own light_source_* fields.
-  activeCaptureId?: number;
-};
+  // distinction doesn't gate them -- see the mask's own light_source_* fields.
+  | { key: string; type: "mask"; locallyActivatedEffectKey?: string }
+  // One particular capture on the mask at `key` is singled out (meta-clicked, or just drawn/
+  // relocated) -- mirrors CarouselEntry's own "mask" vs "capture" split (see its doc comment)
+  // rather than qualifying the "mask" variant above with an optional captureId.
+  | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string };
 
 export type CarouselEntry =
   | { type: "svg"; key: string }

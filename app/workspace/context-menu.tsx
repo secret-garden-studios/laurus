@@ -156,7 +156,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const active = useMemo<boolean>(() => {
     if (uiState.activeElement?.key !== media.key) return false;
     if (media.type === "capture") {
-      return uiState.activeElement.type === "mask" && uiState.activeElement.activeCaptureId === media.captureId;
+      return uiState.activeElement.type === "capture" && uiState.activeElement.captureId === media.captureId;
     }
     return true;
   }, [uiState.activeElement, media]);
@@ -1035,8 +1035,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         case "capture": {
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
-                            type: "mask",
-                            activeCaptureId: media.captureId,
+                            type: "capture",
+                            captureId: media.captureId,
                           };
                           uiDispatch({
                             type: UIActionType.SetActiveElement,
@@ -1151,8 +1151,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         );
                         if (
                           uiState.activeElement?.key == media.key &&
-                          uiState.activeElement.type === "mask" &&
-                          uiState.activeElement.activeCaptureId === media.captureId
+                          uiState.activeElement.type === "capture" &&
+                          uiState.activeElement.captureId === media.captureId
                         ) {
                           uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                           notifyMaskActiveElementChanged(undefined);

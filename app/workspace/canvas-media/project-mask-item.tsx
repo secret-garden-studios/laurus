@@ -339,8 +339,9 @@ export function ProjectMaskItem({
   // off the server's own response by syncCapturedIndices instead.
   const capturesRef = useRef<Map<number, Set<number>>>(new Map());
   // Which capture (if any) reads as the bright one among capturesRef's -- mirrors
-  // uiState.activeElement.activeCaptureId, refreshed on mount/via setActiveCapture below for the
-  // same reason activeHighlightRef mirrors uiState.activeElement itself.
+  // uiState.activeElement's own captureId when its type is "capture", refreshed on mount/via
+  // setActiveCapture below for the same reason activeHighlightRef mirrors uiState.activeElement
+  // itself.
   const activeCaptureIdRef = useRef<number | undefined>(undefined);
 
   // Which of this mesh's own polygon indices a capture-relocate drag would land on if released
@@ -1046,8 +1047,13 @@ export function ProjectMaskItem({
           coreState.pendingLightSourceCapture?.maskKey === mediaKey
             ? new Set(coreState.pendingLightSourceCapture.polygonIndices)
             : undefined;
-        activeHighlightRef.current = uiState.activeElement?.type === "mask" && uiState.activeElement.key === mediaKey;
-        activeCaptureIdRef.current = activeHighlightRef.current ? uiState.activeElement?.activeCaptureId : undefined;
+        activeHighlightRef.current =
+          (uiState.activeElement?.type === "mask" || uiState.activeElement?.type === "capture") &&
+          uiState.activeElement.key === mediaKey;
+        activeCaptureIdRef.current =
+          activeHighlightRef.current && uiState.activeElement?.type === "capture"
+            ? uiState.activeElement.captureId
+            : undefined;
         capturesRef.current = buildCapturesMap(maskData.polygons);
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
@@ -1383,7 +1389,7 @@ export function ProjectMaskItem({
                 if (hitCaptureId !== undefined) {
                   uiDispatch({
                     type: UIActionType.SetActiveElement,
-                    value: { key: mediaKey, type: "mask", activeCaptureId: hitCaptureId },
+                    value: { key: mediaKey, type: "capture", captureId: hitCaptureId },
                   });
                   notifyMaskActiveElementChanged(mediaKey);
                   notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
@@ -1528,7 +1534,7 @@ export function ProjectMaskItem({
                     notifyMaskCaptureUpdated(mediaKey, updated);
                     uiDispatch({
                       type: UIActionType.SetActiveElement,
-                      value: { key: mediaKey, type: "mask", activeCaptureId: captureId },
+                      value: { key: mediaKey, type: "capture", captureId },
                     });
                     notifyMaskActiveElementChanged(mediaKey);
                     notifyMaskActiveCaptureChanged(mediaKey, captureId);

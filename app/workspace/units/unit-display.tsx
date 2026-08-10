@@ -135,7 +135,7 @@ export default function UnitDisplay({
           notifyMaskActiveElementChanged(newActiveElement.key);
           // No particular capture is singled out when the whole mask becomes active -- clears
           // any previously-bright capture highlight (see ui-state.ts's LaurusActiveElement
-          // comment on activeCaptureId undefined meaning exactly this).
+          // "mask" vs "capture" doc comment).
           notifyMaskActiveCaptureChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
@@ -147,9 +147,9 @@ export default function UnitDisplay({
         case "capture": {
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
-            type: "mask",
+            type: "capture",
             locallyActivatedEffectKey: effectKey,
-            activeCaptureId: entry.captureId,
+            captureId: entry.captureId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,

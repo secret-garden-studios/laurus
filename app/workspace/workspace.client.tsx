@@ -1120,7 +1120,7 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
         uiDispatch({
           type: UIActionType.SetActiveElement,
-          value: { key: maskKey, type: "mask", activeCaptureId: captureId },
+          value: { key: maskKey, type: "capture", captureId },
         });
         notifyMaskActiveElementChanged(maskKey);
         notifyMaskActiveCaptureChanged(maskKey, captureId);
