@@ -620,7 +620,7 @@ export default function Maskbar() {
             ...dynamicSizes.toggle.div,
           }}
         >
-          <span style={{ opacity: isTextureDisabled ? 0.3 : 0.7 }}>{"texture"}</span>
+          <span style={{ opacity: isTextureDisabled ? 0.3 : 1 }}>{"texture"}</span>
           <ParameterSliderX
             resolution={{ ...uiState.resolution }}
             hash={`${selectedMaskKey ?? "maskbar"}|texture`}

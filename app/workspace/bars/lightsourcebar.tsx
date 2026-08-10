@@ -383,7 +383,7 @@ export default function LightSourcebar() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"size"}</span>
+        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 1 }}>{"size"}</span>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
           hash={`${selectedMaskKey ?? "lightsourcebar"}|size`}
@@ -398,9 +398,6 @@ export default function LightSourcebar() {
           }}
           disabled={isLightSourceControlsDisabled}
         />
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>
-          {Math.round(lightSourceSizeValue)}
-        </span>
       </div>
       <div
         title={
@@ -416,7 +413,7 @@ export default function LightSourcebar() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"intensity"}</span>
+        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 1 }}>{"intensity"}</span>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
           hash={`${selectedMaskKey ?? "lightsourcebar"}|intensity`}
@@ -431,9 +428,6 @@ export default function LightSourcebar() {
           }}
           disabled={isLightSourceControlsDisabled}
         />
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>{`${Math.round(
-          lightSourceIntensityValue * 100,
-        )}%`}</span>
       </div>
       <div
         title={
@@ -449,7 +443,7 @@ export default function LightSourcebar() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"falloff"}</span>
+        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 1 }}>{"falloff"}</span>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
           hash={`${selectedMaskKey ?? "lightsourcebar"}|falloff`}
@@ -465,9 +459,6 @@ export default function LightSourcebar() {
           }}
           disabled={isLightSourceControlsDisabled}
         />
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>
-          {Math.round(lightSourceFalloffValue)}
-        </span>
       </div>
       <div
         title={
@@ -483,7 +474,7 @@ export default function LightSourcebar() {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7 }}>{"darkness"}</span>
+        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 1 }}>{"darkness"}</span>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
           hash={`${selectedMaskKey ?? "lightsourcebar"}|darkness`}
@@ -498,9 +489,6 @@ export default function LightSourcebar() {
           }}
           disabled={isLightSourceControlsDisabled}
         />
-        <span style={{ opacity: isLightSourceControlsDisabled ? 0.3 : 0.7, width: "4ch" }}>{`${Math.round(
-          lightSourceDarknessValue * 100,
-        )}%`}</span>
       </div>
     </div>
   );
