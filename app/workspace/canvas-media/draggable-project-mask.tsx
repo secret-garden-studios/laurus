@@ -9,7 +9,7 @@ import {
   LaurusProjectResult,
 } from "../../projects/projects.server";
 import { LaurusFrame, LaurusMaskResult } from "../workspace.server";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { MaskImperativeHandle, ProjectMaskItem, ProjectMaskItemSource } from "./project-mask-item";
@@ -26,9 +26,10 @@ interface DraggableProjectMask {
   forceAbsolutePosition?: boolean;
 }
 /**
- * Move-tool dragging, alt-click multi-select (via `selectedMaskKeys`, ProjectMaskItem), and now
- * metaKey/"contextmenu"-tool context-menu opening -- full parity with DraggableProjectImg/Svg,
- * mirroring the same click/transform/context-menu wiring for a mask instead of an img/svg.
+ * Move-tool dragging and drag-driven context-menu repositioning for a mask -- mirrors
+ * DraggableProjectImg/Svg structurally, though click handling itself (alt-select, meta-click,
+ * tool-driven activation, context-menu open/close) lives entirely in ProjectMaskItem now, not
+ * here -- see its own `meta` prop doc comment for why.
  */
 export function DraggableProjectMask({
   mediaKey,
@@ -40,7 +41,7 @@ export function DraggableProjectMask({
   maskElementsRef,
   forceAbsolutePosition,
 }: DraggableProjectMask) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
 
   const dndPosition = useMemo(() => {
@@ -194,71 +195,6 @@ export function DraggableProjectMask({
     ],
   );
 
-  // Mirrors DraggableProjectImg's onImgClick -- metaKey (cmd/ctrl-click) or the dedicated
-  // "contextmenu" tool both toggle the context menu; alt-click multi-select is handled inside
-  // ProjectMaskItem itself (it owns selectedMaskKeys) and stays untouched here.
-  const onMaskClick = useCallback(
-    (metaKey: boolean) => {
-      const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
-      const showContextMenu = itemContextMenu?.showContextMenu ?? false;
-      const contextMenuConfig = itemContextMenu?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
-
-      const newContextMenuConfig = getNewContextMenuConfig(
-        { ...meta },
-        {
-          width: coreState.project.canvas_width,
-          height: coreState.project.canvas_height,
-        },
-        { ...meta },
-        { x: meta.scale_x, y: meta.scale_y },
-        contextMenuConfig,
-      );
-      if (metaKey && !uiState.filledForwards) {
-        uiDispatch({
-          type: UIActionType.SetProjectContextMenu,
-          key: mediaKey,
-          showContextMenu: !showContextMenu,
-          contextMenuConfig: newContextMenuConfig,
-        });
-        return;
-      }
-      switch (uiState.tool.type) {
-        case "contextmenu": {
-          uiDispatch({
-            type: UIActionType.SetProjectContextMenu,
-            key: mediaKey,
-            showContextMenu: !showContextMenu,
-            contextMenuConfig: newContextMenuConfig,
-          });
-          break;
-        }
-        case "rotate": {
-          const newActiveElement: LaurusActiveElement = {
-            key: mediaKey,
-            type: "mask",
-          };
-          uiDispatch({
-            type: UIActionType.SetActiveElement,
-            value: newActiveElement,
-          });
-          notifyMaskActiveElementChanged(mediaKey);
-          break;
-        }
-      }
-    },
-    [
-      uiState.projectContextMenus,
-      uiState.filledForwards,
-      uiState.tool.type,
-      mediaKey,
-      meta,
-      coreState.project.canvas_width,
-      coreState.project.canvas_height,
-      uiDispatch,
-      notifyMaskActiveElementChanged,
-    ],
-  );
-
   return (
     <DndContext
       id={`dnd-context-${mediaKey}`}
@@ -280,7 +216,7 @@ export function DraggableProjectMask({
         maskElementsRef={maskElementsRef}
         transform={laurusTransform}
         framesCacheRef={framesCacheRef}
-        onClick={onMaskClick}
+        meta={meta}
         maxZIndex={highestOrder}
       />
     </DndContext>

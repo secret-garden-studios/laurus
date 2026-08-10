@@ -1,7 +1,7 @@
 "use client";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CoreContext, HoverContext, LaurusTransform, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, LaurusTransform, UIContext, getNewContextMenuConfig } from "../workspace.client";
 import { useToolCursor } from "../hooks/useToolCursor";
 import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
@@ -17,7 +17,8 @@ import {
   uploadCurveMask,
 } from "../mask-gl";
 import { CoreActionType, DEFAULT_LIGHT_SOURCE_VALUE } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
@@ -169,13 +170,13 @@ interface ProjectMaskItem {
   // WAAPI pipeline (getNewAnimations/getNewAnimationsByTarget) the same way img/svg's own element
   // refs do. Omitted by the live-preview call site for the same reason as maskHandlesRef above.
   maskElementsRef?: RefObject<Map<string, HTMLCanvasElement> | null>;
-  // The following four are only meaningful for placed (static) masks too -- they exist purely
-  // to mount <ContextMenu> with parity to ProjectImg/ProjectSvg (see DraggableProjectMask's
-  // onMaskClick and maxZIndex's own comment below). Omitted by the live-preview call site in
-  // canvas.tsx for the same reason as maskHandlesRef above.
+  // The following four are only meaningful for placed (static) masks too -- they exist purely to
+  // mount <ContextMenu> and drive this mesh's own click handling (mirrors ProjectImg/ProjectSvg's
+  // own `meta` prop -- see maxZIndex's own comment below for the rest). Omitted by the
+  // live-preview call site in canvas.tsx for the same reason as maskHandlesRef above.
   transform?: LaurusTransform;
   framesCacheRef?: RefObject<Map<string, LaurusFrame[]>>;
-  onClick?: (metaKey: boolean) => void;
+  meta?: LaurusProjectMask;
   // The highest order among every img/svg/mask in the project -- mirrors ProjectImg/ProjectSvg's
   // own maxZIndex exactly, boosting this mask's zIndex (via Z_INDEX.CONTEXT_MENU_OFFSET) above
   // every other item, and above the marquee/mask tool's interaction-canvas overlay in
@@ -205,7 +206,7 @@ export function ProjectMaskItem({
   maskElementsRef,
   transform,
   framesCacheRef,
-  onClick,
+  meta,
   maxZIndex,
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -222,8 +223,8 @@ export function ProjectMaskItem({
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
   // Which flavor of <ContextMenu> a meta-click should open -- "capture" (and which one, by id)
   // when the click lands on one of the mesh's own captures, "mask" otherwise (the existing general
-  // mask menu). Both share the same shown/hidden state (uiState.projectContextMenus, toggled via
-  // the passed-down onClick below) and the same on-screen anchor (transform); this only decides
+  // mask menu). Both share the same shown/hidden state (uiState.projectContextMenus, toggled below
+  // in this component's own onClick) and the same on-screen anchor (transform); this only decides
   // which `media` gets handed to the one <ContextMenu> mount.
   const [contextMenuVariant, setContextMenuVariant] = useState<ContextMenuVariant>({ type: "mask" });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1274,7 +1275,7 @@ export function ProjectMaskItem({
   );
 
   // Only meaningful for placed (static) masks -- a live preview has no persisted mediaKey to
-  // key uiState.projectContextMenus by, and never gets a transform/framesCacheRef/onClick from
+  // key uiState.projectContextMenus by, and never gets a transform/framesCacheRef/meta from
   // its call site (canvas.tsx) to begin with.
   const showContextMenu =
     source.kind === "static" && (uiState.projectContextMenus.get(mediaKey)?.showContextMenu ?? false);
@@ -1313,22 +1314,25 @@ export function ProjectMaskItem({
             // that conversion to silently drift out of sync with what's actually on screen.
             data-mask-key={source.kind === "static" ? mediaKey : undefined}
             onClick={(e) => {
+              // Not available on a live preview -- there's no persisted mediaKey yet, and no
+              // `meta` from this component's own call site (canvas.tsx) to begin with. Every
+              // branch below depends on this narrowing (source.maskData, or just the mediaKey
+              // being meaningful to dispatch against).
+              if (source.kind !== "static") return;
               // Alt-click toggles selection, same as images/svgs (see DraggableProjectImg's
               // onImgClick). So does a plain click while the scale tool is active -- mirroring
               // DraggableProjectImg/Svg's own `case "scale":` in their tool-type switch, which
-              // toggles selectedImgKeys/selectedSvgKeys the same way. Not available on a live
-              // preview -- there's no persisted mediaKey yet. Excluded on a meta-click so that
-              // still falls through to the capture-menu handling below instead of also toggling
-              // selection. Mutually exclusive with the metaKey/tool-driven click below, mirroring
-              // how DraggableProjectImg's onImgClick only falls through to its tool-type switch
-              // once the alt-select branch has already been ruled out. The light source tool
-              // shares this same branch (rather than getting its own, like rotate below) since
-              // Lightsourcebar, like Scalebar, reads selectedMaskKeys directly and has no need for
-              // uiState.activeElement beyond the capture-activation already handled here.
+              // toggles selectedImgKeys/selectedSvgKeys the same way. Excluded on a meta-click so
+              // that still falls through to the capture-menu handling below instead of also
+              // toggling selection. Mutually exclusive with the metaKey/tool-driven click below,
+              // mirroring how DraggableProjectImg's onImgClick only falls through to its tool-type
+              // switch once the alt-select branch has already been ruled out. The light source
+              // tool shares this same branch (rather than getting its own, like rotate below)
+              // since Lightsourcebar, like Scalebar, reads selectedMaskKeys directly and has no
+              // need for uiState.activeElement beyond the capture-activation already handled here.
               if (
-                source.kind === "static" &&
-                (isAltKeyPressed ||
-                  ((uiState.tool.type === "scale" || uiState.tool.type === "light_source") && !e.metaKey))
+                isAltKeyPressed ||
+                ((uiState.tool.type === "scale" || uiState.tool.type === "light_source") && !e.metaKey)
               ) {
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
@@ -1352,11 +1356,11 @@ export function ProjectMaskItem({
               }
               // A plain click while the rotate tool is active also toggles selection, mirroring
               // the scale-tool branch above -- but doesn't return early, since (unlike scale) the
-              // rotate tool still needs the metaKey/tool-driven onClick below to run so its own
-              // "rotate" case can set uiState.activeElement (DraggableProjectMask's onMaskClick),
-              // which Rotatebar and other activeElement consumers (e.g. the units carousel) still
-              // depend on independently of this selection set.
-              if (source.kind === "static" && uiState.tool.type === "rotate" && !e.metaKey) {
+              // rotate tool still needs the metaKey/tool-driven switch further down to run so its
+              // own "rotate" case can set uiState.activeElement, which Rotatebar and other
+              // activeElement consumers (e.g. the units carousel) still depend on independently of
+              // this selection set.
+              if (uiState.tool.type === "rotate" && !e.metaKey) {
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
@@ -1372,9 +1376,9 @@ export function ProjectMaskItem({
               // bright highlight, Lightsourcebar's target) -- hit-tested in the same buffer-pixel
               // space onMouseMove already converts screen coordinates into below (unflipped:
               // polygon.d points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's).
-              // Both flavors share the same shown/hidden toggle (onClick below).
+              // Both flavors share the same shown/hidden toggle further down.
               let hitCaptureId: number | undefined;
-              if (source.kind === "static" && e.metaKey) {
+              if (e.metaKey) {
                 const canvas = e.currentTarget;
                 const rect = canvas.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
@@ -1385,31 +1389,69 @@ export function ProjectMaskItem({
                   hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
                 }
               }
-              if (source.kind === "static") {
-                if (hitCaptureId !== undefined) {
+              if (hitCaptureId !== undefined) {
+                uiDispatch({
+                  type: UIActionType.SetActiveElement,
+                  value: { key: mediaKey, type: "capture", captureId: hitCaptureId },
+                });
+                notifyMaskActiveElementChanged(mediaKey);
+                notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
+              }
+              const newVariant: ContextMenuVariant =
+                hitCaptureId !== undefined ? { type: "capture", captureId: hitCaptureId } : { type: "mask" };
+              // Meta-clicking a different part of the mesh while a menu is already showing
+              // switches which flavor is displayed in place, rather than closing it -- the
+              // shown/hidden toggle below (shared with the mask's general menu) only fires when
+              // the variant isn't changing, so a second meta-click on the *same* kind of target
+              // still closes it as expected.
+              const switchingVariantWhileOpen =
+                showContextMenu &&
+                (newVariant.type !== contextMenuVariant.type ||
+                  (newVariant.type === "capture" &&
+                    contextMenuVariant.type === "capture" &&
+                    newVariant.captureId !== contextMenuVariant.captureId));
+              setContextMenuVariant(newVariant);
+              if (switchingVariantWhileOpen) return;
+              // Mirrors DraggableProjectImg/Svg's own onImgClick metaKey-toggle/tool-switch tail
+              // exactly -- the metaKey branch toggles the menu unconditionally; a plain click only
+              // toggles it (or moves the active element) for specific tools.
+              if (!meta) return;
+              const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
+              const contextMenuConfig = itemContextMenu?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
+              const newContextMenuConfig = getNewContextMenuConfig(
+                { ...meta },
+                {
+                  width: coreState.project.canvas_width,
+                  height: coreState.project.canvas_height,
+                },
+                { ...meta },
+                { x: meta.scale_x, y: meta.scale_y },
+                contextMenuConfig,
+              );
+              if (e.metaKey && !uiState.filledForwards) {
+                uiDispatch({
+                  type: UIActionType.SetProjectContextMenu,
+                  key: mediaKey,
+                  showContextMenu: !showContextMenu,
+                  contextMenuConfig: newContextMenuConfig,
+                });
+                return;
+              }
+              switch (uiState.tool.type) {
+                case "contextmenu": {
                   uiDispatch({
-                    type: UIActionType.SetActiveElement,
-                    value: { key: mediaKey, type: "capture", captureId: hitCaptureId },
+                    type: UIActionType.SetProjectContextMenu,
+                    key: mediaKey,
+                    showContextMenu: !showContextMenu,
+                    contextMenuConfig: newContextMenuConfig,
                   });
-                  notifyMaskActiveElementChanged(mediaKey);
-                  notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
+                  break;
                 }
-                const newVariant: ContextMenuVariant =
-                  hitCaptureId !== undefined ? { type: "capture", captureId: hitCaptureId } : { type: "mask" };
-                // Meta-clicking a different part of the mesh while a menu is already showing
-                // switches which flavor is displayed in place, rather than closing it -- the
-                // shown/hidden toggle below (shared with the mask's general menu) only fires when
-                // the variant isn't changing, so a second meta-click on the *same* kind of target
-                // still closes it as expected.
-                const switchingVariantWhileOpen =
-                  showContextMenu &&
-                  (newVariant.type !== contextMenuVariant.type ||
-                    (newVariant.type === "capture" &&
-                      contextMenuVariant.type === "capture" &&
-                      newVariant.captureId !== contextMenuVariant.captureId));
-                setContextMenuVariant(newVariant);
-                if (!switchingVariantWhileOpen) {
-                  onClick?.(e.metaKey);
+                case "rotate": {
+                  const newActiveElement: LaurusActiveElement = { key: mediaKey, type: "mask" };
+                  uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+                  notifyMaskActiveElementChanged(mediaKey);
+                  break;
                 }
               }
             }}
