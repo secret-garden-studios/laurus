@@ -463,8 +463,18 @@ export function ProjectMaskItem({
   };
   // isDragging (dnd-kit's own) never turns on for a capture-relocate drag -- onPointerDown claims
   // that gesture via stopPropagation before dnd-kit's sensor sees the pointer -- so
-  // isDraggingCapture covers it separately.
-  const cursor = dragDisabled ? "" : isDragging || isDraggingCapture ? "grabbing" : "grab";
+  // isDraggingCapture covers it separately. The light source tool gets its own crosshair here
+  // (mirroring the img/svg "select this" cursor scale/rotate already show) since masks -- not
+  // images/svgs -- are the only media light source actually targets (see the onClick branch
+  // above); a live preview has no persisted mediaKey to select, so it's excluded.
+  const cursor =
+    uiState.tool.type === "light_source" && source.kind === "static"
+      ? "crosshair"
+      : dragDisabled
+        ? ""
+        : isDragging || isDraggingCapture
+          ? "grabbing"
+          : "grab";
 
   const render = useCallback(() => {
     const state = glStateRef.current;
@@ -1300,8 +1310,15 @@ export function ProjectMaskItem({
               // still falls through to the capture-menu handling below instead of also toggling
               // selection. Mutually exclusive with the metaKey/tool-driven click below, mirroring
               // how DraggableProjectImg's onImgClick only falls through to its tool-type switch
-              // once the alt-select branch has already been ruled out.
-              if (source.kind === "static" && (isAltKeyPressed || (uiState.tool.type === "scale" && !e.metaKey))) {
+              // once the alt-select branch has already been ruled out. The light source tool
+              // shares this same branch (rather than getting its own, like rotate below) since
+              // Lightsourcebar, like Scalebar, reads selectedMaskKeys directly and has no need for
+              // uiState.activeElement beyond the capture-activation already handled here.
+              if (
+                source.kind === "static" &&
+                (isAltKeyPressed ||
+                  ((uiState.tool.type === "scale" || uiState.tool.type === "light_source") && !e.metaKey))
+              ) {
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
