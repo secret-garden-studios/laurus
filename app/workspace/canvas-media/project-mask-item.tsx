@@ -301,6 +301,14 @@ export function ProjectMaskItem({
   const lastKnownCaptureRef = useRef<
     Map<number, { indices: Set<number>; circle: { cx: number; cy: number; radius: number } }>
   >(new Map());
+  // captureIds with a relocate commit currently in flight -- checked by onPointerDown to refuse
+  // starting a second relocate drag on the same capture until the server acks the first. Without
+  // this, grabbing a capture again before that ack lands raced the two commits: the second drag's
+  // onPointerDown still read `source.maskData.polygons` (which won't reflect the first commit
+  // until it resolves), so it rederived its start circle from the *original* pre-drag position and
+  // the capture visibly hopped back there. Simpler than trying to reconcile the two -- just make a
+  // second relocate impossible until the first is confirmed.
+  const captureCommitInFlightRef = useRef<Set<number>>(new Set());
   // Mirrors captureDragRef's presence in state (rather than being read off the ref directly) so
   // the "grabbing" cursor below can react to it -- dnd-kit's own `isDragging` never turns on for
   // this gesture, since onPointerDown claims it via stopPropagation before dnd-kit's sensor ever
@@ -1411,6 +1419,11 @@ export function ProjectMaskItem({
               const [bufferX, bufferY] = point;
               const captureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
               if (captureId === undefined) return;
+              // A relocate for this exact capture is still awaiting its server ack -- refuse to
+              // start another one on top of it (see captureCommitInFlightRef) rather than let the
+              // two race. Falls through untouched, same as a click that missed the capture
+              // entirely.
+              if (captureCommitInFlightRef.current.has(captureId)) return;
               const originalIndices = new Set<number>();
               source.maskData.polygons.forEach((p, i) => {
                 if (p.capture_id === captureId) originalIndices.add(i);
@@ -1499,8 +1512,13 @@ export function ProjectMaskItem({
                 value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
               });
               notifyMaskPendingCaptureSet(mediaKey, finalIndices);
+              // Locks this capture against a second relocate (see onPointerDown /
+              // captureCommitInFlightRef) until this request's ack lands, whether it succeeds or
+              // fails.
+              captureCommitInFlightRef.current.add(captureId);
               sendMaskCaptureUpdate(source.maskData.mask_media_id, captureId, captureName, [...finalIndices]).then(
                 (updated) => {
+                  captureCommitInFlightRef.current.delete(captureId);
                   if (updated) {
                     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
                     // Before the active-element/pending-capture notifies below, which recolor off
