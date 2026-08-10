@@ -698,16 +698,22 @@ export function buildStaticMaskMesh(
       [maskData.width, maskData.height],
       [0, maskData.height],
     ];
-    // One shared centroid (the image's own center) for the whole quad rather than one per its
-    // two triangles -- it's a rendering trick to fill the curve-clipped sliver, not real mesh
-    // geometry, so splitting its light source facet in two would just show a seam along its diagonal.
-    const center: [number, number] = [maskData.width / 2, maskData.height / 2];
+    // Each corner carries its own position as its "centroid" rather than one shared value --
+    // unlike a_centroid elsewhere (all 3 vertices of a real facet agree, forcing flat shading),
+    // here the 6 corners all differ, so v_lightSourcePos interpolates smoothly across the quad
+    // instead of forcing one flat distance-to-epicenter for the whole fringe. A single shared
+    // centroid (e.g. the image's own center) would've been wrong everywhere the fringe's true
+    // position isn't near that center -- most visible on whichever side sits farthest from the
+    // light source, where the real low-poly mesh went nearly black but this backing quad stayed
+    // lit as if it were still at the image's center, reading as a bright sliver the shadow never
+    // quite reached. Using each corner's real position instead still stays seamless across the
+    // quad's own diagonal (both triangles share those two corners' values), it just isn't flat.
     for (const [x, y] of corners) {
       positions.push(x, y);
       colors.push(r, g, b);
       uvs.push(x / maskData.width, 1 - y / maskData.height);
       barycentrics.push(1, 1, 1);
-      centroids.push(...center);
+      centroids.push(x, y);
     }
   }
 
