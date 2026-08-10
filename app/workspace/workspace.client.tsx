@@ -1896,11 +1896,6 @@ export default function Workspace({
                     })}
                     {Array.from(coreState.project.svgs.entries()).map((e) => {
                       const [key, meta] = e;
-                      // A light source wired to a mask (see canvas.tsx's handleSvgDrop) is a wiring key
-                      // only, not an independently visible element -- see project-mask-item.tsx,
-                      // which reads it directly off coreState.project.svgs to drive the target
-                      // mask's WebGL light source highlight instead.
-                      if (meta.target_mask_key !== undefined) return;
                       const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
                       if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
                         return;

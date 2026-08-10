@@ -131,7 +131,6 @@ export default function DraggableCamera({
                 })}
                 {Array.from(coreState.project.svgs.entries()).map((e) => {
                   const [key, meta] = e;
-                  if (meta.target_mask_key !== undefined) return;
                   const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
                   if (meta.top < 0 || meta.left < 0 || showContextMenu) return;
                   const svgData = coreState.canvasSvgs.get(key);

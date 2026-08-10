@@ -263,7 +263,7 @@ export default function Scalebar() {
           if (scaleX !== undefined) nextScaleX = scaleX;
           if (scaleY !== undefined) nextScaleY = scaleY;
         }
-        
+
         switch (type) {
           case "img": {
             newImgs.set(key, {

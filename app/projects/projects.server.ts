@@ -50,14 +50,6 @@ export interface ProjectSvg_V1_0 {
   stroke: string;
   stroke_width: number;
   description: string;
-  // Set when this placed svg was dropped onto a mask (a "light source"): the key (into this same
-  // project's `masks` map) of the mask it's wired to. A light source carries no independent
-  // on-screen presence of its own once dropped -- see workspace.client.tsx's project.svgs render
-  // loop, which skips mounting a DraggableProjectSvg for any entry with this set -- it exists
-  // purely as a project element key that move/light_source effects can target, driving that
-  // mask's WebGL light source highlight (project-mask-item.tsx) instead of rendering as its own
-  // element. undefined for every ordinary svg.
-  target_mask_key?: string;
 }
 // No media_key -- unlike imgs/svgs, LaurusMaskResult (the mask websocket's output) doesn't
 // have one; this stores placement/cosmetic fields plus a reference to it, mirroring how
