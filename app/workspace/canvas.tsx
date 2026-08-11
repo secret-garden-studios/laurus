@@ -131,7 +131,7 @@ function isBadFrame(
 
 export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-  const { coreState, dispatch, captureMeshSection } = useContext(CoreContext);
+  const { coreState, dispatch, captureMeshSection, createTopologyPeak } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
@@ -245,9 +245,15 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          // Capturing a mesh-section (an existing placed mask) takes priority over dropping a
-          // fresh mask in from an armed browser thumbnail -- see handleMouseUp's own comment.
-          if (!uiState.tool.capturingMeshSection && uiState.browserElement?.type !== "img") break;
+          // Capturing a mesh-section or editing topology (both drag a circle over an existing
+          // placed mask) take priority over dropping a fresh mask in from an armed browser
+          // thumbnail -- see handleMouseUp's own comment.
+          if (
+            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.editingTopology &&
+            uiState.browserElement?.type !== "img"
+          )
+            break;
           const canvas = drawingCanvasRef.current;
           if (!canvas) return;
           const p = calcMousePosition(canvas, event);
@@ -276,7 +282,12 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          if (!uiState.tool.capturingMeshSection && uiState.browserElement?.type !== "img") break;
+          if (
+            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.editingTopology &&
+            uiState.browserElement?.type !== "img"
+          )
+            break;
           const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.beginPath();
@@ -512,19 +523,47 @@ export default function Canvas() {
     [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
   );
 
+  // Re-expresses a circle drawn in main-canvas space (same space `anchor`/dropArea already live
+  // in, and the same space this drawing canvas's own getBoundingClientRect() lives in) into the
+  // target mask's own mesh-buffer-pixel space. Rather than re-derive the mask's on-screen rect
+  // from project placement metadata (top/left/scale/frame offsets -- several assumptions that can
+  // silently drift out of sync with what's actually rendered), this measures the mask's real DOM
+  // canvas directly (found via the data-mask-key attribute project-mask-item.tsx sets on it), the
+  // same way that component's own onMouseMove handler already converts screen coordinates into
+  // mesh-buffer-pixel space for the mouse-driven light source. Shared by both the capture and
+  // topology-peak draw gestures below, which otherwise differ only in what they do with the result.
+  function screenCircleToMeshSpace(
+    maskKey: string,
+    drawingCanvas: HTMLCanvasElement,
+    dropArea: ProjectCircle,
+  ): { cx: number; cy: number; radius: number } | undefined {
+    const maskCanvasEl = document.querySelector<HTMLCanvasElement>(`canvas[data-mask-key="${CSS.escape(maskKey)}"]`);
+    if (!maskCanvasEl) return undefined;
+
+    const drawingRect = drawingCanvas.getBoundingClientRect();
+    const maskRect = maskCanvasEl.getBoundingClientRect();
+    if (maskRect.width === 0 || maskRect.height === 0) return undefined;
+
+    // dropArea.cx/cy are relative to the drawing canvas's own top-left (see calcMousePosition) --
+    // reconstruct a viewport-relative position and re-express it relative to the mask canvas's own
+    // top-left instead.
+    const localX = dropArea.cx + drawingRect.left - maskRect.left;
+    const localY = dropArea.cy + drawingRect.top - maskRect.top;
+
+    const scaleX = maskCanvasEl.width / maskRect.width;
+    const scaleY = maskCanvasEl.height / maskRect.height;
+
+    return {
+      cx: localX * scaleX,
+      cy: localY * scaleY,
+      radius: dropArea.radius * scaleX,
+    };
+  }
+
   // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle and
   // immediately persists them -- drawing the circle *is* the confirmation, no separate confirm
   // step (see workspace.client.tsx's captureMeshSection). Shown optimistically as a mesh highlight
   // in project-mask-item.tsx while the request is in flight.
-  //
-  // The circle arrives in main-canvas space (same space `anchor`/dropArea already live in, and
-  // the same space this drawing canvas's own getBoundingClientRect() lives in). Rather than
-  // re-derive the mask's on-screen rect from project placement metadata (top/left/scale/frame
-  // offsets -- several assumptions that can silently drift out of sync with what's actually
-  // rendered), this measures the mask's real DOM canvas directly (found via the data-mask-key
-  // attribute project-mask-item.tsx sets on it), the same way that component's own onMouseMove
-  // handler already converts screen coordinates into mesh-buffer-pixel space for the
-  // mouse-driven light source.
   const handleLightSourceCapture = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
@@ -533,27 +572,8 @@ export default function Canvas() {
       const drawingCanvas = drawingCanvasRef.current;
       if (!maskData || !drawingCanvas) return;
 
-      const maskCanvasEl = document.querySelector<HTMLCanvasElement>(`canvas[data-mask-key="${CSS.escape(maskKey)}"]`);
-      if (!maskCanvasEl) return;
-
-      const drawingRect = drawingCanvas.getBoundingClientRect();
-      const maskRect = maskCanvasEl.getBoundingClientRect();
-      if (maskRect.width === 0 || maskRect.height === 0) return;
-
-      // dropArea.cx/cy are relative to the drawing canvas's own top-left (see
-      // calcMousePosition) -- reconstruct a viewport-relative position and re-express it
-      // relative to the mask canvas's own top-left instead.
-      const localX = dropArea.cx + drawingRect.left - maskRect.left;
-      const localY = dropArea.cy + drawingRect.top - maskRect.top;
-
-      const scaleX = maskCanvasEl.width / maskRect.width;
-      const scaleY = maskCanvasEl.height / maskRect.height;
-
-      const meshCircle = {
-        cx: localX * scaleX,
-        cy: localY * scaleY,
-        radius: dropArea.radius * scaleX,
-      };
+      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
+      if (!meshCircle) return;
 
       const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
       if (polygonIndices.size === 0) return;
@@ -561,6 +581,29 @@ export default function Canvas() {
       captureMeshSection(maskKey, Array.from(polygonIndices));
     },
     [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
+  );
+
+  // Draws a new topology peak at the drag circle's epicenter/radius and immediately persists it,
+  // seeded at whatever shape Maskbar's own peak sliders are currently staged at (uiState.stagedPeak)
+  // -- mirrors handleLightSourceCapture's own "drawing is confirmation" reasoning, but unlike a
+  // capture there's no triangle-index membership that decides what it looks like: a peak is a term in
+  // a continuous height field the shaders evaluate from its epicenter, radius, elevation and falloff
+  // (see mask-gl.ts's PEAK_FIELD_GLSL), so the drawn circle contributes only the first two and the
+  // mesh's own triangulation contributes nothing at all.
+  const handleTopologyCapture = useCallback(
+    (dropArea: ProjectCircle) => {
+      if (selectedMaskKeys.size !== 1) return;
+      const maskKey = Array.from(selectedMaskKeys)[0];
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!maskData || !drawingCanvas) return;
+
+      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
+      if (!meshCircle) return;
+
+      createTopologyPeak(maskKey, meshCircle, uiState.stagedPeak);
+    },
+    [selectedMaskKeys, coreState.canvasMasks, createTopologyPeak, uiState.stagedPeak],
   );
 
   const handleDuplicateDrop = useCallback(
@@ -770,6 +813,11 @@ export default function Canvas() {
             break;
           }
 
+          if (uiState.tool.editingTopology) {
+            handleTopologyCapture(dropArea);
+            break;
+          }
+
           // Marquee-drag equivalent of the marquee tool's own img drop, straight off an armed
           // img-browser thumbnail (see img-browser's onImgClick) -- masks the source image
           // directly, landing it at the drawn circle's frame, without ever creating a project img
@@ -797,6 +845,7 @@ export default function Canvas() {
       coreState.project.imgs,
       coreState.project.svgs,
       handleLightSourceCapture,
+      handleTopologyCapture,
       selectedImgKeys,
       selectedSvgKeys,
       setSelectedImgKeys,

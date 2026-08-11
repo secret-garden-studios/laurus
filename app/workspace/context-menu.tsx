@@ -11,7 +11,7 @@ import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspa
 import { useMaskPersist } from "./hooks/useMaskPersist";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
-import { SvgRepo, polyline200, texture300, image200 } from "../svg-repo";
+import { SvgRepo, polyline200, texture300, image200, stairs300 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
   LaurusActiveElement,
@@ -132,7 +132,11 @@ export type ContextMenuMedia =
   // meta-click hit-test) -- reuses the owning mask's own key/meta (there's no separate entity),
   // just a different, much smaller menu targeting this one captureId: only "active" and "delete"
   // are wired up; every other row still renders for visual parity with img/svg/mask but is inert.
-  | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask };
+  | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
+  // One of a mesh's own topology peaks (see maskbar.tsx's topology tool, project-mask-item.tsx's
+  // meta-click hit-test via peakIdAtPoint) -- mirrors "capture" above exactly: reuses the owning
+  // mask's own key/meta, just targets this one peakId. Only "active" and "delete" are wired up.
+  | { type: "peak"; key: string; peakId: number; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -144,9 +148,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     dispatch,
     notifyMaskActiveElementChanged,
     notifyMaskActiveCaptureChanged,
+    notifyMaskActivePeakChanged,
     notifyMaskCaptureUpdated,
     sendMaskCaptureUpdate,
     closeMaskCaptureSocket,
+    deleteMaskPeak,
+    closeMaskPeakSocket,
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { setSelectedImgKeys } = useContext(HoverContext);
@@ -157,6 +164,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     if (uiState.activeElement?.key !== media.key) return false;
     if (media.type === "capture") {
       return uiState.activeElement.type === "capture" && uiState.activeElement.captureId === media.captureId;
+    }
+    if (media.type === "peak") {
+      return uiState.activeElement.type === "peak" && uiState.activeElement.peakId === media.peakId;
     }
     return true;
   }, [uiState.activeElement, media]);
@@ -449,10 +459,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (media.type === "mask") {
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
-          // deleteProjectMedia is never actually invoked for a "capture" (see the delete cell's
-          // onClick below, which calls sendMaskCaptureUpdate directly instead) -- narrowed here
-          // only to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's narrower img/svg/mask parameter type.
-          if (media.type !== "capture") {
+          // deleteProjectMedia is never actually invoked for a "capture" or "peak" (see the delete
+          // cell's onClick below, which calls sendMaskCaptureUpdate/sendMaskPeakUpdate directly
+          // instead) -- narrowed here only to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's
+          // narrower img/svg/mask parameter type.
+          if (media.type !== "capture" && media.type !== "peak") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
           }
@@ -767,8 +778,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectMaskIsTransformed(m);
       }
-      // Not implemented for a capture yet -- always shown, always disabled.
-      case "capture": {
+      // Not implemented for a capture or peak yet -- always shown, always disabled.
+      case "capture":
+      case "peak": {
         return false;
       }
     }
@@ -846,9 +858,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
-  // Only "active" and "delete" are wired up for a capture -- everything else below (swap, move
-  // up/down, revert) renders for visual parity with img/svg/mask but stays inert.
-  const isCapture = media.type === "capture";
+  // Only "active" and "delete" are wired up for a capture or peak -- everything else below (swap,
+  // move up/down, revert) renders for visual parity with img/svg/mask but stays inert.
+  const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
   const disabledCellStyle: CSSProperties = { color: "rgba(127,127,127, 1)", cursor: "default" };
 
   const cellStyle: CSSProperties = {
@@ -940,7 +952,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {media.type === "mask" || media.type === "capture" ? media.meta.media_id : media.meta.media_key}
+                  {media.type === "mask" || media.type === "capture" || media.type === "peak"
+                    ? media.meta.media_id
+                    : media.meta.media_key}
                 </div>
                 <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
                   <div>
@@ -1044,6 +1058,25 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           notifyMaskActiveElementChanged(media.key);
                           notifyMaskActiveCaptureChanged(media.key, media.captureId);
+                          // This capture is now the mesh's sole active sub-element -- clear any
+                          // peak highlight left over from before.
+                          notifyMaskActivePeakChanged(media.key, undefined);
+                          break;
+                        }
+                        case "peak": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "peak",
+                            peakId: media.peakId,
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          notifyMaskActiveElementChanged(media.key);
+                          notifyMaskActivePeakChanged(media.key, media.peakId);
+                          // Mirrors the capture case's own symmetric clear above.
+                          notifyMaskActiveCaptureChanged(media.key, undefined);
                           break;
                         }
                       }
@@ -1053,7 +1086,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                {media.type !== "mask" && media.type !== "capture" && (
+                {media.type !== "mask" && !isCaptureOrPeak && (
                   <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                     {"swap"}
                   </div>
@@ -1068,20 +1101,20 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   </div>
                 )}
                 <div
-                  style={{ ...cellStyle, ...(isCapture && disabledCellStyle) }}
-                  className={isCapture ? "" : styles["animated-nav-dark"]}
+                  style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
+                  className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
                   onClick={() => {
-                    if (isCapture) return;
+                    if (isCaptureOrPeak) return;
                     updateMediaOrder(isAltPressed ? "top" : "increment");
                   }}
                 >
                   {isAltPressed ? "move to top" : "move up"}
                 </div>
                 <div
-                  style={{ ...cellStyle, ...(isCapture && disabledCellStyle) }}
-                  className={isCapture ? "" : styles["animated-nav-dark"]}
+                  style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
+                  className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
                   onClick={() => {
-                    if (isCapture) return;
+                    if (isCaptureOrPeak) return;
                     updateMediaOrder(isAltPressed ? "bottom" : "decrement");
                   }}
                 >
@@ -1124,6 +1157,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
                         newMasks.delete(media.key);
                         closeMaskCaptureSocket(media.meta.media_id);
+                        closeMaskPeakSocket(media.meta.media_id);
                         deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
                         break;
                       }
@@ -1166,6 +1200,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         });
                         break;
                       }
+                      case "peak": {
+                        // Everything a peak delete entails -- the request, reconciling the mask,
+                        // refreshing the mesh, and falling the active element back when the peak being
+                        // removed was the active one -- lives in deleteMaskPeak
+                        // (workspace.client.tsx), shared with the canvas's own alt-click and Maskbar's
+                        // peak list.
+                        await deleteMaskPeak(media.key, media.peakId);
+                        break;
+                      }
                     }
                   }}
                 >
@@ -1187,6 +1230,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                       switch (media.type) {
                         case "capture":
                           return polyline200();
+                        case "peak":
+                          return stairs300();
                         case "img":
                           return image200();
                         case "mask":

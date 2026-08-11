@@ -28,6 +28,8 @@ import {
   LaurusSvgPageSearch,
   searchSvgs,
   nextCaptureId,
+  nextPeakId,
+  MaskPeakUpdateRequest_V1_0,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
@@ -47,11 +49,14 @@ import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
 import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
+import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
+import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
 import {
   LIGHT_SOURCE_DARKNESS_DEFAULT,
   LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
   LIGHT_SOURCE_INTENSITY_DEFAULT,
   LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  MIN_MASK_PEAK_RADIUS_PX,
   TEXTURE_MIX_DEFAULT,
 } from "./mask-gl";
 import {
@@ -79,7 +84,14 @@ import {
   ProjectMediaContextMenu,
   LaurusTool,
 } from "./states/ui-state";
-import { CoreAction, CoreActionType, CoreState, coreContextReducer, defaultCoreState } from "./states/core-state";
+import {
+  CoreAction,
+  CoreActionType,
+  CoreState,
+  PendingTopologyEdit,
+  coreContextReducer,
+  defaultCoreState,
+} from "./states/core-state";
 import { RESOLUTION } from "../landing.config";
 import { defaultProject } from "../projects/states/core-state";
 
@@ -204,6 +216,24 @@ export interface CoreContextProps {
     polygonIndices: number[],
   ) => Promise<LaurusMaskResult | undefined>;
   closeMaskCaptureSocket: (maskMediaId: string) => void;
+  createTopologyPeak: (
+    maskKey: string,
+    circle: { cx: number; cy: number; radius: number },
+    seed: { elevation: number; falloff: number },
+  ) => Promise<void>;
+  sendMaskPeakUpdate: (
+    maskMediaId: string,
+    update: MaskPeakUpdateRequest_V1_0,
+  ) => Promise<LaurusMaskResult | undefined>;
+  // The one implementation of "remove this peak", shared by all three affordances that offer it
+  // (project-mask-item.tsx's alt-click, context-menu.tsx's delete cell, and Maskbar's own peak
+  // list) -- each of which previously carried its own copy, which is how one of them ended up
+  // needing to know that the delete verb was a zero radius. Deleting a peak is more than the
+  // request: it also has to reconcile the mask, refresh the mesh, and notice when the peak it just
+  // removed was the active element (which would otherwise leave Maskbar's sliders pointed at an id
+  // that no longer exists), and every caller wants all of that.
+  deleteMaskPeak: (maskKey: string, peakId: number) => Promise<void>;
+  closeMaskPeakSocket: (maskMediaId: string) => void;
   // The following notifyMask* functions are how every file that changes state a mask mesh's own
   // appearance depends on reaches into maskHandlesRef and drives it directly, imperatively --
   // ProjectMaskItem has no useEffect watching any of this reactively (see its own file comment).
@@ -217,11 +247,19 @@ export interface CoreContextProps {
   // shared by every img/svg/mask effect-wiring call site in the app, none of which know or care
   // about captures.
   notifyMaskActiveCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
+  // Mirrors notifyMaskActiveCaptureChanged exactly, for a mesh's own topology peaks -- kept
+  // separate for the same reason (only peak-highlight call sites know or care about peakIds).
+  notifyMaskActivePeakChanged: (maskKey: string, peakId: number | undefined) => void;
   notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
+  // Mirrors the notifyMaskPendingCapture*/notifyMaskCaptureUpdated trio above, one topology peak
+  // edit (create, or an existing peak's elevate/move drag) at a time instead of a capture.
+  notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
+  notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
+  notifyMaskPeaksUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
 
 export const CoreContext = createContext<CoreContextProps>({
@@ -236,14 +274,22 @@ export const CoreContext = createContext<CoreContextProps>({
   captureMeshSection: async () => {},
   sendMaskCaptureUpdate: async () => undefined,
   closeMaskCaptureSocket: () => {},
+  createTopologyPeak: async () => {},
+  sendMaskPeakUpdate: async () => undefined,
+  deleteMaskPeak: async () => {},
+  closeMaskPeakSocket: () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskActiveElementChanged: () => {},
   notifyMaskActiveCaptureChanged: () => {},
+  notifyMaskActivePeakChanged: () => {},
   notifyMaskPendingCaptureSet: () => {},
   notifyMaskPendingCaptureCleared: () => {},
   notifyMaskCaptureUpdated: () => {},
   notifyMaskAppearanceChanged: () => {},
   notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskPendingTopologySet: () => {},
+  notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskPeaksUpdated: () => {},
 });
 
 export interface UIContextProps {
@@ -739,6 +785,10 @@ export default function Workspace({
     coreState.apiOrigin,
     coreState.accessToken,
   );
+  const { sendPeakUpdate: sendMaskPeakUpdate, closeSocket: closeMaskPeakSocket } = useMaskPeakSockets(
+    coreState.apiOrigin,
+    coreState.accessToken,
+  );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -1059,7 +1109,12 @@ export default function Workspace({
   // these values also calls the matching one of these right after. Stable (empty deps, closing
   // only over the ref) -- never need to be listed as a dependency anywhere else in this file.
   const notifyMaskToolChanged = useCallback((toolType: string) => {
-    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.abortCaptureDragForToolChange(toolType)));
+    maskHandlesRef.current?.forEach((handles) =>
+      handles.forEach((h) => {
+        h.abortCaptureDragForToolChange(toolType);
+        h.abortTopologyDragForToolChange();
+      }),
+    );
   }, []);
   const notifyMaskActiveElementChanged = useCallback((key: string | undefined) => {
     maskHandlesRef.current?.forEach((handles, maskKey) =>
@@ -1068,6 +1123,9 @@ export default function Workspace({
   }, []);
   const notifyMaskActiveCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActiveCapture(captureId));
+  }, []);
+  const notifyMaskActivePeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActivePeak(peakId));
   }, []);
   const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices));
@@ -1084,6 +1142,16 @@ export default function Workspace({
   }, []);
   const notifyMaskLightSourcePreviewToggled = useCallback((enabled: boolean) => {
     maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.onLightSourcePreviewToggled(enabled)));
+  }, []);
+  const notifyMaskPendingTopologySet = useCallback((maskKey: string, edit: PendingTopologyEdit) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingTopology(edit));
+  }, []);
+  const notifyMaskPendingTopologyCleared = useCallback((maskKey: string | undefined) => {
+    if (maskKey === undefined) return;
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingTopology());
+  }, []);
+  const notifyMaskPeaksUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncPeaks(updated));
   }, []);
 
   // Persists a freshly drawn mesh-section capture immediately -- drawing a circle (canvas.tsx's
@@ -1124,10 +1192,20 @@ export default function Workspace({
         });
         notifyMaskActiveElementChanged(maskKey);
         notifyMaskActiveCaptureChanged(maskKey, captureId);
+        // A freshly drawn capture is now this mesh's sole active sub-element -- clear any
+        // previously-active peak's own ring highlight so it doesn't keep glowing alongside it.
+        notifyMaskActivePeakChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
       notifyMaskPendingCaptureCleared(maskKey);
-      uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
+      uiDispatch({
+        type: UIActionType.SetTool,
+        value: {
+          type: "mask",
+          capturingMeshSection: false,
+          editingTopology: uiState.tool.type === "mask" ? uiState.tool.editingTopology : false,
+        },
+      });
       notifyMaskToolChanged("mask");
     },
     [
@@ -1135,12 +1213,164 @@ export default function Workspace({
       sendMaskCaptureUpdate,
       dispatch,
       uiDispatch,
+      uiState.tool,
       notifyMaskPendingCaptureSet,
       notifyMaskActiveElementChanged,
       notifyMaskActiveCaptureChanged,
+      notifyMaskActivePeakChanged,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskToolChanged,
+    ],
+  );
+
+  // Persists a freshly drawn topology peak immediately -- drawing a circle (canvas.tsx's
+  // handleTopologyCapture) is taken as confirmation to save it, mirroring captureMeshSection's own
+  // "no separate confirm step" reasoning. `seed` is whatever Maskbar's own peak sliders are
+  // currently staged at (uiState.stagedPeak, passed by canvas.tsx) -- not hardcoded defaults -- so
+  // drawing several peaks in a row without touching a slider keeps reusing the last dialed-in
+  // shape. Always creates a *new* peak (the next free id on this mask); moving one afterwards is a
+  // drag directly on its own epicenter instead (project-mask-item.tsx's topology onPointerDown/
+  // onPointerUp), and reshaping it afterwards is the same Maskbar sliders once it's active (see
+  // this function's own SetActiveElement below). Unlike captureMeshSection, this deliberately
+  // leaves `editingTopology` on afterwards -- so drawing several peaks, or immediately dragging the
+  // one just placed, doesn't require re-toggling the tool.
+  //
+  // The drawn radius is floored at MIN_MASK_PEAK_RADIUS_PX because the height field divides by it
+  // (u = dist / radius, see PEAK_FIELD_GLSL): a circle drawn as an accidental click would otherwise
+  // persist a peak whose field is degenerate rather than merely small.
+  //
+  // polygon_indices (see MaskPeakUpdateRequest_V1_0) is derived from the same circle via
+  // captureTriangleIndicesInCircle -- the same centroid-in-circle test captureMeshSection's own
+  // caller already runs for captures -- rather than requiring a separate selection gesture; a
+  // peak's own field stays driven by cx/cy/radius/elevation/falloff regardless, this is
+  // bookkeeping only.
+  const createTopologyPeak = useCallback(
+    async (
+      maskKey: string,
+      circle: { cx: number; cy: number; radius: number },
+      seed: { elevation: number; falloff: number },
+    ) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData) return;
+      const peakId = nextPeakId(maskData.peaks);
+      const radius = Math.max(circle.radius, MIN_MASK_PEAK_RADIUS_PX);
+      const edit: PendingTopologyEdit = {
+        maskKey,
+        peakId,
+        cx: circle.cx,
+        cy: circle.cy,
+        radius,
+        elevation: seed.elevation,
+        falloff: seed.falloff,
+      };
+
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+      notifyMaskPendingTopologySet(maskKey, edit);
+
+      const polygonIndices = [
+        ...captureTriangleIndicesInCircle(maskData.polygons, { cx: circle.cx, cy: circle.cy, radius }),
+      ];
+      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
+        peak_id: peakId,
+        cx: circle.cx,
+        cy: circle.cy,
+        radius,
+        elevation: seed.elevation,
+        falloff: seed.falloff,
+        remove: false,
+        polygon_indices: polygonIndices,
+      });
+      if (updated) {
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+        notifyMaskPeaksUpdated(maskKey, updated);
+        // Makes the new peak the active element immediately -- Maskbar's elevation slider reads
+        // off uiState.activeElement, so the freshly drawn peak (rather than the staged value) is
+        // what it edits from here, the same way a freshly drawn capture becomes the active element
+        // in captureMeshSection above.
+        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "peak", peakId } });
+        notifyMaskActiveElementChanged(maskKey);
+        notifyMaskActivePeakChanged(maskKey, peakId);
+        // Mirrors captureMeshSection's own symmetric clear above -- a freshly drawn peak is now
+        // this mesh's sole active sub-element, so any previously-active capture's own outline
+        // shouldn't keep showing alongside it.
+        notifyMaskActiveCaptureChanged(maskKey, undefined);
+      }
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+      notifyMaskPendingTopologyCleared(maskKey);
+    },
+    [
+      coreState.canvasMasks,
+      sendMaskPeakUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
+      notifyMaskActiveElementChanged,
+      notifyMaskActivePeakChanged,
+      notifyMaskActiveCaptureChanged,
+    ],
+  );
+
+  // Removes one peak, and everything that has to follow from it. Lives here rather than at the
+  // three call sites that offer the affordance (project-mask-item.tsx's alt-click on an epicenter,
+  // context-menu.tsx's delete cell, Maskbar's own peak list) because those three had grown three
+  // copies of this sequence, and the copies had already started to disagree -- one of them tested
+  // the active element against the mask key, the other didn't. Collapsing them also means the wire
+  // detail that a delete is `remove: true` (rather than the zero radius it used to be overloaded
+  // as -- see MaskPeakUpdateRequest_V1_0) is stated exactly once.
+  //
+  // No pending/optimistic phase, unlike createTopologyPeak: there's nothing to preview. The peak
+  // stays fully rendered until the server confirms, then disappears -- which is the right failure
+  // mode, since a delete that didn't land leaves the peak visibly still there rather than
+  // vanishing it locally and resurrecting it on the next load.
+  const deleteMaskPeak = useCallback(
+    async (maskKey: string, peakId: number) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const peak = maskData?.peaks.find((p) => p.id === peakId);
+      if (!maskData || !peak) return;
+
+      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
+        peak_id: peakId,
+        // The geometry still rides along on a delete: the request is a full-replace upsert whose
+        // `remove` flag is what selects deletion, not a partial verb with its own shape (see
+        // MaskPeakUpdateRequest_V1_0), so these fields are required and are simply ignored.
+        cx: peak.cx,
+        cy: peak.cy,
+        radius: peak.radius,
+        elevation: peak.elevation,
+        falloff: peak.falloff,
+        remove: true,
+        // Empty rather than recomputed: polygon_indices full-replaces this one peak's own polygon
+        // tagging, so clearing it is exactly what untags every triangle that carried this peak's id.
+        polygon_indices: [],
+      });
+      if (!updated) return;
+
+      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+      notifyMaskPeaksUpdated(maskKey, updated);
+      // Deleting the active peak would otherwise leave Maskbar's peak sliders pointed at an id
+      // that's now gone -- fall back to the whole mask being active, same as a deleted capture does.
+      if (
+        uiState.activeElement?.key === maskKey &&
+        uiState.activeElement.type === "peak" &&
+        uiState.activeElement.peakId === peakId
+      ) {
+        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+        notifyMaskActiveElementChanged(maskKey);
+        notifyMaskActivePeakChanged(maskKey, undefined);
+      }
+    },
+    [
+      coreState.canvasMasks,
+      sendMaskPeakUpdate,
+      dispatch,
+      uiDispatch,
+      uiState.activeElement,
+      notifyMaskPeaksUpdated,
+      notifyMaskActiveElementChanged,
+      notifyMaskActivePeakChanged,
     ],
   );
 
@@ -1471,14 +1701,22 @@ export default function Workspace({
       captureMeshSection,
       sendMaskCaptureUpdate,
       closeMaskCaptureSocket,
+      createTopologyPeak,
+      sendMaskPeakUpdate,
+      deleteMaskPeak,
+      closeMaskPeakSocket,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
       notifyMaskActiveCaptureChanged,
+      notifyMaskActivePeakChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
     }),
     [
       coreState,
@@ -1493,14 +1731,22 @@ export default function Workspace({
       captureMeshSection,
       sendMaskCaptureUpdate,
       closeMaskCaptureSocket,
+      createTopologyPeak,
+      sendMaskPeakUpdate,
+      deleteMaskPeak,
+      closeMaskPeakSocket,
       notifyMaskToolChanged,
       notifyMaskActiveElementChanged,
       notifyMaskActiveCaptureChanged,
+      notifyMaskActivePeakChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
     ],
   );
 
@@ -1744,6 +1990,7 @@ export default function Workspace({
                     gridRow: "3",
                     gridColumn: "2",
                     width: "100%",
+                    overflowX: "auto",
                   }}
                 >
                   <Subtitlebar />
@@ -1788,6 +2035,7 @@ export default function Workspace({
                         pointerEvents:
                           uiState.tool.type === "mask" &&
                           !uiState.tool.capturingMeshSection &&
+                          !uiState.tool.editingTopology &&
                           uiState.browserElement?.type !== "img"
                             ? "none"
                             : // Alt-click-select (ProjectMaskItem's onClick) needs to reach an

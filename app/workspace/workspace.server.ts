@@ -298,13 +298,22 @@ export async function deleteSvg(
  * `capture_id` is 0 if this triangle isn't part of any of the mask's
  * "captures" (client-selected subsections of the mesh, e.g. light source
  * regions -- see MaskMediaResult_V1_0.captures), otherwise the id of the
- * capture it belongs to -- see MaskCaptureUpdateRequest_V1_0. */
+ * capture it belongs to -- see MaskCaptureUpdateRequest_V1_0.
+ *
+ * `peak_id` mirrors `capture_id` for the mask's topology peaks (see
+ * Peak_V1_0 and MaskPeakUpdateRequest_V1_0): 0 if not part of any peak,
+ * otherwise the id of the peak it belongs to. Bookkeeping only (highlighting,
+ * future effect-wiring) -- a peak's shape comes from the height field
+ * mask-gl.ts's shaders evaluate from cx/cy/radius/elevation/falloff as
+ * uniforms, a continuous function of position that never consults which
+ * polygons carry its id. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
   stroke: string;
   stroke_width: number;
   capture_id: number;
+  peak_id: number;
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
@@ -316,6 +325,52 @@ export interface Capture_V1_0 {
   name: string;
 }
 export type LaurusCapture = Capture_V1_0;
+
+/** One client-placed topology adjustment: one term of the signed height field
+ * `h(x, y)` the mask's shaders evaluate to give the mesh its relief. An
+ * epicenter (`cx`/`cy`, in the mask's own mesh space, same as
+ * PolygonPath_V1_0's `d` strings), the `radius` its influence reaches, the
+ * signed `elevation` at that epicenter (negative is a dent/crater, not an
+ * error), and the `falloff` exponent shaping how it decays to nothing at the
+ * rim:
+ *
+ *     h(p) = sum over peaks of  elevation * (1 - u^2)^falloff,
+ *            u = min(|p - (cx, cy)| / radius, 1)
+ *
+ * The whole field is a uniform-driven, continuous function of position: the
+ * server stores these five numbers and computes nothing from them, and both
+ * of mask-gl.ts's shader stages read the same one -- the vertex stage to
+ * displace geometry, the fragment stage to take the field's analytic gradient
+ * and light the perturbed surface normal (which is where the illusion of a
+ * bump actually comes from; see PEAK_FIELD_GLSL there). Because the field is
+ * a function of position alone, nothing about the mesh's own triangulation can
+ * change the shape a peak takes.
+ *
+ * PolygonPath_V1_0.peak_id mirrors Capture_V1_0's own polygon tagging, but
+ * only for bookkeeping (highlighting, future effect-wiring); it never feeds
+ * the field. See MaskPeakUpdateRequest_V1_0. */
+export interface Peak_V1_0 {
+  id: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  elevation: number;
+  falloff: number;
+}
+export type LaurusPeak = Peak_V1_0;
+
+/** Exponent of a peak's radial profile `k(u) = (1 - u^2)^falloff` that
+ * reproduces the smooth dome `(1 - u^2)^2`, whose slope vanishes at *both* the
+ * epicenter and the rim -- that C1 join at the rim is what lets a peak sit in
+ * the middle of the mesh with no crease ring around it.
+ *
+ * Lives here beside Peak_V1_0 rather than in mask-gl.ts with the rest of the
+ * peak constants because it's the *schema* default: it's what normalizeMaskResult
+ * backfills onto a peak persisted before falloff existed, mirroring the identical
+ * default on the server's own RedisPeak/Peak/PeakUpdate models. mask-gl.ts (which
+ * already imports from this module, so the dependency can only point this way)
+ * owns the *authoring* bounds instead -- see MIN/MAX_MASK_PEAK_FALLOFF there. */
+export const PEAK_FALLOFF_DEFAULT = 2.0;
 
 /**
  * One sample of a silhouette's outward alpha falloff: `offset` pixels outside
@@ -382,10 +437,37 @@ export interface MaskMediaResult_V1_0 {
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
   captures: Capture_V1_0[];
+  peaks: Peak_V1_0[];
   creator: string;
   last_editor: string;
 }
 export type LaurusMaskResult = MaskMediaResult_V1_0;
+
+/** A mask document exactly as it can actually come off the wire, which is not the same shape as
+ * MaskMediaResult_V1_0: that interface describes the *current* schema, while what's sitting in the
+ * database spans every schema a mask was ever saved under. Two generations of drift are live --
+ * documents from before topology peaks existed carry no `peaks` key at all, and documents from
+ * before the height field's falloff existed carry peaks without one. Spelling both out as optional
+ * here is what lets normalizeMaskResult read them without a cast. */
+type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff"> & { falloff?: number };
+type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: RawPeak_V1_0[] };
+
+// The one place both of those generations get repaired, so nothing downstream has to know they
+// exist. Every raw parse of a mask document (below, plus the socket response handlers in
+// useMaskCaptureSockets/useMaskPeakSockets) goes through this: a legacy mask loads with no peaks of
+// its own instead of crashing the first time ProjectMaskItem's render() tries to .map over an
+// undefined array, and a pre-falloff peak loads as the default dome instead of reaching the shader
+// with falloff undefined (which NaNs the whole height field, taking the mesh's geometry with it).
+//
+// Deliberately no longer short-circuits on `mask.peaks` being present: a document can have peaks
+// and still predate falloff, so the peaks array always gets walked. The server backfills the same
+// default via its own model defaults -- this is the client-side belt to that suspenders.
+export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
+  return {
+    ...mask,
+    peaks: (mask.peaks ?? []).map((peak) => ({ ...peak, falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT })),
+  };
+}
 
 export async function getMask(baseUrl: string | undefined, maskId: string) {
   try {
@@ -400,7 +482,7 @@ export async function getMask(baseUrl: string | undefined, maskId: string) {
       return undefined;
     }
     const response: MaskMediaResult_V1_0 = await raw_response.json();
-    return response;
+    return normalizeMaskResult(response);
   } catch (error) {
     console.log({ error });
     return undefined;
@@ -420,7 +502,7 @@ export async function getMasks(baseUrl: string | undefined, mediaId: string) {
       return undefined;
     }
     const response: MaskMediaResult_V1_0[] = await raw_response.json();
-    return response;
+    return response.map(normalizeMaskResult);
   } catch (error) {
     console.log({ error });
     return undefined;
@@ -445,7 +527,7 @@ export async function getMasksByIds(baseUrl: string | undefined, maskMediaIds: s
       return undefined;
     }
     const response: MaskMediaResult_V1_0[] = await raw_response.json();
-    return response;
+    return response.map(normalizeMaskResult);
   } catch (error) {
     console.log({ error });
     return undefined;
@@ -486,6 +568,12 @@ export async function deleteMask(
  * a new one is created. */
 export function nextCaptureId(captures: Capture_V1_0[]): number {
   return 1 + captures.reduce((max, c) => Math.max(max, c.id), 0);
+}
+
+/** Smallest peak id not already used by any of this mask's own peaks -- the
+ * same "no server-side allocator needed" reasoning as nextCaptureId. */
+export function nextPeakId(peaks: Peak_V1_0[]): number {
+  return 1 + peaks.reduce((max, p) => Math.max(max, p.id), 0);
 }
 
 /* /media/masks/mask (websocket) */
@@ -614,7 +702,7 @@ export function maskImage(
         handlers.onTriangle?.(message);
         break;
       case "complete":
-        handlers.onComplete?.(message);
+        handlers.onComplete?.({ ...message, result: normalizeMaskResult(message.result) });
         socket.close();
         break;
       case "error":
@@ -652,6 +740,53 @@ export type MaskCaptureSocketMessage_V1_0 = MaskCaptureUpdateComplete_V1_0 | Mas
 
 export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
   return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/captures?token=${encodeURIComponent(accessToken)}`;
+}
+
+/* /media/masks/{mask_media_id}/peaks (websocket) */
+
+/** Full-replace upsert (or, when `remove` is set, deletion) of the single peak
+ * identified by peak_id -- e.g. a topology bump dragged out over the mesh, or
+ * relocated/re-elevated/re-shaped -- leaving the mask's other peaks untouched.
+ * Sent any number of times over the life of one mask's peak socket -- see
+ * useMaskPeakSockets, which owns that socket and this message's
+ * request/response pairing (mirrors useMaskCaptureSockets exactly).
+ *
+ * `remove` is the delete signal, and it's a field of its own rather than the
+ * `radius <= 0` sentinel this used to overload for two reasons: a radius is now
+ * directly authored by a slider the user can drag to its own floor (so the
+ * sentinel would be reachable by accident), and a zero radius is degenerate in
+ * the height field itself (`u = dist / radius`), so it was never a legitimate
+ * value that merely happened to be spoken for. The server still honours
+ * `radius <= 0` as a legacy delete so a stale cached client's delete doesn't
+ * persist an invisible peak, but this client never sends it that way.
+ *
+ * `polygon_indices` mirrors MaskCaptureUpdateRequest_V1_0.polygon_indices:
+ * which of the mask's own polygons (by array index) carry this peak's id.
+ * Bookkeeping only -- never read back to compute the field. Callers derive
+ * this from the same circle being sent as cx/cy/radius rather than running
+ * a separate selection gesture -- see captureTriangleIndicesInCircle in
+ * light-source-capture.ts, which already does exactly this test for
+ * captures and takes an arbitrary circle. Note this has to be recomputed
+ * whenever `radius` changes, not just when the epicenter moves: a resize
+ * changes which polygons fall inside the circle. */
+export interface MaskPeakUpdateRequest_V1_0 {
+  peak_id: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  elevation: number;
+  falloff: number;
+  remove: boolean;
+  polygon_indices: number[];
+}
+export interface MaskPeakUpdateComplete_V1_0 {
+  type: "peak_update_complete";
+  result: MaskMediaResult_V1_0;
+}
+export type MaskPeakSocketMessage_V1_0 = MaskPeakUpdateComplete_V1_0 | MaskError_V1_0;
+
+export function toMaskPeakSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
+  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/peaks?token=${encodeURIComponent(accessToken)}`;
 }
 
 /* /media/groups */

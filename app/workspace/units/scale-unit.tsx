@@ -299,11 +299,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         if (!img) return [1, 1];
         return [img.scale_x, img.scale_y];
       }
-      // A capture has no scale of its own -- scale acts on the mesh's own whole-element
+      // A capture or peak has no scale of its own -- scale acts on the mesh's own whole-element
       // transform (see this file's own carouselEntryKey), the same one a "mask"-typed active
-      // element already targets, so both variants share this case.
+      // element already targets, so all three variants share this case.
       case "mask":
-      case "capture": {
+      case "capture":
+      case "peak": {
         const mask = snapshot.masks.get(activeElement.key);
         if (!mask) return [1, 1];
         return [mask.scale_x, mask.scale_y];

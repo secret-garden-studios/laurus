@@ -2634,3 +2634,37 @@ export function asterisk300(
     ),
   };
 }
+
+export function stairs200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/stairs_2_24dp_E3E3E3_FILL1_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(`<path d="M120-240v-40h226.54v-220h226.54v-220H840v40H613.46v220H386.92v220H120Z"/>`),
+  };
+}
+
+export function stairs300(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "/material-ui/thin/stairs_2_24dp_E3E3E3_FILL1_wght300_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(`<path d="M100-220v-60h233.27v-230h233.27v-230H860v60H626.73v230H393.46v230H100Z"/>`),
+  };
+}

@@ -1,5 +1,5 @@
 import { parsePathPoints } from "../mask-gl";
-import { LaurusPolygonPath } from "../workspace.server";
+import { LaurusPeak, LaurusPolygonPath } from "../workspace.server";
 
 function centroidOf(points: [number, number][]): [number, number] {
   return [
@@ -25,13 +25,38 @@ export function captureTriangleIndicesInCircle(
   polygons: LaurusPolygonPath[],
   circle: { cx: number; cy: number; radius: number },
 ): Set<number> {
-  const indices = new Set<number>();
-  polygons.forEach((polygon, i) => {
+  return indicesInCircleFromCentroids(polygonCentroids(polygons), circle);
+}
+
+/** Every polygon's own centroid, in polygons order -- the expensive half of
+ * captureTriangleIndicesInCircle, split out so a caller that tests many circles against one unchanged
+ * mesh can pay for the parse once instead of once per test.
+ *
+ * "Expensive" is the operative word: this runs parsePathPoints, a regex, over every triangle in the
+ * mesh, and a mask carries thousands. That was fine while the only callers were rare commits, but a
+ * peak's parameters are now live-previewable, so the highlight recolor that depends on this can be
+ * asked to run on every animation frame of a slider drag (see recolorHighlight in
+ * project-mask-item.tsx, which caches the result of this for exactly that reason). An entry is
+ * [NaN, NaN] for a polygon whose `d` yielded no points, so indices line up with polygons either way.
+ */
+export function polygonCentroids(polygons: LaurusPolygonPath[]): [number, number][] {
+  return polygons.map((polygon) => {
     const points = parsePathPoints(polygon.d);
-    if (points.length === 0) return;
-    const centroid = centroidOf(points);
-    const dx = centroid[0] - circle.cx;
-    const dy = centroid[1] - circle.cy;
+    return points.length === 0 ? ([NaN, NaN] as [number, number]) : centroidOf(points);
+  });
+}
+
+/** The cheap half of captureTriangleIndicesInCircle: which of the already-computed centroids fall
+ * inside `circle`. A NaN centroid (a polygon whose `d` had no points, see polygonCentroids) fails the
+ * comparison and so is excluded, matching the original behavior of skipping such a polygon. */
+export function indicesInCircleFromCentroids(
+  centroids: [number, number][],
+  circle: { cx: number; cy: number; radius: number },
+): Set<number> {
+  const indices = new Set<number>();
+  centroids.forEach(([x, y], i) => {
+    const dx = x - circle.cx;
+    const dy = y - circle.cy;
     if (dx * dx + dy * dy <= circle.radius * circle.radius) indices.add(i);
   });
   return indices;
@@ -91,4 +116,38 @@ export function captureIdAtPoint(polygons: LaurusPolygonPath[], point: [number, 
     }
   }
   return undefined;
+}
+
+/** Which peak (by id) `point` (mask-local mesh space, same as the polygons' own `d` strings) falls
+ * within, if any -- used the same way captureIdAtPoint is, to tell "a topology drag starting on an
+ * existing peak's epicenter" apart from everywhere else on the mesh. Simpler than captureIdAtPoint:
+ * a peak's own geometry already *is* its center + radius, so this is a direct point-in-circle test
+ * rather than a bounding-box reconstruction from member triangles.
+ *
+ * Where several peaks contain the point, the smallest-radius one wins rather than whichever comes
+ * first in mask.peaks order. Unlike overlapping captures (which are genuinely an edge case, since
+ * they're distinct light sources that sit apart), overlapping peaks are an ordinary way to build
+ * relief -- a small sharp peak placed on the shoulder of a broad one is exactly what a height field
+ * is for -- and first-wins would make the small one ungrabbable whenever it happened to be created
+ * second. Smallest-first is also the intuitive reading of a click: the tightest thing under the
+ * cursor is the thing being pointed at.
+ *
+ * Tested against the mesh's *undisplaced* space while the user clicks displaced pixels. That's exact
+ * at the epicenter, where the swell is identically zero (see peakSwell, mask-gl.ts), and off by at
+ * most 0.385 * MASK_PEAK_SWELL * |elevation| px out on the flanks -- a few pixels at ordinary
+ * elevations, and always in the direction of the peak's own center, so a click that lands inside the
+ * drawn dome lands inside this test too. */
+export function peakIdAtPoint(peaks: LaurusPeak[], point: [number, number]): number | undefined {
+  const [px, py] = point;
+  let bestId: number | undefined;
+  let bestRadius = Infinity;
+  for (const peak of peaks) {
+    const dx = px - peak.cx;
+    const dy = py - peak.cy;
+    if (dx * dx + dy * dy > peak.radius * peak.radius) continue;
+    if (peak.radius >= bestRadius) continue;
+    bestId = peak.id;
+    bestRadius = peak.radius;
+  }
+  return bestId;
 }

@@ -2,19 +2,35 @@ import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useE
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { ParameterSliderX } from "@/app/components/parameter-slider";
+import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
-import { CoreActionType } from "../states/core-state";
+import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
+import {
+  MAX_MASK_PEAK_ELEVATION,
+  MAX_MASK_PEAK_FALLOFF,
+  MIN_MASK_PEAK_FALLOFF,
+  MIN_MASK_PEAK_RADIUS_PX,
+} from "../mask-gl";
+import { captureTriangleIndicesInCircle } from "../canvas-media/light-source-capture";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   // Aliased locally -- Maskbar itself has no notion of what a captured mesh subsection becomes
   // (a light source, or something else down the line); it just hands the drag off to whoever
   // does via these two callbacks.
-  const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskToolChanged,
+    notifyMaskAppearanceChanged,
+    sendMaskPeakUpdate,
+    notifyMaskPendingTopologySet,
+    notifyMaskPendingTopologyCleared,
+    notifyMaskPeaksUpdated,
+  } = useContext(CoreContext);
   const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
@@ -287,6 +303,28 @@ export default function Maskbar() {
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
+  const isTopologyDisabled = selectedMaskKey === undefined;
+  const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
+  const activeElement = uiState.activeElement;
+  const selectedMaskData = selectedMaskKey !== undefined ? coreState.canvasMasks.get(selectedMaskKey) : undefined;
+  const activePeak =
+    activeElement?.type === "peak" && activeElement.key === selectedMaskKey
+      ? selectedMaskData?.peaks.find((p) => p.id === activeElement.peakId)
+      : undefined;
+  // Enabled whenever there's a peak to edit -- either one is the active element (the bright
+  // highlight, meta-clickable independently of the topology toggle -- see project-mask-item.tsx's
+  // onClick hit-test) or the topology toggle is on, in which case with no peak active these instead
+  // read/write uiState.stagedPeak, the shape the *next* circle-drag will create a peak at
+  // (isTopologyDisabled already covers "no mask selected" transitively for that branch --
+  // editingTopology can't stay true without one, see the cleanup effect below).
+  const isPeakParamDisabled = !activePeak && !isTopologyOn;
+  const elevationValue = activePeak?.elevation ?? uiState.stagedPeak.elevation;
+  const falloffValue = activePeak?.falloff ?? uiState.stagedPeak.falloff;
+  // Radius is the one peak parameter with nothing to stage: the circle-drag that creates a peak is
+  // what defines it (see stagedPeak, ui-state.ts), so with no active peak there is genuinely nothing
+  // for this slider to point at and it stays disabled even while the topology tool is on.
+  const radiusValue = activePeak?.radius;
+  const isRadiusDisabled = !activePeak;
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
   const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
   // Same coalescing-queue persistence as LightSourcebar's own saveLightSourceField -- every edit
@@ -378,6 +416,240 @@ export default function Maskbar() {
     setTextureCursor({ x: newCursor, y: 0 });
   }, [textureMixValue, getTextureCursor]);
 
+  // Which of a peak's own shape parameters an edit is changing. A partial rather than a whole peak
+  // because each slider is an independent control that only knows its own value -- the rest are
+  // merged from whatever the active peak currently carries (see mergePeakPatch below).
+  type PeakPatch = { elevation?: number; radius?: number; falloff?: number };
+
+  interface PendingPeakSave {
+    maskKey: string;
+    maskMediaId: string;
+    peakId: number;
+    cx: number;
+    cy: number;
+    radius: number;
+    elevation: number;
+    falloff: number;
+    polygonIndices: number[];
+  }
+  // Same coalescing-queue persistence as pendingTextureSaveRef above -- every edit previews
+  // instantly (see savePeakField's own notifyMaskPendingTopologySet), and only the network write to
+  // the peak's own socket coalesces: whichever value is newest when a send completes goes out next,
+  // rather than a debounce timer dropping mid-drag ticks or racing an in-flight request. Also what
+  // keeps useMaskPeakSockets' id-less FIFO reply pairing sound, since it awaits each send before
+  // issuing the next.
+  const pendingPeakSaveRef = useRef<PendingPeakSave | null>(null);
+  const isPersistingPeakRef = useRef(false);
+  const persistPeakQueue = useCallback(async () => {
+    if (isPersistingPeakRef.current) return;
+    isPersistingPeakRef.current = true;
+    let settledMaskKey: string | undefined;
+    try {
+      while (pendingPeakSaveRef.current) {
+        const toSave = pendingPeakSaveRef.current;
+        pendingPeakSaveRef.current = null;
+        settledMaskKey = toSave.maskKey;
+        const updated = await sendMaskPeakUpdate(toSave.maskMediaId, {
+          peak_id: toSave.peakId,
+          cx: toSave.cx,
+          cy: toSave.cy,
+          radius: toSave.radius,
+          elevation: toSave.elevation,
+          falloff: toSave.falloff,
+          remove: false,
+          polygon_indices: toSave.polygonIndices,
+        });
+        if (updated) {
+          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: updated });
+          notifyMaskPeaksUpdated(toSave.maskKey, updated);
+        } else {
+          console.error("failed to save peak change", { peak_id: toSave.peakId });
+        }
+      }
+    } finally {
+      isPersistingPeakRef.current = false;
+      // Only clear the optimistic preview once every queued write has drained -- clearing it after
+      // each individual request instead would flash back to whatever the last confirmed server
+      // state was between mid-drag ticks.
+      if (settledMaskKey !== undefined) {
+        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+        notifyMaskPendingTopologyCleared(settledMaskKey);
+      }
+    }
+  }, [sendMaskPeakUpdate, dispatch, notifyMaskPeaksUpdated, notifyMaskPendingTopologyCleared]);
+
+  // One patched-onto-the-active-peak edit, as both the shader wants it (a complete set of the peak's
+  // field parameters, since a partial one would render the peak with a parameter missing rather than
+  // pending) and the wire wants it. Shared by savePeakField and previewPeakChange so the preview and
+  // the commit can't disagree about what a patch means.
+  const mergePeakPatch = useCallback(
+    (patch: PeakPatch): PendingTopologyEdit | undefined => {
+      if (selectedMaskKey === undefined || !activePeak) return undefined;
+      return {
+        maskKey: selectedMaskKey,
+        peakId: activePeak.id,
+        cx: activePeak.cx,
+        cy: activePeak.cy,
+        radius: patch.radius ?? activePeak.radius,
+        elevation: patch.elevation ?? activePeak.elevation,
+        falloff: patch.falloff ?? activePeak.falloff,
+      };
+    },
+    [selectedMaskKey, activePeak],
+  );
+
+  const savePeakField = useCallback(
+    (patch: PeakPatch) => {
+      if (selectedMaskKey === undefined) return;
+      const edit = mergePeakPatch(patch);
+      if (!edit) {
+        // No peak is active -- this just stages the shape the next circle-drag creates a peak at (see
+        // canvas.tsx's handleTopologyCapture), nothing on the mesh to preview or persist yet. A radius
+        // in the patch is ignored here on purpose: the drag itself defines that (see stagedPeak).
+        uiDispatch({
+          type: UIActionType.SetStagedPeak,
+          value: { elevation: patch.elevation, falloff: patch.falloff },
+        });
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(selectedMaskKey);
+      if (!maskData) return;
+
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+      notifyMaskPendingTopologySet(selectedMaskKey, edit);
+
+      pendingPeakSaveRef.current = {
+        maskKey: selectedMaskKey,
+        maskMediaId: maskData.mask_media_id,
+        peakId: edit.peakId,
+        cx: edit.cx,
+        cy: edit.cy,
+        radius: edit.radius,
+        elevation: edit.elevation,
+        falloff: edit.falloff,
+        // Derived from the *merged* circle rather than the peak's current one: a radius edit changes
+        // which polygons fall inside it, so reusing the old membership would leave the peak's own
+        // polygon tagging describing a circle it no longer has. Only bookkeeping (highlighting) rides
+        // on it -- the field itself never reads it -- but the highlight would visibly disagree with
+        // the dome.
+        polygonIndices: [
+          ...captureTriangleIndicesInCircle(maskData.polygons, {
+            cx: edit.cx,
+            cy: edit.cy,
+            radius: edit.radius,
+          }),
+        ],
+      };
+      void persistPeakQueue();
+    },
+    [
+      selectedMaskKey,
+      mergePeakPatch,
+      coreState.canvasMasks,
+      dispatch,
+      notifyMaskPendingTopologySet,
+      uiDispatch,
+      persistPeakQueue,
+    ],
+  );
+
+  // Trackpad-drag live preview, mirroring previewTextureMixChange's own split (onCursorMove fires
+  // continuously while dragging; onNewCursor only once on release). With an active peak this drives
+  // the mesh's live relief preview directly, skipping savePeakField's own dispatch/persist for the
+  // same reason previewTextureMixChange skips saveTextureField's -- no benefit to
+  // committing/persisting on every mid-drag pixel when release will commit the settled value anyway.
+  // With no active peak there's nothing on the mesh to preview, so this just keeps the staged value
+  // (and so the slider's own displayed position) current as it drags.
+  //
+  // This is genuinely cheap now, which is why it's wired up at all: a peak is a shader uniform, so
+  // one of these is a handful of floats and a redraw, with no geometry rebuild and no round trip. The
+  // one thing that doesn't track live is the subdivision density, which settles on release -- see
+  // syncPeaks in project-mask-item.tsx.
+  const previewPeakChange = useCallback(
+    (patch: PeakPatch) => {
+      const edit = mergePeakPatch(patch);
+      if (edit) {
+        notifyMaskPendingTopologySet(edit.maskKey, edit);
+      } else {
+        uiDispatch({
+          type: UIActionType.SetStagedPeak,
+          value: { elevation: patch.elevation, falloff: patch.falloff },
+        });
+      }
+    },
+    [mergePeakPatch, notifyMaskPendingTopologySet, uiDispatch],
+  );
+
+  const elevationTrackRef = useRef<HTMLDivElement | null>(null);
+  const [elevationCursor, setElevationCursor] = useState({ x: 0, y: 0 });
+  // Elevation is signed now -- a negative peak is a dent, the same dome inverted -- but
+  // useTrackpadState only ever produces 0..maxValue (its getTrackValue floors at a non-negative
+  // minValue). So the signed range rides on a track twice as long, offset by half: the midpoint is
+  // elevation 0, the left half craters and the right half domes. Paired with
+  // ParameterSliderXPlusMinus, as Scalebar does, so the -/+ ends of the track read correctly.
+  //
+  // The ceiling itself is a flat constant rather than anything derived from the mask, because a
+  // peak's relief is defined relative to its own radius (see mask-gl.ts's peakProfile) and so doesn't
+  // scale with how big the mesh happens to be.
+  const elevationSpan = MAX_MASK_PEAK_ELEVATION * 2;
+  const { getTrackValue: getElevationValue, getTrackCursor: getElevationCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    elevationSpan,
+  );
+  // The two halves of that offset, kept together so the track->value and value->track directions
+  // can't drift apart.
+  const elevationFromTrack = useCallback(
+    (cursorX: number, trackWidth: number) => getElevationValue(cursorX, trackWidth, 0) - MAX_MASK_PEAK_ELEVATION,
+    [getElevationValue],
+  );
+  const elevationToTrack = useCallback(
+    (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_PEAK_ELEVATION, trackWidth),
+    [getElevationCursor],
+  );
+
+  useEffect(() => {
+    if (!elevationTrackRef.current) return;
+    setElevationCursor({ x: elevationToTrack(elevationValue, elevationTrackRef.current.clientWidth), y: 0 });
+  }, [elevationValue, elevationToTrack]);
+
+  const radiusTrackRef = useRef<HTMLDivElement | null>(null);
+  const [radiusCursor, setRadiusCursor] = useState({ x: 0, y: 0 });
+  // Unlike elevation, a radius genuinely *is* a length in the mesh's own coordinate space, so its
+  // ceiling scales with the mask: the smaller of the two dimensions, so the largest authorable peak
+  // is one that spans the mesh's narrow axis. Floored at MIN_MASK_PEAK_RADIUS_PX, which is why the
+  // track spans the difference and the value adds the floor back -- dragging to the very end of the
+  // track can't produce the degenerate zero radius the height field divides by.
+  const radiusMax = selectedMaskData
+    ? Math.max(MIN_MASK_PEAK_RADIUS_PX + 1, Math.min(selectedMaskData.width, selectedMaskData.height))
+    : MIN_MASK_PEAK_RADIUS_PX + 1;
+  const { getTrackValue: getRadiusValue, getTrackCursor: getRadiusCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    radiusMax - MIN_MASK_PEAK_RADIUS_PX,
+  );
+
+  useEffect(() => {
+    if (!radiusTrackRef.current || radiusValue === undefined) return;
+    const newCursor = getRadiusCursor(radiusValue - MIN_MASK_PEAK_RADIUS_PX, radiusTrackRef.current.clientWidth);
+    setRadiusCursor({ x: newCursor, y: 0 });
+  }, [radiusValue, getRadiusCursor]);
+
+  const falloffTrackRef = useRef<HTMLDivElement | null>(null);
+  const [falloffCursor, setFalloffCursor] = useState({ x: 0, y: 0 });
+  // Same floor-plus-span arrangement as radius, for the profile exponent's own
+  // MIN..MAX_MASK_PEAK_FALLOFF range -- at the low end a peak meets flat mesh with a visible crease
+  // ring, at the high end it's a needle. See MIN_MASK_PEAK_FALLOFF for why the floor isn't 0.
+  const falloffSpan = MAX_MASK_PEAK_FALLOFF - MIN_MASK_PEAK_FALLOFF;
+  const { getTrackValue: getFalloffValue, getTrackCursor: getFalloffCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    falloffSpan,
+  );
+
+  useEffect(() => {
+    if (!falloffTrackRef.current) return;
+    const newCursor = getFalloffCursor(falloffValue - MIN_MASK_PEAK_FALLOFF, falloffTrackRef.current.clientWidth);
+    setFalloffCursor({ x: newCursor, y: 0 });
+  }, [falloffValue, getFalloffCursor]);
+
   // Starting fresh whenever the selected image changes, rather than leaving a stale mesh/status
   // or position/size override from whatever was last masked (mask.reset() clears both). Skipped
   // while a mask is actively connecting/streaming -- the img context menu's "mask" cell selects
@@ -392,11 +664,14 @@ export default function Maskbar() {
 
   // The toggle is disabled with no mask selected, but its underlying tool state can still be
   // left on from before the deselect -- turn it off so the toggle doesn't render as on while
-  // disabled, and canvas.tsx stops treating drags as mesh-section captures.
+  // disabled, and canvas.tsx stops treating drags as mesh-section captures or topology edits.
   useEffect(() => {
     if (selectedMaskKey !== undefined) return;
-    if (uiState.tool.type !== "mask" || !uiState.tool.capturingMeshSection) return;
-    uiDispatch({ type: UIActionType.SetTool, value: { type: "mask", capturingMeshSection: false } });
+    if (uiState.tool.type !== "mask" || (!uiState.tool.capturingMeshSection && !uiState.tool.editingTopology)) return;
+    uiDispatch({
+      type: UIActionType.SetTool,
+      value: { type: "mask", capturingMeshSection: false, editingTopology: false },
+    });
     notifyMaskToolChanged("mask");
   }, [selectedMaskKey, uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
@@ -405,10 +680,10 @@ export default function Maskbar() {
       <div
         style={{
           width: "100%",
+          height: "100%",
           display: "flex",
           alignItems: "center",
-          height: "100%",
-          overflowX: "auto",
+          overflow: "auto",
           ...dynamicSizes.flex,
         }}
       >
@@ -609,8 +884,8 @@ export default function Maskbar() {
         <div
           title={
             isTextureDisabled
-              ? "select or generate a mesh to blend between the source image and its low-poly mesh"
-              : "0% shows the source image at full resolution, 100% shows the fully faceted low-poly mesh with its triangle strokes drawn in"
+              ? "select or generate a mesh to adjust its wireframe overlay"
+              : "0% hides the mesh's triangle wireframe, 100% draws it fully in over the source image"
           }
           style={{
             display: "flex",
@@ -668,7 +943,7 @@ export default function Maskbar() {
               if (uiState.tool.type !== "mask") return;
               uiDispatch({
                 type: UIActionType.SetTool,
-                value: { type: "mask", capturingMeshSection: !uiState.tool.capturingMeshSection },
+                value: { ...uiState.tool, capturingMeshSection: !uiState.tool.capturingMeshSection },
               });
               notifyMaskToolChanged("mask");
             }}
@@ -678,6 +953,155 @@ export default function Maskbar() {
             disabled={isCaptureDisabled}
           />
         </div>
+        <div
+          title={
+            isTopologyDisabled
+              ? "select a mesh to adjust its topology"
+              : "drag a circle over this mesh to raise that area's elevation, warping the surrounding triangles like a topographic map"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span
+            style={{
+              textShadow: isTopologyOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+            }}
+          >
+            {"peak"}
+          </span>
+          <Toggle
+            value={isTopologyOn}
+            onClick={() => {
+              if (uiState.tool.type !== "mask") return;
+              uiDispatch({
+                type: UIActionType.SetTool,
+                value: { ...uiState.tool, editingTopology: !uiState.tool.editingTopology },
+              });
+              notifyMaskToolChanged("mask");
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+            disabled={isTopologyDisabled}
+          />
+        </div>
+        <div
+          title={
+            isPeakParamDisabled
+              ? "enable topology to set the elevation new peaks are drawn at, or adjust the active one"
+              : activePeak
+                ? "the active peak's own elevation -- negative dents the surface inward. drag a circle elsewhere on the mesh to place another"
+                : "the elevation the next circle you drag out will be created at -- negative dents the surface inward"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"elevation"}</span>
+          <ParameterSliderXPlusMinus
+            resolution={{ ...uiState.resolution }}
+            hash={`${selectedMaskKey ?? "maskbar"}|elevation|${activePeak?.id ?? "staged"}`}
+            size={dynamicSizes.paramSize}
+            containerRef={elevationTrackRef}
+            cursor={elevationCursor}
+            onCursorMove={(newCursor) => {
+              if (!elevationTrackRef.current) return;
+              previewPeakChange({
+                elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth),
+              });
+            }}
+            onNewCursor={(newCursor) => {
+              setElevationCursor({ ...newCursor, y: 0 });
+              if (!elevationTrackRef.current) return;
+              savePeakField({ elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth) });
+            }}
+            disabled={isPeakParamDisabled}
+          />
+        </div>
+        <div
+          title={
+            isRadiusDisabled
+              ? "select a peak to resize it -- a new peak's radius comes from the circle you drag out"
+              : "how far the active peak's own influence reaches"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ opacity: isRadiusDisabled ? 0.3 : 1 }}>{"radius"}</span>
+          <ParameterSliderX
+            resolution={{ ...uiState.resolution }}
+            hash={`${selectedMaskKey ?? "maskbar"}|radius|${activePeak?.id ?? "staged"}`}
+            size={dynamicSizes.paramSize}
+            containerRef={radiusTrackRef}
+            cursor={radiusCursor}
+            onCursorMove={(newCursor) => {
+              if (!radiusTrackRef.current) return;
+              const newValue =
+                MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
+              previewPeakChange({ radius: newValue });
+            }}
+            onNewCursor={(newCursor) => {
+              setRadiusCursor({ ...newCursor, y: 0 });
+              if (!radiusTrackRef.current) return;
+              const newValue =
+                MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
+              savePeakField({ radius: newValue });
+            }}
+            disabled={isRadiusDisabled}
+          />
+        </div>
+        <div
+          title={
+            isPeakParamDisabled
+              ? "enable topology to shape the profile new peaks are drawn with, or adjust the active one"
+              : "the active peak's own profile -- low is a broad dome with a visible rim, high is a needle"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"falloff"}</span>
+          <ParameterSliderX
+            resolution={{ ...uiState.resolution }}
+            hash={`${selectedMaskKey ?? "maskbar"}|falloff|${activePeak?.id ?? "staged"}`}
+            size={dynamicSizes.paramSize}
+            containerRef={falloffTrackRef}
+            cursor={falloffCursor}
+            onCursorMove={(newCursor) => {
+              if (!falloffTrackRef.current) return;
+              const newValue =
+                MIN_MASK_PEAK_FALLOFF + getFalloffValue(newCursor.x, falloffTrackRef.current.clientWidth, 0);
+              previewPeakChange({ falloff: newValue });
+            }}
+            onNewCursor={(newCursor) => {
+              setFalloffCursor({ ...newCursor, y: 0 });
+              if (!falloffTrackRef.current) return;
+              const newValue =
+                MIN_MASK_PEAK_FALLOFF + getFalloffValue(newCursor.x, falloffTrackRef.current.clientWidth, 0);
+              savePeakField({ falloff: newValue });
+            }}
+            disabled={isPeakParamDisabled}
+          />
+        </div>
+        <div />
       </div>
     </>
   );

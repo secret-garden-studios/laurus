@@ -3,6 +3,8 @@ import { WorkspaceResolution } from "../workspace.config";
 import { LaurusImgResult, LaurusEffect, LaurusSvgResult } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
+import { PEAK_ELEVATION_DEFAULT } from "../mask-gl";
+import { PEAK_FALLOFF_DEFAULT } from "../workspace.server";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
@@ -35,7 +37,7 @@ export type LaurusTool =
   | { type: "scale" }
   | { type: "rotate" }
   | { type: "mix" }
-  | { type: "mask"; capturingMeshSection: boolean }
+  | { type: "mask"; capturingMeshSection: boolean; editingTopology: boolean }
   | { type: "light_source" };
 
 export const defaultMarqueeTool: LaurusTool = {
@@ -50,6 +52,7 @@ export const defaultMarqueeTool: LaurusTool = {
 export const defaultMaskTool: LaurusTool = {
   type: "mask",
   capturingMeshSection: false,
+  editingTopology: false,
 };
 
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
@@ -67,7 +70,13 @@ export type LaurusActiveElement =
   // One particular capture on the mask at `key` is singled out (meta-clicked, or just drawn/
   // relocated) -- mirrors CarouselEntry's own "mask" vs "capture" split (see its doc comment)
   // rather than qualifying the "mask" variant above with an optional captureId.
-  | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string };
+  | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
+  // One particular topology peak on the mask at `key` is singled out -- set the instant a fresh
+  // peak commits (workspace.client.tsx's createTopologyPeak) or an existing one is grabbed
+  // (project-mask-item.tsx's topology onPointerUp), mirroring the "capture" variant above exactly.
+  // Maskbar's elevation slider reads/writes whichever peak this points at; with no "peak" active
+  // element it instead edits/reads uiState.stagedPeakElevation, seeding the next peak drawn.
+  | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
 
 export type CarouselEntry =
   | { type: "svg"; key: string }
@@ -111,6 +120,15 @@ export interface UIState {
   // default (see Lightsourcebar's "preview" toggle) so hovering over masks while working doesn't
   // constantly trigger the animation.
   lightSourcePreview: boolean;
+  // The shape Maskbar's own peak sliders are staged at whenever no topology peak is currently active
+  // -- read the instant a fresh circle-drag commits a new peak (workspace.client.tsx's
+  // createTopologyPeak), so drawing several peaks in a row without touching a slider keeps reusing
+  // whatever shape was last dialed in, rather than always restarting at the defaults.
+  //
+  // Radius is deliberately absent: unlike elevation and falloff, it isn't dialed in ahead of time --
+  // the circle-drag that creates the peak is what defines it. Anything staged for it would be
+  // immediately overwritten by the gesture.
+  stagedPeak: { elevation: number; falloff: number };
 }
 
 export const defaultUIState: UIState = {
@@ -141,6 +159,7 @@ export const defaultUIState: UIState = {
   showTimeline: true,
   mediaBrowserFilter: "img",
   lightSourcePreview: false,
+  stagedPeak: { elevation: PEAK_ELEVATION_DEFAULT, falloff: PEAK_FALLOFF_DEFAULT },
 };
 
 export enum UIActionType {
@@ -175,6 +194,7 @@ export enum UIActionType {
   SetShowTimeline,
   SetMediaBrowserFilter,
   SetLightSourcePreview,
+  SetStagedPeak,
 }
 
 export type UIAction =
@@ -224,7 +244,10 @@ export type UIAction =
   | { type: UIActionType.SetShowMediaBrowser; value: boolean }
   | { type: UIActionType.SetShowTimeline; value: boolean }
   | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter }
-  | { type: UIActionType.SetLightSourcePreview; value: boolean };
+  | { type: UIActionType.SetLightSourcePreview; value: boolean }
+  // Partial so a caller can stage one parameter without restating the others -- Maskbar's sliders are
+  // independent controls, and each only knows its own value.
+  | { type: UIActionType.SetStagedPeak; value: Partial<UIState["stagedPeak"]> };
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
@@ -391,6 +414,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetLightSourcePreview: {
       return { ...state, lightSourcePreview: action.value };
+    }
+    case UIActionType.SetStagedPeak: {
+      return { ...state, stagedPeak: { ...state.stagedPeak, ...action.value } };
     }
   }
 }

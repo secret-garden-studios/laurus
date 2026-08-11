@@ -13,16 +13,25 @@ import {
   loadImageTexture,
   MaskLightSource,
   parsePathPoints,
+  PeakGeometryInput,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
+  uploadStaticMaskMesh,
 } from "../mask-gl";
-import { CoreActionType, DEFAULT_LIGHT_SOURCE_VALUE } from "../states/core-state";
+import { CoreActionType, DEFAULT_LIGHT_SOURCE_VALUE, PendingTopologyEdit } from "../states/core-state";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
-import { capturedRegionCircle, captureTriangleIndicesInCircle, captureIdAtPoint } from "./light-source-capture";
+import {
+  capturedRegionCircle,
+  captureTriangleIndicesInCircle,
+  captureIdAtPoint,
+  indicesInCircleFromCentroids,
+  peakIdAtPoint,
+  polygonCentroids,
+} from "./light-source-capture";
 import {
   getFrames,
   getImg,
@@ -33,17 +42,21 @@ import {
   LaurusFrame,
   LaurusImgResult,
   LaurusMaskResult,
+  LaurusPeak,
   LaurusPolygonPath,
 } from "../workspace.server";
 import { maskCaptureInputId } from "../effects-utils";
 
-// Intensity written into a_highlight (see recolorHighlight/mask-gl.ts) for every capture on the
-// active mask that *isn't* the selected one -- lets you see where a mesh's other light sources
-// already sit (so a freshly drawn circle doesn't land blindly on top of one) without them reading
-// as equally "selected" as the one actually being edited. The shader mixes this straight into the
-// stroke's opacity (captureEdge = ... * v_highlight), so it degrades gracefully to a fainter
-// outline rather than needing a distinct color.
-const DIM_CAPTURE_HIGHLIGHT = 0.35;
+// Intensity written into a_highlight (see recolorHighlight/mask-gl.ts) for every capture's or
+// topology peak's own triangles alike, on the active mask that *isn't* the selected one -- lets
+// you see where a mesh's other light sources/topology bumps already sit (so a freshly drawn
+// circle doesn't land blindly on top of one) without them reading as equally "selected" as the
+// one actually being edited. The shader mixes this straight into the stroke's opacity
+// (captureEdge = ... * v_highlight), so it degrades gracefully to a fainter outline rather than
+// needing a distinct color. Shared between the two so they read as consistently "dim" against
+// each other, mirroring HIGHLIGHT_STROKE_COLOR's own single-source-of-truth reasoning
+// (mask-gl.ts) for the color itself.
+const DIM_HIGHLIGHT = 0.35;
 
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
@@ -70,6 +83,21 @@ function buildCapturesMap(polygons: LaurusPolygonPath[]): Map<number, Set<number
     byCapture.set(p.capture_id, indices);
   });
   return byCapture;
+}
+
+// Mirrors buildCapturesMap exactly, one topology peak instead of a capture: groups a mesh's own
+// polygon indices by which peak (if any) they belong to, using PolygonPath_V1_0's own peak_id
+// (0 means "no peak"). This is what recolorHighlight now paints a peak's triangles from, in place
+// of the old continuous-distance ring stroke -- see peaksMapRef's own comment.
+function buildPeaksMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
+  const byPeak = new Map<number, Set<number>>();
+  polygons.forEach((p, i) => {
+    if (p.peak_id === 0) return;
+    const indices = byPeak.get(p.peak_id) ?? new Set<number>();
+    indices.add(i);
+    byPeak.set(p.peak_id, indices);
+  });
+  return byPeak;
 }
 
 // Screen coordinates -> mesh-local buffer-pixel space (top-left origin, unflipped -- matching
@@ -119,13 +147,22 @@ export interface MaskImperativeHandle {
   // Mirrors the old tool-change effect: aborts a capture-relocate drag in progress on this mesh
   // (if any) the moment the tool stops being "move" elsewhere in the app.
   abortCaptureDragForToolChange: (newToolType: string) => void;
+  // Same reasoning as abortCaptureDragForToolChange, for a topology elevate/move drag in progress
+  // -- takes no toolType, unlike its capture sibling, since notifyMaskToolChanged("mask") fires
+  // for *both* the capture and topology toggles (see maskbar.tsx), so the passed string alone
+  // can't tell which sub-flag actually changed; this re-checks the real current tool off
+  // latestRef instead.
+  abortTopologyDragForToolChange: () => void;
   // Whether this mask is the app's current active element -- recolors its captured triangles
   // in/out of the highlight accordingly (folded with any pending capture preview, see
-  // recolorHighlight).
+  // recolorHighlight), and (via activePeakIdRef's own reset here) its peaks' ring strokes too.
   setActiveHighlighted: (active: boolean) => void;
   // Which of this (already-active) mask's captures reads as the bright one, dimming the rest --
-  // see DIM_CAPTURE_HIGHLIGHT/recolorHighlight. undefined highlights every capture equally dim.
+  // see DIM_HIGHLIGHT/recolorHighlight. undefined highlights every capture equally dim.
   setActiveCapture: (captureId: number | undefined) => void;
+  // Mirrors setActiveCapture exactly, for this mesh's own topology peaks -- see DIM_HIGHLIGHT/
+  // render()'s own peaks-building. undefined highlights every peak equally dim.
+  setActivePeak: (peakId: number | undefined) => void;
   setPendingCapture: (indices: Set<number>) => void;
   clearPendingCapture: () => void;
   // The server's response to a just-committed capture change (a relocate drag, a fresh
@@ -134,6 +171,12 @@ export interface MaskImperativeHandle {
   // stale data at the exact point every one of those flows calls this (right after dispatching
   // SetCanvasMask, before React has re-rendered with the new prop). See capturesRef.
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
+  // Mirrors setPendingCapture/clearPendingCapture/syncCapturedIndices above, one topology peak
+  // edit (creation, or an existing peak's elevate/move drag) at a time instead of a capture --
+  // see peaksRef/pendingTopologyRef's own comments.
+  setPendingTopology: (edit: PendingTopologyEdit) => void;
+  clearPendingTopology: () => void;
+  syncPeaks: (updated: LaurusMaskResult) => void;
   // Re-applies this mask's own texture value (ProjectMask_V1_0.texture, persisted server-side via
   // updateProject the same way light_source_* is -- see Maskbar's saveTextureField) and resting
   // light-source dial values. Reads off coreState.project.masks by default, but a caller that just
@@ -212,10 +255,16 @@ export function ProjectMaskItem({
     dispatch,
     notifyMaskActiveElementChanged,
     notifyMaskActiveCaptureChanged,
+    notifyMaskActivePeakChanged,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskCaptureUpdated,
     sendMaskCaptureUpdate,
+    notifyMaskPendingTopologySet,
+    notifyMaskPendingTopologyCleared,
+    notifyMaskPeaksUpdated,
+    sendMaskPeakUpdate,
+    deleteMaskPeak,
   } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -229,6 +278,11 @@ export function ProjectMaskItem({
   const lightSourceDarknessRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.darkness);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
+  // [startVertex, vertexCount] per source.maskData.polygons entry, in that same order -- what
+  // buildStaticMaskMesh's own vertexRanges returns, kept alongside vertexCountRef since a peak can
+  // expand a polygon into more than 3 vertices (see recolorHighlight, which reads this instead of
+  // assuming a fixed 3-per-polygon layout).
+  const vertexRangesRef = useRef<[number, number][]>([]);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
   // Where the cursor-driven epicenter currently is, already converted to gl_FragCoord space.
@@ -306,6 +360,46 @@ export function ProjectMaskItem({
   // this gesture, since onPointerDown claims it via stopPropagation before dnd-kit's sensor ever
   // sees the pointer.
   const [isDraggingCapture, setIsDraggingCapture] = useState(false);
+  // A topology elevate/move drag in progress (topology tool, grabbed directly on an existing
+  // peak's own epicenter -- see the canvas's onPointerDown below). Mirrors captureDragRef exactly:
+  // a ref, not state, since the live preview comes free from pendingTopologyRef/render() once
+  // setPendingTopology is called (locally or via notifyMaskPendingTopologySet).
+  const peakDragRef = useRef<
+    | {
+        pointerId: number;
+        peakId: number;
+        startX: number;
+        startY: number;
+        originalCx: number;
+        originalCy: number;
+        originalRadius: number;
+        originalElevation: number;
+        originalFalloff: number;
+        rafId: number | undefined;
+        latestX: number;
+        latestY: number;
+        // Nothing but scalars: a drag no longer needs a geometry snapshot at all. It used to carry
+        // the mesh's parsed/welded points so each rAF tick could re-warp a pristine copy on the CPU,
+        // because the displacement was baked into the vertex buffers. Now the displacement is a
+        // shader uniform (see mask-gl.ts's PEAK_FIELD_GLSL), so a tick's whole job is to publish the
+        // peak's new epicenter and let the next draw evaluate the field from it.
+      }
+    | undefined
+  >(undefined);
+  // peakIds with an elevate/move commit currently in flight -- mirrors captureCommitInFlightRef's
+  // own reasoning exactly (refuse a second drag on the same peak until the first's ack lands).
+  const peakCommitInFlightRef = useRef<Set<number>>(new Set());
+  // Mirrors isDraggingCapture's own reasoning (dnd-kit's isDragging never turns on for this
+  // gesture either).
+  const [isDraggingTopology, setIsDraggingTopology] = useState(false);
+  // This mesh's own persisted peaks, by id -- mirrors capturesRef exactly: kept in sync directly
+  // off the server's own response (syncPeaks) rather than re-derived from source.maskData.peaks on
+  // every render, for the same staleness reason capturesRef never is (see its own comment).
+  const peaksRef = useRef<LaurusPeak[]>([]);
+  // The one topology peak edit currently in flight (a fresh circle-drawn peak, or an existing
+  // peak's elevate/move drag), if any -- mirrors pendingCaptureRef exactly, and always wins over
+  // peaksRef for that one peak's id when present (see render()'s own peaks list below).
+  const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
   // This mesh's own current highlight inputs -- mirrors what the old highlightedPolygonIndices
   // memo derived reactively, but pushed imperatively instead: pendingCaptureRef is set/cleared
   // both locally (this file's own pointer handlers) and externally (canvas.tsx's circle-draw
@@ -325,7 +419,7 @@ export function ProjectMaskItem({
   const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
   const activeHighlightRef = useRef(false);
   // Every one of this mesh's own captures, by id -- what activeHighlightRef actually paints (one
-  // bright, the rest dim -- see activeCaptureIdRef/DIM_CAPTURE_HIGHLIGHT/recolorHighlight).
+  // bright, the rest dim -- see activeCaptureIdRef/DIM_HIGHLIGHT/recolorHighlight).
   // Deliberately NOT re-derived from source.maskData.polygons on every recolor, for the same
   // staleness reason capturedIndicesRef never was (see the comment above): kept in sync directly
   // off the server's own response by syncCapturedIndices instead.
@@ -335,6 +429,22 @@ export function ProjectMaskItem({
   // setActiveCapture below for the same reason activeHighlightRef mirrors uiState.activeElement
   // itself.
   const activeCaptureIdRef = useRef<number | undefined>(undefined);
+  // Every one of this mesh's own topology peaks, by id -- mirrors capturesRef exactly (built with
+  // buildPeaksMap instead of buildCapturesMap, off PolygonPath_V1_0's own peak_id), and what
+  // activeHighlightRef actually paints for peaks the same way capturesRef does for captures. Kept
+  // in sync directly off the server's own response by syncPeaks, for the same staleness reason as
+  // capturesRef.
+  const peaksMapRef = useRef<Map<number, Set<number>>>(new Map());
+  // Every polygon's own centroid, in polygons order -- the parse-once cache behind recolorHighlight's
+  // pending-peak circle test (see polygonCentroids, light-source-capture.ts). Refreshed wherever
+  // peaksMapRef/capturesRef are, since all three are derived from the same polygons array and go
+  // stale together; a mask's triangulation itself never changes after it's built, so nothing else
+  // can invalidate it.
+  const polygonCentroidsRef = useRef<[number, number][]>([]);
+  // Which of this mesh's own peaks (peaksMapRef above) reads as the bright one -- mirrors
+  // activeCaptureIdRef exactly, one peakId instead of a captureId, refreshed on mount/via
+  // setActivePeak below.
+  const activePeakIdRef = useRef<number | undefined>(undefined);
 
   // Which of this mesh's own polygon indices a capture-relocate drag would land on if released
   // `dx`/`dy` (buffer pixels) away from where it started -- shared by the rAF-throttled live
@@ -381,6 +491,83 @@ export function ProjectMaskItem({
     dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
     notifyMaskPendingCaptureCleared(mediaKey);
   }, [dispatch, mediaKey, notifyMaskPendingCaptureCleared]);
+
+  // The one place the shader's peak state is assembled: this mesh's persisted peaks, with any edit
+  // that's mid-flight to the server overriding the peak it belongs to. A pending edit for an id that
+  // isn't in peaksRef yet is a peak being created, so it appears rather than being dropped.
+  //
+  // This is the whole preview mechanism. Because the height field is evaluated from uniforms rather
+  // than baked into vertex buffers (see mask-gl.ts's PEAK_FIELD_GLSL), "showing an uncommitted edit"
+  // and "showing the committed state" are the same code path with different numbers in it -- which is
+  // what makes a live drag or slider preview exact rather than an approximation of what the commit
+  // will look like. It also means the preview costs one uniform upload per frame and no buffer
+  // traffic at all.
+  const resolvePeakUniforms = useCallback((): PeakGeometryInput[] => {
+    const pending = pendingTopologyRef.current;
+    const peaks = peaksRef.current.map((peak): PeakGeometryInput =>
+      pending && pending.peakId === peak.id
+        ? {
+            cx: pending.cx,
+            cy: pending.cy,
+            radius: pending.radius,
+            elevation: pending.elevation,
+            falloff: pending.falloff,
+          }
+        : { cx: peak.cx, cy: peak.cy, radius: peak.radius, elevation: peak.elevation, falloff: peak.falloff },
+    );
+    if (pending && !peaksRef.current.some((peak) => peak.id === pending.peakId)) {
+      peaks.push({
+        cx: pending.cx,
+        cy: pending.cy,
+        radius: pending.radius,
+        elevation: pending.elevation,
+        falloff: pending.falloff,
+      });
+    }
+    return peaks;
+  }, []);
+
+  // Mirrors recomputeCaptureDrag exactly (same rAF throttling, same reasoning) -- dx/dy translate
+  // the epicenter. elevation/falloff are left at their originals: a peak's own profile is defined
+  // relative to its own radius (see mask-gl.ts's peakProfile), so none of its shape depends on where
+  // the epicenter sits and a move needs no rescaling of anything else.
+  //
+  // Publishing the pending edit is now the entire tick. The existing
+  // notifyMaskPendingTopologySet -> setPendingTopology -> recolorHighlight -> render chain already
+  // redraws, and render() reads the peak's live position straight out of resolvePeakUniforms, so
+  // there's no geometry to rebuild and no separate preview path to keep in step.
+  const recomputeTopologyDrag = useCallback(() => {
+    const drag = peakDragRef.current;
+    if (!drag) return;
+    drag.rafId = undefined;
+    const dx = drag.latestX - drag.startX;
+    const dy = drag.latestY - drag.startY;
+    const edit: PendingTopologyEdit = {
+      maskKey: mediaKey,
+      peakId: drag.peakId,
+      cx: drag.originalCx + dx,
+      cy: drag.originalCy + dy,
+      radius: drag.originalRadius,
+      elevation: drag.originalElevation,
+      falloff: drag.originalFalloff,
+    };
+    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+    notifyMaskPendingTopologySet(mediaKey, edit);
+  }, [mediaKey, dispatch, notifyMaskPendingTopologySet]);
+
+  // Mirrors abortCaptureDrag exactly. Clearing the pending edit is all an abort has to do now: the
+  // mesh's own buffers were never touched by the drag, so dropping the override sends the next draw
+  // straight back to the peak's resting position with nothing to undo.
+  const abortTopologyDrag = useCallback(() => {
+    const drag = peakDragRef.current;
+    if (!drag) return;
+    if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
+    canvasRef.current?.releasePointerCapture(drag.pointerId);
+    peakDragRef.current = undefined;
+    setIsDraggingTopology(false);
+    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+    notifyMaskPendingTopologyCleared(mediaKey);
+  }, [dispatch, mediaKey, notifyMaskPendingTopologyCleared]);
 
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
@@ -463,15 +650,16 @@ export function ProjectMaskItem({
     transform: CSS.Translate.toString(dndTransform),
     touchAction: "none",
   };
-  // isDragging (dnd-kit's own) never turns on for a capture-relocate drag -- onPointerDown claims
-  // that gesture via stopPropagation before dnd-kit's sensor sees the pointer -- so
-  // isDraggingCapture covers it separately. Routed through the same tool-cursor logic img/svg use
-  // (see useToolCursor) rather than a bespoke ternary -- a live preview has no persisted mediaKey
-  // to select, so it passes `undefined` rather than "mask" to keep it out of any tool's targets.
+  // isDragging (dnd-kit's own) never turns on for a capture-relocate or topology drag --
+  // onPointerDown claims that gesture via stopPropagation before dnd-kit's sensor sees the pointer
+  // -- so isDraggingCapture/isDraggingTopology cover them separately. Routed through the same
+  // tool-cursor logic img/svg use (see useToolCursor) rather than a bespoke ternary -- a live
+  // preview has no persisted mediaKey to select, so it passes `undefined` rather than "mask" to
+  // keep it out of any tool's targets.
   const cursor = useToolCursor({
     target: source.kind === "static" ? "mask" : undefined,
     dragDisabled,
-    isDragging: isDragging || isDraggingCapture,
+    isDragging: isDragging || isDraggingCapture || isDraggingTopology,
   });
 
   const render = useCallback(() => {
@@ -489,25 +677,33 @@ export function ProjectMaskItem({
             darkness: lightSourceDarknessRef.current,
           },
         ];
+    // Peaks are uniforms, read fresh every frame (see resolvePeakUniforms) -- so an edit to one is a
+    // handful of floats and a redraw, never a buffer rewrite. What the mesh's own vertex buffers
+    // still carry is the *topology* subdivision refreshed at commit time by syncPeaks below, which is
+    // only there to give the shader's displacement enough vertices to bend. A peak's highlighting is
+    // the one peak-related thing that is genuinely per-vertex: see recolorHighlight/peaksMapRef.
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       lightSources,
+      peaks: resolvePeakUniforms(),
       texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
     });
-  }, []);
+  }, [resolvePeakUniforms]);
 
   // Marks the mesh's covered triangles to reflect pendingCaptureRef/activeHighlightRef (see
   // their own comment) by re-uploading the shader's a_highlight buffer -- a 1.0/0.0 flag per
   // vertex that the fragment shader (mask-gl.ts) uses to draw a sky-blue stroke along those
   // triangles' edges, leaving colorBuffer -- and so the mesh's own fill -- untouched. Vertex
-  // layout mirrors buildStaticMaskMesh exactly: an optional 6-vertex backing quad (only when the
-  // mask has curves), then 3 vertices per polygon in maskData.polygons order. Stable (empty deps,
-  // reads everything through refs, including source via latestRef below) -- called both from this
-  // file's own local handlers and from the mount-created MaskImperativeHandle's methods, which
-  // may run long after the render that created them.
+  // layout mirrors buildStaticMaskMesh's own vertexRanges (vertexRangesRef) -- unlike a plain
+  // fixed "3 vertices per polygon" offset, a polygon near an active peak's own epicenter can have
+  // expanded into many more than 3 (see subdivideMeshForPeaks, mask-gl.ts), so this has to look
+  // up each polygon's own actual range rather than compute one. Stable (empty deps, reads
+  // everything through refs, including source via latestRef below) -- called both from this file's
+  // own local handlers and from the mount-created MaskImperativeHandle's methods, which may run
+  // long after the render that created them.
   const recolorHighlight = useCallback(() => {
     const state = glStateRef.current;
     if (!state) return;
@@ -518,11 +714,13 @@ export function ProjectMaskItem({
     const { gl } = state;
 
     const highlights = new Float32Array(vertexCount);
-    const quadVertexCount = latestSource.maskData.curves.length > 0 ? 6 : 0;
+    const vertexRanges = vertexRangesRef.current;
     const paint = (indices: Set<number>, intensity: number) => {
       indices.forEach((polygonIndex) => {
-        const startVertex = quadVertexCount + polygonIndex * 3;
-        for (let v = 0; v < 3; v++) {
+        const range = vertexRanges[polygonIndex];
+        if (!range) return;
+        const [startVertex, count] = range;
+        for (let v = 0; v < count; v++) {
           const vertex = startVertex + v;
           if (vertex >= vertexCount) continue;
           highlights[vertex] = intensity;
@@ -530,13 +728,36 @@ export function ProjectMaskItem({
       });
     };
 
-    const pending = pendingCaptureRef.current;
-    if (pending && pending.size > 0) {
-      paint(pending, 1);
+    const pendingCapture = pendingCaptureRef.current;
+    if (pendingCapture && pendingCapture.size > 0) {
+      paint(pendingCapture, 1);
     } else if (activeHighlightRef.current) {
       const activeCaptureId = activeCaptureIdRef.current;
       capturesRef.current.forEach((indices, captureId) => {
-        paint(indices, captureId === activeCaptureId ? 1 : DIM_CAPTURE_HIGHLIGHT);
+        paint(indices, captureId === activeCaptureId ? 1 : DIM_HIGHLIGHT);
+      });
+    }
+
+    // Mirrors the capture precedence immediately above, one topology peak instead of a capture:
+    // peaksMapRef (built with buildPeaksMap off PolygonPath_V1_0's own peak_id) is what an active
+    // mesh paints, one peak bright and the rest dim. A drag/create preview (pendingTopologyRef) has
+    // no polygon_indices of its own the way pendingCaptureRef does -- only a circle -- so its
+    // triangles are re-derived on the fly by the same centroid-in-circle test the eventual commit's
+    // own polygon_indices use (see createTopologyPeak/onPointerUp below); every other peak goes fully
+    // dark for that one frame, the same way capturesRef's other captures do while pendingCaptureRef
+    // is set.
+    //
+    // Against the cached centroids rather than captureTriangleIndicesInCircle, which would re-parse
+    // every triangle's `d` with a regex. That mattered little when a pending edit only existed for the
+    // duration of a round trip, but a peak's parameters are live-previewable now, so this path runs on
+    // every animation frame of a slider or epicenter drag -- see polygonCentroidsRef.
+    const pendingTopology = pendingTopologyRef.current;
+    if (pendingTopology) {
+      paint(indicesInCircleFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
+    } else if (activeHighlightRef.current) {
+      const activePeakId = activePeakIdRef.current;
+      peaksMapRef.current.forEach((indices, peakId) => {
+        paint(indices, peakId === activePeakId ? 1 : DIM_HIGHLIGHT);
       });
     }
 
@@ -911,6 +1132,7 @@ export function ProjectMaskItem({
   const latestRef = useRef({
     source,
     coreState,
+    uiState,
     applyDefaultLightSourceValue,
     playLightSourceAnimation,
     preparePlayback,
@@ -919,6 +1141,7 @@ export function ProjectMaskItem({
   latestRef.current = {
     source,
     coreState,
+    uiState,
     applyDefaultLightSourceValue,
     playLightSourceAnimation,
     preparePlayback,
@@ -953,19 +1176,10 @@ export function ProjectMaskItem({
         const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
         const mesh = colorCtx
           ? buildStaticMaskMesh(maskData, colorCtx)
-          : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0 };
+          : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0, vertexRanges: [] };
         vertexCountRef.current = mesh.vertexCount;
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.positions), gl.STATIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.colorBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.colors), gl.STATIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.barycentricBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.barycentrics), gl.STATIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.uvBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.centroidBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.centroids), gl.STATIC_DRAW);
+        vertexRangesRef.current = mesh.vertexRanges;
+        uploadStaticMaskMesh(state, mesh);
         // Zeroed here; recolorHighlight (called below, once the capture/active state is seeded)
         // uploads the real pattern.
         gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
@@ -1040,13 +1254,24 @@ export function ProjectMaskItem({
             ? new Set(coreState.pendingLightSourceCapture.polygonIndices)
             : undefined;
         activeHighlightRef.current =
-          (uiState.activeElement?.type === "mask" || uiState.activeElement?.type === "capture") &&
+          (uiState.activeElement?.type === "mask" ||
+            uiState.activeElement?.type === "capture" ||
+            uiState.activeElement?.type === "peak") &&
           uiState.activeElement.key === mediaKey;
         activeCaptureIdRef.current =
           activeHighlightRef.current && uiState.activeElement?.type === "capture"
             ? uiState.activeElement.captureId
             : undefined;
+        activePeakIdRef.current =
+          activeHighlightRef.current && uiState.activeElement?.type === "peak"
+            ? uiState.activeElement.peakId
+            : undefined;
         capturesRef.current = buildCapturesMap(maskData.polygons);
+        peaksRef.current = maskData.peaks;
+        peaksMapRef.current = buildPeaksMap(maskData.polygons);
+        polygonCentroidsRef.current = polygonCentroids(maskData.polygons);
+        pendingTopologyRef.current =
+          coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
@@ -1075,13 +1300,26 @@ export function ProjectMaskItem({
             if (newToolType === "move") return;
             if (captureDragRef.current) abortCaptureDrag();
           },
+          abortTopologyDragForToolChange: () => {
+            if (!peakDragRef.current) return;
+            const tool = latestRef.current.uiState.tool;
+            if (tool.type === "mask" && tool.editingTopology) return;
+            abortTopologyDrag();
+          },
           setActiveHighlighted: (active) => {
             activeHighlightRef.current = active;
-            if (!active) activeCaptureIdRef.current = undefined;
+            if (!active) {
+              activeCaptureIdRef.current = undefined;
+              activePeakIdRef.current = undefined;
+            }
             recolorHighlight();
           },
           setActiveCapture: (captureId) => {
             activeCaptureIdRef.current = captureId;
+            recolorHighlight();
+          },
+          setActivePeak: (peakId) => {
+            activePeakIdRef.current = peakId;
             recolorHighlight();
           },
           setPendingCapture: (indices) => {
@@ -1097,6 +1335,48 @@ export function ProjectMaskItem({
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
             capturesRef.current = buildCapturesMap(updated.polygons);
+            polygonCentroidsRef.current = polygonCentroids(updated.polygons);
+            recolorHighlight();
+          },
+          setPendingTopology: (edit) => {
+            pendingTopologyRef.current = edit;
+            recolorHighlight();
+          },
+          clearPendingTopology: () => {
+            pendingTopologyRef.current = undefined;
+            recolorHighlight();
+          },
+          syncPeaks: (updated) => {
+            const latestSource = latestRef.current.source;
+            if (latestSource.kind !== "static") return;
+            if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
+            peaksRef.current = updated.peaks;
+            peaksMapRef.current = buildPeaksMap(updated.polygons);
+            polygonCentroidsRef.current = polygonCentroids(updated.polygons);
+            // Rebuilds the mesh's geometry buffers from scratch after every committed peak edit --
+            // the same build this file's own mount-time setup above already runs once.
+            //
+            // This is a *topology refresh*, not what makes the edit visible. The peak itself became
+            // visible the moment its numbers reached the shader's uniforms (see resolvePeakUniforms
+            // and render above); what this recovers is the subdivision -- the extra vertices near the
+            // peak that give the shader's displacement enough geometry to bend smoothly rather than
+            // in three straight chords (see subdivideMeshForPeaks, mask-gl.ts).
+            //
+            // Which is also why it only runs on commit and never per drag-tick: since the subdivision
+            // budget depends on elevation/radius/falloff, re-tessellating live would mean a full
+            // rebuild every frame of a slider drag. The visible consequence of deferring it is that
+            // wireframe density and the smoothness of the dome's own linearization settle at the
+            // moment of release; the relief itself doesn't move, because per-fragment shading doesn't
+            // care how many triangles it's spread across. If that settling ever reads as a pop, the
+            // fix is to budget subdivision against a fixed planning elevation rather than the live
+            // one, so topology stops depending on the parameter being dragged at all.
+            const glState = glStateRef.current;
+            if (glState && colorCtx) {
+              const mesh = buildStaticMaskMesh(updated, colorCtx);
+              vertexCountRef.current = mesh.vertexCount;
+              vertexRangesRef.current = mesh.vertexRanges;
+              uploadStaticMaskMesh(glState, mesh);
+            }
             recolorHighlight();
           },
           applyMaskAppearanceDefaults,
@@ -1255,7 +1535,16 @@ export function ProjectMaskItem({
       // showed up as a visible color flicker right after dropping a relocated capture.
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [meshIdentityKey, render, recolorHighlight, abortCaptureDrag, maskHandlesRef, maskElementsRef, mediaKey],
+    [
+      meshIdentityKey,
+      render,
+      recolorHighlight,
+      abortCaptureDrag,
+      abortTopologyDrag,
+      maskHandlesRef,
+      maskElementsRef,
+      mediaKey,
+    ],
   );
 
   // Only meaningful for placed (static) masks -- a live preview has no persisted mediaKey to
@@ -1355,13 +1644,18 @@ export function ProjectMaskItem({
                   return next;
                 });
               }
-              // Meta-clicking directly on one of the mesh's captures opens that capture's own
-              // flavor of the context menu instead of the mesh's general one, and selects it (the
-              // bright highlight, Lightsourcebar's target) -- hit-tested in the same buffer-pixel
-              // space onMouseMove already converts screen coordinates into below (unflipped:
-              // polygon.d points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's).
-              // Both flavors share the same shown/hidden toggle further down.
+              // Meta-clicking directly on one of the mesh's captures or topology peaks opens that
+              // element's own flavor of the context menu instead of the mesh's general one, and
+              // selects it (the bright highlight -- Lightsourcebar's target for a capture, or
+              // Maskbar's elevation slider target for a peak, see notifyMaskActivePeakChanged/
+              // MaskImperativeHandle.setActivePeak) -- hit-tested in the same buffer-pixel space
+              // onMouseMove already converts screen coordinates into below (unflipped: polygon.d
+              // points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's). All three
+              // flavors share the same shown/hidden toggle further down. A peak hit wins over a
+              // capture hit at the same point -- a peak is a much smaller, more deliberate target
+              // (point + radius) than a capture's polygon region.
               let hitCaptureId: number | undefined;
+              let hitPeakId: number | undefined;
               if (e.metaKey) {
                 const canvas = e.currentTarget;
                 const rect = canvas.getBoundingClientRect();
@@ -1370,36 +1664,64 @@ export function ProjectMaskItem({
                   const scaleY = canvas.height / rect.height;
                   const bufferX = (e.clientX - rect.left) * scaleX;
                   const bufferY = (e.clientY - rect.top) * scaleY;
-                  hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
+                  hitPeakId = peakIdAtPoint(peaksRef.current, [bufferX, bufferY]);
+                  if (hitPeakId === undefined) {
+                    hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
+                  }
                 }
               }
               const previouslyActiveCaptureId =
                 uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
                   ? uiState.activeElement.captureId
                   : undefined;
-              if (hitCaptureId !== undefined) {
+              const previouslyActivePeakId =
+                uiState.activeElement?.type === "peak" && uiState.activeElement.key === mediaKey
+                  ? uiState.activeElement.peakId
+                  : undefined;
+              if (hitPeakId !== undefined) {
+                uiDispatch({
+                  type: UIActionType.SetActiveElement,
+                  value: { key: mediaKey, type: "peak", peakId: hitPeakId },
+                });
+                notifyMaskActiveElementChanged(mediaKey);
+                notifyMaskActivePeakChanged(mediaKey, hitPeakId);
+                // Clear any capture highlight still showing from before this click -- the peak
+                // just selected is now this mesh's sole active sub-element.
+                notifyMaskActiveCaptureChanged(mediaKey, undefined);
+              } else if (hitCaptureId !== undefined) {
                 uiDispatch({
                   type: UIActionType.SetActiveElement,
                   value: { key: mediaKey, type: "capture", captureId: hitCaptureId },
                 });
                 notifyMaskActiveElementChanged(mediaKey);
                 notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
-              } else if (showContextMenu && previouslyActiveCaptureId !== undefined) {
-                // Meta-clicking off the capture while its own menu is still showing switches the
-                // display back to the mesh's general flavor -- the <ContextMenu> render below has
-                // no separate local flavor to flip (it derives "mask" vs "capture" straight from
-                // uiState.activeElement, mirroring the highlight above), so clearing the active
-                // capture here is what makes that switch happen.
+                // Mirrors the peak branch's own symmetric clear above.
+                notifyMaskActivePeakChanged(mediaKey, undefined);
+              } else if (
+                showContextMenu &&
+                (previouslyActiveCaptureId !== undefined || previouslyActivePeakId !== undefined)
+              ) {
+                // Meta-clicking off the capture/peak while its own menu is still showing switches
+                // the display back to the mesh's general flavor -- the <ContextMenu> render below
+                // has no separate local flavor to flip (it derives "mask" vs "capture" vs "peak"
+                // straight from uiState.activeElement, mirroring the highlight above), so clearing
+                // the active element here is what makes that switch happen.
                 uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
                 notifyMaskActiveElementChanged(mediaKey);
                 notifyMaskActiveCaptureChanged(mediaKey, undefined);
+                notifyMaskActivePeakChanged(mediaKey, undefined);
               }
               // Meta-clicking a different part of the mesh while a menu is already showing
               // switches which flavor is displayed in place, rather than closing it -- the
-              // shown/hidden toggle below (shared with the mask's general menu) only fires when
-              // the displayed capture isn't changing, so a second meta-click on the *same* kind of
-              // target still closes it as expected.
-              if (showContextMenu && previouslyActiveCaptureId !== hitCaptureId) return;
+              // shown/hidden toggle below (shared across all three flavors) only fires when the
+              // displayed capture/peak isn't changing, so a second meta-click on the *same* kind
+              // of target still closes it as expected.
+              if (
+                showContextMenu &&
+                (previouslyActiveCaptureId !== hitCaptureId || previouslyActivePeakId !== hitPeakId)
+              ) {
+                return;
+              }
               // Mirrors DraggableProjectImg/Svg's own onImgClick metaKey-toggle/tool-switch tail
               // exactly -- the metaKey branch toggles the menu unconditionally; a plain click only
               // toggles it (or moves the active element) for specific tools.
@@ -1444,11 +1766,73 @@ export function ProjectMaskItem({
               }
             }}
             onPointerDown={(e) => {
+              if (source.kind !== "static") return;
+              // Moving/deleting an existing topology peak -- the move tool grabs one exactly the
+              // way it grabs a capture below (so relocating a peak works the same way relocating a
+              // capture does, tool for tool), and the topology tool *also* grabs one directly
+              // (letting you nudge a peak you're already mid-edit on without switching tools).
+              // Alt/meta-click-to-delete is scoped to the topology tool only -- see its own comment
+              // below -- so an ordinary move-tool relocate never risks deleting on a stray modifier.
+              const isTopologyTool = uiState.tool.type === "mask" && uiState.tool.editingTopology;
+              const isMoveTool = uiState.tool.type === "move";
+              if (isTopologyTool || isMoveTool) {
+                const canvas = e.currentTarget;
+                const point = toBufferPoint(canvas, e.clientX, e.clientY);
+                const peakId = point ? peakIdAtPoint(peaksRef.current, point) : undefined;
+                const peak = peakId !== undefined ? peaksRef.current.find((p) => p.id === peakId) : undefined;
+                if (point && peakId !== undefined && peak && !peakCommitInFlightRef.current.has(peakId)) {
+                  const [bufferX, bufferY] = point;
+                  // Alt/meta-click deletes the peak outright instead of starting a drag -- a
+                  // lighter-weight affordance than the context-menu delete cell, consistent with
+                  // meta-click already being this app's modifier for "target this specific
+                  // sub-element" (see captureIdAtPoint's own callers). Gated on the topology tool
+                  // specifically so the move tool's own alt-click-to-select-mask gesture
+                  // (ProjectMaskItem's onClick) never doubles as an accidental peak delete.
+                  //
+                  // Everything the delete actually entails -- the request, reconciling the mask,
+                  // refreshing the mesh, and falling the active element back when the peak being
+                  // removed was the active one -- lives in deleteMaskPeak (workspace.client.tsx),
+                  // shared with the context menu and Maskbar's peak list. This site's only remaining
+                  // job is the in-flight guard, which is local to this canvas's own gestures.
+                  if (isTopologyTool && (e.altKey || e.metaKey)) {
+                    peakCommitInFlightRef.current.add(peakId);
+                    void deleteMaskPeak(mediaKey, peakId).finally(() => {
+                      peakCommitInFlightRef.current.delete(peakId);
+                    });
+                    return;
+                  }
+                  e.stopPropagation();
+                  e.preventDefault();
+                  canvas.setPointerCapture(e.pointerId);
+                  peakDragRef.current = {
+                    pointerId: e.pointerId,
+                    peakId,
+                    startX: bufferX,
+                    startY: bufferY,
+                    originalCx: peak.cx,
+                    originalCy: peak.cy,
+                    originalRadius: peak.radius,
+                    originalElevation: peak.elevation,
+                    originalFalloff: peak.falloff,
+                    rafId: undefined,
+                    latestX: bufferX,
+                    latestY: bufferY,
+                  };
+                  setIsDraggingTopology(true);
+                  return;
+                }
+                // The topology tool claims the whole mesh even off a peak, the same way capturing a
+                // fresh mesh-section does -- falling through to the capture-relocate/whole-mask-drag
+                // logic below would be surprising while actively editing topology. The move tool has
+                // no such exclusive claim (see the "isMoveTool" comment below): missing a peak here
+                // just falls through to try a capture instead.
+                if (isTopologyTool) return;
+              }
               // Only the move tool relocates a capture, and only when the gesture actually starts
               // on one of the mesh's own captures -- everywhere else on the mesh (or a mesh with
               // no capture at all) falls through untouched, letting the wrapper div's own
               // dnd-kit listeners (whole-mask drag) see the event exactly as they do today.
-              if (source.kind !== "static" || uiState.tool.type !== "move") return;
+              if (uiState.tool.type !== "move") return;
               const canvas = e.currentTarget;
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
@@ -1503,14 +1887,92 @@ export function ProjectMaskItem({
               notifyMaskPendingCaptureSet(mediaKey, originalIndices);
             }}
             onPointerMove={(e) => {
-              const drag = captureDragRef.current;
-              if (!drag || e.pointerId !== drag.pointerId) return;
-              const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-              if (!point) return;
-              [drag.latestX, drag.latestY] = point;
-              if (drag.rafId === undefined) drag.rafId = requestAnimationFrame(recomputeCaptureDrag);
+              const captureDrag = captureDragRef.current;
+              if (captureDrag && e.pointerId === captureDrag.pointerId) {
+                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
+                if (!point) return;
+                [captureDrag.latestX, captureDrag.latestY] = point;
+                if (captureDrag.rafId === undefined) captureDrag.rafId = requestAnimationFrame(recomputeCaptureDrag);
+                return;
+              }
+              const peakDrag = peakDragRef.current;
+              if (peakDrag && e.pointerId === peakDrag.pointerId) {
+                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
+                if (!point) return;
+                [peakDrag.latestX, peakDrag.latestY] = point;
+                if (peakDrag.rafId === undefined) peakDrag.rafId = requestAnimationFrame(recomputeTopologyDrag);
+              }
             }}
             onPointerUp={(e) => {
+              const peakDrag = peakDragRef.current;
+              if (peakDrag && e.pointerId === peakDrag.pointerId && source.kind === "static") {
+                if (peakDrag.rafId !== undefined) cancelAnimationFrame(peakDrag.rafId);
+                e.currentTarget.releasePointerCapture(e.pointerId);
+                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
+                const dx = (point?.[0] ?? peakDrag.latestX) - peakDrag.startX;
+                const dy = (point?.[1] ?? peakDrag.latestY) - peakDrag.startY;
+                const peakId = peakDrag.peakId;
+                const finalCx = peakDrag.originalCx + dx;
+                const finalCy = peakDrag.originalCy + dy;
+                // A peak's own profile is defined relative to its own radius (mask-gl.ts's
+                // peakProfile), so none of its shape depends on where the epicenter sits -- the
+                // drag-start elevation and falloff stay exactly right at any final position.
+                const finalElevation = peakDrag.originalElevation;
+                const finalFalloff = peakDrag.originalFalloff;
+                peakDragRef.current = undefined;
+                setIsDraggingTopology(false);
+                // Left showing the dragged-to preview until the request resolves -- mirrors the
+                // capture relocate's own reasoning below (clearing immediately would fall back to
+                // the mesh's still-stale peak position and flash back for the round trip). No
+                // separate final geometry sync is needed the way it once was: the pending edit *is*
+                // what the shader draws from, so publishing it here is already an exact match for
+                // what's being sent, and syncPeaks' eventual rebuild only refreshes the subdivision.
+                const edit: PendingTopologyEdit = {
+                  maskKey: mediaKey,
+                  peakId,
+                  cx: finalCx,
+                  cy: finalCy,
+                  radius: peakDrag.originalRadius,
+                  elevation: finalElevation,
+                  falloff: finalFalloff,
+                };
+                dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+                notifyMaskPendingTopologySet(mediaKey, edit);
+                peakCommitInFlightRef.current.add(peakId);
+                sendMaskPeakUpdate(source.maskData.mask_media_id, {
+                  peak_id: peakId,
+                  cx: finalCx,
+                  cy: finalCy,
+                  radius: peakDrag.originalRadius,
+                  elevation: finalElevation,
+                  falloff: finalFalloff,
+                  remove: false,
+                  polygon_indices: [
+                    ...captureTriangleIndicesInCircle(source.maskData.polygons, {
+                      cx: finalCx,
+                      cy: finalCy,
+                      radius: peakDrag.originalRadius,
+                    }),
+                  ],
+                }).then((updated) => {
+                  peakCommitInFlightRef.current.delete(peakId);
+                  if (updated) {
+                    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
+                    notifyMaskPeaksUpdated(mediaKey, updated);
+                    // Grabbing a peak (even a barely-moved click) makes it the active element --
+                    // mirrors the capture relocate's own SetActiveElement below, and is what lets
+                    // Maskbar's elevation slider pick it up immediately afterwards.
+                    uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "peak", peakId } });
+                    notifyMaskActiveElementChanged(mediaKey);
+                    notifyMaskActivePeakChanged(mediaKey, peakId);
+                    // Mirrors the capture relocate's own symmetric clear below.
+                    notifyMaskActiveCaptureChanged(mediaKey, undefined);
+                  }
+                  dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+                  notifyMaskPendingTopologyCleared(mediaKey);
+                });
+                return;
+              }
               const drag = captureDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId || source.kind !== "static") return;
               if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
@@ -1568,6 +2030,9 @@ export function ProjectMaskItem({
                     });
                     notifyMaskActiveElementChanged(mediaKey);
                     notifyMaskActiveCaptureChanged(mediaKey, captureId);
+                    // Mirrors the peak relocate's own symmetric clear -- a relocated capture is now
+                    // this mesh's sole active sub-element.
+                    notifyMaskActivePeakChanged(mediaKey, undefined);
                     // Cache the circle actually used, translated by this drag's own delta -- not
                     // re-derived from the resulting triangles (capturedRegionCircle), which is what
                     // let the radius creep up over successive relocations. See lastKnownCaptureRef.
@@ -1595,15 +2060,20 @@ export function ProjectMaskItem({
             onPointerCancel={(e) => {
               // A browser-interrupted gesture (e.g. window blur) shouldn't commit a possibly
               // incomplete drag -- mirrors the abort half of onPointerUp only, never persists.
+              const peakDrag = peakDragRef.current;
+              if (peakDrag && e.pointerId === peakDrag.pointerId) {
+                abortTopologyDrag();
+                return;
+              }
               const drag = captureDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId) return;
               abortCaptureDrag();
             }}
             onMouseMove={(e) => {
-              // A capture-relocate drag owns this mesh's pointer for its duration -- defense in
-              // depth on top of onPointerDown's preventDefault (which should already suppress the
-              // compatibility mousemove for this pointer).
-              if (captureDragRef.current) return;
+              // A capture-relocate or topology drag owns this mesh's pointer for its duration --
+              // defense in depth on top of onPointerDown's preventDefault (which should already
+              // suppress the compatibility mousemove for this pointer).
+              if (captureDragRef.current || peakDragRef.current) return;
               // A wired move effect (see the mount ref-callback above) owns the epicenter instead
               // -- the mouse no longer drives it for this mesh. Same when the "preview" toggle
               // (Lightsourcebar) is off -- hovering shouldn't run the animation at all.
@@ -1643,7 +2113,9 @@ export function ProjectMaskItem({
             media={
               uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
                 ? { key: mediaKey, type: "capture", captureId: uiState.activeElement.captureId, meta: maskMeta }
-                : { key: mediaKey, type: "mask", meta: maskMeta }
+                : uiState.activeElement?.type === "peak" && uiState.activeElement.key === mediaKey
+                  ? { key: mediaKey, type: "peak", peakId: uiState.activeElement.peakId, meta: maskMeta }
+                  : { key: mediaKey, type: "mask", meta: maskMeta }
             }
             framesCacheRef={framesCacheRef}
             transform={transform}

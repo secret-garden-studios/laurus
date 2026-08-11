@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
-import { LaurusMaskResult, MaskCaptureSocketMessage_V1_0, toMaskCaptureSocketUrl } from "../workspace.server";
+import {
+  LaurusMaskResult,
+  MaskCaptureSocketMessage_V1_0,
+  normalizeMaskResult,
+  toMaskCaptureSocketUrl,
+} from "../workspace.server";
 
 /**
  * Owns one persistent websocket per mask for capture create/move/delete,
@@ -58,7 +63,7 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
           return;
         }
         if (message.type === "capture_update_complete") {
-          resolveNext(message.result);
+          resolveNext(normalizeMaskResult(message.result));
         } else {
           console.log({ error: message.message });
           resolveNext(undefined);

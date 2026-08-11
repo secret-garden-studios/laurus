@@ -44,6 +44,29 @@ export interface PendingLightSourceCapture {
   polygonIndices: number[];
 }
 
+// A topology peak edit (creation, move, or a reshape from any of Maskbar's peak sliders) that's
+// mid-flight to the server -- drawing a peak persists it immediately (see canvas.tsx's
+// handleTopologyCapture and workspace.client.tsx's createTopologyPeak), and dragging an existing
+// peak's epicenter or any of its parameters does the same (project-mask-item.tsx, maskbar.tsx).
+// Mirrors PendingLightSourceCapture's role exactly: holds the optimistic preview while the request
+// is outstanding, in the same mesh-local coordinate space as Peak_V1_0 itself.
+//
+// Carries every field of the height field a peak contributes, not just the ones a given gesture
+// happens to be changing, because this is what ProjectMaskItem hands the shader as that peak's
+// uniforms while the request is outstanding (see resolvePeakUniforms there) -- a partial edit would
+// render the peak with a missing parameter rather than a pending one. That's also why this is the
+// whole preview mechanism now: the shader evaluates the field from these numbers directly, so an
+// optimistic edit *is* the preview, with no geometry rebuild between the two.
+export interface PendingTopologyEdit {
+  maskKey: string;
+  peakId: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  elevation: number;
+  falloff: number;
+}
+
 export interface CoreState {
   apiOrigin: string | undefined;
   accessToken: string | undefined;
@@ -58,6 +81,7 @@ export interface CoreState {
   timelineMaxValue: number;
   inputsToRender: Set<string>;
   pendingLightSourceCapture: PendingLightSourceCapture | undefined;
+  pendingTopologyEdit: PendingTopologyEdit | undefined;
 }
 
 export const defaultCoreState: CoreState = {
@@ -74,6 +98,7 @@ export const defaultCoreState: CoreState = {
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
   pendingLightSourceCapture: undefined,
+  pendingTopologyEdit: undefined,
 };
 
 export enum CoreActionType {
@@ -105,6 +130,7 @@ export enum CoreActionType {
   SetTimelineMaxValue,
   SetInputsToRender,
   SetPendingLightSourceCapture,
+  SetPendingTopologyEdit,
 }
 
 export type CoreAction =
@@ -136,7 +162,8 @@ export type CoreAction =
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> }
-  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined };
+  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined }
+  | { type: CoreActionType.SetPendingTopologyEdit; value: PendingTopologyEdit | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
   switch (action.type) {
@@ -366,6 +393,9 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
     }
     case CoreActionType.SetPendingLightSourceCapture: {
       return { ...state, pendingLightSourceCapture: action.value };
+    }
+    case CoreActionType.SetPendingTopologyEdit: {
+      return { ...state, pendingTopologyEdit: action.value };
     }
   }
 }
