@@ -4,7 +4,6 @@ import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/pro
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { SvgRepo, addBox300, asterisk300, stairs300 } from "@/app/svg-repo";
-import Toggle from "@/app/components/toggle";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import {
@@ -92,9 +91,10 @@ export default function LightSourcebar() {
   const { selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   // Which row of dials the bar is currently showing -- cycled by double-clicking the icon (see
-  // the JSX below). Not derived from uiState.tool/activeElement: it's purely a display mode for
-  // this bar, independent of whatever tool Maskbar itself has active.
-  const [target, setTarget] = useState<"preview" | "capture" | "peak">("preview");
+  // the JSX below): "capture" -> "peak" -> "preview" (the capture-preview dials) -> back to
+  // "capture". Not derived from uiState.tool/activeElement: it's purely a display mode for this
+  // bar, independent of whatever tool Maskbar itself has active.
+  const [target, setTarget] = useState<"preview" | "capture" | "peak">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -233,9 +233,12 @@ export default function LightSourcebar() {
   // The active capture -- mirrors activePeak below, and likewise has no "whole mask selected"
   // fallback: a capture has no equivalent of a peak's "staged shape" either, so being the active
   // element is the only thing that ever enables these dials.
-  const activeCaptureMaskData = activeCaptureMaskKey !== undefined ? coreState.canvasMasks.get(activeCaptureMaskKey) : undefined;
+  const activeCaptureMaskData =
+    activeCaptureMaskKey !== undefined ? coreState.canvasMasks.get(activeCaptureMaskKey) : undefined;
   const activeCapture =
-    activeElement?.type === "capture" ? activeCaptureMaskData?.captures.find((c) => c.id === activeElement.captureId) : undefined;
+    activeElement?.type === "capture"
+      ? activeCaptureMaskData?.captures.find((c) => c.id === activeElement.captureId)
+      : undefined;
   const isCaptureParamDisabled = !activeCapture;
 
   // The active peak -- mirrors activeCaptureMaskKey above, and likewise doesn't require
@@ -289,7 +292,8 @@ export default function LightSourcebar() {
 
   const savePreviewField = useCallback(
     (
-      field: "capture_preview_size" | "capture_preview_intensity" | "capture_preview_falloff" | "capture_preview_darkness",
+      field:
+        "capture_preview_size" | "capture_preview_intensity" | "capture_preview_falloff" | "capture_preview_darkness",
       value: number,
     ) => {
       if (targetMaskKey === undefined) return;
@@ -935,17 +939,25 @@ export default function LightSourcebar() {
     >
       <div
         title={
-          target === "peak"
-            ? "targeting peaks -- double-click for the preview"
-            : target === "capture"
-              ? "targeting captures -- double-click for peaks"
-              : "targeting the preview -- double-click for captures"
+          target === "capture"
+            ? "targeting captures -- double-click for peaks"
+            : target === "peak"
+              ? "targeting peaks -- double-click for the capture-preview"
+              : "targeting the capture-preview -- double-click for captures"
         }
-        onDoubleClick={() => setTarget(target === "preview" ? "capture" : target === "capture" ? "peak" : "preview")}
+        onDoubleClick={() => {
+          const nextTarget = target === "capture" ? "peak" : target === "peak" ? "preview" : "capture";
+          setTarget(nextTarget);
+          // The capture-preview view no longer has its own on/off toggle -- cycling onto it is now
+          // what turns mouse-hover preview on, and cycling off it turns the mesh's live epicenter
+          // preview back off, tied directly to this double-click rather than a separate effect.
+          uiDispatch({ type: UIActionType.SetLightSourcePreview, value: nextTarget === "preview" });
+          notifyMaskLightSourcePreviewToggled(nextTarget === "preview");
+        }}
         style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
       >
         <SvgRepo
-          svg={target === "peak" ? stairs300() : target === "capture" ? addBox300() : asterisk300()}
+          svg={target === "capture" ? asterisk300() : target === "peak" ? stairs300() : asterisk300()}
           containerStyle={{
             width: dynamicSizes.svgSize.width,
             height: dynamicSizes.svgSize.height,
@@ -954,39 +966,18 @@ export default function LightSourcebar() {
           scaleToContaier={true}
         />
       </div>
-      <div
-        title={
-          uiState.lightSourcePreview
-            ? "mousing over a mesh drives its light source epicenter"
-            : "mousing over a mesh no longer drives its light source epicenter"
-        }
-        style={{
-          display: "flex",
-          alignItems: "center",
-          height: "100%",
-          ...dynamicSizes.toggle.div,
-        }}
-      >
-        <span
-          style={{
-            textShadow: uiState.lightSourcePreview ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-          }}
-        >
-          {"preview"}
-        </span>
-        <Toggle
-          value={uiState.lightSourcePreview}
-          onClick={() => {
-            uiDispatch({ type: UIActionType.SetLightSourcePreview, value: !uiState.lightSourcePreview });
-            notifyMaskLightSourcePreviewToggled(!uiState.lightSourcePreview);
-          }}
-          trackStyles={{ ...dynamicSizes.toggle.track }}
-          buttonStyles={{ ...dynamicSizes.toggle.button }}
-          translateX={dynamicSizes.toggle.translateX}
-        />
-      </div>
       {target === "preview" ? (
         <>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span>{"preview"}</span>
+          </div>
           <div
             title={
               isPreviewControlsDisabled
@@ -1011,7 +1002,8 @@ export default function LightSourcebar() {
                 setPreviewSizeCursor({ ...newCursor, y: 0 });
                 if (!previewSizeTrackRef.current) return;
                 const newValue =
-                  getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) + CAPTURE_PREVIEW_SIZE_MIN;
+                  getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
+                  CAPTURE_PREVIEW_SIZE_MIN;
                 handlePreviewSizeChange(newValue);
               }}
               disabled={isPreviewControlsDisabled}
