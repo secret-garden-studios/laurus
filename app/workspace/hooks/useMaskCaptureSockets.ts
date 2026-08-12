@@ -85,10 +85,7 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
   );
 
   const sendCaptureUpdate = useCallback(
-    (
-      maskMediaId: string,
-      request: MaskCaptureUpdateRequest_V1_0,
-    ): Promise<LaurusMaskResult | undefined> => {
+    (maskMediaId: string, request: MaskCaptureUpdateRequest_V1_0): Promise<LaurusMaskResult | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
