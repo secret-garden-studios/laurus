@@ -40,7 +40,7 @@ import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
-import { parseMaskCaptureInputId } from "./effects-utils";
+import { deleteMaskPeakEffects, parseMaskCaptureInputId, parseMaskPeakInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -420,6 +420,21 @@ function initCarouselEntries(
           type: "capture",
           key: projectMask[0],
           captureId: capture.id,
+        },
+        distance,
+      });
+    });
+    // ...and one per topology peak, for the same reason -- each peak is separately wireable to a
+    // "light_source" effect that ramps its own relief (see maskPeakInputId). Only the light
+    // source unit's "peak" mode ever navigates onto these; every other unit's carousel filters
+    // them out the same way rotate filters out captures.
+    const peaks = canvasMasks.get(projectMask[0])?.peaks ?? [];
+    peaks.forEach((peak) => {
+      temp.push({
+        entry: {
+          type: "peak",
+          key: projectMask[0],
+          peakId: peak.id,
         },
         distance,
       });
@@ -1007,7 +1022,13 @@ export default function Workspace({
               coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
-              if (parseMaskCaptureInputId(inputKey).captureId === undefined) {
+              // A capture's or a peak's own input_id drives the mesh directly (see the element
+              // lookup below, which neither ever matches), so -- unlike a whole mask's bare key --
+              // neither feeds the WAAPI timeline's own length.
+              if (
+                parseMaskCaptureInputId(inputKey).captureId === undefined &&
+                parseMaskPeakInputId(inputKey).peakId === undefined
+              ) {
                 globalLimit = Math.max(globalLimit, e.value.end);
               }
             }
@@ -1284,6 +1305,10 @@ export default function Workspace({
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
         notifyMaskPeaksUpdated(maskKey, updated);
+        // Every freshly drawn peak earns its own carousel entry, exactly as a capture does above --
+        // that entry is what the light source unit's "peak" mode navigates onto to wire this peak's
+        // own equation (see maskPeakInputId).
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: maskKey, peakId } });
         // Makes the new peak the active element immediately -- Lightsourcebar's elevation slider
         // reads off uiState.activeElement, so the freshly drawn peak (rather than the staged
         // value) is what it edits from here, the same way a freshly drawn capture becomes the
@@ -1350,6 +1375,11 @@ export default function Workspace({
 
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
       notifyMaskPeaksUpdated(maskKey, updated);
+      // The peak's own carousel entry and any equation wired through it go with it -- peak ids are
+      // reused (nextPeakId fills the lowest free one), so an equation left behind would attach
+      // itself to the next peak drawn rather than sit harmlessly orphaned.
+      uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, peakId });
+      deleteMaskPeakEffects(maskKey, peakId, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
       // Deleting the active peak would otherwise leave Lightsourcebar's peak sliders pointed at an
       // id that's now gone -- fall back to the whole mask being active, same as a deleted capture
       // does.
@@ -1365,6 +1395,9 @@ export default function Workspace({
     },
     [
       coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
       sendMaskPeakUpdate,
       dispatch,
       uiDispatch,
@@ -1537,22 +1570,33 @@ export default function Workspace({
       // play -- without this check, resolveTargetCaptureId's fallback-to-first-capture would make
       // it spuriously re-play whichever capture happens to be selected/first, using an equation
       // that's meant for a completely different (whole-element) purpose.
+      //
+      // A peak-flavored inputKey (see maskPeakInputId) satisfies the same "actually sub-element
+      // scoped" requirement by carrying a peakId instead -- it only ever comes from a
+      // "light_source" preview, since a peak has no transform for move/scale to act on.
+      const { peakId: targetPeakId } = parseMaskPeakInputId(target.inputKey);
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>
           effect.key === target.effectKey &&
           (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
-          parseMaskCaptureInputId(target.inputKey).captureId !== undefined,
+          (parseMaskCaptureInputId(target.inputKey).captureId !== undefined || targetPeakId !== undefined),
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
-        // maskHandlesRef is keyed by a mask's own element key, not the capture-scoped input_id a
-        // unit's preview button builds (see maskCaptureInputId) -- recover both so playback lands
-        // on the right mesh *and* the exact capture the button was for, rather than letting
-        // playLightSourceAnimation's own resolveTargetCaptureId guess.
+        // maskHandlesRef is keyed by a mask's own element key, not the capture- or peak-scoped
+        // input_id a unit's preview button builds (see maskCaptureInputId/maskPeakInputId) --
+        // recover both so playback lands on the right mesh *and* the exact capture/peak the button
+        // was for, rather than letting playLightSourceAnimation's own resolveTargetCaptureId guess.
         const { maskKey, captureId } = parseMaskCaptureInputId(target.inputKey);
         maskHandlesRef.current
           ?.get(maskKey)
-          ?.forEach((player) => lightSourceFinished.push(player.play(target.effectKey, captureId)));
+          ?.forEach((player) =>
+            lightSourceFinished.push(
+              targetPeakId !== undefined
+                ? player.play(target.effectKey, undefined, targetPeakId)
+                : player.play(target.effectKey, captureId),
+            ),
+          );
       }
 
       if (newAnimations.length == 0 && lightSourceFinished.length == 0) {

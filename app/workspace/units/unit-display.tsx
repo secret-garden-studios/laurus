@@ -57,23 +57,22 @@ interface UnitDisplay {
   carouselIndex: number;
   effectKey: string;
   onNewLocalIndex: (v: number) => void;
-  // False for rotate (see rotate-unit.tsx's carouselEntryKey / effects-utils.ts) -- a capture has
-  // no whole-element transform for rotate to act on, so its unit's carousel must skip past
-  // "capture" entries entirely rather than letting the chevrons land on one.
-  capturesWireable?: boolean;
-  // True for light source (see light-source-unit.tsx's carouselEntryKey) -- a light source is
-  // exclusively a capture's own effect, so its unit's carousel must skip every "img", "svg", and
-  // whole-"mask" entry and only ever land on "capture" entries.
-  onlyCapturesWireable?: boolean;
+  // Which entries this unit's chevrons are allowed to land on -- the same predicate its
+  // useCarouselIndex call takes, so the two can't disagree about what's navigable. Rotate passes
+  // one that rejects "capture" (a capture has no whole-element transform for rotate to act on);
+  // light source passes one that accepts *only* "capture" or only "peak", depending on which
+  // target it's on (see light-source-unit.tsx). The default rejects only "peak" entries, which
+  // nothing but light source can ever wire.
+  isEntryWireable?: (entry: CarouselEntry) => boolean;
 }
 export default function UnitDisplay({
   carouselIndex,
   effectKey,
   onNewLocalIndex,
-  capturesWireable = true,
-  onlyCapturesWireable = false,
+  isEntryWireable = (entry) => entry.type !== "peak",
 }: UnitDisplay) {
-  const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } = useContext(CoreContext);
+  const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged, notifyMaskActivePeakChanged } =
+    useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
@@ -169,27 +168,56 @@ export default function UnitDisplay({
           });
           break;
         }
+        case "peak": {
+          // Mirrors "capture" above exactly -- including the shared mask anchor for the context
+          // menu, since a peak has no on-screen presence of its own either. Clears any bright
+          // capture highlight for the same reason createTopologyPeak does: a peak being singled
+          // out makes it this mesh's sole active sub-element.
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "peak",
+            locallyActivatedEffectKey: effectKey,
+            peakId: entry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          notifyMaskActiveElementChanged(newActiveElement.key);
+          notifyMaskActivePeakChanged(entry.key, entry.peakId);
+          notifyMaskActiveCaptureChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
+          break;
+        }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged],
+    [
+      uiState.carouselEntries,
+      effectKey,
+      uiDispatch,
+      notifyMaskActiveElementChanged,
+      notifyMaskActiveCaptureChanged,
+      notifyMaskActivePeakChanged,
+    ],
   );
 
-  // First index in `direction` from `fromIndex` this carousel is allowed to land on -- skips
-  // "capture" entries when capturesWireable is false, or skips every non-"capture" entry when
-  // onlyCapturesWireable is true (see this file's UnitDisplay props doc comment). Returns
-  // undefined when nothing navigable remains, so callers can both disable a chevron and no-op its
-  // click.
+  // First index in `direction` from `fromIndex` this carousel is allowed to land on -- whatever
+  // isEntryWireable accepts (see this file's UnitDisplay props doc comment). Returns undefined when
+  // nothing navigable remains, so callers can both disable a chevron and no-op its click.
   const findNavigableIndex = useCallback(
     (fromIndex: number, direction: 1 | -1): number | undefined => {
       let i = fromIndex + direction;
       while (i >= 0 && i < uiState.carouselEntries.length) {
-        const entryType = uiState.carouselEntries[i].type;
-        if (onlyCapturesWireable ? entryType === "capture" : capturesWireable || entryType !== "capture") return i;
+        if (isEntryWireable(uiState.carouselEntries[i])) return i;
         i += direction;
       }
       return undefined;
     },
-    [uiState.carouselEntries, capturesWireable, onlyCapturesWireable],
+    [uiState.carouselEntries, isEntryWireable],
   );
 
   const hideContextMenu = useCallback(
@@ -368,7 +396,7 @@ export default function UnitDisplay({
                     const boundsHeight = Math.max(1, Math.max(...ys) - minY);
                     return (
                       <div
-                        key={`${c.key}-${c.captureId}`}
+                        key={`${c.key}-capture-${c.captureId}`}
                         title="mesh capture"
                         onClick={() => {
                           if (isAltKeyPressed) return;
@@ -393,6 +421,66 @@ export default function UnitDisplay({
                               vectorEffect="non-scaling-stroke"
                             />
                           ))}
+                        </svg>
+                      </div>
+                    );
+                  }
+                  case "peak": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    const peak = maskData?.peaks.find((p) => p.id === c.peakId);
+                    if (!maskData || !peak) break;
+                    // The peak's own circle of influence, drawn in the mesh's own coordinate space
+                    // (the same space maskData.polygons' `d` strings use), over the triangles it
+                    // covers. Unlike a capture -- whose identity *is* its set of polygons -- a peak
+                    // is defined by cx/cy/radius and only tags polygons for bookkeeping (see
+                    // Peak_V1_0), so the circle is the thing worth showing and the tagged triangles
+                    // are context behind it.
+                    const coveredPolygons = maskData.polygons.filter((p) => p.peak_id === c.peakId);
+                    const padding = peak.radius * 0.25;
+                    const viewBox = [
+                      peak.cx - peak.radius - padding,
+                      peak.cy - peak.radius - padding,
+                      Math.max(1, (peak.radius + padding) * 2),
+                      Math.max(1, (peak.radius + padding) * 2),
+                    ].join(" ");
+                    return (
+                      <div
+                        key={`${c.key}-peak-${c.peakId}`}
+                        title="mesh peak"
+                        onClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          hideOtherContextMenus(i);
+                        }}
+                        style={{
+                          ...dynamicSizes.displaySvg,
+                          display: "grid",
+                          placeContent: "center",
+                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                        }}
+                      >
+                        <svg width="100%" height="100%" viewBox={viewBox}>
+                          {coveredPolygons.map((p, polygonIndex) => (
+                            <path
+                              key={polygonIndex}
+                              d={p.d}
+                              fill="none"
+                              stroke="rgb(120, 120, 120)"
+                              strokeWidth={1}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          ))}
+                          <circle
+                            cx={peak.cx}
+                            cy={peak.cy}
+                            r={peak.radius}
+                            fill="none"
+                            stroke="rgb(235, 235, 235)"
+                            strokeWidth={1}
+                            vectorEffect="non-scaling-stroke"
+                          />
                         </svg>
                       </div>
                     );

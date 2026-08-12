@@ -29,11 +29,37 @@ export function maskCaptureInputId(maskKey: string, captureId: number): string {
   return `${maskKey}:${captureId}`;
 }
 
+// The math input_id one of a mask's own topology peaks wires its "light_source" equation under --
+// the peak flavor of maskCaptureInputId above, and just as distinct from the mask's own bare key.
+// A peak equation ramps the peak's elevation/radius/falloff (see LightSourceEquation_V1_0's own
+// peak_* fields) rather than the four light_source_* dials, starting from that peak's own
+// persisted shape; the "peak:" infix is what the server keys that seed lookup off
+// (light_source_math.py's resolve_light_source_seed), so keep the two in sync. Never collides with
+// a capture's own input_id, whose suffix is always numeric.
+export function maskPeakInputId(maskKey: string, peakId: number): string {
+  return `${maskKey}:peak:${peakId}`;
+}
+
+// Inverse of maskPeakInputId -- peakId comes back undefined for anything that isn't peak-flavored
+// (an img/svg key, a bare mask key, or a capture's own input_id), so this doubles as the test for
+// which flavor an input_id is.
+export function parseMaskPeakInputId(inputId: string): { maskKey: string; peakId: number | undefined } {
+  const separatorIndex = inputId.indexOf(":peak:");
+  if (separatorIndex === -1) return { maskKey: inputId, peakId: undefined };
+  const peakId = Number(inputId.slice(separatorIndex + ":peak:".length));
+  return {
+    maskKey: inputId.slice(0, separatorIndex),
+    peakId: Number.isFinite(peakId) ? peakId : undefined,
+  };
+}
+
 // Inverse of maskCaptureInputId -- recovers the mask's own element key (what maskHandlesRef and
 // maskElementsRef are both keyed by, see project-mask-item.tsx's mount ref-callback) and the
 // specific capture a caller meant, from an input_id built by the function above. captureId comes
 // back undefined for an img/svg's own bare key (no ":" at all), a whole-mask's own bare key
-// (CarouselEntry's "mask" variant), or a mask input_id predating per-capture math.
+// (CarouselEntry's "mask" variant), a mask input_id predating per-capture math, or a peak's own
+// input_id (whose non-numeric "peak:" suffix parses to NaN -- see maskPeakInputId), leaving the
+// maskKey correct for every flavor.
 export function parseMaskCaptureInputId(inputId: string): { maskKey: string; captureId: number | undefined } {
   const separatorIndex = inputId.indexOf(":");
   if (separatorIndex === -1) return { maskKey: inputId, captureId: undefined };
@@ -50,7 +76,14 @@ export function parseMaskCaptureInputId(inputId: string): { maskKey: string; cap
 // LaurusEffect.math.keys() (e.g. effect-unit.tsx's initial carouselIndex pick) need this rather
 // than entry.key directly.
 export function carouselEntryMathKey(entry: CarouselEntry): string {
-  return entry.type === "capture" ? maskCaptureInputId(entry.key, entry.captureId) : entry.key;
+  switch (entry.type) {
+    case "capture":
+      return maskCaptureInputId(entry.key, entry.captureId);
+    case "peak":
+      return maskPeakInputId(entry.key, entry.peakId);
+    default:
+      return entry.key;
+  }
 }
 
 // True for `key` if it's this mediaKey's own bare identity (an img/svg, or a mask with no
@@ -170,5 +203,22 @@ export async function deleteMaskCaptureEffects(
   dispatch: Dispatch<CoreAction>,
 ) {
   const inputId = maskCaptureInputId(maskKey, captureId);
+  await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
+}
+
+// Mirrors deleteMaskCaptureEffects exactly, for one of a mask's own topology peaks -- called when
+// a peak is removed (workspace.client.tsx's deleteMaskPeak), so its light_source equation doesn't
+// outlive the peak it was ramping. Peak ids are reused (nextPeakId fills the lowest free one), so
+// a left-behind equation wouldn't stay orphaned -- it would silently attach itself to the next
+// peak drawn.
+export async function deleteMaskPeakEffects(
+  maskKey: string,
+  peakId: number,
+  apiOrigin: string | undefined,
+  accessToken: string | undefined,
+  effects: LaurusEffect[],
+  dispatch: Dispatch<CoreAction>,
+) {
+  const inputId = maskPeakInputId(maskKey, peakId);
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }

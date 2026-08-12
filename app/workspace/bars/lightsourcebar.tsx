@@ -206,12 +206,9 @@ export default function LightSourcebar() {
   // selectedMaskKeys: a peak has no "whole mask selected" equivalent to fall back to, so being the
   // active element is the only thing that ever enables these.
   const activePeakMaskKey = activeElement?.type === "peak" ? activeElement.key : undefined;
-  const activePeakMaskData =
-    activePeakMaskKey !== undefined ? coreState.canvasMasks.get(activePeakMaskKey) : undefined;
+  const activePeakMaskData = activePeakMaskKey !== undefined ? coreState.canvasMasks.get(activePeakMaskKey) : undefined;
   const activePeak =
-    activeElement?.type === "peak"
-      ? activePeakMaskData?.peaks.find((p) => p.id === activeElement.peakId)
-      : undefined;
+    activeElement?.type === "peak" ? activePeakMaskData?.peaks.find((p) => p.id === activeElement.peakId) : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
   // Enabled whenever there's a peak to edit -- either one is the active element, or the topology
   // tool is on, in which case with no peak active these instead read/write uiState.stagedPeak, the
@@ -298,9 +295,7 @@ export default function LightSourcebar() {
     },
     [targetMaskMeta, saveLightSourceField, mask],
   );
-  const lightSourceIntensityValue = targetMaskMeta
-    ? targetMaskMeta.light_source_intensity
-    : mask.lightSourceIntensity;
+  const lightSourceIntensityValue = targetMaskMeta ? targetMaskMeta.light_source_intensity : mask.lightSourceIntensity;
   const handleLightSourceIntensityChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
@@ -684,8 +679,7 @@ export default function LightSourcebar() {
               onNewCursor={(newCursor) => {
                 setSizeCursor({ ...newCursor, y: 0 });
                 if (!sizeTrackRef.current) return;
-                const newValue =
-                  getSizeValue(newCursor.x, sizeTrackRef.current.clientWidth, 0) + LIGHT_SOURCE_SIZE_MIN;
+                const newValue = getSizeValue(newCursor.x, sizeTrackRef.current.clientWidth, 0) + LIGHT_SOURCE_SIZE_MIN;
                 handleLightSourceSizeChange(newValue);
               }}
               disabled={isLightSourceControlsDisabled}
@@ -884,16 +878,14 @@ export default function LightSourcebar() {
               onCursorMove={(newCursor) => {
                 if (!peakFalloffTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_FALLOFF +
-                  getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
+                  MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
                 previewPeakChange({ falloff: newValue });
               }}
               onNewCursor={(newCursor) => {
                 setPeakFalloffCursor({ ...newCursor, y: 0 });
                 if (!peakFalloffTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_FALLOFF +
-                  getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
+                  MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
                 savePeakField({ falloff: newValue });
               }}
               disabled={isPeakParamDisabled}

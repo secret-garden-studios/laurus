@@ -45,7 +45,7 @@ import {
   LaurusPeak,
   LaurusPolygonPath,
 } from "../workspace.server";
-import { maskCaptureInputId } from "../effects-utils";
+import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
 // Intensity written into a_highlight (see recolorHighlight/mask-gl.ts) for every capture's or
 // topology peak's own triangles alike, on the active mask that *isn't* the selected one -- lets
@@ -134,7 +134,12 @@ export interface MaskImperativeHandle {
   // which recovers it straight from the AnimationTarget.inputKey a unit's own preview button
   // built (see maskCaptureInputId/parseMaskCaptureInputId). Omitted by handlePlayAll's bare
   // play(), which still falls back to resolveTargetCaptureId's own guess.
-  play: (effectKey?: string, captureId?: number) => Promise<void>;
+  //
+  // peakId is the peak-flavored equivalent, mutually exclusive with captureId: a "light_source"
+  // effect wired to one of this mesh's own topology peaks (see maskPeakInputId) ramps that peak's
+  // relief rather than an epicenter's dials, so playback drives the height field's uniforms
+  // instead of the light list (see playbackPeaksRef).
+  play: (effectKey?: string, captureId?: number, peakId?: number) => Promise<void>;
   // Fetch-only half of play(): resolves once this mask's own frames are loaded, to a start()
   // closure that kicks off the actual playback clock -- or to undefined if there's nothing wired
   // to play, or if a fresher play()/preparePlayback() call superseded this one while it was
@@ -142,7 +147,11 @@ export interface MaskImperativeHandle {
   // their frames before starting any of their clocks, so a slow fetch on one mask doesn't
   // visibly stagger its start relative to the others -- see this method's implementation
   // (preparePlayback) for why play() alone doesn't already do this.
-  preparePlayback: (effectKey?: string, captureId?: number) => Promise<(() => Promise<void>) | undefined>;
+  preparePlayback: (
+    effectKey?: string,
+    captureId?: number,
+    peakId?: number,
+  ) => Promise<(() => Promise<void>) | undefined>;
   stop: () => void;
   // Mirrors the old tool-change effect: aborts a capture-relocate drag in progress on this mesh
   // (if any) the moment the tool stops being "move" elsewhere in the app.
@@ -304,6 +313,12 @@ export function ProjectMaskItem({
   // render() reads this instead of lightSourceRef/lightSourceSizeRef&co. whenever wiredMoveRef is
   // true. Cleared by stopLightSourceAnimation.
   const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
+  // The peak-flavored counterpart of playbackLightSourcesRef, keyed by peakId -- one entry per
+  // topology peak playLightSourceAnimation is currently animating, holding that peak's own solved
+  // shape for this frame. A peak's epicenter never moves under playback (an equation ramps
+  // elevation/radius/falloff only, see LightSourceEquation_V1_0), so cx/cy stay the peak's own and
+  // aren't carried here. Consulted by resolvePeakUniforms; cleared by stopLightSourceAnimation.
+  const playbackPeaksRef = useRef<Map<number, { elevation: number; radius: number; falloff: number }>>(new Map());
   // The in-flight playLightSourceAnimation() session, if any -- lets stopLightSourceAnimation() (and a
   // fresh play() call) cancel whatever's currently running instead of two loops racing.
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
@@ -502,10 +517,26 @@ export function ProjectMaskItem({
   // what makes a live drag or slider preview exact rather than an approximation of what the commit
   // will look like. It also means the preview costs one uniform upload per frame and no buffer
   // traffic at all.
+  //
+  // Playback (playbackPeaksRef) overrides the same way a pending edit does, and takes precedence
+  // over it: the two never legitimately coexist -- a peak-driving effect only plays once its
+  // slider edits have committed -- and if a stale pending edit ever did linger, the animation
+  // being watched is the one that should win. Only elevation/radius/falloff come from playback;
+  // the epicenter stays wherever the peak actually sits.
   const resolvePeakUniforms = useCallback((): PeakGeometryInput[] => {
     const pending = pendingTopologyRef.current;
-    const peaks = peaksRef.current.map((peak): PeakGeometryInput =>
-      pending && pending.peakId === peak.id
+    const peaks = peaksRef.current.map((peak): PeakGeometryInput => {
+      const playing = playbackPeaksRef.current.get(peak.id);
+      if (playing) {
+        return {
+          cx: peak.cx,
+          cy: peak.cy,
+          radius: playing.radius,
+          elevation: playing.elevation,
+          falloff: playing.falloff,
+        };
+      }
+      return pending && pending.peakId === peak.id
         ? {
             cx: pending.cx,
             cy: pending.cy,
@@ -513,8 +544,8 @@ export function ProjectMaskItem({
             elevation: pending.elevation,
             falloff: pending.falloff,
           }
-        : { cx: peak.cx, cy: peak.cy, radius: peak.radius, elevation: peak.elevation, falloff: peak.falloff },
-    );
+        : { cx: peak.cx, cy: peak.cy, radius: peak.radius, elevation: peak.elevation, falloff: peak.falloff };
+    });
     if (pending && !peaksRef.current.some((peak) => peak.id === pending.peakId)) {
       peaks.push({
         cx: pending.cx,
@@ -797,6 +828,9 @@ export function ProjectMaskItem({
     }
     wiredMoveRef.current = false;
     playbackLightSourcesRef.current = new Map();
+    // Dropping these sends the next draw straight back to every peak's persisted relief, the same
+    // way abortTopologyDrag does for a drag -- the mesh's own buffers were never touched.
+    playbackPeaksRef.current = new Map();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
     applyDefaultLightSourceValue();
     render();
@@ -831,20 +865,24 @@ export function ProjectMaskItem({
   // guaranteed they resolved together. Resolves to undefined if nothing's wired to play, or if a
   // fresher play()/stop() superseded this one while its frames were still in flight.
   const preparePlayback = useCallback(
-    (effectKey?: string, captureId?: number): Promise<(() => Promise<void>) | undefined> => {
+    (effectKey?: string, captureId?: number, peakId?: number): Promise<(() => Promise<void>) | undefined> => {
       stopLightSourceAnimation();
       if (source.kind !== "static") return Promise.resolve(undefined);
 
-      // Play All (bare play(), neither effectKey nor captureId given -- see
-      // MaskImperativeHandle) animates every one of this mesh's own captures that has something
-      // wired, all at once (see mask-gl.ts's array uniforms). A single-effect preview always
-      // concerns exactly one capture: the one handlePlayTarget recovered from the preview
-      // button's own AnimationTarget.inputKey (captureId), or -- for the rarer case of a caller
-      // that only knows the effectKey -- resolveTargetCaptureId's own guess.
-      const playAll = effectKey === undefined && captureId === undefined;
+      // Play All (bare play(), no effectKey/captureId/peakId given -- see MaskImperativeHandle)
+      // animates every one of this mesh's own captures that has something wired, all at once (see
+      // mask-gl.ts's array uniforms). A single-effect preview always concerns exactly one capture:
+      // the one handlePlayTarget recovered from the preview button's own AnimationTarget.inputKey
+      // (captureId), or -- for the rarer case of a caller that only knows the effectKey --
+      // resolveTargetCaptureId's own guess.
+      const playAll = effectKey === undefined && captureId === undefined && peakId === undefined;
+      // A peak-flavored preview drives no capture at all, so it contributes nothing here -- its
+      // own target is resolved separately below (peakTargets).
       const candidateCaptureIds = playAll
         ? Array.from(capturesRef.current.keys())
-        : [captureId ?? resolveTargetCaptureId()].filter((id): id is number => id !== undefined);
+        : peakId !== undefined
+          ? []
+          : [captureId ?? resolveTargetCaptureId()].filter((id): id is number => id !== undefined);
 
       const targets = candidateCaptureIds
         .map((id) => {
@@ -879,9 +917,32 @@ export function ProjectMaskItem({
         // target resolved above, so a capture's epicenter never anchors on a different capture
         // than the one whose frames are driving it.
         .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.captureId) }));
-      if (targets.length === 0) return Promise.resolve(undefined);
 
-      wiredMoveRef.current = true;
+      // The peak half of the same resolution, mirroring `targets` above. Only "light_source" can
+      // wire a peak (a peak has no transform for move/scale to act on), so there's one effect kind
+      // to look for rather than three, and no rest position to anchor: a peak's epicenter is its
+      // own cx/cy and playback never moves it (see playbackPeaksRef).
+      const candidatePeakIds = playAll ? peaksRef.current.map((peak) => peak.id) : peakId !== undefined ? [peakId] : [];
+      const peakTargets = candidatePeakIds
+        .map((id) => {
+          const inputId = maskPeakInputId(mediaKey, id);
+          const wiredLightSource = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "light_source" }> =>
+              effect.type === "light_source" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { peakId: id, inputId, wiredLightSource };
+        })
+        .filter((t) => t.wiredLightSource);
+
+      if (targets.length === 0 && peakTargets.length === 0) return Promise.resolve(undefined);
+
+      // Only the capture half of playback owns the light list -- a peak-only preview leaves the
+      // mesh lit exactly as it was (its resting dials, or the cursor's own light), since flipping
+      // this on with no capture targets would swap in an empty playbackLightSourcesRef and darken
+      // the mesh for the duration of an animation that has nothing to do with its lighting.
+      wiredMoveRef.current = targets.length > 0;
 
       // Keyed by captureId, same as targets/playbackLightSourcesRef -- playAll fetches one
       // pre-merged, project-wide frame timeline per target capture (matching how the backend
@@ -892,6 +953,9 @@ export function ProjectMaskItem({
       const moveFramesByCapture = new Map<number, LaurusFrame[]>();
       const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
       const scaleFramesByCapture = new Map<number, LaurusFrame[]>();
+      // Keyed by peakId, mirroring the four above -- one timeline per peak being animated, whether
+      // it came from playAll's merged solve or a single peak's own light_source frames.
+      const framesByPeak = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
 
@@ -929,8 +993,8 @@ export function ProjectMaskItem({
         // resolves, so these are never read mid-fetch.
         totalFrames = 1;
         durationSeconds = 0;
-        ready = Promise.all(
-          targets.map((t) =>
+        ready = Promise.all([
+          ...targets.map((t) =>
             fetchFramesCached(t.inputId, t.inputId, () =>
               getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
             ).then((result) => {
@@ -938,10 +1002,40 @@ export function ProjectMaskItem({
               mergedFramesByCapture.set(t.captureId, result ?? []);
             }),
           ),
-        ).then(() => {
+          // Peaks go through the same project-wide merged solve their captures do -- a peak's own
+          // input_id is just another input as far as /frames is concerned.
+          ...peakTargets.map((t) =>
+            fetchFramesCached(t.inputId, t.inputId, () =>
+              getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
+            ).then((result) => {
+              if (activePlaybackRef.current !== session) return;
+              framesByPeak.set(t.peakId, result ?? []);
+            }),
+          ),
+        ]).then(() => {
           if (activePlaybackRef.current !== session) return;
-          totalFrames = Math.max(1, ...Array.from(mergedFramesByCapture.values()).map((f) => f.length));
+          totalFrames = Math.max(
+            1,
+            ...Array.from(mergedFramesByCapture.values()).map((f) => f.length),
+            ...Array.from(framesByPeak.values()).map((f) => f.length),
+          );
           durationSeconds = totalFrames / fps;
+        });
+      } else if (targets.length === 0) {
+        // A peak-flavored preview -- mutually exclusive with the capture case below, since
+        // handlePlayTarget passes exactly one of captureId/peakId (see this function's own
+        // candidateCaptureIds/candidatePeakIds above). Always exactly one peak, and always exactly
+        // one effect kind, so there's a single fetch and the timeline comes straight from it.
+        const peakTarget = peakTargets[0];
+        const wiredLightSource = peakTarget.wiredLightSource!;
+        const timingValue = wiredLightSource.value;
+        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
+        durationSeconds = totalFrames / fps;
+        ready = fetchFramesCached(peakTarget.inputId, `light_source:${peakTarget.inputId}`, () =>
+          getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, peakTarget.inputId),
+        ).then((result) => {
+          if (activePlaybackRef.current === session && result) framesByPeak.set(peakTarget.peakId, result);
         });
       } else {
         const target = targets[0];
@@ -1082,6 +1176,21 @@ export function ProjectMaskItem({
                     darkness,
                   });
                 });
+
+                // The peak half: each animating peak's solved relief for this frame, published for
+                // resolvePeakUniforms to pick up on the render() below. No coordinate conversion
+                // like the epicenter's above -- elevation/radius/falloff all live in the mesh's own
+                // space already, the same space the sliders that authored them work in.
+                peakTargets.forEach((t) => {
+                  const frames = framesByPeak.get(t.peakId);
+                  if (!frames || frames.length === 0) return;
+                  const point = frames[Math.min(frameIndex, frames.length - 1)];
+                  playbackPeaksRef.current.set(t.peakId, {
+                    elevation: point.peak_elevation,
+                    radius: point.peak_radius,
+                    falloff: point.peak_falloff,
+                  });
+                });
                 render();
               }
 
@@ -1118,8 +1227,8 @@ export function ProjectMaskItem({
   // preview) that don't need to coordinate several of these against each other -- fetch, then
   // start immediately once this one target's own frames are in.
   const playLightSourceAnimation = useCallback(
-    (effectKey?: string, captureId?: number): Promise<void> =>
-      preparePlayback(effectKey, captureId).then((start) => start?.()),
+    (effectKey?: string, captureId?: number, peakId?: number): Promise<void> =>
+      preparePlayback(effectKey, captureId, peakId).then((start) => start?.()),
     [preparePlayback],
   );
 
@@ -1293,8 +1402,10 @@ export function ProjectMaskItem({
         recolorHighlight();
 
         const handle: MaskImperativeHandle = {
-          play: (effectKey, captureId) => latestRef.current.playLightSourceAnimation(effectKey, captureId),
-          preparePlayback: (effectKey, captureId) => latestRef.current.preparePlayback(effectKey, captureId),
+          play: (effectKey, captureId, peakId) =>
+            latestRef.current.playLightSourceAnimation(effectKey, captureId, peakId),
+          preparePlayback: (effectKey, captureId, peakId) =>
+            latestRef.current.preparePlayback(effectKey, captureId, peakId),
           stop: () => latestRef.current.stopLightSourceAnimation(),
           abortCaptureDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;

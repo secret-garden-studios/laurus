@@ -89,7 +89,12 @@ export type CarouselEntry =
   // One entry per capture, not per mask -- a mask with several captures (see project-mask-item.tsx)
   // gets that many carousel entries, each wiring one particular capture (see workspace.client.tsx's
   // initCarouselEntries/captureMeshSection).
-  | { type: "capture"; key: string; captureId: number };
+  | { type: "capture"; key: string; captureId: number }
+  // One entry per topology peak, mirroring "capture" above exactly. Only "light_source" can wire
+  // one (a peak has no transform of its own for move/scale/rotate to act on) -- and only in the
+  // unit's own "peak" mode, which is what filters the carousel down to these (see
+  // light-source-unit.tsx's isPeakCarouselEntry).
+  | { type: "peak"; key: string; peakId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
@@ -221,9 +226,10 @@ export type UIAction =
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
-  // captureId narrows this to one particular mask entry (deleting one capture); omitted, every
-  // entry with this key goes (deleting the whole img/svg/mask, all its capture entries included).
-  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number }
+  // captureId/peakId narrows this to one particular mask entry (deleting one capture, or one
+  // peak); with neither, every entry with this key goes (deleting the whole img/svg/mask, all its
+  // capture and peak entries included).
+  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number; peakId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
@@ -348,8 +354,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.DeleteCarouselEntry: {
       const newEntries = state.carouselEntries.filter((m) => {
         if (m.key !== action.key) return true;
-        if (action.captureId === undefined) return false;
-        return !(m.type === "capture" && m.captureId === action.captureId);
+        if (action.captureId !== undefined) return !(m.type === "capture" && m.captureId === action.captureId);
+        if (action.peakId !== undefined) return !(m.type === "peak" && m.peakId === action.peakId);
+        return false;
       });
       return { ...state, carouselEntries: newEntries };
     }

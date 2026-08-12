@@ -8,7 +8,7 @@ import { LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate 
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 
 export interface RotateUnitControls {
@@ -33,6 +33,11 @@ export const defaultRotateEquation: LaurusRotateEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+// Rotate acts on a whole element's transform, which neither a capture nor a topology peak has (see
+// this file's own carouselEntryKey) -- passed to useCarouselIndex and UnitDisplay so neither ever
+// derives an index onto one.
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "peak";
+
 interface RotateUnit {
   rotate: LaurusRotateResult;
   carouselIndexInit: number;
@@ -47,6 +52,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     uiState.carouselEntries,
     carouselIndexInit,
     rotate.rotate_id,
+    isRotateCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
@@ -113,9 +119,10 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           // format to worry about colliding with.
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        // A capture isn't wireable to rotate -- it acts on a whole element's transform, which a
-        // capture doesn't have (see effects-utils.ts's own comment).
-        case "capture": {
+        // Neither a capture nor a topology peak is wireable to rotate -- it acts on a whole
+        // element's transform, which neither has (see effects-utils.ts's own comment).
+        case "capture":
+        case "peak": {
           return "";
         }
       }
@@ -363,7 +370,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             carouselIndex={carouselIndex}
             effectKey={rotate.rotate_id}
             onNewLocalIndex={setLocalIndex}
-            capturesWireable={false}
+            isEntryWireable={isRotateCarouselEntry}
           />
           {/* controls */}
           <div style={{ display: "grid" }}>

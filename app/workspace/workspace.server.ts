@@ -1692,6 +1692,15 @@ export interface LightSourceSolution_V1_0 {
   light_source_intensity: number;
   light_source_falloff: number;
   light_source_darkness: number;
+  /** A light_source equation wired to a topology peak (input_id
+   * "<mask_key>:peak:<peak_id>", see maskPeakInputId in effects-utils.ts) ramps
+   * these three instead of the four light_source_* fields above, which stay at
+   * zero for a peak-flavored equation. One solution type rather than two, so a
+   * caller never has to branch on which flavor it solved before reading the
+   * result -- mirrors the server's own LightSourceSolution. */
+  peak_elevation: number;
+  peak_radius: number;
+  peak_falloff: number;
 }
 export interface LightSourceEquation_V1_0 {
   input_id: string;
@@ -1703,6 +1712,13 @@ export interface LightSourceEquation_V1_0 {
   light_source_intensity: number;
   light_source_falloff: number;
   light_source_darkness: number;
+  /** The peak shape this equation ramps toward, for a peak-flavored input_id --
+   * see LightSourceSolution_V1_0 above. Absolute targets, not deltas: the ramp
+   * starts from the peak's own persisted elevation/radius/falloff (the server's
+   * resolve_light_source_seed) and lands exactly here. */
+  peak_elevation: number;
+  peak_radius: number;
+  peak_falloff: number;
   loop: LaurusLoopType;
   solution: LightSourceSolution_V1_0[];
   limit_factor: number;
@@ -1915,8 +1931,24 @@ interface Frame_V1_0 {
   light_source_intensity: number;
   light_source_falloff: number;
   light_source_darkness: number;
+  // Only ever non-neutral on a frame solved for a peak-flavored input_id (see
+  // LightSourceSolution_V1_0) -- every other effect's frames leave them at the neutral
+  // "no relief change" values below, the same way they leave sx/sy at 1.
+  peak_elevation: number;
+  peak_radius: number;
+  peak_falloff: number;
   input_id: string;
 }
+
+// What a frame carries for peak fields when nothing peak-flavored solved it -- elevation/radius
+// at 0 (a peak of no size, i.e. no displacement at all) and the schema's own smooth-dome falloff,
+// matching the server's own NEUTRAL_FRAME. Spread into every non-light_source frame builder below
+// so a caller reading frame.peak_* never has to distinguish "unsolved" from "solved to nothing".
+const NEUTRAL_PEAK_FRAME = {
+  peak_elevation: 0,
+  peak_radius: 0,
+  peak_falloff: PEAK_FALLOFF_DEFAULT,
+};
 export async function getScaleFrames(
   baseUrl: string | undefined,
   scaleId: string,
@@ -1939,6 +1971,7 @@ export async function getScaleFrames(
     light_source_intensity: 0,
     light_source_falloff: 0,
     light_source_darkness: 0,
+    ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));
 }
@@ -1963,6 +1996,7 @@ export async function getMoveFrames(
     light_source_intensity: 0,
     light_source_falloff: 0,
     light_source_darkness: 0,
+    ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));
 }
@@ -1988,6 +2022,7 @@ export async function getRotateFrames(
     light_source_intensity: 0,
     light_source_falloff: 0,
     light_source_darkness: 0,
+    ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));
 }

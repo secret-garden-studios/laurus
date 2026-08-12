@@ -10,7 +10,7 @@ import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.c
 import { LaurusProjectResult } from "../../projects/projects.server";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { maskCaptureInputId } from "../effects-utils";
 
@@ -32,6 +32,9 @@ export const defaultScaleEquation: LaurusScaleEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+// Same rule move uses, for the same reason -- see move-unit.tsx's isMoveCarouselEntry.
+const isScaleCarouselEntry = (entry: CarouselEntry) => entry.type !== "peak";
+
 interface ScaleUnit {
   scale: LaurusScaleResult;
   carouselIndexInit: number;
@@ -46,6 +49,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     uiState.carouselEntries,
     carouselIndexInit,
     scale.scale_id,
+    isScaleCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
@@ -158,6 +162,11 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           // math -- keying purely off the mask's element key would collapse every capture on the
           // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+        }
+        // Not wireable to scale, for the same reason it isn't to move -- see move-unit.tsx's own
+        // "peak" case.
+        case "peak": {
+          return "";
         }
       }
     } else {

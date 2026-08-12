@@ -2,6 +2,7 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
@@ -9,12 +10,13 @@ import {
   fileCopy,
   playArrow,
   remove,
+  stairs300,
   syncAlt,
   updateDisabled,
 } from "@/app/svg-repo";
 import { dmSans } from "@/app/fonts";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LightSourceUnitControls, defaultLightSourceEquation } from "../light-source-unit";
+import { LightSourceUnitControls, LightSourceUnitTarget, defaultLightSourceEquation } from "../light-source-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
   getLightSourceFrames,
@@ -35,6 +37,16 @@ interface LightSourceUnitbar {
   updateTrackpads: (newControls: LightSourceUnitControls) => void;
   currentControls: LightSourceUnitControls;
   setCurrentControls: Dispatch<SetStateAction<LightSourceUnitControls>>;
+  // Which flavor of equation the unit is editing, and the toggle for it -- owned by the unit (it's
+  // the unit's sliders *and* its carousel that move together, see its own toggleTarget), driven
+  // from the button below the same way MoveUnitbar's own "shape" button drives which parameters
+  // move-unit.tsx shows.
+  target: LightSourceUnitTarget;
+  onToggleTarget: () => void;
+  // What a from-scratch equation for whatever the carousel is currently on starts as -- the plain
+  // defaults for a capture, the active peak's own current shape for a peak. See the unit's own
+  // newEquationSeed for why a peak can't just use the defaults.
+  newEquationSeed: LaurusLightSourceEquation;
 }
 
 export default function LightSourceUnitbar({
@@ -44,6 +56,9 @@ export default function LightSourceUnitbar({
   updateTrackpads,
   currentControls,
   setCurrentControls,
+  target,
+  onToggleTarget,
+  newEquationSeed,
 }: LightSourceUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -186,6 +201,38 @@ export default function LightSourceUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
+        {/* Double-click, not click, mirroring MoveUnitbar's own "shape" button (and
+            Lightsourcebar's asterisk, which flips the same two targets for the *starting* state
+            these equations ramp from) -- switching target swaps every slider and re-points the
+            carousel, so it's deliberately not a single stray click away. */}
+        <div
+          title={
+            target === "peak"
+              ? "targeting peaks -- double-click for captures"
+              : "targeting captures -- double-click for peaks"
+          }
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target === "peak" ? "peak" : "capture"}
+            svg={target === "peak" ? stairs300() : asterisk300()}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
         <div
           title="loop"
           onDoubleClick={() => {
@@ -201,7 +248,7 @@ export default function LightSourceUnitbar({
                     loop: nextLoop,
                   }
                 : {
-                    ...defaultLightSourceEquation,
+                    ...newEquationSeed,
                     input_id: activeKey,
                     loop: nextLoop,
                   };
@@ -213,7 +260,6 @@ export default function LightSourceUnitbar({
             position: "relative",
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >
@@ -317,7 +363,7 @@ export default function LightSourceUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...defaultLightSourceEquation,
+                    ...newEquationSeed,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -373,7 +419,7 @@ export default function LightSourceUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...defaultLightSourceEquation,
+                    ...newEquationSeed,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -538,8 +584,11 @@ export default function LightSourceUnitbar({
                 ...snapshot,
                 math: newMath,
               };
+              // The seed, not the bare defaults -- clearing a peak's equation should leave its
+              // sliders reading the shape the peak actually has (which is what an unwired peak
+              // shows), not collapsed at zero/a degenerate falloff.
               const defaultControls: LightSourceUnitControls = {
-                ...defaultLightSourceEquation,
+                ...newEquationSeed,
                 time: 0,
               };
               setCurrentControls(defaultControls);

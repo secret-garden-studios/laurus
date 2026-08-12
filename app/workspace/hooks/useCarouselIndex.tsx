@@ -6,7 +6,7 @@ import { CarouselEntry, LaurusActiveElement } from "../states/ui-state";
 // `index`), falling back to `index` itself if nothing in `entries` qualifies. Lets an effect whose
 // units only some entry types (e.g. light-source-unit.tsx's captures-only equations) keep its
 // derived index off the types it can't act on, without a runtime pass to correct it after the fact.
-function nearestNavigableIndex(
+export function nearestNavigableIndex(
   entries: CarouselEntry[],
   index: number,
   isNavigable: (entry: CarouselEntry) => boolean,
@@ -52,6 +52,11 @@ export const useCarouselIndex = (
     if (c.key !== activeKey) return false;
     if (activeElement?.type === "capture") {
       return c.type === "capture" && c.captureId === activeElement.captureId;
+    }
+    // Peaks need the same exclusion for the same reason -- a mask's own "mask" entry (and its
+    // capture entries) all sit before its peaks in carouselEntries.
+    if (activeElement?.type === "peak") {
+      return c.type === "peak" && c.peakId === activeElement.peakId;
     }
     return true;
   });

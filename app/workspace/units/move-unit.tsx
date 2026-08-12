@@ -15,7 +15,7 @@ import {
 } from "../workspace.config";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { maskCaptureInputId } from "../effects-utils";
 
@@ -45,6 +45,11 @@ export const defaultMoveEquation: LaurusMoveEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+// Everything but a topology peak, which has no transform for move to act on (see this file's own
+// carouselEntryKey) -- passed to useCarouselIndex so no index it derives lands on one. UnitDisplay
+// already rejects the same entries by default.
+const isMoveCarouselEntry = (entry: CarouselEntry) => entry.type !== "peak";
+
 interface MoveUnit {
   move: LaurusMoveResult;
   carouselIndexInit: number;
@@ -59,6 +64,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     uiState.carouselEntries,
     carouselIndexInit,
     move.move_id,
+    isMoveCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
@@ -126,6 +132,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           // math -- keying purely off the mask's element key would collapse every capture on the
           // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+        }
+        // A topology peak isn't wireable to move -- it has no transform of its own, only a relief
+        // the "light_source" effect can ramp (see light-source-unit.tsx's own "peak" mode). This
+        // unit's carousel never lands on one either (see UnitDisplay's isEntryWireable).
+        case "peak": {
+          return "";
         }
       }
     } else {
