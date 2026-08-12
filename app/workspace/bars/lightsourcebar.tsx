@@ -3,7 +3,7 @@ import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
-import { SvgRepo, addBox300, asterisk300, stairs300 } from "@/app/svg-repo";
+import { SvgRepo, asterisk300, stairs300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import {
