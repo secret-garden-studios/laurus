@@ -1646,9 +1646,9 @@ export function ProjectMaskItem({
               }
               // Meta-clicking directly on one of the mesh's captures or topology peaks opens that
               // element's own flavor of the context menu instead of the mesh's general one, and
-              // selects it (the bright highlight -- Lightsourcebar's target for a capture, or
-              // Maskbar's elevation slider target for a peak, see notifyMaskActivePeakChanged/
-              // MaskImperativeHandle.setActivePeak) -- hit-tested in the same buffer-pixel space
+              // selects it (the bright highlight -- Lightsourcebar's own target, for either flavor,
+              // see notifyMaskActivePeakChanged/MaskImperativeHandle.setActivePeak) -- hit-tested in
+              // the same buffer-pixel space
               // onMouseMove already converts screen coordinates into below (unflipped: polygon.d
               // points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's). All three
               // flavors share the same shown/hidden toggle further down. A peak hit wins over a
@@ -1961,7 +1961,7 @@ export function ProjectMaskItem({
                     notifyMaskPeaksUpdated(mediaKey, updated);
                     // Grabbing a peak (even a barely-moved click) makes it the active element --
                     // mirrors the capture relocate's own SetActiveElement below, and is what lets
-                    // Maskbar's elevation slider pick it up immediately afterwards.
+                    // Lightsourcebar's elevation slider pick it up immediately afterwards.
                     uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "peak", peakId } });
                     notifyMaskActiveElementChanged(mediaKey);
                     notifyMaskActivePeakChanged(mediaKey, peakId);

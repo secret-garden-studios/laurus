@@ -1226,13 +1226,13 @@ export default function Workspace({
 
   // Persists a freshly drawn topology peak immediately -- drawing a circle (canvas.tsx's
   // handleTopologyCapture) is taken as confirmation to save it, mirroring captureMeshSection's own
-  // "no separate confirm step" reasoning. `seed` is whatever Maskbar's own peak sliders are
+  // "no separate confirm step" reasoning. `seed` is whatever Lightsourcebar's own peak sliders are
   // currently staged at (uiState.stagedPeak, passed by canvas.tsx) -- not hardcoded defaults -- so
   // drawing several peaks in a row without touching a slider keeps reusing the last dialed-in
   // shape. Always creates a *new* peak (the next free id on this mask); moving one afterwards is a
   // drag directly on its own epicenter instead (project-mask-item.tsx's topology onPointerDown/
-  // onPointerUp), and reshaping it afterwards is the same Maskbar sliders once it's active (see
-  // this function's own SetActiveElement below). Unlike captureMeshSection, this deliberately
+  // onPointerUp), and reshaping it afterwards is the same Lightsourcebar sliders once it's active
+  // (see this function's own SetActiveElement below). Unlike captureMeshSection, this deliberately
   // leaves `editingTopology` on afterwards -- so drawing several peaks, or immediately dragging the
   // one just placed, doesn't require re-toggling the tool.
   //
@@ -1284,10 +1284,10 @@ export default function Workspace({
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
         notifyMaskPeaksUpdated(maskKey, updated);
-        // Makes the new peak the active element immediately -- Maskbar's elevation slider reads
-        // off uiState.activeElement, so the freshly drawn peak (rather than the staged value) is
-        // what it edits from here, the same way a freshly drawn capture becomes the active element
-        // in captureMeshSection above.
+        // Makes the new peak the active element immediately -- Lightsourcebar's elevation slider
+        // reads off uiState.activeElement, so the freshly drawn peak (rather than the staged
+        // value) is what it edits from here, the same way a freshly drawn capture becomes the
+        // active element in captureMeshSection above.
         uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "peak", peakId } });
         notifyMaskActiveElementChanged(maskKey);
         notifyMaskActivePeakChanged(maskKey, peakId);
@@ -1350,8 +1350,9 @@ export default function Workspace({
 
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
       notifyMaskPeaksUpdated(maskKey, updated);
-      // Deleting the active peak would otherwise leave Maskbar's peak sliders pointed at an id
-      // that's now gone -- fall back to the whole mask being active, same as a deleted capture does.
+      // Deleting the active peak would otherwise leave Lightsourcebar's peak sliders pointed at an
+      // id that's now gone -- fall back to the whole mask being active, same as a deleted capture
+      // does.
       if (
         uiState.activeElement?.key === maskKey &&
         uiState.activeElement.type === "peak" &&

@@ -52,7 +52,7 @@ export const MAX_MASK_PEAKS = 16;
  * an obvious but unexaggerated bump. */
 export const PEAK_ELEVATION_DEFAULT = 80;
 
-/** Bound Maskbar's elevation slider allows in *either* direction -- both while staging the
+/** Bound Lightsourcebar's elevation slider allows in *either* direction -- both while staging the
  * elevation the next circle-drag will create a peak at (see stagedPeak, ui-state.ts) and once a
  * peak is active. Symmetric because elevation is signed: a negative peak is a dent/crater, the same
  * dome inverted, and there is no reason to allow less of one than the other.

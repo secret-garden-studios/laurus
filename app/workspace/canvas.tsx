@@ -584,12 +584,12 @@ export default function Canvas() {
   );
 
   // Draws a new topology peak at the drag circle's epicenter/radius and immediately persists it,
-  // seeded at whatever shape Maskbar's own peak sliders are currently staged at (uiState.stagedPeak)
-  // -- mirrors handleLightSourceCapture's own "drawing is confirmation" reasoning, but unlike a
-  // capture there's no triangle-index membership that decides what it looks like: a peak is a term in
-  // a continuous height field the shaders evaluate from its epicenter, radius, elevation and falloff
-  // (see mask-gl.ts's PEAK_FIELD_GLSL), so the drawn circle contributes only the first two and the
-  // mesh's own triangulation contributes nothing at all.
+  // seeded at whatever shape Lightsourcebar's own peak sliders are currently staged at
+  // (uiState.stagedPeak) -- mirrors handleLightSourceCapture's own "drawing is confirmation"
+  // reasoning, but unlike a capture there's no triangle-index membership that decides what it looks
+  // like: a peak is a term in a continuous height field the shaders evaluate from its epicenter,
+  // radius, elevation and falloff (see mask-gl.ts's PEAK_FIELD_GLSL), so the drawn circle
+  // contributes only the first two and the mesh's own triangulation contributes nothing at all.
   const handleTopologyCapture = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;

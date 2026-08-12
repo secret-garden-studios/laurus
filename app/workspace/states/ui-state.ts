@@ -74,8 +74,8 @@ export type LaurusActiveElement =
   // One particular topology peak on the mask at `key` is singled out -- set the instant a fresh
   // peak commits (workspace.client.tsx's createTopologyPeak) or an existing one is grabbed
   // (project-mask-item.tsx's topology onPointerUp), mirroring the "capture" variant above exactly.
-  // Maskbar's elevation slider reads/writes whichever peak this points at; with no "peak" active
-  // element it instead edits/reads uiState.stagedPeakElevation, seeding the next peak drawn.
+  // Lightsourcebar's elevation slider reads/writes whichever peak this points at; with no "peak"
+  // active element it instead edits/reads uiState.stagedPeakElevation, seeding the next peak drawn.
   | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
 
 export type CarouselEntry =
@@ -120,10 +120,11 @@ export interface UIState {
   // default (see Lightsourcebar's "preview" toggle) so hovering over masks while working doesn't
   // constantly trigger the animation.
   lightSourcePreview: boolean;
-  // The shape Maskbar's own peak sliders are staged at whenever no topology peak is currently active
-  // -- read the instant a fresh circle-drag commits a new peak (workspace.client.tsx's
-  // createTopologyPeak), so drawing several peaks in a row without touching a slider keeps reusing
-  // whatever shape was last dialed in, rather than always restarting at the defaults.
+  // The shape Lightsourcebar's own peak sliders are staged at whenever no topology peak is
+  // currently active -- read the instant a fresh circle-drag commits a new peak
+  // (workspace.client.tsx's createTopologyPeak), so drawing several peaks in a row without
+  // touching a slider keeps reusing whatever shape was last dialed in, rather than always
+  // restarting at the defaults.
   //
   // Radius is deliberately absent: unlike elevation and falloff, it isn't dialed in ahead of time --
   // the circle-drag that creates the peak is what defines it. Anything staged for it would be

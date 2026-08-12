@@ -44,10 +44,11 @@ export interface PendingLightSourceCapture {
   polygonIndices: number[];
 }
 
-// A topology peak edit (creation, move, or a reshape from any of Maskbar's peak sliders) that's
-// mid-flight to the server -- drawing a peak persists it immediately (see canvas.tsx's
+// A topology peak edit (creation, move, or a reshape from any of Lightsourcebar's peak sliders)
+// that's mid-flight to the server -- drawing a peak persists it immediately (see canvas.tsx's
 // handleTopologyCapture and workspace.client.tsx's createTopologyPeak), and dragging an existing
-// peak's epicenter or any of its parameters does the same (project-mask-item.tsx, maskbar.tsx).
+// peak's epicenter or any of its parameters does the same (project-mask-item.tsx,
+// lightsourcebar.tsx).
 // Mirrors PendingLightSourceCapture's role exactly: holds the optimistic preview while the request
 // is outstanding, in the same mesh-local coordinate space as Peak_V1_0 itself.
 //
