@@ -437,6 +437,13 @@ export default function LightSourcebar() {
       const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
       const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
       dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
+      // Handed to the mesh directly rather than left for it to re-read off the dispatch above, for
+      // the same synchronous reason savePreviewField passes its own values through
+      // notifyMaskAppearanceChanged. These four dials are a capture's standing light now (see
+      // resolveRestingLightSources in project-mask-item.tsx), so without this the resting shading
+      // would lag a slider drag by a render -- or, since nothing else on this path forces a redraw,
+      // not follow it at all until something unrelated happened to repaint the mesh.
+      notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
 
       // Current polygon membership, preserved unchanged -- these three edits never move or resize
       // the capture, and sendMaskCaptureUpdate is a full-replace, so omitting it would clear the
@@ -461,7 +468,14 @@ export default function LightSourcebar() {
       };
       void persistCaptureQueue();
     },
-    [activeCaptureMaskKey, activeCapture, activeCaptureMaskData, dispatch, persistCaptureQueue],
+    [
+      activeCaptureMaskKey,
+      activeCapture,
+      activeCaptureMaskData,
+      dispatch,
+      notifyMaskCaptureUpdated,
+      persistCaptureQueue,
+    ],
   );
 
   // The centre a resize grows/shrinks around, frozen for the duration of one slider drag.
@@ -511,12 +525,12 @@ export default function LightSourcebar() {
   // onPointerMove), so a resize reads as the same gesture.
   const previewCaptureSizeChange = useCallback(
     (size: number) => {
-      if (activeCaptureMaskKey === undefined) return;
+      if (activeCaptureMaskKey === undefined || !activeCapture) return;
       const polygonIndices = captureIndicesForSize(size);
       if (!polygonIndices) return;
-      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices));
+      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices), activeCapture.id);
     },
-    [activeCaptureMaskKey, captureIndicesForSize, notifyMaskPendingCaptureSet],
+    [activeCaptureMaskKey, activeCapture, captureIndicesForSize, notifyMaskPendingCaptureSet],
   );
 
   // Commits a resize: the new `size` *and* the membership it implies, in one full-replace write.
@@ -543,6 +557,11 @@ export default function LightSourcebar() {
       const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
       const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
       dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
+      // The new size, straight to the mesh -- same reason saveCaptureField does it above, and it
+      // matters more here: `size` is the radius of this capture's standing light, so a resize that
+      // only reached the mesh as a membership change would repaint the highlight at the new size
+      // while still lighting the mesh at the old one.
+      notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
       // Held until the write lands, same reasoning as the relocate drag's own pending capture:
       // clearing it now would fall back to the mesh's still-stale capture_id tags and flash the
       // old size back for the round trip.
@@ -550,7 +569,7 @@ export default function LightSourcebar() {
         type: CoreActionType.SetPendingLightSourceCapture,
         value: { maskKey: activeCaptureMaskKey, captureId: activeCapture.id, polygonIndices },
       });
-      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices));
+      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices), activeCapture.id);
 
       pendingCaptureSaveRef.current = {
         maskKey: activeCaptureMaskKey,
@@ -573,6 +592,7 @@ export default function LightSourcebar() {
       activeCaptureMaskData,
       captureIndicesForSize,
       dispatch,
+      notifyMaskCaptureUpdated,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       persistCaptureQueue,

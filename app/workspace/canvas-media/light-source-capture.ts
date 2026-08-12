@@ -62,6 +62,31 @@ export function indicesInCircleFromCentroids(
   return indices;
 }
 
+/** Where a capture's own light hangs: the centroid of its member polygons' centroids, in the same
+ * mask-local mesh space the polygons' `d` strings are in. The same center capturedRegionCircle
+ * reconstructs, but taken off the already-parsed centroid cache (see polygonCentroids) and off a
+ * membership Set rather than off `capture_id`, so it's cheap enough for ProjectMaskItem's own
+ * resolveRestingLightSources to call on every frame and current enough to follow a relocate drag
+ * that hasn't round-tripped to the server yet.
+ *
+ * undefined when no member polygon yielded a usable centroid -- a capture whose triangles are all
+ * degenerate has no position to light from, and inventing one (the mesh's center, say) would put a
+ * light somewhere the document never asked for. */
+export function captureCenterFromCentroids(
+  centroids: [number, number][],
+  indices: Set<number>,
+): [number, number] | undefined {
+  const members: [number, number][] = [];
+  indices.forEach((index) => {
+    const centroid = centroids[index];
+    // NaN marks a polygon whose `d` yielded no points (see polygonCentroids) -- averaging one in
+    // would poison the whole capture's center, not just drop that triangle's contribution.
+    if (centroid && !Number.isNaN(centroid[0]) && !Number.isNaN(centroid[1])) members.push(centroid);
+  });
+  if (members.length === 0) return undefined;
+  return centroidOf(members);
+}
+
 /** Reconstructs the circle a given capture was (or could have been) drawn with -- centroid of its
  * own polygons' centroids as cx/cy, radius the farthest of them from that center. Every capture
  * that has ever existed through this UI was itself authored via captureTriangleIndicesInCircle,

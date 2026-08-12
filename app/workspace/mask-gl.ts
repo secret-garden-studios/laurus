@@ -16,6 +16,25 @@ export const CAPTURE_FALLOFF_CSS_PX_DEFAULT = 350;
 /** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's light source darkness slider. */
 export const CAPTURE_DARKNESS_DEFAULT = 0.2;
 
+/** How far past its own core a freshly drawn capture reaches, as a multiple of its drawn diameter
+ * -- the seed for Capture_V1_0.falloff at creation (see captureMeshSection, workspace.client.tsx).
+ *
+ * A capture is a standing light on the mesh (see resolveRestingLightSources, project-mask-item.tsx),
+ * and the shader gates all of a light's relief on reach = 1 - smoothstep(radius, radius + falloff,
+ * dist) -- so a capture whose falloff is 0 casts *nothing* past its own rim, no matter how bright it
+ * is. That was the old creation default, which made a freshly dropped capture invisible on any peak
+ * it wasn't literally sitting on top of.
+ *
+ * Derived from the two preview defaults above rather than picked independently, so a dropped capture
+ * reaches like the cursor light it's modelled on: the cursor spreads CAPTURE_FALLOFF_CSS_PX_DEFAULT
+ * past a core of CAPTURE_SIZE_CSS_PX_DEFAULT, and this is that same ratio. Scaling it off the drawn
+ * diameter (rather than copying the cursor's own px distance) is what makes a bigger capture reach
+ * proportionally further, and keeps the whole computation in mesh space -- `size` is already mesh
+ * space, so no canvas-scale conversion enters into it. Seeded once, at creation: from then on the
+ * falloff is the Lightsourcebar slider's to own, so a later resize moves the core without yanking
+ * the reach along with it. */
+export const CAPTURE_FALLOFF_TO_SIZE_RATIO = CAPTURE_FALLOFF_CSS_PX_DEFAULT / CAPTURE_SIZE_CSS_PX_DEFAULT;
+
 /** Default opacity, 0-1, of each triangle's own edge-stroke wireframe overlay (0 invisible, 1
  * fully visible; see edge/withEdge in the fragment shader below) -- the mesh's own fill is always
  * the source photo (see base below), this only ever controls the wireframe drawn on
@@ -118,18 +137,6 @@ export const MASK_PEAK_SWELL_LIMIT = 0.9;
  * a slope read as lit/shadowed", not a unit conversion. */
 export const MASK_BUMP_STRENGTH = 0.85;
 
-/** A fixed directional key light, in mesh space (y-down, so this is up-and-left on screen; +z out
- * of the screen toward the viewer), used by the relief term and nothing else -- plus its own gain.
- *
- * It exists because a mask's real lights are the cursor's (radius 0 until the pointer is actually
- * over the mesh) and playback's, so u_lightSourceCount is 0 most of the time -- without a key light
- * a peak would be invisible at rest, which is an odd thing for a sculpting tool. Costs exactly zero
- * on flat mesh, for the same reason the per-light term does: the relief is identically 0 wherever
- * the height field is flat. Normalized in JS because GLSL ES 1.00 const initializers may not call
- * built-ins like normalize(). */
-export const MASK_BUMP_KEY_DIRECTION: [number, number, number] = [-0.5, -0.5, 0.7];
-export const MASK_BUMP_KEY_STRENGTH = 0.55;
-
 /** How high above the mesh plane a light source hangs, as a multiple of its own core radius.
  *
  * A light carries no height of its own (only center/radius/falloff/intensity/darkness), so it
@@ -184,13 +191,6 @@ export const HIGHLIGHT_STROKE_COLOR: [number, number, number] = [0.258824, 0.521
 // compile error) -- toFixed guarantees one no matter how the JS constants above are written.
 function glFloat(n: number): string {
   return n.toFixed(6);
-}
-
-// GLSL ES 1.00 forbids calling built-ins like normalize() in a const initializer, so any direction
-// spliced into the shader as a constant has to arrive already unit-length.
-function normalize3(v: [number, number, number]): [number, number, number] {
-  const length = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / length, v[1] / length, v[2] / length];
 }
 
 /** A vertex/fragment GLSL pair, compiled and linked together into one WebGLProgram by createProgram. */
@@ -409,12 +409,6 @@ varying float v_highlight;
 // peakField below. See the vertex stage's own assignment for why it isn't the displaced position.
 varying vec2 v_meshPos;
 
-// A fixed directional key light used by the relief term below and nothing else, plus its gain --
-// spliced in from MASK_BUMP_KEY_DIRECTION/MASK_BUMP_KEY_STRENGTH above (change those constants, not
-// these lines), already normalized in JS since GLSL ES 1.00 const initializers may not call
-// normalize(). See MASK_BUMP_KEY_DIRECTION for why a peak needs a light that is always present.
-const vec3 BUMP_KEY_DIR = vec3(${normalize3(MASK_BUMP_KEY_DIRECTION).map(glFloat).join(", ")});
-#define BUMP_KEY_STRENGTH ${glFloat(MASK_BUMP_KEY_STRENGTH)}
 // Gain on the relief each real light source contributes -- spliced in from MASK_BUMP_STRENGTH.
 #define BUMP_STRENGTH ${glFloat(MASK_BUMP_STRENGTH)}
 // How high a light hangs above the mesh plane, as a multiple of its core radius -- spliced in from
@@ -568,10 +562,15 @@ void main() {
   vec3 surface = vec3(v_meshPos, field.z);
   // Relief is accumulated as two one-sided halves -- the slope facing a light and the slope facing
   // away -- because they feed opposite ends of the composite below (one mixes toward white, the
-  // other subtracts). Seeded from the always-on key light, then raised by each real light in turn.
-  float keyBump = dot(normal, BUMP_KEY_DIR) - BUMP_KEY_DIR.z;
-  float bumpLit = max(keyBump, 0.0) * BUMP_KEY_STRENGTH;
-  float bumpShade = max(-keyBump, 0.0) * BUMP_KEY_STRENGTH;
+  // other subtracts). Seeded at zero and raised by each real light in turn: a mesh with no light
+  // sources on it has no relief at all, so a peak sitting in a mask that carries no captures reads
+  // as flat rather than as lit from some direction nothing in the document chose. There used to be a
+  // fixed directional key light seeded in here instead, precisely so a peak would still be visible
+  // at rest -- but "at rest" now means every capture's own persisted light is on (see
+  // ProjectMaskItem's resolveRestingLightSources), so the real lights cover that case and an invented one
+  // can only disagree with them about where the light is coming from.
+  float bumpLit = 0.0;
+  float bumpShade = 0.0;
 
   float bestHighlight = 0.0;
   float leastShadow = 0.0;

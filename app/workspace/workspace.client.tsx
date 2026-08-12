@@ -55,6 +55,7 @@ import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capt
 import {
   CAPTURE_DARKNESS_DEFAULT,
   CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_FALLOFF_TO_SIZE_RATIO,
   CAPTURE_INTENSITY_DEFAULT,
   CAPTURE_SIZE_CSS_PX_DEFAULT,
   MIN_MASK_PEAK_RADIUS_PX,
@@ -249,7 +250,12 @@ export interface CoreContextProps {
   // Mirrors notifyMaskActiveCaptureChanged exactly, for a mesh's own topology peaks -- kept
   // separate for the same reason (only peak-highlight call sites know or care about peakIds).
   notifyMaskActivePeakChanged: (maskKey: string, peakId: number | undefined) => void;
-  notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>) => void;
+  // `captureId` says which capture this optimistic membership belongs to. The mesh needs it to move
+  // that capture's own standing light along with the preview (see resolveRestingLightSources,
+  // project-mask-item.tsx) -- the highlight itself never cared, which is why it's optional rather
+  // than required. A capture still being created carries one too; it simply has no committed record
+  // to light with yet, so the mesh skips it until the create lands.
+  notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>, captureId?: number) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
@@ -1147,8 +1153,8 @@ export default function Workspace({
   const notifyMaskActivePeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActivePeak(peakId));
   }, []);
-  const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices));
+  const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>, captureId?: number) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices, captureId));
   }, []);
   const notifyMaskPendingCaptureCleared = useCallback((maskKey: string | undefined) => {
     if (maskKey === undefined) return;
@@ -1188,6 +1194,10 @@ export default function Workspace({
     async (maskKey: string, polygonIndices: number[], size: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
+      // This mask's persisted preview-toggle dials -- the appearance the cursor light is currently
+      // running at, which the new capture inherits below. Undefined for a mask that has no project
+      // record yet, in which case the same defaults the cursor itself falls back to apply.
+      const maskMeta = coreState.project.masks.get(maskKey);
       const captureId = nextCaptureId(maskData.captures);
       const name = `light ${captureId}`;
 
@@ -1195,7 +1205,7 @@ export default function Workspace({
         type: CoreActionType.SetPendingLightSourceCapture,
         value: { maskKey, captureId, polygonIndices },
       });
-      notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices));
+      notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices), captureId);
 
       const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, {
         capture_id: captureId,
@@ -1203,12 +1213,28 @@ export default function Workspace({
         polygon_indices: polygonIndices,
         // Seeded from the circle actually drawn, since `size` is this capture's own geometry as
         // well as its light core: leaving it at 0 would mean the first touch of Lightsourcebar's
-        // size slider snapped the capture shut before growing it. The rest of the dials do start
-        // at rest/off -- they're a look, not a geometry, and have no drawn value to inherit.
+        // size slider snapped the capture shut before growing it.
         size,
-        intensity: 0,
-        falloff: 0,
-        darkness: 0,
+        // The other three used to start at 0 on the reasoning that they're "a look, not a geometry"
+        // with no drawn value to inherit. That stopped being true once a capture became a standing
+        // light on the mesh (see resolveRestingLightSources, project-mask-item.tsx): at 0 the light
+        // has no brightness, no darkening, and -- via falloff -- no reach past its own rim, so a
+        // freshly dropped capture lit nothing at all, including peaks sitting right beside it.
+        //
+        // A capture is the cursor's preview light, pinned where it was dropped, so it inherits that
+        // light's own appearance. Intensity and darkness copy the mask's *current* preview dials
+        // verbatim -- both are unitless 0-1, so there's nothing to convert, and tuning the preview
+        // before dropping now carries over the way it reads like it should.
+        intensity: maskMeta?.capture_preview_intensity ?? CAPTURE_INTENSITY_DEFAULT,
+        darkness: maskMeta?.capture_preview_darkness ?? CAPTURE_DARKNESS_DEFAULT,
+        // Falloff can't just be copied across the way those two are: the preview's is in on-screen
+        // CSS pixels (the cursor light converts it per frame by the canvas scale), while a capture's
+        // lives in the mesh's own space alongside `size`. Scaled off the drawn diameter instead --
+        // same reach-to-core ratio the preview defaults describe, but expressed in the units `size`
+        // is already in, which also makes a bigger capture reach proportionally further. Clamped to
+        // the reach Lightsourcebar's own falloff slider tops out at, so a capture drawn near the
+        // mask's full width doesn't start with its thumb pinned off the end of the track.
+        falloff: Math.min(size * CAPTURE_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
       });
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
@@ -1242,6 +1268,7 @@ export default function Workspace({
     },
     [
       coreState.canvasMasks,
+      coreState.project.masks,
       sendMaskCaptureUpdate,
       dispatch,
       uiDispatch,

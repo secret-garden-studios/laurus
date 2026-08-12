@@ -26,6 +26,7 @@ import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
 import {
   capturedRegionCircle,
+  captureCenterFromCentroids,
   captureTriangleIndicesInCircle,
   captureIdAtPoint,
   indicesInCircleFromCentroids,
@@ -38,6 +39,7 @@ import {
   getLightSourceFrames,
   getMoveFrames,
   getScaleFrames,
+  LaurusCapture,
   LaurusEffect,
   LaurusFrame,
   LaurusImgResult,
@@ -83,6 +85,12 @@ function buildCapturesMap(polygons: LaurusPolygonPath[]): Map<number, Set<number
     byCapture.set(p.capture_id, indices);
   });
   return byCapture;
+}
+
+// The registry half of buildCapturesMap: a mesh's own capture records by id, so a lookup is a Map
+// hit rather than a linear scan of maskData.captures on every frame (see resolveRestingLightSources).
+function buildCapturesMetaMap(captures: LaurusCapture[]): Map<number, LaurusCapture> {
+  return new Map(captures.map((capture) => [capture.id, capture]));
 }
 
 // Mirrors buildCapturesMap exactly, one topology peak instead of a capture: groups a mesh's own
@@ -172,7 +180,7 @@ export interface MaskImperativeHandle {
   // Mirrors setActiveCapture exactly, for this mesh's own topology peaks -- see DIM_HIGHLIGHT/
   // render()'s own peaks-building. undefined highlights every peak equally dim.
   setActivePeak: (peakId: number | undefined) => void;
-  setPendingCapture: (indices: Set<number>) => void;
+  setPendingCapture: (indices: Set<number>, captureId?: number) => void;
   clearPendingCapture: () => void;
   // The server's response to a just-committed capture change (a relocate drag, a fresh
   // circle-drawn capture, or a clear) -- updates this mask's own idea of which polygons are
@@ -432,6 +440,14 @@ export function ProjectMaskItem({
   // got back from the server, which updates this ref directly off the real response instead of
   // waiting on a re-render. See recolorHighlight.
   const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
+  // Which existing capture pendingCaptureRef above is standing in for, when it's standing in for one
+  // -- undefined both when nothing is pending and when what's pending is a brand-new capture that has
+  // no committed record yet. Only resolveRestingLightSources reads it: a relocate or resize has to
+  // move that capture's own light along with its highlight, and it can't just consult captureDragRef,
+  // which is released at pointerup while the pending indices deliberately survive until the server's
+  // ack lands (see onPointerUp below) -- keying off the drag would flash the light back to the old
+  // position for exactly the round trip the pending state exists to cover.
+  const pendingCaptureIdRef = useRef<number | undefined>(undefined);
   const activeHighlightRef = useRef(false);
   // Every one of this mesh's own captures, by id -- what activeHighlightRef actually paints (one
   // bright, the rest dim -- see activeCaptureIdRef/DIM_HIGHLIGHT/recolorHighlight).
@@ -439,6 +455,12 @@ export function ProjectMaskItem({
   // staleness reason capturedIndicesRef never was (see the comment above): kept in sync directly
   // off the server's own response by syncCapturedIndices instead.
   const capturesRef = useRef<Map<number, Set<number>>>(new Map());
+  // The dials half of capturesRef: every capture's own registry record (size/intensity/falloff/
+  // darkness), by id. Kept in sync in exactly the same places and for exactly the same staleness
+  // reason -- these four numbers are now what a capture's standing light is made of (see
+  // resolveRestingLightSources), so a slider tick has to reach the next frame rather than wait for
+  // the SetCanvasMask it just dispatched to come back around through a React render.
+  const capturesMetaRef = useRef<Map<number, LaurusCapture>>(new Map());
   // Which capture (if any) reads as the bright one among capturesRef's -- mirrors
   // uiState.activeElement's own captureId when its type is "capture", refreshed on mount/via
   // setActiveCapture below for the same reason activeHighlightRef mirrors uiState.activeElement
@@ -490,7 +512,7 @@ export function ProjectMaskItem({
       type: CoreActionType.SetPendingLightSourceCapture,
       value: { maskKey: mediaKey, captureId: drag.captureId, polygonIndices: [...indices] },
     });
-    notifyMaskPendingCaptureSet(mediaKey, indices);
+    notifyMaskPendingCaptureSet(mediaKey, indices, drag.captureId);
   }, [captureIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingCaptureSet]);
 
   // Abandons an in-progress capture-relocate drag without persisting anything -- used both by a
@@ -657,6 +679,62 @@ export function ProjectMaskItem({
     [source, resolveTargetCaptureId],
   );
 
+  // Every capture on this mesh, as the light source it is: one MaskLightSource per capture, hanging
+  // over that capture's own region at its own persisted size/intensity/falloff/darkness. These are
+  // the mesh's *standing* lights -- always on, with the cursor's hover epicenter and playback's
+  // animated lights layered on top of them rather than replacing them (see render below).
+  //
+  // This is what a peak's resting relief is actually made of. The shader has no key light of its own
+  // any more (see mask-gl.ts's bumpLit/bumpShade), so a mask carrying no captures uploads no lights
+  // at all and its peaks render flat -- which is the honest answer, since nothing in the document
+  // says where light would be coming from. Once captures exist, the shading follows them: the shader
+  // already scales each light's relief by reach = 1 - shadow, i.e. by that light's own radius and
+  // falloff measured against this facet's distance to it, so several captures weight themselves
+  // against a given peak with no extra arithmetic here. All this has to get right is where each
+  // light is and how big it is.
+  //
+  // Reads capturesRef/capturesMetaRef/polygonCentroidsRef rather than `source` directly, for the
+  // same staleness reason computeLightSourceRestPosition does (see its comment) -- a capture that
+  // just moved, was just resized, or just had a dial dragged must light its new region with its new
+  // numbers on the very next frame, not once the dispatch has round-tripped through a React render.
+  const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
+    const canvas = canvasRef.current;
+    if (!canvas) return [];
+    const centroids = polygonCentroidsRef.current;
+    const lights: MaskLightSource[] = [];
+    capturesRef.current.forEach((indices, captureId) => {
+      // Whatever playback is currently driving this capture *is* its light for this frame (position
+      // and dials both, see playbackLightSourcesRef) -- adding its resting light alongside would
+      // light the same capture twice, from two different places at once.
+      if (playbackLightSourcesRef.current.has(captureId)) return;
+      // A capture with polygons tagged for it but no registry entry has no dials to light with;
+      // playback's own fallback chain reaches for the mask's preview dials there, but those are
+      // screen-space and mesh-wide (see its comment), which is exactly the mixing this shouldn't do.
+      const meta = capturesMetaRef.current.get(captureId);
+      if (!meta) return;
+      // While a relocate or resize of this capture is pending, its light rides the optimistic
+      // membership rather than the region the server still thinks it owns -- so it travels with the
+      // drag and stays where it was dropped across the commit's round trip, exactly as the highlight
+      // does (see pendingCaptureIdRef).
+      const pending = pendingCaptureIdRef.current === captureId ? pendingCaptureRef.current : undefined;
+      const center = captureCenterFromCentroids(centroids, pending ?? indices);
+      if (!center) return;
+      lights.push({
+        x: center[0],
+        // gl_FragCoord's origin is bottom-left; the mesh's own space is top-left, same flip
+        // playback's own epicenter makes.
+        y: canvas.height - center[1],
+        // size is a diameter in mesh space, and mesh space is this canvas's buffer space -- so no
+        // scaleX conversion here, exactly as playback's per-capture lights avoid one.
+        radius: meta.size / 2,
+        falloff: meta.falloff,
+        intensity: meta.intensity,
+        darkness: meta.darkness,
+      });
+    });
+    return lights;
+  }, []);
+
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
   }, [source.kind, uiState.tool.type]);
@@ -696,18 +774,25 @@ export function ProjectMaskItem({
   const render = useCallback(() => {
     const state = glStateRef.current;
     if (!state) return;
-    // Playback (wiredMoveRef) owns however many lights playLightSourceAnimation is currently
-    // animating; otherwise it's just the cursor's own single light, using the mask's resting
-    // preview-toggle dial values (captureIntensityRef&co.) rather than anything per-capture.
-    const lightSources: MaskLightSource[] = wiredMoveRef.current
-      ? Array.from(playbackLightSourcesRef.current.values())
-      : [
-          {
-            ...lightSourceRef.current,
-            intensity: captureIntensityRef.current,
-            darkness: captureDarknessRef.current,
-          },
-        ];
+    // Every capture is a standing light on this mesh (resolveRestingLightSources), and the
+    // interactive light rides on top of it: playback (wiredMoveRef) owns however many lights
+    // playLightSourceAnimation is currently animating, and otherwise it's the cursor's own single
+    // light, using the mask's mesh-wide preview-toggle dial values (captureIntensityRef&co.) rather
+    // than anything per-capture. The interactive lights go first because drawMaskMesh keeps only the
+    // first MAX_MASK_LIGHT_SOURCES with a positive radius -- on a mesh carrying that many captures,
+    // the light the user is actively moving is the one that must not be the one dropped.
+    const lightSources: MaskLightSource[] = [
+      ...(wiredMoveRef.current
+        ? Array.from(playbackLightSourcesRef.current.values())
+        : [
+            {
+              ...lightSourceRef.current,
+              intensity: captureIntensityRef.current,
+              darkness: captureDarknessRef.current,
+            },
+          ]),
+      ...resolveRestingLightSources(),
+    ];
     // Peaks are uniforms, read fresh every frame (see resolvePeakUniforms) -- so an edit to one is a
     // handful of floats and a redraw, never a buffer rewrite. What the mesh's own vertex buffers
     // still carry is the *topology* subdivision refreshed at commit time by syncPeaks below, which is
@@ -722,7 +807,7 @@ export function ProjectMaskItem({
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
     });
-  }, [resolvePeakUniforms]);
+  }, [resolvePeakUniforms, resolveRestingLightSources]);
 
   // Marks the mesh's covered triangles to reflect pendingCaptureRef/activeHighlightRef (see
   // their own comment) by re-uploading the shader's a_highlight buffer -- a 1.0/0.0 flag per
@@ -1372,10 +1457,10 @@ export function ProjectMaskItem({
         }
 
         lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-        pendingCaptureRef.current =
-          coreState.pendingLightSourceCapture?.maskKey === mediaKey
-            ? new Set(coreState.pendingLightSourceCapture.polygonIndices)
-            : undefined;
+        const pendingCapture =
+          coreState.pendingLightSourceCapture?.maskKey === mediaKey ? coreState.pendingLightSourceCapture : undefined;
+        pendingCaptureRef.current = pendingCapture ? new Set(pendingCapture.polygonIndices) : undefined;
+        pendingCaptureIdRef.current = pendingCapture?.captureId;
         activeHighlightRef.current =
           (uiState.activeElement?.type === "mask" ||
             uiState.activeElement?.type === "capture" ||
@@ -1390,6 +1475,7 @@ export function ProjectMaskItem({
             ? uiState.activeElement.peakId
             : undefined;
         capturesRef.current = buildCapturesMap(maskData.polygons);
+        capturesMetaRef.current = buildCapturesMetaMap(maskData.captures);
         peaksRef.current = maskData.peaks;
         peaksMapRef.current = buildPeaksMap(maskData.polygons);
         polygonCentroidsRef.current = polygonCentroids(maskData.polygons);
@@ -1447,11 +1533,13 @@ export function ProjectMaskItem({
             activePeakIdRef.current = peakId;
             recolorHighlight();
           },
-          setPendingCapture: (indices) => {
+          setPendingCapture: (indices, captureId) => {
+            pendingCaptureIdRef.current = captureId;
             pendingCaptureRef.current = indices;
             recolorHighlight();
           },
           clearPendingCapture: () => {
+            pendingCaptureIdRef.current = undefined;
             pendingCaptureRef.current = undefined;
             recolorHighlight();
           },
@@ -1460,6 +1548,7 @@ export function ProjectMaskItem({
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
             capturesRef.current = buildCapturesMap(updated.polygons);
+            capturesMetaRef.current = buildCapturesMetaMap(updated.captures);
             polygonCentroidsRef.current = polygonCentroids(updated.polygons);
             recolorHighlight();
           },
@@ -2015,7 +2104,7 @@ export function ProjectMaskItem({
                 type: CoreActionType.SetPendingLightSourceCapture,
                 value: { maskKey: mediaKey, captureId, polygonIndices: [...originalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, originalIndices);
+              notifyMaskPendingCaptureSet(mediaKey, originalIndices, captureId);
             }}
             onPointerMove={(e) => {
               const captureDrag = captureDragRef.current;
@@ -2140,7 +2229,7 @@ export function ProjectMaskItem({
                 type: CoreActionType.SetPendingLightSourceCapture,
                 value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, finalIndices);
+              notifyMaskPendingCaptureSet(mediaKey, finalIndices, captureId);
               // Locks this capture against a second relocate (see onPointerDown /
               // captureCommitInFlightRef) until this request's ack lands, whether it succeeds or
               // fails.
