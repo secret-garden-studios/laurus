@@ -61,10 +61,10 @@ export function useMaskPersist() {
         rotate_angle: 0,
         // Seeded from whatever the live preview was dialed to while streaming, so persisting
         // doesn't reset the look back to some unrelated default.
-        light_source_size: mask.lightSourceSize,
-        light_source_intensity: mask.lightSourceIntensity,
-        light_source_falloff: mask.lightSourceFalloff,
-        light_source_darkness: mask.lightSourceDarkness,
+        capture_preview_size: mask.captureSize,
+        capture_preview_intensity: mask.captureIntensity,
+        capture_preview_falloff: mask.captureFalloff,
+        capture_preview_darkness: mask.captureDarkness,
         texture: mask.textureMix,
         description: "",
       };
@@ -116,10 +116,10 @@ export function useMaskPersist() {
       dispatch,
       uiDispatch,
       setSelectedMaskKeys,
-      mask.lightSourceSize,
-      mask.lightSourceIntensity,
-      mask.lightSourceFalloff,
-      mask.lightSourceDarkness,
+      mask.captureSize,
+      mask.captureIntensity,
+      mask.captureFalloff,
+      mask.captureDarkness,
       mask.textureMix,
     ],
   );

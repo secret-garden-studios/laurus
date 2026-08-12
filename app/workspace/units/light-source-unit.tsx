@@ -12,10 +12,10 @@ import {
 import {
   getDynamicUnitSizes,
   MIN_LIMIT_FACTOR,
-  LIGHT_SOURCE_DARKNESS_MAX,
-  LIGHT_SOURCE_FALLOFF_MAX,
-  LIGHT_SOURCE_INTENSITY_MAX,
-  LIGHT_SOURCE_SIZE_MAX,
+  CAPTURE_DARKNESS_MAX,
+  CAPTURE_FALLOFF_MAX,
+  CAPTURE_INTENSITY_MAX,
+  CAPTURE_SIZE_MAX,
 } from "../workspace.config";
 import {
   MAX_MASK_PEAK_ELEVATION,
@@ -32,22 +32,24 @@ import { dmSans } from "../../fonts";
 
 // Which flavor of light_source equation this unit is currently editing. Not state and not
 // persisted -- it's read off whichever carousel entry the display is showing, and "switching" it
-// (double-clicking the unitbar's own target button, the same gesture Lightsourcebar's asterisk uses
+// (double-clicking the unitbar's own target button, the same gesture Lightsourcebar's icon uses
 // for the identical split) means moving the display to an entry of the other flavor.
 //
-// "capture": the original four dials, ramping a mask capture's own epicenter/glow from the
-// starting appearance Lightsourcebar's capture dials edit. "peak": elevation/radius/falloff,
-// ramping one topology peak's own relief from the starting shape Lightsourcebar's peak dials
-// edit. The two are separate equations under separate input_ids (see maskCaptureInputId/
-// maskPeakInputId), not two views of one -- which is exactly why the flavor can be read off the
-// entry: an entry is a capture or a peak, and that settles which equation there is to edit.
+// "capture": the original four dials, ramping a mask capture's own epicenter/glow from that
+// capture's own starting appearance -- Capture_V1_0's persisted size/intensity/falloff/darkness,
+// the same fields Lightsourcebar's "capture" dials edit (see newEquationSeed below). "peak":
+// elevation/radius/falloff, ramping one topology peak's own relief from the starting shape
+// Lightsourcebar's peak dials edit. The two are separate equations under separate input_ids (see
+// maskCaptureInputId/maskPeakInputId), not two views of one -- which is exactly why the flavor
+// can be read off the entry: an entry is a capture or a peak, and that settles which equation
+// there is to edit.
 export type LightSourceUnitTarget = "capture" | "peak";
 
 export interface LightSourceUnitControls {
-  light_source_size: number;
-  light_source_intensity: number;
-  light_source_falloff: number;
-  light_source_darkness: number;
+  capture_size: number;
+  capture_intensity: number;
+  capture_falloff: number;
+  capture_darkness: number;
   peak_elevation: number;
   peak_radius: number;
   peak_falloff: number;
@@ -61,10 +63,10 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   time: 0.000001,
   loop: LaurusLoopType.none,
   solution: [],
-  light_source_size: 0,
-  light_source_intensity: 0,
-  light_source_falloff: 0,
-  light_source_darkness: 0,
+  capture_size: 0,
+  capture_intensity: 0,
+  capture_falloff: 0,
+  capture_darkness: 0,
   peak_elevation: 0,
   peak_radius: 0,
   // The authoring floor, not PEAK_FALLOFF_DEFAULT -- that's the *schema's* default (what a peak
@@ -124,10 +126,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const target: LightSourceUnitTarget = uiState.carouselEntries[carouselIndex]?.type === "peak" ? "peak" : "capture";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<LightSourceUnitControls>({
-    light_source_size: 0,
-    light_source_intensity: 0,
-    light_source_falloff: 0,
-    light_source_darkness: 0,
+    capture_size: 0,
+    capture_intensity: 0,
+    capture_falloff: 0,
+    capture_darkness: 0,
     peak_elevation: defaultLightSourceEquation.peak_elevation,
     peak_radius: defaultLightSourceEquation.peak_radius,
     peak_falloff: defaultLightSourceEquation.peak_falloff,
@@ -217,58 +219,85 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     }
   }, [uiState.carouselEntries, coreState.project.masks, carouselIndex]);
 
-  // param 1: light_source_size
+  // The capture this unit's "capture" target is currently pointed at -- mirrors activePeakEntry
+  // below exactly, including reading off the carousel entry rather than uiState.activeElement.
+  // Its own persisted size/intensity/falloff/darkness (see Capture_V1_0) is this equation's seed
+  // whenever nothing has been dialed in for it yet -- see newEquationSeed below -- and the mesh it
+  // lives on is what bounds the size/falloff tracks just below.
+  const activeCaptureEntry = useMemo(() => {
+    if (carouselIndex >= uiState.carouselEntries.length) return undefined;
+    const entry = uiState.carouselEntries[carouselIndex];
+    return entry.type === "capture" ? entry : undefined;
+  }, [carouselIndex, uiState.carouselEntries]);
+  const activeCaptureMaskData = activeCaptureEntry ? coreState.canvasMasks.get(activeCaptureEntry.key) : undefined;
+  const activeCapture = useMemo(() => {
+    if (!activeCaptureEntry) return undefined;
+    return activeCaptureMaskData?.captures.find((c) => c.id === activeCaptureEntry.captureId);
+  }, [activeCaptureEntry, activeCaptureMaskData]);
+
+  // param 1: capture_size
+  //
+  // A capture's size is a diameter in the mesh's own coordinate space (it's the capture's own
+  // geometry, not just a look -- see Capture_V1_0), so this ramp target's ceiling scales with the
+  // mask exactly the way peakRadiusMax below does, and the way Lightsourcebar's own capture size
+  // slider does. Ramping past the mesh's narrow axis just means owning every triangle.
+  const captureSizeMax = activeCaptureMaskData
+    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
+    : CAPTURE_SIZE_MAX;
   const sizeTrackRef = useRef<HTMLDivElement | null>(null);
   const [sizeCursor, setSizeCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getSizeValue, getInverseTrackCursor: getSizeCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    LIGHT_SOURCE_SIZE_MAX,
+    captureSizeMax,
   );
   const sizeTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_source_size.toFixed(1)
+      ? lightSource.math.get(carouselEntryKey)!.capture_size.toFixed(1)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const sizeRef = useRef<HTMLDivElement | null>(null);
 
-  // param 2: light_source_intensity
+  // param 2: capture_intensity
   const intensityTrackRef = useRef<HTMLDivElement | null>(null);
   const [intensityCursor, setIntensityCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getIntensityValue, getInverseTrackCursor: getIntensityCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    LIGHT_SOURCE_INTENSITY_MAX,
+    CAPTURE_INTENSITY_MAX,
   );
   const intensityTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_source_intensity.toFixed(2)
+      ? lightSource.math.get(carouselEntryKey)!.capture_intensity.toFixed(2)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const intensityRef = useRef<HTMLDivElement | null>(null);
 
-  // param 3: light_source_falloff
+  // param 3: capture_falloff -- mesh-space like the size above, and bounded the same way.
+  const captureFalloffMax = activeCaptureMaskData
+    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
+    : CAPTURE_FALLOFF_MAX;
   const falloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [falloffCursor, setFalloffCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getFalloffValue, getInverseTrackCursor: getFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    LIGHT_SOURCE_FALLOFF_MAX,
+    captureFalloffMax,
   );
   const falloffTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_source_falloff.toFixed(1)
+      ? lightSource.math.get(carouselEntryKey)!.capture_falloff.toFixed(1)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const falloffRef = useRef<HTMLDivElement | null>(null);
 
-  // param 4: light_source_darkness
+  // param 4: capture_darkness
   const darknessTrackRef = useRef<HTMLDivElement | null>(null);
   const [darknessCursor, setDarknessCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getDarknessValue, getInverseTrackCursor: getDarknessCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    LIGHT_SOURCE_DARKNESS_MAX,
+    CAPTURE_DARKNESS_MAX,
   );
   const darknessTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_source_darkness.toFixed(2)
+      ? lightSource.math.get(carouselEntryKey)!.capture_darkness.toFixed(2)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const darknessRef = useRef<HTMLDivElement | null>(null);
@@ -550,23 +579,23 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const updateTrackpads = useCallback(
     (newControls: LightSourceUnitControls) => {
       if (sizeTrackRef.current) {
-        setSizeCursor({ y: getSizeCursor(newControls.light_source_size, sizeTrackRef.current.clientHeight), x: 0 });
+        setSizeCursor({ y: getSizeCursor(newControls.capture_size, sizeTrackRef.current.clientHeight), x: 0 });
       }
       if (intensityTrackRef.current) {
         setIntensityCursor({
-          y: getIntensityCursor(newControls.light_source_intensity, intensityTrackRef.current.clientHeight),
+          y: getIntensityCursor(newControls.capture_intensity, intensityTrackRef.current.clientHeight),
           x: 0,
         });
       }
       if (falloffTrackRef.current) {
         setFalloffCursor({
-          y: getFalloffCursor(newControls.light_source_falloff, falloffTrackRef.current.clientHeight),
+          y: getFalloffCursor(newControls.capture_falloff, falloffTrackRef.current.clientHeight),
           x: 0,
         });
       }
       if (darknessTrackRef.current) {
         setDarknessCursor({
-          y: getDarknessCursor(newControls.light_source_darkness, darknessTrackRef.current.clientHeight),
+          y: getDarknessCursor(newControls.capture_darkness, darknessTrackRef.current.clientHeight),
           x: 0,
         });
       }
@@ -619,10 +648,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       const activeEquation = lightSource.math.get(activeKey);
       const initControls: LightSourceUnitControls = { ...currentControls };
       if (activeEquation) {
-        initControls.light_source_size = activeEquation.light_source_size;
-        initControls.light_source_intensity = activeEquation.light_source_intensity;
-        initControls.light_source_falloff = activeEquation.light_source_falloff;
-        initControls.light_source_darkness = activeEquation.light_source_darkness;
+        initControls.capture_size = activeEquation.capture_size;
+        initControls.capture_intensity = activeEquation.capture_intensity;
+        initControls.capture_falloff = activeEquation.capture_falloff;
+        initControls.capture_darkness = activeEquation.capture_darkness;
         initControls.peak_elevation = activeEquation.peak_elevation;
         initControls.peak_radius = activeEquation.peak_radius;
         initControls.peak_falloff = activeEquation.peak_falloff;
@@ -630,10 +659,14 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.loop = activeEquation.loop;
         initControls.limit_factor = activeEquation.limit_factor;
       } else if (activeKey) {
-        initControls.light_source_size = defaultLightSourceEquation.light_source_size;
-        initControls.light_source_intensity = defaultLightSourceEquation.light_source_intensity;
-        initControls.light_source_falloff = defaultLightSourceEquation.light_source_falloff;
-        initControls.light_source_darkness = defaultLightSourceEquation.light_source_darkness;
+        // Seeded from the capture's own current appearance (mirroring the peak seeding just
+        // below) rather than the equation defaults, so an unwired capture's sliders start where
+        // its own dials in Lightsourcebar already are (which is also where the server's own ramp
+        // would start from -- see resolve_light_source_seed) instead of collapsed at zero/off.
+        initControls.capture_size = activeCapture?.size ?? defaultLightSourceEquation.capture_size;
+        initControls.capture_intensity = activeCapture?.intensity ?? defaultLightSourceEquation.capture_intensity;
+        initControls.capture_falloff = activeCapture?.falloff ?? defaultLightSourceEquation.capture_falloff;
+        initControls.capture_darkness = activeCapture?.darkness ?? defaultLightSourceEquation.capture_darkness;
         // Seeded from the peak's own current shape rather than the equation defaults, so an
         // unwired peak's sliders start where the peak actually is (which is also where the
         // server's own ramp would start from -- see resolve_light_source_seed) instead of
@@ -660,34 +693,49 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     coreState.timelineUnit,
     target,
     activePeak,
+    activeCapture,
   ]);
 
   // What a *fresh* equation for whatever the carousel is currently on starts as, before the one
-  // field being edited is written over it. For a capture that's just the defaults (its four dials
-  // genuinely rest at zero/off). For a peak it's the peak's own current shape: every field of a
-  // light_source equation is an absolute target the server ramps *to* (see _ramp_to_target), so
-  // leaving the two untouched peak fields at the defaults would make a first drag of, say, the
-  // radius slider also silently target "flatten this peak to nothing/set falloff to the authoring
-  // floor" -- the peak would jump on every field, not just the one actually touched. Seeding them
-  // to where the peak already is makes an untouched field a no-op ramp, which is what "I only
-  // edited radius" should mean.
+  // field being edited is written over it. Every field of a light_source equation is an absolute
+  // target the server ramps *to* (see _ramp_to_target), so leaving the untouched fields at the
+  // defaults would make a first drag of, say, the falloff slider also silently target "reset
+  // everything else to zero/off" -- the capture or peak would jump on every field, not just the
+  // one actually touched. Seeding them from where the capture/peak already is makes an untouched
+  // field a no-op ramp, which is what "I only edited one dial" should mean.
+  //
+  // For a capture that's Capture_V1_0's own persisted size/intensity/falloff/darkness (the same
+  // starting appearance Lightsourcebar's "capture" dials edit). For a peak it's the peak's own
+  // current shape (elevation/radius/falloff). Neither active -- an "img"/"svg"/whole-"mask" entry,
+  // or a carousel with nothing on it yet -- falls back to the plain defaults.
   const newEquationSeed = useMemo((): LaurusLightSourceEquation => {
-    if (!activePeak) return defaultLightSourceEquation;
-    return {
-      ...defaultLightSourceEquation,
-      peak_elevation: activePeak.elevation,
-      peak_radius: activePeak.radius,
-      peak_falloff: activePeak.falloff,
-    };
-  }, [activePeak]);
+    if (activePeak) {
+      return {
+        ...defaultLightSourceEquation,
+        peak_elevation: activePeak.elevation,
+        peak_radius: activePeak.radius,
+        peak_falloff: activePeak.falloff,
+      };
+    }
+    if (activeCapture) {
+      return {
+        ...defaultLightSourceEquation,
+        capture_size: activeCapture.size,
+        capture_intensity: activeCapture.intensity,
+        capture_falloff: activeCapture.falloff,
+        capture_darkness: activeCapture.darkness,
+      };
+    }
+    return defaultLightSourceEquation;
+  }, [activePeak, activeCapture]);
 
   const saveLightSourceField = useCallback(
     (
       field:
-        | "light_source_size"
-        | "light_source_intensity"
-        | "light_source_falloff"
-        | "light_source_darkness"
+        | "capture_size"
+        | "capture_intensity"
+        | "capture_falloff"
+        | "capture_darkness"
         | "peak_elevation"
         | "peak_radius"
         | "peak_falloff",
@@ -821,8 +869,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setSizeCursor({ ...newCursor, x: 0 });
                           if (!sizeTrackRef.current) return;
                           const newVal = getSizeValue(newCursor.y, sizeTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, light_source_size: newVal }));
-                          saveLightSourceField("light_source_size", newVal);
+                          setCurrentControls((v) => ({ ...v, capture_size: newVal }));
+                          saveLightSourceField("capture_size", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!sizeTrackRef.current || !sizeRef.current) return;
@@ -845,8 +893,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setIntensityCursor({ ...newCursor, x: 0 });
                           if (!intensityTrackRef.current) return;
                           const newVal = getIntensityValue(newCursor.y, intensityTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, light_source_intensity: newVal }));
-                          saveLightSourceField("light_source_intensity", newVal);
+                          setCurrentControls((v) => ({ ...v, capture_intensity: newVal }));
+                          saveLightSourceField("capture_intensity", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!intensityTrackRef.current || !intensityRef.current) return;
@@ -869,8 +917,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setFalloffCursor({ ...newCursor, x: 0 });
                           if (!falloffTrackRef.current) return;
                           const newVal = getFalloffValue(newCursor.y, falloffTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, light_source_falloff: newVal }));
-                          saveLightSourceField("light_source_falloff", newVal);
+                          setCurrentControls((v) => ({ ...v, capture_falloff: newVal }));
+                          saveLightSourceField("capture_falloff", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!falloffTrackRef.current || !falloffRef.current) return;
@@ -893,8 +941,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setDarknessCursor({ ...newCursor, x: 0 });
                           if (!darknessTrackRef.current) return;
                           const newVal = getDarknessValue(newCursor.y, darknessTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, light_source_darkness: newVal }));
-                          saveLightSourceField("light_source_darkness", newVal);
+                          setCurrentControls((v) => ({ ...v, capture_darkness: newVal }));
+                          saveLightSourceField("capture_darkness", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!darknessTrackRef.current || !darknessRef.current) return;

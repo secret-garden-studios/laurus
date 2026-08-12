@@ -18,7 +18,7 @@ import {
   uploadCurveMask,
   uploadStaticMaskMesh,
 } from "../mask-gl";
-import { CoreActionType, DEFAULT_LIGHT_SOURCE_VALUE, PendingTopologyEdit } from "../states/core-state";
+import { CoreActionType, DEFAULT_CAPTURE_VALUE, PendingTopologyEdit } from "../states/core-state";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
@@ -187,9 +187,9 @@ export interface MaskImperativeHandle {
   clearPendingTopology: () => void;
   syncPeaks: (updated: LaurusMaskResult) => void;
   // Re-applies this mask's own texture value (ProjectMask_V1_0.texture, persisted server-side via
-  // updateProject the same way light_source_* is -- see Maskbar's saveTextureField) and resting
-  // light-source dial values. Reads off coreState.project.masks by default, but a caller that just
-  // optimistically wrote a fresh value (and kicked off persisting it) can pass it directly via
+  // updateProject the same way capture_preview_* is -- see Maskbar's saveTextureField) and resting
+  // preview-toggle dial values. Reads off coreState.project.masks by default, but a caller that
+  // just optimistically wrote a fresh value (and kicked off persisting it) can pass it directly via
   // `override` -- necessary because this fires synchronously right after that write, before React
   // has re-rendered this component with the new `coreState` prop (same stale-closure hazard
   // syncCapturedIndices avoids above by taking `updated` directly instead of re-reading `source`).
@@ -199,7 +199,7 @@ export interface MaskImperativeHandle {
 
 export interface MaskAppearanceOverride {
   textureMix?: number;
-  lightSource?: { size: number; intensity: number; falloff: number; darkness: number };
+  capture?: { size: number; intensity: number; falloff: number; darkness: number };
 }
 
 interface ProjectMaskItem {
@@ -281,10 +281,10 @@ export function ProjectMaskItem({
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
-  const lightSourceSizeRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.size);
-  const lightSourceIntensityRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.intensity);
-  const lightSourceFalloffRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.falloff);
-  const lightSourceDarknessRef = useRef(DEFAULT_LIGHT_SOURCE_VALUE.darkness);
+  const captureSizeRef = useRef(DEFAULT_CAPTURE_VALUE.size);
+  const captureIntensityRef = useRef(DEFAULT_CAPTURE_VALUE.intensity);
+  const captureFalloffRef = useRef(DEFAULT_CAPTURE_VALUE.falloff);
+  const captureDarknessRef = useRef(DEFAULT_CAPTURE_VALUE.darkness);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   // [startVertex, vertexCount] per source.maskData.polygons entry, in that same order -- what
@@ -310,7 +310,7 @@ export function ProjectMaskItem({
   // a single-effect preview only ever populates one, but Play All (bare play(), see
   // MaskImperativeHandle) can populate several at once, one per capture with its own wired
   // move/light_source effect, all rendered simultaneously (see mask-gl.ts's array uniforms).
-  // render() reads this instead of lightSourceRef/lightSourceSizeRef&co. whenever wiredMoveRef is
+  // render() reads this instead of lightSourceRef/captureSizeRef&co. whenever wiredMoveRef is
   // true. Cleared by stopLightSourceAnimation.
   const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
   // The peak-flavored counterpart of playbackLightSourcesRef, keyed by peakId -- one entry per
@@ -698,14 +698,14 @@ export function ProjectMaskItem({
     if (!state) return;
     // Playback (wiredMoveRef) owns however many lights playLightSourceAnimation is currently
     // animating; otherwise it's just the cursor's own single light, using the mask's resting
-    // dial values (lightSourceIntensityRef&co.) rather than anything per-capture.
+    // preview-toggle dial values (captureIntensityRef&co.) rather than anything per-capture.
     const lightSources: MaskLightSource[] = wiredMoveRef.current
       ? Array.from(playbackLightSourcesRef.current.values())
       : [
           {
             ...lightSourceRef.current,
-            intensity: lightSourceIntensityRef.current,
-            darkness: lightSourceDarknessRef.current,
+            intensity: captureIntensityRef.current,
+            darkness: captureDarknessRef.current,
           },
         ];
     // Peaks are uniforms, read fresh every frame (see resolvePeakUniforms) -- so an edit to one is a
@@ -797,19 +797,19 @@ export function ProjectMaskItem({
     render();
   }, [render]);
 
-  // Resets the light source dials (size/intensity/falloff/darkness) to this mask's own starting
-  // appearance (ProjectMask_V1_0.light_source_*, set via LightSourcebar/Maskbar and persisted the
-  // same way scale_x/scale_y are) -- shared by applyMaskAppearanceDefaults (below, via latestRef)
-  // and by stopLightSourceAnimation, so leaving mouse control or finishing a wired-effect
-  // playback both land back on the same static baseline instead of stranding the dials at
-  // whatever a played frame last set them to.
-  const applyDefaultLightSourceValue = useCallback(() => {
+  // Resets the preview dials (size/intensity/falloff/darkness) to this mask's own starting
+  // appearance (ProjectMask_V1_0.capture_preview_*, set via LightSourcebar/Maskbar and persisted
+  // the same way scale_x/scale_y are) -- shared by applyMaskAppearanceDefaults (below, via
+  // latestRef) and by stopLightSourceAnimation, so leaving mouse control or finishing a
+  // wired-effect playback both land back on the same static baseline instead of stranding the
+  // dials at whatever a played frame last set them to.
+  const applyDefaultCaptureValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
-    lightSourceSizeRef.current = maskMeta?.light_source_size ?? DEFAULT_LIGHT_SOURCE_VALUE.size;
-    lightSourceIntensityRef.current = maskMeta?.light_source_intensity ?? DEFAULT_LIGHT_SOURCE_VALUE.intensity;
-    lightSourceFalloffRef.current = maskMeta?.light_source_falloff ?? DEFAULT_LIGHT_SOURCE_VALUE.falloff;
-    lightSourceDarknessRef.current = maskMeta?.light_source_darkness ?? DEFAULT_LIGHT_SOURCE_VALUE.darkness;
+    captureSizeRef.current = maskMeta?.capture_preview_size ?? DEFAULT_CAPTURE_VALUE.size;
+    captureIntensityRef.current = maskMeta?.capture_preview_intensity ?? DEFAULT_CAPTURE_VALUE.intensity;
+    captureFalloffRef.current = maskMeta?.capture_preview_falloff ?? DEFAULT_CAPTURE_VALUE.falloff;
+    captureDarknessRef.current = maskMeta?.capture_preview_darkness ?? DEFAULT_CAPTURE_VALUE.darkness;
   }, [source, coreState.project.masks, mediaKey]);
 
   // Cancels whatever playLightSourceAnimation() session is currently running (if any), resolving its
@@ -832,9 +832,9 @@ export function ProjectMaskItem({
     // way abortTopologyDrag does for a drag -- the mesh's own buffers were never touched.
     playbackPeaksRef.current = new Map();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-    applyDefaultLightSourceValue();
+    applyDefaultCaptureValue();
     render();
-  }, [render, applyDefaultLightSourceValue]);
+  }, [render, applyDefaultCaptureValue]);
 
   // Plays the light source epicenter/dials through whichever "move" and/or "light_source" effects are
   // wired to this mask's light source key (see lightSourceKey above) instead of the mouse; the mouse handlers
@@ -1118,19 +1118,19 @@ export function ProjectMaskItem({
                       ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
                       : undefined;
                   // Gated on wiredLightSource even in the merged-frames case: merge_frames
-                  // (server-side) fills light_source_size/intensity/falloff/darkness with 0 whenever
+                  // (server-side) fills capture_size/intensity/falloff/darkness with 0 whenever
                   // no light_source effect is wired for this capture, and unlike a move's x/y=0 (a
-                  // legitimate "stay at rest" no-op) a light_source_size/falloff of 0 would actively
+                  // legitimate "stay at rest" no-op) a capture_size/falloff of 0 would actively
                   // drop this capture's light out of drawMaskMesh's activeLights filter, killing it
                   // entirely rather than just leaving it unmoved.
-                  const lightSourcePoint = playAll
+                  const capturePoint = playAll
                     ? t.wiredLightSource
                       ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                       : undefined
                     : lightSourceFrames && lightSourceFrames.length > 0
                       ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
                       : undefined;
-                  // No gating needed here the way lightSourcePoint needs it above: both merge_frames
+                  // No gating needed here the way capturePoint needs it above: both merge_frames
                   // (server) and getScaleFrames' own unwired case leave sx at 1 -- already the
                   // correct "no scale wired" neutral multiplier, not a value that would zero anything
                   // out.
@@ -1153,13 +1153,18 @@ export function ProjectMaskItem({
                   const pointY = movePoint?.y ?? 0;
                   const bufferX = restX + pointX * scaleX;
                   const bufferY = restY + pointY * scaleY;
-                  // Falls back to the mask's own resting dial values whenever this particular capture
-                  // has no light_source effect of its own wired -- same rule the single-epicenter
-                  // version used.
-                  const size = lightSourcePoint?.light_source_size ?? lightSourceSizeRef.current;
-                  const intensity = lightSourcePoint?.light_source_intensity ?? lightSourceIntensityRef.current;
-                  const falloff = lightSourcePoint?.light_source_falloff ?? lightSourceFalloffRef.current;
-                  const darkness = lightSourcePoint?.light_source_darkness ?? lightSourceDarknessRef.current;
+                  // Falls back to this capture's *own* persisted resting appearance whenever it has
+                  // no light_source effect wired -- not the mask's preview-toggle dials, which are
+                  // a different concern (the mesh-wide mouse-hover epicenter) and, unlike these,
+                  // are measured in on-screen pixels. Mixing the two here would put a screen-space
+                  // size on a mesh-space radius below. Only a capture with no registry entry at all
+                  // (membership tagged on polygons but the entry itself gone) falls through to the
+                  // preview dials, purely so it still draws something.
+                  const captureMeta = source.maskData.captures.find((c) => c.id === t.captureId);
+                  const size = capturePoint?.capture_size ?? captureMeta?.size ?? captureSizeRef.current;
+                  const intensity = capturePoint?.capture_intensity ?? captureMeta?.intensity ?? captureIntensityRef.current;
+                  const falloff = capturePoint?.capture_falloff ?? captureMeta?.falloff ?? captureFalloffRef.current;
+                  const darkness = capturePoint?.capture_darkness ?? captureMeta?.darkness ?? captureDarknessRef.current;
                   // "scale" doesn't set the radius outright -- it multiplies whatever `size` above
                   // already resolved to, the same relative-not-absolute role scale_x/scale_y play
                   // for an img/svg's own base size. sy is unused: the light glow is a circle, with
@@ -1170,8 +1175,15 @@ export function ProjectMaskItem({
                     x: bufferX,
                     // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
                     y: canvas.height - bufferY,
-                    radius: (size / 2) * scaleMultiplier * scaleX,
-                    falloff: falloff * scaleX,
+                    // No scaleX on either of these, unlike the cursor-driven preview epicenter
+                    // below: a capture's own size/falloff live in the mesh's own space (which is
+                    // this canvas's buffer space -- see screenCircleToMeshSpace in canvas.tsx), the
+                    // same space the sliders that authored them work in, exactly as a peak's
+                    // radius/elevation/falloff already do. That's what lets `size` double as the
+                    // capture's own geometry: the circle whose triangles it owns is the same circle
+                    // this lights, at any zoom (see saveCaptureSizeField in lightsourcebar.tsx).
+                    radius: (size / 2) * scaleMultiplier,
+                    falloff,
                     intensity,
                     darkness,
                   });
@@ -1242,7 +1254,7 @@ export function ProjectMaskItem({
     source,
     coreState,
     uiState,
-    applyDefaultLightSourceValue,
+    applyDefaultCaptureValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
@@ -1251,7 +1263,7 @@ export function ProjectMaskItem({
     source,
     coreState,
     uiState,
-    applyDefaultLightSourceValue,
+    applyDefaultCaptureValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
@@ -1387,13 +1399,13 @@ export function ProjectMaskItem({
           if (latest.source.kind !== "static") return;
           textureMixRef.current =
             override?.textureMix ?? latest.coreState.project.masks.get(mediaKey)?.texture ?? TEXTURE_MIX_DEFAULT;
-          if (override?.lightSource) {
-            lightSourceSizeRef.current = override.lightSource.size;
-            lightSourceIntensityRef.current = override.lightSource.intensity;
-            lightSourceFalloffRef.current = override.lightSource.falloff;
-            lightSourceDarknessRef.current = override.lightSource.darkness;
+          if (override?.capture) {
+            captureSizeRef.current = override.capture.size;
+            captureIntensityRef.current = override.capture.intensity;
+            captureFalloffRef.current = override.capture.falloff;
+            captureDarknessRef.current = override.capture.darkness;
           } else {
-            latest.applyDefaultLightSourceValue();
+            latest.applyDefaultCaptureValue();
           }
           render();
         };
@@ -1607,10 +1619,10 @@ export function ProjectMaskItem({
         }
         glowColorRef.current = liveGlowColorRef.current;
         textureMixRef.current = mask.textureMixRef.current;
-        lightSourceSizeRef.current = mask.lightSourceSizeRef.current;
-        lightSourceIntensityRef.current = mask.lightSourceIntensityRef.current;
-        lightSourceFalloffRef.current = mask.lightSourceFalloffRef.current;
-        lightSourceDarknessRef.current = mask.lightSourceDarknessRef.current;
+        captureSizeRef.current = mask.captureSizeRef.current;
+        captureIntensityRef.current = mask.captureIntensityRef.current;
+        captureFalloffRef.current = mask.captureFalloffRef.current;
+        captureDarknessRef.current = mask.captureDarknessRef.current;
 
         render();
         rafRef.current = requestAnimationFrame(loop);
@@ -1959,18 +1971,24 @@ export function ProjectMaskItem({
               source.maskData.polygons.forEach((p, i) => {
                 if (p.capture_id === captureId) originalIndices.add(i);
               });
-              // Trust the circle a previous relocate drag actually used, if the mesh's captured
-              // set still matches what it left behind -- only falling back to reconstructing one
-              // from the triangles themselves (capturedRegionCircle) the first time, or after some
-              // other flow (a fresh circle-drawn capture, a clear) changed the capture out from
-              // under this cache. See lastKnownCaptureRef's comment for why re-deriving on every
-              // drag, rather than just this once, was the actual growing-capture bug.
+              // The capture's own persisted `size` is the authority on its radius -- it *is* the
+              // circle this capture owns (see Capture_V1_0), so a relocate can carry it across
+              // verbatim instead of reconstructing it. That's what makes the radius stable across
+              // any number of relocations: capturedRegionCircle only ever sees the triangles that
+              // survived the last test, so re-deriving from them compounds (the growing-capture
+              // bug lastKnownCaptureRef was added to work around). The centre still has to be
+              // reconstructed -- a capture has no persisted cx/cy of its own, unlike a peak.
+              //
+              // A capture drawn before `size` existed carries 0, so the cache and the
+              // reconstruction both remain as fallbacks for exactly those.
+              const persistedSize = source.maskData.captures.find((c) => c.id === captureId)?.size ?? 0;
               const known = lastKnownCaptureRef.current.get(captureId);
-              const circle =
+              const reconstructed =
                 known && sameIndices(known.indices, originalIndices)
                   ? known.circle
                   : capturedRegionCircle(source.maskData.polygons, captureId);
-              if (!circle) return;
+              if (!reconstructed) return;
+              const circle = persistedSize > 0 ? { ...reconstructed, radius: persistedSize / 2 } : reconstructed;
               // Claims the gesture before dnd-kit's own onPointerDown (spread as `{...listeners}`
               // on the ancestor wrapper div) gets a chance to see it -- ordinary React synthetic
               // bubbling, confirmed against @dnd-kit/core's actual source. preventDefault also
@@ -2096,8 +2114,8 @@ export function ProjectMaskItem({
               // rAF frame from onPointerMove.
               const finalIndices = captureIndicesAtOffset(drag, dx, dy);
               const captureId = drag.captureId;
-              const captureName =
-                source.maskData.captures.find((c) => c.id === captureId)?.name ?? `light ${captureId}`;
+              const existingCapture = source.maskData.captures.find((c) => c.id === captureId);
+              const captureName = existingCapture?.name ?? `light ${captureId}`;
               captureDragRef.current = undefined;
               setIsDraggingCapture(false);
               if (finalIndices.size === 0) {
@@ -2125,7 +2143,17 @@ export function ProjectMaskItem({
               // captureCommitInFlightRef) until this request's ack lands, whether it succeeds or
               // fails.
               captureCommitInFlightRef.current.add(captureId);
-              sendMaskCaptureUpdate(source.maskData.mask_media_id, captureId, captureName, [...finalIndices]).then(
+              sendMaskCaptureUpdate(source.maskData.mask_media_id, {
+                capture_id: captureId,
+                name: captureName,
+                polygon_indices: [...finalIndices],
+                // A relocate never touches the capture's own light appearance -- carry it through
+                // unchanged, since this websocket call is a full-replace of the whole record.
+                size: existingCapture?.size ?? 0,
+                intensity: existingCapture?.intensity ?? 0,
+                falloff: existingCapture?.falloff ?? 0,
+                darkness: existingCapture?.darkness ?? 0,
+              }).then(
                 (updated) => {
                   captureCommitInFlightRef.current.delete(captureId);
                   if (updated) {
@@ -2202,8 +2230,8 @@ export function ProjectMaskItem({
                 x: bufferX,
                 // gl_FragCoord's origin is bottom-left; the DOM's is top-left.
                 y: canvas.height - bufferY,
-                radius: (lightSourceSizeRef.current / 2) * scaleX,
-                falloff: lightSourceFalloffRef.current * scaleX,
+                radius: (captureSizeRef.current / 2) * scaleX,
+                falloff: captureFalloffRef.current * scaleX,
               };
               render();
             }}

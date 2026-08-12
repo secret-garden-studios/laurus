@@ -319,10 +319,21 @@ export type LaurusPolygonPath = PolygonPath_V1_0;
 
 /** One named, client-selected subsection of a mask's mesh (e.g. a light
  * source region). `id` is referenced by any number of the mask's own
- * PolygonPath_V1_0.capture_id fields. */
+ * PolygonPath_V1_0.capture_id fields.
+ *
+ * `size`/`intensity`/`falloff`/`darkness` are this capture's own resting
+ * light appearance -- the seed a wired "light_source" effect's equation
+ * ramps from, the same way a ProjectMask_V1_0's own capture_preview_*
+ * fields are the seed for the mesh-wide mouse-hover preview instead (see
+ * ProjectMask_V1_0). Lightsourcebar's "capture" dials read and write these
+ * fields directly. */
 export interface Capture_V1_0 {
   id: number;
   name: string;
+  size: number;
+  intensity: number;
+  falloff: number;
+  darkness: number;
 }
 export type LaurusCapture = Capture_V1_0;
 
@@ -723,7 +734,8 @@ export function maskImage(
  * the single capture identified by capture_id -- e.g. a light source region
  * selected by dragging a circle over the mesh, or relocating one -- leaving
  * the mask's other captures untouched. Upserts a captures registry entry
- * named `name`. An empty polygon_indices array clears this one capture.
+ * named `name` with the given `size`/`intensity`/`falloff`/`darkness` (see
+ * Capture_V1_0). An empty polygon_indices array clears this one capture.
  * Sent any number of times over the life of one mask's capture socket --
  * see useMaskCaptureSockets, which owns that socket and this message's
  * request/response pairing. */
@@ -731,6 +743,10 @@ export interface MaskCaptureUpdateRequest_V1_0 {
   capture_id: number;
   name: string;
   polygon_indices: number[];
+  size: number;
+  intensity: number;
+  falloff: number;
+  darkness: number;
 }
 export interface MaskCaptureUpdateComplete_V1_0 {
   type: "capture_update_complete";
@@ -1688,13 +1704,13 @@ export async function deleteRotate(
 /* /light_sources */
 
 export interface LightSourceSolution_V1_0 {
-  light_source_size: number;
-  light_source_intensity: number;
-  light_source_falloff: number;
-  light_source_darkness: number;
+  capture_size: number;
+  capture_intensity: number;
+  capture_falloff: number;
+  capture_darkness: number;
   /** A light_source equation wired to a topology peak (input_id
    * "<mask_key>:peak:<peak_id>", see maskPeakInputId in effects-utils.ts) ramps
-   * these three instead of the four light_source_* fields above, which stay at
+   * these three instead of the four capture_* fields above, which stay at
    * zero for a peak-flavored equation. One solution type rather than two, so a
    * caller never has to branch on which flavor it solved before reading the
    * result -- mirrors the server's own LightSourceSolution. */
@@ -1708,10 +1724,10 @@ export interface LightSourceEquation_V1_0 {
    * ms
    */
   time: number;
-  light_source_size: number;
-  light_source_intensity: number;
-  light_source_falloff: number;
-  light_source_darkness: number;
+  capture_size: number;
+  capture_intensity: number;
+  capture_falloff: number;
+  capture_darkness: number;
   /** The peak shape this equation ramps toward, for a peak-flavored input_id --
    * see LightSourceSolution_V1_0 above. Absolute targets, not deltas: the ramp
    * starts from the peak's own persisted elevation/radius/falloff (the server's
@@ -1927,10 +1943,10 @@ interface Frame_V1_0 {
   ry: number;
   rz: number;
   rangle: number;
-  light_source_size: number;
-  light_source_intensity: number;
-  light_source_falloff: number;
-  light_source_darkness: number;
+  capture_size: number;
+  capture_intensity: number;
+  capture_falloff: number;
+  capture_darkness: number;
   // Only ever non-neutral on a frame solved for a peak-flavored input_id (see
   // LightSourceSolution_V1_0) -- every other effect's frames leave them at the neutral
   // "no relief change" values below, the same way they leave sx/sy at 1.
@@ -1967,10 +1983,10 @@ export async function getScaleFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    light_source_size: 0,
-    light_source_intensity: 0,
-    light_source_falloff: 0,
-    light_source_darkness: 0,
+    capture_size: 0,
+    capture_intensity: 0,
+    capture_falloff: 0,
+    capture_darkness: 0,
     ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));
@@ -1992,10 +2008,10 @@ export async function getMoveFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    light_source_size: 0,
-    light_source_intensity: 0,
-    light_source_falloff: 0,
-    light_source_darkness: 0,
+    capture_size: 0,
+    capture_intensity: 0,
+    capture_falloff: 0,
+    capture_darkness: 0,
     ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));
@@ -2018,10 +2034,10 @@ export async function getRotateFrames(
     y: 0,
     sx: 1,
     sy: 1,
-    light_source_size: 0,
-    light_source_intensity: 0,
-    light_source_falloff: 0,
-    light_source_darkness: 0,
+    capture_size: 0,
+    capture_intensity: 0,
+    capture_falloff: 0,
+    capture_darkness: 0,
     ...NEUTRAL_PEAK_FRAME,
     input_id: inputId,
   }));

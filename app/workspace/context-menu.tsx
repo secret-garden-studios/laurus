@@ -1162,12 +1162,17 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         break;
                       }
                       case "capture": {
-                        const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
-                          media.meta.media_id,
-                          media.captureId,
-                          "",
-                          [],
-                        );
+                        const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(media.meta.media_id, {
+                          capture_id: media.captureId,
+                          name: "",
+                          polygon_indices: [],
+                          // Irrelevant for a delete -- an empty polygon_indices drops the capture's
+                          // whole registry entry server-side regardless (see update_mask_capture_in_redis).
+                          size: 0,
+                          intensity: 0,
+                          falloff: 0,
+                          darkness: 0,
+                        });
                         if (!updated) break;
                         dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
                         notifyMaskCaptureUpdated(media.key, updated);

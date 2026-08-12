@@ -9,28 +9,28 @@ import {
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
-  LIGHT_SOURCE_DARKNESS_DEFAULT,
-  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
-  LIGHT_SOURCE_INTENSITY_DEFAULT,
-  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  CAPTURE_DARKNESS_DEFAULT,
+  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_INTENSITY_DEFAULT,
+  CAPTURE_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
 // One mesh's light source parameters -- the shape of ProjectMask_V1_0's own
-// light_source_size/intensity/falloff/darkness fields (the mask's persisted starting appearance,
-// see LightSourcebar/Scalebar), and of the live in-flight useMaskPreview values before a mask
-// exists yet to persist to.
-export interface LightSourceValue {
+// capture_preview_size/intensity/falloff/darkness fields (the mask's persisted preview-toggle
+// starting appearance, see LightSourcebar/Scalebar), and of the live in-flight useMaskPreview
+// values before a mask exists yet to persist to.
+export interface CaptureValue {
   size: number;
   intensity: number;
   falloff: number;
   darkness: number;
 }
 
-export const DEFAULT_LIGHT_SOURCE_VALUE: LightSourceValue = {
-  size: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
-  intensity: LIGHT_SOURCE_INTENSITY_DEFAULT,
-  falloff: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
-  darkness: LIGHT_SOURCE_DARKNESS_DEFAULT,
+export const DEFAULT_CAPTURE_VALUE: CaptureValue = {
+  size: CAPTURE_SIZE_CSS_PX_DEFAULT,
+  intensity: CAPTURE_INTENSITY_DEFAULT,
+  falloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  darkness: CAPTURE_DARKNESS_DEFAULT,
 };
 
 // A light-source-capture drag that's mid-flight to the server -- drawing/redrawing a capture

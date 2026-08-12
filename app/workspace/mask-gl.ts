@@ -5,16 +5,16 @@
 import type { MaskCurve_V1_0 } from "./workspace.server";
 
 /** Default width/height of the light source's bright core, in on-screen (CSS) pixels -- converted to buffer pixels per frame. Adjustable via Maskbar's light source size slider. */
-export const LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT = 150;
+export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
 
 /** Default brightness of the light source's core, 0-1 -- 1 mixes the epicenter fully to white. Adjustable via Maskbar's light source intensity slider. */
-export const LIGHT_SOURCE_INTENSITY_DEFAULT = 0.05;
+export const CAPTURE_INTENSITY_DEFAULT = 0.05;
 
 /** Default distance, in on-screen (CSS) pixels, over which the darkening ramps up beyond the core -- independent of canvas size. Adjustable via Maskbar's light source falloff slider. */
-export const LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT = 350;
+export const CAPTURE_FALLOFF_CSS_PX_DEFAULT = 350;
 
 /** Default strength of the darkening at the far edge of the spread, 0-1 -- 1 drives it fully to black. Adjustable via Maskbar's light source darkness slider. */
-export const LIGHT_SOURCE_DARKNESS_DEFAULT = 0.2;
+export const CAPTURE_DARKNESS_DEFAULT = 0.2;
 
 /** Default opacity, 0-1, of each triangle's own edge-stroke wireframe overlay (0 invisible, 1
  * fully visible; see edge/withEdge in the fragment shader below) -- the mesh's own fill is always

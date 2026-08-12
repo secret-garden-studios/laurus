@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   LaurusMaskResult,
   MaskCaptureSocketMessage_V1_0,
+  MaskCaptureUpdateRequest_V1_0,
   normalizeMaskResult,
   toMaskCaptureSocketUrl,
 } from "../workspace.server";
@@ -86,16 +87,13 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
   const sendCaptureUpdate = useCallback(
     (
       maskMediaId: string,
-      captureId: number,
-      name: string,
-      polygonIndices: number[],
+      request: MaskCaptureUpdateRequest_V1_0,
     ): Promise<LaurusMaskResult | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
         queuesRef.current.get(maskMediaId)?.push(resolve);
-        const send = () =>
-          socket.send(JSON.stringify({ capture_id: captureId, name, polygon_indices: polygonIndices }));
+        const send = () => socket.send(JSON.stringify(request));
         if (socket.readyState === WebSocket.OPEN) {
           send();
         } else {

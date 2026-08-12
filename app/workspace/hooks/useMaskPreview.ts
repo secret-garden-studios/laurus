@@ -11,10 +11,10 @@ import {
 } from "../workspace.server";
 import {
   colorToRGB01,
-  LIGHT_SOURCE_DARKNESS_DEFAULT,
-  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
-  LIGHT_SOURCE_INTENSITY_DEFAULT,
-  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  CAPTURE_DARKNESS_DEFAULT,
+  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_INTENSITY_DEFAULT,
+  CAPTURE_SIZE_CSS_PX_DEFAULT,
   TEXTURE_MIX_DEFAULT,
 } from "../mask-gl";
 
@@ -69,36 +69,36 @@ export function useMaskPreview() {
   }, []);
 
   // Same mirrored state+ref pattern as textureMix, for Maskbar's epicenter size/intensity sliders.
-  const [lightSourceSize, setLightSourceSizeState] = useState(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
-  const lightSourceSizeRef = useRef(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
+  const [captureSize, setCaptureSizeState] = useState(CAPTURE_SIZE_CSS_PX_DEFAULT);
+  const captureSizeRef = useRef(CAPTURE_SIZE_CSS_PX_DEFAULT);
 
-  const setLightSourceSize = useCallback((value: number) => {
-    lightSourceSizeRef.current = value;
-    setLightSourceSizeState(value);
+  const setCaptureSize = useCallback((value: number) => {
+    captureSizeRef.current = value;
+    setCaptureSizeState(value);
   }, []);
 
-  const [lightSourceIntensity, setLightSourceIntensityState] = useState(LIGHT_SOURCE_INTENSITY_DEFAULT);
-  const lightSourceIntensityRef = useRef(LIGHT_SOURCE_INTENSITY_DEFAULT);
+  const [captureIntensity, setCaptureIntensityState] = useState(CAPTURE_INTENSITY_DEFAULT);
+  const captureIntensityRef = useRef(CAPTURE_INTENSITY_DEFAULT);
 
-  const setLightSourceIntensity = useCallback((value: number) => {
-    lightSourceIntensityRef.current = value;
-    setLightSourceIntensityState(value);
+  const setCaptureIntensity = useCallback((value: number) => {
+    captureIntensityRef.current = value;
+    setCaptureIntensityState(value);
   }, []);
 
-  const [lightSourceFalloff, setLightSourceFalloffState] = useState(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
-  const lightSourceFalloffRef = useRef(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
+  const [captureFalloff, setCaptureFalloffState] = useState(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
+  const captureFalloffRef = useRef(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
 
-  const setLightSourceFalloff = useCallback((value: number) => {
-    lightSourceFalloffRef.current = value;
-    setLightSourceFalloffState(value);
+  const setCaptureFalloff = useCallback((value: number) => {
+    captureFalloffRef.current = value;
+    setCaptureFalloffState(value);
   }, []);
 
-  const [lightSourceDarkness, setLightSourceDarknessState] = useState(LIGHT_SOURCE_DARKNESS_DEFAULT);
-  const lightSourceDarknessRef = useRef(LIGHT_SOURCE_DARKNESS_DEFAULT);
+  const [captureDarkness, setCaptureDarknessState] = useState(CAPTURE_DARKNESS_DEFAULT);
+  const captureDarknessRef = useRef(CAPTURE_DARKNESS_DEFAULT);
 
-  const setLightSourceDarkness = useCallback((value: number) => {
-    lightSourceDarknessRef.current = value;
-    setLightSourceDarknessState(value);
+  const setCaptureDarkness = useCallback((value: number) => {
+    captureDarknessRef.current = value;
+    setCaptureDarknessState(value);
   }, []);
 
   // Where/how big the generated mask should land, overriding the default of overlaying it
@@ -150,13 +150,13 @@ export function useMaskPreview() {
     setErrorMessage(undefined);
     setStatus("idle");
     setTextureMix(TEXTURE_MIX_DEFAULT);
-    setLightSourceSize(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
-    setLightSourceIntensity(LIGHT_SOURCE_INTENSITY_DEFAULT);
-    setLightSourceFalloff(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
-    setLightSourceDarkness(LIGHT_SOURCE_DARKNESS_DEFAULT);
+    setCaptureSize(CAPTURE_SIZE_CSS_PX_DEFAULT);
+    setCaptureIntensity(CAPTURE_INTENSITY_DEFAULT);
+    setCaptureFalloff(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
+    setCaptureDarkness(CAPTURE_DARKNESS_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setTextureMix, setLightSourceSize, setLightSourceIntensity, setLightSourceFalloff, setLightSourceDarkness]);
+  }, [setTextureMix, setCaptureSize, setCaptureIntensity, setCaptureFalloff, setCaptureDarkness]);
 
   const start = useCallback(
     // onComplete fires exactly once, straight off the websocket's one and only "complete"
@@ -178,10 +178,10 @@ export function useMaskPreview() {
       setErrorMessage(undefined);
       setStatus("connecting");
       setTextureMix(TEXTURE_MIX_DEFAULT);
-      setLightSourceSize(LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT);
-      setLightSourceIntensity(LIGHT_SOURCE_INTENSITY_DEFAULT);
-      setLightSourceFalloff(LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT);
-      setLightSourceDarkness(LIGHT_SOURCE_DARKNESS_DEFAULT);
+      setCaptureSize(CAPTURE_SIZE_CSS_PX_DEFAULT);
+      setCaptureIntensity(CAPTURE_INTENSITY_DEFAULT);
+      setCaptureFalloff(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
+      setCaptureDarkness(CAPTURE_DARKNESS_DEFAULT);
 
       socketRef.current?.close();
       socketRef.current = maskImage(
@@ -273,10 +273,10 @@ export function useMaskPreview() {
       coreState.accessToken,
       getColorCtx,
       setTextureMix,
-      setLightSourceSize,
-      setLightSourceIntensity,
-      setLightSourceFalloff,
-      setLightSourceDarkness,
+      setCaptureSize,
+      setCaptureIntensity,
+      setCaptureFalloff,
+      setCaptureDarkness,
     ],
   );
 
@@ -288,18 +288,18 @@ export function useMaskPreview() {
     textureMix,
     setTextureMix,
     textureMixRef,
-    lightSourceSize,
-    setLightSourceSize,
-    lightSourceSizeRef,
-    lightSourceIntensity,
-    setLightSourceIntensity,
-    lightSourceIntensityRef,
-    lightSourceFalloff,
-    setLightSourceFalloff,
-    lightSourceFalloffRef,
-    lightSourceDarkness,
-    setLightSourceDarkness,
-    lightSourceDarknessRef,
+    captureSize,
+    setCaptureSize,
+    captureSizeRef,
+    captureIntensity,
+    setCaptureIntensity,
+    captureIntensityRef,
+    captureFalloff,
+    setCaptureFalloff,
+    captureFalloffRef,
+    captureDarkness,
+    setCaptureDarkness,
+    captureDarknessRef,
     position,
     setPosition,
     size,

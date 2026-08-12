@@ -29,6 +29,7 @@ import {
   searchSvgs,
   nextCaptureId,
   nextPeakId,
+  MaskCaptureUpdateRequest_V1_0,
   MaskPeakUpdateRequest_V1_0,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
@@ -52,10 +53,10 @@ import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
 import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
 import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
 import {
-  LIGHT_SOURCE_DARKNESS_DEFAULT,
-  LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
-  LIGHT_SOURCE_INTENSITY_DEFAULT,
-  LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
+  CAPTURE_DARKNESS_DEFAULT,
+  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_INTENSITY_DEFAULT,
+  CAPTURE_SIZE_CSS_PX_DEFAULT,
   MIN_MASK_PEAK_RADIUS_PX,
   TEXTURE_MIX_DEFAULT,
 } from "./mask-gl";
@@ -208,12 +209,10 @@ export interface CoreContextProps {
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
   cancelFrameDownload: () => void;
-  captureMeshSection: (maskKey: string, polygonIndices: number[]) => Promise<void>;
+  captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
   sendMaskCaptureUpdate: (
     maskMediaId: string,
-    captureId: number,
-    name: string,
-    polygonIndices: number[],
+    request: MaskCaptureUpdateRequest_V1_0,
   ) => Promise<LaurusMaskResult | undefined>;
   closeMaskCaptureSocket: (maskMediaId: string) => void;
   createTopologyPeak: (
@@ -313,18 +312,18 @@ const defaultMaskPreview: UseMaskPreview = {
   textureMix: TEXTURE_MIX_DEFAULT,
   setTextureMix: () => {},
   textureMixRef: { current: TEXTURE_MIX_DEFAULT },
-  lightSourceSize: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT,
-  setLightSourceSize: () => {},
-  lightSourceSizeRef: { current: LIGHT_SOURCE_SIZE_CSS_PX_DEFAULT },
-  lightSourceIntensity: LIGHT_SOURCE_INTENSITY_DEFAULT,
-  setLightSourceIntensity: () => {},
-  lightSourceIntensityRef: { current: LIGHT_SOURCE_INTENSITY_DEFAULT },
-  lightSourceFalloff: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT,
-  setLightSourceFalloff: () => {},
-  lightSourceFalloffRef: { current: LIGHT_SOURCE_FALLOFF_CSS_PX_DEFAULT },
-  lightSourceDarkness: LIGHT_SOURCE_DARKNESS_DEFAULT,
-  setLightSourceDarkness: () => {},
-  lightSourceDarknessRef: { current: LIGHT_SOURCE_DARKNESS_DEFAULT },
+  captureSize: CAPTURE_SIZE_CSS_PX_DEFAULT,
+  setCaptureSize: () => {},
+  captureSizeRef: { current: CAPTURE_SIZE_CSS_PX_DEFAULT },
+  captureIntensity: CAPTURE_INTENSITY_DEFAULT,
+  setCaptureIntensity: () => {},
+  captureIntensityRef: { current: CAPTURE_INTENSITY_DEFAULT },
+  captureFalloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  setCaptureFalloff: () => {},
+  captureFalloffRef: { current: CAPTURE_FALLOFF_CSS_PX_DEFAULT },
+  captureDarkness: CAPTURE_DARKNESS_DEFAULT,
+  setCaptureDarkness: () => {},
+  captureDarknessRef: { current: CAPTURE_DARKNESS_DEFAULT },
   position: { value: false, x: undefined, y: undefined },
   setPosition: () => {},
   size: { value: false, width: undefined, height: undefined },
@@ -1186,7 +1185,7 @@ export default function Workspace({
   // the request is in flight (mirrors project-mask-item.tsx's own relocate-drag commit in
   // onPointerUp), then reconciled with the server response.
   const captureMeshSection = useCallback(
-    async (maskKey: string, polygonIndices: number[]) => {
+    async (maskKey: string, polygonIndices: number[], size: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
       const captureId = nextCaptureId(maskData.captures);
@@ -1198,7 +1197,19 @@ export default function Workspace({
       });
       notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices));
 
-      const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, captureId, name, polygonIndices);
+      const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, {
+        capture_id: captureId,
+        name,
+        polygon_indices: polygonIndices,
+        // Seeded from the circle actually drawn, since `size` is this capture's own geometry as
+        // well as its light core: leaving it at 0 would mean the first touch of Lightsourcebar's
+        // size slider snapped the capture shut before growing it. The rest of the dials do start
+        // at rest/off -- they're a look, not a geometry, and have no drawn value to inherit.
+        size,
+        intensity: 0,
+        falloff: 0,
+        darkness: 0,
+      });
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
         // Before the notifies below, which recolor off this mask's own captured-indices ref -- see

@@ -578,7 +578,11 @@ export default function Canvas() {
       const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
       if (polygonIndices.size === 0) return;
 
-      captureMeshSection(maskKey, Array.from(polygonIndices));
+      // The drawn circle's own diameter becomes the capture's `size` -- both its light core and,
+      // from here on, the circle Lightsourcebar's size slider re-runs this same membership test
+      // with. Already mesh-space (screenCircleToMeshSpace), which is the space `size` is measured
+      // in.
+      captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
     [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
   );
