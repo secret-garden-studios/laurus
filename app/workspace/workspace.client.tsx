@@ -253,15 +253,15 @@ export interface CoreContextProps {
   // the dispatch that actually changed the underlying value, mirroring how handlePlayAll/
   // handleStopAll above already reach into the same map for play()/stop().
   notifyMaskToolChanged: (toolType: string) => void;
-  notifyMaskActiveElementChanged: (key: string | undefined) => void;
+  notifyMaskSelectionChanged: (key: string | undefined) => void;
   // Which of an already-active mask's own captures reads as the bright one -- kept separate from
-  // notifyMaskActiveElementChanged (rather than folding captureId into that call) since that one's
+  // notifyMaskSelectionChanged (rather than folding captureId into that call) since that one's
   // shared by every img/svg/mask effect-wiring call site in the app, none of which know or care
   // about captures.
-  notifyMaskActiveCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
-  // Mirrors notifyMaskActiveCaptureChanged exactly, for a mesh's own topology peaks -- kept
+  notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
+  // Mirrors notifyMaskSelectedCaptureChanged exactly, for a mesh's own topology peaks -- kept
   // separate for the same reason (only peak-highlight call sites know or care about peakIds).
-  notifyMaskActivePeakChanged: (maskKey: string, peakId: number | undefined) => void;
+  notifyMaskSelectedPeakChanged: (maskKey: string, peakId: number | undefined) => void;
   // `captureId` says which capture this optimistic membership belongs to. The mesh needs it to move
   // that capture's own standing light along with the preview (see resolveRestingLightSources,
   // project-mask-item.tsx) -- the highlight itself never cared, which is why it's optional rather
@@ -296,9 +296,9 @@ export const CoreContext = createContext<CoreContextProps>({
   deleteMaskPeak: async () => {},
   closeMaskPeakSocket: () => {},
   notifyMaskToolChanged: () => {},
-  notifyMaskActiveElementChanged: () => {},
-  notifyMaskActiveCaptureChanged: () => {},
-  notifyMaskActivePeakChanged: () => {},
+  notifyMaskSelectionChanged: () => {},
+  notifyMaskSelectedCaptureChanged: () => {},
+  notifyMaskSelectedPeakChanged: () => {},
   notifyMaskPendingCaptureSet: () => {},
   notifyMaskPendingCaptureCleared: () => {},
   notifyMaskCaptureUpdated: () => {},
@@ -1155,16 +1155,16 @@ export default function Workspace({
       }),
     );
   }, []);
-  const notifyMaskActiveElementChanged = useCallback((key: string | undefined) => {
+  const notifyMaskSelectionChanged = useCallback((key: string | undefined) => {
     maskHandlesRef.current?.forEach((handles, maskKey) =>
-      handles.forEach((h) => h.setActiveHighlighted(maskKey === key)),
+      handles.forEach((h) => h.setSelectedHighlighted(maskKey === key)),
     );
   }, []);
-  const notifyMaskActiveCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActiveCapture(captureId));
+  const notifyMaskSelectedCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedCapture(captureId));
   }, []);
-  const notifyMaskActivePeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setActivePeak(peakId));
+  const notifyMaskSelectedPeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedPeak(peakId));
   }, []);
   const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>, captureId?: number) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices, captureId));
@@ -1257,15 +1257,18 @@ export default function Workspace({
         // Every freshly drawn capture earns its own carousel entry -- see CarouselEntry's own
         // doc comment on why this is per-capture, not per-mask.
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
+        // Selected, not activated: drawing a capture is a "look at this one" gesture (it points
+        // Lightsourcebar's dials at it and paints it bright), while wiring an effect to it stays a
+        // deliberate step through a unit display -- see LaurusSelectedElement's own doc comment.
         uiDispatch({
-          type: UIActionType.SetActiveElement,
+          type: UIActionType.SetSelectedElement,
           value: { key: maskKey, type: "capture", captureId },
         });
-        notifyMaskActiveElementChanged(maskKey);
-        notifyMaskActiveCaptureChanged(maskKey, captureId);
-        // A freshly drawn capture is now this mesh's sole active sub-element -- clear any
-        // previously-active peak's own ring highlight so it doesn't keep glowing alongside it.
-        notifyMaskActivePeakChanged(maskKey, undefined);
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedCaptureChanged(maskKey, captureId);
+        // A freshly drawn capture is now this mesh's sole selected sub-element -- clear any
+        // previously-selected peak's own ring highlight so it doesn't keep glowing alongside it.
+        notifyMaskSelectedPeakChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
       notifyMaskPendingCaptureCleared(maskKey);
@@ -1287,9 +1290,9 @@ export default function Workspace({
       uiDispatch,
       uiState.tool,
       notifyMaskPendingCaptureSet,
-      notifyMaskActiveElementChanged,
-      notifyMaskActiveCaptureChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskToolChanged,
@@ -1360,17 +1363,17 @@ export default function Workspace({
         // that entry is what the light source unit's "peak" mode navigates onto to wire this peak's
         // own equation (see maskPeakInputId).
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: maskKey, peakId } });
-        // Makes the new peak the active element immediately -- Lightsourcebar's elevation slider
-        // reads off uiState.activeElement, so the freshly drawn peak (rather than the staged
-        // value) is what it edits from here, the same way a freshly drawn capture becomes the
-        // active element in captureMeshSection above.
-        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "peak", peakId } });
-        notifyMaskActiveElementChanged(maskKey);
-        notifyMaskActivePeakChanged(maskKey, peakId);
+        // Selects the new peak immediately -- Lightsourcebar's elevation slider reads off
+        // uiState.selectedElement, so the freshly drawn peak (rather than the staged value) is what
+        // it edits from here, the same way a freshly drawn capture becomes selected in
+        // captureMeshSection above. Selection only, for the same reason it is there.
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "peak", peakId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedPeakChanged(maskKey, peakId);
         // Mirrors captureMeshSection's own symmetric clear above -- a freshly drawn peak is now
-        // this mesh's sole active sub-element, so any previously-active capture's own outline
+        // this mesh's sole selected sub-element, so any previously-selected capture's own outline
         // shouldn't keep showing alongside it.
-        notifyMaskActiveCaptureChanged(maskKey, undefined);
+        notifyMaskSelectedCaptureChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
       notifyMaskPendingTopologyCleared(maskKey);
@@ -1383,9 +1386,9 @@ export default function Workspace({
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
       notifyMaskPeaksUpdated,
-      notifyMaskActiveElementChanged,
-      notifyMaskActivePeakChanged,
-      notifyMaskActiveCaptureChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedCaptureChanged,
     ],
   );
 
@@ -1431,17 +1434,27 @@ export default function Workspace({
       // itself to the next peak drawn rather than sit harmlessly orphaned.
       uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, peakId });
       deleteMaskPeakEffects(maskKey, peakId, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
-      // Deleting the active peak would otherwise leave Lightsourcebar's peak sliders pointed at an
-      // id that's now gone -- fall back to the whole mask being active, same as a deleted capture
-      // does.
+      // Deleting the selected peak would otherwise leave Lightsourcebar's peak sliders pointed at
+      // an id that's now gone -- fall back to the whole mask being selected, same as a deleted
+      // capture does.
+      if (
+        uiState.selectedElement?.key === maskKey &&
+        uiState.selectedElement.type === "peak" &&
+        uiState.selectedElement.peakId === peakId
+      ) {
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "mask" } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedPeakChanged(maskKey, undefined);
+      }
+      // The wiring half is independent of the highlight: an equation attached to this peak is gone
+      // either way (deleteMaskPeakEffects above), so an activeElement still pointing at it would
+      // leave a unit display parked on a carousel entry that no longer exists.
       if (
         uiState.activeElement?.key === maskKey &&
         uiState.activeElement.type === "peak" &&
         uiState.activeElement.peakId === peakId
       ) {
         uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
-        notifyMaskActiveElementChanged(maskKey);
-        notifyMaskActivePeakChanged(maskKey, undefined);
       }
     },
     [
@@ -1453,9 +1466,10 @@ export default function Workspace({
       dispatch,
       uiDispatch,
       uiState.activeElement,
+      uiState.selectedElement,
       notifyMaskPeaksUpdated,
-      notifyMaskActiveElementChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedPeakChanged,
     ],
   );
 
@@ -1521,7 +1535,13 @@ export default function Workspace({
     }
     if (uiState.activeElement !== undefined) {
       uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
-      notifyMaskActiveElementChanged(undefined);
+    }
+    // Separate from the activeElement clear above now that the two are distinct concerns -- this
+    // one is what actually takes the capture/peak highlights off the mesh, which would otherwise
+    // paint over the animation being recorded.
+    if (uiState.selectedElement !== undefined) {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
+      notifyMaskSelectionChanged(undefined);
     }
 
     const players: MaskImperativeHandle[] = [];
@@ -1587,8 +1607,9 @@ export default function Workspace({
     uiState.playbackMode.type,
     uiState.tool.type,
     uiState.activeElement,
+    uiState.selectedElement,
     notifyMaskToolChanged,
-    notifyMaskActiveElementChanged,
+    notifyMaskSelectionChanged,
   ]);
 
   const handlePlayTarget = useCallback(
@@ -1598,7 +1619,12 @@ export default function Workspace({
       closeContextMenus();
       if (uiState.activeElement !== undefined) {
         uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
-        notifyMaskActiveElementChanged(undefined);
+      }
+      // Mirrors handlePlayAll's own split above -- clearing the selection is what takes the
+      // highlights off the mesh.
+      if (uiState.selectedElement !== undefined) {
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
+        notifyMaskSelectionChanged(undefined);
       }
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
@@ -1686,7 +1712,8 @@ export default function Workspace({
       handleMixRestoration,
       uiState.playbackMode.type,
       uiState.activeElement,
-      notifyMaskActiveElementChanged,
+      uiState.selectedElement,
+      notifyMaskSelectionChanged,
     ],
   );
 
@@ -1805,9 +1832,9 @@ export default function Workspace({
       deleteMaskPeak,
       closeMaskPeakSocket,
       notifyMaskToolChanged,
-      notifyMaskActiveElementChanged,
-      notifyMaskActiveCaptureChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
@@ -1835,9 +1862,9 @@ export default function Workspace({
       deleteMaskPeak,
       closeMaskPeakSocket,
       notifyMaskToolChanged,
-      notifyMaskActiveElementChanged,
-      notifyMaskActiveCaptureChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,

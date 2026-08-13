@@ -35,7 +35,9 @@ const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 // dial sets (`target`, local-only UI state -- not persisted, purely which row of controls is
 // showing): "preview" (the mesh-wide mouse-hover epicenter's own resting size/intensity/falloff/
 // darkness), "capture" (an individual capture's own resting size/intensity/falloff/darkness), and
-// "peak" (elevation/radius/falloff, moved over from Maskbar's own topology sliders).
+// "peak" (elevation/radius/falloff, moved over from Maskbar's own topology sliders). Selecting a
+// capture or a peak on canvas also swings `target` onto that flavor's row -- see the effect that
+// does it for why picking one is taken as authority over what this bar shows.
 //
 // The "preview" dials edit ProjectMask_V1_0.capture_preview_* directly and persist via
 // updateProject, exactly the way Scalebar edits an img/svg's own scale_x/scale_y -- the mesh-wide
@@ -63,15 +65,19 @@ const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 // "capture" dials have no such fallback: a capture must already exist on canvas (drawn via the
 // mask tool's own capture gesture) before its own fields are editable.
 //
+// Every dial set here targets uiState.selectedElement, never uiState.activeElement: this bar
+// follows what's highlighted on the mesh (alt-clicked or light-source-clicked directly onto a
+// capture/peak, freshly drawn, dragged, or meta-clicked open), not whatever an effect unit's
+// carousel happens to be parked on. See LaurusSelectedElement's own doc comment for the split.
+//
 // Neither the "preview" nor "peak" dial set requires a mask to be in HoverContext's own
-// selectedMaskKeys -- an active capture or peak (meta-clicked directly on canvas, see
-// project-mask-item.tsx's onClick hit-test) is enough on its own, since selectedMaskKeys and
-// uiState.activeElement are separate, only loosely-coupled concerns and a meta-click never
-// touches the former. selectedMaskKeys remains a fallback for the "preview" dials only, covering
-// the "whole mask selected, no particular capture singled out" case -- a peak has no equivalent,
-// so activeElement is the only thing that ever enables the "peak" dials, and likewise the only
-// thing that ever enables the "capture" dials (which have no "whole mask selected" fallback
-// either -- see above).
+// selectedMaskKeys -- a selected capture or peak is enough on its own, since selectedMaskKeys and
+// uiState.selectedElement are separate, only loosely-coupled concerns and selecting a sub-element
+// never touches the former. selectedMaskKeys remains a fallback for the "preview" dials only,
+// covering the "whole mask selected, no particular capture singled out" case -- a peak has no
+// equivalent, so selectedElement is the only thing that ever enables the "peak" dials, and likewise
+// the only thing that ever enables the "capture" dials (which have no "whole mask selected"
+// fallback either -- see above).
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const {
@@ -92,8 +98,8 @@ export default function LightSourcebar() {
   const mask = useContext(MaskContext);
   // Which row of dials the bar is currently showing -- cycled by double-clicking the icon (see
   // the JSX below): "capture" -> "peak" -> "preview" (the capture-preview dials) -> back to
-  // "capture". Not derived from uiState.tool/activeElement: it's purely a display mode for this
-  // bar, independent of whatever tool Maskbar itself has active.
+  // "capture". Independent of uiState.tool, but selecting a capture or a peak does swing it onto
+  // that flavor's row (see the effect below).
   const [target, setTarget] = useState<"preview" | "capture" | "peak">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -215,16 +221,18 @@ export default function LightSourcebar() {
   // There's only something to tune once geometry is actually on screen -- same rule Maskbar's
   // texture slider used.
   const hasMesh = mask.status === "streaming" || mask.status === "done";
-  const activeElement = uiState.activeElement;
-  // An active capture (meta-clicked directly on canvas, see project-mask-item.tsx's onClick
-  // hit-test) is enough on its own to edit its parent mask's capture_preview_* starting state --
-  // independent of whether that mask also happens to be in selectedMaskKeys. The two are separate,
-  // loosely-coupled concerns (HoverContext's own multi-select set vs. the single active element a
-  // meta-click sets), and a meta-click never touches selectedMaskKeys itself, so requiring both
-  // would leave these dials disabled for a capture that's plainly active. A selected mask (no
-  // particular capture singled out) remains the fallback, preserving the old "select the mask
-  // itself" path.
-  const activeCaptureMaskKey = activeElement?.type === "capture" ? activeElement.key : undefined;
+  // uiState.selectedElement, not activeElement: these dials follow what's *highlighted* on the mesh
+  // (alt-clicked or light-source-clicked directly, drawn, dragged, or meta-clicked open) rather
+  // than whatever an effect unit's carousel happens to be parked on. See LaurusSelectedElement.
+  const selectedElement = uiState.selectedElement;
+  // A selected capture is enough on its own to edit its parent mask's capture_preview_* starting
+  // state -- independent of whether that mask also happens to be in selectedMaskKeys. The two are
+  // separate, loosely-coupled concerns (HoverContext's own multi-select set vs. the single selected
+  // element a click on a capture sets), and selecting a capture never touches selectedMaskKeys
+  // itself, so requiring both would leave these dials disabled for a capture that's plainly
+  // highlighted. A selected mask (no particular capture singled out) remains the fallback,
+  // preserving the old "select the mask itself" path.
+  const activeCaptureMaskKey = selectedElement?.type === "capture" ? selectedElement.key : undefined;
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   // Hovering a mask already drives its live on-canvas preview (see project-mask-item.tsx's
   // onMouseMove, gated the same way on uiState.lightSourcePreview) -- these dials should track
@@ -236,24 +244,26 @@ export default function LightSourcebar() {
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
 
-  // The active capture -- mirrors activePeak below, and likewise has no "whole mask selected"
-  // fallback: a capture has no equivalent of a peak's "staged shape" either, so being the active
+  // The selected capture -- mirrors activePeak below, and likewise has no "whole mask selected"
+  // fallback: a capture has no equivalent of a peak's "staged shape" either, so being the selected
   // element is the only thing that ever enables these dials.
   const activeCaptureMaskData =
     activeCaptureMaskKey !== undefined ? coreState.canvasMasks.get(activeCaptureMaskKey) : undefined;
   const activeCapture =
-    activeElement?.type === "capture"
-      ? activeCaptureMaskData?.captures.find((c) => c.id === activeElement.captureId)
+    selectedElement?.type === "capture"
+      ? activeCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
       : undefined;
   const isCaptureParamDisabled = !activeCapture;
 
-  // The active peak -- mirrors activeCaptureMaskKey above, and likewise doesn't require
+  // The selected peak -- mirrors activeCaptureMaskKey above, and likewise doesn't require
   // selectedMaskKeys: a peak has no "whole mask selected" equivalent to fall back to, so being the
-  // active element is the only thing that ever enables these.
-  const activePeakMaskKey = activeElement?.type === "peak" ? activeElement.key : undefined;
+  // selected element is the only thing that ever enables these.
+  const activePeakMaskKey = selectedElement?.type === "peak" ? selectedElement.key : undefined;
   const activePeakMaskData = activePeakMaskKey !== undefined ? coreState.canvasMasks.get(activePeakMaskKey) : undefined;
   const activePeak =
-    activeElement?.type === "peak" ? activePeakMaskData?.peaks.find((p) => p.id === activeElement.peakId) : undefined;
+    selectedElement?.type === "peak"
+      ? activePeakMaskData?.peaks.find((p) => p.id === selectedElement.peakId)
+      : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
   // Enabled whenever there's a peak to edit -- either one is the active element, or the topology
   // tool is on, in which case with no peak active these instead read/write uiState.stagedPeak, the
@@ -266,6 +276,29 @@ export default function LightSourcebar() {
   // nothing for this slider to point at and it stays disabled even while the topology tool is on.
   const radiusValue = activePeak?.radius;
   const isRadiusDisabled = !activePeak;
+
+  // One primitive that changes exactly when the *identity* of the selected sub-element does.
+  // Keying the effect below off `selectedElement` itself would re-fire on every redundant
+  // re-dispatch of the same selection (a unit's setActiveElementIfNull re-selecting the entry it's
+  // already parked on, say), yanking the row back out from under a deliberate double-click cycle.
+  const selectedSubElement =
+    selectedElement?.type === "capture"
+      ? `capture|${selectedElement.key}|${selectedElement.captureId}`
+      : selectedElement?.type === "peak"
+        ? `peak|${selectedElement.key}|${selectedElement.peakId}`
+        : undefined;
+  // Selecting a capture or a peak swings this bar onto that flavor's dials -- the selection is what
+  // these dials edit (see this file's own header comment), so landing on a peak while the "capture"
+  // row is showing would otherwise leave every visible control disabled with the thing you just
+  // clicked glowing on canvas. Deliberately only these two: a whole-mask selection has no row of
+  // its own (the "preview" dials are mask-wide but are a separate concern -- see Capture_V1_0), so
+  // there's nothing to swing onto and whatever row is showing stays put. Double-clicking the icon
+  // still overrides this freely; the dep above is the identity of the selection, not the number of
+  // times it's been set, so a manual cycle sticks until a *different* capture or peak is picked.
+  useEffect(() => {
+    if (selectedSubElement === undefined) return;
+    setTarget(selectedSubElement.startsWith("peak|") ? "peak" : "capture");
+  }, [selectedSubElement]);
 
   // The latest not-yet-sent project state, plus whether a save is currently in flight -- refs, not
   // state, so a burst of drag events can coalesce onto the newest value without waiting on a

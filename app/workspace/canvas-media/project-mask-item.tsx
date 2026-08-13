@@ -19,7 +19,7 @@ import {
   uploadStaticMaskMesh,
 } from "../mask-gl";
 import { CoreActionType, DEFAULT_CAPTURE_VALUE, PendingTopologyEdit } from "../states/core-state";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { LaurusActiveElement, LaurusSelectedElement, UIActionType } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
@@ -172,14 +172,14 @@ export interface MaskImperativeHandle {
   abortTopologyDragForToolChange: () => void;
   // Whether this mask is the app's current active element -- recolors its captured triangles
   // in/out of the highlight accordingly (folded with any pending capture preview, see
-  // recolorHighlight), and (via activePeakIdRef's own reset here) its peaks' ring strokes too.
-  setActiveHighlighted: (active: boolean) => void;
+  // recolorHighlight), and (via selectedPeakIdRef's own reset here) its peaks' ring strokes too.
+  setSelectedHighlighted: (active: boolean) => void;
   // Which of this (already-active) mask's captures reads as the bright one, dimming the rest --
   // see DIM_HIGHLIGHT/recolorHighlight. undefined highlights every capture equally dim.
-  setActiveCapture: (captureId: number | undefined) => void;
-  // Mirrors setActiveCapture exactly, for this mesh's own topology peaks -- see DIM_HIGHLIGHT/
+  setSelectedCapture: (captureId: number | undefined) => void;
+  // Mirrors setSelectedCapture exactly, for this mesh's own topology peaks -- see DIM_HIGHLIGHT/
   // render()'s own peaks-building. undefined highlights every peak equally dim.
-  setActivePeak: (peakId: number | undefined) => void;
+  setSelectedPeak: (peakId: number | undefined) => void;
   setPendingCapture: (indices: Set<number>, captureId?: number) => void;
   clearPendingCapture: () => void;
   // The server's response to a just-committed capture change (a relocate drag, a fresh
@@ -270,9 +270,9 @@ export function ProjectMaskItem({
   const {
     coreState,
     dispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskActiveCaptureChanged,
-    notifyMaskActivePeakChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskCaptureUpdated,
@@ -428,8 +428,9 @@ export function ProjectMaskItem({
   // memo derived reactively, but pushed imperatively instead: pendingCaptureRef is set/cleared
   // both locally (this file's own pointer handlers) and externally (canvas.tsx's circle-draw
   // capture flow, via notifyMaskPendingCaptureSet/Cleared) and always wins when present;
-  // activeHighlightRef mirrors whether this mask is uiState.activeElement, kept in sync by
-  // setActiveHighlighted below. capturesRef is what activeHighlightRef actually paints --
+  // selectedHighlightRef mirrors whether this mask is uiState.selectedElement (NOT activeElement --
+  // the highlight follows selection, see LaurusSelectedElement's own doc comment), kept in sync by
+  // setSelectedHighlighted below. capturesRef is what selectedHighlightRef actually paints --
   // deliberately NOT re-derived from source.maskData.polygons on every recolor: a capture commit
   // (this file's onPointerUp, captureMeshSection, the capture context-menu's delete)
   // dispatches SetCanvasMask and then immediately wants the new indices to paint, but dispatch()
@@ -449,9 +450,9 @@ export function ProjectMaskItem({
   // ack lands (see onPointerUp below) -- keying off the drag would flash the light back to the old
   // position for exactly the round trip the pending state exists to cover.
   const pendingCaptureIdRef = useRef<number | undefined>(undefined);
-  const activeHighlightRef = useRef(false);
-  // Every one of this mesh's own captures, by id -- what activeHighlightRef actually paints (one
-  // bright, the rest dim -- see activeCaptureIdRef/DIM_HIGHLIGHT/recolorHighlight).
+  const selectedHighlightRef = useRef(false);
+  // Every one of this mesh's own captures, by id -- what selectedHighlightRef actually paints (one
+  // bright, the rest dim -- see selectedCaptureIdRef/DIM_HIGHLIGHT/recolorHighlight).
   // Deliberately NOT re-derived from source.maskData.polygons on every recolor, for the same
   // staleness reason capturedIndicesRef never was (see the comment above): kept in sync directly
   // off the server's own response by syncCapturedIndices instead.
@@ -463,13 +464,13 @@ export function ProjectMaskItem({
   // the SetCanvasMask it just dispatched to come back around through a React render.
   const capturesMetaRef = useRef<Map<number, LaurusCapture>>(new Map());
   // Which capture (if any) reads as the bright one among capturesRef's -- mirrors
-  // uiState.activeElement's own captureId when its type is "capture", refreshed on mount/via
-  // setActiveCapture below for the same reason activeHighlightRef mirrors uiState.activeElement
+  // uiState.selectedElement's own captureId when its type is "capture", refreshed on mount/via
+  // setSelectedCapture below for the same reason selectedHighlightRef mirrors uiState.selectedElement
   // itself.
-  const activeCaptureIdRef = useRef<number | undefined>(undefined);
+  const selectedCaptureIdRef = useRef<number | undefined>(undefined);
   // Every one of this mesh's own topology peaks, by id -- mirrors capturesRef exactly (built with
   // buildPeaksMap instead of buildCapturesMap, off PolygonPath_V1_0's own peak_id), and what
-  // activeHighlightRef actually paints for peaks the same way capturesRef does for captures. Kept
+  // selectedHighlightRef actually paints for peaks the same way capturesRef does for captures. Kept
   // in sync directly off the server's own response by syncPeaks, for the same staleness reason as
   // capturesRef.
   const peaksMapRef = useRef<Map<number, Set<number>>>(new Map());
@@ -480,9 +481,9 @@ export function ProjectMaskItem({
   // can invalidate it.
   const polygonCentroidsRef = useRef<[number, number][]>([]);
   // Which of this mesh's own peaks (peaksMapRef above) reads as the bright one -- mirrors
-  // activeCaptureIdRef exactly, one peakId instead of a captureId, refreshed on mount/via
-  // setActivePeak below.
-  const activePeakIdRef = useRef<number | undefined>(undefined);
+  // selectedCaptureIdRef exactly, one peakId instead of a captureId, refreshed on mount/via
+  // setSelectedPeak below.
+  const selectedPeakIdRef = useRef<number | undefined>(undefined);
 
   // Which of this mesh's own polygon indices a capture-relocate drag would land on if released
   // `dx`/`dy` (buffer pixels) away from where it started -- shared by the rAF-throttled live
@@ -648,13 +649,13 @@ export function ProjectMaskItem({
   // A wired move/light_source effect targets one particular capture (its math is keyed by
   // maskCaptureInputId(mediaKey, captureId), not mediaKey alone -- see effects-utils.ts), so
   // playback needs to settle on *which* capture before it can look up that effect or anchor on
-  // its rest position: whichever one is currently selected (activeCaptureIdRef), or failing that
+  // its rest position: whichever one is currently selected (selectedCaptureIdRef), or failing that
   // the mesh's first capture -- deterministic and, for the common single-capture case, the only
   // one there is anyway. Shared by computeLightSourceRestPosition (below) and
   // playLightSourceAnimation, which must agree on the same capture or the epicenter would move
   // relative to one capture while playing back another's equation.
   const resolveTargetCaptureId = useCallback((): number | undefined => {
-    if (activeCaptureIdRef.current !== undefined) return activeCaptureIdRef.current;
+    if (selectedCaptureIdRef.current !== undefined) return selectedCaptureIdRef.current;
     return capturesRef.current.keys().next().value;
   }, []);
 
@@ -810,7 +811,7 @@ export function ProjectMaskItem({
     });
   }, [resolvePeakUniforms, resolveRestingLightSources]);
 
-  // Marks the mesh's covered triangles to reflect pendingCaptureRef/activeHighlightRef (see
+  // Marks the mesh's covered triangles to reflect pendingCaptureRef/selectedHighlightRef (see
   // their own comment) by re-uploading the shader's a_highlight buffer -- a 1.0/0.0 flag per
   // vertex that the fragment shader (mask-gl.ts) uses to draw a sky-blue stroke along those
   // triangles' edges, leaving colorBuffer -- and so the mesh's own fill -- untouched. Vertex
@@ -848,8 +849,8 @@ export function ProjectMaskItem({
     const pendingCapture = pendingCaptureRef.current;
     if (pendingCapture && pendingCapture.size > 0) {
       paint(pendingCapture, 1);
-    } else if (activeHighlightRef.current) {
-      const activeCaptureId = activeCaptureIdRef.current;
+    } else if (selectedHighlightRef.current) {
+      const activeCaptureId = selectedCaptureIdRef.current;
       capturesRef.current.forEach((indices, captureId) => {
         paint(indices, captureId === activeCaptureId ? 1 : DIM_HIGHLIGHT);
       });
@@ -871,8 +872,8 @@ export function ProjectMaskItem({
     const pendingTopology = pendingTopologyRef.current;
     if (pendingTopology) {
       paint(indicesInCircleFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
-    } else if (activeHighlightRef.current) {
-      const activePeakId = activePeakIdRef.current;
+    } else if (selectedHighlightRef.current) {
+      const activePeakId = selectedPeakIdRef.current;
       peaksMapRef.current.forEach((indices, peakId) => {
         paint(indices, peakId === activePeakId ? 1 : DIM_HIGHLIGHT);
       });
@@ -1462,18 +1463,14 @@ export function ProjectMaskItem({
           coreState.pendingLightSourceCapture?.maskKey === mediaKey ? coreState.pendingLightSourceCapture : undefined;
         pendingCaptureRef.current = pendingCapture ? new Set(pendingCapture.polygonIndices) : undefined;
         pendingCaptureIdRef.current = pendingCapture?.captureId;
-        activeHighlightRef.current =
-          (uiState.activeElement?.type === "mask" ||
-            uiState.activeElement?.type === "capture" ||
-            uiState.activeElement?.type === "peak") &&
-          uiState.activeElement.key === mediaKey;
-        activeCaptureIdRef.current =
-          activeHighlightRef.current && uiState.activeElement?.type === "capture"
-            ? uiState.activeElement.captureId
+        selectedHighlightRef.current = uiState.selectedElement?.key === mediaKey;
+        selectedCaptureIdRef.current =
+          selectedHighlightRef.current && uiState.selectedElement?.type === "capture"
+            ? uiState.selectedElement.captureId
             : undefined;
-        activePeakIdRef.current =
-          activeHighlightRef.current && uiState.activeElement?.type === "peak"
-            ? uiState.activeElement.peakId
+        selectedPeakIdRef.current =
+          selectedHighlightRef.current && uiState.selectedElement?.type === "peak"
+            ? uiState.selectedElement.peakId
             : undefined;
         capturesRef.current = buildCapturesMap(maskData.polygons);
         capturesMetaRef.current = buildCapturesMetaMap(maskData.captures);
@@ -1518,20 +1515,20 @@ export function ProjectMaskItem({
             if (tool.type === "mask" && tool.editingTopology) return;
             abortTopologyDrag();
           },
-          setActiveHighlighted: (active) => {
-            activeHighlightRef.current = active;
+          setSelectedHighlighted: (active) => {
+            selectedHighlightRef.current = active;
             if (!active) {
-              activeCaptureIdRef.current = undefined;
-              activePeakIdRef.current = undefined;
+              selectedCaptureIdRef.current = undefined;
+              selectedPeakIdRef.current = undefined;
             }
             recolorHighlight();
           },
-          setActiveCapture: (captureId) => {
-            activeCaptureIdRef.current = captureId;
+          setSelectedCapture: (captureId) => {
+            selectedCaptureIdRef.current = captureId;
             recolorHighlight();
           },
-          setActivePeak: (peakId) => {
-            activePeakIdRef.current = peakId;
+          setSelectedPeak: (peakId) => {
+            selectedPeakIdRef.current = peakId;
             recolorHighlight();
           },
           setPendingCapture: (indices, captureId) => {
@@ -1807,6 +1804,50 @@ export function ProjectMaskItem({
               // branch below depends on this narrowing (source.maskData, or just the mediaKey
               // being meaningful to dispatch against).
               if (source.kind !== "static") return;
+              // Which of this mesh's own sub-elements this click lands on, hit-tested in the same
+              // buffer-pixel space onMouseMove already converts screen coordinates into (unflipped:
+              // polygon.d points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's).
+              // A peak hit wins over a capture hit at the same point -- a peak is a much smaller,
+              // more deliberate target (point + radius) than a capture's polygon region. Narrowed
+              // past the "mask" variant of LaurusSelectedElement: a hit is always one specific
+              // sub-element, never the mesh as a whole, and callers branch on which flavor it is.
+              const hitSubElement = (): Extract<LaurusSelectedElement, { type: "capture" | "peak" }> | undefined => {
+                if (source.kind !== "static") return undefined;
+                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
+                if (!point) return undefined;
+                const peakId = peakIdAtPoint(peaksRef.current, point);
+                if (peakId !== undefined) return { key: mediaKey, type: "peak", peakId };
+                const captureId = captureIdAtPoint(source.maskData.polygons, point);
+                if (captureId !== undefined) return { key: mediaKey, type: "capture", captureId };
+                return undefined;
+              };
+              // The one place this file moves the selection -- highlight (recolorHighlight, via the
+              // imperative notifies) and Lightsourcebar's own dials both follow it, and neither
+              // follows uiState.activeElement any more (see LaurusSelectedElement's doc comment).
+              // The two notifies are always issued as a pair, one of them clearing: whichever
+              // sub-element is now selected is this mesh's sole bright one, so the other flavor's
+              // leftover highlight has to go with it.
+              const select = (selected: LaurusSelectedElement) => {
+                uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
+                notifyMaskSelectionChanged(mediaKey);
+                notifyMaskSelectedCaptureChanged(
+                  mediaKey,
+                  selected.type === "capture" ? selected.captureId : undefined,
+                );
+                notifyMaskSelectedPeakChanged(mediaKey, selected.type === "peak" ? selected.peakId : undefined);
+              };
+              // Which of this mesh's own sub-elements was already selected coming into this click --
+              // shared by the alt/light-source branch's own deselect toggle and the meta-click
+              // menu-flavor handling further down, which both need to know whether this click is
+              // landing on the thing that was already picked.
+              const previouslySelectedCaptureId =
+                uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
+                  ? uiState.selectedElement.captureId
+                  : undefined;
+              const previouslySelectedPeakId =
+                uiState.selectedElement?.type === "peak" && uiState.selectedElement.key === mediaKey
+                  ? uiState.selectedElement.peakId
+                  : undefined;
               // Alt-click toggles selection, same as images/svgs (see DraggableProjectImg's
               // onImgClick). So does a plain click while the scale tool is active -- mirroring
               // DraggableProjectImg/Svg's own `case "scale":` in their tool-type switch, which
@@ -1816,26 +1857,49 @@ export function ProjectMaskItem({
               // mirroring how DraggableProjectImg's onImgClick only falls through to its tool-type
               // switch once the alt-select branch has already been ruled out. The light source
               // tool shares this same branch (rather than getting its own, like rotate below)
-              // since Lightsourcebar, like Scalebar, reads selectedMaskKeys directly and has no
-              // need for uiState.activeElement beyond the capture-activation already handled here.
+              // since Lightsourcebar, like Scalebar, reads selectedMaskKeys directly.
               if (
                 isAltKeyPressed ||
                 ((uiState.tool.type === "scale" || uiState.tool.type === "light_source") && !e.metaKey)
               ) {
+                // Landing directly on a capture or peak selects that sub-element instead of
+                // toggling the whole mesh -- this and the light source tool's own crosshair are the
+                // primary way to highlight one and point Lightsourcebar's dials at it. Scoped to
+                // alt and the light source tool specifically: the scale tool's crosshair is about
+                // the mesh's own transform, which has nothing per-capture to aim at. A miss falls
+                // through to the whole-mask toggle below unchanged, so the bare mesh still behaves
+                // exactly as it did.
+                if (isAltKeyPressed || uiState.tool.type === "light_source") {
+                  const hit = hitSubElement();
+                  if (hit) {
+                    // Clicking the one that's already selected deselects it, mirroring the
+                    // whole-mask toggle just below -- this is a toggle, not a "make this current".
+                    // Deselecting widens back to the mesh itself (every capture back to its dim,
+                    // unselected highlight, no particular one singled out) rather than clearing the
+                    // selection outright, which is the same fallback deleteMaskPeak and the
+                    // meta-click-off-the-capture branch further down already use: you're still
+                    // looking at this mesh, just not at one thing on it.
+                    const alreadySelected =
+                      hit.type === "capture"
+                        ? previouslySelectedCaptureId === hit.captureId
+                        : previouslySelectedPeakId === hit.peakId;
+                    select(alreadySelected ? { key: mediaKey, type: "mask" } : hit);
+                    return;
+                  }
+                }
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
                     next.delete(mediaKey);
                   } else {
                     next.add(mediaKey);
-                    // Selecting a mesh that already has a capture activates it immediately, the
-                    // same way alt-clicking a wired svg used to -- no extra step to see/wire what
-                    // it covers (recolorHighlight above). No particular capture is singled out by
-                    // this (every capture on the mesh renders its dim, unselected highlight) --
-                    // meta-clicking one specifically (below) is what picks a bright one.
+                    // Selecting a mesh that already has a capture highlights it immediately, the
+                    // same way alt-clicking a wired svg used to -- no extra step to see what it
+                    // covers (recolorHighlight above). No particular capture is singled out by this
+                    // (every capture on the mesh renders its dim, unselected highlight) -- landing
+                    // on one directly, above, is what picks a bright one.
                     if (source.maskData.captures.length > 0) {
-                      uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
-                      notifyMaskActiveElementChanged(mediaKey);
+                      select({ key: mediaKey, type: "mask" });
                     }
                   }
                   return next;
@@ -1861,70 +1925,25 @@ export function ProjectMaskItem({
               }
               // Meta-clicking directly on one of the mesh's captures or topology peaks opens that
               // element's own flavor of the context menu instead of the mesh's general one, and
-              // selects it (the bright highlight -- Lightsourcebar's own target, for either flavor,
-              // see notifyMaskActivePeakChanged/MaskImperativeHandle.setActivePeak) -- hit-tested in
-              // the same buffer-pixel space
-              // onMouseMove already converts screen coordinates into below (unflipped: polygon.d
-              // points, unlike lightSourceRef, are top-left-origin, not gl_FragCoord's). All three
-              // flavors share the same shown/hidden toggle further down. A peak hit wins over a
-              // capture hit at the same point -- a peak is a much smaller, more deliberate target
-              // (point + radius) than a capture's polygon region.
-              let hitCaptureId: number | undefined;
-              let hitPeakId: number | undefined;
-              if (e.metaKey) {
-                const canvas = e.currentTarget;
-                const rect = canvas.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  const scaleX = canvas.width / rect.width;
-                  const scaleY = canvas.height / rect.height;
-                  const bufferX = (e.clientX - rect.left) * scaleX;
-                  const bufferY = (e.clientY - rect.top) * scaleY;
-                  hitPeakId = peakIdAtPoint(peaksRef.current, [bufferX, bufferY]);
-                  if (hitPeakId === undefined) {
-                    hitCaptureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
-                  }
-                }
-              }
-              const previouslyActiveCaptureId =
-                uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
-                  ? uiState.activeElement.captureId
-                  : undefined;
-              const previouslyActivePeakId =
-                uiState.activeElement?.type === "peak" && uiState.activeElement.key === mediaKey
-                  ? uiState.activeElement.peakId
-                  : undefined;
-              if (hitPeakId !== undefined) {
-                uiDispatch({
-                  type: UIActionType.SetActiveElement,
-                  value: { key: mediaKey, type: "peak", peakId: hitPeakId },
-                });
-                notifyMaskActiveElementChanged(mediaKey);
-                notifyMaskActivePeakChanged(mediaKey, hitPeakId);
-                // Clear any capture highlight still showing from before this click -- the peak
-                // just selected is now this mesh's sole active sub-element.
-                notifyMaskActiveCaptureChanged(mediaKey, undefined);
-              } else if (hitCaptureId !== undefined) {
-                uiDispatch({
-                  type: UIActionType.SetActiveElement,
-                  value: { key: mediaKey, type: "capture", captureId: hitCaptureId },
-                });
-                notifyMaskActiveElementChanged(mediaKey);
-                notifyMaskActiveCaptureChanged(mediaKey, hitCaptureId);
-                // Mirrors the peak branch's own symmetric clear above.
-                notifyMaskActivePeakChanged(mediaKey, undefined);
+              // selects it (the bright highlight -- Lightsourcebar's own target, for either flavor).
+              // It deliberately does NOT activate it: opening a menu on a capture used to silently
+              // rewire whatever effect unit was parked elsewhere. All three flavors share the same
+              // shown/hidden toggle further down.
+              const hit = e.metaKey ? hitSubElement() : undefined;
+              const hitCaptureId = hit?.type === "capture" ? hit.captureId : undefined;
+              const hitPeakId = hit?.type === "peak" ? hit.peakId : undefined;
+              if (hit) {
+                select(hit);
               } else if (
                 showContextMenu &&
-                (previouslyActiveCaptureId !== undefined || previouslyActivePeakId !== undefined)
+                (previouslySelectedCaptureId !== undefined || previouslySelectedPeakId !== undefined)
               ) {
                 // Meta-clicking off the capture/peak while its own menu is still showing switches
                 // the display back to the mesh's general flavor -- the <ContextMenu> render below
                 // has no separate local flavor to flip (it derives "mask" vs "capture" vs "peak"
-                // straight from uiState.activeElement, mirroring the highlight above), so clearing
-                // the active element here is what makes that switch happen.
-                uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "mask" } });
-                notifyMaskActiveElementChanged(mediaKey);
-                notifyMaskActiveCaptureChanged(mediaKey, undefined);
-                notifyMaskActivePeakChanged(mediaKey, undefined);
+                // straight from uiState.selectedElement, mirroring the highlight above), so widening
+                // the selection back to the whole mesh here is what makes that switch happen.
+                select({ key: mediaKey, type: "mask" });
               }
               // Meta-clicking a different part of the mesh while a menu is already showing
               // switches which flavor is displayed in place, rather than closing it -- the
@@ -1933,7 +1952,7 @@ export function ProjectMaskItem({
               // of target still closes it as expected.
               if (
                 showContextMenu &&
-                (previouslyActiveCaptureId !== hitCaptureId || previouslyActivePeakId !== hitPeakId)
+                (previouslySelectedCaptureId !== hitCaptureId || previouslySelectedPeakId !== hitPeakId)
               ) {
                 return;
               }
@@ -1975,7 +1994,7 @@ export function ProjectMaskItem({
                 case "rotate": {
                   const newActiveElement: LaurusActiveElement = { key: mediaKey, type: "mask" };
                   uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
-                  notifyMaskActiveElementChanged(mediaKey);
+                  notifyMaskSelectionChanged(mediaKey);
                   break;
                 }
               }
@@ -2180,14 +2199,19 @@ export function ProjectMaskItem({
                   if (updated) {
                     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
                     notifyMaskPeaksUpdated(mediaKey, updated);
-                    // Grabbing a peak (even a barely-moved click) makes it the active element --
-                    // mirrors the capture relocate's own SetActiveElement below, and is what lets
-                    // Lightsourcebar's elevation slider pick it up immediately afterwards.
-                    uiDispatch({ type: UIActionType.SetActiveElement, value: { key: mediaKey, type: "peak", peakId } });
-                    notifyMaskActiveElementChanged(mediaKey);
-                    notifyMaskActivePeakChanged(mediaKey, peakId);
+                    // Grabbing a peak (even a barely-moved click) selects it -- mirrors the capture
+                    // relocate's own SetSelectedElement below, and is what lets Lightsourcebar's
+                    // elevation slider pick it up immediately afterwards. Selection only: a drag
+                    // is a "look at this one" gesture, not a request to rewire an effect (see
+                    // LaurusSelectedElement).
+                    uiDispatch({
+                      type: UIActionType.SetSelectedElement,
+                      value: { key: mediaKey, type: "peak", peakId },
+                    });
+                    notifyMaskSelectionChanged(mediaKey);
+                    notifyMaskSelectedPeakChanged(mediaKey, peakId);
                     // Mirrors the capture relocate's own symmetric clear below.
-                    notifyMaskActiveCaptureChanged(mediaKey, undefined);
+                    notifyMaskSelectedCaptureChanged(mediaKey, undefined);
                   }
                   dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
                   notifyMaskPendingTopologyCleared(mediaKey);
@@ -2249,20 +2273,20 @@ export function ProjectMaskItem({
                 captureCommitInFlightRef.current.delete(captureId);
                 if (updated) {
                   dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
-                  // Before the active-element/pending-capture notifies below, which recolor off
+                  // Before the selection/pending-capture notifies below, which recolor off
                   // this mask's own captured-indices ref -- `source` is still last render's stale
                   // polygons at this exact point (dispatch() doesn't apply synchronously), so
                   // recoloring off it here would briefly repaint the *previous* capture position.
                   notifyMaskCaptureUpdated(mediaKey, updated);
                   uiDispatch({
-                    type: UIActionType.SetActiveElement,
+                    type: UIActionType.SetSelectedElement,
                     value: { key: mediaKey, type: "capture", captureId },
                   });
-                  notifyMaskActiveElementChanged(mediaKey);
-                  notifyMaskActiveCaptureChanged(mediaKey, captureId);
+                  notifyMaskSelectionChanged(mediaKey);
+                  notifyMaskSelectedCaptureChanged(mediaKey, captureId);
                   // Mirrors the peak relocate's own symmetric clear -- a relocated capture is now
-                  // this mesh's sole active sub-element.
-                  notifyMaskActivePeakChanged(mediaKey, undefined);
+                  // this mesh's sole selected sub-element.
+                  notifyMaskSelectedPeakChanged(mediaKey, undefined);
                   // Cache the circle actually used, translated by this drag's own delta -- not
                   // re-derived from the resulting triangles (capturedRegionCircle), which is what
                   // let the radius creep up over successive relocations. See lastKnownCaptureRef.
@@ -2347,10 +2371,10 @@ export function ProjectMaskItem({
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
             media={
-              uiState.activeElement?.type === "capture" && uiState.activeElement.key === mediaKey
-                ? { key: mediaKey, type: "capture", captureId: uiState.activeElement.captureId, meta: maskMeta }
-                : uiState.activeElement?.type === "peak" && uiState.activeElement.key === mediaKey
-                  ? { key: mediaKey, type: "peak", peakId: uiState.activeElement.peakId, meta: maskMeta }
+              uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
+                ? { key: mediaKey, type: "capture", captureId: uiState.selectedElement.captureId, meta: maskMeta }
+                : uiState.selectedElement?.type === "peak" && uiState.selectedElement.key === mediaKey
+                  ? { key: mediaKey, type: "peak", peakId: uiState.selectedElement.peakId, meta: maskMeta }
                   : { key: mediaKey, type: "mask", meta: maskMeta }
             }
             framesCacheRef={framesCacheRef}

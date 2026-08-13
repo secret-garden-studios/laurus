@@ -59,24 +59,47 @@ export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 
+// Which element an effect unit's carousel is currently parked on -- i.e. what a newly wired
+// equation attaches to. Purely about wiring: it deliberately does NOT drive the canvas highlight or
+// Lightsourcebar's dials, which read LaurusSelectedElement below instead. See that type's own doc
+// comment for why the two used to be one thing and no longer are.
 export type LaurusActiveElement =
   | { key: string; type: "svg"; locallyActivatedEffectKey?: string }
   | { key: string; type: "img"; locallyActivatedEffectKey?: string }
-  // The whole mask active, no particular capture singled out -- every capture on it renders its
-  // dim, unselected highlight rather than one bright one (see project-mask-item.tsx's
-  // recolorHighlight). Lightsourcebar's dials are still per-mask, not per-capture, so this
-  // distinction doesn't gate them -- see the mask's own light_source_* fields.
+  // The whole mask wired, no particular capture singled out. Lightsourcebar's dials are still
+  // per-mask, not per-capture, so this distinction doesn't gate them -- see the mask's own
+  // light_source_* fields.
   | { key: string; type: "mask"; locallyActivatedEffectKey?: string }
-  // One particular capture on the mask at `key` is singled out (meta-clicked, or just drawn/
-  // relocated) -- mirrors CarouselEntry's own "mask" vs "capture" split (see its doc comment)
-  // rather than qualifying the "mask" variant above with an optional captureId.
+  // One particular capture on the mask at `key` is wired -- mirrors CarouselEntry's own "mask" vs
+  // "capture" split (see its doc comment) rather than qualifying the "mask" variant above with an
+  // optional captureId.
   | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
-  // One particular topology peak on the mask at `key` is singled out -- set the instant a fresh
-  // peak commits (workspace.client.tsx's createTopologyPeak) or an existing one is grabbed
-  // (project-mask-item.tsx's topology onPointerUp), mirroring the "capture" variant above exactly.
-  // Lightsourcebar's elevation slider reads/writes whichever peak this points at; with no "peak"
-  // active element it instead edits/reads uiState.stagedPeakElevation, seeding the next peak drawn.
+  // One particular topology peak on the mask at `key` is wired, mirroring the "capture" variant
+  // above exactly. Only "light_source" can wire one, and only in its own "peak" mode (see
+  // light-source-unit.tsx's isPeakCarouselEntry).
   | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
+
+// What the canvas actually paints as highlighted, and what Lightsourcebar's dials read and write --
+// deliberately NOT activeElement above, which the two used to share. The two answer different
+// questions: activeElement is about *wiring* (which element an effect unit's carousel is parked on,
+// and therefore what an equation attaches to), while this is about *attention* (which capture or
+// peak you're currently looking at and tuning). Collapsing them meant every context-menu click on a
+// capture silently rewired an effect, and every carousel step silently moved the highlight.
+//
+// Selection is driven by the gestures that read as "pick this": an alt-click or a light-source-tool
+// click directly on a capture/peak (project-mask-item.tsx's onClick hit-test), a meta-click opening
+// that element's own context menu, drawing or dragging one, or activating a capture/peak from a
+// unit display -- the one place the two concepts deliberately move together (see unit-display.tsx).
+//
+// Only mask sub-elements appear here: an img/svg's own "selected" state is HoverContext's
+// selectedImgKeys/selectedSvgKeys, and a whole mask's is selectedMaskKeys. The "mask" variant is
+// this set's own "no particular sub-element singled out" case (every capture renders its dim,
+// unselected highlight -- see project-mask-item.tsx's recolorHighlight), not a duplicate of
+// selectedMaskKeys.
+export type LaurusSelectedElement =
+  | { key: string; type: "mask" }
+  | { key: string; type: "capture"; captureId: number }
+  | { key: string; type: "peak"; peakId: number };
 
 export type CarouselEntry =
   | { type: "svg"; key: string }
@@ -107,6 +130,7 @@ export interface UIState {
   tool: LaurusTool;
   browserElement: LaurusBrowserElement | undefined;
   activeElement: LaurusActiveElement | undefined;
+  selectedElement: LaurusSelectedElement | undefined;
   effectNames: string[];
   effectClipboard: LaurusEffect | undefined;
   recordingLight: boolean;
@@ -126,7 +150,7 @@ export interface UIState {
   // constantly trigger the animation.
   lightSourcePreview: boolean;
   // The shape Lightsourcebar's own peak sliders are staged at whenever no topology peak is
-  // currently active -- read the instant a fresh circle-drag commits a new peak
+  // currently selected -- read the instant a fresh circle-drag commits a new peak
   // (workspace.client.tsx's createTopologyPeak), so drawing several peaks in a row without
   // touching a slider keeps reusing whatever shape was last dialed in, rather than always
   // restarting at the defaults.
@@ -148,6 +172,7 @@ export const defaultUIState: UIState = {
   effectClipboard: undefined,
   browserElement: undefined,
   activeElement: undefined,
+  selectedElement: undefined,
   recordingLight: false,
   timelineUnits: [],
   timelineValues: [],
@@ -181,6 +206,7 @@ export enum UIActionType {
   SetTool,
   SetBrowserElement,
   SetActiveElement,
+  SetSelectedElement,
   SetLightFrameBackground,
   SetEffectClipboard,
   SetRecordingLight,
@@ -221,6 +247,10 @@ export type UIAction =
   | {
       type: UIActionType.SetActiveElement;
       value: LaurusActiveElement | undefined;
+    }
+  | {
+      type: UIActionType.SetSelectedElement;
+      value: LaurusSelectedElement | undefined;
     }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
@@ -335,6 +365,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetActiveElement: {
       return { ...state, activeElement: action.value };
+    }
+    case UIActionType.SetSelectedElement: {
+      return { ...state, selectedElement: action.value };
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };

@@ -40,8 +40,13 @@ interface ScaleUnit {
   carouselIndexInit: number;
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
-    useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
+  } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
@@ -233,7 +238,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -246,7 +250,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -259,7 +262,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "capture": {
@@ -276,8 +278,13 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -288,8 +295,9 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     uiState.activeElement,
     scale.scale_id,
     uiDispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskActiveCaptureChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
   ]);
 
   const getActiveScale = useCallback((): [number, number] => {

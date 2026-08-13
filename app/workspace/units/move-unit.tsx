@@ -55,8 +55,13 @@ interface MoveUnit {
   carouselIndexInit: number;
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
-    useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
+  } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
@@ -231,7 +236,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -244,7 +248,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -257,7 +260,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "capture": {
@@ -268,7 +270,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           // sit first in the carousel. Since this callback's whole point is to re-anchor the
           // active element on the capture the carousel is *already* showing (carouselIndex),
           // getting this wrong would make this component's own next render silently snap back to
-          // a different capture than the one just edited -- see notifyMaskActiveCaptureChanged's
+          // a different capture than the one just edited -- see notifyMaskSelectedCaptureChanged's
           // sibling call in unit-display.tsx's own setActiveElement, which this mirrors.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
@@ -280,8 +282,13 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -291,9 +298,10 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     uiState.carouselEntries,
     uiState.activeElement,
     move.move_id,
-    notifyMaskActiveCaptureChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
     uiDispatch,
-    notifyMaskActiveElementChanged,
+    notifyMaskSelectionChanged,
   ]);
 
   const saveNewEquation = useCallback(

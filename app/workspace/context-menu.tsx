@@ -146,9 +146,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const {
     coreState,
     dispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskActiveCaptureChanged,
-    notifyMaskActivePeakChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
     notifyMaskCaptureUpdated,
     sendMaskCaptureUpdate,
     closeMaskCaptureSocket,
@@ -446,7 +446,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               type: UIActionType.SetActiveElement,
               value: undefined,
             });
-            notifyMaskActiveElementChanged(undefined);
+          }
+          // Separate from the activeElement clear above (the two are distinct concerns now, see
+          // LaurusSelectedElement) -- this is what takes the deleted media's own highlight off.
+          if (uiState.selectedElement?.key == media.key) {
+            uiDispatch({
+              type: UIActionType.SetSelectedElement,
+              value: undefined,
+            });
+            notifyMaskSelectionChanged(undefined);
           }
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
@@ -482,12 +490,13 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       coreState.accessToken,
       coreState.effects,
       uiState.activeElement?.key,
+      uiState.selectedElement?.key,
       uiState.browserElement,
       media.key,
       media.type,
       uiDispatch,
       framesCacheRef,
-      notifyMaskActiveElementChanged,
+      notifyMaskSelectionChanged,
     ],
   );
 
@@ -998,6 +1007,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   >
                     {"active"}
                   </span>
+                  {/* The explicit activation control -- unlike the meta-click that opened this
+                      menu (which only ever selects, see project-mask-item.tsx's onClick), toggling
+                      this on for a capture or peak also selects it, mirroring unit-display.tsx's
+                      own setActiveElement: it's a deliberate "wire this one" and the thing being
+                      wired should light up on the mesh. Turning it off leaves the selection alone
+                      -- unwiring an effect isn't a reason to stop looking at the element. */}
                   <Toggle
                     value={active}
                     onClick={() => {
@@ -1006,7 +1021,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           type: UIActionType.SetActiveElement,
                           value: undefined,
                         });
-                        notifyMaskActiveElementChanged(undefined);
                         return;
                       }
                       switch (media.type) {
@@ -1019,7 +1033,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
-                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                         case "svg": {
@@ -1031,7 +1044,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
-                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                         case "mask": {
@@ -1043,7 +1055,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
-                          notifyMaskActiveElementChanged(media.key);
                           break;
                         }
                         case "capture": {
@@ -1056,11 +1067,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
-                          notifyMaskActiveElementChanged(media.key);
-                          notifyMaskActiveCaptureChanged(media.key, media.captureId);
-                          // This capture is now the mesh's sole active sub-element -- clear any
+                          uiDispatch({
+                            type: UIActionType.SetSelectedElement,
+                            value: { key: media.key, type: "capture", captureId: media.captureId },
+                          });
+                          notifyMaskSelectionChanged(media.key);
+                          notifyMaskSelectedCaptureChanged(media.key, media.captureId);
+                          // This capture is now the mesh's sole bright sub-element -- clear any
                           // peak highlight left over from before.
-                          notifyMaskActivePeakChanged(media.key, undefined);
+                          notifyMaskSelectedPeakChanged(media.key, undefined);
                           break;
                         }
                         case "peak": {
@@ -1073,10 +1088,14 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                             type: UIActionType.SetActiveElement,
                             value: newActiveElement,
                           });
-                          notifyMaskActiveElementChanged(media.key);
-                          notifyMaskActivePeakChanged(media.key, media.peakId);
+                          uiDispatch({
+                            type: UIActionType.SetSelectedElement,
+                            value: { key: media.key, type: "peak", peakId: media.peakId },
+                          });
+                          notifyMaskSelectionChanged(media.key);
+                          notifyMaskSelectedPeakChanged(media.key, media.peakId);
                           // Mirrors the capture case's own symmetric clear above.
-                          notifyMaskActiveCaptureChanged(media.key, undefined);
+                          notifyMaskSelectedCaptureChanged(media.key, undefined);
                           break;
                         }
                       }
@@ -1194,7 +1213,22 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           uiState.activeElement.captureId === media.captureId
                         ) {
                           uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
-                          notifyMaskActiveElementChanged(undefined);
+                        }
+                        // Falls back to the whole mesh rather than clearing outright, mirroring
+                        // deleteMaskPeak's own fallback (workspace.client.tsx) -- the menu this
+                        // click lives in derives its flavor from the selection, and a deleted
+                        // capture's flavor no longer has anything to show.
+                        if (
+                          uiState.selectedElement?.key == media.key &&
+                          uiState.selectedElement.type === "capture" &&
+                          uiState.selectedElement.captureId === media.captureId
+                        ) {
+                          uiDispatch({
+                            type: UIActionType.SetSelectedElement,
+                            value: { key: media.key, type: "mask" },
+                          });
+                          notifyMaskSelectionChanged(media.key);
+                          notifyMaskSelectedCaptureChanged(media.key, undefined);
                         }
                         // Only the deleted capture's own carousel entry goes away -- any others
                         // this mask still has (see CarouselEntry's own doc comment) are untouched.
@@ -1269,7 +1303,7 @@ interface BrowserContextMenu {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserContextMenu) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -1366,12 +1400,13 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
         if (!updated) {
           dispatch({ type: CoreActionType.SetProject, value: snapshot });
         } else {
+          // No selection to clear alongside it: this menu's media is only ever an img or svg (see
+          // BrorwserContextMenuMedia), and uiState.selectedElement only ever holds a mask key.
           if (uiState.activeElement?.key == media.key) {
             uiDispatch({
               type: UIActionType.SetActiveElement,
               value: undefined,
             });
-            notifyMaskActiveElementChanged(undefined);
           }
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
@@ -1400,7 +1435,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
       media.type,
       uiDispatch,
       framesCacheRef,
-      notifyMaskActiveElementChanged,
     ],
   );
 

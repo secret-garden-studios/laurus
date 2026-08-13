@@ -37,7 +37,7 @@ export function DraggableProjectImg({
   refKey,
   forceAbsolutePosition,
 }: DraggableProjectImg) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged } = useContext(CoreContext);
+  const { coreState, dispatch, notifyMaskSelectionChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
@@ -412,7 +412,7 @@ export function DraggableProjectImg({
               type: UIActionType.SetActiveElement,
               value: newActiveElement,
             });
-            notifyMaskActiveElementChanged(newActiveElement.key);
+            notifyMaskSelectionChanged(newActiveElement.key);
             break;
           }
           case "mask": {
@@ -424,7 +424,7 @@ export function DraggableProjectImg({
               type: UIActionType.SetActiveElement,
               value: newActiveElement,
             });
-            notifyMaskActiveElementChanged(newActiveElement.key);
+            notifyMaskSelectionChanged(newActiveElement.key);
             break;
           }
         }
@@ -442,7 +442,7 @@ export function DraggableProjectImg({
       setSelectedImgKeys,
       uiDispatch,
       onImgStackDrop,
-      notifyMaskActiveElementChanged,
+      notifyMaskSelectionChanged,
     ],
   );
 

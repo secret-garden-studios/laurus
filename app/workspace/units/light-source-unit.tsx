@@ -104,9 +104,9 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const {
     coreState,
     dispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskActiveCaptureChanged,
-    notifyMaskActivePeakChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -404,6 +404,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
 
   // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
   // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
+  // Mirrors unit-display.tsx's own setActiveElement on the selection question too: activating a
+  // capture or a peak also selects it (the thing whose equation this unit edits should light up on
+  // the mesh and claim Lightsourcebar's dials), while the svg/img/mask cases leave the selection
+  // alone -- see LaurusSelectedElement.
   const activateEntry = useCallback(
     (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
@@ -417,7 +421,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -430,7 +433,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -443,7 +445,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "capture": {
@@ -454,7 +455,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           // sit first in the carousel. Since this callback's whole point is to re-anchor the
           // active element on the capture the carousel is *already* showing (carouselIndex),
           // getting this wrong would make this component's own next render silently snap back to
-          // a different capture than the one just edited -- see notifyMaskActiveCaptureChanged's
+          // a different capture than the one just edited -- see notifyMaskSelectedCaptureChanged's
           // sibling call in unit-display.tsx's own setActiveElement, which this mirrors.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
@@ -466,8 +467,13 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
         // Mirrors "capture" above, for this unit's "peak" target -- editing a peak's own equation
@@ -484,18 +490,23 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActivePeakChanged(newActiveElement.key, carouselEntry.peakId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
           break;
         }
       }
     },
     [
       lightSource.light_source_id,
-      notifyMaskActiveCaptureChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
       uiDispatch,
-      notifyMaskActiveElementChanged,
+      notifyMaskSelectionChanged,
     ],
   );
 

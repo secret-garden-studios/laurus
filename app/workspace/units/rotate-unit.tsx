@@ -43,8 +43,13 @@ interface RotateUnit {
   carouselIndexInit: number;
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
-  const { coreState, dispatch, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged } =
-    useContext(CoreContext);
+  const {
+    coreState,
+    dispatch,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
+  } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
@@ -209,7 +214,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "img": {
@@ -222,7 +226,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "mask": {
@@ -235,7 +238,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           break;
         }
         case "capture": {
@@ -253,8 +255,13 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActiveCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -265,8 +272,9 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     uiState.activeElement,
     rotate.rotate_id,
     uiDispatch,
-    notifyMaskActiveElementChanged,
-    notifyMaskActiveCaptureChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
   ]);
 
   const saveNewEquation = useCallback(

@@ -71,12 +71,19 @@ export default function UnitDisplay({
   onNewLocalIndex,
   isEntryWireable = (entry) => entry.type !== "peak",
 }: UnitDisplay) {
-  const { coreState, notifyMaskActiveElementChanged, notifyMaskActiveCaptureChanged, notifyMaskActivePeakChanged } =
+  const { coreState, notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
     useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
 
+  // Wires this unit's effect to a carousel entry. Activation and selection are otherwise separate
+  // concerns (see LaurusSelectedElement) -- this is the one place they deliberately move together,
+  // and only for the two entry types with something on the mesh to look at: activating a capture or
+  // a peak from a unit display also selects it, so the thing whose equation you're about to edit
+  // lights up on canvas and Lightsourcebar's dials swing onto it. The "svg"/"img"/"mask" cases
+  // deliberately leave the selection alone -- none of them singles out a sub-element, so moving the
+  // carousel past one shouldn't take the highlight off whatever capture or peak is being tuned.
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
       if (uiState.carouselEntries.length <= newCarouselIndex) return;
@@ -95,7 +102,6 @@ export default function UnitDisplay({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -113,7 +119,6 @@ export default function UnitDisplay({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -131,11 +136,6 @@ export default function UnitDisplay({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          // No particular capture is singled out when the whole mask becomes active -- clears
-          // any previously-bright capture highlight (see ui-state.ts's LaurusActiveElement
-          // "mask" vs "capture" doc comment).
-          notifyMaskActiveCaptureChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -154,13 +154,20 @@ export default function UnitDisplay({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActiveCaptureChanged(entry.key, entry.captureId);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "capture", captureId: entry.captureId },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedCaptureChanged(entry.key, entry.captureId);
+          // Clears any bright peak highlight for the same reason createTopologyPeak does in
+          // reverse: whichever sub-element was just singled out is this mesh's sole bright one.
+          notifyMaskSelectedPeakChanged(entry.key, undefined);
           // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
           // anchor a context menu to beyond the mask's own -- the menu positions off that shared
           // anchor regardless of flavor, and project-mask-item.tsx's own <ContextMenu> render
-          // derives "mask" vs "capture" straight from uiState.activeElement (set above), so the
-          // SetActiveElement dispatch above is what picks the flavor here.
+          // derives "mask" vs "capture" straight from uiState.selectedElement, so the
+          // SetSelectedElement dispatch above is what picks the flavor here.
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -169,10 +176,9 @@ export default function UnitDisplay({
           break;
         }
         case "peak": {
-          // Mirrors "capture" above exactly -- including the shared mask anchor for the context
-          // menu, since a peak has no on-screen presence of its own either. Clears any bright
-          // capture highlight for the same reason createTopologyPeak does: a peak being singled
-          // out makes it this mesh's sole active sub-element.
+          // Mirrors "capture" above exactly -- including both the shared mask anchor for the
+          // context menu (a peak has no on-screen presence of its own either) and the paired
+          // selection, which makes this peak the mesh's sole bright sub-element.
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
             type: "peak",
@@ -183,9 +189,13 @@ export default function UnitDisplay({
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
-          notifyMaskActiveElementChanged(newActiveElement.key);
-          notifyMaskActivePeakChanged(entry.key, entry.peakId);
-          notifyMaskActiveCaptureChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "peak", peakId: entry.peakId },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedPeakChanged(entry.key, entry.peakId);
+          notifyMaskSelectedCaptureChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -199,9 +209,9 @@ export default function UnitDisplay({
       uiState.carouselEntries,
       effectKey,
       uiDispatch,
-      notifyMaskActiveElementChanged,
-      notifyMaskActiveCaptureChanged,
-      notifyMaskActivePeakChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
     ],
   );
 
