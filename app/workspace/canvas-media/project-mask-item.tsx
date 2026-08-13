@@ -283,7 +283,8 @@ export function ProjectMaskItem({
     sendMaskPeakUpdate,
     deleteMaskPeak,
   } = useContext(CoreContext);
-  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed } = useContext(HoverContext);
+  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
+    useContext(HoverContext);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glStateRef = useRef<GLState | undefined>(undefined);
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
@@ -2306,6 +2307,13 @@ export function ProjectMaskItem({
               // -- the mouse no longer drives it for this mesh. Same when the "preview" toggle
               // (Lightsourcebar) is off -- hovering shouldn't run the animation at all.
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
+              // Re-affirmed on every move rather than just on mouseenter: a mask dropped elsewhere
+              // can remount this mesh's own canvas node (Map re-keying) out from under an
+              // already-stationary cursor, and a DOM node swapped in under a stationary pointer
+              // never gets a real mouseenter -- only genuine pointer movement is guaranteed to
+              // fire here. React bails out on setting an unchanged value, so this costs nothing
+              // once the pointer settles over one mask (see targetMaskKey, lightsourcebar.tsx).
+              setMostRecentlyHoveredMaskKey(mediaKey);
               const canvas = e.currentTarget;
               const rect = canvas.getBoundingClientRect();
               if (rect.width === 0 || rect.height === 0) return;

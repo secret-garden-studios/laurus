@@ -88,7 +88,7 @@ export default function LightSourcebar() {
     notifyMaskPendingTopologyCleared,
     notifyMaskPeaksUpdated,
   } = useContext(CoreContext);
-  const { selectedMaskKeys } = useContext(HoverContext);
+  const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   // Which row of dials the bar is currently showing -- cycled by double-clicking the icon (see
   // the JSX below): "capture" -> "peak" -> "preview" (the capture-preview dials) -> back to
@@ -226,7 +226,13 @@ export default function LightSourcebar() {
   // itself" path.
   const activeCaptureMaskKey = activeElement?.type === "capture" ? activeElement.key : undefined;
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const targetMaskKey = activeCaptureMaskKey ?? selectedMaskKey;
+  // Hovering a mask already drives its live on-canvas preview (see project-mask-item.tsx's
+  // onMouseMove, gated the same way on uiState.lightSourcePreview) -- these dials should track
+  // that same mask rather than requiring the separate, deliberate selectedMaskKeys click, or the
+  // sliders read as "zeroed" (mask.captureSize's own scratch default, see below) right up until
+  // something is explicitly selected. Sticky (see mostRecentlyHoveredMaskKey's own comment), so it
+  // still points at the right mask once the cursor leaves the mesh to reach these sliders.
+  const targetMaskKey = activeCaptureMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
 

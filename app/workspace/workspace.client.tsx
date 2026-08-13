@@ -174,6 +174,16 @@ export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): K
 export interface HoverContextProps {
   mostRecentlyEnteredEffectUnitKey: string | undefined;
   setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
+  // Sticky, like mostRecentlyEnteredEffectUnitKey above -- kept current by every mousemove over a
+  // mask's mesh (not just the boundary-crossing mouseenter -- a mask dropped elsewhere can remount
+  // another mesh's canvas node out from under an already-stationary cursor, which never fires a
+  // real mouseenter), never cleared on leave, so it keeps pointing at that mask while the cursor
+  // travels off the mesh and onto Lightsourcebar's own preview sliders to drag one (see
+  // project-mask-item.tsx's onMouseMove and lightsourcebar.tsx's targetMaskKey). Distinct from
+  // selectedMaskKeys: a hover shouldn't require the deliberate click a selection does, but it
+  // still needs to outlive the hover itself for the sliders to stay usable.
+  mostRecentlyHoveredMaskKey: string | undefined;
+  setMostRecentlyHoveredMaskKey: (key: string | undefined) => void;
   isMetaKeyPressed: boolean;
   isAltKeyPressed: boolean;
   selectedEffectUnitKeys: Set<string>;
@@ -189,6 +199,8 @@ export interface HoverContextProps {
 export const HoverContext = createContext<HoverContextProps>({
   mostRecentlyEnteredEffectUnitKey: undefined,
   setMostRecentlyEnteredEffectUnitKey: () => {},
+  mostRecentlyHoveredMaskKey: undefined,
+  setMostRecentlyHoveredMaskKey: () => {},
   isMetaKeyPressed: false,
   isAltKeyPressed: false,
   selectedEffectUnitKeys: new Set<string>(),
@@ -736,6 +748,7 @@ export default function Workspace({
   const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(
     undefined,
   );
+  const [mostRecentlyHoveredMaskKey, setMostRecentlyHoveredMaskKey] = useState<string | undefined>(undefined);
   const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
   const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
@@ -1747,6 +1760,8 @@ export default function Workspace({
     () => ({
       mostRecentlyEnteredEffectUnitKey,
       setMostRecentlyEnteredEffectUnitKey,
+      mostRecentlyHoveredMaskKey,
+      setMostRecentlyHoveredMaskKey,
       isMetaKeyPressed,
       isAltKeyPressed,
       selectedEffectUnitKeys,
@@ -1760,6 +1775,7 @@ export default function Workspace({
     }),
     [
       mostRecentlyEnteredEffectUnitKey,
+      mostRecentlyHoveredMaskKey,
       isMetaKeyPressed,
       isAltKeyPressed,
       selectedEffectUnitKeys,
