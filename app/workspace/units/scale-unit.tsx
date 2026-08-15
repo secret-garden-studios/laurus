@@ -10,9 +10,9 @@ import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.c
 import { LaurusProjectResult } from "../../projects/projects.server";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
-import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { maskCaptureInputId } from "../effects-utils";
+import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
 export interface ScaleUnitControls {
   scale_x: number;
@@ -32,9 +32,6 @@ export const defaultScaleEquation: LaurusScaleEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
-// Same rule move uses, for the same reason -- see move-unit.tsx's isMoveCarouselEntry.
-const isScaleCarouselEntry = (entry: CarouselEntry) => entry.type !== "peak";
-
 interface ScaleUnit {
   scale: LaurusScaleResult;
   carouselIndexInit: number;
@@ -49,12 +46,13 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+  // Same "no predicate, every entry type wires" rule move uses -- see move-unit.tsx's own
+  // useCarouselIndex call.
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     scale.scale_id,
-    isScaleCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
@@ -168,10 +166,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
-        // Not wireable to scale, for the same reason it isn't to move -- see move-unit.tsx's own
-        // "peak" case.
+        // A scale equation wired to a peak multiplies that peak's own radius -- the same
+        // relative-not-absolute role sx plays for a capture's glow (see project-mask-item.tsx's
+        // scaleMultiplier). Keyed per peak, see maskPeakInputId.
         case "peak": {
-          return "";
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
         }
       }
     } else {
@@ -285,6 +285,27 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
           notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          break;
+        }
+        // Mirrors "capture" above exactly -- see unit-display.tsx's own "peak" case.
+        case "peak": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "peak",
+            locallyActivatedEffectKey: scale.scale_id,
+            peakId: carouselEntry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
           break;
         }
       }

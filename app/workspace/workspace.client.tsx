@@ -441,10 +441,10 @@ function initCarouselEntries(
         distance,
       });
     });
-    // ...and one per topology peak, for the same reason -- each peak is separately wireable to a
-    // "light_source" effect that ramps its own relief (see maskPeakInputId). Only the light
-    // source unit's "peak" mode ever navigates onto these; every other unit's carousel filters
-    // them out the same way rotate filters out captures.
+    // ...and one per topology peak, for the same reason -- each peak is separately wireable (see
+    // maskPeakInputId) to a "light_source" effect ramping its own relief, a "move" translating it
+    // across the mesh, or a "scale" multiplying its radius. Only "rotate" filters these out, the
+    // same way it filters out captures: neither has a whole-element transform for it to act on.
     const peaks = canvasMasks.get(projectMask[0])?.peaks ?? [];
     peaks.forEach((peak) => {
       temp.push({
@@ -1649,8 +1649,9 @@ export default function Workspace({
       // that's meant for a completely different (whole-element) purpose.
       //
       // A peak-flavored inputKey (see maskPeakInputId) satisfies the same "actually sub-element
-      // scoped" requirement by carrying a peakId instead -- it only ever comes from a
-      // "light_source" preview, since a peak has no transform for move/scale to act on.
+      // scoped" requirement by carrying a peakId instead, and comes from any of the same three
+      // units' preview buttons -- a peak has no element transform of its own, but it does have an
+      // epicenter for "move" to translate and a radius for "scale" to multiply.
       const { peakId: targetPeakId } = parseMaskPeakInputId(target.inputKey);
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>

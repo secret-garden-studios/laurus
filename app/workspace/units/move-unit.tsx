@@ -15,9 +15,9 @@ import {
 } from "../workspace.config";
 import { useCarouselIndex } from "../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
-import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { maskCaptureInputId } from "../effects-utils";
+import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
 export interface MoveUnitControls {
   amplitude: number;
@@ -45,11 +45,6 @@ export const defaultMoveEquation: LaurusMoveEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
-// Everything but a topology peak, which has no transform for move to act on (see this file's own
-// carouselEntryKey) -- passed to useCarouselIndex so no index it derives lands on one. UnitDisplay
-// already rejects the same entries by default.
-const isMoveCarouselEntry = (entry: CarouselEntry) => entry.type !== "peak";
-
 interface MoveUnit {
   move: LaurusMoveResult;
   carouselIndexInit: number;
@@ -64,12 +59,14 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+  // No isNavigable predicate: move is wireable to every entry type there is, peaks included (a
+  // peak's equation translates its own epicenter across the mesh -- see this file's own
+  // carouselEntryKey). UnitDisplay's default is the same "everything" rule.
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     move.move_id,
-    isMoveCarouselEntry,
   );
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
@@ -138,11 +135,13 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
-        // A topology peak isn't wireable to move -- it has no transform of its own, only a relief
-        // the "light_source" effect can ramp (see light-source-unit.tsx's own "peak" mode). This
-        // unit's carousel never lands on one either (see UnitDisplay's isEntryWireable).
+        // A peak has no element transform of its own, but it does have an epicenter: a move
+        // equation wired here translates the peak's cx/cy, dragging its whole dome across the mesh
+        // over the animation (see project-mask-item.tsx's peakTargets). Keyed per peak for the
+        // same reason a capture is -- see maskPeakInputId.
         case "peak": {
-          return "";
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
         }
       }
     } else {
@@ -289,6 +288,28 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
           notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          break;
+        }
+        // Mirrors "capture" above exactly, down to the paired selection that makes this peak the
+        // mesh's sole bright sub-element -- see unit-display.tsx's own "peak" case.
+        case "peak": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "peak",
+            locallyActivatedEffectKey: move.move_id,
+            peakId: carouselEntry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
           break;
         }
       }

@@ -60,16 +60,17 @@ interface UnitDisplay {
   // Which entries this unit's chevrons are allowed to land on -- the same predicate its
   // useCarouselIndex call takes, so the two can't disagree about what's navigable. Rotate passes
   // one that rejects "capture" (a capture has no whole-element transform for rotate to act on);
-  // light source passes one that accepts *only* "capture" or only "peak", depending on which
-  // target it's on (see light-source-unit.tsx). The default rejects only "peak" entries, which
-  // nothing but light source can ever wire.
+  // light source passes one that accepts only "capture" and "peak" entries (see
+  // light-source-unit.tsx). The default accepts everything, which is what move and scale -- the
+  // units that omit this -- both want: each is wireable to every entry type there is, a peak
+  // included (move translates its epicenter, scale multiplies its radius).
   isEntryWireable?: (entry: CarouselEntry) => boolean;
 }
 export default function UnitDisplay({
   carouselIndex,
   effectKey,
   onNewLocalIndex,
-  isEntryWireable = (entry) => entry.type !== "peak",
+  isEntryWireable = () => true,
 }: UnitDisplay) {
   const { coreState, notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
     useContext(CoreContext);

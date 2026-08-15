@@ -29,13 +29,17 @@ export function maskCaptureInputId(maskKey: string, captureId: number): string {
   return `${maskKey}:${captureId}`;
 }
 
-// The math input_id one of a mask's own topology peaks wires its "light_source" equation under --
-// the peak flavor of maskCaptureInputId above, and just as distinct from the mask's own bare key.
-// A peak equation ramps the peak's elevation/radius/falloff (see LightSourceEquation_V1_0's own
-// peak_* fields) rather than the four light_source_* dials, starting from that peak's own
-// persisted shape; the "peak:" infix is what the server keys that seed lookup off
-// (light_source_math.py's resolve_light_source_seed), so keep the two in sync. Never collides with
-// a capture's own input_id, whose suffix is always numeric.
+// The math input_id one of a mask's own topology peaks wires its equations under -- the peak
+// flavor of maskCaptureInputId above, and just as distinct from the mask's own bare key. Three of
+// the four effect kinds can wire one, each acting on a different part of the peak's geometry:
+// "light_source" ramps its elevation/radius/falloff (see LightSourceEquation_V1_0's own peak_*
+// fields) rather than the four light_source_* dials, starting from that peak's own persisted
+// shape; "move" translates its epicenter across the mesh; "scale" multiplies its radius. Only
+// "rotate" can't, having no whole-element transform to act on. The "peak:" infix is what the
+// server keys the light_source seed lookup off (light_source_math.py's
+// resolve_light_source_seed), so keep the two in sync -- move/scale need no seed of their own and
+// treat this as any other opaque input_id. Never collides with a capture's own input_id, whose
+// suffix is always numeric.
 export function maskPeakInputId(maskKey: string, peakId: number): string {
   return `${maskKey}:peak:${peakId}`;
 }
@@ -207,8 +211,9 @@ export async function deleteMaskCaptureEffects(
 }
 
 // Mirrors deleteMaskCaptureEffects exactly, for one of a mask's own topology peaks -- called when
-// a peak is removed (workspace.client.tsx's deleteMaskPeak), so its light_source equation doesn't
-// outlive the peak it was ramping. Peak ids are reused (nextPeakId fills the lowest free one), so
+// a peak is removed (workspace.client.tsx's deleteMaskPeak), so none of its equations (any of the
+// three kinds that can wire a peak -- see maskPeakInputId) outlives the peak they were driving.
+// Peak ids are reused (nextPeakId fills the lowest free one), so
 // a left-behind equation wouldn't stay orphaned -- it would silently attach itself to the next
 // peak drawn.
 export async function deleteMaskPeakEffects(
