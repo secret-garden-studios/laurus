@@ -825,10 +825,17 @@ export default function LightSourcebar() {
     (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_PEAK_ELEVATION, trackWidth),
     [getElevationCursor],
   );
+  // `target` is a dep alongside the value itself: this bar mounts only one row of sliders'
+  // track divs at a time (see the JSX below), so a selection that both changes the underlying
+  // value *and* flips `target` onto this row (selectedSubElement's own effect, above) can commit
+  // before the DOM has re-rendered onto this branch -- the ref is still null on that pass, so the
+  // effect no-ops and the cursor is left stale (zeroed, if this is the first time the row's
+  // mounted) until something else happens to change the value again. Re-running once `target`
+  // itself lands on this row catches the ref the moment it's actually populated.
   useEffect(() => {
     if (!elevationTrackRef.current) return;
     setElevationCursor({ x: elevationToTrack(elevationValue, elevationTrackRef.current.clientWidth), y: 0 });
-  }, [elevationValue, elevationToTrack]);
+  }, [elevationValue, elevationToTrack, target]);
 
   const radiusTrackRef = useRef<HTMLDivElement | null>(null);
   const [radiusCursor, setRadiusCursor] = useState({ x: 0, y: 0 });
@@ -848,7 +855,7 @@ export default function LightSourcebar() {
     if (!radiusTrackRef.current || radiusValue === undefined) return;
     const newCursor = getRadiusCursor(radiusValue - MIN_MASK_PEAK_RADIUS_PX, radiusTrackRef.current.clientWidth);
     setRadiusCursor({ x: newCursor, y: 0 });
-  }, [radiusValue, getRadiusCursor]);
+  }, [radiusValue, getRadiusCursor, target]);
 
   const peakFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [peakFalloffCursor, setPeakFalloffCursor] = useState({ x: 0, y: 0 });
@@ -867,7 +874,7 @@ export default function LightSourcebar() {
       peakFalloffTrackRef.current.clientWidth,
     );
     setPeakFalloffCursor({ x: newCursor, y: 0 });
-  }, [peakFalloffValue, getPeakFalloffCursor]);
+  }, [peakFalloffValue, getPeakFalloffCursor, target]);
 
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const [previewSizeCursor, setPreviewSizeCursor] = useState({ x: 0, y: 0 });
@@ -882,7 +889,7 @@ export default function LightSourcebar() {
       previewSizeTrackRef.current.clientWidth,
     );
     setPreviewSizeCursor({ x: newCursor, y: 0 });
-  }, [previewSizeValue, getPreviewSizeCursor]);
+  }, [previewSizeValue, getPreviewSizeCursor, target]);
 
   const previewIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const [previewIntensityCursor, setPreviewIntensityCursor] = useState({ x: 0, y: 0 });
@@ -894,7 +901,7 @@ export default function LightSourcebar() {
     if (!previewIntensityTrackRef.current) return;
     const newCursor = getPreviewIntensityCursor(previewIntensityValue, previewIntensityTrackRef.current.clientWidth);
     setPreviewIntensityCursor({ x: newCursor, y: 0 });
-  }, [previewIntensityValue, getPreviewIntensityCursor]);
+  }, [previewIntensityValue, getPreviewIntensityCursor, target]);
 
   const previewFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [previewFalloffCursor, setPreviewFalloffCursor] = useState({ x: 0, y: 0 });
@@ -909,7 +916,7 @@ export default function LightSourcebar() {
       previewFalloffTrackRef.current.clientWidth,
     );
     setPreviewFalloffCursor({ x: newCursor, y: 0 });
-  }, [previewFalloffValue, getPreviewFalloffCursor]);
+  }, [previewFalloffValue, getPreviewFalloffCursor, target]);
 
   const previewDarknessTrackRef = useRef<HTMLDivElement | null>(null);
   const [previewDarknessCursor, setPreviewDarknessCursor] = useState({ x: 0, y: 0 });
@@ -921,7 +928,7 @@ export default function LightSourcebar() {
     if (!previewDarknessTrackRef.current) return;
     const newCursor = getPreviewDarknessCursor(previewDarknessValue, previewDarknessTrackRef.current.clientWidth);
     setPreviewDarknessCursor({ x: newCursor, y: 0 });
-  }, [previewDarknessValue, getPreviewDarknessCursor]);
+  }, [previewDarknessValue, getPreviewDarknessCursor, target]);
 
   // A capture's size is a diameter in the mesh's own coordinate space, so its ceiling scales with
   // the mask rather than sitting at a fixed constant: a capture spanning the mesh's narrow axis is
@@ -941,7 +948,7 @@ export default function LightSourcebar() {
     if (!captureSizeTrackRef.current) return;
     const newCursor = getCaptureSizeCursor(captureSizeValue, captureSizeTrackRef.current.clientWidth);
     setCaptureSizeCursor({ x: newCursor, y: 0 });
-  }, [captureSizeValue, getCaptureSizeCursor]);
+  }, [captureSizeValue, getCaptureSizeCursor, target]);
 
   const captureIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const [captureIntensityCursor, setCaptureIntensityCursor] = useState({ x: 0, y: 0 });
@@ -953,7 +960,7 @@ export default function LightSourcebar() {
     if (!captureIntensityTrackRef.current) return;
     const newCursor = getCaptureIntensityCursor(captureIntensityValue, captureIntensityTrackRef.current.clientWidth);
     setCaptureIntensityCursor({ x: newCursor, y: 0 });
-  }, [captureIntensityValue, getCaptureIntensityCursor]);
+  }, [captureIntensityValue, getCaptureIntensityCursor, target]);
 
   // Mesh-space too, for the same reason size is (the glow reaches out from the core in the mesh's
   // own units, so it has to scale with the mask the way the core does) -- but measured from the
@@ -972,7 +979,7 @@ export default function LightSourcebar() {
     if (!captureFalloffTrackRef.current) return;
     const newCursor = getCaptureFalloffCursor(captureFalloffValue, captureFalloffTrackRef.current.clientWidth);
     setCaptureFalloffCursor({ x: newCursor, y: 0 });
-  }, [captureFalloffValue, getCaptureFalloffCursor]);
+  }, [captureFalloffValue, getCaptureFalloffCursor, target]);
 
   const captureDarknessTrackRef = useRef<HTMLDivElement | null>(null);
   const [captureDarknessCursor, setCaptureDarknessCursor] = useState({ x: 0, y: 0 });
@@ -984,7 +991,7 @@ export default function LightSourcebar() {
     if (!captureDarknessTrackRef.current) return;
     const newCursor = getCaptureDarknessCursor(captureDarknessValue, captureDarknessTrackRef.current.clientWidth);
     setCaptureDarknessCursor({ x: newCursor, y: 0 });
-  }, [captureDarknessValue, getCaptureDarknessCursor]);
+  }, [captureDarknessValue, getCaptureDarknessCursor, target]);
 
   return (
     <div
