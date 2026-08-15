@@ -672,7 +672,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 </div>
                 <ParameterSliderXPlusMinus
                   resolution={{ ...uiState.resolution }}
-                  label={"zoom"}
                   hash={`${scale.scale_id}|p2`}
                   size={dynamicSizes.scaleParam}
                   containerRef={scaleXTrackRef}
@@ -811,7 +810,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                     </div>
                     <ParameterSliderXPlusMinus
                       resolution={{ ...uiState.resolution }}
-                      label={"zoom"}
                       hash={`${scale.scale_id}|p3`}
                       size={dynamicSizes.scaleParam}
                       containerRef={scaleYTrackRef}

@@ -496,7 +496,6 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            label={"zoom"}
             hash={`${target?.key ?? "scalebar"}|scalex`}
             size={dynamicSizes.paramSize}
             containerRef={scaleXTrackRef}
@@ -585,7 +584,6 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            label={"zoom"}
             hash={`${target?.key ?? "scalebar"}|scaley`}
             size={dynamicSizes.paramSize}
             containerRef={scaleYTrackRef}

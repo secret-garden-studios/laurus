@@ -201,7 +201,6 @@ export function ParameterSliderY({
 
 interface ParameterSliderXPlusMinus {
   resolution: LaurusResolution;
-  label?: string;
   hash: string;
   size: {
     capWidth: number | string;
@@ -346,7 +345,6 @@ export function ParameterSliderXPlusMinus({
 
 interface ParameterSliderX {
   resolution: LaurusResolution;
-  label?: string;
   hash: string;
   size: {
     capWidth: number | string;

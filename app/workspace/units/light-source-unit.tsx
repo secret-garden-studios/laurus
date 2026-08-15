@@ -28,7 +28,6 @@ import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../ef
 import LightSourceUnitbar from "./bars/light-source-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { dmSans } from "../../fonts";
 
 // Which flavor of light_source equation this unit is currently editing. Not state and not
 // persisted -- it's read off whichever carousel entry the display is showing, and "switching" it
@@ -1040,25 +1039,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                     padding: dynamicSizes.peakParamDisplay.padding,
                   }}
                 >
-                  <div
-                    className={dmSans.className}
-                    ref={elevationRef}
-                    style={{
-                      color: "rgb(220,220,220)",
-                      fontWeight: "bold",
-                      textAlign: "center",
-                      whiteSpace: "nowrap",
-                      pointerEvents: "none",
-                      userSelect: "none",
-                      fontSize: dynamicSizes.peakParamDisplay.fontSize,
-                      letterSpacing: dynamicSizes.peakParamDisplay.letterSpacing,
-                    }}
-                  >
-                    {elevationTitle ?? "elevation"}
-                  </div>
                   <ParameterSliderXPlusMinus
                     resolution={{ ...uiState.resolution }}
-                    label={"elevation"}
                     hash={`${lightSource.light_source_id}|peak|main`}
                     size={dynamicSizes.peakParam}
                     containerRef={elevationTrackRef}
