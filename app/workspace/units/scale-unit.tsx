@@ -8,11 +8,38 @@ import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/pa
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.server";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+
+// Which kind of media this unit is currently editing the scale of. Not state and not persisted --
+// it's read off whichever carousel entry the display is showing, exactly the way
+// light-source-unit.tsx reads its own capture/peak split off the same place, and for the same
+// reason: an entry *is* an img/svg/mask/capture/peak, and that settles which parameters there are
+// to edit. Deriving rather than storing is also what makes the two gestures the user expects for
+// free -- stepping the chevrons onto a different kind of media, or activating one from the canvas,
+// both move the display, and the target follows without either path having to know about it.
+//
+// Scale means something different per kind, which is what this gates: an img/svg/mask has a
+// whole-element transform with independent width and height, while a capture (whose sx multiplies
+// its glow) and a peak (whose sx multiplies its radius) are both single-axis -- see
+// targetHasScaleHeight below.
+export type ScaleUnitTarget = CarouselEntry["type"];
+
+// The order the unitbar's target button walks. Fixed rather than read off the carousel, which is
+// ordered by canvas position (see workspace.client.tsx's initCarouselEntries) and so interleaves
+// the types with no order of its own to borrow.
+const SCALE_TARGET_ORDER: ScaleUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
+
+// Whether this target has a second, independent axis to scale. A capture's sx multiplies its glow
+// and a peak's multiplies its radius -- both radial, so there is no height for a sy to mean
+// anything about, and the h slider is left unrendered rather than shown wired to nothing. Shared
+// with scale-unitbar.tsx, whose aspect-ratio link has nothing to link in the same case.
+export function targetHasScaleHeight(target: ScaleUnitTarget): boolean {
+  return target !== "capture" && target !== "peak";
+}
 
 export interface ScaleUnitControls {
   scale_x: number;
@@ -54,6 +81,11 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     carouselIndexInit,
     scale.scale_id,
   );
+  // Whatever the display is showing is what this unit is editing -- see ScaleUnitTarget. The "img"
+  // fallback is for a carousel with nothing on it at all, where there's no equation to wire either
+  // way and the full parameter set is the right thing to leave standing.
+  const target: ScaleUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
+  const hasHeight = targetHasScaleHeight(target);
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
     scale_x: defaultScaleEquation.scale_x,
@@ -224,9 +256,13 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     return scale.math.has(carouselEntryKey) ? scale.math.get(carouselEntryKey)!.scale_y.toFixed(3) : undefined;
   }, [carouselEntryKey, scale.math]);
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
+  // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
+  // Mirrors light-source-unit.tsx's own activateEntry on the selection question too: activating a
+  // capture or a peak also selects it, while the svg/img/mask cases leave the selection alone (see
+  // LaurusSelectedElement).
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -309,16 +345,69 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           break;
         }
       }
+    },
+    [
+      scale.scale_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
+    }
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  // Switching target *is* moving the carousel -- each kind of media lives on its own carousel
+  // entries and the target is read back off whichever one is showing (see ScaleUnitTarget), so
+  // there's no separate mode to flip. The chevrons already walk every entry; this is the shortcut
+  // past however many entries of the kinds in between sit in the way.
+  //
+  // Walks SCALE_TARGET_ORDER forward from the current target and stops at the first kind the
+  // carousel actually has an entry of, so kinds this project has none of (no masks placed, no peaks
+  // drawn) are skipped rather than making the button dead. Within a kind it prefers an entry this
+  // effect already has math for, mirroring EffectUnit's own carouselIndexInit rule ("show me the
+  // equation that exists"), and otherwise lands on the nearest one. With no other kind present at
+  // all, nothing moves.
+  const toggleTarget = useCallback(() => {
+    const startIndex = SCALE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= SCALE_TARGET_ORDER.length; offset++) {
+      const candidate = SCALE_TARGET_ORDER[(startIndex + offset) % SCALE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && scale.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+      // nearestNavigableIndex falls back to the index it was handed when nothing qualifies, so
+      // this is also the "carousel has no entry of this kind" test -- move on to the next kind.
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      // While this unit is the one holding the active element, the carousel follows that element
+      // rather than the local index (see useCarouselIndex) -- so the jump above would be silently
+      // ignored unless the active element moves with it.
+      if (uiState.activeElement?.locallyActivatedEffectKey === scale.scale_id) {
+        activateEntry(nextEntry);
+      }
+      return;
     }
   }, [
+    target,
     carouselIndex,
     uiState.carouselEntries,
     uiState.activeElement,
+    scale.math,
     scale.scale_id,
-    uiDispatch,
-    notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
+    setLocalIndex,
+    activateEntry,
   ]);
 
   const getActiveScale = useCallback((): [number, number] => {
@@ -433,7 +522,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       }
       updateTrackpads(initControls);
     })();
-  }, [carouselEntryKey, scale.math, updateTrackpads, currentControls]);
+    // `target` is a dependency even though nothing above reads it: moving between kinds of media
+    // mounts or unmounts the h slider, and updateTrackpads can only position a track that exists.
+    // carouselEntryKey covers that move on its own in every case a key resolves, but not between
+    // two entries that resolve to none -- so this is belt and braces against a newly-revealed h
+    // track sitting at whatever cursor it last had.
+  }, [carouselEntryKey, scale.math, updateTrackpads, currentControls, target]);
 
   return (
     <div
@@ -584,7 +678,10 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   containerRef={scaleXTrackRef}
                   cursor={scaleXCursor}
                   onCursorMove={(newCursor) => {
-                    if (!scaleXTrackRef.current || !scaleXRef.current || !scaleYRef.current) return;
+                    // The h readout is deliberately not part of this guard -- it's unmounted (and
+                    // its ref null) on a single-axis target, where the w readout still has to
+                    // track the drag. See targetHasScaleHeight.
+                    if (!scaleXTrackRef.current || !scaleXRef.current) return;
                     const newScaleValue = getScaleXValue(
                       newCursor.x,
                       scaleXTrackRef.current.clientWidth,
@@ -592,7 +689,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                     );
                     scaleXRef.current.value = newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
 
-                    if (!unlockAspectRatio) {
+                    if (!unlockAspectRatio && scaleYRef.current) {
                       scaleYRef.current.value =
                         newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
                     }
@@ -610,7 +707,11 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       scale_x: newScaleXValue,
                     };
                     let newScaleYValue: number | undefined = undefined;
-                    if (!unlockAspectRatio) {
+                    // Gated on the target having a height at all, not just on the aspect link:
+                    // dragging w on a capture or a peak must leave scale_y alone rather than
+                    // quietly writing a coupled value into a field that target's own slider never
+                    // shows (and that its geometry has no use for). See targetHasScaleHeight.
+                    if (!unlockAspectRatio && hasHeight) {
                       const d = getActiveScale();
                       const r = d[0] / d[1];
                       const newYCursor = newCursor.x / r;
@@ -647,132 +748,141 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={scaleXTitle}
                 />
-                <div
-                  style={{
-                    display: "flex",
-                    marginTop: dynamicSizes.scaleParamDisplay.marginTop,
-                    gap: dynamicSizes.scaleParamDisplay.flexGap,
-                  }}
-                >
-                  <div
-                    className={dmSans.className}
-                    style={{
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      display: "grid",
-                      alignContent: "center",
-                      color: "rgb(220, 220, 220)",
-                      fontWeight: "bold",
-                      fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
-                    }}
-                  >
-                    {"h"}
-                  </div>
-                  <input
-                    className={dellaRespira.className}
-                    id={`scale-y-input-${scale.scale_id}`}
-                    disabled
-                    ref={scaleYRef}
-                    type="text"
-                    placeholder="0.00"
-                    style={{
-                      textAlign: "right",
-                      background: "none",
-                      color: "rgba(255, 255, 255, 0.7)",
-                      border: "none",
-                      outline: "none",
-                      display: "inline-block",
-                      overflowX: "scroll",
-                      letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
-                      fontSize: dynamicSizes.scaleParamDisplay.fontSize,
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      width: "6ch",
-                      textShadow: "2px 2px 3px rgba(10,10,10,1)",
-                    }}
-                  />
-                  <div
-                    className={dmSans.className}
-                    style={{
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      display: "grid",
-                      alignContent: "center",
-                      color: "rgb(240, 240, 240)",
-                      fontSize: dynamicSizes.scaleParamDisplay.unitFontSize,
-                    }}
-                  >
-                    <i>{"x"}</i>
-                  </div>
-                </div>
-                <ParameterSliderXPlusMinus
-                  resolution={{ ...uiState.resolution }}
-                  label={"zoom"}
-                  hash={`${scale.scale_id}|p3`}
-                  size={dynamicSizes.scaleParam}
-                  containerRef={scaleYTrackRef}
-                  cursor={scaleYCursor}
-                  onCursorMove={(newCursor) => {
-                    if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
-                    const newScaleValue = getScaleYValue(
-                      newCursor.x,
-                      scaleYTrackRef.current.clientWidth,
-                      complexTrackpadOptions,
-                    );
-                    scaleYRef.current.value = newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
+                {/* height -- only for the targets that have one. A capture's sx multiplies its
+                    glow and a peak's multiplies its radius, both radial, so there's nothing for a
+                    second axis to mean and the slider is left unrendered rather than shown wired
+                    to a field nothing reads. See targetHasScaleHeight. */}
+                {hasHeight && (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        marginTop: dynamicSizes.scaleParamDisplay.marginTop,
+                        gap: dynamicSizes.scaleParamDisplay.flexGap,
+                      }}
+                    >
+                      <div
+                        className={dmSans.className}
+                        style={{
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          display: "grid",
+                          alignContent: "center",
+                          color: "rgb(220, 220, 220)",
+                          fontWeight: "bold",
+                          fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
+                        }}
+                      >
+                        {"h"}
+                      </div>
+                      <input
+                        className={dellaRespira.className}
+                        id={`scale-y-input-${scale.scale_id}`}
+                        disabled
+                        ref={scaleYRef}
+                        type="text"
+                        placeholder="0.00"
+                        style={{
+                          textAlign: "right",
+                          background: "none",
+                          color: "rgba(255, 255, 255, 0.7)",
+                          border: "none",
+                          outline: "none",
+                          display: "inline-block",
+                          overflowX: "scroll",
+                          letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
+                          fontSize: dynamicSizes.scaleParamDisplay.fontSize,
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          width: "6ch",
+                          textShadow: "2px 2px 3px rgba(10,10,10,1)",
+                        }}
+                      />
+                      <div
+                        className={dmSans.className}
+                        style={{
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          display: "grid",
+                          alignContent: "center",
+                          color: "rgb(240, 240, 240)",
+                          fontSize: dynamicSizes.scaleParamDisplay.unitFontSize,
+                        }}
+                      >
+                        <i>{"x"}</i>
+                      </div>
+                    </div>
+                    <ParameterSliderXPlusMinus
+                      resolution={{ ...uiState.resolution }}
+                      label={"zoom"}
+                      hash={`${scale.scale_id}|p3`}
+                      size={dynamicSizes.scaleParam}
+                      containerRef={scaleYTrackRef}
+                      cursor={scaleYCursor}
+                      onCursorMove={(newCursor) => {
+                        if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
+                        const newScaleValue = getScaleYValue(
+                          newCursor.x,
+                          scaleYTrackRef.current.clientWidth,
+                          complexTrackpadOptions,
+                        );
+                        scaleYRef.current.value =
+                          newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
 
-                    if (!unlockAspectRatio) {
-                      scaleXRef.current.value =
-                        newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
-                    }
-                  }}
-                  onNewCursor={(newCursor) => {
-                    setScaleYCursor({ ...newCursor, y: 0 });
-                    if (!scaleYTrackRef.current) return;
-                    const newScaleYValue = getScaleYValue(
-                      newCursor.x,
-                      scaleYTrackRef.current.clientWidth,
-                      complexTrackpadOptions,
-                    );
-                    const newControls: ScaleUnitControls = {
-                      ...currentControls,
-                      scale_y: newScaleYValue,
-                    };
-                    let newScaleXValue: number | undefined = undefined;
-                    if (!unlockAspectRatio) {
-                      const d = getActiveScale();
-                      const r = d[0] / d[1];
-                      const newXCursor = newCursor.x * r;
-                      const newXValue = newScaleYValue / r;
-                      setScaleXCursor({ x: newXCursor, y: 0 });
-                      newScaleXValue = newXValue;
-                      newControls.scale_x = newXValue;
-                    }
-                    setCurrentControls(newControls);
-                    const activeKey = carouselEntryKey;
-                    if (activeKey) {
-                      const snapshot: LaurusScaleResult = { ...scale };
-                      const activeEquation = snapshot.math.get(activeKey);
-                      if (activeEquation) {
-                        const newEquation = {
-                          ...activeEquation,
-                          scale_y: newScaleYValue,
-                          ...(newScaleXValue != undefined && {
-                            scale_x: newScaleXValue,
-                          }),
-                        };
-                        saveNewEquation(snapshot, newEquation);
-                      } else {
-                        const newEquation = {
-                          ...defaultScaleEquation,
-                          input_id: activeKey,
-                          scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
+                        if (!unlockAspectRatio) {
+                          scaleXRef.current.value =
+                            newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
+                        }
+                      }}
+                      onNewCursor={(newCursor) => {
+                        setScaleYCursor({ ...newCursor, y: 0 });
+                        if (!scaleYTrackRef.current) return;
+                        const newScaleYValue = getScaleYValue(
+                          newCursor.x,
+                          scaleYTrackRef.current.clientWidth,
+                          complexTrackpadOptions,
+                        );
+                        const newControls: ScaleUnitControls = {
+                          ...currentControls,
                           scale_y: newScaleYValue,
                         };
-                        saveNewEquation(snapshot, newEquation);
-                      }
-                    }
-                  }}
-                  disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                  title={scaleYTitle}
-                />
+                        let newScaleXValue: number | undefined = undefined;
+                        if (!unlockAspectRatio) {
+                          const d = getActiveScale();
+                          const r = d[0] / d[1];
+                          const newXCursor = newCursor.x * r;
+                          const newXValue = newScaleYValue / r;
+                          setScaleXCursor({ x: newXCursor, y: 0 });
+                          newScaleXValue = newXValue;
+                          newControls.scale_x = newXValue;
+                        }
+                        setCurrentControls(newControls);
+                        const activeKey = carouselEntryKey;
+                        if (activeKey) {
+                          const snapshot: LaurusScaleResult = { ...scale };
+                          const activeEquation = snapshot.math.get(activeKey);
+                          if (activeEquation) {
+                            const newEquation = {
+                              ...activeEquation,
+                              scale_y: newScaleYValue,
+                              ...(newScaleXValue != undefined && {
+                                scale_x: newScaleXValue,
+                              }),
+                            };
+                            saveNewEquation(snapshot, newEquation);
+                          } else {
+                            const newEquation = {
+                              ...defaultScaleEquation,
+                              input_id: activeKey,
+                              scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
+                              scale_y: newScaleYValue,
+                            };
+                            saveNewEquation(snapshot, newEquation);
+                          }
+                        }
+                      }}
+                      disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                      title={scaleYTitle}
+                    />
+                  </>
+                )}
               </div>
               <div />
               {/* toolbar */}
@@ -785,6 +895,8 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 setCurrentControls={setCurrentControls}
                 setUnlockAspectRatio={setUnlockAspectRatio}
                 saveNewEquation={saveNewEquation}
+                target={target}
+                onToggleTarget={toggleTarget}
               />
             </div>
           </div>

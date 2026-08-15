@@ -75,8 +75,8 @@ export type LaurusActiveElement =
   // optional captureId.
   | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
   // One particular topology peak on the mask at `key` is wired, mirroring the "capture" variant
-  // above exactly. Only "light_source" can wire one, and only in its own "peak" mode (see
-  // light-source-unit.tsx's isPeakCarouselEntry).
+  // above exactly. Three of the four effect kinds can wire one, each acting on a different part of
+  // its geometry (see maskPeakInputId) -- only "rotate" can't.
   | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
 
 // What the canvas actually paints as highlighted, and what Lightsourcebar's dials read and write --
@@ -113,10 +113,10 @@ export type CarouselEntry =
   // gets that many carousel entries, each wiring one particular capture (see workspace.client.tsx's
   // initCarouselEntries/captureMeshSection).
   | { type: "capture"; key: string; captureId: number }
-  // One entry per topology peak, mirroring "capture" above exactly. Only "light_source" can wire
-  // one (a peak has no transform of its own for move/scale/rotate to act on) -- and only in the
-  // unit's own "peak" mode, which is what filters the carousel down to these (see
-  // light-source-unit.tsx's isPeakCarouselEntry).
+  // One entry per topology peak, mirroring "capture" above exactly. "light_source" ramps its own
+  // relief, "move" translates its epicenter and "scale" multiplies its radius (see
+  // maskPeakInputId); only "rotate" filters these out, having no whole-element transform of a
+  // peak's to act on.
   | { type: "peak"; key: string; peakId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };

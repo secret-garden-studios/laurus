@@ -3,16 +3,21 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
+  image200,
   link,
   linkOff,
   playArrow,
+  polyline200,
   remove,
+  stairs300,
   syncAlt,
+  texture300,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
@@ -25,7 +30,7 @@ import {
   LaurusScaleResult,
   updateScale,
 } from "../../workspace.server";
-import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
+import { ScaleUnitControls, ScaleUnitTarget, defaultScaleEquation, targetHasScaleHeight } from "../scale-unit";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
@@ -39,6 +44,12 @@ interface ScaleUnitbar {
   setCurrentControls: Dispatch<SetStateAction<ScaleUnitControls>>;
   saveNewEquation: (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => Promise<void>;
   setUnlockAspectRatio: Dispatch<SetStateAction<boolean>>;
+  // Which kind of media the unit is editing, and the toggle for it -- owned by the unit (it's the
+  // unit's parameters *and* its carousel that move together, see its own toggleTarget), driven
+  // from the button below exactly the way LightSourceUnitbar's own target button drives
+  // light-source-unit.tsx's capture/peak split.
+  target: ScaleUnitTarget;
+  onToggleTarget: () => void;
 }
 export default function ScaleUnitbar({
   scale,
@@ -49,6 +60,8 @@ export default function ScaleUnitbar({
   setCurrentControls,
   saveNewEquation,
   setUnlockAspectRatio,
+  target,
+  onToggleTarget,
 }: ScaleUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -78,6 +91,29 @@ export default function ScaleUnitbar({
         };
     }
   });
+
+  // Whether the unit is currently showing an h slider for this target -- the aspect-ratio link
+  // below has nothing to link without one. See targetHasScaleHeight.
+  const hasHeight = targetHasScaleHeight(target);
+
+  // Mirrors context-menu.tsx's own per-media-type icons, except for a capture -- which shares
+  // svg's polyline there, no use here where the point is telling the two apart. That one and the
+  // peak take Lightsourcebar's own capture/peak pair instead, which light-source-unitbar.tsx's
+  // target button already uses for the same job.
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+      case "capture":
+        return asterisk300();
+      case "peak":
+        return stairs300();
+    }
+  }, [target]);
 
   const loopSvg = useMemo((): LaurusClientSvg => {
     const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -210,6 +246,35 @@ export default function ScaleUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
+        {/* Double-click, not click, mirroring LightSourceUnitbar's own target button -- switching
+            target swaps which parameters the unit shows and re-points the carousel, so it's
+            deliberately not a single stray click away. Navigating the carousel onto a different
+            kind of media (the chevrons, or an activation from the canvas) moves the target on its
+            own without going through here -- see ScaleUnitTarget. */}
+        <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
         <div
           title={"loop"}
           onDoubleClick={() => {
@@ -234,7 +299,6 @@ export default function ScaleUnitbar({
             position: "relative",
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >
@@ -424,10 +488,11 @@ export default function ScaleUnitbar({
             scaleToContaier={true}
           />
         </div>
+        {/* Dead on a single-axis target, along with the h slider it links to -- see hasHeight. */}
         <div
           title={"link width and height"}
           onClick={() => {
-            if (isAltKeyPressed || scale.locked) return;
+            if (isAltKeyPressed || scale.locked || !hasHeight) return;
             const activeKey = carouselEntryKey;
             if (activeKey && scale.math.has(activeKey)) {
               setUnlockAspectRatio((v) => !v);
@@ -442,7 +507,7 @@ export default function ScaleUnitbar({
           <SvgRepo
             title={"link width and height"}
             svg={
-              scale.math.has(carouselEntryKey)
+              scale.math.has(carouselEntryKey) && hasHeight
                 ? unlockAspectRatio
                   ? linkOff()
                   : link()
@@ -451,7 +516,7 @@ export default function ScaleUnitbar({
                   : link("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) && hasHeight ? "pointer" : "",
               ...dynamicSizes.paramButton,
             }}
             scale={1}
