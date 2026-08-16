@@ -367,6 +367,23 @@ export interface Peak_V1_0 {
   radius: number;
   elevation: number;
   falloff: number;
+  /** This peak's custom silhouette, or `""` for a circle -- which generalizes
+   * `radius` from one distance into a distance per direction:
+   *
+   *     u = |p - (cx, cy)| / (radius * rho(theta))
+   *
+   * `rho` is in (0, 1] with a maximum of exactly 1, so `radius` still means
+   * this peak's furthest reach and an empty shape reproduces the circle above
+   * exactly rather than approximately -- shaped peaks are a generalization of
+   * the circle, not a second mode beside it.
+   *
+   * A normalized closed `M ... L ... Z` polygon, already centered on the origin
+   * and scaled so its own furthest point sits at radius 1 (see
+   * canvas-media/peak-shape.ts, which authors it from an svg and re-samples it
+   * on load). The server stores this string and computes nothing from it; the
+   * client samples it into an angular table and uploads that as texture data
+   * for both shader stages to read (see peakShapeAt in mask-gl.ts). */
+  shape: string;
 }
 export type LaurusPeak = Peak_V1_0;
 
@@ -457,10 +474,11 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 /** A mask document exactly as it can actually come off the wire, which is not the same shape as
  * MaskMediaResult_V1_0: that interface describes the *current* schema, while what's sitting in the
  * database spans every schema a mask was ever saved under. Two generations of drift are live --
- * documents from before topology peaks existed carry no `peaks` key at all, and documents from
- * before the height field's falloff existed carry peaks without one. Spelling both out as optional
- * here is what lets normalizeMaskResult read them without a cast. */
-type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff"> & { falloff?: number };
+ * documents from before topology peaks existed carry no `peaks` key at all, documents from
+ * before the height field's falloff existed carry peaks without one, and documents from before
+ * custom shapes existed carry peaks without a `shape`. Spelling them all out as optional here is
+ * what lets normalizeMaskResult read them without a cast. */
+type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff" | "shape"> & { falloff?: number; shape?: string };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: RawPeak_V1_0[] };
 
 // The one place both of those generations get repaired, so nothing downstream has to know they
@@ -472,11 +490,20 @@ type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: R
 //
 // Deliberately no longer short-circuits on `mask.peaks` being present: a document can have peaks
 // and still predate falloff, so the peaks array always gets walked. The server backfills the same
-// default via its own model defaults -- this is the client-side belt to that suspenders.
+// defaults via its own model defaults -- this is the client-side belt to that suspenders.
+//
+// `shape` backfills to "" rather than to undefined so that "is this peak a circle" is one check
+// everywhere downstream (a falsy string) instead of two. Unlike falloff, an absent shape cannot NaN
+// the field -- rho is only consulted when a shape is present -- so this one is about keeping the
+// type honest rather than about repairing a document that would otherwise render wrong.
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
-    peaks: (mask.peaks ?? []).map((peak) => ({ ...peak, falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT })),
+    peaks: (mask.peaks ?? []).map((peak) => ({
+      ...peak,
+      falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT,
+      shape: peak.shape ?? "",
+    })),
   };
 }
 
@@ -784,7 +811,13 @@ export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, acc
  * light-source-capture.ts, which already does exactly this test for
  * captures and takes an arbitrary circle. Note this has to be recomputed
  * whenever `radius` changes, not just when the epicenter moves: a resize
- * changes which polygons fall inside the circle. */
+ * changes which polygons fall inside the circle.
+ *
+ * `shape` is this peak's custom silhouette, or `""` for a circle (see
+ * Peak_V1_0.shape). It goes out on *every* update rather than only on the one
+ * that authored it, because this request is a full-replace upsert rather than
+ * a partial verb: leaving it off a later move or resize would clear the shape
+ * rather than leave it alone. */
 export interface MaskPeakUpdateRequest_V1_0 {
   peak_id: number;
   cx: number;
@@ -792,6 +825,7 @@ export interface MaskPeakUpdateRequest_V1_0 {
   radius: number;
   elevation: number;
   falloff: number;
+  shape: string;
   remove: boolean;
   polygon_indices: number[];
 }

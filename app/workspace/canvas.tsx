@@ -139,6 +139,8 @@ export default function Canvas() {
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
+  // Which silhouette a topology drag draws, false when the topology tool is off (see TopologyMode).
+  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
 
   // A fresh mask-drop from the img-browser (see handleMaskDrop below) -- a browser image has no
   // project entry to read a frame off of, so the drop circle's own computed frame is held here
@@ -605,9 +607,17 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      createTopologyPeak(maskKey, meshCircle, uiState.stagedPeak);
+      createTopologyPeak(maskKey, meshCircle, {
+        ...uiState.stagedPeak,
+        // The staged silhouette is armed by browsing an svg rather than by a deliberate "draw this
+        // shape" act (see Maskbar's shape cell), so which mode the drag is in -- not merely whether
+        // something happens to be staged -- is what decides between it and a circle. Without this,
+        // arming an svg for a marquee drop would silently reshape every peak the plain "peak" mode
+        // drew afterwards.
+        shape: topologyMode === "shape" ? uiState.stagedPeak.shape : "",
+      });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createTopologyPeak, uiState.stagedPeak],
+    [selectedMaskKeys, coreState.canvasMasks, createTopologyPeak, uiState.stagedPeak, topologyMode],
   );
 
   const handleDuplicateDrop = useCallback(

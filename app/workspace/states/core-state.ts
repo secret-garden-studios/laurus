@@ -66,6 +66,14 @@ export interface PendingTopologyEdit {
   radius: number;
   elevation: number;
   falloff: number;
+  /** The peak's custom silhouette, or "" for a circle (see Peak_V1_0.shape).
+   *
+   * Carried even though no gesture can currently *change* a shape mid-edit, because a pending edit for
+   * a peak that doesn't exist yet is how a freshly drawn peak is previewed before the server has
+   * answered (see resolvePeakUniforms in project-mask-item.tsx) -- and drawing is exactly when a shape
+   * is chosen. Without it, a shaped peak would draw as a circle and then pop into its real outline the
+   * moment the socket replied. */
+  shape: string;
 }
 
 export interface CoreState {

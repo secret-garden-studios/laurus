@@ -51,7 +51,7 @@ import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
 import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
 import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
-import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
+import { peakTriangleIndices } from "./canvas-media/light-source-capture";
 import {
   CAPTURE_DARKNESS_DEFAULT,
   CAPTURE_FALLOFF_CSS_PX_DEFAULT,
@@ -231,7 +231,10 @@ export interface CoreContextProps {
   createTopologyPeak: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    seed: { elevation: number; falloff: number },
+    // `shape` is the normalized silhouette the drawn peak should take, or "" for a circle. It rides
+    // in the seed alongside elevation/falloff rather than in `circle` because it is authored the same
+    // way they are -- staged on a bar before the drag, rather than measured from the drag itself.
+    seed: { elevation: number; falloff: number; shape: string },
   ) => Promise<void>;
   sendMaskPeakUpdate: (
     maskMediaId: string,
@@ -1315,16 +1318,17 @@ export default function Workspace({
   // (u = dist / radius, see PEAK_FIELD_GLSL): a circle drawn as an accidental click would otherwise
   // persist a peak whose field is degenerate rather than merely small.
   //
-  // polygon_indices (see MaskPeakUpdateRequest_V1_0) is derived from the same circle via
-  // captureTriangleIndicesInCircle -- the same centroid-in-circle test captureMeshSection's own
-  // caller already runs for captures -- rather than requiring a separate selection gesture; a
-  // peak's own field stays driven by cx/cy/radius/elevation/falloff regardless, this is
-  // bookkeeping only.
+  // polygon_indices (see MaskPeakUpdateRequest_V1_0) is derived from the drawn region via
+  // peakTriangleIndices rather than requiring a separate selection gesture -- the centroid-in-region
+  // test captureMeshSection's own caller runs for captures, generalized to honour the peak's
+  // silhouette. That tagging is bookkeeping only and never feeds the field, but it is what the
+  // selected-peak highlight paints, so a circular test here would draw a circle of lit triangles
+  // around a dome that had taken the svg's outline.
   const createTopologyPeak = useCallback(
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number },
+      seed: { elevation: number; falloff: number; shape: string },
     ) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
@@ -1338,13 +1342,14 @@ export default function Workspace({
         radius,
         elevation: seed.elevation,
         falloff: seed.falloff,
+        shape: seed.shape,
       };
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(maskKey, edit);
 
       const polygonIndices = [
-        ...captureTriangleIndicesInCircle(maskData.polygons, { cx: circle.cx, cy: circle.cy, radius }),
+        ...peakTriangleIndices(maskData.polygons, { cx: circle.cx, cy: circle.cy, radius, shape: seed.shape }),
       ];
       const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
         peak_id: peakId,
@@ -1353,6 +1358,7 @@ export default function Workspace({
         radius,
         elevation: seed.elevation,
         falloff: seed.falloff,
+        shape: seed.shape,
         remove: false,
         polygon_indices: polygonIndices,
       });
@@ -1413,13 +1419,14 @@ export default function Workspace({
       const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
         peak_id: peakId,
         // The geometry still rides along on a delete: the request is a full-replace upsert whose
-        // `remove` flag is what selects deletion, not a partial verb with its own shape (see
+        // `remove` flag is what selects deletion, not a partial verb of its own (see
         // MaskPeakUpdateRequest_V1_0), so these fields are required and are simply ignored.
         cx: peak.cx,
         cy: peak.cy,
         radius: peak.radius,
         elevation: peak.elevation,
         falloff: peak.falloff,
+        shape: peak.shape,
         remove: true,
         // Empty rather than recomputed: polygon_indices full-replaces this one peak's own polygon
         // tagging, so clearing it is exactly what untags every triangle that carried this peak's id.

@@ -29,10 +29,12 @@ import {
   captureCenterFromCentroids,
   captureTriangleIndicesInCircle,
   captureIdAtPoint,
-  indicesInCircleFromCentroids,
+  indicesInPeakFromCentroids,
   peakIdAtPoint,
+  peakTriangleIndices,
   polygonCentroids,
 } from "./light-source-capture";
+import { cachedPeakShape } from "./peak-shape";
 import {
   getFrames,
   getImg,
@@ -106,6 +108,26 @@ function buildPeaksMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> 
     byPeak.set(p.peak_id, indices);
   });
   return byPeak;
+}
+
+// A persisted peak as the height field's consumers want it. The one conversion in the crossing
+// between how a peak is *stored* and how it is *evaluated*: `shape` goes from the normalized outline
+// the server keeps to the sampled angular table both the shaders and the subdivision budget read (see
+// peak-shape.ts). Everything else passes through untouched, and `id` is dropped because nothing
+// geometric has any use for it.
+//
+// Worth routing every conversion through here rather than spreading the peak: PeakGeometryInput and
+// Peak_V1_0 agree on the name `shape` while disagreeing on its type, so a spread would be a type
+// error at best and, if either type ever loosened, a table-shaped hole at worst.
+function toPeakGeometry(peak: LaurusPeak): PeakGeometryInput {
+  return {
+    cx: peak.cx,
+    cy: peak.cy,
+    radius: peak.radius,
+    elevation: peak.elevation,
+    falloff: peak.falloff,
+    shape: cachedPeakShape(peak.shape),
+  };
 }
 
 // Screen coordinates -> mesh-local buffer-pixel space (top-left origin, unflipped -- matching
@@ -404,6 +426,9 @@ export function ProjectMaskItem({
         originalRadius: number;
         originalElevation: number;
         originalFalloff: number;
+        // Snapshotted alongside the rest so a relocate carries the silhouette with it, both in the
+        // live preview and in the commit -- a drag translates a peak, it does not reshape one.
+        originalShape: string;
         rafId: number | undefined;
         latestX: number;
         latestY: number;
@@ -552,9 +577,16 @@ export function ProjectMaskItem({
   // slider edits have committed -- and if a stale pending edit ever did linger, the animation
   // being watched is the one that should win. Every field comes from playback, epicenter included:
   // a "move" effect wired to this peak translates cx/cy over the animation.
+  // Every branch below takes its silhouette from the *persisted* peak rather than from the override
+  // sitting on top of it, and that is deliberate rather than an oversight: neither a drag nor an
+  // animation can change what shape a peak is. A move effect translates its epicenter and a slider
+  // reshapes its profile, but the outline is chosen once when the peak is drawn. The single exception
+  // is the last branch, a pending edit for a peak the server hasn't acknowledged yet -- there is no
+  // persisted peak to read from, which is exactly why PendingTopologyEdit carries a shape of its own.
   const resolvePeakUniforms = useCallback((): PeakGeometryInput[] => {
     const pending = pendingTopologyRef.current;
     const peaks = peaksRef.current.map((peak): PeakGeometryInput => {
+      const shape = cachedPeakShape(peak.shape);
       const playing = playbackPeaksRef.current.get(peak.id);
       if (playing) {
         return {
@@ -563,6 +595,7 @@ export function ProjectMaskItem({
           radius: playing.radius,
           elevation: playing.elevation,
           falloff: playing.falloff,
+          shape,
         };
       }
       return pending && pending.peakId === peak.id
@@ -572,8 +605,9 @@ export function ProjectMaskItem({
             radius: pending.radius,
             elevation: pending.elevation,
             falloff: pending.falloff,
+            shape,
           }
-        : { cx: peak.cx, cy: peak.cy, radius: peak.radius, elevation: peak.elevation, falloff: peak.falloff };
+        : toPeakGeometry(peak);
     });
     if (pending && !peaksRef.current.some((peak) => peak.id === pending.peakId)) {
       peaks.push({
@@ -582,6 +616,7 @@ export function ProjectMaskItem({
         radius: pending.radius,
         elevation: pending.elevation,
         falloff: pending.falloff,
+        shape: cachedPeakShape(pending.shape),
       });
     }
     return peaks;
@@ -610,6 +645,7 @@ export function ProjectMaskItem({
       radius: drag.originalRadius,
       elevation: drag.originalElevation,
       falloff: drag.originalFalloff,
+      shape: drag.originalShape,
     };
     dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
     notifyMaskPendingTopologySet(mediaKey, edit);
@@ -865,18 +901,19 @@ export function ProjectMaskItem({
     // peaksMapRef (built with buildPeaksMap off PolygonPath_V1_0's own peak_id) is what an active
     // mesh paints, one peak bright and the rest dim. A drag/create preview (pendingTopologyRef) has
     // no polygon_indices of its own the way pendingCaptureRef does -- only a circle -- so its
-    // triangles are re-derived on the fly by the same centroid-in-circle test the eventual commit's
+    // triangles are re-derived on the fly by the same centroid-in-region test the eventual commit's
     // own polygon_indices use (see createTopologyPeak/onPointerUp below); every other peak goes fully
     // dark for that one frame, the same way capturesRef's other captures do while pendingCaptureRef
-    // is set.
+    // is set. "Region" rather than "circle" because a peak can carry a silhouette, and the preview
+    // has to claim the same triangles the commit will or the highlight visibly jumps on release.
     //
-    // Against the cached centroids rather than captureTriangleIndicesInCircle, which would re-parse
-    // every triangle's `d` with a regex. That mattered little when a pending edit only existed for the
+    // Against the cached centroids rather than peakTriangleIndices, which would re-parse every
+    // triangle's `d` with a regex. That mattered little when a pending edit only existed for the
     // duration of a round trip, but a peak's parameters are live-previewable now, so this path runs on
     // every animation frame of a slider or epicenter drag -- see polygonCentroidsRef.
     const pendingTopology = pendingTopologyRef.current;
     if (pendingTopology) {
-      paint(indicesInCircleFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
+      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
     } else if (selectedHighlightRef.current) {
       const activePeakId = selectedPeakIdRef.current;
       peaksMapRef.current.forEach((indices, peakId) => {
@@ -1491,7 +1528,7 @@ export function ProjectMaskItem({
         colorCanvas.height = 1;
         const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
         const mesh = colorCtx
-          ? buildStaticMaskMesh(maskData, colorCtx)
+          ? buildStaticMaskMesh({ ...maskData, peaks: maskData.peaks.map(toPeakGeometry) }, colorCtx)
           : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0, vertexRanges: [] };
         vertexCountRef.current = mesh.vertexCount;
         vertexRangesRef.current = mesh.vertexRanges;
@@ -1690,7 +1727,7 @@ export function ProjectMaskItem({
             // one, so topology stops depending on the parameter being dragged at all.
             const glState = glStateRef.current;
             if (glState && colorCtx) {
-              const mesh = buildStaticMaskMesh(updated, colorCtx);
+              const mesh = buildStaticMaskMesh({ ...updated, peaks: updated.peaks.map(toPeakGeometry) }, colorCtx);
               vertexCountRef.current = mesh.vertexCount;
               vertexRangesRef.current = mesh.vertexRanges;
               uploadStaticMaskMesh(glState, mesh);
@@ -2154,6 +2191,7 @@ export function ProjectMaskItem({
                     originalRadius: peak.radius,
                     originalElevation: peak.elevation,
                     originalFalloff: peak.falloff,
+                    originalShape: peak.shape,
                     rafId: undefined,
                     latestX: bufferX,
                     latestY: bufferY,
@@ -2281,6 +2319,7 @@ export function ProjectMaskItem({
                   radius: peakDrag.originalRadius,
                   elevation: finalElevation,
                   falloff: finalFalloff,
+                  shape: peakDrag.originalShape,
                 };
                 dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
                 notifyMaskPendingTopologySet(mediaKey, edit);
@@ -2292,12 +2331,14 @@ export function ProjectMaskItem({
                   radius: peakDrag.originalRadius,
                   elevation: finalElevation,
                   falloff: finalFalloff,
+                  shape: peakDrag.originalShape,
                   remove: false,
                   polygon_indices: [
-                    ...captureTriangleIndicesInCircle(source.maskData.polygons, {
+                    ...peakTriangleIndices(source.maskData.polygons, {
                       cx: finalCx,
                       cy: finalCy,
                       radius: peakDrag.originalRadius,
+                      shape: peakDrag.originalShape,
                     }),
                   ],
                 }).then((updated) => {

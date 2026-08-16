@@ -3,14 +3,15 @@ import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
-import { LaurusTool, UIActionType, defaultMarqueeTool } from "../states/ui-state";
+import { UIActionType } from "../states/ui-state";
+import { decodeSvgMarkup } from "../svg-upload-utils";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
-  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
@@ -71,32 +72,19 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
         if (showContextMenu) setShowContextMenu(false);
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
+        // Deliberately only arms the svg -- picking one out of the browser no longer switches to the
+        // marquee tool. Arming an svg now means two different things depending on where you are (a
+        // marquee-drag drops it on canvas; Maskbar's shape toggle takes its outline for a peak), so
+        // yanking the tool over to marquee would make the second one unreachable: Maskbar is only
+        // mounted while the mask tool is active (see titlebar.tsx), so it would unmount the very bar
+        // the armed svg was being picked for.
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        if (uiState.playbackMode.type == "stopped") {
-          const currentTool = { ...uiState.tool };
-          const newTool: LaurusTool =
-            currentTool.type == "marquee" ? { ...currentTool, duplicate: false } : defaultMarqueeTool;
-          uiDispatch({
-            type: UIActionType.SetTool,
-            value: newTool,
-          });
-          notifyMaskToolChanged(newTool.type);
-        }
       }
     },
-    [
-      browserElementMediaId,
-      showContextMenu,
-      uiDispatch,
-      uiState.playbackMode.type,
-      uiState.tool,
-      setSelectedImgKeys,
-      setSelectedSvgKeys,
-      notifyMaskToolChanged,
-    ],
+    [browserElementMediaId, showContextMenu, uiDispatch, setSelectedImgKeys, setSelectedSvgKeys],
   );
 
   useEffect(() => {
@@ -111,17 +99,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
     };
   }, []);
 
-  let decodedString = "";
-  try {
-    decodedString = decodeURIComponent(
-      atob(svg.markup)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(""),
-    );
-  } catch (error) {
-    console.log("Failed to decodeURIComponent from svg markup", { error });
-  }
+  const decodedString = decodeSvgMarkup(svg.markup);
   if (!decodedString) return;
   return (
     <div

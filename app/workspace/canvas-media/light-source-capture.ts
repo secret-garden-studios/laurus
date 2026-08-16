@@ -1,5 +1,6 @@
-import { parsePathPoints } from "../mask-gl";
+import { parsePathPoints, peakShapeRhoAt } from "../mask-gl";
 import { LaurusPeak, LaurusPolygonPath } from "../workspace.server";
+import { cachedPeakShape } from "./peak-shape";
 
 function centroidOf(points: [number, number][]): [number, number] {
   return [
@@ -60,6 +61,51 @@ export function indicesInCircleFromCentroids(
     if (dx * dx + dy * dy <= circle.radius * circle.radius) indices.add(i);
   });
   return indices;
+}
+
+/** One peak's region, as the membership tests below want it: the same cx/cy/radius a circle needs,
+ * plus the normalized silhouette that turns `radius` into a reach per direction ("" for a circle).
+ * Structural rather than LaurusPeak so a peak that exists only as a pending edit -- a drag in flight,
+ * or a circle being drawn right now -- can be tested with the identical code as a persisted one. */
+export interface PeakRegion {
+  cx: number;
+  cy: number;
+  radius: number;
+  shape: string;
+}
+
+/** Which of the already-computed centroids fall inside `peak`, honouring its silhouette -- the peak's
+ * counterpart to indicesInCircleFromCentroids, which it delegates to verbatim when there is no shape.
+ *
+ * This is what decides a peak's `polygon_indices`: which triangles carry its id, and so which ones
+ * light up when it is selected. That tagging never feeds the height field (see Peak_V1_0.shape), but
+ * "never feeds rendering" is not the same as "never seen" -- the highlight is precisely how a user
+ * reads which part of the mesh a peak has claimed. Testing it against the plain radius while the
+ * relief itself follows the silhouette makes the two visibly disagree: the dome takes the svg's
+ * outline and the highlight stays a circle around it. */
+export function indicesInPeakFromCentroids(centroids: [number, number][], peak: PeakRegion): Set<number> {
+  const shape = peak.shape ? cachedPeakShape(peak.shape) : undefined;
+  if (!shape) return indicesInCircleFromCentroids(centroids, peak);
+  const indices = new Set<number>();
+  centroids.forEach(([x, y], i) => {
+    const dx = x - peak.cx;
+    const dy = y - peak.cy;
+    const distance = Math.hypot(dx, dy);
+    // NaN centroids (a polygon whose `d` yielded no points, see polygonCentroids) fail this
+    // comparison and drop out, matching indicesInCircleFromCentroids' own behaviour.
+    if (distance <= peak.radius * peakShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)) {
+      indices.add(i);
+    }
+  });
+  return indices;
+}
+
+/** indicesInPeakFromCentroids against a mesh's polygons directly -- the peak's counterpart to
+ * captureTriangleIndicesInCircle, and the expensive one, since it parses every triangle's `d` (see
+ * polygonCentroids). Fine for the commit paths that call it once; anything per-frame should hold the
+ * centroids and call indicesInPeakFromCentroids instead. */
+export function peakTriangleIndices(polygons: LaurusPolygonPath[], peak: PeakRegion): Set<number> {
+  return indicesInPeakFromCentroids(polygonCentroids(polygons), peak);
 }
 
 /** Where a capture's own light hangs: the centroid of its member polygons' centroids, in the same
@@ -146,33 +192,46 @@ export function captureIdAtPoint(polygons: LaurusPolygonPath[], point: [number, 
 /** Which peak (by id) `point` (mask-local mesh space, same as the polygons' own `d` strings) falls
  * within, if any -- used the same way captureIdAtPoint is, to tell "a topology drag starting on an
  * existing peak's epicenter" apart from everywhere else on the mesh. Simpler than captureIdAtPoint:
- * a peak's own geometry already *is* its center + radius, so this is a direct point-in-circle test
+ * a peak's own geometry already *is* its center and reach, so this is a direct point-in-peak test
  * rather than a bounding-box reconstruction from member triangles.
  *
- * Where several peaks contain the point, the smallest-radius one wins rather than whichever comes
- * first in mask.peaks order. Unlike overlapping captures (which are genuinely an edge case, since
- * they're distinct light sources that sit apart), overlapping peaks are an ordinary way to build
- * relief -- a small sharp peak placed on the shoulder of a broad one is exactly what a height field
- * is for -- and first-wins would make the small one ungrabbable whenever it happened to be created
- * second. Smallest-first is also the intuitive reading of a click: the tightest thing under the
- * cursor is the thing being pointed at.
+ * "Reach" rather than "radius" because a peak can carry a custom silhouette, in which case its
+ * boundary is `radius * rho(theta)` and lands at a different distance in every direction (see
+ * peakShapeAt in mask-gl.ts). Testing against the plain radius instead would make the whole
+ * circumscribing disc of a star grabbable, including the notches between its points, which is
+ * precisely the area a user would expect to click *through* to whatever sits behind it.
+ *
+ * Where several peaks contain the point, the one whose boundary is tightest *in that direction* wins,
+ * rather than whichever comes first in mask.peaks order. Unlike overlapping captures (which are
+ * genuinely an edge case, since they're distinct light sources that sit apart), overlapping peaks are
+ * an ordinary way to build relief -- a small sharp peak placed on the shoulder of a broad one is
+ * exactly what a height field is for -- and first-wins would make the small one ungrabbable whenever
+ * it happened to be created second. Tightest-first is also the intuitive reading of a click: the
+ * closest-fitting thing under the cursor is the thing being pointed at.
  *
  * Tested against the mesh's *undisplaced* space while the user clicks displaced pixels. That's exact
  * at the epicenter, where the swell is identically zero (see peakSwell, mask-gl.ts), and off by at
  * most 0.385 * MASK_PEAK_SWELL * |elevation| px out on the flanks -- a few pixels at ordinary
  * elevations, and always in the direction of the peak's own center, so a click that lands inside the
- * drawn dome lands inside this test too. */
+ * drawn dome lands inside this test too. That bound is independent of the silhouette, since the local
+ * reach cancels out of the swell entirely (see peakSwell's own comment), so a shaped peak is no less
+ * accurate here than a round one. */
 export function peakIdAtPoint(peaks: LaurusPeak[], point: [number, number]): number | undefined {
   const [px, py] = point;
   let bestId: number | undefined;
-  let bestRadius = Infinity;
+  let bestReach = Infinity;
   for (const peak of peaks) {
     const dx = px - peak.cx;
     const dy = py - peak.cy;
-    if (dx * dx + dy * dy > peak.radius * peak.radius) continue;
-    if (peak.radius >= bestRadius) continue;
+    const distance = Math.hypot(dx, dy);
+    // Circles skip the atan2 outright, the same way peakSwellAt does -- this runs on every
+    // mousemove over a mesh, and almost every peak is round.
+    const shape = peak.shape ? cachedPeakShape(peak.shape) : undefined;
+    const reach = shape ? peak.radius * peakShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0) : peak.radius;
+    if (distance > reach) continue;
+    if (reach >= bestReach) continue;
     bestId = peak.id;
-    bestRadius = peak.radius;
+    bestReach = reach;
   }
   return bestId;
 }

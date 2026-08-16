@@ -106,19 +106,16 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
         queuesRef.current.get(maskMediaId)?.push(resolve);
-        const send = () =>
-          socket.send(
-            JSON.stringify({
-              peak_id: update.peak_id,
-              cx: update.cx,
-              cy: update.cy,
-              radius: update.radius,
-              elevation: update.elevation,
-              falloff: update.falloff,
-              remove: update.remove,
-              polygon_indices: update.polygon_indices,
-            }),
-          );
+        // Serialized wholesale rather than field-by-field. It used to be an explicit object literal
+        // listing each key, which was pure ceremony -- MaskPeakUpdateRequest_V1_0 is already the exact
+        // wire shape in the exact wire casing, so the literal restated the type without adding a
+        // single transformation. What it did add was the failure mode repolygon exists to prevent on
+        // the server (see its docstring there): a field added to the request type is *invisible* at a
+        // call site that enumerates keys. Nothing errors and nothing type-checks differently -- the
+        // new field is simply never sent, and because this request is a full-replace upsert, the
+        // server then clears it on every unrelated edit. `shape` was very nearly the second casualty
+        // of exactly that.
+        const send = () => socket.send(JSON.stringify(update));
         if (socket.readyState === WebSocket.OPEN) {
           send();
         } else {

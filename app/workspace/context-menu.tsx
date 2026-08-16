@@ -11,7 +11,7 @@ import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspa
 import { useMaskPersist } from "./hooks/useMaskPersist";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
-import { SvgRepo, polyline200, texture300, image200, stairs300 } from "../svg-repo";
+import { SvgRepo, polyline200, texture300, image200, stairs300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
   LaurusActiveElement,
@@ -1268,7 +1268,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     svg={(() => {
                       switch (media.type) {
                         case "capture":
-                          return polyline200();
+                          return asterisk300();
                         case "peak":
                           return stairs300();
                         case "img":

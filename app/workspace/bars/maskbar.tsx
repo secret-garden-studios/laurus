@@ -8,6 +8,8 @@ import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
+import { PeakShapeResult, buildPeakShapeFromMarkup } from "../canvas-media/peak-shape";
+import { decodeSvgMarkup } from "../svg-upload-utils";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -288,7 +290,55 @@ export default function Maskbar() {
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
   const isTopologyDisabled = selectedMaskKey === undefined;
-  const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
+  // Which silhouette a circle-drag over this mesh draws, or false with the topology tool off (see
+  // TopologyMode in ui-state.ts). The two toggles below are two views of this one field, which is
+  // what makes them mutually exclusive without either having to reach over and switch the other off.
+  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
+  const isTopologyOn = topologyMode === "circle";
+  const isShapeOn = topologyMode === "shape";
+
+  const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
+  // What the armed svg's outline is worth as a peak silhouette -- validated the moment one is armed,
+  // rather than when a control is clicked. That is the whole reason the shape control is a toggle
+  // now: the answer arrives while the user is still *browsing* for a shape, as a control that either
+  // lights up or doesn't, instead of after picking one, coming here, clicking, and only then being
+  // refused. It costs one validation sweep per svg armed, which is an author-time gesture, not a
+  // per-frame one.
+  //
+  // Memoized on the markup and not on the element, because SetBrowserElement dispatches a fresh
+  // {...svg} copy on every click -- keying on the object would re-sample on a re-click of the very
+  // same svg.
+  const armedMarkup = armedSvg?.markup;
+  const armedShape = useMemo<PeakShapeResult | undefined>(() => {
+    if (!armedMarkup) return undefined;
+    const decoded = decodeSvgMarkup(armedMarkup);
+    if (!decoded) return { ok: false, reason: "the svg's markup could not be read" };
+    return buildPeakShapeFromMarkup(decoded);
+  }, [armedMarkup]);
+  const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
+  const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
+
+  // The staged silhouette mirrors whatever the browser has armed, so what this cell previews and
+  // what a drag actually draws are the same string by construction rather than by two code paths
+  // agreeing. Cleared when nothing usable is armed, so an outline can't outlive the svg it came from
+  // and get drawn onto some later peak.
+  const stagedShape = uiState.stagedPeak.shape;
+  useEffect(() => {
+    const path = armedShape?.ok ? armedShape.shape.path : "";
+    if (stagedShape === path) return;
+    uiDispatch({ type: UIActionType.SetStagedPeak, value: { shape: path } });
+  }, [armedShape, stagedShape, uiDispatch]);
+
+  // Shape mode has nothing left to draw once its svg is unarmed or replaced by an unusable one.
+  // Falls back to the tool being off rather than to "circle": the user asked for this silhouette
+  // specifically, so quietly re-pointing their next drag at a plain circle would draw a peak they
+  // never asked for -- same reasoning as the deselected-mask effect below.
+  useEffect(() => {
+    if (uiState.tool.type !== "mask" || uiState.tool.editingTopology !== "shape") return;
+    if (armedShape?.ok) return;
+    uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, editingTopology: false } });
+    notifyMaskToolChanged("mask");
+  }, [uiState.tool, armedShape, uiDispatch, notifyMaskToolChanged]);
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
   const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
   // Same coalescing-queue persistence as LightSourcebar's own saveLightSourceField -- every edit
@@ -687,7 +737,7 @@ export default function Maskbar() {
           title={
             isTopologyDisabled
               ? "select a mesh to adjust its topology"
-              : "drag a circle over this mesh to raise that area's elevation, warping the surrounding triangles like a topographic map"
+              : 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for peaks shaped like an svg instead'
           }
           style={{
             display: "flex",
@@ -710,7 +760,9 @@ export default function Maskbar() {
               if (uiState.tool.type !== "mask") return;
               uiDispatch({
                 type: UIActionType.SetTool,
-                value: { ...uiState.tool, editingTopology: !uiState.tool.editingTopology },
+                // Assigning the mode rather than flipping a flag is what makes turning this on turn
+                // "shape" off, since both toggles are views of the same field.
+                value: { ...uiState.tool, editingTopology: isTopologyOn ? false : "circle" },
               });
               notifyMaskToolChanged("mask");
             }}
@@ -718,6 +770,46 @@ export default function Maskbar() {
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
             disabled={isTopologyDisabled}
+          />
+        </div>
+        <div
+          title={
+            isTopologyDisabled
+              ? "select a mesh to give its peaks a custom shape"
+              : shapeError
+                ? `${armedSvg?.media_key ?? "this svg"} can't shape a peak: ${shapeError}`
+                : armedShape?.ok
+                  ? `drag a circle over this mesh to raise a peak shaped like ${armedSvg?.media_key}'s outline instead of a round one`
+                  : "pick an svg in the browser to shape new peaks like its outline"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ textShadow: isShapeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"shape"}</span>
+          {/* A preview, not a control -- the toggle beside it is what arms the mode. Drawn from the
+              very string that will be persisted on the peak (stagedShape mirrors it, see above), so
+              what is shown here and what the shader ends up evaluating cannot drift. It is normalized
+              to a maximum radius of 1 about the origin (see PeakShape.path), which is what makes this
+              fixed viewBox fit any shape without measuring it. */}
+          <Toggle
+            value={isShapeOn}
+            onClick={() => {
+              if (uiState.tool.type !== "mask") return;
+              uiDispatch({
+                type: UIActionType.SetTool,
+                value: { ...uiState.tool, editingTopology: isShapeOn ? false : "shape" },
+              });
+              notifyMaskToolChanged("mask");
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+            disabled={isShapeDisabled}
           />
         </div>
         <div />

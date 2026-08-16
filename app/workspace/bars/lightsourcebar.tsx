@@ -12,7 +12,11 @@ import {
   MIN_MASK_PEAK_FALLOFF,
   MIN_MASK_PEAK_RADIUS_PX,
 } from "../mask-gl";
-import { capturedRegionCircle, captureTriangleIndicesInCircle } from "../canvas-media/light-source-capture";
+import {
+  capturedRegionCircle,
+  captureTriangleIndicesInCircle,
+  peakTriangleIndices,
+} from "../canvas-media/light-source-capture";
 import { LaurusMaskResult } from "../workspace.server";
 import {
   CAPTURE_DARKNESS_MAX,
@@ -670,6 +674,10 @@ export default function LightSourcebar() {
     radius: number;
     elevation: number;
     falloff: number;
+    // Carried through unchanged. No slider on this bar can reshape a silhouette, but the write below
+    // is a full-replace upsert, so a shape left out here is a shape *erased* the first time someone
+    // nudges an elevation.
+    shape: string;
     polygonIndices: number[];
   }
   // Same coalescing-queue persistence as pendingPreviewSaveRef above -- every edit previews
@@ -696,6 +704,7 @@ export default function LightSourcebar() {
           radius: toSave.radius,
           elevation: toSave.elevation,
           falloff: toSave.falloff,
+          shape: toSave.shape,
           remove: false,
           polygon_indices: toSave.polygonIndices,
         });
@@ -733,6 +742,9 @@ export default function LightSourcebar() {
         radius: patch.radius ?? activePeak.radius,
         elevation: patch.elevation ?? activePeak.elevation,
         falloff: patch.falloff ?? activePeak.falloff,
+        // Not patchable, only preserved -- a PeakPatch describes the three things these sliders can
+        // change, and a silhouette is chosen when the peak is drawn rather than dialed in afterwards.
+        shape: activePeak.shape,
       };
     },
     [activePeakMaskKey, activePeak],
@@ -766,16 +778,20 @@ export default function LightSourcebar() {
         radius: edit.radius,
         elevation: edit.elevation,
         falloff: edit.falloff,
-        // Derived from the *merged* circle rather than the peak's current one: a radius edit changes
+        shape: edit.shape,
+        // Derived from the *merged* region rather than the peak's current one: a radius edit changes
         // which polygons fall inside it, so reusing the old membership would leave the peak's own
-        // polygon tagging describing a circle it no longer has. Only bookkeeping (highlighting) rides
+        // polygon tagging describing a region it no longer has. Only bookkeeping (highlighting) rides
         // on it -- the field itself never reads it -- but the highlight would visibly disagree with
-        // the dome.
+        // the dome. Through peakTriangleIndices rather than the circle test for that same reason one
+        // step further: a shaped peak's dome follows its silhouette, so a circular membership test
+        // would light a ring of triangles the relief never touches.
         polygonIndices: [
-          ...captureTriangleIndicesInCircle(maskData.polygons, {
+          ...peakTriangleIndices(maskData.polygons, {
             cx: edit.cx,
             cy: edit.cy,
             radius: edit.radius,
+            shape: edit.shape,
           }),
         ],
       };

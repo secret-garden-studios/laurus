@@ -21,6 +21,29 @@ export function dataUrlToFile(dataUrl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+/**
+ * The inner markup of a LaurusSvgResult, decoded from the base64 the server sends it as. Returns ""
+ * rather than throwing on malformed input, since every caller's fallback is "render/use nothing".
+ *
+ * The atob -> percent-escape -> decodeURIComponent dance is not superstition: atob yields one
+ * JavaScript character per *byte*, so any multi-byte UTF-8 in the source (a non-ascii id, a title
+ * element, a designer's name in a comment) comes back mojibake unless the byte string is re-read as
+ * UTF-8, which is what the percent-escaping round trip does.
+ */
+export function decodeSvgMarkup(markup: string): string {
+  try {
+    return decodeURIComponent(
+      atob(markup)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(""),
+    );
+  } catch (error) {
+    console.log("Failed to decode svg markup", { error });
+    return "";
+  }
+}
+
 export async function rasterizeSvg(svgXml: string, width: number = 1120, height: number = 1120): Promise<string> {
   return new Promise((resolve, reject) => {
     const svgBlob = new Blob([svgXml], { type: "image/svg+xml;charset=utf-8" });

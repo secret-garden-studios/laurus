@@ -26,6 +26,9 @@ import {
   isActivePeak,
   peakProfileK,
   peakSwellAt,
+  PEAK_SHAPE_SLOPE_RANGE,
+  encodePeakShapeTexture,
+  peakShapeRhoAt,
 } from "./mask-gl.ts";
 // Separately, and as `import type`: type stripping erases the annotation but leaves a value import
 // in place, and a type imported as a value is a runtime resolution error.
@@ -234,7 +237,7 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
     for (const [stage, src] of stages) {
       const offenders = src
         .split("\n")
-        .filter((line) => /^#define (MASK_PEAK|BUMP|LIGHT_HEIGHT)/.test(line) && !/\d\.\d/.test(line));
+        .filter((line) => /^#define (MASK_PEAK|BUMP|LIGHT_HEIGHT|PEAK_)/.test(line) && !/\d\.\d/.test(line));
       assert.deepEqual(offenders, [], `${stage}`);
     }
     // ...while the array bound must be an integer literal, since it both sizes an array and bounds a
@@ -284,6 +287,272 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
     // A varying written by one stage and read by the other; a mismatch is a link error.
     for (const [stage, src] of stages) {
       assert.match(src, /varying vec2 v_meshPos;/, `${stage}`);
+    }
+  });
+
+  it("declares the shape sampler mediump rather than letting it default", () => {
+    // The subtlest of the precision traps here, because it produces no diagnostic at all. GLSL ES
+    // 1.00 defaults sampler2D to *lowp* in both stages, and texture2D returns values at its sampler's
+    // precision -- so under the default, the low byte of every pair decodePeakShape16 reassembles is
+    // rounded away and the 16-bit table silently becomes an 8-bit one. It compiles, it links, it
+    // renders, and a shaped peak's outline just quietly stair-steps.
+    for (const [stage, src] of stages) {
+      assert.match(src, /uniform mediump sampler2D u_peakShapes;/, `${stage}`);
+    }
+  });
+
+  it("keeps the shape lookup's overflow guards in place", () => {
+    // Neither guard changes what any real shape renders as (see PEAK_SHAPE_MIN_RHO and
+    // PEAK_GRADIENT_LIMIT), which is exactly why they are easy to delete as dead weight. What they
+    // actually prevent is the gradient's 1/rho^2 running away on a needle-thin lobe until it
+    // overflows mediump, at which point normalize() turns inf into NaN and the peak renders with
+    // black fragments scattered over it -- a symptom with no obvious connection to its cause.
+    for (const [stage, src] of stages) {
+      assert.match(src, /max\(pair\.x, PEAK_SHAPE_MIN_RHO\)/, `${stage}: rho floor`);
+      assert.match(src, /clamp\(gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT\)/, `${stage}: gradient clamp`);
+    }
+  });
+
+  it("splices the shape lookup into both stages exactly once", () => {
+    // Same reasoning as the kernel check above: the vertex stage reads a shape to displace by it and
+    // the fragment stage to light it, so both need it and neither may redeclare it.
+    for (const [stage, src] of stages) {
+      for (const signature of ["vec2 peakShapeAt(", "float decodePeakShape16("]) {
+        assert.equal(src.split(signature).length - 1, 1, `${stage}: ${signature}`);
+      }
+    }
+  });
+});
+
+describe("peakShapeRhoAt -- the shape lookup's TypeScript twin", () => {
+  /** A table whose value at sample i is i + 1, so an interpolated read is trivially predictable.
+   * Starting at 1 rather than 0 keeps every entry a legal rho -- 0 is not a reach any shape can have,
+   * and peakShapeRhoAt floors it, which would make sample 0 read as the floor instead of the table. */
+  const ramp = (samples: number) => ({
+    path: "",
+    rho: Float32Array.from({ length: samples }, (_, i) => i + 1),
+    rhoPrime: new Float32Array(samples),
+  });
+
+  it("is exactly 1 for a circle, at every angle", () => {
+    // The constant case the whole design rests on: an unshaped peak must take the identical path
+    // through every formula rather than a parallel one, so this has to be exactly 1, not nearly.
+    for (let theta = -Math.PI; theta < Math.PI; theta += 0.1) {
+      assert.equal(peakShapeRhoAt(undefined, theta), 1, `at theta=${theta.toFixed(2)}`);
+    }
+  });
+
+  it("reads sample i at that sample's own angle", () => {
+    // Pins the index convention shared with the shader: sample 0 sits at theta = -pi, and the sweep
+    // runs to +pi. An off-by-half-a-texel here rotates every shaped peak slightly.
+    const shape = ramp(8);
+    for (let i = 0; i < 8; i++) {
+      const theta = -Math.PI + (2 * Math.PI * i) / 8;
+      assert.ok(Math.abs(peakShapeRhoAt(shape, theta) - (i + 1)) < 1e-6, `sample ${i}`);
+    }
+  });
+
+  it("interpolates linearly between samples", () => {
+    const shape = ramp(8);
+    const theta = -Math.PI + (2 * Math.PI * 2.5) / 8;
+    assert.ok(Math.abs(peakShapeRhoAt(shape, theta) - 3.5) < 1e-6, `got ${peakShapeRhoAt(shape, theta)}`);
+  });
+
+  it("wraps across the +/-pi seam instead of clamping", () => {
+    // The seam is the one place a table can be read out of bounds, and clamping there would flatten a
+    // shaped peak along a single radial line -- a visible crease with no obvious cause.
+    const shape = ramp(8);
+    // Just shy of +pi is halfway between the last sample (8) and the first (1), i.e. 4.5 -- reached
+    // only by wrapping the upper index back to 0. Clamping would give 8 instead.
+    const theta = Math.PI - (2 * Math.PI) / 16;
+    assert.ok(Math.abs(peakShapeRhoAt(shape, theta) - 4.5) < 1e-6, `got ${peakShapeRhoAt(shape, theta)}`);
+  });
+});
+
+describe("peakSwellAt -- with a custom shape", () => {
+  /** A shape reaching its full radius along +x and half of it along -x, varying smoothly between --
+   * enough asymmetry that a formula still using the peak's maximum radius would visibly disagree. */
+  const lopsided = (samples = 128) => {
+    const rho = Float32Array.from({ length: samples }, (_, i) => {
+      const theta = -Math.PI + (2 * Math.PI * i) / samples;
+      return 0.75 + 0.25 * Math.cos(theta);
+    });
+    const step = (2 * Math.PI) / samples;
+    const rhoPrime = Float32Array.from({ length: samples }, (_, i) => {
+      const next = rho[(i + 1) % samples];
+      const previous = rho[(i - 1 + samples) % samples];
+      return (next - previous) / (2 * step);
+    });
+    return { path: "lopsided", rho, rhoPrime };
+  };
+
+  it("is still exactly zero at the epicenter", () => {
+    for (const falloff of FALLOFFS) {
+      assert.deepEqual(peakSwellAt([100, 100], [peak({ falloff, shape: lopsided() })]), [0, 0], `falloff ${falloff}`);
+    }
+  });
+
+  it("is still exactly zero at and beyond the peak's maximum reach, in every direction", () => {
+    // The no-tearing guarantee, restated for a radius that varies with direction. It is deliberately
+    // pinned against the peak's MAXIMUM reach rather than its local rim, and that is the honest form
+    // of the claim rather than a weaker one: rho is at most 1 everywhere, so `radius` bounds the
+    // shape in every direction, and a vertex outside it cannot be disturbed by any shape whatsoever.
+    // That is precisely what the subdivision pass and the "a subdivided triangle can never pull away
+    // from an unsubdivided neighbour" argument need.
+    //
+    // Exactness at the *local* rim is a different matter and is checked separately below, because it
+    // cannot be bit-exact: reconstructing a point at that distance and taking atan2 of it returns a
+    // theta a few ulps from the one it was built with, so the interpolated rho differs microscopically
+    // and u lands at 0.9999999 rather than 1.
+    const shape = lopsided();
+    const p = peak({ shape });
+    for (let i = 0; i < 64; i++) {
+      const theta = -Math.PI + (2 * Math.PI * i) / 64;
+      for (const distance of [p.radius, p.radius + 1, p.radius * 2]) {
+        const [dx, dy] = peakSwellAt([p.cx + distance * Math.cos(theta), p.cy + distance * Math.sin(theta)], [p]);
+        assert.deepEqual([dx, dy], [0, 0], `at theta=${theta.toFixed(2)}, distance ${distance.toFixed(2)}`);
+      }
+    }
+  });
+
+  it("falls continuously to zero across the local rim", () => {
+    // The other half of no-tearing, and the half a varying radius actually puts at risk: inside a
+    // pinched direction the rim arrives early, and if the displacement were still finite there the
+    // mesh would tear along the silhouette's own outline. Just inside must be negligible and just
+    // outside must be exactly nothing -- checked all the way round, since a formula still dividing by
+    // the maximum radius passes on the one axis where rho happens to be 1 and fails everywhere else.
+    const shape = lopsided();
+    const p = peak({ shape });
+    for (let i = 0; i < 64; i++) {
+      const theta = -Math.PI + (2 * Math.PI * i) / 64;
+      const localRadius = p.radius * peakShapeRhoAt(shape, theta);
+      const [insideX, insideY] = peakSwellAt(
+        [p.cx + localRadius * (1 - 1e-6) * Math.cos(theta), p.cy + localRadius * (1 - 1e-6) * Math.sin(theta)],
+        [p],
+      );
+      assert.ok(Math.hypot(insideX, insideY) < 1e-3, `just inside the rim at theta=${theta.toFixed(2)}`);
+      const outside = localRadius * (1 + 1e-6);
+      assert.deepEqual(
+        peakSwellAt([p.cx + outside * Math.cos(theta), p.cy + outside * Math.sin(theta)], [p]),
+        [0, 0],
+        `just outside the rim at theta=${theta.toFixed(2)}`,
+      );
+    }
+  });
+
+  it("keeps the 0.385 * MASK_PEAK_SWELL * |elevation| pixel bound", () => {
+    // The bound peakSwell's own comment argues survives the substitution, because the local radius
+    // cancels out of h * u * radial entirely. Worth checking rather than trusting: it is the single
+    // claim that lets one constant keep tuning the whole feature no matter what shape is authored.
+    const shape = lopsided();
+    for (const elevation of [MAX_MASK_PEAK_ELEVATION, -MAX_MASK_PEAK_ELEVATION, 80]) {
+      for (const falloff of FALLOFFS) {
+        const p = peak({ radius: 50, elevation, falloff, shape });
+        let worst = 0;
+        for (let i = 0; i < 64; i++) {
+          const theta = -Math.PI + (2 * Math.PI * i) / 64;
+          for (let d = 0; d < p.radius; d += 0.05) {
+            const [dx, dy] = peakSwellAt([p.cx + d * Math.cos(theta), p.cy + d * Math.sin(theta)], [p]);
+            worst = Math.max(worst, Math.hypot(dx, dy));
+          }
+        }
+        assert.ok(
+          worst <= 0.385 * MASK_PEAK_SWELL * Math.abs(elevation) + 1e-9,
+          `bound exceeded at elevation ${elevation}, falloff ${falloff}: ${worst}`,
+        );
+      }
+    }
+  });
+
+  it("reduces to the unshaped result when the shape is flat", () => {
+    // A rho of all 1s is a circle written the long way round, so it must produce bit-identical output
+    // to no shape at all -- the check that the shaped path really is a generalization rather than a
+    // parallel implementation that happens to look similar.
+    const flat = { path: "flat", rho: new Float32Array(128).fill(1), rhoPrime: new Float32Array(128) };
+    for (let i = 0; i < 32; i++) {
+      const theta = -Math.PI + (2 * Math.PI * i) / 32;
+      for (const d of [1, 10, 25, 49]) {
+        const at: [number, number] = [100 + d * Math.cos(theta), 100 + d * Math.sin(theta)];
+        assert.deepEqual(peakSwellAt(at, [peak({ shape: flat })]), peakSwellAt(at, [peak()]), `theta ${theta}, d ${d}`);
+      }
+    }
+  });
+});
+
+describe("encodePeakShapeTexture -- the 16-bit byte-pair packing", () => {
+  /** decodePeakShape16 from the kernel, transcribed. The encoder and the shader are the two halves of
+   * one format and are written in different languages, so this pins that they agree -- a mismatch
+   * would produce a wrong shape rather than an error. */
+  const decode16 = (high: number, low: number) => high / 255 + low / 255 / 255;
+
+  const shapeOf = (rho: number[], rhoPrime: number[]) => ({
+    path: "t",
+    rho: new Float32Array(rho),
+    rhoPrime: new Float32Array(rhoPrime),
+  });
+
+  it("round-trips rho to better than one part in 30000", () => {
+    const values = [0.001, 0.1, 0.25, 0.5, 0.7071, 0.9, 0.999, 1];
+    const data = encodePeakShapeTexture(
+      [
+        shapeOf(
+          values,
+          values.map(() => 0),
+        ),
+      ],
+      values.length,
+      4,
+    );
+    values.forEach((expected, i) => {
+      const decoded = decode16(data[i * 4], data[i * 4 + 1]);
+      assert.ok(Math.abs(decoded - expected) < 3e-5, `rho ${expected} decoded as ${decoded}`);
+    });
+  });
+
+  it("round-trips a signed slope through the bias", () => {
+    const slopes = [0, 1, -1, 3.5, -3.5, PEAK_SHAPE_SLOPE_RANGE, -PEAK_SHAPE_SLOPE_RANGE];
+    const data = encodePeakShapeTexture(
+      [
+        shapeOf(
+          slopes.map(() => 1),
+          slopes,
+        ),
+      ],
+      slopes.length,
+      4,
+    );
+    slopes.forEach((expected, i) => {
+      const decoded = (decode16(data[i * 4 + 2], data[i * 4 + 3]) * 2 - 1) * PEAK_SHAPE_SLOPE_RANGE;
+      assert.ok(Math.abs(decoded - expected) < 1e-3, `slope ${expected} decoded as ${decoded}`);
+    });
+  });
+
+  it("clamps a slope past the encodable range rather than wrapping it", () => {
+    // Wrapping would turn the needliest part of a spike into a slope pointing the wrong way, which
+    // reads as the lighting inverting on that one lobe. Clamping merely lights it a little flat.
+    const slopes = [PEAK_SHAPE_SLOPE_RANGE * 3, -PEAK_SHAPE_SLOPE_RANGE * 3];
+    const data = encodePeakShapeTexture([shapeOf([1, 1], slopes)], 2, 4);
+    const decoded = slopes.map((_, i) => (decode16(data[i * 4 + 2], data[i * 4 + 3]) * 2 - 1) * PEAK_SHAPE_SLOPE_RANGE);
+    assert.ok(Math.abs(decoded[0] - PEAK_SHAPE_SLOPE_RANGE) < 1e-3, `got ${decoded[0]}`);
+    assert.ok(Math.abs(decoded[1] + PEAK_SHAPE_SLOPE_RANGE) < 1e-3, `got ${decoded[1]}`);
+  });
+
+  it("writes each shape into its own row and leaves circle rows untouched", () => {
+    // Row i belongs to peak i, and peakShapeAt indexes by row -- a shape written to the wrong row is
+    // a peak silently wearing another peak's outline.
+    const data = encodePeakShapeTexture([undefined, shapeOf([1, 1], [0, 0]), undefined], 2, 4);
+    assert.deepEqual([...data.slice(0, 8)], new Array(8).fill(0), "row 0 is a circle and stays zeroed");
+    assert.equal(data[8], 255, "row 1 carries the shape");
+    assert.deepEqual([...data.slice(16, 32)], new Array(16).fill(0), "rows 2 and 3 stay zeroed");
+  });
+
+  it("never lets a full-reach direction decode above 1", () => {
+    // rho = 1 is the maximum by construction, and peakShapeAt multiplies the peak's radius by it. A
+    // decode landing at 1.0000038 would put geometry fractionally outside the radius that peakSwell's
+    // no-tearing argument is stated against.
+    const data = encodePeakShapeTexture([shapeOf([1, 1, 1], [0, 0, 0])], 3, 1);
+    for (let i = 0; i < 3; i++) {
+      assert.ok(decode16(data[i * 4], data[i * 4 + 1]) <= 1, `texel ${i}`);
     }
   });
 });

@@ -13,6 +13,16 @@ export interface ProjectMediaContextMenu {
 
 export type LaurusThumbnail = { type: "svg"; value: LaurusSvgResult } | { type: "img"; value: LaurusImgResult };
 
+// What a circle-drag over a selected mesh draws, or false when the topology tool is off altogether.
+// "circle" is the plain round peak the tool has always drawn; "shape" draws the silhouette staged
+// from the armed svg instead (see stagedPeak.shape below, and Maskbar's own peak/shape toggles).
+//
+// One tri-state field rather than two booleans because the modes are mutually exclusive by nature --
+// a drag draws one silhouette or the other, never both -- so the state can't represent the
+// contradiction. Every consumer that only cares whether topology editing is on at all (canvas.tsx's
+// drag gating, project-mask-item.tsx's peak grab/delete) still reads it as a plain truthiness check.
+export type TopologyMode = false | "circle" | "shape";
+
 export type LaurusTool =
   | {
       type: "marquee";
@@ -37,7 +47,7 @@ export type LaurusTool =
   | { type: "scale" }
   | { type: "rotate" }
   | { type: "mix" }
-  | { type: "mask"; capturingMeshSection: boolean; editingTopology: boolean }
+  | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
   | { type: "light_source" };
 
 export const defaultMarqueeTool: LaurusTool = {
@@ -158,7 +168,15 @@ export interface UIState {
   // Radius is deliberately absent: unlike elevation and falloff, it isn't dialed in ahead of time --
   // the circle-drag that creates the peak is what defines it. Anything staged for it would be
   // immediately overwritten by the gesture.
-  stagedPeak: { elevation: number; falloff: number };
+  //
+  // `shape` is the normalized silhouette a "shape"-mode drag draws, or "" when no usable svg is
+  // armed (see Peak_V1_0.shape). It belongs here for exactly the reason elevation and falloff do: it
+  // is chosen before the gesture rather than measured from it, and it persists across several drags
+  // so a row of peaks can be drawn in one silhouette without re-picking it each time. Unlike those
+  // two it has no slider -- Maskbar mirrors it from whichever svg the browser has armed (see its
+  // shape cell), and only a drag in TopologyMode "shape" consumes it, so it being staged never
+  // changes what the plain "peak" mode draws.
+  stagedPeak: { elevation: number; falloff: number; shape: string };
 }
 
 export const defaultUIState: UIState = {
@@ -190,7 +208,7 @@ export const defaultUIState: UIState = {
   showTimeline: true,
   mediaBrowserFilter: "img",
   lightSourcePreview: false,
-  stagedPeak: { elevation: PEAK_ELEVATION_DEFAULT, falloff: PEAK_FALLOFF_DEFAULT },
+  stagedPeak: { elevation: PEAK_ELEVATION_DEFAULT, falloff: PEAK_FALLOFF_DEFAULT, shape: "" },
 };
 
 export enum UIActionType {

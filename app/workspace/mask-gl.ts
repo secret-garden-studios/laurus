@@ -3,6 +3,7 @@
 // imports entirely, so the peak height field's own math can be loaded and unit-tested directly under
 // `node --experimental-strip-types` with no bundler or module-resolution setup (see peak-field.test.ts).
 import type { MaskCurve_V1_0 } from "./workspace.server";
+import type { PeakShape } from "./canvas-media/peak-shape";
 
 /** Default width/height of the light source's bright core, in on-screen (CSS) pixels -- converted to buffer pixels per frame. Adjustable via Maskbar's light source size slider. */
 export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
@@ -132,6 +133,45 @@ export const MASK_PEAK_SWELL = 0.5;
  * that condition against a typical peak before assuming the swell still looks like the field. */
 export const MASK_PEAK_SWELL_LIMIT = 0.9;
 
+/** Range the shape table's slope channel is encoded across, as +/- this many units of
+ * d(rho)/d(theta) (see encodePeakShapeTexture and peakShapeAt).
+ *
+ * A slope only exists for a shaped peak: rho is identically 1 for a circle, so rho' is identically 0
+ * and none of this is reachable. The magnitudes that actually occur are set by how sharply a
+ * silhouette's outline turns -- an axis-aligned square peaks at 1.0 right at its corners, and a
+ * five-pointed star with notches at 0.4 of its tips reaches about 3. 8 leaves headroom over both
+ * while keeping the 16-bit quantization at 2.4e-4, which is far below anything the lighting can show.
+ *
+ * A silhouette needlier than that has its slope clamped rather than wrapped, so the very tip of a
+ * spike lights slightly flatter than it geometrically should. That is a graceful, local failure, and
+ * the alternative -- a wider range for every shape -- would spend precision everywhere to buy it. */
+export const PEAK_SHAPE_SLOPE_RANGE = 8.0;
+
+/** Floor on a shape's normalized reach, applied when the table is read (see peakShapeAt).
+ *
+ * rho is normalized so its maximum is exactly 1, so this says "no direction reaches less than 5% of
+ * the way the furthest one does". That is not an arbitrary safety margin -- a 20:1 spike is already
+ * narrower than the 128-sample table can describe (its tip falls between texels), so below this the
+ * representation has given up regardless and the floor only decides how it gives up.
+ *
+ * It also keeps the field's arithmetic inside mediump. The gradient's tangential term divides by
+ * rho SQUARED (see peakField), so an unfloored rho near zero produces coefficients in the millions --
+ * which overflows to inf, and the normalize() the fragment stage builds its lighting normal with
+ * turns inf into NaN. The failure mode is black fragments scattered over the peak, with nothing in
+ * the compile log about it. */
+export const PEAK_SHAPE_MIN_RHO = 0.05;
+
+/** Ceiling on the height field's own gradient, in dimensionless slope (see peakField).
+ *
+ * A guard, not a shaper -- the same status MASK_PEAK_SWELL_LIMIT has, and the same reason to keep it
+ * far from where anything real lives. An ordinary peak's gradient runs around 0.1; 32 is an 88-degree
+ * wall, indistinguishable from any larger value once normalize() has turned it into a unit normal.
+ * So this never binds on a shape anyone authors, and exists purely so that the pathological
+ * combination (a needle-thin lobe on a tiny radius at maximum elevation) saturates instead of
+ * overflowing mediump. Paired with PEAK_SHAPE_MIN_RHO, it keeps every intermediate in that
+ * calculation under ~20k, which is inside the fp16 range mediump is realistically implemented as. */
+export const PEAK_GRADIENT_LIMIT = 32.0;
+
 /** Gain on the relief each real light source contributes through the perturbed normal (see the
  * fragment shader's bump term). Multiplies a quantity already in 0-1, so this is "how strongly does
  * a slope read as lit/shadowed", not a unit conversion. */
@@ -216,10 +256,17 @@ const PEAK_FIELD_GLSL = `
 #define MAX_MASK_PEAKS ${MAX_MASK_PEAKS}
 #define MASK_PEAK_SWELL ${glFloat(MASK_PEAK_SWELL)}
 #define MASK_PEAK_SWELL_LIMIT ${glFloat(MASK_PEAK_SWELL_LIMIT)}
+#define PEAK_SHAPE_SLOPE_RANGE ${glFloat(PEAK_SHAPE_SLOPE_RANGE)}
+#define PEAK_SHAPE_MIN_RHO ${glFloat(PEAK_SHAPE_MIN_RHO)}
+#define PEAK_GRADIENT_LIMIT ${glFloat(PEAK_GRADIENT_LIMIT)}
+#define PEAK_FIELD_PI 3.141592653589793
 
 // One peak per element: xy = epicenter, z = radius, w = signed elevation (negative is a dent).
 // All in mesh space -- the same top-left-origin, y-down, buffer-pixel space a_position is in, since
 // a mask's canvas is always drawn 1:1 against u_resolution, so no conversion is ever needed here.
+//
+// z is the peak's radius in the direction the shape reaches FURTHEST (see u_peakShapes): for an
+// unshaped peak that is every direction, which is why a circle needs no special case anywhere below.
 uniform mediump vec4 u_peaks[MAX_MASK_PEAKS];
 // Each peak's own profile exponent -- see peakProfile. Separate from u_peaks only because that one
 // is already full at vec4.
@@ -230,6 +277,76 @@ uniform mediump float u_peakFalloffs[MAX_MASK_PEAKS];
 // u_peaks/u_peakFalloffs above (int defaults to highp in the vertex stage, mediump in the fragment
 // stage).
 uniform mediump int u_peakCount;
+
+// The custom-shape table: one row per shaped peak, u_peakShapeSamples texels wide, holding that
+// shape's normalized angular radius rho(theta) and its slope d(rho)/d(theta). See peakShapeAt.
+// Explicitly mediump, which is NOT the default and is not merely defensive: GLSL ES 1.00 defaults
+// sampler2D to lowp in both stages, and the precision of a sampler is the precision of what
+// texture2D hands back. lowp guarantees only 8 bits of relative precision, so the low byte of every
+// pair decodePeakShape16 reassembles would be rounded away entirely and the table would silently
+// collapse to 8-bit -- visible as stair-stepping around a shaped peak's outline, with nothing in the
+// compile log to explain it.
+uniform mediump sampler2D u_peakShapes;
+// Which row of u_peakShapes each peak reads, or a negative value for "this peak is a circle" -- the
+// overwhelmingly common case, and the one that must cost nothing, so it short-circuits before any
+// texture fetch happens at all. Also the whole fallback mechanism: where vertex texture fetch is
+// unavailable (see initGLState), drawMaskMesh writes -1 here for every peak and shaped peaks
+// gracefully render as the circles they are a generalization of, in both stages consistently.
+uniform mediump float u_peakShapeRows[MAX_MASK_PEAKS];
+// The table's width, passed rather than compiled in so that this module keeps its promise of having
+// no runtime imports (see the type-only import on line 1) -- the sampler that produces the table
+// lives in canvas-media/peak-shape.ts, and importing its PEAK_SHAPE_SAMPLES for real would break
+// peak-field.test.ts's ability to load this file under bare type stripping.
+uniform mediump float u_peakShapeSamples;
+
+// One 16-bit value out of a byte pair, as encodePeakShapeTexture wrote it: the high byte carries
+// value*255 truncated, the low byte carries the remainder. Kept in [0, 1] the whole way rather than
+// reassembled as (high*256 + low) -- mediump is only guaranteed 2^14 of range and 2^-10 of relative
+// precision, so the reassembled form would both overflow and quantize on exactly the hardware the
+// annotation exists to support.
+float decodePeakShape16(vec2 bytes) {
+  return bytes.x + bytes.y * (1.0 / 255.0);
+}
+
+// One shaped peak's rho(theta) and d(rho)/d(theta), or (1, 0) for a circle.
+//
+// This is what makes a peak's radius a *function of direction* instead of a scalar. rho is in (0, 1]
+// with a maximum of exactly 1, so u_peaks[i].z stays the peak's furthest reach and every guarantee
+// stated in terms of it survives untouched -- most importantly that the field is identically 0 at and
+// beyond the rim in EVERY direction, since u still reaches 1 exactly at the outline.
+//
+// Filtering is done by hand off a NEAREST texture rather than by asking GL for LINEAR, and that is
+// not a preference. The table is 16-bit, stored as byte pairs, and hardware filtering would
+// interpolate the high and low bytes independently -- so anywhere the low byte wraps (254 -> 0 as the
+// high byte ticks up) it would blend through the entire range and spike. Fetching both texels and
+// mixing the DECODED values is the same interpolation done in the one order that is meaningful. The
+// second fetch reads past the last texel on purpose: the texture is power-of-two and wrapped REPEAT,
+// so theta = +pi lands back on theta = -pi and the seam interpolates like any other texel boundary.
+//
+// IMPORTANT for anyone tempted to move the call sites: every fetch below must stay in *uniform*
+// control flow. A fragment-stage texture2D computes its LOD from implicit derivatives, which the spec
+// leaves undefined once the quad's four fragments disagree about whether the fetch happens. Both
+// callers therefore look a shape up BEFORE testing u >= 1.0, even though that means occasionally
+// fetching for a point the peak turns out not to reach -- the obvious "optimization" of moving the
+// lookup after that test is exactly what makes the flow non-uniform. The two conditions guarding the
+// fetch as written (the loop's break on u_peakCount, and the row < 0.0 early return) both read
+// uniforms only, so every fragment in a quad agrees.
+vec2 peakShapeAt(float row, float theta) {
+  if (row < 0.0) return vec2(1.0, 0.0);
+  float t = (theta + PEAK_FIELD_PI) / (2.0 * PEAK_FIELD_PI) * u_peakShapeSamples;
+  float index = floor(t);
+  float v = (row + 0.5) / float(MAX_MASK_PEAKS);
+  vec4 lower = texture2D(u_peakShapes, vec2((index + 0.5) / u_peakShapeSamples, v));
+  vec4 upper = texture2D(u_peakShapes, vec2((index + 1.5) / u_peakShapeSamples, v));
+  vec2 pair = mix(
+    vec2(decodePeakShape16(lower.rg), decodePeakShape16(lower.ba)),
+    vec2(decodePeakShape16(upper.rg), decodePeakShape16(upper.ba)),
+    t - index);
+  // The field divides by rho -- and, in the gradient, by rho squared -- so a genuinely tiny lobe (or
+  // quantization landing one on 0) is an overflow rather than merely a small number. See
+  // PEAK_SHAPE_MIN_RHO.
+  return vec2(max(pair.x, PEAK_SHAPE_MIN_RHO), (pair.y * 2.0 - 1.0) * PEAK_SHAPE_SLOPE_RANGE);
+}
 
 // One peak's radial profile and its analytic derivative, at u = clamp(dist / radius, 0, 1):
 //
@@ -257,10 +374,24 @@ vec2 peakProfile(float u, float falloff) {
 
 // The whole height field at p, and its gradient, summed over every active peak:
 //
-//   h(p)      = sum_i  E_i * k(u_i),                  u_i = |p - c_i| / R_i
-//   grad h(p) = sum_i (E_i * dk/du(u_i) / R_i) * normalize(p - c_i)
+//   h(p)       = sum_i  E_i * k(u_i),                 u_i = |p - c_i| / R_i(theta_i)
+//   R_i(theta) = u_peaks[i].z * rho_i(theta)          this peak's reach in that one direction
+//   grad u_i   = (1 / R_i) * radial_i
+//                  - (rho_i' / (u_peaks[i].z * rho_i^2)) * tangential_i
+//   grad h(p)  = sum_i  E_i * dk/du(u_i) * grad u_i
 //
-// (grad u_i = (p - c_i) / (R_i * |p - c_i|), so the chain rule collapses to one radial scalar.)
+// The tangential term is the whole difference between a shaped peak and a circular one, and it is
+// not optional. Height alone already makes the mesh bulge in the silhouette's outline -- but the
+// fragment stage lights the surface from grad h, and with a purely radial gradient every point would
+// be lit as though its slope ran straight out from the epicenter. A star would read as a circular
+// dome that happens to be clipped into a star, which is the giveaway that the relief is fake. The
+// rho'/rho^2 term tilts the normal sideways wherever the outline turns, and that is what the eye
+// actually reads as the shape being three-dimensional. It falls out of the chain rule rather than
+// being authored: u depends on theta now, so grad u picks up (1/dist) * du/dtheta along the tangent
+// and the dist cancels.
+//
+// For a circle rho is 1 and rho' is 0, so both new factors vanish identically and this reduces to the
+// plain radial form it replaces -- exactly, not approximately.
 //
 // Returns vec3(dh/dx, dh/dy, h) out of a single loop, so a caller can never pair a height with a
 // gradient computed from different inputs. Heights and positions are both in mesh pixels, which
@@ -272,16 +403,31 @@ vec3 peakField(vec2 p) {
   for (int i = 0; i < MAX_MASK_PEAKS; i++) {
     if (i >= u_peakCount) break;
     vec2 toPoint = p - u_peaks[i].xy;
-    float radius = u_peaks[i].z;
     float elevation = u_peaks[i].w;
     float dist = length(toPoint);
+    // atan is undefined at the epicenter -- where u is 0 whatever the direction, so any angle serves.
+    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
+    vec2 shape = peakShapeAt(u_peakShapeRows[i], theta);
+    float radius = u_peaks[i].z * shape.x;
     float u = dist / radius;
     if (u >= 1.0) continue;
     vec2 profile = peakProfile(u, u_peakFalloffs[i]);
     field.z += elevation * profile.x;
     // The radial direction is undefined exactly at an epicenter -- but dk/du is 0 there, so the
     // whole gradient term vanishes anyway; skip it rather than normalize a zero-length vector.
-    if (dist > 1e-4) field.xy += (elevation * profile.y / radius) * (toPoint / dist);
+    if (dist > 1e-4) {
+      vec2 radial = toPoint / dist;
+      vec2 tangential = vec2(-radial.y, radial.x);
+      vec2 gradU = radial / radius - tangential * (shape.y / (u_peaks[i].z * shape.x * shape.x));
+      // Clamped BEFORE the elevation scales it, and the accumulator clamped again after, purely to
+      // keep every intermediate inside mediump -- see PEAK_GRADIENT_LIMIT for why neither ever binds
+      // on a real shape. The order is what matters: clamping only the sum would leave the product
+      // (elevation * dk/du * gradU) free to overflow on its way there, which is exactly the term that
+      // blows up for a needle-thin lobe.
+      gradU = clamp(gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
+      field.xy = clamp(
+        field.xy + (elevation * profile.y) * gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
+    }
   }
   return field;
 }
@@ -292,8 +438,17 @@ vec3 peakField(vec2 p) {
 // to be authored outright. This is a weak-perspective (first-order) projection of the height field
 // with one camera axis per peak, running through that peak's own epicenter:
 //
-//   dp(p) = MASK_PEAK_SWELL * sum_i (h_i(p) / R_i) * (p - c_i)
+//   dp(p) = MASK_PEAK_SWELL * sum_i (h_i(p) / R_i(theta_i)) * (p - c_i)
 //         = MASK_PEAK_SWELL * sum_i  h_i(p) * u_i * radial_i
+//
+// R_i is the peak's LOCAL reach in this point's own direction (u_peaks[i].z * rho), not its maximum,
+// and using the local one is what carries all four properties below across to shaped peaks unchanged.
+// The second line is the reason: |p - c_i| is u_i * R_i, so R_i cancels out of the product entirely
+// and the displacement is still exactly h * u * radial, whatever shape rho describes. In particular
+// the pixel bound is still |dp| <= 0.385 * MASK_PEAK_SWELL * |elevation|, with no rho in it. What
+// does change is that the fold guard engages sooner inside a narrow lobe, where R_i is small and the
+// coefficient SWELL*h/R_i is correspondingly larger -- which is correct, since a narrow lobe is
+// exactly where a big negative elevation would otherwise fold the mesh through itself.
 //
 // i.e. every point is pushed out along its own radial by how high it is, scaled by how far out it
 // already is. Four properties earn this profile over the alternatives:
@@ -321,8 +476,9 @@ vec2 peakSwell(vec2 p) {
   for (int i = 0; i < MAX_MASK_PEAKS; i++) {
     if (i >= u_peakCount) break;
     vec2 toPoint = p - u_peaks[i].xy;
-    float radius = u_peaks[i].z;
     float dist = length(toPoint);
+    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
+    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
     float u = dist / radius;
     if (u >= 1.0) continue;
     float height = u_peaks[i].w * peakProfile(u, u_peakFalloffs[i]).x;
@@ -720,12 +876,69 @@ export interface GLState {
   peaksLoc: WebGLUniformLocation;
   peakFalloffsLoc: WebGLUniformLocation;
   peakCountLoc: WebGLUniformLocation;
+  peakShapesLoc: WebGLUniformLocation;
+  peakShapeRowsLoc: WebGLUniformLocation;
+  peakShapeSamplesLoc: WebGLUniformLocation;
+  /** The custom-shape table (see encodePeakShapeTexture), one row per shaped peak. Owned here rather
+   * than rebuilt per draw because its contents only change when a peak's *shape* changes, which is a
+   * rare authoring event -- unlike every other peak parameter, which a slider drag can change on
+   * every frame. See peakShapeSignature. */
+  peakShapeTexture: WebGLTexture;
+  /** Which shapes the texture currently holds, as the ordered list of their paths. Mutable, and the
+   * whole point: the encode-and-upload below is far too expensive for a per-frame path, so it runs
+   * only when this stops matching what the frame is asking for. */
+  peakShapeSignature: string;
+  /** Whether the vertex stage can sample textures at all.
+   *
+   * WebGL1 permits MAX_VERTEX_TEXTURE_IMAGE_UNITS to be 0, and the vertex stage is where peakSwell
+   * reads a shape to displace geometry by it. Rather than fail the whole mask on such hardware -- the
+   * shape is an addition to a feature that works fine without it -- drawMaskMesh marks every peak as
+   * a circle when this is false, which both stages then agree on. Shaped peaks come out round; nothing
+   * tears, nothing renders wrong, and every unshaped peak is completely unaffected. */
+  supportsVertexTextures: boolean;
   textureMixLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
   hasTextureLoc: WebGLUniformLocation;
   maskLoc: WebGLUniformLocation;
   maskActiveLoc: WebGLUniformLocation;
   glowColorLoc: WebGLUniformLocation;
+}
+
+/** Packs a frame's shaped peaks into the RGBA8 rows peakShapeAt reads: one row per shape, each
+ * `samples` texels wide, RG carrying rho and BA carrying d(rho)/d(theta).
+ *
+ * Both values are 16-bit across a byte pair, in the one arrangement mediump can decode without
+ * either overflowing or quantizing: the high byte holds the value scaled to 0-255 and truncated, the
+ * low byte holds the remainder of that same scaling, so the decode is `high + low/255` and never
+ * leaves 0-1. Reassembling as `high*256 + low` would be the obvious alternative and is wrong on
+ * exactly the hardware the mediump annotations exist for -- mediump guarantees only 2^14 of range.
+ *
+ * rho is stored as-is (it is already in (0, 1]); the slope is biased into 0-1 across
+ * +/-PEAK_SHAPE_SLOPE_RANGE, which is affine and therefore survives peakShapeAt's interpolation --
+ * blending two biased slopes and decoding once gives the same answer as decoding both and blending,
+ * so the shader is free to mix before it decodes.
+ *
+ * Unused rows are left as zeroes rather than filled with a flat circle: a peak with no shape never
+ * reads the texture at all (its row index is negative), so their contents are unreachable.
+ */
+export function encodePeakShapeTexture(shapes: (PeakShape | undefined)[], samples: number, rows: number): Uint8Array {
+  const data = new Uint8Array(samples * rows * 4);
+  shapes.forEach((shape, row) => {
+    if (!shape || row >= rows) return;
+    for (let i = 0; i < samples; i++) {
+      const offset = (row * samples + i) * 4;
+      const rho = Math.min(Math.max(shape.rho[i] ?? 1, 0), 1);
+      const slope = shape.rhoPrime[i] ?? 0;
+      const biased = Math.min(Math.max(slope / PEAK_SHAPE_SLOPE_RANGE, -1), 1) * 0.5 + 0.5;
+      const rhoScaled = rho * 255;
+      const slopeScaled = biased * 255;
+      data[offset] = Math.floor(rhoScaled);
+      data[offset + 1] = Math.round((rhoScaled - Math.floor(rhoScaled)) * 255);
+      data[offset + 2] = Math.floor(slopeScaled);
+      data[offset + 3] = Math.round((slopeScaled - Math.floor(slopeScaled)) * 255);
+    }
+  });
+  return data;
 }
 
 export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
@@ -756,6 +969,20 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvLoc = gl.getAttribLocation(program, "a_uv");
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
+  const peakShapeTexture = gl.createTexture();
+  if (!peakShapeTexture) return undefined;
+  gl.bindTexture(gl.TEXTURE_2D, peakShapeTexture);
+  // NEAREST on both axes, deliberately. Vertically because each row is a different peak and any
+  // blending between them would be meaningless; horizontally because the table is 16-bit stored as
+  // byte pairs, which hardware filtering would corrupt at every low-byte wrap -- peakShapeAt blends
+  // the decoded values itself instead. REPEAT on S is what makes theta = +pi wrap onto theta = -pi,
+  // so the seam behaves like any other texel boundary; it is legal here only because the table's
+  // width is a power of two.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
   const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
   const lightSourceRadiiLoc = gl.getUniformLocation(program, "u_lightSourceRadii");
@@ -766,6 +993,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const peaksLoc = gl.getUniformLocation(program, "u_peaks");
   const peakFalloffsLoc = gl.getUniformLocation(program, "u_peakFalloffs");
   const peakCountLoc = gl.getUniformLocation(program, "u_peakCount");
+  const peakShapesLoc = gl.getUniformLocation(program, "u_peakShapes");
+  const peakShapeRowsLoc = gl.getUniformLocation(program, "u_peakShapeRows");
+  const peakShapeSamplesLoc = gl.getUniformLocation(program, "u_peakShapeSamples");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
@@ -789,6 +1019,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !peaksLoc ||
     !peakFalloffsLoc ||
     !peakCountLoc ||
+    !peakShapesLoc ||
+    !peakShapeRowsLoc ||
+    !peakShapeSamplesLoc ||
     !textureMixLoc ||
     !textureLoc ||
     !hasTextureLoc ||
@@ -823,6 +1056,14 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     peaksLoc,
     peakFalloffsLoc,
     peakCountLoc,
+    peakShapesLoc,
+    peakShapeRowsLoc,
+    peakShapeSamplesLoc,
+    peakShapeTexture,
+    // Starts empty rather than as a flat circle table, so the first frame carrying any shaped peak
+    // uploads one and a project with no shaped peaks never uploads anything at all.
+    peakShapeSignature: "",
+    supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
     textureMixLoc,
     textureLoc,
     hasTextureLoc,
@@ -935,6 +1176,54 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform4fv(state.peaksLoc, peaks);
     gl.uniform1fv(state.peakFalloffsLoc, falloffs);
   }
+
+  // The shape table. Every peak defaults to the circle sentinel, so an unshaped mesh -- which is
+  // every mesh until someone authors a shape -- pays for exactly one uniform array upload here and
+  // never touches the texture at all.
+  const shapeRows = new Float32Array(MAX_MASK_PEAKS).fill(-1);
+  const shapes = activePeaks.map((peak) => peak.shape);
+  // Dropped wholesale where the vertex stage cannot sample -- see GLState.supportsVertexTextures.
+  // Both stages read the same u_peakShapeRows, so this degrades a shaped peak to the circle it
+  // generalizes in the displacement and the shading together, rather than letting them disagree.
+  const usableShapes = state.supportsVertexTextures ? shapes : shapes.map(() => undefined);
+  const samples = usableShapes.find((shape) => shape !== undefined)?.rho.length;
+  if (samples !== undefined) {
+    usableShapes.forEach((shape, i) => {
+      if (shape) shapeRows[i] = i;
+    });
+    // Re-encoded only when the set of shapes actually changes. A peak's geometry is edited on every
+    // frame of a slider drag, but its *shape* is picked once at authoring time -- so keying on the
+    // paths keeps a full encode-and-upload off the drag path entirely.
+    const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, state.peakShapeTexture);
+    if (signature !== state.peakShapeSignature) {
+      // Rows go up in the order encodePeakShapeTexture wrote them, which takes an explicit opt-out:
+      // UNPACK_FLIP_Y_WEBGL is context-wide sticky state, both image uploads in this module turn it
+      // on (see buildMaskTexture and loadImageTexture, where flipping is correct -- image rows are
+      // top-first and the UVs are not), and neither turns it back off. It applies to ArrayBufferView
+      // uploads exactly as it does to DOM ones, so inheriting it here would land peak i's samples on
+      // row MAX_MASK_PEAKS - 1 - i and hand every shaped peak an all-zero row instead -- which
+      // peakShapeAt floors to PEAK_SHAPE_MIN_RHO, collapsing the peak to 5% of its radius rather
+      // than failing in any way that looks like a texture problem.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        samples,
+        MAX_MASK_PEAKS,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        encodePeakShapeTexture(usableShapes, samples, MAX_MASK_PEAKS),
+      );
+      state.peakShapeSignature = signature;
+    }
+    gl.uniform1i(state.peakShapesLoc, 2);
+    gl.uniform1f(state.peakShapeSamplesLoc, samples);
+  }
+  gl.uniform1fv(state.peakShapeRowsLoc, shapeRows);
 
   gl.uniform1f(state.textureMixLoc, options.textureMix);
 
@@ -1245,6 +1534,12 @@ export interface PeakGeometryInput {
   radius: number;
   elevation: number;
   falloff: number;
+  /** This peak's custom silhouette, or undefined for a circle -- which is the overwhelmingly common
+   * case and the one that must stay free, so every consumer treats undefined as "rho is 1 everywhere"
+   * rather than materialising a flat table for it. `radius` above is then the shape's furthest reach
+   * rather than its only one (see peakShapeAt in the shared kernel). Type-only, so this module keeps
+   * its no-runtime-imports promise (see line 1). */
+  shape?: PeakShape;
 }
 
 /** Whether a peak can affect anything at all. Zero elevation contributes nothing to the height field
@@ -1271,6 +1566,30 @@ export function peakProfileK(u: number, falloff: number): number {
   return Math.pow(Math.max(s, 1e-4), falloff);
 }
 
+/** TypeScript twin of the shared kernel's own peakShapeAt, reduced to the one channel the CPU side
+ * needs: a shape's normalized reach in the direction `theta`, or 1 for a circle.
+ *
+ * Lives here beside the other twins rather than in canvas-media/peak-shape.ts, where the table it
+ * reads is produced, for the reason stated on line 1 -- a real import there would cost this module
+ * its loadability under bare type stripping, and with it peak-field.test.ts. What it duplicates is
+ * only the *lookup* (the same nearest-texel pair, the same linear blend between them, the same wrap
+ * at +/-pi), never the sampling, so the two cannot disagree about what a shape is -- only, at worst,
+ * about how finely it is read between two stored samples.
+ *
+ * Same measurement-only status as peakProfileK and peakSwellAt below: nothing here ever moves a
+ * point. */
+export function peakShapeRhoAt(shape: PeakShape | undefined, theta: number): number {
+  if (!shape) return 1;
+  const samples = shape.rho.length;
+  const t = ((theta + Math.PI) / (2 * Math.PI)) * samples;
+  const index = Math.floor(t);
+  const lower = shape.rho[((index % samples) + samples) % samples];
+  const upper = shape.rho[(((index + 1) % samples) + samples) % samples];
+  // The same floor the kernel applies (see PEAK_SHAPE_MIN_RHO), so the triangle budget is measured
+  // against the reach the GPU will actually use rather than a smaller one this side alone believes in.
+  return Math.max(lower + (upper - lower) * (t - index), PEAK_SHAPE_MIN_RHO);
+}
+
 /** TypeScript twin of the shared kernel's own peakSwell -- the in-plane displacement the vertex stage
  * applies at `point`. Measurement only; see peakProfileK's own comment. */
 export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[]): [number, number] {
@@ -1280,7 +1599,19 @@ export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[])
     const toPointX = point[0] - peak.cx;
     const toPointY = point[1] - peak.cy;
     const dist = Math.hypot(toPointX, toPointY);
-    const u = dist / peak.radius;
+    // The peak's reach in this point's own direction, which for a circle is just its radius. Note
+    // this is the LOCAL radius, matching the kernel -- see peakSwell's own comment there for why the
+    // pixel bound survives the substitution with no rho left in it.
+    //
+    // The unshaped case skips the atan2 rather than passing it to a lookup that would discard it, and
+    // that branch is worth more than it looks: this function is the whole subdivision pass's inner
+    // loop (edgeSwellSag samples it five times per edge, for every edge of a mesh carrying thousands
+    // of triangles, once per peak), so an atan2 computed for every circular peak would be a real cost
+    // paid on every mesh in the project to support a feature almost none of them use.
+    const radius = peak.shape
+      ? peak.radius * peakShapeRhoAt(peak.shape, dist > 1e-4 ? Math.atan2(toPointY, toPointX) : 0)
+      : peak.radius;
+    const u = dist / radius;
     if (u >= 1) continue;
     const height = peak.elevation * peakProfileK(u, Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF));
     const coefficient = Math.min(
