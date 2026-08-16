@@ -721,9 +721,17 @@ export default function Maskbar() {
             value={isCaptureOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
+              const newCaptureValue = !uiState.tool.capturingMeshSection;
               uiDispatch({
                 type: UIActionType.SetTool,
-                value: { ...uiState.tool, capturingMeshSection: !uiState.tool.capturingMeshSection },
+                // Turning capture on also switches peak/shape off -- a drag is either a capture or a
+                // topology edit, never both, mirroring how peak and shape already exclude each other
+                // via editingTopology.
+                value: {
+                  ...uiState.tool,
+                  capturingMeshSection: newCaptureValue,
+                  editingTopology: newCaptureValue ? false : uiState.tool.editingTopology,
+                },
               });
               notifyMaskToolChanged("mask");
             }}
@@ -758,11 +766,17 @@ export default function Maskbar() {
             value={isTopologyOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
+              const newTopologyMode = isTopologyOn ? false : "circle";
               uiDispatch({
                 type: UIActionType.SetTool,
                 // Assigning the mode rather than flipping a flag is what makes turning this on turn
-                // "shape" off, since both toggles are views of the same field.
-                value: { ...uiState.tool, editingTopology: isTopologyOn ? false : "circle" },
+                // "shape" off, since both toggles are views of the same field. Also switches capture
+                // off when turning on, since a drag is either a capture or a topology edit, never both.
+                value: {
+                  ...uiState.tool,
+                  editingTopology: newTopologyMode,
+                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
+                },
               });
               notifyMaskToolChanged("mask");
             }}
@@ -800,9 +814,16 @@ export default function Maskbar() {
             value={isShapeOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
+              const newTopologyMode = isShapeOn ? false : "shape";
               uiDispatch({
                 type: UIActionType.SetTool,
-                value: { ...uiState.tool, editingTopology: isShapeOn ? false : "shape" },
+                // Also switches capture off when turning on, since a drag is either a capture or a
+                // topology edit, never both -- mirrors the peak toggle's own handler.
+                value: {
+                  ...uiState.tool,
+                  editingTopology: newTopologyMode,
+                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
+                },
               });
               notifyMaskToolChanged("mask");
             }}
