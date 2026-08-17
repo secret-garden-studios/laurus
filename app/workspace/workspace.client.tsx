@@ -48,7 +48,7 @@ import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
-import { useMaskPreview, UseMaskPreview } from "./hooks/useMaskPreview";
+import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
 import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
 import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
 import { peakTriangleIndices } from "./canvas-media/light-source-capture";
@@ -349,6 +349,8 @@ const defaultMaskPreview: UseMaskPreview = {
   setPosition: () => {},
   size: { value: false, width: undefined, height: undefined },
   setSize: () => {},
+  resolution: MASK_RESOLUTION_DEFAULT,
+  setResolution: () => {},
   start: () => {},
   reset: () => {},
   meshRefs: {
