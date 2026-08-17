@@ -56,6 +56,9 @@ export default function Titlebar() {
             center: {
               padding: "0 0px 0px 15px",
             },
+            mask: {
+              padding: "0 0px 0px 15px",
+            },
             right: {
               padding: "0 15px 0px 15px",
             },
@@ -83,6 +86,9 @@ export default function Titlebar() {
               paddingLeft: 5,
             },
             center: {
+              padding: "0 0px 0px 10px",
+            },
+            mask: {
               padding: "0 0px 0px 10px",
             },
             right: {
@@ -113,6 +119,9 @@ export default function Titlebar() {
               paddingLeft: 5,
             },
             center: {
+              padding: "0 0px 0px 10px",
+            },
+            mask: {
               padding: "0 0px 0px 10px",
             },
             right: {
@@ -304,6 +313,23 @@ export default function Titlebar() {
             {`${coreState.project.svgs.size}`}
           </div>
           <div>{`svg`}</div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "1ch",
+            ...dynamicSizes.stats.mask,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+            }}
+          >
+            {`${coreState.project.masks.size}`}
+          </div>
+          <div>{`mask`}</div>
         </div>
         <div
           style={{
