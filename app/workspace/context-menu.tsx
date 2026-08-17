@@ -7,7 +7,7 @@ import {
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
-import { CoreContext, HoverContext, LaurusTransform, UIContext } from "./workspace.client";
+import { CoreContext, HoverContext, LaurusTransform, UIContext, getMaskSourceImgIds } from "./workspace.client";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
@@ -45,12 +45,15 @@ function cleanUpMediaBrowser(
   mediaType: "img" | "svg" | "mask",
   mediaId: string,
   project: LaurusProjectResult,
+  canvasMasks: Map<string, LaurusMaskResult>,
   uiDispatch: Dispatch<UIAction>,
 ) {
   switch (mediaType) {
     case "img": {
       const stillExists = Array.from(project.imgs.values()).some((i) => i.img_media_id === mediaId);
-      if (!project.browse_public_imgs && !stillExists) {
+      // Still needed for the img browser even once unplaced, if some remaining mask was made from it.
+      const stillNeededForMask = getMaskSourceImgIds(project.masks, canvasMasks).has(mediaId);
+      if (!project.browse_public_imgs && !stillExists && !stillNeededForMask) {
         uiDispatch({ type: UIActionType.DeleteBrowserImg, value: mediaId });
       }
       break;
@@ -473,7 +476,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           // narrower img/svg/mask parameter type.
           if (media.type !== "capture" && media.type !== "peak") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
-            cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+            cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
           }
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
@@ -489,6 +492,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
+      coreState.canvasMasks,
       uiState.activeElement?.key,
       uiState.selectedElement?.key,
       uiState.browserElement,
@@ -1414,7 +1418,7 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
           cleanUpCanvasMedia(media.type, media.key, dispatch);
-          cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -1429,6 +1433,7 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
+      coreState.canvasMasks,
       uiState.activeElement?.key,
       uiState.browserElement,
       media.key,

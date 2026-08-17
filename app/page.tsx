@@ -118,6 +118,22 @@ export async function fetchProject(
       const maskMediaIds = masksArray.map((m) => m.media_id);
       canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
     }
+    // A mask's source image isn't necessarily still placed on the canvas -- e.g. a mask dropped
+    // straight from an armed img-browser thumbnail never gets a project.imgs entry. Fetch those
+    // source images too so the image browser can still show where the mask came from.
+    if (fetchMedia) {
+      const placedImgIds = new Set(imgsArray.map((i) => i.img_media_id));
+      const fetchedImgIds = new Set(canvasImgs.map((i) => i.img_media_id));
+      const missingSourceImgIds = new Set(
+        canvasMasks.map((m) => m.source_img_media_id).filter((id) => !placedImgIds.has(id) && !fetchedImgIds.has(id)),
+      );
+      for (const sourceImgMediaId of missingSourceImgIds) {
+        const imgMediaResult = await getImg(laurusApi, sourceImgMediaId);
+        if (imgMediaResult) {
+          canvasImgs.push({ ...imgMediaResult });
+        }
+      }
+    }
     return {
       project: newProject,
       scales: scales ?? [],

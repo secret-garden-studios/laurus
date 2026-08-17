@@ -10,7 +10,7 @@ import {
   useLayoutEffect,
 } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, UIContext } from "../workspace.client";
+import { CoreContext, UIContext, getMaskSourceImgIds } from "../workspace.client";
 import styles from "../../app.module.css";
 import { publicIcon, refresh200, sort300, SvgRepo } from "../../svg-repo";
 import { createImg, LaurusFrame, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
@@ -376,10 +376,10 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
       }
     }
     if (!newBrowsePublicImgs && newProjectIdAck) {
-      const newBrowserImgs = uiState.browserImgs.filter((b) =>
-        Array.from(newProject.imgs.values())
-          .flatMap((v) => v.img_media_id)
-          .includes(b.img_media_id),
+      const placedImgIds = new Set(Array.from(newProject.imgs.values()).map((v) => v.img_media_id));
+      const maskSourceImgIds = getMaskSourceImgIds(newProject.masks, coreState.canvasMasks);
+      const newBrowserImgs = uiState.browserImgs.filter(
+        (b) => placedImgIds.has(b.img_media_id) || maskSourceImgIds.has(b.img_media_id),
       );
       uiDispatch({ type: UIActionType.SetBrowserImgs, value: newBrowserImgs });
       uiDispatch({
@@ -393,6 +393,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
     setMediaSort("none");
   }, [
     coreState.project,
+    coreState.canvasMasks,
     coreState.apiOrigin,
     coreState.accessToken,
     dispatch,
@@ -628,18 +629,25 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                       color: "rgba(220, 220, 220, 1)",
                     }}
                   >
-                    {sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
-                      const img = media as LaurusImgResult;
-                      const publicImg: boolean = !Array.from(coreState.project.imgs.values())
-                        .flatMap((i) => i.img_media_id)
-                        .includes(img.img_media_id);
-                      if (publicImg && !coreState.project.browse_public_imgs) return;
-                      return (
-                        <div key={i}>
-                          <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
-                        </div>
-                      );
-                    })}
+                    {(() => {
+                      // A mask's source image should stay visible here even when it was never
+                      // placed on the canvas (e.g. a mask dropped straight off a public img
+                      // thumbnail) -- otherwise it vanishes the moment "browse public imgs" is off.
+                      const maskSourceImgIds = getMaskSourceImgIds(coreState.project.masks, coreState.canvasMasks);
+                      return sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
+                        const img = media as LaurusImgResult;
+                        const isProjectImg = Array.from(coreState.project.imgs.values())
+                          .flatMap((i) => i.img_media_id)
+                          .includes(img.img_media_id);
+                        const publicImg: boolean = !isProjectImg && !maskSourceImgIds.has(img.img_media_id);
+                        if (publicImg && !coreState.project.browse_public_imgs) return;
+                        return (
+                          <div key={i}>
+                            <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </>
               );

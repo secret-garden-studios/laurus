@@ -471,6 +471,20 @@ function initCarouselEntries(
   return entries;
 }
 
+/** Every mask's source image id, whether or not that image is (still) placed on the canvas --
+ * MaskThumbnail/project-mask-item/media-browser all need this same "is this img a mask's origin"
+ * check to keep a since-unplaced source image reachable in the img browser. */
+export function getMaskSourceImgIds(
+  masks: Map<string, LaurusProjectMask>,
+  canvasMasks: Map<string, LaurusMaskResult>,
+): Set<string> {
+  return new Set(
+    Array.from(masks.keys())
+      .map((key) => canvasMasks.get(key)?.source_img_media_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
 interface InitReducer {
   arg1: ProjectDependencies | undefined;
   arg2: string[] | undefined;
@@ -593,14 +607,25 @@ function initReducer({
             e[0],
             projectDependencies.canvasMasks.find((v) => v.mask_media_id == e[1].media_id),
           ])
-          // A project mask can outlive the mask media it points at (e.g. deleted, or -- since the
-          // mask feature was renamed from "vector" to "mask" -- saved under the old Redis key
-          // namespace and no longer resolvable). Skipping unresolved entries here, rather than
-          // spreading `undefined` into a hollow placeholder object, is what keeps
-          // ProjectMaskItem/buildStaticMaskMesh from crashing on a `curves` that was never there.
           .filter((e): e is [string, LaurusMaskResult] => e[1] !== undefined),
       )
     : new Map();
+
+  // Masks whose source image was never (or is no longer) placed on the canvas still need that
+  // source image reachable from the img browser -- MaskThumbnail/project-mask-item fall back to
+  // uiState.browserImgs (fed by newCanvasImgs below) when project.imgs has no match.
+  if (projectDependencies) {
+    const placedImgIds = new Set(projectDependencies.project.imgs.values().map((i) => i.img_media_id));
+    getMaskSourceImgIds(projectDependencies.project.masks, newCanvasMasks).forEach((sourceImgMediaId) => {
+      if (placedImgIds.has(sourceImgMediaId) || newCanvasImgs.has(sourceImgMediaId)) {
+        return;
+      }
+      const sourceImg = projectDependencies.canvasImgs.find((i) => i.img_media_id == sourceImgMediaId);
+      if (sourceImg) {
+        newCanvasImgs.set(sourceImgMediaId, { ...sourceImg });
+      }
+    });
+  }
 
   const browserImgIds = new Set(browserDependencies.browserImgs.map((i) => i.img_media_id));
   const browserSvgIds = new Set(browserDependencies.browserSvgs.map((s) => s.svg_media_id));
