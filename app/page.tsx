@@ -96,7 +96,7 @@ export async function fetchProject(
     const canvasSvgs: SvgMediaResult_V1_0[] = [];
     if (fetchMedia) {
       for (let i = 0; i < svgsArray.length; i++) {
-        const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id, svgsArray[i].media_key);
+        const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id);
         if (svgMediaResult) {
           canvasSvgs.push({ ...svgMediaResult });
         }
@@ -106,7 +106,7 @@ export async function fetchProject(
     const canvasImgs: ImgMediaResult_V1_0[] = [];
     if (fetchMedia) {
       for (let i = 0; i < imgsArray.length; i++) {
-        const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id, imgsArray[i].media_key);
+        const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id);
         if (imgMediaResult) {
           canvasImgs.push({ ...imgMediaResult });
         }

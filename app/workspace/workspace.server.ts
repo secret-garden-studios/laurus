@@ -146,12 +146,9 @@ export interface ImgMediaResult_V1_0 {
   last_editor: string;
 }
 export type LaurusImgResult = ImgMediaResult_V1_0;
-export async function getImg(baseUrl: string | undefined, imgMediaId: string, filename?: string) {
+export async function getImg(baseUrl: string | undefined, imgMediaId: string) {
   try {
-    let url = `${baseUrl}/media/img/${imgMediaId}`;
-    if (filename) {
-      url += `?filename=${filename}`;
-    }
+    const url = `${baseUrl}/media/img/${imgMediaId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
@@ -220,12 +217,9 @@ export interface SvgMediaResult_V1_0 {
   last_editor: string;
 }
 export type LaurusSvgResult = SvgMediaResult_V1_0;
-export async function getSvg(baseUrl: string | undefined, svgMediaId: string, filename?: string) {
+export async function getSvg(baseUrl: string | undefined, svgMediaId: string) {
   try {
-    let url = `${baseUrl}/media/svg/${svgMediaId}`;
-    if (filename) {
-      url += `?filename=${filename}`;
-    }
+    const url = `${baseUrl}/media/svg/${svgMediaId}`;
     const raw_response = await fetch(url, {
       method: "GET",
       headers: {
