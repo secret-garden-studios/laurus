@@ -31,6 +31,9 @@ import {
   nextPeakId,
   MaskCaptureUpdateRequest_V1_0,
   MaskPeakUpdateRequest_V1_0,
+  LaurusPeakBlackPoint,
+  toPeakBlackPoint,
+  toPeakBlackPointFields,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
@@ -231,10 +234,12 @@ export interface CoreContextProps {
   createTopologyPeak: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    // `shape` is the normalized silhouette the drawn peak should take, or "" for a circle. It rides
-    // in the seed alongside elevation/falloff rather than in `circle` because it is authored the same
-    // way they are -- staged on a bar before the drag, rather than measured from the drag itself.
-    seed: { elevation: number; falloff: number; shape: string },
+    // `shape` is the normalized silhouette the drawn peak should take, or "" for a circle, and
+    // `blackPoint` is the colour its shading should bottom out at (see Peak_V1_0's own black_point_*
+    // fields). Both ride in the seed alongside elevation/falloff rather than in `circle` because they
+    // are authored the same way those are -- staged on a bar before the drag, rather than measured
+    // from the drag itself.
+    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
   ) => Promise<void>;
   sendMaskPeakUpdate: (
     maskMediaId: string,
@@ -1330,7 +1335,7 @@ export default function Workspace({
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; shape: string },
+      seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
     ) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
@@ -1345,6 +1350,7 @@ export default function Workspace({
         elevation: seed.elevation,
         falloff: seed.falloff,
         shape: seed.shape,
+        blackPoint: seed.blackPoint,
       };
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
@@ -1361,6 +1367,7 @@ export default function Workspace({
         elevation: seed.elevation,
         falloff: seed.falloff,
         shape: seed.shape,
+        ...toPeakBlackPointFields(seed.blackPoint),
         remove: false,
         polygon_indices: polygonIndices,
       });
@@ -1429,6 +1436,7 @@ export default function Workspace({
         elevation: peak.elevation,
         falloff: peak.falloff,
         shape: peak.shape,
+        ...toPeakBlackPointFields(toPeakBlackPoint(peak)),
         remove: true,
         // Empty rather than recomputed: polygon_indices full-replaces this one peak's own polygon
         // tagging, so clearing it is exactly what untags every triangle that carried this peak's id.

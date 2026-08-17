@@ -2,7 +2,7 @@
 // below), and spelling that out has a payoff beyond tidiness: it makes this module free of runtime
 // imports entirely, so the peak height field's own math can be loaded and unit-tested directly under
 // `node --experimental-strip-types` with no bundler or module-resolution setup (see peak-field.test.ts).
-import type { MaskCurve_V1_0 } from "./workspace.server";
+import type { MaskCurve_V1_0, PeakBlackPoint_V1_0 } from "./workspace.server";
 import type { PeakShape } from "./canvas-media/peak-shape";
 
 /** Default width/height of the light source's bright core, in on-screen (CSS) pixels -- converted to buffer pixels per frame. Adjustable via Maskbar's light source size slider. */
@@ -171,6 +171,117 @@ export const PEAK_SHAPE_MIN_RHO = 0.05;
  * overflowing mediump. Paired with PEAK_SHAPE_MIN_RHO, it keeps every intermediate in that
  * calculation under ~20k, which is inside the fp16 range mediump is realistically implemented as. */
 export const PEAK_GRADIENT_LIMIT = 32.0;
+
+/** Profile height, as a fraction of a peak's own elevation, below which that peak is treated as having
+ * no relief left -- which is where its black point stops being at full strength and starts fading out
+ * (see PEAK_BLACK_POINT_HALO_MAX for the band it fades across).
+ *
+ * This exists because a peak's *radius* and its *relief* are not the same boundary, and the gap
+ * between them grows with falloff. k(u) = (1 - u^2)^f collapses faster the higher f is, so at
+ * MAX_MASK_PEAK_FALLOFF a peak is a needle whose height is gone by u ~ 0.76 and whose shading is gone
+ * by u ~ 0.85, leaving the outer 27% of its own footprint as flat, unelevated mesh. Anchoring the
+ * black point to the radius therefore tinted a broad flat annulus that has no relief to floor,
+ * rendering it as a visibly unshaded "base" ringing the peak -- the region had always been flat, but
+ * it took a tint to make it legible. Anchoring to where the relief actually ends instead means the
+ * colour follows the peak that is visible rather than the disc that was authored.
+ *
+ * A constant threshold on k is a good stand-in for "where the relief ends" and a cheap one: solving
+ * k(u) = this for u is a single pow. It tracks the measured extent of the bump shading to within a few
+ * percent of the radius across the whole falloff range. It is an approximation in one specific way --
+ * it takes no account of elevation, and a taller peak's relief does reach marginally further -- but
+ * measured across the full elevation and radius ranges that spread is only 0.071 in u, and the
+ * threshold sits at the outer end of it, so the error falls on the side of covering slightly too much
+ * rather than leaving relief unlifted.
+ *
+ * 1e-3 rather than something larger because k is what collapses; near the edge it falls so steeply
+ * that an order of magnitude either way moves the boundary by a few percent of the radius at most. */
+export const PEAK_BLACK_POINT_RELIEF_K = 1e-3;
+
+/** Widest a peak's black point ever feathers out past the end of its own relief, as a fraction of that
+ * peak's reach. Reached at MAX_MASK_PEAK_FALLOFF; a peak at MIN_MASK_PEAK_FALLOFF gets no halo at all,
+ * and the band scales between the two (see PEAK_BLACK_POINT_HALO_EASE). The lift is at full strength
+ * everywhere inside the relief regardless -- only the width of the join beyond it varies.
+ *
+ * Three decisions are packed in here.
+ *
+ * The lift is flat across the peak's body rather than following its own radial profile k(u), which is
+ * what everything else about a peak fades by. A black point is a *floor* on how dark the peak may get,
+ * and a floor that fades is not a floor: k(u) is already down to 0.56 halfway out on the default dome,
+ * so weighting by it would let the whole middle of the peak drift back toward black -- the exact thing
+ * the swatch exists to prevent. k earns exactly one job here, deciding where the body *ends* (see
+ * PEAK_BLACK_POINT_RELIEF_K), and none at all in how strongly the lift applies within it.
+ *
+ * The join then has to live OUTSIDE that boundary rather than just inside it, and that is forced by
+ * falloff. The profile's slope is dk/du = -2*f*u*(1 - u^2)^(f-1), so at the default falloff of 2 the
+ * (1 - u^2) factor takes the rim slope to zero and a peak's shading has already died out before the
+ * rim -- an inward feather there is harmless. At MIN_MASK_PEAK_FALLOFF the exponent is zero, that
+ * factor disappears, and the slope is -2u: *maximal at the rim* (a gradient of 1.33 against 0.01 for
+ * the dome). The peak's darkest ring sits exactly at u = 1, so an inward feather switches the floor off
+ * precisely where it is needed most and leaves a black band around the peak -- which is what it did.
+ * There is no safe place inside a low-falloff peak to put that transition, because there the darkest
+ * point IS the boundary.
+ *
+ * The width of that join then tracks falloff, for the same reason its side does. A halo exists to hide
+ * the colour discontinuity where lifted meets unlifted, and how much hiding that needs is exactly how
+ * smoothly the peak already meets the mesh -- which is what falloff controls. At the maximum the peak
+ * dissolves into flat mesh with no edge of its own, so a bare cutoff would be the only hard line
+ * anywhere near it and the join needs the full width. At the minimum the rim already carries a hard
+ * ~191/255 step from the crease (see MIN_MASK_PEAK_FALLOFF, where that crease is called out as
+ * deliberate), so a colour transition in that same place lands inside an edge that is already there --
+ * and a halo would instead bleed colour past a peak that reads as crisply bounded, which is the wrong
+ * look for it twice over.
+ *
+ * The ceiling itself is sized by the halo's own gradient, which has to stay under roughly 4/255 per
+ * pixel to read as shading rather than as a ring. 0.2 holds that for any peak of a reasonable size,
+ * and is only marginal for a small peak sitting on very dark mesh. */
+export const PEAK_BLACK_POINT_HALO_MAX = 0.2;
+
+/** Exponent shaping how a peak's halo grows from none at MIN_MASK_PEAK_FALLOFF to
+ * PEAK_BLACK_POINT_HALO_MAX at MAX_MASK_PEAK_FALLOFF: width = MAX * t^this, for t the falloff's own
+ * normalized position in that range.
+ *
+ * Below 1, so the halo widens fast as falloff leaves its minimum and then slowly. That asymmetry
+ * matches what it is hiding behind rather than being a taste call. The crease at a peak's rim does not
+ * decay linearly with falloff -- it collapses, measuring roughly 190/255 at the minimum, 9/255 by
+ * falloff 2 and nothing at all by 3. A linear halo is therefore still only a fifth of its width at the
+ * exact falloff where the crease has already stopped covering for it, which leaves the halo itself as
+ * the most visible edge anywhere near the peak across most of the usable range -- the artifact
+ * reappearing in a new place rather than being fixed.
+ *
+ * Empirical rather than derived: the crease's collapse has no clean closed form to inverting (it is a
+ * discontinuity in the profile's rim slope, zero for every falloff above the minimum and 2 exactly at
+ * it), so this is the exponent that measured best against it. 0.35 keeps the worst edge near a peak
+ * under ~4/255 per pixel at every falloff except a single marginal 4.4 around 2.5. The endpoints are
+ * untouched by it: t^anything is still 0 at 0 and 1 at 1, so "minimum falloff means no halo, maximum
+ * means the full one" holds exactly. */
+export const PEAK_BLACK_POINT_HALO_EASE = 0.35;
+
+/** Exponent shaping how the lift fades ACROSS a peak's halo: weight = (1 - t)^this, for t the
+ * fragment's own position in the band (0 at the rim, 1 at the halo's outer edge).
+ *
+ * Not to be confused with PEAK_BLACK_POINT_HALO_EASE just above, which shapes how the halo's *width*
+ * grows with falloff. That one decides how far the band reaches; this one decides what happens inside
+ * it.
+ *
+ * Above 1, which is what makes the halo blend outward from the rim rather than sitting as a collar
+ * that fades late. The obvious choice here is a smoothstep, and it is wrong for exactly one reason:
+ * smoothstep has zero slope at *both* ends, so it leaves the first fifth of the band above 90% tint
+ * before anything visibly changes. That reads as a solid ring of colour hugging the peak with a fade
+ * somewhere beyond it, rather than as a blend. This curve starts at full rate instead (slope 1.5 at
+ * the rim, against smoothstep's 0), which cuts that band to 7%.
+ *
+ * It still has to land softly, though, which is what rules out the plain linear fade: (1 - t) arrives
+ * at the outer edge with slope 1, and a gradient that stops abruptly draws a faint Mach line exactly
+ * where the halo is supposed to have become invisible. Any exponent above 1 lands with slope 0.
+ *
+ * 1.5 specifically because it is the largest such exponent whose maximum slope is still 1.5 -- the
+ * same worst gradient smoothstep already had, so starting the fade at the rim costs nothing against
+ * the per-pixel budget PEAK_BLACK_POINT_HALO_MAX was sized against. (1 - t)^2 blends sooner but peaks
+ * at slope 2, a third over that budget.
+ *
+ * Both ends are exact regardless: (1 - t)^n is 1 at the rim and 0 at the outer edge for every n, so
+ * the halo reaches the mask's own untouched colour precisely rather than asymptotically. */
+export const PEAK_BLACK_POINT_HALO_FADE = 1.5;
 
 /** Gain on the relief each real light source contributes through the perturbed normal (see the
  * fragment shader's bump term). Multiplies a quantity already in 0-1, so this is "how strongly does
@@ -656,6 +767,116 @@ uniform sampler2D u_mask;
 uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
+// Each peak's own black point: .rgb is the colour that peak's shading bottoms out at, .a is how much
+// of it applies at all -- 0 for every peak until someone opens the swatch, which is why an untouched
+// mesh needs no special case below.
+//
+// Fragment-only, unlike u_peaks and friends in the shared kernel above: nothing in the vertex stage
+// lights anything, so this neither costs a vertex uniform register nor needs the explicit mediump
+// annotation those carry to keep the two stages' declared precisions from disagreeing at link time.
+uniform vec4 u_peakBlackPoints[MAX_MASK_PEAKS];
+
+// The widest a black point's halo ever reaches past a peak's rim, and the falloff range that halo is
+// scaled across -- spliced in from PEAK_BLACK_POINT_HALO_MAX and MIN/MAX_MASK_PEAK_FALLOFF above.
+// PEAK_BLACK_POINT_HALO_MAX's own comment carries the justification for all three. Change those
+// constants, not these lines.
+#define BLACK_POINT_HALO_MAX ${glFloat(PEAK_BLACK_POINT_HALO_MAX)}
+#define BLACK_POINT_HALO_EASE ${glFloat(PEAK_BLACK_POINT_HALO_EASE)}
+#define BLACK_POINT_HALO_FADE ${glFloat(PEAK_BLACK_POINT_HALO_FADE)}
+#define BLACK_POINT_RELIEF_K ${glFloat(PEAK_BLACK_POINT_RELIEF_K)}
+#define PEAK_FALLOFF_MIN ${glFloat(MIN_MASK_PEAK_FALLOFF)}
+#define PEAK_FALLOFF_MAX ${glFloat(MAX_MASK_PEAK_FALLOFF)}
+
+// The black point in force at p: .rgb the colour, .a the weight to apply it at.
+//
+// A mask can carry overlapping peaks, so this is a weighted average of their colours rather than a
+// winner. The weight is flat across each peak's body -- everywhere it still has relief -- and feathers
+// to nothing over a halo beyond that, whose width is the peak's own falloff scaled across
+// BLACK_POINT_HALO_MAX: none at all at the minimum, full at the maximum.
+//
+// The body is bounded by where the relief ends rather than by the peak's radius, and the two are only
+// the same boundary at low falloff. A needle-shaped peak's height is gone long before its radius is,
+// so anchoring to the radius tinted a flat unelevated annulus around it -- up to 27% of the footprint
+// -- which rendered as an unshaded "base" ringing the peak. See PEAK_BLACK_POINT_RELIEF_K.
+//
+// That the join then sits outside the body is why a low-falloff peak doesn't wear a black ring, and
+// that its width tracks falloff is why a peak with a crease of its own doesn't wear a halo either;
+// see PEAK_BLACK_POINT_HALO_MAX for both.
+//
+// The returned weight is the max rather than the sum, for the same reason bestHighlight below uses
+// max: two overlapping black points shouldn't lift one facet further than either of them asked for.
+// Zero means nothing reaches here, and the caller leaves its shading alone.
+//
+// Mirrors peakField's own loop, u for u, with one deliberate difference beyond the weight: the cutoff
+// is the far edge of the halo rather than the rim, since unlike the height field this does have
+// something to say just outside a peak. The shape lookup still happens BEFORE that test -- see
+// peakShapeAt's own comment on why the fetch has to stay in uniform control flow.
+vec4 peakBlackPoint(vec2 p) {
+  vec3 color = vec3(0.0);
+  float total = 0.0;
+  float weight = 0.0;
+  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
+    if (i >= u_peakCount) break;
+    vec2 toPoint = p - u_peaks[i].xy;
+    float dist = length(toPoint);
+    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
+    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
+    float u = dist / radius;
+    // Floored rather than trusted: drawMaskMesh already floors what it uploads, but the reciprocal
+    // below divides by this and a document stored before MIN_MASK_PEAK_FALLOFF existed can carry
+    // anything at all, zero included.
+    float falloff = max(u_peakFalloffs[i], PEAK_FALLOFF_MIN);
+    // Where this peak's relief ends: the u at which its profile has fallen to BLACK_POINT_RELIEF_K,
+    // i.e. (1 - u^2)^falloff = K solved for u. This bounds the peak's *body*, which coincides with the
+    // rim only at low falloff and pulls well inside it as the profile sharpens -- see
+    // PEAK_BLACK_POINT_RELIEF_K for why the tint follows this rather than the authored radius.
+    float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
+    // This peak's own halo width, from its own falloff: none at the minimum, BLACK_POINT_HALO_MAX at
+    // the maximum, eased between (see BLACK_POINT_HALO_EASE for why that curve isn't a straight line).
+    //
+    // Clamped at the top as well because nothing caps what a stored falloff can be, and a value above
+    // PEAK_FALLOFF_MAX would otherwise widen this peak's halo past the ceiling that sized it.
+    float haloT = clamp((falloff - PEAK_FALLOFF_MIN) / (PEAK_FALLOFF_MAX - PEAK_FALLOFF_MIN), 0.0, 1.0);
+    float halo = BLACK_POINT_HALO_MAX * pow(haloT, BLACK_POINT_HALO_EASE);
+    if (u >= reliefEnd + halo) continue;
+    // How far into the halo this fragment sits: 0 where the body ends, 1 at the halo's outer edge.
+    // Divided by max(halo, 1e-4) rather than by halo itself because a peak at the minimum falloff has
+    // no halo at all, and that degenerates cleanly into the step this case wants -- t is 0 inside the
+    // body and 1 outside it, with no band in between, and no division by zero on the way.
+    float t = clamp((u - reliefEnd) / max(halo, 1e-4), 0.0, 1.0);
+    // The fade across that band: the lift blends outward from the body and reaches exactly zero at the
+    // outer edge, so the halo arrives at the mask's own untouched colour rather than merely near it.
+    // See BLACK_POINT_HALO_FADE for why this curve and not a smoothstep.
+    float w = pow(1.0 - t, BLACK_POINT_HALO_FADE) * u_peakBlackPoints[i].a;
+    color += u_peakBlackPoints[i].rgb * w;
+    total += w;
+    weight = max(weight, w);
+  }
+  // Guarded because the average divides by it: every peak reaching this fragment can legitimately
+  // have a zero-alpha swatch, which is the common case rather than an edge one.
+  return total > 0.0 ? vec4(color / total, weight) : vec4(0.0);
+}
+
+// One already-shaded colour, with the peak's black point installed as its floor.
+//
+// This is the photographic black point, not a tint: it rescales the whole 0-1 tonal range onto
+// [blackPoint, 1] rather than blending toward a colour. 0 lands exactly on the swatch, 1 lands
+// exactly on white, and everything between is carried proportionally -- so a green swatch means every
+// tone in the peak is a shade of green running up to white, with pure black no longer reachable at
+// all. A blend toward the swatch would instead leave the source photo's own dark pixels showing
+// through the midtones, which is the thing this must not do.
+//
+// The clamp is what makes the floor a floor. The composite below deliberately leaves its subtraction
+// unclamped (a facet in more than one light's full shadow can go negative), and a negative input
+// would scale to something *below* the swatch -- the one outcome the whole feature exists to rule out.
+//
+// mix()ed by the weight rather than applied outright so this is exactly the identity where no peak
+// reaches: at 0 the result is the untouched colour, including its negative components.
+vec3 liftToBlackPoint(vec3 color, vec4 blackPoint) {
+  vec3 lifted = blackPoint.rgb + clamp(color, 0.0, 1.0) * (1.0 - blackPoint.rgb);
+  return mix(color, lifted, blackPoint.a);
+}
+
 void main() {
   // The polygon "stroke" texture controls (alpha via u_textureMix, see withEdge below) -- 1 right
   // at a triangle's own edge, fading to 0 over the next STROKE_WIDTH_PX screen pixels. Barycentric
@@ -781,14 +1002,23 @@ void main() {
   // otherwise sum past 1.0 and mix would extrapolate past white) so that a slope tilted into a light
   // brightens the same way proximity to that light's core already does.
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec3 shaded = lit - leastShadow - bumpShade;
+  // Whatever black point covers this fragment, resolved once and applied to both the fill and the
+  // wireframe below so the two can't disagree about how dark this peak is allowed to get.
+  vec4 blackPoint = peakBlackPoint(v_meshPos);
+  // The shading as it has always been computed, then rescaled so the peak's darkest reachable tone is
+  // the swatch rather than black (see liftToBlackPoint -- a levels remap, not a blend). Outside every
+  // peak, and on any peak whose swatch alpha is 0, the lift is the identity and this is bit-for-bit
+  // the line it replaced.
+  vec3 shaded = liftToBlackPoint(lit - leastShadow - bumpShade, blackPoint);
   // The wireframe's own stroke endpoint darkens with the same shadow term as the fill above, so a
   // triangle sitting deep in a light source's shadow doesn't keep a bright hairline around it
   // while its interior goes dark. STROKE_COLOR (spliced in from MASK_STROKE_COLOR above -- change
   // that constant, not this line) is its lit baseline before that darkening. The bump's own shaded
   // half is subtracted here too, for exactly the same reason: a wireframe that stayed bright across
-  // a peak's shadowed flank would read as a lit cage sitting over an unlit surface.
-  vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
+  // a peak's shadowed flank would read as a lit cage sitting over an unlit surface. And it takes the
+  // same lift the fill just did, for that reason one step further: a stroke still able to reach black
+  // across a peak whose fill cannot would read as a cage of a different material than its surface.
+  vec3 strokeColor = liftToBlackPoint(STROKE_COLOR - leastShadow - bumpShade, blackPoint);
   // STROKE_ALPHA caps how far this can ever reach regardless of u_textureMix -- 1.0 leaves
   // u_textureMix as the sole ceiling, same as before the alpha channel existed.
   vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
@@ -879,6 +1109,10 @@ export interface GLState {
   peakShapesLoc: WebGLUniformLocation;
   peakShapeRowsLoc: WebGLUniformLocation;
   peakShapeSamplesLoc: WebGLUniformLocation;
+  /** Each peak's own black point (see u_peakBlackPoints in the fragment shader). Listed apart from
+   * the peak uniforms above because it is the one that is *not* shared with the vertex stage: a black
+   * point shades, it never displaces. */
+  peakBlackPointsLoc: WebGLUniformLocation;
   /** The custom-shape table (see encodePeakShapeTexture), one row per shaped peak. Owned here rather
    * than rebuilt per draw because its contents only change when a peak's *shape* changes, which is a
    * rare authoring event -- unlike every other peak parameter, which a slider drag can change on
@@ -996,6 +1230,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const peakShapesLoc = gl.getUniformLocation(program, "u_peakShapes");
   const peakShapeRowsLoc = gl.getUniformLocation(program, "u_peakShapeRows");
   const peakShapeSamplesLoc = gl.getUniformLocation(program, "u_peakShapeSamples");
+  const peakBlackPointsLoc = gl.getUniformLocation(program, "u_peakBlackPoints");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
@@ -1022,6 +1257,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !peakShapesLoc ||
     !peakShapeRowsLoc ||
     !peakShapeSamplesLoc ||
+    !peakBlackPointsLoc ||
     !textureMixLoc ||
     !textureLoc ||
     !hasTextureLoc ||
@@ -1059,6 +1295,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     peakShapesLoc,
     peakShapeRowsLoc,
     peakShapeSamplesLoc,
+    peakBlackPointsLoc,
     peakShapeTexture,
     // Starts empty rather than as a flat circle table, so the first frame carrying any shaped peak
     // uploads one and a project with no shaped peaks never uploads anything at all.
@@ -1163,6 +1400,12 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     // xyzw = cx, cy, radius, elevation -- see u_peaks' own comment in PEAK_FIELD_GLSL.
     const peaks = new Float32Array(activePeaks.length * 4);
     const falloffs = new Float32Array(activePeaks.length);
+    // rgba, in the same peak order -- a zeroed entry (which is what an absent black point becomes) is
+    // read by the shader as "no black point" rather than as opaque black, since its alpha is the
+    // weight the tint is applied at. See u_peakBlackPoints. Left unfilled past activePeaks.length for
+    // the same reason the two arrays above are: the shader's loop breaks at u_peakCount, so nothing
+    // beyond it is ever read.
+    const blackPoints = new Float32Array(activePeaks.length * 4);
     activePeaks.forEach((peak, i) => {
       peaks[i * 4] = peak.cx;
       peaks[i * 4 + 1] = peak.cy;
@@ -1172,9 +1415,14 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       // derivative raises a near-zero base to a negative exponent (see peakProfile), and a document
       // stored before that bound existed can still carry such a value.
       falloffs[i] = Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF);
+      blackPoints[i * 4] = peak.blackPoint?.r ?? 0;
+      blackPoints[i * 4 + 1] = peak.blackPoint?.g ?? 0;
+      blackPoints[i * 4 + 2] = peak.blackPoint?.b ?? 0;
+      blackPoints[i * 4 + 3] = peak.blackPoint?.a ?? 0;
     });
     gl.uniform4fv(state.peaksLoc, peaks);
     gl.uniform1fv(state.peakFalloffsLoc, falloffs);
+    gl.uniform4fv(state.peakBlackPointsLoc, blackPoints);
   }
 
   // The shape table. Every peak defaults to the circle sentinel, so an unshaped mesh -- which is
@@ -1540,6 +1788,11 @@ export interface PeakGeometryInput {
    * rather than its only one (see peakShapeAt in the shared kernel). Type-only, so this module keeps
    * its no-runtime-imports promise (see line 1). */
   shape?: PeakShape;
+  /** This peak's own black point, or undefined for none -- the colour the mask's lights drive this
+   * peak's shading toward instead of black, weighted by the peak's own profile (see peakBlackPoint
+   * in the fragment shader). Undefined and an alpha of 0 mean the same thing to every consumer, so
+   * a peak that has never had one costs nothing beyond its slot in the uniform array. */
+  blackPoint?: PeakBlackPoint_V1_0;
 }
 
 /** Whether a peak can affect anything at all. Zero elevation contributes nothing to the height field

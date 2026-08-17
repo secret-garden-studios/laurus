@@ -4,7 +4,7 @@ import { LaurusImgResult, LaurusEffect, LaurusSvgResult } from "../workspace.ser
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
 import { PEAK_ELEVATION_DEFAULT } from "../mask-gl";
-import { PEAK_FALLOFF_DEFAULT } from "../workspace.server";
+import { LaurusPeakBlackPoint, PEAK_BLACK_POINT_DEFAULT, PEAK_FALLOFF_DEFAULT } from "../workspace.server";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
@@ -176,7 +176,12 @@ export interface UIState {
   // two it has no slider -- Maskbar mirrors it from whichever svg the browser has armed (see its
   // shape cell), and only a drag in TopologyMode "shape" consumes it, so it being staged never
   // changes what the plain "peak" mode draws.
-  stagedPeak: { elevation: number; falloff: number; shape: string };
+  //
+  // `blackPoint` belongs here for the same reason elevation and falloff do -- Lightsourcebar's swatch
+  // edits it with no peak selected exactly the way those two sliders do, so a colour dialed in before
+  // the first drag is the colour that drag's peak is created with, and a row of peaks drawn afterwards
+  // keeps it (see Peak_V1_0's own black_point_* fields).
+  stagedPeak: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint };
 }
 
 export const defaultUIState: UIState = {
@@ -208,7 +213,12 @@ export const defaultUIState: UIState = {
   showTimeline: true,
   mediaBrowserFilter: "img",
   lightSourcePreview: false,
-  stagedPeak: { elevation: PEAK_ELEVATION_DEFAULT, falloff: PEAK_FALLOFF_DEFAULT, shape: "" },
+  stagedPeak: {
+    elevation: PEAK_ELEVATION_DEFAULT,
+    falloff: PEAK_FALLOFF_DEFAULT,
+    shape: "",
+    blackPoint: PEAK_BLACK_POINT_DEFAULT,
+  },
 };
 
 export enum UIActionType {

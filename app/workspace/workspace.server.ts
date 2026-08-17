@@ -384,8 +384,64 @@ export interface Peak_V1_0 {
    * client samples it into an angular table and uploads that as texture data
    * for both shader stages to read (see peakShapeAt in mask-gl.ts). */
   shape: string;
+  /** This peak's own black point, each channel 0-1 -- the darkest colour the
+   * peak's shading can reach, standing in for the black everything outside a
+   * peak still falls to.
+   *
+   * A black point in the photographic sense rather than a tint: the shader
+   * rescales the peak's whole tonal range onto [black point, white], so the
+   * floor lands exactly on this colour, highlights still reach pure white, and
+   * every tone between is carried proportionally. Set it green and the peak
+   * renders as shades of green running up to white, with black unreachable
+   * anywhere inside it (see liftToBlackPoint in mask-gl.ts).
+   *
+   * Flat rather than nested because this interface is the wire shape, and the
+   * server stores four floats (see RedisPeak); toPeakBlackPoint below is what
+   * turns them back into one value for everything that reads them. */
+  black_point_r: number;
+  black_point_g: number;
+  black_point_b: number;
+  black_point_a: number;
 }
 export type LaurusPeak = Peak_V1_0;
+
+/** One peak's black point, gathered back up out of Peak_V1_0's four flat wire
+ * fields. Every consumer on this side wants it as one value -- it travels as a
+ * unit through PendingTopologyEdit, the staged peak, and the shader's own vec4
+ * uniform -- and passing four loose numbers around is the same transposition
+ * hazard MaskPeakUpdateRequest_V1_0 already exists to avoid (see
+ * useMaskPeakSockets' own note on why that request is an object).
+ *
+ * `a` is how strongly the black point is applied rather than a compositing
+ * opacity: at 0 the peak shades exactly as it did before this field existed, so
+ * the swatch is off rather than black, and at 1 the peak's floor sits fully on
+ * the colour. Values between fade the floor back toward black proportionally. */
+export interface PeakBlackPoint_V1_0 {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+export type LaurusPeakBlackPoint = PeakBlackPoint_V1_0;
+
+/** No black point at all -- what a peak drawn before the swatch existed loads
+ * as, and what a freshly drawn one starts at. The alpha is the load-bearing
+ * part (see PeakBlackPoint_V1_0); the colour channels are only along for the
+ * ride until someone opens the swatch. Mirrors the identical per-field defaults
+ * on the server's own RedisPeak/Peak/PeakUpdate models, the same way
+ * PEAK_FALLOFF_DEFAULT does. */
+export const PEAK_BLACK_POINT_DEFAULT: PeakBlackPoint_V1_0 = { r: 0, g: 0, b: 0, a: 0 };
+
+/** The one place a peak's four wire fields become a black point, so nothing
+ * downstream has to know they were ever flat. */
+export function toPeakBlackPoint(peak: Peak_V1_0): PeakBlackPoint_V1_0 {
+  return {
+    r: peak.black_point_r,
+    g: peak.black_point_g,
+    b: peak.black_point_b,
+    a: peak.black_point_a,
+  };
+}
 
 /** Exponent of a peak's radial profile `k(u) = (1 - u^2)^falloff` that
  * reproduces the smooth dome `(1 - u^2)^2`, whose slope vanishes at *both* the
@@ -473,12 +529,20 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 
 /** A mask document exactly as it can actually come off the wire, which is not the same shape as
  * MaskMediaResult_V1_0: that interface describes the *current* schema, while what's sitting in the
- * database spans every schema a mask was ever saved under. Two generations of drift are live --
+ * database spans every schema a mask was ever saved under. Several generations of drift are live --
  * documents from before topology peaks existed carry no `peaks` key at all, documents from
- * before the height field's falloff existed carry peaks without one, and documents from before
- * custom shapes existed carry peaks without a `shape`. Spelling them all out as optional here is
+ * before the height field's falloff existed carry peaks without one, documents from before
+ * custom shapes existed carry peaks without a `shape`, and documents from before the black point
+ * existed carry peaks without its four channels. Spelling them all out as optional here is
  * what lets normalizeMaskResult read them without a cast. */
-type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff" | "shape"> & { falloff?: number; shape?: string };
+type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}`> & {
+  falloff?: number;
+  shape?: string;
+  black_point_r?: number;
+  black_point_g?: number;
+  black_point_b?: number;
+  black_point_a?: number;
+};
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: RawPeak_V1_0[] };
 
 // The one place both of those generations get repaired, so nothing downstream has to know they
@@ -496,6 +560,12 @@ type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: R
 // everywhere downstream (a falsy string) instead of two. Unlike falloff, an absent shape cannot NaN
 // the field -- rho is only consulted when a shape is present -- so this one is about keeping the
 // type honest rather than about repairing a document that would otherwise render wrong.
+//
+// The black point's four channels backfill for the same type-honesty reason, and its alpha is the
+// one that matters: at 0 the shader leaves the peak shading exactly as it did before the swatch
+// existed (see peakBlackPoint in mask-gl.ts), so a pre-swatch peak needs no special case anywhere
+// downstream either. An absent channel reaching the shader as undefined would NaN the vec4 the way
+// an absent falloff NaNs the field, so this one *is* also a repair.
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
@@ -503,6 +573,10 @@ export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaRes
       ...peak,
       falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT,
       shape: peak.shape ?? "",
+      black_point_r: peak.black_point_r ?? PEAK_BLACK_POINT_DEFAULT.r,
+      black_point_g: peak.black_point_g ?? PEAK_BLACK_POINT_DEFAULT.g,
+      black_point_b: peak.black_point_b ?? PEAK_BLACK_POINT_DEFAULT.b,
+      black_point_a: peak.black_point_a ?? PEAK_BLACK_POINT_DEFAULT.a,
     })),
   };
 }
@@ -817,7 +891,14 @@ export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, acc
  * Peak_V1_0.shape). It goes out on *every* update rather than only on the one
  * that authored it, because this request is a full-replace upsert rather than
  * a partial verb: leaving it off a later move or resize would clear the shape
- * rather than leave it alone. */
+ * rather than leave it alone.
+ *
+ * `black_point_*` is this peak's own black point (see Peak_V1_0), and rides
+ * along on every update for that same full-replace reason -- a caller that only
+ * sent it from the swatch would have every elevation nudge, epicenter drag and
+ * radius change silently reset it. Flat here because this is the wire shape;
+ * callers carrying it as one value spread it in through toPeakBlackPointFields
+ * below rather than listing the four by hand at each send. */
 export interface MaskPeakUpdateRequest_V1_0 {
   peak_id: number;
   cx: number;
@@ -826,8 +907,28 @@ export interface MaskPeakUpdateRequest_V1_0 {
   elevation: number;
   falloff: number;
   shape: string;
+  black_point_r: number;
+  black_point_g: number;
+  black_point_b: number;
+  black_point_a: number;
   remove: boolean;
   polygon_indices: number[];
+}
+
+/** A black point, flattened back into the four wire fields a peak update sends.
+ * The inverse of toPeakBlackPoint, and the reason both exist: every one of the
+ * four call sites that sends a peak update carries its black point as one value,
+ * so without this each would restate the same four-line spread -- which is
+ * exactly the enumeration hazard useMaskPeakSockets' own comment describes,
+ * where a field added to the request is invisible at a call site that lists keys
+ * and gets cleared on every unrelated edit. */
+export function toPeakBlackPointFields(blackPoint: PeakBlackPoint_V1_0) {
+  return {
+    black_point_r: blackPoint.r,
+    black_point_g: blackPoint.g,
+    black_point_b: blackPoint.b,
+    black_point_a: blackPoint.a,
+  };
 }
 export interface MaskPeakUpdateComplete_V1_0 {
   type: "peak_update_complete";

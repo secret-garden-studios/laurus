@@ -17,7 +17,8 @@ import {
   captureTriangleIndicesInCircle,
   peakTriangleIndices,
 } from "../canvas-media/light-source-capture";
-import { LaurusMaskResult } from "../workspace.server";
+import { LaurusMaskResult, LaurusPeakBlackPoint, toPeakBlackPoint, toPeakBlackPointFields } from "../workspace.server";
+import { ColorSwatch } from "@/app/components/color-swatch";
 import {
   CAPTURE_DARKNESS_MAX,
   CAPTURE_FALLOFF_MAX,
@@ -280,6 +281,10 @@ export default function LightSourcebar() {
   // nothing for this slider to point at and it stays disabled even while the topology tool is on.
   const radiusValue = activePeak?.radius;
   const isRadiusDisabled = !activePeak;
+  // Reads off the active peak, or off the staged value when there isn't one -- exactly like elevation
+  // and falloff above, and unlike radius: a colour is dialed in ahead of the gesture rather than
+  // measured from it, so there genuinely is something for it to stage.
+  const blackPointValue = activePeak ? toPeakBlackPoint(activePeak) : uiState.stagedPeak.blackPoint;
 
   // One primitive that changes exactly when the *identity* of the selected sub-element does.
   // Keying the effect below off `selectedElement` itself would re-fire on every redundant
@@ -659,11 +664,36 @@ export default function LightSourcebar() {
     [saveCaptureField],
   );
 
-  // Which of a peak's own shape parameters an edit is changing. A partial rather than a whole peak
+  // Which of a peak's own parameters an edit is changing. A partial rather than a whole peak
   // because each slider is an independent control that only knows its own value -- the rest are
   // merged from whatever the active peak currently carries (see mergePeakPatch below). Moved over
-  // from Maskbar verbatim, alongside the sliders that drive it.
-  type PeakPatch = { elevation?: number; radius?: number; falloff?: number };
+  // from Maskbar verbatim, alongside the sliders that drive it, and since joined by `blackPoint`,
+  // which the swatch drives (see the ColorSwatch below). The black point arrives as one whole colour
+  // rather than a channel at a time because the swatch itself already merges channels -- from this
+  // bar's point of view it is one control with one value, exactly like a slider.
+  type PeakPatch = {
+    elevation?: number;
+    radius?: number;
+    falloff?: number;
+    blackPoint?: LaurusPeakBlackPoint;
+  };
+
+  // A PeakPatch reduced to the fields uiState.stagedPeak actually holds, dropping any the patch
+  // doesn't carry.
+  //
+  // The dropping is the point, not tidiness: SetStagedPeak merges by spread (see ui-state.ts), so a
+  // key present-but-undefined *overwrites* the staged value with undefined rather than leaving it
+  // alone. Listing the fields unconditionally -- which is what this used to do -- meant dragging the
+  // falloff slider with no peak selected quietly wiped the staged elevation, and the elevation slider
+  // then read NaN off it. `radius` is never staged at all; see stagedPeak's own comment for why.
+  const toStagedPeakPatch = useCallback(
+    (patch: PeakPatch) => ({
+      ...(patch.elevation !== undefined ? { elevation: patch.elevation } : {}),
+      ...(patch.falloff !== undefined ? { falloff: patch.falloff } : {}),
+      ...(patch.blackPoint !== undefined ? { blackPoint: patch.blackPoint } : {}),
+    }),
+    [],
+  );
 
   interface PendingPeakSave {
     maskKey: string;
@@ -678,6 +708,10 @@ export default function LightSourcebar() {
     // is a full-replace upsert, so a shape left out here is a shape *erased* the first time someone
     // nudges an elevation.
     shape: string;
+    // Carried for the same full-replace reason, but unlike `shape` this one is also *edited* from
+    // this bar (see the ColorSwatch below), so it is both the value a swatch drag is committing and
+    // the value an elevation drag has to preserve.
+    blackPoint: LaurusPeakBlackPoint;
     polygonIndices: number[];
   }
   // Same coalescing-queue persistence as pendingPreviewSaveRef above -- every edit previews
@@ -705,6 +739,7 @@ export default function LightSourcebar() {
           elevation: toSave.elevation,
           falloff: toSave.falloff,
           shape: toSave.shape,
+          ...toPeakBlackPointFields(toSave.blackPoint),
           remove: false,
           polygon_indices: toSave.polygonIndices,
         });
@@ -742,9 +777,13 @@ export default function LightSourcebar() {
         radius: patch.radius ?? activePeak.radius,
         elevation: patch.elevation ?? activePeak.elevation,
         falloff: patch.falloff ?? activePeak.falloff,
-        // Not patchable, only preserved -- a PeakPatch describes the three things these sliders can
-        // change, and a silhouette is chosen when the peak is drawn rather than dialed in afterwards.
+        // Not patchable, only preserved -- a silhouette is chosen when the peak is drawn rather than
+        // dialed in afterwards, so no control on this bar can put one in a PeakPatch.
         shape: activePeak.shape,
+        // Patchable, unlike shape: the swatch edits this. Falls back to whatever the peak already
+        // carries so an elevation/radius/falloff drag preserves it rather than clearing it -- which
+        // matters more here than for any other field, since the write this feeds is a full-replace.
+        blackPoint: patch.blackPoint ?? toPeakBlackPoint(activePeak),
       };
     },
     [activePeakMaskKey, activePeak],
@@ -757,10 +796,7 @@ export default function LightSourcebar() {
         // No peak is active -- this just stages the shape the next circle-drag creates a peak at (see
         // canvas.tsx's handleTopologyCapture), nothing on the mesh to preview or persist yet. A radius
         // in the patch is ignored here on purpose: the drag itself defines that (see stagedPeak).
-        uiDispatch({
-          type: UIActionType.SetStagedPeak,
-          value: { elevation: patch.elevation, falloff: patch.falloff },
-        });
+        uiDispatch({ type: UIActionType.SetStagedPeak, value: toStagedPeakPatch(patch) });
         return;
       }
       const maskData = coreState.canvasMasks.get(edit.maskKey);
@@ -779,6 +815,7 @@ export default function LightSourcebar() {
         elevation: edit.elevation,
         falloff: edit.falloff,
         shape: edit.shape,
+        blackPoint: edit.blackPoint,
         // Derived from the *merged* region rather than the peak's current one: a radius edit changes
         // which polygons fall inside it, so reusing the old membership would leave the peak's own
         // polygon tagging describing a region it no longer has. Only bookkeeping (highlighting) rides
@@ -797,7 +834,15 @@ export default function LightSourcebar() {
       };
       void persistPeakQueue();
     },
-    [mergePeakPatch, coreState.canvasMasks, dispatch, notifyMaskPendingTopologySet, uiDispatch, persistPeakQueue],
+    [
+      mergePeakPatch,
+      coreState.canvasMasks,
+      dispatch,
+      notifyMaskPendingTopologySet,
+      uiDispatch,
+      persistPeakQueue,
+      toStagedPeakPatch,
+    ],
   );
 
   // Trackpad-drag live preview, mirroring the capture dials' own instant-apply split (onCursorMove
@@ -812,13 +857,10 @@ export default function LightSourcebar() {
       if (edit) {
         notifyMaskPendingTopologySet(edit.maskKey, edit);
       } else {
-        uiDispatch({
-          type: UIActionType.SetStagedPeak,
-          value: { elevation: patch.elevation, falloff: patch.falloff },
-        });
+        uiDispatch({ type: UIActionType.SetStagedPeak, value: toStagedPeakPatch(patch) });
       }
     },
-    [mergePeakPatch, notifyMaskPendingTopologySet, uiDispatch],
+    [mergePeakPatch, notifyMaskPendingTopologySet, uiDispatch, toStagedPeakPatch],
   );
 
   const elevationTrackRef = useRef<HTMLDivElement | null>(null);
@@ -1422,6 +1464,36 @@ export default function LightSourcebar() {
                   MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
                 savePeakField({ falloff: newValue });
               }}
+              disabled={isPeakParamDisabled}
+            />
+          </div>
+          <div
+            title={
+              isPeakParamDisabled
+                ? "enable topology to set the black point new peaks are drawn with, or adjust the active one"
+                : activePeak
+                  ? "the active peak's own black point -- the darkest colour this peak can reach. its shading runs from here up to white, never to black. alpha is how strongly it applies"
+                  : "the black point the next circle you drag out will be created with -- the darkest colour that peak can reach, its shading running from there up to white rather than to black"
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"black point"}</span>
+            <ColorSwatch
+              resolution={{ ...uiState.resolution }}
+              hash={`${activePeakMaskKey ?? "lightsourcebar"}|peak-black-point|${activePeak?.id ?? "staged"}`}
+              size={dynamicSizes.paramSize}
+              chipSize={dynamicSizes.svgSize.height}
+              value={blackPointValue}
+              // Same instant-apply split as the peak sliders beside it: a drag previews straight onto
+              // the mesh's uniforms (previewPeakChange), and only the release commits and persists.
+              onPreview={(next) => previewPeakChange({ blackPoint: next })}
+              onChange={(next) => savePeakField({ blackPoint: next })}
               disabled={isPeakParamDisabled}
             />
           </div>

@@ -47,7 +47,10 @@ import {
   LaurusImgResult,
   LaurusMaskResult,
   LaurusPeak,
+  LaurusPeakBlackPoint,
   LaurusPolygonPath,
+  toPeakBlackPoint,
+  toPeakBlackPointFields,
 } from "../workspace.server";
 import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
@@ -127,6 +130,10 @@ function toPeakGeometry(peak: LaurusPeak): PeakGeometryInput {
     elevation: peak.elevation,
     falloff: peak.falloff,
     shape: cachedPeakShape(peak.shape),
+    // The other half of the crossing this function exists for: the black point goes from the four
+    // flat floats the server stores to the single value the shader's vec4 uniform wants (see
+    // toPeakBlackPoint, which is the one place that regrouping happens).
+    blackPoint: toPeakBlackPoint(peak),
   };
 }
 
@@ -429,6 +436,10 @@ export function ProjectMaskItem({
         // Snapshotted alongside the rest so a relocate carries the silhouette with it, both in the
         // live preview and in the commit -- a drag translates a peak, it does not reshape one.
         originalShape: string;
+        // Same reasoning as originalShape, and the commit below is where it actually matters: that
+        // send is a full-replace upsert, so a black point left out of it is a black point *erased*
+        // the first time someone nudges a peak across the mesh.
+        originalBlackPoint: LaurusPeakBlackPoint;
         rafId: number | undefined;
         latestX: number;
         latestY: number;
@@ -596,6 +607,11 @@ export function ProjectMaskItem({
           elevation: playing.elevation,
           falloff: playing.falloff,
           shape,
+          // From the persisted peak, exactly as `shape` is, and for a related reason: no effect can
+          // animate a black point -- the light_source equation's peak-flavored frame carries
+          // elevation/radius/falloff and nothing else (see LightSourceFrame's own peak_* fields) --
+          // so playback has no value of its own to offer here.
+          blackPoint: toPeakBlackPoint(peak),
         };
       }
       return pending && pending.peakId === peak.id
@@ -606,6 +622,9 @@ export function ProjectMaskItem({
             elevation: pending.elevation,
             falloff: pending.falloff,
             shape,
+            // From the pending edit rather than the persisted peak, unlike `shape` directly above it:
+            // the swatch *can* be dragged, so this is the branch that paints its live preview.
+            blackPoint: pending.blackPoint,
           }
         : toPeakGeometry(peak);
     });
@@ -617,6 +636,7 @@ export function ProjectMaskItem({
         elevation: pending.elevation,
         falloff: pending.falloff,
         shape: cachedPeakShape(pending.shape),
+        blackPoint: pending.blackPoint,
       });
     }
     return peaks;
@@ -646,6 +666,7 @@ export function ProjectMaskItem({
       elevation: drag.originalElevation,
       falloff: drag.originalFalloff,
       shape: drag.originalShape,
+      blackPoint: drag.originalBlackPoint,
     };
     dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
     notifyMaskPendingTopologySet(mediaKey, edit);
@@ -2192,6 +2213,7 @@ export function ProjectMaskItem({
                     originalElevation: peak.elevation,
                     originalFalloff: peak.falloff,
                     originalShape: peak.shape,
+                    originalBlackPoint: toPeakBlackPoint(peak),
                     rafId: undefined,
                     latestX: bufferX,
                     latestY: bufferY,
@@ -2320,6 +2342,7 @@ export function ProjectMaskItem({
                   elevation: finalElevation,
                   falloff: finalFalloff,
                   shape: peakDrag.originalShape,
+                  blackPoint: peakDrag.originalBlackPoint,
                 };
                 dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
                 notifyMaskPendingTopologySet(mediaKey, edit);
@@ -2332,6 +2355,7 @@ export function ProjectMaskItem({
                   elevation: finalElevation,
                   falloff: finalFalloff,
                   shape: peakDrag.originalShape,
+                  ...toPeakBlackPointFields(peakDrag.originalBlackPoint),
                   remove: false,
                   polygon_indices: [
                     ...peakTriangleIndices(source.maskData.polygons, {

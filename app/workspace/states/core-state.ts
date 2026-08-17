@@ -6,6 +6,7 @@ import {
   LaurusMediaGroupResult,
   LaurusSvgResult,
   LaurusMaskResult,
+  LaurusPeakBlackPoint,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
@@ -74,6 +75,13 @@ export interface PendingTopologyEdit {
    * is chosen. Without it, a shaped peak would draw as a circle and then pop into its real outline the
    * moment the socket replied. */
   shape: string;
+  /** The peak's black point (see Peak_V1_0's own black_point_* fields).
+   *
+   * Unlike `shape`, this one *is* changed mid-edit -- dragging a channel in Lightsourcebar's swatch
+   * previews through here on every tick, the same way the elevation/radius/falloff sliders do -- so
+   * it is carried for both reasons at once: to preview an edit to it, and so that a freshly drawn
+   * peak's own black point survives the round trip before the server has answered. */
+  blackPoint: LaurusPeakBlackPoint;
 }
 
 export interface CoreState {
