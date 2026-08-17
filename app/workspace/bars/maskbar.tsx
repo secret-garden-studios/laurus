@@ -280,6 +280,7 @@ export default function Maskbar() {
 
   const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
   const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
+  const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
   // There's only something to blend once geometry is actually on screen.
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   // A selected placed mask takes priority over the live in-flight preview -- picking a specific
@@ -660,6 +661,48 @@ export default function Maskbar() {
             autoComplete="off"
             style={sizeInputStyle}
           />
+        </div>
+        <div
+          title={
+            isResolutionDisabled
+              ? "select an image to mask, or arm one from the browser, to set the generated mesh's resolution"
+              : "how finely the generated mesh is triangulated -- 2x/3x roughly double/triple the point density of the default"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ opacity: isResolutionDisabled ? 0.3 : 1 }}>{"resolution"}</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              letterSpacing: 2,
+            }}
+          >
+            {([1, 2, 3] as const).map((factor) => {
+              const isSelected = mask.resolution === factor;
+              return (
+                <span
+                  key={factor}
+                  onClick={isResolutionDisabled ? undefined : () => mask.setResolution(factor)}
+                  style={{
+                    cursor: isResolutionDisabled ? "default" : "pointer",
+                    color: (isSelected && !isResolutionDisabled) ? "inherit" : "rgb(67,67,67)",
+                    textShadow: (isSelected && !isResolutionDisabled) ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                    padding: "4px 8px",
+                    ...dynamicSizes.input.label,
+                  }}
+                >
+                  {`${factor}x`}
+                </span>
+              );
+            })}
+          </div>
         </div>
         <div
           title={

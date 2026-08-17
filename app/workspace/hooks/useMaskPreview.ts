@@ -20,6 +20,16 @@ import {
 
 export type MaskStatus = "idle" | "connecting" | "streaming" | "done" | "error";
 
+/** "1x"/"2x"/"3x" -- how much finer the generated mesh should be relative to the server's own
+ * defaults. 2x/3x scale max_triangle_area and detail_points to divide the mesh into 2x/3x as
+ * many points; see the request built in start() below. */
+export type MaskResolutionFactor = 1 | 2 | 3;
+export const MASK_RESOLUTION_DEFAULT: MaskResolutionFactor = 1;
+// Mirrors the server's own MaskRequest defaults (app/pydantic_schemas.py) -- 1x sends no override
+// at all, so the server's defaults apply exactly as before this control existed.
+const BASE_MAX_TRIANGLE_AREA = 600.0;
+const BASE_DETAIL_POINTS = 3000;
+
 export interface MaskPositionOverride {
   value: boolean;
   x: number | undefined;
@@ -99,6 +109,17 @@ export function useMaskPreview() {
   const setCaptureDarkness = useCallback((value: number) => {
     captureDarknessRef.current = value;
     setCaptureDarknessState(value);
+  }, []);
+
+  // Mirrored state+ref like textureMix/captureSize above, but never reset in reset()/start() --
+  // this is a standing quality preference the user dials in once, not a per-run override tied to
+  // a specific mesh the way position/size are, so a fresh mask trigger should keep using it.
+  const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
+  const resolutionRef = useRef<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
+
+  const setResolution = useCallback((value: MaskResolutionFactor) => {
+    resolutionRef.current = value;
+    setResolutionState(value);
   }, []);
 
   // Where/how big the generated mask should land, overriding the default of overlaying it
@@ -183,11 +204,18 @@ export function useMaskPreview() {
       setCaptureFalloff(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
       setCaptureDarkness(CAPTURE_DARKNESS_DEFAULT);
 
+      const resolutionFactor = resolutionRef.current;
       socketRef.current?.close();
       socketRef.current = maskImage(
         coreState.apiOrigin,
         coreState.accessToken,
-        { img_media_id: img.img_media_id },
+        resolutionFactor === 1
+          ? { img_media_id: img.img_media_id }
+          : {
+              img_media_id: img.img_media_id,
+              max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
+              detail_points: BASE_DETAIL_POINTS * resolutionFactor,
+            },
         {
           onGroupStart: () => {
             setStatus("streaming");
@@ -304,6 +332,8 @@ export function useMaskPreview() {
     setPosition,
     size,
     setSize,
+    resolution,
+    setResolution,
     start,
     reset,
     meshRefs: {
