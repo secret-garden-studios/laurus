@@ -692,8 +692,8 @@ export default function Maskbar() {
                   onClick={isResolutionDisabled ? undefined : () => mask.setResolution(factor)}
                   style={{
                     cursor: isResolutionDisabled ? "default" : "pointer",
-                    color: (isSelected && !isResolutionDisabled) ? "inherit" : "rgb(67,67,67)",
-                    textShadow: (isSelected && !isResolutionDisabled) ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                    color: isSelected && !isResolutionDisabled ? "inherit" : "rgb(67,67,67)",
+                    textShadow: isSelected && !isResolutionDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                     padding: "4px 8px",
                     ...dynamicSizes.input.label,
                   }}
