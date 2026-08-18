@@ -146,7 +146,14 @@ export default function EffectUnitbar({
               return asterisk300();
           }
         })()}
-        scale={0.6}
+        scale={(() => {
+          switch (effect.type) {
+            case "rotate":
+              return 0.5;
+            default:
+              return 0.6;
+          }
+        })()}
         scaleToContaier={true}
         containerStyle={{
           width: dynamicSizes.toolbar.width,

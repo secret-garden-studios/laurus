@@ -1418,7 +1418,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
               color: "rgb(227,227,227)",
             }}
           >
-            <div>{`${effectName.replaceAll("_", " ")}`}</div>
+            <div>{effectName === "light_source" ? "shader" : `${effectName.replaceAll("_", " ")}`}</div>
             <SvgRepo
               svg={(() => {
                 switch (effectName) {
@@ -1438,7 +1438,16 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                 width: effectBrowserSize.svg,
                 height: effectBrowserSize.svg,
               }}
-              scale={0.7}
+              scale={(() => {
+                switch (effectName) {
+                  case "rotate":
+                    return 0.6;
+                  case "light_source":
+                    return 0.75;
+                  default:
+                    return 0.7;
+                }
+              })()}
               scaleToContaier={true}
             />
             <div style={{ marginLeft: "auto" }} />

@@ -323,7 +323,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             selected={uiState.tool.type == "rotate"}
             svg={{
               svg: cycle200(),
-              scale: 0.55,
+              scale: 0.525,
               cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
             }}
             onClick={() => {
@@ -351,7 +351,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             selected={uiState.tool.type == "light_source"}
             svg={{
               svg: asterisk200(),
-              scale: 0.55,
+              scale: 0.65,
               cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
             }}
             onClick={() => {

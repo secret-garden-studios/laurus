@@ -3,7 +3,7 @@ import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
-import { SvgRepo, asterisk300, stairs300 } from "@/app/svg-repo";
+import { SvgRepo, asterisk300, antigravity300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import {
@@ -1081,7 +1081,7 @@ export default function LightSourcebar() {
         style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
       >
         <SvgRepo
-          svg={target === "capture" ? asterisk300() : target === "peak" ? stairs300() : asterisk300()}
+          svg={target === "capture" ? asterisk300() : target === "peak" ? antigravity300() : asterisk300()}
           containerStyle={{
             width: dynamicSizes.svgSize.width,
             height: dynamicSizes.svgSize.height,

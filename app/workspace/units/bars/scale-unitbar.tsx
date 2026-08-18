@@ -15,7 +15,7 @@ import {
   playArrow,
   polyline200,
   remove,
-  stairs300,
+  antigravity300,
   syncAlt,
   texture300,
   updateDisabled,
@@ -111,7 +111,7 @@ export default function ScaleUnitbar({
       case "capture":
         return asterisk300();
       case "peak":
-        return stairs300();
+        return antigravity300();
     }
   }, [target]);
 

@@ -10,7 +10,7 @@ import {
   fileCopy,
   playArrow,
   remove,
-  stairs300,
+  antigravity300,
   syncAlt,
   updateDisabled,
 } from "@/app/svg-repo";
@@ -201,10 +201,6 @@ export default function LightSourceUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
-        {/* Double-click, not click, mirroring MoveUnitbar's own "shape" button (and
-            Lightsourcebar's asterisk, which flips the same two targets for the *starting* state
-            these equations ramp from) -- switching target swaps every slider and re-points the
-            carousel, so it's deliberately not a single stray click away. */}
         <div
           title={
             target === "peak"
@@ -224,7 +220,7 @@ export default function LightSourceUnitbar({
         >
           <SvgRepo
             title={target === "peak" ? "peak" : "capture"}
-            svg={target === "peak" ? stairs300() : asterisk300()}
+            svg={target === "peak" ? antigravity300() : asterisk300()}
             containerStyle={{
               cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
               ...dynamicSizes.paramButton,

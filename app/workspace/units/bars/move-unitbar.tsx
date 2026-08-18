@@ -3,6 +3,8 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  antigravity300,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
@@ -11,9 +13,12 @@ import {
   earthquake,
   ellipseFillZero,
   fileCopy,
+  image200,
   playArrow,
+  polyline200,
   remove,
   syncAlt,
+  texture300,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
@@ -28,7 +33,7 @@ import {
   updateMove,
 } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
-import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
+import { MoveUnitControls, MoveUnitTarget, defaultMoveEquation } from "../move-unit";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
@@ -39,6 +44,12 @@ interface MoveUnitbar {
   updateTrackpads: (newControls: MoveUnitControls) => void;
   currentControls: MoveUnitControls;
   setCurrentControls: Dispatch<SetStateAction<MoveUnitControls>>;
+  // Which kind of media the unit is editing, and the toggle for it -- owned by the unit (it's the
+  // unit's parameters *and* its carousel that move together, see its own toggleTarget), driven
+  // from the button below exactly the way ScaleUnitbar's own target button drives which parameters
+  // scale-unit.tsx shows.
+  target: MoveUnitTarget;
+  onToggleTarget: () => void;
 }
 
 export default function MoveUnitbar({
@@ -48,10 +59,31 @@ export default function MoveUnitbar({
   updateTrackpads,
   currentControls,
   setCurrentControls,
+  target,
+  onToggleTarget,
 }: MoveUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  // Mirrors context-menu.tsx's own per-media-type icons, except for a capture -- which shares
+  // svg's polyline there, no use here where the point is telling the two apart. That one and the
+  // peak take Lightsourcebar's own capture/peak pair instead, the same icons scale-unitbar.tsx's
+  // own targetSvg uses for the identical job.
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+      case "capture":
+        return asterisk300();
+      case "peak":
+        return antigravity300();
+    }
+  }, [target]);
 
   const [dynamicSizes] = useState(() => {
     const ds = getDynamicUnitSizes(uiState.resolution);
@@ -237,6 +269,35 @@ export default function MoveUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
+        {/* Double-click, not click, mirroring ScaleUnitbar's own target button -- switching target
+            swaps which parameters the unit shows and re-points the carousel, so it's deliberately
+            not a single stray click away. Navigating the carousel onto a different kind of media
+            (the chevrons, or an activation from the canvas) moves the target on its own without
+            going through here -- see MoveUnitTarget. */}
+        <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
         <div
           title={"shape"}
           onDoubleClick={() => {
@@ -258,7 +319,6 @@ export default function MoveUnitbar({
           style={{
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >

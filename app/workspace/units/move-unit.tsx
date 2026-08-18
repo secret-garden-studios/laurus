@@ -13,11 +13,24 @@ import {
   MOVE_FREQUENCY_MAX,
   MOVE_WAVELENGTH_MAX,
 } from "../workspace.config";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+
+// Which kind of media this unit is currently editing the move of. Not state and not persisted --
+// it's read off whichever carousel entry the display is showing, exactly the way scale-unit.tsx
+// reads its own target off the identical place. Move is wireable to every entry type there is
+// (see this file's own carouselEntryKey, and its useCarouselIndex call's own comment on why there
+// is no isNavigable predicate), so unlike rotate's own target this one includes captures and
+// peaks too.
+export type MoveUnitTarget = CarouselEntry["type"];
+
+// The order the unitbar's target button walks. Fixed rather than read off the carousel, which is
+// ordered by canvas position (see workspace.client.tsx's initCarouselEntries) and so interleaves
+// the types with no order of its own to borrow -- mirrors scale-unit.tsx's own SCALE_TARGET_ORDER.
+const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
 
 export interface MoveUnitControls {
   amplitude: number;
@@ -68,6 +81,10 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     carouselIndexInit,
     move.move_id,
   );
+  // Whatever the display is showing is what this unit is editing -- see MoveUnitTarget. The "img"
+  // fallback is for a carousel with nothing on it at all, where there's no equation to wire either
+  // way and the full parameter set is the right thing to leave standing.
+  const target: MoveUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
     ...defaultMoveEquation,
@@ -221,9 +238,13 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const angleRef = useRef<HTMLDivElement | null>(null);
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
+  // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
+  // Mirrors scale-unit.tsx's own activateEntry on the selection question too: activating a capture
+  // or a peak also selects it, while the svg/img/mask cases leave the selection alone (see
+  // LaurusSelectedElement).
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -313,16 +334,63 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           break;
         }
       }
+    },
+    [
+      move.move_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
+    }
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  // Switching target *is* moving the carousel -- each kind of media lives on its own carousel
+  // entries and the target is read back off whichever one is showing (see MoveUnitTarget), so
+  // there's no separate mode to flip. The chevrons already walk every entry; this is the shortcut
+  // past however many entries of the kinds in between sit in the way. Mirrors scale-unit.tsx's own
+  // toggleTarget exactly.
+  const toggleTarget = useCallback(() => {
+    const startIndex = MOVE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= MOVE_TARGET_ORDER.length; offset++) {
+      const candidate = MOVE_TARGET_ORDER[(startIndex + offset) % MOVE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && move.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+      // nearestNavigableIndex falls back to the index it was handed when nothing qualifies, so
+      // this is also the "carousel has no entry of this kind" test -- move on to the next kind.
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      // While this unit is the one holding the active element, the carousel follows that element
+      // rather than the local index (see useCarouselIndex) -- so the jump above would be silently
+      // ignored unless the active element moves with it.
+      if (uiState.activeElement?.locallyActivatedEffectKey === move.move_id) {
+        activateEntry(nextEntry);
+      }
+      return;
     }
   }, [
+    target,
     carouselIndex,
     uiState.carouselEntries,
     uiState.activeElement,
+    move.math,
     move.move_id,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
-    uiDispatch,
-    notifyMaskSelectionChanged,
+    setLocalIndex,
+    activateEntry,
   ]);
 
   const saveNewEquation = useCallback(
@@ -654,6 +722,8 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   setCurrentControls={setCurrentControls}
                   updateTrackpads={updateTrackpads}
                   saveNewEquation={saveNewEquation}
+                  target={target}
+                  onToggleTarget={toggleTarget}
                 />
               </div>
             </div>

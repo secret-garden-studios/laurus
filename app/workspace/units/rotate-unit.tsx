@@ -6,10 +6,11 @@ import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../workspace.server";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { carouselEntryMathKey } from "../effects-utils";
 
 export interface RotateUnitControls {
   x: number;
@@ -38,6 +39,17 @@ export const defaultRotateEquation: LaurusRotateEquation = {
 // derives an index onto one.
 const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "peak";
 
+// Which kind of media this unit is currently editing the rotation of. Not state and not persisted
+// -- it's read off whichever carousel entry the display is showing, exactly the way scale-unit.tsx
+// reads its own target off the identical place. Capture and peak are never a target here -- see
+// isRotateCarouselEntry above.
+export type RotateUnitTarget = "img" | "svg" | "mask";
+
+// The order the unitbar's target button walks. Fixed rather than read off the carousel, which is
+// ordered by canvas position (see workspace.client.tsx's initCarouselEntries) and so interleaves
+// the types with no order of its own to borrow -- mirrors scale-unit.tsx's own SCALE_TARGET_ORDER.
+const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask"];
+
 interface RotateUnit {
   rotate: LaurusRotateResult;
   carouselIndexInit: number;
@@ -59,6 +71,13 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     rotate.rotate_id,
     isRotateCarouselEntry,
   );
+  // Whatever the display is showing is what this unit is editing -- see RotateUnitTarget. The
+  // "img" fallback covers both a carousel entry rotate can't target (a capture/peak, which
+  // isRotateCarouselEntry already keeps carouselIndex off of) and a carousel with nothing on it at
+  // all, where there's no equation to wire either way and the full parameter set is the right
+  // thing to leave standing.
+  const entryType = uiState.carouselEntries[carouselIndex]?.type;
+  const target: RotateUnitTarget = entryType === "svg" || entryType === "mask" ? entryType : "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
     x: 0,
@@ -200,9 +219,14 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     return (rotate.math.get(carouselEntryKey)?.angle ?? 0) < 0 ? true : false;
   });
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
+  // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
+  // Mirrors scale-unit.tsx's own activateEntry on the selection question too: activating a capture
+  // also selects it, while the svg/img/mask cases leave the selection alone (see
+  // LaurusSelectedElement). A "peak" case is never reached -- isRotateCarouselEntry keeps
+  // carouselIndex off peak entries, and ROTATE_TARGET_ORDER never walks the toggle onto one.
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -243,8 +267,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "capture": {
           // Rotate has no equation for a capture (see this file's carouselEntryKey above), but
           // the active-element/highlight system still tracks whichever entry is being browsed --
-          // see move-unit.tsx's own setActiveElementIfNull for why this must be type "capture"
-          // (not "mask") here.
+          // see move-unit.tsx's own activateEntry for why this must be type "capture" (not "mask")
+          // here.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "capture",
@@ -265,16 +289,64 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           break;
         }
       }
+    },
+    [
+      rotate.rotate_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
+    }
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  // Switching target *is* moving the carousel -- each kind of media lives on its own carousel
+  // entries and the target is read back off whichever one is showing (see RotateUnitTarget), so
+  // there's no separate mode to flip. The chevrons already walk every entry; this is the shortcut
+  // past however many entries of the kinds in between sit in the way. Mirrors scale-unit.tsx's own
+  // toggleTarget, minus the capture/peak legs neither ROTATE_TARGET_ORDER nor
+  // isRotateCarouselEntry ever lets this land on.
+  const toggleTarget = useCallback(() => {
+    const startIndex = ROTATE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= ROTATE_TARGET_ORDER.length; offset++) {
+      const candidate = ROTATE_TARGET_ORDER[(startIndex + offset) % ROTATE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && rotate.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+      // nearestNavigableIndex falls back to the index it was handed when nothing qualifies, so
+      // this is also the "carousel has no entry of this kind" test -- move on to the next kind.
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      // While this unit is the one holding the active element, the carousel follows that element
+      // rather than the local index (see useCarouselIndex) -- so the jump above would be silently
+      // ignored unless the active element moves with it.
+      if (uiState.activeElement?.locallyActivatedEffectKey === rotate.rotate_id) {
+        activateEntry(nextEntry);
+      }
+      return;
     }
   }, [
+    target,
     carouselIndex,
     uiState.carouselEntries,
     uiState.activeElement,
+    rotate.math,
     rotate.rotate_id,
-    uiDispatch,
-    notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
+    setLocalIndex,
+    activateEntry,
   ]);
 
   const saveNewEquation = useCallback(
@@ -569,6 +641,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   setCurrentControls={setCurrentControls}
                   counterClockwise={counterClockwise}
                   setCounterClockwise={setCounterClockwise}
+                  target={target}
+                  onToggleTarget={toggleTarget}
                 />
               </div>
             </div>

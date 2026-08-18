@@ -8,14 +8,17 @@ import {
   cancelCircle,
   contentPaste,
   fileCopy,
+  image200,
   playArrow,
+  polyline200,
   remove,
   syncAlt,
+  texture300,
   updateCounterClockwise,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
+import { RotateUnitControls, RotateUnitTarget, defaultRotateEquation } from "../rotate-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
   getRotateFrames,
@@ -38,6 +41,12 @@ interface RotateUnitbar {
   setCurrentControls: Dispatch<SetStateAction<RotateUnitControls>>;
   counterClockwise: boolean;
   setCounterClockwise: Dispatch<SetStateAction<boolean>>;
+  // Which kind of media the unit is editing, and the toggle for it -- owned by the unit (it's the
+  // unit's parameters *and* its carousel that move together, see its own toggleTarget), driven
+  // from the button below exactly the way ScaleUnitbar's own target button drives which parameters
+  // scale-unit.tsx shows.
+  target: RotateUnitTarget;
+  onToggleTarget: () => void;
 }
 
 export default function RotateUnitbar({
@@ -49,10 +58,26 @@ export default function RotateUnitbar({
   setCurrentControls,
   counterClockwise,
   setCounterClockwise,
+  target,
+  onToggleTarget,
 }: RotateUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  // Mirrors context-menu.tsx's own per-media-type icons -- the same three ScaleUnitbar's own
+  // targetSvg uses for img/svg/mask, minus the capture/peak cases rotate can never target (see
+  // RotateUnitTarget).
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+    }
+  }, [target]);
 
   const [dynamicSizes] = useState(() => {
     const ds = getDynamicUnitSizes(uiState.resolution);
@@ -208,6 +233,35 @@ export default function RotateUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
+        {/* Double-click, not click, mirroring ScaleUnitbar's own target button -- switching target
+            swaps which parameters the unit shows and re-points the carousel, so it's deliberately
+            not a single stray click away. Navigating the carousel onto a different kind of media
+            (the chevrons, or an activation from the canvas) moves the target on its own without
+            going through here -- see RotateUnitTarget. */}
+        <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
         <div
           title="loop"
           onDoubleClick={() => {
@@ -235,7 +289,6 @@ export default function RotateUnitbar({
             position: "relative",
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >
