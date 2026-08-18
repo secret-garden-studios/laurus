@@ -1956,6 +1956,7 @@ export default function Workspace({
         setSelectedImgKeys(new Set<string>());
         setSelectedSvgKeys(new Set<string>());
         setSelectedMaskKeys(new Set<string>());
+        notifyMaskSelectionChanged(undefined);
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
           notifyMaskToolChanged(uiState.tool.type);
@@ -2018,7 +2019,14 @@ export default function Workspace({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool, notifyMaskToolChanged]);
+  }, [
+    handlePlayAll,
+    handleStopAll,
+    uiState.playbackMode.type,
+    uiState.tool,
+    notifyMaskToolChanged,
+    notifyMaskSelectionChanged,
+  ]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
