@@ -13,9 +13,6 @@ import { decodeSvgMarkup } from "../svg-upload-utils";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  // Aliased locally -- Maskbar itself has no notion of what a captured mesh subsection becomes
-  // (a light source, or something else down the line); it just hands the drag off to whoever
-  // does via these two callbacks.
   const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
   const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
@@ -191,11 +188,6 @@ export default function Maskbar() {
   const yInputRef = useRef<HTMLInputElement | null>(null);
   const wInputRef = useRef<HTMLInputElement | null>(null);
   const hInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Where/how big the generated mask should land, overriding the default of overlaying it
-  // directly on top of the source image at the image's own frame. Lives in the shared
-  // useMaskPreview instance (not local state) so the live preview in canvas.tsx can read the
-  // same values and match, instead of only jumping to the override once persisted.
   const { position, setPosition, size, setSize } = mask;
 
   const isPositionOn = position.value;
@@ -243,16 +235,9 @@ export default function Maskbar() {
 
   const selectedImgKey = selectedImgKeys.size === 1 ? Array.from(selectedImgKeys)[0] : undefined;
   const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
-  // Armed for a browser-drop (an img-browser thumbnail clicked while the mask tool is active, see
-  // img-browser's onImgClick) -- the source image isn't placed in the project yet, so there's no
-  // imgMeta to read a frame off of, only the still-unplaced thumbnail itself.
   const isArmedForMaskDrop = uiState.tool.type === "mask" && uiState.browserElement?.type === "img";
   const armedImg =
     isArmedForMaskDrop && uiState.browserElement?.type === "img" ? uiState.browserElement.value : undefined;
-  // The source image's own on-canvas aspect ratio -- width/height stay locked to it so resizing
-  // the mask output can't distort it relative to the image it was traced from. Falls back to the
-  // armed browser thumbnail's natural size (unplaced, so no on-canvas scale to apply) when there's
-  // no placed image selected.
   const sourceWidth = imgMeta ? imgMeta.width * imgMeta.scale_x : armedImg?.width;
   const sourceHeight = imgMeta ? imgMeta.height * imgMeta.scale_y : armedImg?.height;
   const sourceAspectRatio = useMemo(() => {
@@ -281,34 +266,17 @@ export default function Maskbar() {
   const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
   const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
   const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
-  // There's only something to blend once geometry is actually on screen.
   const hasMesh = mask.status === "streaming" || mask.status === "done";
-  // A selected placed mask takes priority over the live in-flight preview -- picking a specific
-  // result to adjust should always win over whatever's still streaming in, and the two only
-  // overlap in the rare case both happen to be true at once.
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
   const isCaptureDisabled = selectedMaskKey === undefined;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
   const isTopologyDisabled = selectedMaskKey === undefined;
-  // Which silhouette a circle-drag over this mesh draws, or false with the topology tool off (see
-  // TopologyMode in ui-state.ts). The two toggles below are two views of this one field, which is
-  // what makes them mutually exclusive without either having to reach over and switch the other off.
   const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
   const isTopologyOn = topologyMode === "circle";
   const isShapeOn = topologyMode === "shape";
 
   const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
-  // What the armed svg's outline is worth as a peak silhouette -- validated the moment one is armed,
-  // rather than when a control is clicked. That is the whole reason the shape control is a toggle
-  // now: the answer arrives while the user is still *browsing* for a shape, as a control that either
-  // lights up or doesn't, instead of after picking one, coming here, clicking, and only then being
-  // refused. It costs one validation sweep per svg armed, which is an author-time gesture, not a
-  // per-frame one.
-  //
-  // Memoized on the markup and not on the element, because SetBrowserElement dispatches a fresh
-  // {...svg} copy on every click -- keying on the object would re-sample on a re-click of the very
-  // same svg.
   const armedMarkup = armedSvg?.markup;
   const armedShape = useMemo<PeakShapeResult | undefined>(() => {
     if (!armedMarkup) return undefined;
@@ -318,34 +286,21 @@ export default function Maskbar() {
   }, [armedMarkup]);
   const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
   const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
-
-  // The staged silhouette mirrors whatever the browser has armed, so what this cell previews and
-  // what a drag actually draws are the same string by construction rather than by two code paths
-  // agreeing. Cleared when nothing usable is armed, so an outline can't outlive the svg it came from
-  // and get drawn onto some later peak.
   const stagedShape = uiState.stagedPeak.shape;
-  useEffect(() => {
-    const path = armedShape?.ok ? armedShape.shape.path : "";
-    if (stagedShape === path) return;
-    uiDispatch({ type: UIActionType.SetStagedPeak, value: { shape: path } });
-  }, [armedShape, stagedShape, uiDispatch]);
+  const armedShapePath = armedShape?.ok ? armedShape.shape.path : "";
+  if (stagedShape !== armedShapePath) {
+    uiDispatch({ type: UIActionType.SetStagedPeak, value: { shape: armedShapePath } });
+  }
 
-  // Shape mode has nothing left to draw once its svg is unarmed or replaced by an unusable one.
-  // Falls back to the tool being off rather than to "circle": the user asked for this silhouette
-  // specifically, so quietly re-pointing their next drag at a plain circle would draw a peak they
-  // never asked for -- same reasoning as the deselected-mask effect below.
   useEffect(() => {
     if (uiState.tool.type !== "mask" || uiState.tool.editingTopology !== "shape") return;
     if (armedShape?.ok) return;
     uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, editingTopology: false } });
     notifyMaskToolChanged("mask");
   }, [uiState.tool, armedShape, uiDispatch, notifyMaskToolChanged]);
+
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
   const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
-  // Same coalescing-queue persistence as LightSourcebar's own saveLightSourceField -- every edit
-  // applies locally right away (see saveTextureField below), and only the network PUT coalesces:
-  // whichever value is newest when a save completes goes out next, rather than a debounce timer
-  // dropping mid-drag ticks or racing an in-flight request.
   const pendingTextureSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingTextureRef = useRef(false);
   const persistTextureQueue = useCallback(async () => {
@@ -378,11 +333,7 @@ export default function Maskbar() {
       newMasks.set(selectedMaskKey, newMaskMeta);
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
-      // Passed directly rather than left for the mesh to re-read off coreState: this fires
-      // synchronously, before React has re-rendered ProjectMaskItem with the just-dispatched
-      // project (see MaskAppearanceOverride's own comment in project-mask-item.tsx).
       notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
-
       pendingTextureSaveRef.current = newProject;
       void persistTextureQueue();
     },
@@ -400,13 +351,6 @@ export default function Maskbar() {
     [selectedMaskMeta, saveTextureField, mask],
   );
 
-  // Trackpad (see ParameterSliderX/trackpad.tsx) only calls onNewCursor once, on drag *end* --
-  // onCursorMove is the one that fires continuously while the thumb is actually moving. Mirrors
-  // Scalebar's own split: the WebGL canvas updates live on every tick via the same direct-notify
-  // path saveTextureField uses (see its own comment), but skips that function's dispatch/persist
-  // -- committing coreState.project and queuing the network PUT on every mid-drag pixel would
-  // fight the render for the same frame budget for no benefit, since onNewCursor already commits
-  // the settled value the instant the drag ends.
   const previewTextureMixChange = useCallback(
     (value: number) => {
       if (selectedMaskKey !== undefined) {
@@ -419,33 +363,19 @@ export default function Maskbar() {
   );
 
   const textureTrackRef = useRef<HTMLDivElement | null>(null);
-  const [textureCursor, setTextureCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getTextureValue, getTrackCursor: getTextureCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     1,
   );
 
-  useEffect(() => {
-    if (!textureTrackRef.current) return;
-    const newCursor = getTextureCursor(textureMixValue, textureTrackRef.current.clientWidth);
-    setTextureCursor({ x: newCursor, y: 0 });
-  }, [textureMixValue, getTextureCursor]);
+  const textureCursor = { x: getTextureCursor(textureMixValue, dynamicSizes.paramSize.containerWidth), y: 0 };
 
-  // Starting fresh whenever the selected image changes, rather than leaving a stale mesh/status
-  // or position/size override from whatever was last masked (mask.reset() clears both). Skipped
-  // while a mask is actively connecting/streaming -- the img context menu's "mask" cell selects
-  // the image and triggers masking in the same click (see its handleMaskClick), so this effect
-  // would otherwise fire right after and mask.reset()'s socketRef.current?.close() would abort
-  // the job it just started.
   useEffect(() => {
     if (mask.status === "connecting" || mask.status === "streaming") return;
     mask.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImgKey]);
 
-  // The toggle is disabled with no mask selected, but its underlying tool state can still be
-  // left on from before the deselect -- turn it off so the toggle doesn't render as on while
-  // disabled, and canvas.tsx stops treating drags as mesh-section captures or topology edits.
   useEffect(() => {
     if (selectedMaskKey !== undefined) return;
     if (uiState.tool.type !== "mask" || (!uiState.tool.capturingMeshSection && !uiState.tool.editingTopology)) return;
@@ -603,10 +533,6 @@ export default function Maskbar() {
                   newSizeValue && sourceWidth !== undefined && sourceHeight !== undefined
                     ? {
                         value: true,
-                        // Seeded from the source's current size (the placed image's on-canvas size,
-                        // or the armed browser thumbnail's natural size), so turning the toggle on
-                        // doesn't jump to some other size -- from here, editing either field scales
-                        // the other to keep this same ratio.
                         width: sourceWidth,
                         height: sourceHeight,
                       }
@@ -731,7 +657,6 @@ export default function Maskbar() {
               previewTextureMixChange(newValue);
             }}
             onNewCursor={(newCursor) => {
-              setTextureCursor({ ...newCursor, y: 0 });
               if (!textureTrackRef.current) return;
               const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
               handleTextureMixChange(newValue);
@@ -767,9 +692,6 @@ export default function Maskbar() {
               const newCaptureValue = !uiState.tool.capturingMeshSection;
               uiDispatch({
                 type: UIActionType.SetTool,
-                // Turning capture on also switches peak/shape off -- a drag is either a capture or a
-                // topology edit, never both, mirroring how peak and shape already exclude each other
-                // via editingTopology.
                 value: {
                   ...uiState.tool,
                   capturingMeshSection: newCaptureValue,
@@ -812,9 +734,6 @@ export default function Maskbar() {
               const newTopologyMode = isTopologyOn ? false : "circle";
               uiDispatch({
                 type: UIActionType.SetTool,
-                // Assigning the mode rather than flipping a flag is what makes turning this on turn
-                // "shape" off, since both toggles are views of the same field. Also switches capture
-                // off when turning on, since a drag is either a capture or a topology edit, never both.
                 value: {
                   ...uiState.tool,
                   editingTopology: newTopologyMode,
@@ -848,11 +767,6 @@ export default function Maskbar() {
           }}
         >
           <span style={{ textShadow: isShapeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"shape"}</span>
-          {/* A preview, not a control -- the toggle beside it is what arms the mode. Drawn from the
-              very string that will be persisted on the peak (stagedShape mirrors it, see above), so
-              what is shown here and what the shader ends up evaluating cannot drift. It is normalized
-              to a maximum radius of 1 about the origin (see PeakShape.path), which is what makes this
-              fixed viewBox fit any shape without measuring it. */}
           <Toggle
             value={isShapeOn}
             onClick={() => {
@@ -860,8 +774,6 @@ export default function Maskbar() {
               const newTopologyMode = isShapeOn ? false : "shape";
               uiDispatch({
                 type: UIActionType.SetTool,
-                // Also switches capture off when turning on, since a drag is either a capture or a
-                // topology edit, never both -- mirrors the peak toggle's own handler.
                 value: {
                   ...uiState.tool,
                   editingTopology: newTopologyMode,

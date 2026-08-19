@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
@@ -26,63 +26,11 @@ import {
   CAPTURE_SIZE_MAX,
 } from "../workspace.config";
 
-// Fixed baseline dial ranges for the "preview" dials (independent of any wired "light_source"
-// effect's own math, which has its own separate max constants -- see CAPTURE_SIZE_MAX etc. in
-// workspace.config.ts, used by the "capture" dials below instead).
 const CAPTURE_PREVIEW_SIZE_MIN = 10;
 const CAPTURE_PREVIEW_SIZE_MAX = 300;
 const CAPTURE_PREVIEW_FALLOFF_MIN = 20;
 const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 
-// Houses the dials that used to live in Maskbar -- moved out into their own tool/subtitlebar so
-// they're reachable without the mask tool's position/size/capture controls crowding the same bar.
-// Double-clicking the asterisk/box/stairs icon cycles the bar between three mutually exclusive
-// dial sets (`target`, local-only UI state -- not persisted, purely which row of controls is
-// showing): "preview" (the mesh-wide mouse-hover epicenter's own resting size/intensity/falloff/
-// darkness), "capture" (an individual capture's own resting size/intensity/falloff/darkness), and
-// "peak" (elevation/radius/falloff, moved over from Maskbar's own topology sliders). Selecting a
-// capture or a peak on canvas also swings `target` onto that flavor's row -- see the effect that
-// does it for why picking one is taken as authority over what this bar shows.
-//
-// The "preview" dials edit ProjectMask_V1_0.capture_preview_* directly and persist via
-// updateProject, exactly the way Scalebar edits an img/svg's own scale_x/scale_y -- the mesh-wide
-// starting appearance for the mouse-hover "preview" toggle, independent of any effect. This bar
-// never touches the mouse-driven epicenter's position, only its resting size/intensity/falloff/
-// darkness.
-//
-// The "capture" dials edit the active capture's own Capture_V1_0.size/intensity/falloff/darkness
-// directly via sendMaskCaptureUpdate -- the starting point a wired "light_source" effect's
-// equation ramps FROM for that specific capture, the same way a "scale" effect ramps from
-// scale_x/scale_y. Disambiguated from "preview" precisely so dialing in the mouse-hover preview
-// never silently moves what every capture's own animation starts from (see Capture_V1_0's own doc
-// comment). These dials have no rest-time rendering of their own -- unlike a peak's relief, a
-// capture has never had an on-canvas representation from its own fields; dragging them only
-// becomes visible once a light_source effect is wired to that capture and played back.
-//
-// The "peak" dials edit the active peak's own elevation/radius/falloff the same way Maskbar's
-// topology sliders used to -- straight onto LaurusPeak via sendMaskPeakUpdate, no separate
-// "starting state" of its own to distinguish from a wired equation the way a capture's own fields
-// have (a peak already has a real shape the moment it's drawn).
-//
-// When no mask is selected yet (still mid-masking, nothing placed to persist to), the "preview"
-// dials fall back to the live in-flight MaskContext preview instead -- unsaved, but lets the look
-// be dialed in before there's a project mask entry to seed from (see Maskbar's persistMask). The
-// "capture" dials have no such fallback: a capture must already exist on canvas (drawn via the
-// mask tool's own capture gesture) before its own fields are editable.
-//
-// Every dial set here targets uiState.selectedElement, never uiState.activeElement: this bar
-// follows what's highlighted on the mesh (alt-clicked or light-source-clicked directly onto a
-// capture/peak, freshly drawn, dragged, or meta-clicked open), not whatever an effect unit's
-// carousel happens to be parked on. See LaurusSelectedElement's own doc comment for the split.
-//
-// Neither the "preview" nor "peak" dial set requires a mask to be in HoverContext's own
-// selectedMaskKeys -- a selected capture or peak is enough on its own, since selectedMaskKeys and
-// uiState.selectedElement are separate, only loosely-coupled concerns and selecting a sub-element
-// never touches the former. selectedMaskKeys remains a fallback for the "preview" dials only,
-// covering the "whole mask selected, no particular capture singled out" case -- a peak has no
-// equivalent, so selectedElement is the only thing that ever enables the "peak" dials, and likewise
-// the only thing that ever enables the "capture" dials (which have no "whole mask selected"
-// fallback either -- see above).
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const {
@@ -101,10 +49,6 @@ export default function LightSourcebar() {
   } = useContext(CoreContext);
   const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
   const mask = useContext(MaskContext);
-  // Which row of dials the bar is currently showing -- cycled by double-clicking the icon (see
-  // the JSX below): "capture" -> "peak" -> "preview" (the capture-preview dials) -> back to
-  // "capture". Independent of uiState.tool, but selecting a capture or a peak does swing it onto
-  // that flavor's row (see the effect below).
   const [target, setTarget] = useState<"preview" | "capture" | "peak">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -223,35 +167,13 @@ export default function LightSourcebar() {
     }
   });
 
-  // There's only something to tune once geometry is actually on screen -- same rule Maskbar's
-  // texture slider used.
   const hasMesh = mask.status === "streaming" || mask.status === "done";
-  // uiState.selectedElement, not activeElement: these dials follow what's *highlighted* on the mesh
-  // (alt-clicked or light-source-clicked directly, drawn, dragged, or meta-clicked open) rather
-  // than whatever an effect unit's carousel happens to be parked on. See LaurusSelectedElement.
   const selectedElement = uiState.selectedElement;
-  // A selected capture is enough on its own to edit its parent mask's capture_preview_* starting
-  // state -- independent of whether that mask also happens to be in selectedMaskKeys. The two are
-  // separate, loosely-coupled concerns (HoverContext's own multi-select set vs. the single selected
-  // element a click on a capture sets), and selecting a capture never touches selectedMaskKeys
-  // itself, so requiring both would leave these dials disabled for a capture that's plainly
-  // highlighted. A selected mask (no particular capture singled out) remains the fallback,
-  // preserving the old "select the mask itself" path.
   const activeCaptureMaskKey = selectedElement?.type === "capture" ? selectedElement.key : undefined;
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  // Hovering a mask already drives its live on-canvas preview (see project-mask-item.tsx's
-  // onMouseMove, gated the same way on uiState.lightSourcePreview) -- these dials should track
-  // that same mask rather than requiring the separate, deliberate selectedMaskKeys click, or the
-  // sliders read as "zeroed" (mask.captureSize's own scratch default, see below) right up until
-  // something is explicitly selected. Sticky (see mostRecentlyHoveredMaskKey's own comment), so it
-  // still points at the right mask once the cursor leaves the mesh to reach these sliders.
   const targetMaskKey = activeCaptureMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
-
-  // The selected capture -- mirrors activePeak below, and likewise has no "whole mask selected"
-  // fallback: a capture has no equivalent of a peak's "staged shape" either, so being the selected
-  // element is the only thing that ever enables these dials.
   const activeCaptureMaskData =
     activeCaptureMaskKey !== undefined ? coreState.canvasMasks.get(activeCaptureMaskKey) : undefined;
   const activeCapture =
@@ -259,10 +181,6 @@ export default function LightSourcebar() {
       ? activeCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
       : undefined;
   const isCaptureParamDisabled = !activeCapture;
-
-  // The selected peak -- mirrors activeCaptureMaskKey above, and likewise doesn't require
-  // selectedMaskKeys: a peak has no "whole mask selected" equivalent to fall back to, so being the
-  // selected element is the only thing that ever enables these.
   const activePeakMaskKey = selectedElement?.type === "peak" ? selectedElement.key : undefined;
   const activePeakMaskData = activePeakMaskKey !== undefined ? coreState.canvasMasks.get(activePeakMaskKey) : undefined;
   const activePeak =
@@ -270,53 +188,25 @@ export default function LightSourcebar() {
       ? activePeakMaskData?.peaks.find((p) => p.id === selectedElement.peakId)
       : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
-  // Enabled whenever there's a peak to edit -- either one is the active element, or the topology
-  // tool is on, in which case with no peak active these instead read/write uiState.stagedPeak, the
-  // shape the *next* circle-drag will create a peak at.
   const isPeakParamDisabled = !activePeak && !isTopologyOn;
   const elevationValue = activePeak?.elevation ?? uiState.stagedPeak.elevation;
   const peakFalloffValue = activePeak?.falloff ?? uiState.stagedPeak.falloff;
-  // Radius is the one peak parameter with nothing to stage: the circle-drag that creates a peak is
-  // what defines it (see stagedPeak, ui-state.ts), so with no active peak there is genuinely
-  // nothing for this slider to point at and it stays disabled even while the topology tool is on.
   const radiusValue = activePeak?.radius;
   const isRadiusDisabled = !activePeak;
-  // Reads off the active peak, or off the staged value when there isn't one -- exactly like elevation
-  // and falloff above, and unlike radius: a colour is dialed in ahead of the gesture rather than
-  // measured from it, so there genuinely is something for it to stage.
   const blackPointValue = activePeak ? toPeakBlackPoint(activePeak) : uiState.stagedPeak.blackPoint;
-
-  // One primitive that changes exactly when the *identity* of the selected sub-element does.
-  // Keying the effect below off `selectedElement` itself would re-fire on every redundant
-  // re-dispatch of the same selection (a unit's setActiveElementIfNull re-selecting the entry it's
-  // already parked on, say), yanking the row back out from under a deliberate double-click cycle.
   const selectedSubElement =
     selectedElement?.type === "capture"
       ? `capture|${selectedElement.key}|${selectedElement.captureId}`
       : selectedElement?.type === "peak"
         ? `peak|${selectedElement.key}|${selectedElement.peakId}`
         : undefined;
-  // Selecting a capture or a peak swings this bar onto that flavor's dials -- the selection is what
-  // these dials edit (see this file's own header comment), so landing on a peak while the "capture"
-  // row is showing would otherwise leave every visible control disabled with the thing you just
-  // clicked glowing on canvas. Deliberately only these two: a whole-mask selection has no row of
-  // its own (the "preview" dials are mask-wide but are a separate concern -- see Capture_V1_0), so
-  // there's nothing to swing onto and whatever row is showing stays put. Double-clicking the icon
-  // still overrides this freely; the dep above is the identity of the selection, not the number of
-  // times it's been set, so a manual cycle sticks until a *different* capture or peak is picked.
-  useEffect(() => {
-    if (selectedSubElement === undefined) return;
-    setTarget(selectedSubElement.startsWith("peak|") ? "peak" : "capture");
-  }, [selectedSubElement]);
-
-  // The latest not-yet-sent project state, plus whether a save is currently in flight -- refs, not
-  // state, so a burst of drag events can coalesce onto the newest value without waiting on a
-  // render. Persisting used to gate new edits behind `isSaving` and drop whatever slider events
-  // arrived while a save was in flight; a fast drag fires far more onNewCursor events than the
-  // network round-trip can keep up with, so most of a drag's updates -- including its final,
-  // released-mouse value -- got silently discarded, leaving the preview parked on an earlier
-  // value. Now every edit always applies locally (see savePreviewField below) and only the
-  // network persistence coalesces: whichever value is newest when a save completes goes out next.
+  const [prevSelectedSubElement, setPrevSelectedSubElement] = useState<string | undefined>(undefined);
+  if (selectedSubElement !== prevSelectedSubElement) {
+    setPrevSelectedSubElement(selectedSubElement);
+    if (selectedSubElement !== undefined) {
+      setTarget(selectedSubElement.startsWith("peak|") ? "peak" : "capture");
+    }
+  }
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingPreviewRef = useRef(false);
   const persistPreviewQueue = useCallback(async () => {
@@ -353,10 +243,6 @@ export default function LightSourcebar() {
       newMasks.set(targetMaskKey, newMaskMeta);
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
-      // Passed directly rather than left for the mesh to re-read off coreState: this fires
-      // synchronously, before React has re-rendered ProjectMaskItem with the just-dispatched
-      // project, so a re-read here would still see the previous value (see
-      // MaskAppearanceOverride's own comment in project-mask-item.tsx).
       notifyMaskAppearanceChanged(targetMaskKey, {
         capture: {
           size: newMaskMeta.capture_preview_size,
@@ -417,9 +303,6 @@ export default function LightSourcebar() {
     [targetMaskMeta, savePreviewField, mask],
   );
 
-  // Same coalescing-queue persistence as pendingPreviewSaveRef above, one full-replace capture
-  // record (name/polygon_indices carried through unchanged, since sendMaskCaptureUpdate is a
-  // full-replace of the whole record -- see MaskCaptureUpdateRequest_V1_0) per queued edit.
   interface PendingCaptureSave {
     maskKey: string;
     maskMediaId: string;
@@ -430,11 +313,6 @@ export default function LightSourcebar() {
     intensity: number;
     falloff: number;
     darkness: number;
-    // Whether this write changed the capture's membership and so left an optimistic highlight
-    // behind for the queue to take down once it drains -- true only for a resize (see
-    // saveCaptureSizeField). An intensity/falloff/darkness edit publishes no highlight, and
-    // clearing one it never set could take down a highlight some other flow (a relocate drag)
-    // legitimately owns.
     resized: boolean;
   }
   const pendingCaptureSaveRef = useRef<PendingCaptureSave | null>(null);
@@ -466,9 +344,6 @@ export default function LightSourcebar() {
       }
     } finally {
       isPersistingCaptureRef.current = false;
-      // Only once every queued write has drained -- clearing after each individual request would
-      // flash back to the last confirmed size between mid-drag ticks. Same reasoning (and same
-      // shape) as persistPeakQueue's own settled clear below.
       if (settledResizeMaskKey !== undefined) {
         dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
         notifyMaskPendingCaptureCleared(settledResizeMaskKey);
@@ -480,24 +355,10 @@ export default function LightSourcebar() {
     (field: "size" | "intensity" | "falloff" | "darkness", value: number) => {
       if (activeCaptureMaskKey === undefined || !activeCapture || !activeCaptureMaskData) return;
       const patched = { ...activeCapture, [field]: value };
-      // Applies locally first, same as savePreviewField/savePeakField above -- instant slider
-      // feedback, with only the network write left to coalesce (see persistCaptureQueue).
       const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
       const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
       dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
-      // Handed to the mesh directly rather than left for it to re-read off the dispatch above, for
-      // the same synchronous reason savePreviewField passes its own values through
-      // notifyMaskAppearanceChanged. These four dials are a capture's standing light now (see
-      // resolveRestingLightSources in project-mask-item.tsx), so without this the resting shading
-      // would lag a slider drag by a render -- or, since nothing else on this path forces a redraw,
-      // not follow it at all until something unrelated happened to repaint the mesh.
       notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
-
-      // Current polygon membership, preserved unchanged -- these three edits never move or resize
-      // the capture, and sendMaskCaptureUpdate is a full-replace, so omitting it would clear the
-      // capture's own triangle tagging. Mirrors project-mask-item.tsx's own originalIndices
-      // derivation. `size` doesn't come through here at all -- it *does* change membership, so it
-      // has its own path (see saveCaptureSizeField below).
       const polygonIndices = activeCaptureMaskData.polygons.reduce<number[]>((acc, p, i) => {
         if (p.capture_id === activeCapture.id) acc.push(i);
         return acc;
@@ -526,11 +387,6 @@ export default function LightSourcebar() {
     ],
   );
 
-  // The centre a resize grows/shrinks around, frozen for the duration of one slider drag.
-  // Re-deriving it per tick would drift: capturedRegionCircle reconstructs the centre from
-  // whichever triangles are *currently* members, so each resize would move the centre slightly and
-  // the capture would visibly crawl across the mesh over a single drag. Captured on the first tick
-  // instead, and released once the drag commits.
   const captureResizeAnchorRef = useRef<{ captureId: number; cx: number; cy: number } | null>(null);
   const captureResizeAnchor = useCallback(() => {
     if (!activeCapture || !activeCaptureMaskData) return undefined;
@@ -543,15 +399,6 @@ export default function LightSourcebar() {
     return anchor;
   }, [activeCapture, activeCaptureMaskData]);
 
-  // Which triangles a capture of this diameter would own, centred on the frozen anchor above.
-  // `size` is a diameter in the mesh's own space (the same space the polygons' own `d` strings and
-  // captureTriangleIndicesInCircle work in), so this is the identical membership test the original
-  // circle-drag ran -- resizing by slider and resizing by redrawing land on the same answer.
-  //
-  // Undefined when the circle would own nothing: an empty polygon_indices is the server's own
-  // "delete this capture" signal (see MaskCaptureUpdate), so a slider dragged to zero would
-  // silently destroy the capture rather than just shrink it. Callers treat undefined as "refuse
-  // this value" and leave the capture untouched.
   const captureIndicesForSize = useCallback(
     (size: number): number[] | undefined => {
       if (!activeCaptureMaskData) return undefined;
@@ -567,10 +414,6 @@ export default function LightSourcebar() {
     [activeCaptureMaskData, captureResizeAnchor],
   );
 
-  // Mid-drag: repaint the mesh highlight at the size being dragged through, without committing or
-  // persisting anything. Mirrors previewPeakChange's own role for the peak sliders -- the optimistic
-  // highlight is exactly the mechanism a relocate drag already uses (project-mask-item.tsx's
-  // onPointerMove), so a resize reads as the same gesture.
   const previewCaptureSizeChange = useCallback(
     (size: number) => {
       if (activeCaptureMaskKey === undefined || !activeCapture) return;
@@ -581,20 +424,10 @@ export default function LightSourcebar() {
     [activeCaptureMaskKey, activeCapture, captureIndicesForSize, notifyMaskPendingCaptureSet],
   );
 
-  // Commits a resize: the new `size` *and* the membership it implies, in one full-replace write.
-  // Both have to go together -- `size` is the capture's own geometry now, so persisting one without
-  // the other would leave the lit core and the triangles it owns describing different circles.
   const saveCaptureSizeField = useCallback(
     (size: number) => {
       if (activeCaptureMaskKey === undefined || !activeCapture || !activeCaptureMaskData) return;
       const polygonIndices = captureIndicesForSize(size);
-      // Refused rather than clamped: there's no obvious "smallest legal size" to snap to (it
-      // depends on how dense this mesh's triangles are around this particular centre), and the
-      // slider re-reads its position from the capture on the next render, so declining simply
-      // leaves the thumb where the capture actually is. Takes down whatever highlight the drag's
-      // own mid-flight previews left behind on the way down -- nothing is being committed, so the
-      // mesh has to fall back to the capture's real membership rather than the last legal size
-      // dragged through.
       if (!polygonIndices) {
         captureResizeAnchorRef.current = null;
         notifyMaskPendingCaptureCleared(activeCaptureMaskKey);
@@ -605,14 +438,7 @@ export default function LightSourcebar() {
       const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
       const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
       dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
-      // The new size, straight to the mesh -- same reason saveCaptureField does it above, and it
-      // matters more here: `size` is the radius of this capture's standing light, so a resize that
-      // only reached the mesh as a membership change would repaint the highlight at the new size
-      // while still lighting the mesh at the old one.
       notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
-      // Held until the write lands, same reasoning as the relocate drag's own pending capture:
-      // clearing it now would fall back to the mesh's still-stale capture_id tags and flash the
-      // old size back for the round trip.
       dispatch({
         type: CoreActionType.SetPendingLightSourceCapture,
         value: { maskKey: activeCaptureMaskKey, captureId: activeCapture.id, polygonIndices },
@@ -664,13 +490,6 @@ export default function LightSourcebar() {
     [saveCaptureField],
   );
 
-  // Which of a peak's own parameters an edit is changing. A partial rather than a whole peak
-  // because each slider is an independent control that only knows its own value -- the rest are
-  // merged from whatever the active peak currently carries (see mergePeakPatch below). Moved over
-  // from Maskbar verbatim, alongside the sliders that drive it, and since joined by `blackPoint`,
-  // which the swatch drives (see the ColorSwatch below). The black point arrives as one whole colour
-  // rather than a channel at a time because the swatch itself already merges channels -- from this
-  // bar's point of view it is one control with one value, exactly like a slider.
   type PeakPatch = {
     elevation?: number;
     radius?: number;
@@ -678,14 +497,6 @@ export default function LightSourcebar() {
     blackPoint?: LaurusPeakBlackPoint;
   };
 
-  // A PeakPatch reduced to the fields uiState.stagedPeak actually holds, dropping any the patch
-  // doesn't carry.
-  //
-  // The dropping is the point, not tidiness: SetStagedPeak merges by spread (see ui-state.ts), so a
-  // key present-but-undefined *overwrites* the staged value with undefined rather than leaving it
-  // alone. Listing the fields unconditionally -- which is what this used to do -- meant dragging the
-  // falloff slider with no peak selected quietly wiped the staged elevation, and the elevation slider
-  // then read NaN off it. `radius` is never staged at all; see stagedPeak's own comment for why.
   const toStagedPeakPatch = useCallback(
     (patch: PeakPatch) => ({
       ...(patch.elevation !== undefined ? { elevation: patch.elevation } : {}),
@@ -705,22 +516,11 @@ export default function LightSourcebar() {
     radius: number;
     elevation: number;
     falloff: number;
-    // Carried through unchanged. No slider on this bar can reshape a silhouette, but the write below
-    // is a full-replace upsert, so a shape left out here is a shape *erased* the first time someone
-    // nudges an elevation.
     shape: string;
-    // Carried for the same full-replace reason, but unlike `shape` this one is also *edited* from
-    // this bar (see the ColorSwatch below), so it is both the value a swatch drag is committing and
-    // the value an elevation drag has to preserve.
     blackPoint: LaurusPeakBlackPoint;
     polygonIndices: number[];
   }
-  // Same coalescing-queue persistence as pendingPreviewSaveRef above -- every edit previews
-  // instantly (see savePeakField's own notifyMaskPendingTopologySet), and only the network write to
-  // the peak's own socket coalesces: whichever value is newest when a send completes goes out next,
-  // rather than a debounce timer dropping mid-drag ticks or racing an in-flight request. Also what
-  // keeps useMaskPeakSockets' id-less FIFO reply pairing sound, since it awaits each send before
-  // issuing the next.
+
   const pendingPeakSaveRef = useRef<PendingPeakSave | null>(null);
   const isPersistingPeakRef = useRef(false);
   const persistPeakQueue = useCallback(async () => {
@@ -754,9 +554,6 @@ export default function LightSourcebar() {
       }
     } finally {
       isPersistingPeakRef.current = false;
-      // Only clear the optimistic preview once every queued write has drained -- clearing it after
-      // each individual request instead would flash back to whatever the last confirmed server
-      // state was between mid-drag ticks.
       if (settledMaskKey !== undefined) {
         dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
         notifyMaskPendingTopologyCleared(settledMaskKey);
@@ -764,10 +561,6 @@ export default function LightSourcebar() {
     }
   }, [sendMaskPeakUpdate, dispatch, notifyMaskPeaksUpdated, notifyMaskPendingTopologyCleared]);
 
-  // One patched-onto-the-active-peak edit, as both the shader wants it (a complete set of the peak's
-  // field parameters, since a partial one would render the peak with a parameter missing rather than
-  // pending) and the wire wants it. Shared by savePeakField and previewPeakChange so the preview and
-  // the commit can't disagree about what a patch means.
   const mergePeakPatch = useCallback(
     (patch: PeakPatch): PendingTopologyEdit | undefined => {
       if (activePeakMaskKey === undefined || !activePeak) return undefined;
@@ -779,12 +572,7 @@ export default function LightSourcebar() {
         radius: patch.radius ?? activePeak.radius,
         elevation: patch.elevation ?? activePeak.elevation,
         falloff: patch.falloff ?? activePeak.falloff,
-        // Not patchable, only preserved -- a silhouette is chosen when the peak is drawn rather than
-        // dialed in afterwards, so no control on this bar can put one in a PeakPatch.
         shape: activePeak.shape,
-        // Patchable, unlike shape: the swatch edits this. Falls back to whatever the peak already
-        // carries so an elevation/radius/falloff drag preserves it rather than clearing it -- which
-        // matters more here than for any other field, since the write this feeds is a full-replace.
         blackPoint: patch.blackPoint ?? toPeakBlackPoint(activePeak),
       };
     },
@@ -795,9 +583,6 @@ export default function LightSourcebar() {
     (patch: PeakPatch) => {
       const edit = mergePeakPatch(patch);
       if (!edit) {
-        // No peak is active -- this just stages the shape the next circle-drag creates a peak at (see
-        // canvas.tsx's handleTopologyCapture), nothing on the mesh to preview or persist yet. A radius
-        // in the patch is ignored here on purpose: the drag itself defines that (see stagedPeak).
         uiDispatch({ type: UIActionType.SetStagedPeak, value: toStagedPeakPatch(patch) });
         return;
       }
@@ -822,13 +607,6 @@ export default function LightSourcebar() {
         falloff: edit.falloff,
         shape: edit.shape,
         blackPoint: edit.blackPoint,
-        // Derived from the *merged* region rather than the peak's current one: a radius edit changes
-        // which polygons fall inside it, so reusing the old membership would leave the peak's own
-        // polygon tagging describing a region it no longer has. Only bookkeeping (highlighting) rides
-        // on it -- the field itself never reads it -- but the highlight would visibly disagree with
-        // the dome. Through peakTriangleIndices rather than the circle test for that same reason one
-        // step further: a shaped peak's dome follows its silhouette, so a circular membership test
-        // would light a ring of triangles the relief never touches.
         polygonIndices: [
           ...peakTriangleIndices(maskData.polygons, {
             cx: edit.cx,
@@ -851,12 +629,6 @@ export default function LightSourcebar() {
     ],
   );
 
-  // Trackpad-drag live preview, mirroring the capture dials' own instant-apply split (onCursorMove
-  // fires continuously while dragging; onNewCursor only once on release). With an active peak this
-  // drives the mesh's live relief preview directly, skipping savePeakField's own dispatch/persist --
-  // no benefit to committing/persisting on every mid-drag pixel when release will commit the settled
-  // value anyway. With no active peak there's nothing on the mesh to preview, so this just keeps the
-  // staged value (and so the slider's own displayed position) current as it drags.
   const previewPeakChange = useCallback(
     (patch: PeakPatch) => {
       const edit = mergePeakPatch(patch);
@@ -870,12 +642,7 @@ export default function LightSourcebar() {
   );
 
   const elevationTrackRef = useRef<HTMLDivElement | null>(null);
-  const [elevationCursor, setElevationCursor] = useState({ x: 0, y: 0 });
-  // Elevation is signed -- a negative peak is a dent, the same dome inverted -- but useTrackpadState
-  // only ever produces 0..maxValue (its getTrackValue floors at a non-negative minValue). So the
-  // signed range rides on a track twice as long, offset by half: the midpoint is elevation 0, the
-  // left half craters and the right half domes. Paired with ParameterSliderXPlusMinus so the -/+
-  // ends of the track read correctly.
+
   const elevationSpan = MAX_MASK_PEAK_ELEVATION * 2;
   const { getTrackValue: getElevationValue, getTrackCursor: getElevationCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
@@ -889,25 +656,9 @@ export default function LightSourcebar() {
     (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_PEAK_ELEVATION, trackWidth),
     [getElevationCursor],
   );
-  // `target` is a dep alongside the value itself: this bar mounts only one row of sliders'
-  // track divs at a time (see the JSX below), so a selection that both changes the underlying
-  // value *and* flips `target` onto this row (selectedSubElement's own effect, above) can commit
-  // before the DOM has re-rendered onto this branch -- the ref is still null on that pass, so the
-  // effect no-ops and the cursor is left stale (zeroed, if this is the first time the row's
-  // mounted) until something else happens to change the value again. Re-running once `target`
-  // itself lands on this row catches the ref the moment it's actually populated.
-  useEffect(() => {
-    if (!elevationTrackRef.current) return;
-    setElevationCursor({ x: elevationToTrack(elevationValue, elevationTrackRef.current.clientWidth), y: 0 });
-  }, [elevationValue, elevationToTrack, target]);
+  const elevationCursor = { x: elevationToTrack(elevationValue, dynamicSizes.paramSize.containerWidth), y: 0 };
 
   const radiusTrackRef = useRef<HTMLDivElement | null>(null);
-  const [radiusCursor, setRadiusCursor] = useState({ x: 0, y: 0 });
-  // Unlike elevation, a radius genuinely *is* a length in the mesh's own coordinate space, so its
-  // ceiling scales with the mask: the smaller of the two dimensions, so the largest authorable peak
-  // is one that spans the mesh's narrow axis. Floored at MIN_MASK_PEAK_RADIUS_PX, which is why the
-  // track spans the difference and the value adds the floor back -- dragging to the very end of the
-  // track can't produce the degenerate zero radius the height field divides by.
   const radiusMax = activePeakMaskData
     ? Math.max(MIN_MASK_PEAK_RADIUS_PX + 1, Math.min(activePeakMaskData.width, activePeakMaskData.height))
     : MIN_MASK_PEAK_RADIUS_PX + 1;
@@ -915,147 +666,108 @@ export default function LightSourcebar() {
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     radiusMax - MIN_MASK_PEAK_RADIUS_PX,
   );
-  useEffect(() => {
-    if (!radiusTrackRef.current || radiusValue === undefined) return;
-    const newCursor = getRadiusCursor(radiusValue - MIN_MASK_PEAK_RADIUS_PX, radiusTrackRef.current.clientWidth);
-    setRadiusCursor({ x: newCursor, y: 0 });
-  }, [radiusValue, getRadiusCursor, target]);
+
+  const radiusCursor = {
+    x: getRadiusCursor((radiusValue ?? 0) - MIN_MASK_PEAK_RADIUS_PX, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   const peakFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const [peakFalloffCursor, setPeakFalloffCursor] = useState({ x: 0, y: 0 });
-  // Same floor-plus-span arrangement as radius, for the profile exponent's own
-  // MIN..MAX_MASK_PEAK_FALLOFF range -- at the low end a peak meets flat mesh with a visible crease
-  // ring, at the high end it's a needle. See MIN_MASK_PEAK_FALLOFF for why the floor isn't 0.
   const peakFalloffSpan = MAX_MASK_PEAK_FALLOFF - MIN_MASK_PEAK_FALLOFF;
   const { getTrackValue: getPeakFalloffValue, getTrackCursor: getPeakFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     peakFalloffSpan,
   );
-  useEffect(() => {
-    if (!peakFalloffTrackRef.current) return;
-    const newCursor = getPeakFalloffCursor(
-      peakFalloffValue - MIN_MASK_PEAK_FALLOFF,
-      peakFalloffTrackRef.current.clientWidth,
-    );
-    setPeakFalloffCursor({ x: newCursor, y: 0 });
-  }, [peakFalloffValue, getPeakFalloffCursor, target]);
+  const peakFalloffCursor = {
+    x: getPeakFalloffCursor(peakFalloffValue - MIN_MASK_PEAK_FALLOFF, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
-  const [previewSizeCursor, setPreviewSizeCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getPreviewSizeValue, getTrackCursor: getPreviewSizeCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     CAPTURE_PREVIEW_SIZE_MAX - CAPTURE_PREVIEW_SIZE_MIN,
   );
-  useEffect(() => {
-    if (!previewSizeTrackRef.current) return;
-    const newCursor = getPreviewSizeCursor(
-      previewSizeValue - CAPTURE_PREVIEW_SIZE_MIN,
-      previewSizeTrackRef.current.clientWidth,
-    );
-    setPreviewSizeCursor({ x: newCursor, y: 0 });
-  }, [previewSizeValue, getPreviewSizeCursor, target]);
+  const previewSizeCursor = {
+    x: getPreviewSizeCursor(previewSizeValue - CAPTURE_PREVIEW_SIZE_MIN, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   const previewIntensityTrackRef = useRef<HTMLDivElement | null>(null);
-  const [previewIntensityCursor, setPreviewIntensityCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getPreviewIntensityValue, getTrackCursor: getPreviewIntensityCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     1,
   );
-  useEffect(() => {
-    if (!previewIntensityTrackRef.current) return;
-    const newCursor = getPreviewIntensityCursor(previewIntensityValue, previewIntensityTrackRef.current.clientWidth);
-    setPreviewIntensityCursor({ x: newCursor, y: 0 });
-  }, [previewIntensityValue, getPreviewIntensityCursor, target]);
+  const previewIntensityCursor = {
+    x: getPreviewIntensityCursor(previewIntensityValue, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   const previewFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const [previewFalloffCursor, setPreviewFalloffCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getPreviewFalloffValue, getTrackCursor: getPreviewFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     CAPTURE_PREVIEW_FALLOFF_MAX - CAPTURE_PREVIEW_FALLOFF_MIN,
   );
-  useEffect(() => {
-    if (!previewFalloffTrackRef.current) return;
-    const newCursor = getPreviewFalloffCursor(
+  const previewFalloffCursor = {
+    x: getPreviewFalloffCursor(
       previewFalloffValue - CAPTURE_PREVIEW_FALLOFF_MIN,
-      previewFalloffTrackRef.current.clientWidth,
-    );
-    setPreviewFalloffCursor({ x: newCursor, y: 0 });
-  }, [previewFalloffValue, getPreviewFalloffCursor, target]);
+      dynamicSizes.paramSize.containerWidth,
+    ),
+    y: 0,
+  };
 
   const previewDarknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const [previewDarknessCursor, setPreviewDarknessCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getPreviewDarknessValue, getTrackCursor: getPreviewDarknessCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     1,
   );
-  useEffect(() => {
-    if (!previewDarknessTrackRef.current) return;
-    const newCursor = getPreviewDarknessCursor(previewDarknessValue, previewDarknessTrackRef.current.clientWidth);
-    setPreviewDarknessCursor({ x: newCursor, y: 0 });
-  }, [previewDarknessValue, getPreviewDarknessCursor, target]);
+  const previewDarknessCursor = {
+    x: getPreviewDarknessCursor(previewDarknessValue, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
-  // A capture's size is a diameter in the mesh's own coordinate space, so its ceiling scales with
-  // the mask rather than sitting at a fixed constant: a capture spanning the mesh's narrow axis is
-  // the largest one worth authoring, past which it just owns every triangle. Exactly the rule
-  // radiusMax above uses for a peak, for the same reason. Falls back to the fixed authoring max
-  // (used by the equation sliders in light-source-unit.tsx) with no mesh to measure against.
   const captureSizeMax = activeCaptureMaskData
     ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
     : CAPTURE_SIZE_MAX;
   const captureSizeTrackRef = useRef<HTMLDivElement | null>(null);
-  const [captureSizeCursor, setCaptureSizeCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getCaptureSizeValue, getTrackCursor: getCaptureSizeCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     captureSizeMax,
   );
-  useEffect(() => {
-    if (!captureSizeTrackRef.current) return;
-    const newCursor = getCaptureSizeCursor(captureSizeValue, captureSizeTrackRef.current.clientWidth);
-    setCaptureSizeCursor({ x: newCursor, y: 0 });
-  }, [captureSizeValue, getCaptureSizeCursor, target]);
+  const captureSizeCursor = { x: getCaptureSizeCursor(captureSizeValue, dynamicSizes.paramSize.containerWidth), y: 0 };
 
   const captureIntensityTrackRef = useRef<HTMLDivElement | null>(null);
-  const [captureIntensityCursor, setCaptureIntensityCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getCaptureIntensityValue, getTrackCursor: getCaptureIntensityCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     CAPTURE_INTENSITY_MAX,
   );
-  useEffect(() => {
-    if (!captureIntensityTrackRef.current) return;
-    const newCursor = getCaptureIntensityCursor(captureIntensityValue, captureIntensityTrackRef.current.clientWidth);
-    setCaptureIntensityCursor({ x: newCursor, y: 0 });
-  }, [captureIntensityValue, getCaptureIntensityCursor, target]);
+  const captureIntensityCursor = {
+    x: getCaptureIntensityCursor(captureIntensityValue, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
-  // Mesh-space too, for the same reason size is (the glow reaches out from the core in the mesh's
-  // own units, so it has to scale with the mask the way the core does) -- but measured from the
-  // core's rim rather than across it, so the mesh's narrow axis is a reasonable reach rather than
-  // a diameter's worth of it.
   const captureFalloffMax = activeCaptureMaskData
     ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
     : CAPTURE_FALLOFF_MAX;
   const captureFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const [captureFalloffCursor, setCaptureFalloffCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getCaptureFalloffValue, getTrackCursor: getCaptureFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     captureFalloffMax,
   );
-  useEffect(() => {
-    if (!captureFalloffTrackRef.current) return;
-    const newCursor = getCaptureFalloffCursor(captureFalloffValue, captureFalloffTrackRef.current.clientWidth);
-    setCaptureFalloffCursor({ x: newCursor, y: 0 });
-  }, [captureFalloffValue, getCaptureFalloffCursor, target]);
+  const captureFalloffCursor = {
+    x: getCaptureFalloffCursor(captureFalloffValue, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   const captureDarknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const [captureDarknessCursor, setCaptureDarknessCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getCaptureDarknessValue, getTrackCursor: getCaptureDarknessCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     CAPTURE_DARKNESS_MAX,
   );
-  useEffect(() => {
-    if (!captureDarknessTrackRef.current) return;
-    const newCursor = getCaptureDarknessCursor(captureDarknessValue, captureDarknessTrackRef.current.clientWidth);
-    setCaptureDarknessCursor({ x: newCursor, y: 0 });
-  }, [captureDarknessValue, getCaptureDarknessCursor, target]);
+  const captureDarknessCursor = {
+    x: getCaptureDarknessCursor(captureDarknessValue, dynamicSizes.paramSize.containerWidth),
+    y: 0,
+  };
 
   return (
     <div
@@ -1078,9 +790,6 @@ export default function LightSourcebar() {
         onDoubleClick={() => {
           const nextTarget = target === "capture" ? "peak" : target === "peak" ? "preview" : "capture";
           setTarget(nextTarget);
-          // The capture-preview view no longer has its own on/off toggle -- cycling onto it is now
-          // what turns mouse-hover preview on, and cycling off it turns the mesh's live epicenter
-          // preview back off, tied directly to this double-click rather than a separate effect.
           uiDispatch({ type: UIActionType.SetLightSourcePreview, value: nextTarget === "preview" });
           notifyMaskLightSourcePreviewToggled(nextTarget === "preview");
         }}
@@ -1129,7 +838,6 @@ export default function LightSourcebar() {
               containerRef={previewSizeTrackRef}
               cursor={previewSizeCursor}
               onNewCursor={(newCursor) => {
-                setPreviewSizeCursor({ ...newCursor, y: 0 });
                 if (!previewSizeTrackRef.current) return;
                 const newValue =
                   getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
@@ -1161,7 +869,6 @@ export default function LightSourcebar() {
               containerRef={previewIntensityTrackRef}
               cursor={previewIntensityCursor}
               onNewCursor={(newCursor) => {
-                setPreviewIntensityCursor({ ...newCursor, y: 0 });
                 if (!previewIntensityTrackRef.current) return;
                 const newValue = getPreviewIntensityValue(newCursor.x, previewIntensityTrackRef.current.clientWidth, 0);
                 handlePreviewIntensityChange(newValue);
@@ -1191,7 +898,6 @@ export default function LightSourcebar() {
               containerRef={previewFalloffTrackRef}
               cursor={previewFalloffCursor}
               onNewCursor={(newCursor) => {
-                setPreviewFalloffCursor({ ...newCursor, y: 0 });
                 if (!previewFalloffTrackRef.current) return;
                 const newValue =
                   getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
@@ -1223,7 +929,6 @@ export default function LightSourcebar() {
               containerRef={previewDarknessTrackRef}
               cursor={previewDarknessCursor}
               onNewCursor={(newCursor) => {
-                setPreviewDarknessCursor({ ...newCursor, y: 0 });
                 if (!previewDarknessTrackRef.current) return;
                 const newValue = getPreviewDarknessValue(newCursor.x, previewDarknessTrackRef.current.clientWidth, 0);
                 handlePreviewDarknessChange(newValue);
@@ -1260,7 +965,6 @@ export default function LightSourcebar() {
                 previewCaptureSizeChange(newValue);
               }}
               onNewCursor={(newCursor) => {
-                setCaptureSizeCursor({ ...newCursor, y: 0 });
                 if (!captureSizeTrackRef.current) return;
                 const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
                 saveCaptureSizeField(newValue);
@@ -1290,7 +994,6 @@ export default function LightSourcebar() {
               containerRef={captureIntensityTrackRef}
               cursor={captureIntensityCursor}
               onNewCursor={(newCursor) => {
-                setCaptureIntensityCursor({ ...newCursor, y: 0 });
                 if (!captureIntensityTrackRef.current) return;
                 const newValue = getCaptureIntensityValue(newCursor.x, captureIntensityTrackRef.current.clientWidth, 0);
                 handleCaptureIntensityChange(newValue);
@@ -1320,7 +1023,6 @@ export default function LightSourcebar() {
               containerRef={captureFalloffTrackRef}
               cursor={captureFalloffCursor}
               onNewCursor={(newCursor) => {
-                setCaptureFalloffCursor({ ...newCursor, y: 0 });
                 if (!captureFalloffTrackRef.current) return;
                 const newValue = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
                 handleCaptureFalloffChange(newValue);
@@ -1350,7 +1052,6 @@ export default function LightSourcebar() {
               containerRef={captureDarknessTrackRef}
               cursor={captureDarknessCursor}
               onNewCursor={(newCursor) => {
-                setCaptureDarknessCursor({ ...newCursor, y: 0 });
                 if (!captureDarknessTrackRef.current) return;
                 const newValue = getCaptureDarknessValue(newCursor.x, captureDarknessTrackRef.current.clientWidth, 0);
                 handleCaptureDarknessChange(newValue);
@@ -1390,7 +1091,6 @@ export default function LightSourcebar() {
                 });
               }}
               onNewCursor={(newCursor) => {
-                setElevationCursor({ ...newCursor, y: 0 });
                 if (!elevationTrackRef.current) return;
                 savePeakField({
                   elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth),
@@ -1427,7 +1127,6 @@ export default function LightSourcebar() {
                 previewPeakChange({ radius: newValue });
               }}
               onNewCursor={(newCursor) => {
-                setRadiusCursor({ ...newCursor, y: 0 });
                 if (!radiusTrackRef.current) return;
                 const newValue =
                   MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
@@ -1464,7 +1163,6 @@ export default function LightSourcebar() {
                 previewPeakChange({ falloff: newValue });
               }}
               onNewCursor={(newCursor) => {
-                setPeakFalloffCursor({ ...newCursor, y: 0 });
                 if (!peakFalloffTrackRef.current) return;
                 const newValue =
                   MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
@@ -1496,8 +1194,6 @@ export default function LightSourcebar() {
               size={dynamicSizes.paramSize}
               chipSize={dynamicSizes.svgSize.height}
               value={blackPointValue}
-              // Same instant-apply split as the peak sliders beside it: a drag previews straight onto
-              // the mesh's uniforms (previewPeakChange), and only the release commits and persists.
               onPreview={(next) => previewPeakChange({ blackPoint: next })}
               onChange={(next) => savePeakField({ blackPoint: next })}
               disabled={isPeakParamDisabled}
