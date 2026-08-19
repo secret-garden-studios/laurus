@@ -131,14 +131,7 @@ export type ContextMenuMedia =
   | { type: "img"; key: string; meta: LaurusProjectImg }
   | { type: "svg"; key: string; meta: LaurusProjectSvg }
   | { type: "mask"; key: string; meta: LaurusProjectMask }
-  // One of a mesh's own captures (see maskbar.tsx's "capture" tool, project-mask-item.tsx's
-  // meta-click hit-test) -- reuses the owning mask's own key/meta (there's no separate entity),
-  // just a different, much smaller menu targeting this one captureId: only "active" and "delete"
-  // are wired up; every other row still renders for visual parity with img/svg/mask but is inert.
   | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
-  // One of a mesh's own topology peaks (see maskbar.tsx's topology tool, project-mask-item.tsx's
-  // meta-click hit-test via peakIdAtPoint) -- mirrors "capture" above exactly: reuses the owning
-  // mask's own key/meta, just targets this one peakId. Only "active" and "delete" are wired up.
   | { type: "peak"; key: string; peakId: number; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
@@ -450,8 +443,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               value: undefined,
             });
           }
-          // Separate from the activeElement clear above (the two are distinct concerns now, see
-          // LaurusSelectedElement) -- this is what takes the deleted media's own highlight off.
           if (uiState.selectedElement?.key == media.key) {
             uiDispatch({
               type: UIActionType.SetSelectedElement,
@@ -464,16 +455,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             key: media.key,
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
-          // Project doc no longer references it at this point, so the underlying
-          // MaskMediaResult on the server is now orphaned -- clean it up too, rather than
-          // leaving it behind (as happens for img/svg, whose resources are left alone).
           if (media.type === "mask") {
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
-          // deleteProjectMedia is never actually invoked for a "capture" or "peak" (see the delete
-          // cell's onClick below, which calls sendMaskCaptureUpdate/sendMaskPeakUpdate directly
-          // instead) -- narrowed here only to satisfy cleanUpCanvasMedia/cleanUpMediaBrowser's
-          // narrower img/svg/mask parameter type.
           if (media.type !== "capture" && media.type !== "peak") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
@@ -575,16 +559,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     bottomSide,
   ]);
 
-  // Runs the mask tool directly on this project image, using its own placed frame (top/left/
-  // width/height/scale) as the mask's default landing spot -- see useMaskPersist for the
-  // Maskbar position/size toggles that can still override it. Replaces what used to be a
-  // separate "mask" trigger button in Maskbar itself.
   const handleMaskClick = useCallback(() => {
     if (media.type !== "img" || isMaskBusy) return;
     const imgResult = coreState.canvasImgs.get(media.key);
     if (!imgResult) return;
-    // Selects the image so canvas.tsx's live mesh preview (keyed off selectedImgKeys) picks up
-    // the in-flight stream, matching what alt-selecting it before masking used to give for free.
     setSelectedImgKeys(new Set([media.key]));
     triggerMask(imgResult, media.meta);
   }, [media, isMaskBusy, coreState.canvasImgs, setSelectedImgKeys, triggerMask]);
@@ -791,7 +769,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectMaskIsTransformed(m);
       }
-      // Not implemented for a capture or peak yet -- always shown, always disabled.
       case "capture":
       case "peak": {
         return false;
@@ -871,8 +848,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
-  // Only "active" and "delete" are wired up for a capture or peak -- everything else below (swap,
-  // move up/down, revert) renders for visual parity with img/svg/mask but stays inert.
   const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
   const disabledCellStyle: CSSProperties = { color: "rgba(127,127,127, 1)", cursor: "default" };
 
@@ -884,6 +859,27 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     cursor: "pointer",
     ...dynamicSizes.cell,
   };
+
+  const header = useMemo(() => {
+    switch (media.type) {
+      case "img":
+      case "svg":
+        return media.meta.media_key;
+      case "mask":
+      case "peak":
+      case "capture": {
+        let h = media.key;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return h;
+        coreState.canvasImgs.forEach((i) => {
+          if (i.img_media_id == mask.source_img_media_id) {
+            h = i.media_key;
+          }
+        });
+        return h;
+      }
+    }
+  }, [coreState.canvasImgs, coreState.canvasMasks, media]);
 
   return (
     <>
@@ -965,9 +961,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {media.type === "mask" || media.type === "capture" || media.type === "peak"
-                    ? media.meta.media_id
-                    : media.meta.media_key}
+                  {header}
                 </div>
                 <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
                   <div>
