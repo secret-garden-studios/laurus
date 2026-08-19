@@ -1386,6 +1386,7 @@ export default function Workspace({
       ];
       const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
         peak_id: peakId,
+        name: `peak ${peakId}`,
         cx: circle.cx,
         cy: circle.cy,
         radius,
@@ -1452,9 +1453,7 @@ export default function Workspace({
 
       const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
         peak_id: peakId,
-        // The geometry still rides along on a delete: the request is a full-replace upsert whose
-        // `remove` flag is what selects deletion, not a partial verb of its own (see
-        // MaskPeakUpdateRequest_V1_0), so these fields are required and are simply ignored.
+        name: peak.name,
         cx: peak.cx,
         cy: peak.cy,
         radius: peak.radius,

@@ -356,6 +356,7 @@ export type LaurusCapture = Capture_V1_0;
  * the field. See MaskPeakUpdateRequest_V1_0. */
 export interface Peak_V1_0 {
   id: number;
+  name: string;
   cx: number;
   cy: number;
   radius: number;
@@ -526,10 +527,12 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
  * database spans every schema a mask was ever saved under. Several generations of drift are live --
  * documents from before topology peaks existed carry no `peaks` key at all, documents from
  * before the height field's falloff existed carry peaks without one, documents from before
- * custom shapes existed carry peaks without a `shape`, and documents from before the black point
- * existed carry peaks without its four channels. Spelling them all out as optional here is
- * what lets normalizeMaskResult read them without a cast. */
-type RawPeak_V1_0 = Omit<Peak_V1_0, "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}`> & {
+ * custom shapes existed carry peaks without a `shape`, documents from before the black point
+ * existed carry peaks without its four channels, and documents from before `name` existed carry
+ * peaks without one. Spelling them all out as optional here is what lets normalizeMaskResult read
+ * them without a cast. */
+type RawPeak_V1_0 = Omit<Peak_V1_0, "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}`> & {
+  name?: string;
   falloff?: number;
   shape?: string;
   black_point_r?: number;
@@ -565,6 +568,7 @@ export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaRes
     ...mask,
     peaks: (mask.peaks ?? []).map((peak) => ({
       ...peak,
+      name: peak.name ?? `peak ${peak.id}`,
       falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT,
       shape: peak.shape ?? "",
       black_point_r: peak.black_point_r ?? PEAK_BLACK_POINT_DEFAULT.r,
@@ -892,9 +896,14 @@ export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, acc
  * sent it from the swatch would have every elevation nudge, epicenter drag and
  * radius change silently reset it. Flat here because this is the wire shape;
  * callers carrying it as one value spread it in through toPeakBlackPointFields
- * below rather than listing the four by hand at each send. */
+ * below rather than listing the four by hand at each send.
+ *
+ * `name` rides along for the same full-replace reason -- see Peak_V1_0. Every call site sends
+ * either the peak's own existing name (looked up from the mask's current peaks) or, for a peak with
+ * none on record yet, a synthesized `peak ${peak_id}`. */
 export interface MaskPeakUpdateRequest_V1_0 {
   peak_id: number;
+  name: string;
   cx: number;
   cy: number;
   radius: number;

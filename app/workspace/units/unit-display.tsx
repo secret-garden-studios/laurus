@@ -1,17 +1,142 @@
 import { useContext, useState, useCallback } from "react";
-import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
+import { dmSans } from "@/app/fonts";
+import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
-import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
 import { parsePathPoints } from "../mask-gl";
 import { LaurusMaskResult } from "../workspace.server";
+import { CoreState } from "../states/core-state";
 
-// A mask has no thumbnail of its own -- shows the img its mesh was generated from instead. Only
-// resolves it from what's already in memory (a still-placed project img, or the currently-browsed
-// media page) -- same source project-mask-item.tsx checks first before falling back to a network
-// fetch for its own GL texture load. LaurusImage's own "not found" placeholder covers the miss.
+function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browserImgs"], sourceImgMediaId: string) {
+  for (const [key, img] of coreState.project.imgs) {
+    if (img.img_media_id === sourceImgMediaId) {
+      return coreState.canvasImgs.get(key)?.src;
+    }
+  }
+  return browserImgs.find((img) => img.img_media_id === sourceImgMediaId)?.src;
+}
+
+function PeakOrCaptureThumbnail({
+  title,
+  polygonCount,
+  name,
+  sourceImgMediaId,
+  icon,
+  style,
+  onClick,
+}: {
+  title: string;
+  polygonCount: number;
+  name: string;
+  sourceImgMediaId: string;
+  icon: LaurusClientSvg;
+  style: React.CSSProperties;
+  onClick: () => void;
+}) {
+  const { isAltKeyPressed } = useContext(HoverContext);
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+  const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, sourceImgMediaId);
+  const iconSize = Math.round((typeof style.width === "number" ? style.width : 200) * 0.4);
+  return (
+    <div
+      title={title}
+      onClick={onClick}
+      style={{
+        ...style,
+        position: "relative",
+        display: "grid",
+        placeContent: "center",
+        cursor: isAltKeyPressed ? "crosshair" : "pointer",
+      }}
+    >
+      <LaurusImage
+        draggable={false}
+        alt={sourceImgSrc ?? ""}
+        src={sourceImgSrc ?? ""}
+        fill
+        style={{
+          objectFit: "cover",
+        }}
+      />
+
+      <div
+        className={dmSans.className}
+        style={{
+          position: "absolute",
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0, 0, 0, 0.4)",
+          backdropFilter: "blur(8px)",
+        }}
+      />
+      <SvgRepo
+        svg={icon}
+        scale={1}
+        scaleToContaier
+        containerStyle={{
+          position: "relative",
+          width: iconSize,
+          height: iconSize,
+          filter: "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          bottom: 16,
+          left: 4,
+          right: 4,
+          fontSize: 12,
+          letterSpacing: 2,
+          display: "grid",
+          flexDirection: "column",
+          alignContent: "space-between",
+          justifyContent: "center",
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      >
+        <div
+          style={{
+            textShadow: "0px 0px 1px rgba(255, 255, 255, 0.9)",
+            maxWidth: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            textAlign: "center",
+          }}
+        >
+          {`${name}`}
+        </div>
+        <div
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            display: "flex",
+            gap: 4,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+            }}
+          >
+            {`${polygonCount}`}
+          </div>
+          {`polygons`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MaskThumbnail({
   mediaKey,
   maskData,
@@ -28,16 +153,7 @@ function MaskThumbnail({
   const { coreState } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
 
-  let sourceImgSrc: string | undefined;
-  for (const [key, img] of coreState.project.imgs) {
-    if (img.img_media_id === maskData.source_img_media_id) {
-      sourceImgSrc = coreState.canvasImgs.get(key)?.src;
-      break;
-    }
-  }
-  if (!sourceImgSrc) {
-    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === maskData.source_img_media_id)?.src;
-  }
+  const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, maskData.source_img_media_id);
 
   return (
     <div
@@ -57,13 +173,6 @@ interface UnitDisplay {
   carouselIndex: number;
   effectKey: string;
   onNewLocalIndex: (v: number) => void;
-  // Which entries this unit's chevrons are allowed to land on -- the same predicate its
-  // useCarouselIndex call takes, so the two can't disagree about what's navigable. Rotate passes
-  // one that rejects "capture" (a capture has no whole-element transform for rotate to act on);
-  // light source passes one that accepts only "capture" and "peak" entries (see
-  // light-source-unit.tsx). The default accepts everything, which is what move and scale -- the
-  // units that omit this -- both want: each is wireable to every entry type there is, a peak
-  // included (move translates its epicenter, scale multiplies its radius).
   isEntryWireable?: (entry: CarouselEntry) => boolean;
 }
 export default function UnitDisplay({
@@ -77,14 +186,6 @@ export default function UnitDisplay({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
-
-  // Wires this unit's effect to a carousel entry. Activation and selection are otherwise separate
-  // concerns (see LaurusSelectedElement) -- this is the one place they deliberately move together,
-  // and only for the two entry types with something on the mesh to look at: activating a capture or
-  // a peak from a unit display also selects it, so the thing whose equation you're about to edit
-  // lights up on canvas and Lightsourcebar's dials swing onto it. The "svg"/"img"/"mask" cases
-  // deliberately leave the selection alone -- none of them singles out a sub-element, so moving the
-  // carousel past one shouldn't take the highlight off whatever capture or peak is being tuned.
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
       if (uiState.carouselEntries.length <= newCarouselIndex) return;
@@ -161,14 +262,7 @@ export default function UnitDisplay({
           });
           notifyMaskSelectionChanged(entry.key);
           notifyMaskSelectedCaptureChanged(entry.key, entry.captureId);
-          // Clears any bright peak highlight for the same reason createTopologyPeak does in
-          // reverse: whichever sub-element was just singled out is this mesh's sole bright one.
           notifyMaskSelectedPeakChanged(entry.key, undefined);
-          // A mask's capture (see project-mask-item.tsx) has no on-screen presence of its own to
-          // anchor a context menu to beyond the mask's own -- the menu positions off that shared
-          // anchor regardless of flavor, and project-mask-item.tsx's own <ContextMenu> render
-          // derives "mask" vs "capture" straight from uiState.selectedElement, so the
-          // SetSelectedElement dispatch above is what picks the flavor here.
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -177,9 +271,6 @@ export default function UnitDisplay({
           break;
         }
         case "peak": {
-          // Mirrors "capture" above exactly -- including both the shared mask anchor for the
-          // context menu (a peak has no on-screen presence of its own either) and the paired
-          // selection, which makes this peak the mesh's sole bright sub-element.
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
             type: "peak",
@@ -216,9 +307,6 @@ export default function UnitDisplay({
     ],
   );
 
-  // First index in `direction` from `fromIndex` this carousel is allowed to land on -- whatever
-  // isEntryWireable accepts (see this file's UnitDisplay props doc comment). Returns undefined when
-  // nothing navigable remains, so callers can both disable a chevron and no-op its click.
   const findNavigableIndex = useCallback(
     (fromIndex: number, direction: 1 | -1): number | undefined => {
       let i = fromIndex + direction;
@@ -242,12 +330,6 @@ export default function UnitDisplay({
     [uiDispatch],
   );
 
-  // uiState.projectContextMenus is keyed by media key alone, and a mask with captures fills
-  // several carouselEntries with that same key (its own "mask" entry plus one "capture" entry per
-  // capture -- see CarouselEntry). Filtering "inactive" entries by index (as this used to) still
-  // caught those same-key siblings, so activating one of a mask's entries and then hiding every
-  // *other index* immediately re-hid the very key setActiveElement had just shown. Filtering by
-  // key instead leaves every entry that shares the newly-active key alone.
   const hideOtherContextMenus = useCallback(
     (activeIndex: number) => {
       if (activeIndex < 0 || activeIndex >= uiState.carouselEntries.length) return;
@@ -388,52 +470,28 @@ export default function UnitDisplay({
                   case "capture": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
-                    // No separate media of its own to show a thumbnail of -- reconstructed
-                    // straight from this one capture's own polygons (this carousel entry wires a
-                    // single capture, not the whole mask -- see this file's "capture" case in
-                    // setActiveElement above), using the same `d` path data the mesh itself renders
-                    // with (see mask-gl.ts) rather than a stand-in icon.
-                    const capturedPolygons = coreState.canvasMasks
-                      .get(c.key)
-                      ?.polygons.filter((p) => p.capture_id === c.captureId);
-                    if (!capturedPolygons || capturedPolygons.length === 0) break;
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    if (!maskData) break;
+                    const capturedPolygons = maskData.polygons.filter((p) => p.capture_id === c.captureId);
+                    if (capturedPolygons.length === 0) break;
                     const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
                     if (capturedPoints.length === 0) break;
-                    const xs = capturedPoints.map(([x]) => x);
-                    const ys = capturedPoints.map(([, y]) => y);
-                    const minX = Math.min(...xs);
-                    const minY = Math.min(...ys);
-                    const boundsWidth = Math.max(1, Math.max(...xs) - minX);
-                    const boundsHeight = Math.max(1, Math.max(...ys) - minY);
+                    const capture = maskData.captures.find((cap) => cap.id === c.captureId);
                     return (
-                      <div
+                      <PeakOrCaptureThumbnail
                         key={`${c.key}-capture-${c.captureId}`}
                         title="mesh capture"
+                        polygonCount={capturedPolygons.length}
+                        name={capture?.name ?? `light ${c.captureId}`}
+                        sourceImgMediaId={maskData.source_img_media_id}
+                        icon={asterisk200("rgb(255, 255, 255)")}
+                        style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
-                        style={{
-                          ...dynamicSizes.displaySvg,
-                          display: "grid",
-                          placeContent: "center",
-                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
-                        }}
-                      >
-                        <svg width="100%" height="100%" viewBox={`${minX} ${minY} ${boundsWidth} ${boundsHeight}`}>
-                          {capturedPolygons.map((p, polygonIndex) => (
-                            <path
-                              key={polygonIndex}
-                              d={p.d}
-                              fill="none"
-                              stroke="rgb(235, 235, 235)"
-                              strokeWidth={1}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          ))}
-                        </svg>
-                      </div>
+                      />
                     );
                   }
                   case "peak": {
@@ -442,58 +500,22 @@ export default function UnitDisplay({
                     const maskData = coreState.canvasMasks.get(c.key);
                     const peak = maskData?.peaks.find((p) => p.id === c.peakId);
                     if (!maskData || !peak) break;
-                    // The peak's own circle of influence, drawn in the mesh's own coordinate space
-                    // (the same space maskData.polygons' `d` strings use), over the triangles it
-                    // covers. Unlike a capture -- whose identity *is* its set of polygons -- a peak
-                    // is defined by cx/cy/radius and only tags polygons for bookkeeping (see
-                    // Peak_V1_0), so the circle is the thing worth showing and the tagged triangles
-                    // are context behind it.
-                    const coveredPolygons = maskData.polygons.filter((p) => p.peak_id === c.peakId);
-                    const padding = peak.radius * 0.25;
-                    const viewBox = [
-                      peak.cx - peak.radius - padding,
-                      peak.cy - peak.radius - padding,
-                      Math.max(1, (peak.radius + padding) * 2),
-                      Math.max(1, (peak.radius + padding) * 2),
-                    ].join(" ");
+                    const coveredPolygonCount = maskData.polygons.filter((p) => p.peak_id === c.peakId).length;
                     return (
-                      <div
+                      <PeakOrCaptureThumbnail
                         key={`${c.key}-peak-${c.peakId}`}
                         title="mesh peak"
+                        polygonCount={coveredPolygonCount}
+                        name={peak.name}
+                        sourceImgMediaId={maskData.source_img_media_id}
+                        icon={antigravity200("rgb(255, 255, 255)")}
+                        style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
-                        style={{
-                          ...dynamicSizes.displaySvg,
-                          display: "grid",
-                          placeContent: "center",
-                          cursor: isAltKeyPressed ? "crosshair" : "pointer",
-                        }}
-                      >
-                        <svg width="100%" height="100%" viewBox={viewBox}>
-                          {coveredPolygons.map((p, polygonIndex) => (
-                            <path
-                              key={polygonIndex}
-                              d={p.d}
-                              fill="none"
-                              stroke="rgb(120, 120, 120)"
-                              strokeWidth={1}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          ))}
-                          <circle
-                            cx={peak.cx}
-                            cy={peak.cy}
-                            r={peak.radius}
-                            fill="none"
-                            stroke="rgb(235, 235, 235)"
-                            strokeWidth={1}
-                            vectorEffect="non-scaling-stroke"
-                          />
-                        </svg>
-                      </div>
+                      />
                     );
                   }
                 }

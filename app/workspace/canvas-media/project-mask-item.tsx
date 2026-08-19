@@ -2325,6 +2325,8 @@ export function ProjectMaskItem({
                 // drag-start elevation and falloff stay exactly right at any final position.
                 const finalElevation = peakDrag.originalElevation;
                 const finalFalloff = peakDrag.originalFalloff;
+                const existingPeak = source.maskData.peaks.find((p) => p.id === peakId);
+                const peakName = existingPeak?.name ?? `peak ${peakId}`;
                 peakDragRef.current = undefined;
                 setIsDraggingTopology(false);
                 // Left showing the dragged-to preview until the request resolves -- mirrors the
@@ -2349,6 +2351,7 @@ export function ProjectMaskItem({
                 peakCommitInFlightRef.current.add(peakId);
                 sendMaskPeakUpdate(source.maskData.mask_media_id, {
                   peak_id: peakId,
+                  name: peakName,
                   cx: finalCx,
                   cy: finalCy,
                   radius: peakDrag.originalRadius,

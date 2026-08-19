@@ -699,6 +699,7 @@ export default function LightSourcebar() {
     maskKey: string;
     maskMediaId: string;
     peakId: number;
+    name: string;
     cx: number;
     cy: number;
     radius: number;
@@ -733,6 +734,7 @@ export default function LightSourcebar() {
         settledMaskKey = toSave.maskKey;
         const updated = await sendMaskPeakUpdate(toSave.maskMediaId, {
           peak_id: toSave.peakId,
+          name: toSave.name,
           cx: toSave.cx,
           cy: toSave.cy,
           radius: toSave.radius,
@@ -805,10 +807,14 @@ export default function LightSourcebar() {
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(edit.maskKey, edit);
 
+      const existingPeak = maskData.peaks.find((p) => p.id === edit.peakId);
+      const peakName = existingPeak?.name ?? `peak ${edit.peakId}`;
+
       pendingPeakSaveRef.current = {
         maskKey: edit.maskKey,
         maskMediaId: maskData.mask_media_id,
         peakId: edit.peakId,
+        name: peakName,
         cx: edit.cx,
         cy: edit.cy,
         radius: edit.radius,
