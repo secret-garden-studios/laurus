@@ -3,7 +3,7 @@ import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
-import { UIActionType } from "../states/ui-state";
+import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
 import { decodeSvgMarkup } from "../svg-upload-utils";
 
 export interface SvgBrowser {
@@ -11,9 +11,9 @@ export interface SvgBrowser {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
-  const { coreState } = useContext(CoreContext);
+  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -72,19 +72,31 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
         if (showContextMenu) setShowContextMenu(false);
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
-        // Deliberately only arms the svg -- picking one out of the browser no longer switches to the
-        // marquee tool. Arming an svg now means two different things depending on where you are (a
-        // marquee-drag drops it on canvas; Maskbar's shape toggle takes its outline for a peak), so
-        // yanking the tool over to marquee would make the second one unreachable: Maskbar is only
-        // mounted while the mask tool is active (see titlebar.tsx), so it would unmount the very bar
-        // the armed svg was being picked for.
+        setSelectedMaskKeys(new Set());
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
+        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+          const newTool: LaurusTool = defaultMarqueeTool;
+          uiDispatch({
+            type: UIActionType.SetTool,
+            value: newTool,
+          });
+          notifyMaskToolChanged(newTool.type);
+        }
       }
     },
-    [browserElementMediaId, showContextMenu, uiDispatch, setSelectedImgKeys, setSelectedSvgKeys],
+    [
+      browserElementMediaId,
+      showContextMenu,
+      uiDispatch,
+      setSelectedImgKeys,
+      setSelectedSvgKeys,
+      setSelectedMaskKeys,
+      uiState.tool.type,
+      notifyMaskToolChanged,
+    ],
   );
 
   useEffect(() => {

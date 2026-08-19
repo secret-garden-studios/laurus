@@ -72,22 +72,13 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
         if (showContextMenu) setShowContextMenu(false);
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
-        // Otherwise a mask selected earlier this session (from a prior drop, or an alt-click)
-        // stays "selected" -- Maskbar's texture slider would then silently keep editing that old
-        // mask's own topology instead of mask.textureMix, the value this fresh arming is actually
-        // meant to prep for the next drop (see useMaskPersist's triggerMask).
         setSelectedMaskKeys(new Set());
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
-        // Left alone when the mask tool is already active -- canvas.tsx's drag handlers pick up
-        // the browserElement just dispatched above and let a drawn circle mask it directly (see
-        // handleMaskDrop), so forcing a switch to marquee here would lose that selection.
-        if (uiState.playbackMode.type == "stopped" && uiState.tool.type !== "mask") {
-          const currentTool = { ...uiState.tool };
-          const newTool: LaurusTool =
-            currentTool.type == "marquee" ? { ...currentTool, duplicate: false } : defaultMarqueeTool;
+        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+          const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
             value: newTool,
@@ -100,7 +91,6 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       browserElementMediaId,
       showContextMenu,
       uiDispatch,
-      uiState.playbackMode.type,
       uiState.tool,
       setSelectedImgKeys,
       setSelectedSvgKeys,
