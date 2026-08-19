@@ -177,14 +177,6 @@ export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): K
 export interface HoverContextProps {
   mostRecentlyEnteredEffectUnitKey: string | undefined;
   setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
-  // Sticky, like mostRecentlyEnteredEffectUnitKey above -- kept current by every mousemove over a
-  // mask's mesh (not just the boundary-crossing mouseenter -- a mask dropped elsewhere can remount
-  // another mesh's canvas node out from under an already-stationary cursor, which never fires a
-  // real mouseenter), never cleared on leave, so it keeps pointing at that mask while the cursor
-  // travels off the mesh and onto Lightsourcebar's own preview sliders to drag one (see
-  // project-mask-item.tsx's onMouseMove and lightsourcebar.tsx's targetMaskKey). Distinct from
-  // selectedMaskKeys: a hover shouldn't require the deliberate click a selection does, but it
-  // still needs to outlive the hover itself for the sliders to stay usable.
   mostRecentlyHoveredMaskKey: string | undefined;
   setMostRecentlyHoveredMaskKey: (key: string | undefined) => void;
   isMetaKeyPressed: boolean;
@@ -234,54 +226,23 @@ export interface CoreContextProps {
   createTopologyPeak: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    // `shape` is the normalized silhouette the drawn peak should take, or "" for a circle, and
-    // `blackPoint` is the colour its shading should bottom out at (see Peak_V1_0's own black_point_*
-    // fields). Both ride in the seed alongside elevation/falloff rather than in `circle` because they
-    // are authored the same way those are -- staged on a bar before the drag, rather than measured
-    // from the drag itself.
     seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
   ) => Promise<void>;
   sendMaskPeakUpdate: (
     maskMediaId: string,
     update: MaskPeakUpdateRequest_V1_0,
   ) => Promise<LaurusMaskResult | undefined>;
-  // The one implementation of "remove this peak", shared by all three affordances that offer it
-  // (project-mask-item.tsx's alt-click, context-menu.tsx's delete cell, and Maskbar's own peak
-  // list) -- each of which previously carried its own copy, which is how one of them ended up
-  // needing to know that the delete verb was a zero radius. Deleting a peak is more than the
-  // request: it also has to reconcile the mask, refresh the mesh, and notice when the peak it just
-  // removed was the active element (which would otherwise leave Maskbar's sliders pointed at an id
-  // that no longer exists), and every caller wants all of that.
   deleteMaskPeak: (maskKey: string, peakId: number) => Promise<void>;
   closeMaskPeakSocket: (maskMediaId: string) => void;
-  // The following notifyMask* functions are how every file that changes state a mask mesh's own
-  // appearance depends on reaches into maskHandlesRef and drives it directly, imperatively --
-  // ProjectMaskItem has no useEffect watching any of this reactively (see its own file comment).
-  // Each is a thin broadcast/targeted iteration over maskHandlesRef.current, called right after
-  // the dispatch that actually changed the underlying value, mirroring how handlePlayAll/
-  // handleStopAll above already reach into the same map for play()/stop().
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
-  // Which of an already-active mask's own captures reads as the bright one -- kept separate from
-  // notifyMaskSelectionChanged (rather than folding captureId into that call) since that one's
-  // shared by every img/svg/mask effect-wiring call site in the app, none of which know or care
-  // about captures.
   notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
-  // Mirrors notifyMaskSelectedCaptureChanged exactly, for a mesh's own topology peaks -- kept
-  // separate for the same reason (only peak-highlight call sites know or care about peakIds).
   notifyMaskSelectedPeakChanged: (maskKey: string, peakId: number | undefined) => void;
-  // `captureId` says which capture this optimistic membership belongs to. The mesh needs it to move
-  // that capture's own standing light along with the preview (see resolveRestingLightSources,
-  // project-mask-item.tsx) -- the highlight itself never cared, which is why it's optional rather
-  // than required. A capture still being created carries one too; it simply has no committed record
-  // to light with yet, so the mesh skips it until the create lands.
   notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>, captureId?: number) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
-  // Mirrors the notifyMaskPendingCapture*/notifyMaskCaptureUpdated trio above, one topology peak
-  // edit (create, or an existing peak's elevate/move drag) at a time instead of a capture.
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
   notifyMaskPeaksUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
@@ -327,9 +288,6 @@ export const UIContext = createContext<UIContextProps>({
   uiDispatch: () => {},
 });
 
-// A single shared mask-preview instance, so the "Mask" trigger button (in
-// Maskbar, mounted from Titlebar) and the live WebGL mesh preview (layered into Canvas)
-// read/drive the same in-flight websocket + mesh buffers instead of each starting their own.
 const defaultMaskPreview: UseMaskPreview = {
   status: "idle",
   triangleCount: 0,
@@ -428,9 +386,6 @@ function initCarouselEntries(
   project.masks.entries().forEach((projectMask) => {
     if (projectMask[1].left < 0 || projectMask[1].top < 0) return;
     const distance = Math.sqrt(projectMask[1].top ** 2 + projectMask[1].left ** 2);
-    // The whole mask earns its own carousel entry unconditionally, exactly like an img/svg --
-    // wireable to move/scale/rotate via maskElementsRef regardless of whether it has any
-    // captures at all.
     temp.push({
       entry: {
         type: "mask",
@@ -438,8 +393,6 @@ function initCarouselEntries(
       },
       distance,
     });
-    // Beyond that, a mask earns one more carousel entry per capture it actually has --
-    // otherwise a mask with several captures would only expose one of them to wire up.
     const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
     captures.forEach((capture) => {
       temp.push({
@@ -451,10 +404,6 @@ function initCarouselEntries(
         distance,
       });
     });
-    // ...and one per topology peak, for the same reason -- each peak is separately wireable (see
-    // maskPeakInputId) to a "light_source" effect ramping its own relief, a "move" translating it
-    // across the mesh, or a "scale" multiplying its radius. Only "rotate" filters these out, the
-    // same way it filters out captures: neither has a whole-element transform for it to act on.
     const peaks = canvasMasks.get(projectMask[0])?.peaks ?? [];
     peaks.forEach((peak) => {
       temp.push({
@@ -471,9 +420,6 @@ function initCarouselEntries(
   return entries;
 }
 
-/** Every mask's source image id, whether or not that image is (still) placed on the canvas --
- * MaskThumbnail/project-mask-item/media-browser all need this same "is this img a mask's origin"
- * check to keep a since-unplaced source image reachable in the img browser. */
 export function getMaskSourceImgIds(
   masks: Map<string, LaurusProjectMask>,
   canvasMasks: Map<string, LaurusMaskResult>,
@@ -611,9 +557,6 @@ function initReducer({
       )
     : new Map();
 
-  // Masks whose source image was never (or is no longer) placed on the canvas still need that
-  // source image reachable from the img browser -- MaskThumbnail/project-mask-item fall back to
-  // uiState.browserImgs (fed by newCanvasImgs below) when project.imgs has no match.
   if (projectDependencies) {
     const placedImgIds = new Set(projectDependencies.project.imgs.values().map((i) => i.img_media_id));
     getMaskSourceImgIds(projectDependencies.project.masks, newCanvasMasks).forEach((sourceImgMediaId) => {
@@ -888,22 +831,7 @@ export default function Workspace({
   });
   const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
   const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
-  // A mask's own WebGL <canvas> element, keyed by the mask's own project key -- populated by the
-  // same ProjectMaskItem mount ref-callback that populates maskHandlesRef below, letting a
-  // whole-mask CarouselEntry ("mask", not "capture") drive it through the exact same WAAPI
-  // KeyframeEffect/Animation pipeline img/svg use (see getNewAnimations/getNewAnimationsByTarget),
-  // just targeting a canvas instead of an <img>/<svg>. A capture's own math never resolves an
-  // element here -- maskCaptureInputId's "key:captureId" strings never match a bare mask key.
   const maskElementsRef = useRef<Map<string, HTMLCanvasElement>>(null);
-  // Beyond that whole-element WAAPI target, masks separately have no DOM element for a
-  // *capture's* own move/light_source/scale to animate (a capture lives inside the WebGL mesh,
-  // not as its own element), so unlike img/svg's element refs, this holds MaskImperativeHandle
-  // instances instead -- registered by ProjectMaskItem's own mount ref-callback, keyed by the
-  // mask's own project key, one Set per key since more than one mounted instance can share a
-  // mediaKey. Also doubles as the one place every notifyMask* broadcast/targeted call below
-  // reaches into to imperatively drive a mask's WebGL state -- ProjectMaskItem has no useEffect
-  // of its own reacting to tool/active element/topology/etc. changes; the file dispatching each
-  // of those calls the matching notifyMask* function right after, instead.
   const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
@@ -1055,15 +983,6 @@ export default function Workspace({
           ),
         ];
         const eligibleItems = new Set<string>();
-        // A mask capture's own frames (see project-mask-item.tsx's preparePlayback, "playAll"
-        // branch) run through this exact same fetch-and-cache loop below, keyed the same way --
-        // just filtered to move/light_source/scale/rotate (the effect types a mask can wire up,
-        // capture-scoped or whole-element) and matched against masks instead of imgs/svgs, since
-        // a capture's math key is maskCaptureInputId's "mediaKey:captureId" (or a bare mediaKey,
-        // for a mask input_id predating per-capture math -- parseMaskCaptureInputId's maskKey
-        // handles both). A *whole* mask's own bare key (captureId undefined, see the element
-        // lookup below) does drive a real WAAPI Animation now, so -- unlike a capture, which never
-        // does -- it needs to feed globalLimit too, same as img/svg.
         let globalLimit = 0;
         enabledEffects.forEach((e) => {
           e.value.math.forEach((_, inputKey) => {
@@ -1075,9 +994,6 @@ export default function Workspace({
               coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
-              // A capture's or a peak's own input_id drives the mesh directly (see the element
-              // lookup below, which neither ever matches), so -- unlike a whole mask's bare key --
-              // neither feeds the WAAPI timeline's own length.
               if (
                 parseMaskCaptureInputId(inputKey).captureId === undefined &&
                 parseMaskPeakInputId(inputKey).peakId === undefined
@@ -1128,11 +1044,6 @@ export default function Workspace({
               framesCacheRef.current.set(inputKey, [...framesFromServer]);
             }
           }
-          // A capture's own inputKey (maskCaptureInputId's "key:captureId") never matches any of
-          // these three refs -- a capture lives inside the WebGL mesh, not as its own element --
-          // so it's fetched and cached above like any other input, but never turned into a WAAPI
-          // Animation. A *whole* mask's own bare key does match maskElementsRef, the same way an
-          // img/svg's bare key matches its own ref.
           const element =
             imgElementsRef.current?.get(inputKey) ||
             svgElementsRef.current?.get(inputKey) ||
@@ -1178,10 +1089,6 @@ export default function Workspace({
     frameDownloadAbortControllerRef.current?.abort();
   }, []);
 
-  // See CoreContextProps' own comment -- these all reach directly into maskHandlesRef instead of
-  // being watched for reactively by ProjectMaskItem, so every dispatch site that changes one of
-  // these values also calls the matching one of these right after. Stable (empty deps, closing
-  // only over the ref) -- never need to be listed as a dependency anywhere else in this file.
   const notifyMaskToolChanged = useCallback((toolType: string) => {
     maskHandlesRef.current?.forEach((handles) =>
       handles.forEach((h) => {
@@ -1228,23 +1135,10 @@ export default function Workspace({
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncPeaks(updated));
   }, []);
 
-  // Persists a freshly drawn mesh-section capture immediately -- drawing a circle (canvas.tsx's
-  // handleLightSourceCapture) is taken as confirmation to save it, no separate confirm step.
-  // Always creates a *new* capture (the next free id on this mask, auto-named) rather than
-  // replacing an existing one -- moving/resizing an already-drawn capture is a meta-drag directly
-  // on its own highlighted triangles instead (project-mask-item.tsx's onPointerDown/onPointerUp).
-  // Any triangles the new circle overlaps get reassigned from whichever capture owned them before,
-  // which is harmless: capture_id only ever feeds a UI anchor/highlight, never rendering (see
-  // RedisCapture server-side). Shown optimistically via the pending-capture notifies below while
-  // the request is in flight (mirrors project-mask-item.tsx's own relocate-drag commit in
-  // onPointerUp), then reconciled with the server response.
   const captureMeshSection = useCallback(
     async (maskKey: string, polygonIndices: number[], size: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
-      // This mask's persisted preview-toggle dials -- the appearance the cursor light is currently
-      // running at, which the new capture inherits below. Undefined for a mask that has no project
-      // record yet, in which case the same defaults the cursor itself falls back to apply.
       const maskMeta = coreState.project.masks.get(maskKey);
       const captureId = nextCaptureId(maskData.captures);
       const name = `light ${captureId}`;
@@ -1259,50 +1153,21 @@ export default function Workspace({
         capture_id: captureId,
         name,
         polygon_indices: polygonIndices,
-        // Seeded from the circle actually drawn, since `size` is this capture's own geometry as
-        // well as its light core: leaving it at 0 would mean the first touch of Lightsourcebar's
-        // size slider snapped the capture shut before growing it.
         size,
-        // The other three used to start at 0 on the reasoning that they're "a look, not a geometry"
-        // with no drawn value to inherit. That stopped being true once a capture became a standing
-        // light on the mesh (see resolveRestingLightSources, project-mask-item.tsx): at 0 the light
-        // has no brightness, no darkening, and -- via falloff -- no reach past its own rim, so a
-        // freshly dropped capture lit nothing at all, including peaks sitting right beside it.
-        //
-        // A capture is the cursor's preview light, pinned where it was dropped, so it inherits that
-        // light's own appearance. Intensity and darkness copy the mask's *current* preview dials
-        // verbatim -- both are unitless 0-1, so there's nothing to convert, and tuning the preview
-        // before dropping now carries over the way it reads like it should.
         intensity: maskMeta?.capture_preview_intensity ?? CAPTURE_INTENSITY_DEFAULT,
         darkness: maskMeta?.capture_preview_darkness ?? CAPTURE_DARKNESS_DEFAULT,
-        // Falloff can't just be copied across the way those two are: the preview's is in on-screen
-        // CSS pixels (the cursor light converts it per frame by the canvas scale), while a capture's
-        // lives in the mesh's own space alongside `size`. Scaled off the drawn diameter instead --
-        // same reach-to-core ratio the preview defaults describe, but expressed in the units `size`
-        // is already in, which also makes a bigger capture reach proportionally further. Clamped to
-        // the reach Lightsourcebar's own falloff slider tops out at, so a capture drawn near the
-        // mask's full width doesn't start with its thumb pinned off the end of the track.
         falloff: Math.min(size * CAPTURE_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
       });
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
-        // Before the notifies below, which recolor off this mask's own captured-indices ref -- see
-        // MaskImperativeHandle.syncCapturedIndices' own comment for why that ref, not `source`.
         notifyMaskCaptureUpdated(maskKey, updated);
-        // Every freshly drawn capture earns its own carousel entry -- see CarouselEntry's own
-        // doc comment on why this is per-capture, not per-mask.
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
-        // Selected, not activated: drawing a capture is a "look at this one" gesture (it points
-        // Lightsourcebar's dials at it and paints it bright), while wiring an effect to it stays a
-        // deliberate step through a unit display -- see LaurusSelectedElement's own doc comment.
         uiDispatch({
           type: UIActionType.SetSelectedElement,
           value: { key: maskKey, type: "capture", captureId },
         });
         notifyMaskSelectionChanged(maskKey);
         notifyMaskSelectedCaptureChanged(maskKey, captureId);
-        // A freshly drawn capture is now this mesh's sole selected sub-element -- clear any
-        // previously-selected peak's own ring highlight so it doesn't keep glowing alongside it.
         notifyMaskSelectedPeakChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
@@ -1334,28 +1199,6 @@ export default function Workspace({
     ],
   );
 
-  // Persists a freshly drawn topology peak immediately -- drawing a circle (canvas.tsx's
-  // handleTopologyCapture) is taken as confirmation to save it, mirroring captureMeshSection's own
-  // "no separate confirm step" reasoning. `seed` is whatever Lightsourcebar's own peak sliders are
-  // currently staged at (uiState.stagedPeak, passed by canvas.tsx) -- not hardcoded defaults -- so
-  // drawing several peaks in a row without touching a slider keeps reusing the last dialed-in
-  // shape. Always creates a *new* peak (the next free id on this mask); moving one afterwards is a
-  // drag directly on its own epicenter instead (project-mask-item.tsx's topology onPointerDown/
-  // onPointerUp), and reshaping it afterwards is the same Lightsourcebar sliders once it's active
-  // (see this function's own SetActiveElement below). Unlike captureMeshSection, this deliberately
-  // leaves `editingTopology` on afterwards -- so drawing several peaks, or immediately dragging the
-  // one just placed, doesn't require re-toggling the tool.
-  //
-  // The drawn radius is floored at MIN_MASK_PEAK_RADIUS_PX because the height field divides by it
-  // (u = dist / radius, see PEAK_FIELD_GLSL): a circle drawn as an accidental click would otherwise
-  // persist a peak whose field is degenerate rather than merely small.
-  //
-  // polygon_indices (see MaskPeakUpdateRequest_V1_0) is derived from the drawn region via
-  // peakTriangleIndices rather than requiring a separate selection gesture -- the centroid-in-region
-  // test captureMeshSection's own caller runs for captures, generalized to honour the peak's
-  // silhouette. That tagging is bookkeeping only and never feeds the field, but it is what the
-  // selected-peak highlight paints, so a circular test here would draw a circle of lit triangles
-  // around a dome that had taken the svg's outline.
   const createTopologyPeak = useCallback(
     async (
       maskKey: string,
@@ -1400,20 +1243,10 @@ export default function Workspace({
       if (updated) {
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
         notifyMaskPeaksUpdated(maskKey, updated);
-        // Every freshly drawn peak earns its own carousel entry, exactly as a capture does above --
-        // that entry is what the light source unit's "peak" mode navigates onto to wire this peak's
-        // own equation (see maskPeakInputId).
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: maskKey, peakId } });
-        // Selects the new peak immediately -- Lightsourcebar's elevation slider reads off
-        // uiState.selectedElement, so the freshly drawn peak (rather than the staged value) is what
-        // it edits from here, the same way a freshly drawn capture becomes selected in
-        // captureMeshSection above. Selection only, for the same reason it is there.
         uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "peak", peakId } });
         notifyMaskSelectionChanged(maskKey);
         notifyMaskSelectedPeakChanged(maskKey, peakId);
-        // Mirrors captureMeshSection's own symmetric clear above -- a freshly drawn peak is now
-        // this mesh's sole selected sub-element, so any previously-selected capture's own outline
-        // shouldn't keep showing alongside it.
         notifyMaskSelectedCaptureChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
@@ -1433,18 +1266,6 @@ export default function Workspace({
     ],
   );
 
-  // Removes one peak, and everything that has to follow from it. Lives here rather than at the
-  // three call sites that offer the affordance (project-mask-item.tsx's alt-click on an epicenter,
-  // context-menu.tsx's delete cell, Maskbar's own peak list) because those three had grown three
-  // copies of this sequence, and the copies had already started to disagree -- one of them tested
-  // the active element against the mask key, the other didn't. Collapsing them also means the wire
-  // detail that a delete is `remove: true` (rather than the zero radius it used to be overloaded
-  // as -- see MaskPeakUpdateRequest_V1_0) is stated exactly once.
-  //
-  // No pending/optimistic phase, unlike createTopologyPeak: there's nothing to preview. The peak
-  // stays fully rendered until the server confirms, then disappears -- which is the right failure
-  // mode, since a delete that didn't land leaves the peak visibly still there rather than
-  // vanishing it locally and resurrecting it on the next load.
   const deleteMaskPeak = useCallback(
     async (maskKey: string, peakId: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
@@ -1462,22 +1283,14 @@ export default function Workspace({
         shape: peak.shape,
         ...toPeakBlackPointFields(toPeakBlackPoint(peak)),
         remove: true,
-        // Empty rather than recomputed: polygon_indices full-replaces this one peak's own polygon
-        // tagging, so clearing it is exactly what untags every triangle that carried this peak's id.
         polygon_indices: [],
       });
       if (!updated) return;
 
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
       notifyMaskPeaksUpdated(maskKey, updated);
-      // The peak's own carousel entry and any equation wired through it go with it -- peak ids are
-      // reused (nextPeakId fills the lowest free one), so an equation left behind would attach
-      // itself to the next peak drawn rather than sit harmlessly orphaned.
       uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, peakId });
       deleteMaskPeakEffects(maskKey, peakId, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
-      // Deleting the selected peak would otherwise leave Lightsourcebar's peak sliders pointed at
-      // an id that's now gone -- fall back to the whole mask being selected, same as a deleted
-      // capture does.
       if (
         uiState.selectedElement?.key === maskKey &&
         uiState.selectedElement.type === "peak" &&
@@ -1487,9 +1300,6 @@ export default function Workspace({
         notifyMaskSelectionChanged(maskKey);
         notifyMaskSelectedPeakChanged(maskKey, undefined);
       }
-      // The wiring half is independent of the highlight: an equation attached to this peak is gone
-      // either way (deleteMaskPeakEffects above), so an activeElement still pointing at it would
-      // leave a unit display parked on a carousel entry that no longer exists.
       if (
         uiState.activeElement?.key === maskKey &&
         uiState.activeElement.type === "peak" &&
@@ -1577,9 +1387,6 @@ export default function Workspace({
     if (uiState.activeElement !== undefined) {
       uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
     }
-    // Separate from the activeElement clear above now that the two are distinct concerns -- this
-    // one is what actually takes the capture/peak highlights off the mesh, which would otherwise
-    // paint over the animation being recorded.
     if (uiState.selectedElement !== undefined) {
       uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
       notifyMaskSelectionChanged(undefined);
@@ -1588,18 +1395,6 @@ export default function Workspace({
     const players: MaskImperativeHandle[] = [];
     maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
 
-    // Every registered mask handle -- each decides for itself whether it actually has a wired
-    // move/light_source effect to play, resolving to undefined if not (see MaskImperativeHandle).
-    // Fetched alongside newAnimations, both awaited before anything actually starts: a mask's own
-    // getFrames round-trip has independent network/server-solve latency from every other mask's
-    // (and from the img/svg frames below), so kicking off each one's playback clock the instant
-    // its own fetch resolved -- preparePlayback's single-target play() wrapper does exactly that
-    // -- would visibly stagger their start times against each other. Waiting here for every
-    // target's frames to be in hand first, then starting them all in the same synchronous pass
-    // below, keeps them approximately in sync instead. Also triggered (and awaited) before the
-    // newAnimations bail-out below: a light-source-svg has no DOM element of its own (see
-    // workspace.client.tsx's render-skip), so getNewAnimations never produces a WAAPI Animation
-    // for it -- newAnimations can be legitimately empty while there's still a light source to play.
     const [newAnimations, preparedStarts] = await Promise.all([
       getNewAnimations("none", false, true),
       Promise.all(players.map((player) => player.preparePlayback())),
@@ -1617,9 +1412,6 @@ export default function Workspace({
       return;
     }
 
-    // Calling every start() before yielding back to the event loop is what actually keeps the
-    // masks' clocks in sync with each other and with the WAAPI animations played right after --
-    // each one's own loopStartMs is captured synchronously inside this same tick.
     const lightSourceFinished = readyStarts.map((start) => start());
 
     Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
@@ -1661,8 +1453,6 @@ export default function Workspace({
       if (uiState.activeElement !== undefined) {
         uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
       }
-      // Mirrors handlePlayAll's own split above -- clearing the selection is what takes the
-      // highlights off the mesh.
       if (uiState.selectedElement !== undefined) {
         uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
         notifyMaskSelectionChanged(undefined);
@@ -1674,25 +1464,6 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
       const newAnimations = await getNewAnimationsByTarget("none", false, target);
-
-      // Only the masks wired to this specific light source key, and only for a "move", "light_source",
-      // or "scale" effect -- the only kinds ProjectMaskItem's wiring reacts to. A Rotate preview on
-      // the same element shares this same target.inputKey but has nothing for a mask to play.
-      // Computed (and triggered) before the newAnimations bail-out below: a light-source-svg has no DOM
-      // element of its own (see workspace.client.tsx's render-skip), so getNewAnimationsByTarget
-      // never produces a WAAPI Animation for it -- newAnimations can be legitimately empty while
-      // there's still a light source to play. Also requires target.inputKey to actually be
-      // capture-scoped (captureId !== undefined): a *whole* mask's own move/scale preview shares
-      // this same effect.key/effect.type shape (it's the exact same "move"/"scale" effect a
-      // capture might also be wired into) but its bare-key inputKey has no capture of its own to
-      // play -- without this check, resolveTargetCaptureId's fallback-to-first-capture would make
-      // it spuriously re-play whichever capture happens to be selected/first, using an equation
-      // that's meant for a completely different (whole-element) purpose.
-      //
-      // A peak-flavored inputKey (see maskPeakInputId) satisfies the same "actually sub-element
-      // scoped" requirement by carrying a peakId instead, and comes from any of the same three
-      // units' preview buttons -- a peak has no element transform of its own, but it does have an
-      // epicenter for "move" to translate and a radius for "scale" to multiply.
       const { peakId: targetPeakId } = parseMaskPeakInputId(target.inputKey);
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>
@@ -1702,10 +1473,6 @@ export default function Workspace({
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
-        // maskHandlesRef is keyed by a mask's own element key, not the capture- or peak-scoped
-        // input_id a unit's preview button builds (see maskCaptureInputId/maskPeakInputId) --
-        // recover both so playback lands on the right mesh *and* the exact capture/peak the button
-        // was for, rather than letting playLightSourceAnimation's own resolveTargetCaptureId guess.
         const { maskKey, captureId } = parseMaskCaptureInputId(target.inputKey);
         maskHandlesRef.current
           ?.get(maskKey)
@@ -2031,7 +1798,10 @@ export default function Workspace({
     const handleKey = (e: KeyboardEvent) => {
       setIsMetaKeyPressed(e.metaKey);
       setIsAltKeyPressed(e.altKey);
-      if (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) {
+      if (
+        (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) ||
+        (e.metaKey && uiState.tool.type === "move")
+      ) {
         uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
         notifyMaskToolChanged("none");
       }
@@ -2214,11 +1984,7 @@ export default function Workspace({
                           !uiState.tool.editingTopology &&
                           uiState.browserElement?.type !== "img"
                             ? "none"
-                            : // Alt-click-select (ProjectMaskItem's onClick) needs to reach an
-                              // existing mask underneath -- but only for the mask tool: marquee
-                              // uses the alt key for its own drag-duplicate gesture and needs this
-                              // overlay to keep capturing the drag regardless.
-                              isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                            : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
                               ? "none"
                               : "auto",
                       }}
