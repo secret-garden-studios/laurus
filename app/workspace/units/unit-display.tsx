@@ -239,6 +239,13 @@ export default function UnitDisplay({
             value: newActiveElement,
           });
           uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "mask" },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedCaptureChanged(entry.key, undefined);
+          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
             showContextMenu: true,

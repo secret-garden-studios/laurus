@@ -2538,7 +2538,11 @@ export function ProjectMaskItem({
             style={{
               ...containerSize,
               display: "block",
-              outline: isSelected ? "2px solid rgba(66, 133, 244, 1)" : "none",
+              outline: isSelected
+                ? "2px solid rgba(66, 133, 244, 1)"
+                : showContextMenu
+                  ? "1px solid rgba(255, 255, 255, 0.175)"
+                  : "none",
             }}
           />
         </div>
