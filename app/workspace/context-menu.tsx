@@ -1133,6 +1133,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     style={{ color: "rgb(242, 83, 83)", ...cellStyle }}
                     className={styles["animated-nav-dark"]}
                     onClick={async () => {
+                      const confirmed = confirm("are you sure you want to delete this media?");
+                      if (!confirmed) return;
                       const snapshot: LaurusProjectResult = {
                         ...coreState.project,
                       };
