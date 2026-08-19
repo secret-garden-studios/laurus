@@ -51,10 +51,6 @@ export interface ProjectSvg_V1_0 {
   stroke_width: number;
   description: string;
 }
-// No media_key -- unlike imgs/svgs, LaurusMaskResult (the mask websocket's output) doesn't
-// have one; this stores placement/cosmetic fields plus a reference to it, mirroring how
-// ProjectImg_V1_0 references img_media_id rather than embedding pixel data. media_id is the pk of
-// the RedisMaskMedia (LaurusMaskResult) it places on the canvas.
 export interface ProjectMask_V1_0 {
   media_id: string;
   media_group_id: string;
@@ -69,21 +65,10 @@ export interface ProjectMask_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
-  // The mask's own starting appearance for the mouse-hover "preview" toggle only -- what the
-  // cursor-driven epicenter looks like while previewing, the same way scale_x/scale_y above is
-  // the starting point a "scale" effect ramps from (see Scalebar). Independent of any effect:
-  // Lightsourcebar's "preview" dials read and write these fields directly via updateProject, same
-  // as Scalebar does for scale_x/scale_y, and project-mask-item.tsx renders them as the mesh's
-  // baseline sheen while previewing. NOT what a wired "light_source" effect ramps from -- that's
-  // each Capture_V1_0's own size/intensity/falloff/darkness.
   capture_preview_size: number;
   capture_preview_intensity: number;
   capture_preview_falloff: number;
   capture_preview_darkness: number;
-  // Alpha (0-1) to render every polygon's own stroke at -- 1 fully visible, 0 fully invisible.
-  // Per-placement rather than on the hydrated LaurusMaskResult itself, the same reasoning as
-  // capture_preview_* above -- Maskbar's texture slider reads/writes it directly via updateProject,
-  // the same way Scalebar does scale_x/scale_y.
   texture: number;
   description: string;
 }
