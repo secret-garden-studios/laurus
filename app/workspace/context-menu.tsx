@@ -7,8 +7,7 @@ import {
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
-import { CoreContext, HoverContext, LaurusTransform, UIContext, getMaskSourceImgIds } from "./workspace.client";
-import { useMaskPersist } from "./hooks/useMaskPersist";
+import { CoreContext, LaurusTransform, UIContext, getMaskSourceImgIds } from "./workspace.client";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
@@ -51,7 +50,6 @@ function cleanUpMediaBrowser(
   switch (mediaType) {
     case "img": {
       const stillExists = Array.from(project.imgs.values()).some((i) => i.img_media_id === mediaId);
-      // Still needed for the img browser even once unplaced, if some remaining mask was made from it.
       const stillNeededForMask = getMaskSourceImgIds(project.masks, canvasMasks).has(mediaId);
       if (!project.browse_public_imgs && !stillExists && !stillNeededForMask) {
         uiDispatch({ type: UIActionType.DeleteBrowserImg, value: mediaId });
@@ -65,8 +63,6 @@ function cleanUpMediaBrowser(
       }
       break;
     }
-    // No mask media browser exists (masks aren't reusable browsable assets the way imgs/svgs
-    // are -- each is generated fresh per source image), so there's nothing to dedupe here.
     case "mask": {
       break;
     }
@@ -152,8 +148,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     closeMaskPeakSocket,
   } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { setSelectedImgKeys } = useContext(HoverContext);
-  const { triggerMask, isMaskBusy } = useMaskPersist();
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const active = useMemo<boolean>(() => {
@@ -251,6 +245,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 12,
+            height: 50,
           },
           footer: {
             div: {
@@ -327,6 +322,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 10,
+            height: 42,
           },
           footer: {
             div: {
@@ -404,6 +400,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 10,
+            height: 40,
           },
           footer: {
             div: {
@@ -558,14 +555,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     leftSide,
     bottomSide,
   ]);
-
-  const handleMaskClick = useCallback(() => {
-    if (media.type !== "img" || isMaskBusy) return;
-    const imgResult = coreState.canvasImgs.get(media.key);
-    if (!imgResult) return;
-    setSelectedImgKeys(new Set([media.key]));
-    triggerMask(imgResult, media.meta);
-  }, [media, isMaskBusy, coreState.canvasImgs, setSelectedImgKeys, triggerMask]);
 
   const swapMedia = useCallback(async () => {
     if (!uiState.browserElement) return;
@@ -855,7 +844,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     display: "flex",
     alignItems: "center",
     borderTop: "1px solid rgba(255,255,255,0.05)",
-    height: "100%",
     cursor: "pointer",
     ...dynamicSizes.cell,
   };
@@ -1005,12 +993,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   >
                     {"active"}
                   </span>
-                  {/* The explicit activation control -- unlike the meta-click that opened this
-                      menu (which only ever selects, see project-mask-item.tsx's onClick), toggling
-                      this on for a capture or peak also selects it, mirroring unit-display.tsx's
-                      own setActiveElement: it's a deliberate "wire this one" and the thing being
-                      wired should light up on the mesh. Turning it off leaves the selection alone
-                      -- unwiring an effect isn't a reason to stop looking at the element. */}
                   <Toggle
                     value={active}
                     onClick={() => {
@@ -1071,8 +1053,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           notifyMaskSelectionChanged(media.key);
                           notifyMaskSelectedCaptureChanged(media.key, media.captureId);
-                          // This capture is now the mesh's sole bright sub-element -- clear any
-                          // peak highlight left over from before.
                           notifyMaskSelectedPeakChanged(media.key, undefined);
                           break;
                         }
@@ -1092,7 +1072,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           notifyMaskSelectionChanged(media.key);
                           notifyMaskSelectedPeakChanged(media.key, media.peakId);
-                          // Mirrors the capture case's own symmetric clear above.
                           notifyMaskSelectedCaptureChanged(media.key, undefined);
                           break;
                         }
@@ -1103,160 +1082,146 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                {media.type !== "mask" && !isCaptureOrPeak && (
-                  <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
-                    {"swap"}
-                  </div>
-                )}
-                {media.type === "img" && (
-                  <div
-                    style={{ ...cellStyle, ...(isMaskBusy && disabledCellStyle) }}
-                    className={isMaskBusy ? "" : styles["animated-nav-dark"]}
-                    onClick={handleMaskClick}
-                  >
-                    {"mask"}
-                  </div>
-                )}
+                {/* toolbar */}
                 <div
-                  style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
-                  className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
-                  onClick={() => {
-                    if (isCaptureOrPeak) return;
-                    updateMediaOrder(isAltPressed ? "top" : "increment");
-                  }}
-                >
-                  {isAltPressed ? "move to top" : "move up"}
-                </div>
-                <div
-                  style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
-                  className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
-                  onClick={() => {
-                    if (isCaptureOrPeak) return;
-                    updateMediaOrder(isAltPressed ? "bottom" : "decrement");
-                  }}
-                >
-                  {isAltPressed ? "move to bottom" : "move down"}
-                </div>
-                <div
-                  className={revertEnabled ? styles["animated-nav-dark"] : ""}
                   style={{
-                    color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
-                    ...cellStyle,
-                  }}
-                  onClick={() => {
-                    if (!revertEnabled) return;
-                    revertMedia();
+                    display: "grid",
+                    overflowY: "auto",
+                    alignSelf: "start",
+                    height: dynamicSizes.cell.height * 4,
                   }}
                 >
-                  {"revert"}
-                </div>
-                <div
-                  style={{ color: "rgb(242, 83, 83)", ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
-                  onClick={async () => {
-                    const snapshot: LaurusProjectResult = {
-                      ...coreState.project,
-                    };
-                    switch (media.type) {
-                      case "img": {
-                        const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
-                        newImgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs, undefined);
-                        break;
-                      }
-                      case "svg": {
-                        const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
-                        newSvgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined, undefined);
-                        break;
-                      }
-                      case "mask": {
-                        const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
-                        newMasks.delete(media.key);
-                        closeMaskCaptureSocket(media.meta.media_id);
-                        closeMaskPeakSocket(media.meta.media_id);
-                        deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
-                        break;
-                      }
-                      case "capture": {
-                        const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(media.meta.media_id, {
-                          capture_id: media.captureId,
-                          name: "",
-                          polygon_indices: [],
-                          // Irrelevant for a delete -- an empty polygon_indices drops the capture's
-                          // whole registry entry server-side regardless (see update_mask_capture_in_redis).
-                          size: 0,
-                          intensity: 0,
-                          falloff: 0,
-                          darkness: 0,
-                        });
-                        if (!updated) break;
-                        dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
-                        notifyMaskCaptureUpdated(media.key, updated);
-                        // The capture itself is gone -- its own move/light_source equations
-                        // (keyed by maskCaptureInputId(media.key, media.captureId), not this
-                        // mask's other captures) are now unreachable through the UI, so clear
-                        // them rather than leaving them stranded in that effect's math map.
-                        await deleteMaskCaptureEffects(
-                          media.key,
-                          media.captureId,
-                          coreState.apiOrigin,
-                          coreState.accessToken,
-                          coreState.effects,
-                          dispatch,
-                        );
-                        if (
-                          uiState.activeElement?.key == media.key &&
-                          uiState.activeElement.type === "capture" &&
-                          uiState.activeElement.captureId === media.captureId
-                        ) {
-                          uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+                  {media.type !== "mask" && !isCaptureOrPeak && (
+                    <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
+                      {"swap"}
+                    </div>
+                  )}
+                  <div
+                    style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
+                    className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
+                    onClick={() => {
+                      if (isCaptureOrPeak) return;
+                      updateMediaOrder(isAltPressed ? "top" : "increment");
+                    }}
+                  >
+                    {isAltPressed ? "move to top" : "move up"}
+                  </div>
+                  <div
+                    style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
+                    className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
+                    onClick={() => {
+                      if (isCaptureOrPeak) return;
+                      updateMediaOrder(isAltPressed ? "bottom" : "decrement");
+                    }}
+                  >
+                    {isAltPressed ? "move to bottom" : "move down"}
+                  </div>
+                  <div
+                    className={revertEnabled ? styles["animated-nav-dark"] : ""}
+                    style={{
+                      color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
+                      ...cellStyle,
+                    }}
+                    onClick={() => {
+                      if (!revertEnabled) return;
+                      revertMedia();
+                    }}
+                  >
+                    {"revert"}
+                  </div>
+                  <div
+                    style={{ color: "rgb(242, 83, 83)", ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
+                    onClick={async () => {
+                      const snapshot: LaurusProjectResult = {
+                        ...coreState.project,
+                      };
+                      switch (media.type) {
+                        case "img": {
+                          const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
+                          newImgs.delete(media.key);
+                          deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs, undefined);
+                          break;
                         }
-                        // Falls back to the whole mesh rather than clearing outright, mirroring
-                        // deleteMaskPeak's own fallback (workspace.client.tsx) -- the menu this
-                        // click lives in derives its flavor from the selection, and a deleted
-                        // capture's flavor no longer has anything to show.
-                        if (
-                          uiState.selectedElement?.key == media.key &&
-                          uiState.selectedElement.type === "capture" &&
-                          uiState.selectedElement.captureId === media.captureId
-                        ) {
+                        case "svg": {
+                          const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
+                          newSvgs.delete(media.key);
+                          deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined, undefined);
+                          break;
+                        }
+                        case "mask": {
+                          const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
+                          newMasks.delete(media.key);
+                          closeMaskCaptureSocket(media.meta.media_id);
+                          closeMaskPeakSocket(media.meta.media_id);
+                          deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
+                          break;
+                        }
+                        case "capture": {
+                          const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
+                            media.meta.media_id,
+                            {
+                              capture_id: media.captureId,
+                              name: "",
+                              polygon_indices: [],
+                              size: 0,
+                              intensity: 0,
+                              falloff: 0,
+                              darkness: 0,
+                            },
+                          );
+                          if (!updated) break;
+                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+                          notifyMaskCaptureUpdated(media.key, updated);
+                          await deleteMaskCaptureEffects(
+                            media.key,
+                            media.captureId,
+                            coreState.apiOrigin,
+                            coreState.accessToken,
+                            coreState.effects,
+                            dispatch,
+                          );
+                          if (
+                            uiState.activeElement?.key == media.key &&
+                            uiState.activeElement.type === "capture" &&
+                            uiState.activeElement.captureId === media.captureId
+                          ) {
+                            uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+                          }
+                          if (
+                            uiState.selectedElement?.key == media.key &&
+                            uiState.selectedElement.type === "capture" &&
+                            uiState.selectedElement.captureId === media.captureId
+                          ) {
+                            uiDispatch({
+                              type: UIActionType.SetSelectedElement,
+                              value: { key: media.key, type: "mask" },
+                            });
+                            notifyMaskSelectionChanged(media.key);
+                            notifyMaskSelectedCaptureChanged(media.key, undefined);
+                          }
                           uiDispatch({
-                            type: UIActionType.SetSelectedElement,
-                            value: { key: media.key, type: "mask" },
+                            type: UIActionType.DeleteCarouselEntry,
+                            key: media.key,
+                            captureId: media.captureId,
                           });
-                          notifyMaskSelectionChanged(media.key);
-                          notifyMaskSelectedCaptureChanged(media.key, undefined);
+                          break;
                         }
-                        // Only the deleted capture's own carousel entry goes away -- any others
-                        // this mask still has (see CarouselEntry's own doc comment) are untouched.
-                        uiDispatch({
-                          type: UIActionType.DeleteCarouselEntry,
-                          key: media.key,
-                          captureId: media.captureId,
-                        });
-                        break;
+                        case "peak": {
+                          await deleteMaskPeak(media.key, media.peakId);
+                          break;
+                        }
                       }
-                      case "peak": {
-                        // Everything a peak delete entails -- the request, reconciling the mask,
-                        // refreshing the mesh, and falling the active element back when the peak being
-                        // removed was the active one -- lives in deleteMaskPeak
-                        // (workspace.client.tsx), shared with the canvas's own alt-click and Maskbar's
-                        // peak list.
-                        await deleteMaskPeak(media.key, media.peakId);
-                        break;
-                      }
-                    }
-                  }}
-                >
-                  {"delete"}
+                    }}
+                  >
+                    {"delete"}
+                  </div>
                 </div>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "end",
-                    borderTop: "1px solid rgba(255,255,255,0.1)",
                     height: "100%",
                     ...dynamicSizes.footer.div,
                   }}
@@ -1398,8 +1363,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
         if (!updated) {
           dispatch({ type: CoreActionType.SetProject, value: snapshot });
         } else {
-          // No selection to clear alongside it: this menu's media is only ever an img or svg (see
-          // BrorwserContextMenuMedia), and uiState.selectedElement only ever holds a mask key.
           if (uiState.activeElement?.key == media.key) {
             uiDispatch({
               type: UIActionType.SetActiveElement,
