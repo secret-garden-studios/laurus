@@ -187,7 +187,6 @@ export function ProjectMaskItem({
     notifyMaskPendingTopologyCleared,
     notifyMaskPeaksUpdated,
     sendMaskPeakUpdate,
-    deleteMaskPeak,
   } = useContext(CoreContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
     useContext(HoverContext);
@@ -1448,13 +1447,6 @@ export function ProjectMaskItem({
                 const peak = peakId !== undefined ? peaksRef.current.find((p) => p.id === peakId) : undefined;
                 if (point && peakId !== undefined && peak && !peakCommitInFlightRef.current.has(peakId)) {
                   const [bufferX, bufferY] = point;
-                  if (isTopologyTool && (e.altKey || e.metaKey)) {
-                    peakCommitInFlightRef.current.add(peakId);
-                    void deleteMaskPeak(mediaKey, peakId).finally(() => {
-                      peakCommitInFlightRef.current.delete(peakId);
-                    });
-                    return;
-                  }
                   e.stopPropagation();
                   e.preventDefault();
                   canvas.setPointerCapture(e.pointerId);

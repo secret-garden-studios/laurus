@@ -8,8 +8,7 @@ import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
-import { PeakShapeResult, buildPeakShapeFromMarkup } from "../canvas-media/peak-shape";
-import { decodeSvgMarkup } from "../svg-upload-utils";
+import { PeakShapeResult, buildPeakShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/peak-shape";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -286,11 +285,6 @@ export default function Maskbar() {
   }, [armedMarkup]);
   const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
   const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
-  const stagedShape = uiState.stagedPeak.shape;
-  const armedShapePath = armedShape?.ok ? armedShape.shape.path : "";
-  if (stagedShape !== armedShapePath) {
-    uiDispatch({ type: UIActionType.SetStagedPeak, value: { shape: armedShapePath } });
-  }
 
   useEffect(() => {
     if (uiState.tool.type !== "mask" || uiState.tool.editingTopology !== "shape") return;

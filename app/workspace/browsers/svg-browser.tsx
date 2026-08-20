@@ -4,7 +4,7 @@ import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
-import { decodeSvgMarkup } from "../svg-upload-utils";
+import { decodeSvgMarkup } from "../canvas-media/peak-shape";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;
@@ -13,7 +13,7 @@ export interface SvgBrowser {
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
   const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } = useContext(HoverContext);
+  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -72,7 +72,6 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
         if (showContextMenu) setShowContextMenu(false);
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
-        setSelectedMaskKeys(new Set());
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
@@ -93,7 +92,6 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       uiDispatch,
       setSelectedImgKeys,
       setSelectedSvgKeys,
-      setSelectedMaskKeys,
       uiState.tool.type,
       notifyMaskToolChanged,
     ],
