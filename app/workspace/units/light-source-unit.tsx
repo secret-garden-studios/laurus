@@ -615,34 +615,24 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.loop = activeEquation.loop;
         initControls.limit_factor = activeEquation.limit_factor;
       } else if (activeKey) {
-        initControls.capture_size = activeCapture?.size ?? defaultLightSourceEquation.capture_size;
-        initControls.capture_intensity = activeCapture?.intensity ?? defaultLightSourceEquation.capture_intensity;
-        initControls.capture_falloff = activeCapture?.falloff ?? defaultLightSourceEquation.capture_falloff;
-        initControls.capture_darkness = activeCapture?.darkness ?? defaultLightSourceEquation.capture_darkness;
-        initControls.peak_elevation = activePeak?.elevation ?? defaultLightSourceEquation.peak_elevation;
-        initControls.peak_radius = activePeak?.radius ?? defaultLightSourceEquation.peak_radius;
-        initControls.peak_falloff = activePeak?.falloff ?? defaultLightSourceEquation.peak_falloff;
-        const blackPoint = activePeak ? toPeakBlackPoint(activePeak) : PEAK_BLACK_POINT_DEFAULT;
-        initControls.peak_black_point_r = blackPoint.r;
-        initControls.peak_black_point_g = blackPoint.g;
-        initControls.peak_black_point_b = blackPoint.b;
-        initControls.peak_black_point_a = blackPoint.a;
+        initControls.capture_size = defaultLightSourceEquation.capture_size;
+        initControls.capture_intensity = defaultLightSourceEquation.capture_intensity;
+        initControls.capture_falloff = defaultLightSourceEquation.capture_falloff;
+        initControls.capture_darkness = defaultLightSourceEquation.capture_darkness;
+        initControls.peak_elevation = defaultLightSourceEquation.peak_elevation;
+        initControls.peak_radius = defaultLightSourceEquation.peak_radius;
+        initControls.peak_falloff = defaultLightSourceEquation.peak_falloff;
+        initControls.peak_black_point_r = defaultLightSourceEquation.peak_black_point_r;
+        initControls.peak_black_point_g = defaultLightSourceEquation.peak_black_point_g;
+        initControls.peak_black_point_b = defaultLightSourceEquation.peak_black_point_b;
+        initControls.peak_black_point_a = defaultLightSourceEquation.peak_black_point_a;
         initControls.time = defaultLightSourceEquation.time;
         initControls.loop = defaultLightSourceEquation.loop;
         initControls.limit_factor = defaultLightSourceEquation.limit_factor;
       }
       updateTrackpads(initControls);
     })();
-  }, [
-    currentControls,
-    carouselEntryKey,
-    lightSource.math,
-    updateTrackpads,
-    coreState.timelineUnit,
-    target,
-    activePeak,
-    activeCapture,
-  ]);
+  }, [currentControls, carouselEntryKey, lightSource.math, updateTrackpads, coreState.timelineUnit, target]);
 
   const newEquationSeed = useMemo((): LaurusLightSourceEquation => {
     if (activePeak) {
