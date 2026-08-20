@@ -193,8 +193,8 @@ export default function Maskbar() {
   const isSizeOn = size.value;
   const xValue = position.x?.toString() ?? "0";
   const yValue = position.y?.toString() ?? "0";
-  const widthValue = size.width?.toString() ?? "0";
-  const heightValue = size.height?.toString() ?? "0";
+  const widthValue = size.width?.toFixed() ?? "0";
+  const heightValue = size.height?.toFixed() ?? "0";
   const positionInputStyle = useMemo<CSSProperties>(() => {
     return {
       textAlign: "center",
