@@ -1714,7 +1714,7 @@ export default function Workspace({
     [uiState],
   );
 
-  const maskPreview = useMaskPreview();
+  const maskPreview = useMaskPreview(coreState.apiOrigin, coreState.accessToken);
   const maskContextValue = useMemo(
     () => ({ ...maskPreview, ...maskNotifyContextValue }),
     [maskPreview, maskNotifyContextValue],

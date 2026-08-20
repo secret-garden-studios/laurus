@@ -1,5 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { CoreContext } from "../workspace.client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LaurusImgResult,
   LaurusMaskResult,
@@ -49,8 +48,7 @@ export interface MaskSizeOverride {
  * preview (layered into the main canvas) live in different parts of the tree while sharing one
  * in-flight masking.
  */
-export function useMaskPreview() {
-  const { coreState } = useContext(CoreContext);
+export function useMaskPreview(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
 
@@ -207,8 +205,8 @@ export function useMaskPreview() {
       const resolutionFactor = resolutionRef.current;
       socketRef.current?.close();
       socketRef.current = maskImage(
-        coreState.apiOrigin,
-        coreState.accessToken,
+        apiOrigin,
+        accessToken,
         resolutionFactor === 1
           ? { img_media_id: img.img_media_id }
           : {
@@ -297,8 +295,8 @@ export function useMaskPreview() {
       );
     },
     [
-      coreState.apiOrigin,
-      coreState.accessToken,
+      apiOrigin,
+      accessToken,
       getColorCtx,
       setTextureMix,
       setCaptureSize,
