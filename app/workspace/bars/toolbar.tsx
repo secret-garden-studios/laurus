@@ -145,8 +145,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   Marquee Tool
                 </h4>
                 <p>
-                  Drop media from the <strong>browser</strong> into an area on the canvas, or select existing media on
-                  the canvas.
+                  Drop media from the <strong>browser</strong> into an area on the canvas, or select multiple pieces of
+                  existing media on the canvas.
                 </p>
               </div>
             )}
@@ -177,7 +177,38 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
-            title="mask tool"
+            tooltipId="mask-tool-tooltip"
+          />
+          <Tooltip
+            className={dellaRespira.className}
+            id="mask-tool-tooltip"
+            delayShow={tooltipDelay}
+            style={{
+              backgroundColor: "rgb(40, 40, 40)",
+              color: "rgb(227, 227, 227)",
+              fontSize: dynamicSizes.tooltipFont2,
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+              maxWidth: "300px",
+              zIndex: 99,
+            }}
+            render={() => (
+              <div style={{ padding: 4, width: "100%" }}>
+                <h4
+                  style={{
+                    marginBottom: dynamicSizes.tooltipMarginBottom,
+                    color: "rgb(255, 255, 255)",
+                    fontSize: dynamicSizes.tooltipFont,
+                  }}
+                >
+                  Mask Tool
+                </h4>
+                <p>
+                  Convert media from the <strong>browser</strong> into a mask while dropping it on the canvas. Define
+                  light sources on existing masks or sculpt their surface.
+                </p>
+              </div>
+            )}
           />
           <ToolbarButton
             selected={uiState.tool.type == "contextmenu"}
@@ -373,7 +404,35 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
-            title="light source tool"
+            tooltipId="light-source-tool-tooltip"
+          />
+          <Tooltip
+            className={dellaRespira.className}
+            id="light-source-tool-tooltip"
+            delayShow={tooltipDelay}
+            style={{
+              backgroundColor: "rgb(40, 40, 40)",
+              color: "rgb(227, 227, 227)",
+              fontSize: dynamicSizes.tooltipFont2,
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+              maxWidth: "300px",
+              zIndex: 99,
+            }}
+            render={() => (
+              <div style={{ padding: 4, width: "100%" }}>
+                <h4
+                  style={{
+                    marginBottom: dynamicSizes.tooltipMarginBottom,
+                    color: "rgb(255, 255, 255)",
+                    fontSize: dynamicSizes.tooltipFont,
+                  }}
+                >
+                  Shader Tool
+                </h4>
+                <p>Select features of an existing mask and control how light interacts with them.</p>
+              </div>
+            )}
           />
           <ToolbarButton
             selected={uiState.tool.type == "mix"}
