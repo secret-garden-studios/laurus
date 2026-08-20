@@ -573,7 +573,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
                     }}
                   >
-                    {"w"}
+                    {`${target === "peak" || target === "capture" ? "s" : "w"}`}
                   </div>
                   <input
                     className={dellaRespira.className}
