@@ -1,5 +1,5 @@
 import { useContext, useState, useMemo, useCallback, useEffect, RefObject } from "react";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
@@ -11,7 +11,8 @@ export interface SvgBrowser {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
-  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {

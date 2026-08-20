@@ -10,7 +10,7 @@ import {
   useLayoutEffect,
 } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, UIContext, getMaskSourceImgIds } from "../workspace.client";
+import { CoreContext, MaskContext, UIContext, getMaskSourceImgIds } from "../workspace.client";
 import styles from "../../app.module.css";
 import { publicIcon, refresh200, sort300, SvgRepo } from "../../svg-repo";
 import { createImg, LaurusFrame, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
@@ -117,7 +117,8 @@ interface MediaBrowser {
   onPrevPage?: () => void;
 }
 export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPage }: MediaBrowser) {
-  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {

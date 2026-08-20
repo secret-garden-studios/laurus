@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, convertTime, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { updateMove, LaurusLoopType, LaurusShapeType, LaurusMoveEquation, LaurusMoveResult } from "../workspace.server";
 import Dial from "../../components/dial";
@@ -19,17 +19,8 @@ import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-s
 import { CoreActionType } from "../states/core-state";
 import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
-// Which kind of media this unit is currently editing the move of. Not state and not persisted --
-// it's read off whichever carousel entry the display is showing, exactly the way scale-unit.tsx
-// reads its own target off the identical place. Move is wireable to every entry type there is
-// (see this file's own carouselEntryKey, and its useCarouselIndex call's own comment on why there
-// is no isNavigable predicate), so unlike rotate's own target this one includes captures and
-// peaks too.
 export type MoveUnitTarget = CarouselEntry["type"];
 
-// The order the unitbar's target button walks. Fixed rather than read off the carousel, which is
-// ordered by canvas position (see workspace.client.tsx's initCarouselEntries) and so interleaves
-// the types with no order of its own to borrow -- mirrors scale-unit.tsx's own SCALE_TARGET_ORDER.
 const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
 
 export interface MoveUnitControls {
@@ -63,27 +54,17 @@ interface MoveUnit {
   carouselIndexInit: number;
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
-  const {
-    coreState,
-    dispatch,
-    notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
-  } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  // No isNavigable predicate: move is wireable to every entry type there is, peaks included (a
-  // peak's equation translates its own epicenter across the mesh -- see this file's own
-  // carouselEntryKey). UnitDisplay's default is the same "everything" rule.
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     move.move_id,
   );
-  // Whatever the display is showing is what this unit is editing -- see MoveUnitTarget. The "img"
-  // fallback is for a carousel with nothing on it at all, where there's no equation to wire either
-  // way and the full parameter set is the right thing to leave standing.
   const target: MoveUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
@@ -140,22 +121,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "mask": {
-          // The whole mask, wired the same way an img/svg wires its own bare key -- see
-          // effects-utils.ts's comment on why this never collides with a capture's own
-          // maskCaptureInputId-keyed math below.
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "capture": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
-          // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
-          // math -- keying purely off the mask's element key would collapse every capture on the
-          // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
-        // A peak has no element transform of its own, but it does have an epicenter: a move
-        // equation wired here translates the peak's cx/cy, dragging its whole dome across the mesh
-        // over the animation (see project-mask-item.tsx's peakTargets). Keyed per peak for the
-        // same reason a capture is -- see maskPeakInputId.
         case "peak": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
@@ -238,11 +209,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const angleRef = useRef<HTMLDivElement | null>(null);
 
-  // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
-  // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
-  // Mirrors scale-unit.tsx's own activateEntry on the selection question too: activating a capture
-  // or a peak also selects it, while the svg/img/mask cases leave the selection alone (see
-  // LaurusSelectedElement).
   const activateEntry = useCallback(
     (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
@@ -283,15 +249,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           break;
         }
         case "capture": {
-          // Must be type "capture" (not "mask") here -- omitting that (as this used to, back when
-          // captureId just qualified a "mask"-typed element) leaves useCarouselIndex's own
-          // activeIndex lookup falling back to "any entry with this mask key" whenever the active
-          // element isn't itself a "capture", i.e. whichever of this mask's captures happens to
-          // sit first in the carousel. Since this callback's whole point is to re-anchor the
-          // active element on the capture the carousel is *already* showing (carouselIndex),
-          // getting this wrong would make this component's own next render silently snap back to
-          // a different capture than the one just edited -- see notifyMaskSelectedCaptureChanged's
-          // sibling call in unit-display.tsx's own setActiveElement, which this mirrors.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "capture",
@@ -311,8 +268,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
-        // Mirrors "capture" above exactly, down to the paired selection that makes this peak the
-        // mesh's sole bright sub-element -- see unit-display.tsx's own "peak" case.
         case "peak": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
@@ -350,11 +305,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     }
   }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
 
-  // Switching target *is* moving the carousel -- each kind of media lives on its own carousel
-  // entries and the target is read back off whichever one is showing (see MoveUnitTarget), so
-  // there's no separate mode to flip. The chevrons already walk every entry; this is the shortcut
-  // past however many entries of the kinds in between sit in the way. Mirrors scale-unit.tsx's own
-  // toggleTarget exactly.
   const toggleTarget = useCallback(() => {
     const startIndex = MOVE_TARGET_ORDER.indexOf(target);
     for (let offset = 1; offset <= MOVE_TARGET_ORDER.length; offset++) {
@@ -369,14 +319,10 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           ? withMathIndex
           : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
       const nextEntry = uiState.carouselEntries[nextIndex];
-      // nearestNavigableIndex falls back to the index it was handed when nothing qualifies, so
-      // this is also the "carousel has no entry of this kind" test -- move on to the next kind.
+
       if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
 
       setLocalIndex(nextIndex);
-      // While this unit is the one holding the active element, the carousel follows that element
-      // rather than the local index (see useCarouselIndex) -- so the jump above would be silently
-      // ignored unless the active element moves with it.
       if (uiState.activeElement?.locallyActivatedEffectKey === move.move_id) {
         activateEntry(nextEntry);
       }

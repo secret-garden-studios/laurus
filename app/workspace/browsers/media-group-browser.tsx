@@ -1,6 +1,6 @@
 import { useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import { addCircle, checkCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
@@ -31,7 +31,8 @@ export interface MediaGroupBrowser {
   maxWidth: number;
 }
 export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
-  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const {
     isAltKeyPressed,

@@ -1,5 +1,5 @@
 import { useContext, useState, useMemo, useCallback, useEffect, useRef, RefObject } from "react";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
@@ -11,7 +11,8 @@ export interface ImgBrowser {
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
 export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
-  const { coreState, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {

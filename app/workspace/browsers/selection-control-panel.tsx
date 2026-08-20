@@ -1,6 +1,6 @@
 import { useContext, useState, useCallback, CSSProperties } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { addCircle, SvgRepo } from "../../svg-repo";
 import { createMediaGroup, LaurusMediaGroup } from "../workspace.server";
@@ -12,7 +12,8 @@ export interface SelectionControlPanel {
   containerStyle?: CSSProperties;
 }
 export default function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
-  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const {
     selectedImgKeys,

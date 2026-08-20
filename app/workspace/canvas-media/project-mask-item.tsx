@@ -1,7 +1,15 @@
 "use client";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CoreContext, HoverContext, LaurusTransform, UIContext, getNewContextMenuConfig } from "../workspace.client";
+import {
+  CoreContext,
+  HoverContext,
+  LaurusTransform,
+  MaskContext,
+  SocketContext,
+  UIContext,
+  getNewContextMenuConfig,
+} from "../workspace.client";
 import { useToolCursor } from "../hooks/useToolCursor";
 import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
@@ -173,21 +181,19 @@ export function ProjectMaskItem({
   maxZIndex,
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { sendMaskCaptureUpdate, sendMaskPeakUpdate } = useContext(SocketContext);
   const {
-    coreState,
-    dispatch,
     notifyMaskSelectionChanged,
     notifyMaskSelectedCaptureChanged,
     notifyMaskSelectedPeakChanged,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskCaptureUpdated,
-    sendMaskCaptureUpdate,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskPeaksUpdated,
-    sendMaskPeakUpdate,
-  } = useContext(CoreContext);
+  } = useContext(MaskContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
     useContext(HoverContext);
   const [isHovered, setIsHovered] = useState(false);

@@ -7,7 +7,14 @@ import {
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
-import { CoreContext, LaurusTransform, UIContext, getMaskSourceImgIds } from "./workspace.client";
+import {
+  CoreContext,
+  LaurusTransform,
+  MaskContext,
+  SocketContext,
+  UIContext,
+  getMaskSourceImgIds,
+} from "./workspace.client";
 import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
@@ -135,18 +142,15 @@ interface ContextMenu {
   transform?: LaurusTransform;
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { sendMaskCaptureUpdate, closeMaskCaptureSocket, closeMaskPeakSocket } = useContext(SocketContext);
   const {
-    coreState,
-    dispatch,
     notifyMaskSelectionChanged,
     notifyMaskSelectedCaptureChanged,
     notifyMaskSelectedPeakChanged,
     notifyMaskCaptureUpdated,
-    sendMaskCaptureUpdate,
-    closeMaskCaptureSocket,
-    deleteMaskPeak,
-    closeMaskPeakSocket,
-  } = useContext(CoreContext);
+    deletePeak,
+  } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
@@ -1210,7 +1214,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           break;
                         }
                         case "peak": {
-                          await deleteMaskPeak(media.key, media.peakId);
+                          await deletePeak(media.key, media.peakId);
                           break;
                         }
                       }

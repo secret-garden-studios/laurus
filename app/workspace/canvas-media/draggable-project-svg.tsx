@@ -1,6 +1,13 @@
 "use client";
 import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { CoreContext, HoverContext, getNewContextMenuConfig, LaurusTransform, UIContext } from "../workspace.client";
+import {
+  CoreContext,
+  HoverContext,
+  getNewContextMenuConfig,
+  LaurusTransform,
+  MaskContext,
+  UIContext,
+} from "../workspace.client";
 import { RefObject, useCallback, useContext, useMemo } from "react";
 import {
   updateProject,
@@ -37,7 +44,8 @@ export function DraggableProjectSvg({
   refKey,
   forceAbsolutePosition,
 }: DraggableProjectSvg) {
-  const { coreState, dispatch, notifyMaskSelectionChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
@@ -391,10 +399,6 @@ export function DraggableProjectSvg({
             break;
           }
           case "rotate": {
-            // Toggles selectedSvgKeys the same way the "scale" case above does, so Rotatebar's
-            // blue-outline highlighting stays consistent no matter which tool made the selection
-            // (see Scalebar). SetActiveElement below is untouched -- other consumers (rotate-unit's
-            // carousel, etc.) still key off it independently of this selection set.
             setSelectedSvgKeys((prev) => {
               const next = new Set(prev);
               if (next.has(mediaKey)) {

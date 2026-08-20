@@ -1,5 +1,5 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
@@ -7,7 +7,7 @@ import { UIActionType } from "../states/ui-state";
 
 export default function Marqueebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskToolChanged } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {

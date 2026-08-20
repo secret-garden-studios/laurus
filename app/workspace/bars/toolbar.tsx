@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { CoreContext, UIContext } from "../workspace.client";
+import { MaskContext, UIContext } from "../workspace.client";
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import {
@@ -28,7 +28,7 @@ interface Toolbar {
 }
 export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskToolChanged } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const [tooltipDelay] = useState(1000);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {

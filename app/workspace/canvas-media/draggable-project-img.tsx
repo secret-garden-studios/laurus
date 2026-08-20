@@ -1,6 +1,13 @@
 "use client";
 import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { CoreContext, HoverContext, getNewContextMenuConfig, LaurusTransform, UIContext } from "../workspace.client";
+import {
+  CoreContext,
+  HoverContext,
+  getNewContextMenuConfig,
+  LaurusTransform,
+  MaskContext,
+  UIContext,
+} from "../workspace.client";
 import { RefObject, useCallback, useContext, useMemo } from "react";
 import {
   updateProject,
@@ -37,7 +44,8 @@ export function DraggableProjectImg({
   refKey,
   forceAbsolutePosition,
 }: DraggableProjectImg) {
-  const { coreState, dispatch, notifyMaskSelectionChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {

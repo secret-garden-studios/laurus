@@ -1,7 +1,7 @@
 import { useContext, useState, useCallback } from "react";
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
@@ -181,8 +181,9 @@ export default function UnitDisplay({
   onNewLocalIndex,
   isEntryWireable = () => true,
 }: UnitDisplay) {
-  const { coreState, notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
-    useContext(CoreContext);
+  const { coreState } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));

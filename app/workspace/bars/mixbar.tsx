@@ -1,7 +1,7 @@
 import { geistMono } from "@/app/fonts";
 import { SvgRepo, allOut, arrowDownwardAlt, check, circle, earthquake, experiment, cycle400 } from "@/app/svg-repo";
 import { useContext, useEffect, useMemo, useState } from "react";
-import { UIContext, CoreContext } from "../workspace.client";
+import { UIContext, CoreContext, MaskContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
 import {
   LaurusEffect,
@@ -18,7 +18,8 @@ import { UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 
 export default function Mixbar() {
-  const { coreState, dispatch, notifyMaskToolChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {

@@ -12,9 +12,9 @@ import { PeakShapeResult, buildPeakShapeFromMarkup, decodeSvgMarkup } from "../c
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { coreState, dispatch, notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
   const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const mask = useContext(MaskContext);
+  const { notifyMaskToolChanged, notifyMaskAppearanceChanged, ...mask } = useContext(MaskContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":

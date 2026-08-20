@@ -1,5 +1,5 @@
 import { useCallback, useContext, useRef, useState } from "react";
-import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
+import { CoreContext, HoverContext, UIContext, MaskContext, SocketContext } from "../workspace.client";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
@@ -33,22 +33,20 @@ const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { sendMaskCaptureUpdate, sendMaskPeakUpdate } = useContext(SocketContext);
+  const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
   const {
-    coreState,
-    dispatch,
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
-    sendMaskCaptureUpdate,
     notifyMaskCaptureUpdated,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
-    sendMaskPeakUpdate,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskPeaksUpdated,
-  } = useContext(CoreContext);
-  const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
-  const mask = useContext(MaskContext);
+    ...mask
+  } = useContext(MaskContext);
   const [target, setTarget] = useState<"preview" | "capture" | "peak">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {

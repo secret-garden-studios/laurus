@@ -217,23 +217,47 @@ export interface CoreContextProps {
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
   cancelFrameDownload: () => void;
-  captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
+}
+
+export const CoreContext = createContext<CoreContextProps>({
+  coreState: { ...defaultCoreState },
+  dispatch: () => {},
+  handleRewindAll: () => {},
+  handlePlayAll: () => {},
+  handleFastForwardAll: () => {},
+  handlePlayTarget: () => {},
+  handleStopAll: () => {},
+  cancelFrameDownload: () => {},
+});
+
+export interface SocketContextProps {
   sendMaskCaptureUpdate: (
     maskMediaId: string,
     request: MaskCaptureUpdateRequest_V1_0,
   ) => Promise<LaurusMaskResult | undefined>;
   closeMaskCaptureSocket: (maskMediaId: string) => void;
-  createTopologyPeak: (
-    maskKey: string,
-    circle: { cx: number; cy: number; radius: number },
-    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
-  ) => Promise<void>;
   sendMaskPeakUpdate: (
     maskMediaId: string,
     update: MaskPeakUpdateRequest_V1_0,
   ) => Promise<LaurusMaskResult | undefined>;
-  deleteMaskPeak: (maskKey: string, peakId: number) => Promise<void>;
   closeMaskPeakSocket: (maskMediaId: string) => void;
+}
+
+export const SocketContext = createContext<SocketContextProps>({
+  sendMaskCaptureUpdate: async () => undefined,
+  closeMaskCaptureSocket: () => {},
+  sendMaskPeakUpdate: async () => undefined,
+  closeMaskPeakSocket: () => {},
+});
+
+export interface MaskNotifyValue {
+  captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
+  createPeak: (
+    maskKey: string,
+    circle: { cx: number; cy: number; radius: number },
+    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
+  ) => Promise<void>;
+  deletePeak: (maskKey: string, peakId: number) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
   notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
@@ -247,36 +271,6 @@ export interface CoreContextProps {
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
   notifyMaskPeaksUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
-
-export const CoreContext = createContext<CoreContextProps>({
-  coreState: { ...defaultCoreState },
-  dispatch: () => {},
-  handleRewindAll: () => {},
-  handlePlayAll: () => {},
-  handleFastForwardAll: () => {},
-  handlePlayTarget: () => {},
-  handleStopAll: () => {},
-  cancelFrameDownload: () => {},
-  captureMeshSection: async () => {},
-  sendMaskCaptureUpdate: async () => undefined,
-  closeMaskCaptureSocket: () => {},
-  createTopologyPeak: async () => {},
-  sendMaskPeakUpdate: async () => undefined,
-  deleteMaskPeak: async () => {},
-  closeMaskPeakSocket: () => {},
-  notifyMaskToolChanged: () => {},
-  notifyMaskSelectionChanged: () => {},
-  notifyMaskSelectedCaptureChanged: () => {},
-  notifyMaskSelectedPeakChanged: () => {},
-  notifyMaskPendingCaptureSet: () => {},
-  notifyMaskPendingCaptureCleared: () => {},
-  notifyMaskCaptureUpdated: () => {},
-  notifyMaskAppearanceChanged: () => {},
-  notifyMaskLightSourcePreviewToggled: () => {},
-  notifyMaskPendingTopologySet: () => {},
-  notifyMaskPendingTopologyCleared: () => {},
-  notifyMaskPeaksUpdated: () => {},
-});
 
 export interface UIContextProps {
   uiState: UIState;
@@ -329,12 +323,30 @@ const defaultMaskPreview: UseMaskPreview = {
   },
 };
 
-export const MaskContext = createContext<UseMaskPreview>(defaultMaskPreview);
+const defaultMaskNotifyValue: MaskNotifyValue = {
+  captureMeshSection: async () => {},
+  createPeak: async () => {},
+  deletePeak: async () => {},
+  notifyMaskToolChanged: () => {},
+  notifyMaskSelectionChanged: () => {},
+  notifyMaskSelectedCaptureChanged: () => {},
+  notifyMaskSelectedPeakChanged: () => {},
+  notifyMaskPendingCaptureSet: () => {},
+  notifyMaskPendingCaptureCleared: () => {},
+  notifyMaskCaptureUpdated: () => {},
+  notifyMaskAppearanceChanged: () => {},
+  notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskPendingTopologySet: () => {},
+  notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskPeaksUpdated: () => {},
+};
 
-function MaskPreviewProvider({ children }: { children: React.ReactNode }) {
-  const maskPreview = useMaskPreview();
-  return <MaskContext value={maskPreview}>{children}</MaskContext>;
-}
+export interface MaskContextProps extends UseMaskPreview, MaskNotifyValue {}
+
+export const MaskContext = createContext<MaskContextProps>({
+  ...defaultMaskPreview,
+  ...defaultMaskNotifyValue,
+});
 
 function initProject(p: ProjectResult_V1_0) {
   const projectImgsInit: Map<string, LaurusProjectImg> = new Map(p.imgs.entries().map((e) => [e[0], { ...e[1] }]));
@@ -1199,7 +1211,7 @@ export default function Workspace({
     ],
   );
 
-  const createTopologyPeak = useCallback(
+  const createPeak = useCallback(
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
@@ -1266,7 +1278,7 @@ export default function Workspace({
     ],
   );
 
-  const deleteMaskPeak = useCallback(
+  const deletePeak = useCallback(
     async (maskKey: string, peakId: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       const peak = maskData?.peaks.find((p) => p.id === peakId);
@@ -1633,13 +1645,35 @@ export default function Workspace({
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
-      captureMeshSection,
+    }),
+    [
+      coreState,
+      getNewAnimations,
+      getNewAnimationsByTarget,
+      handleRewindAll,
+      handlePlayAll,
+      handleFastForwardAll,
+      handlePlayTarget,
+      handleStopAll,
+      cancelFrameDownload,
+    ],
+  );
+
+  const socketContextValue = useMemo(
+    () => ({
       sendMaskCaptureUpdate,
       closeMaskCaptureSocket,
-      createTopologyPeak,
       sendMaskPeakUpdate,
-      deleteMaskPeak,
       closeMaskPeakSocket,
+    }),
+    [sendMaskCaptureUpdate, closeMaskCaptureSocket, sendMaskPeakUpdate, closeMaskPeakSocket],
+  );
+
+  const maskNotifyContextValue = useMemo(
+    () => ({
+      captureMeshSection,
+      createPeak,
+      deletePeak,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
@@ -1654,22 +1688,9 @@ export default function Workspace({
       notifyMaskPeaksUpdated,
     }),
     [
-      coreState,
-      getNewAnimations,
-      getNewAnimationsByTarget,
-      handleRewindAll,
-      handlePlayAll,
-      handleFastForwardAll,
-      handlePlayTarget,
-      handleStopAll,
-      cancelFrameDownload,
       captureMeshSection,
-      sendMaskCaptureUpdate,
-      closeMaskCaptureSocket,
-      createTopologyPeak,
-      sendMaskPeakUpdate,
-      deleteMaskPeak,
-      closeMaskPeakSocket,
+      createPeak,
+      deletePeak,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
@@ -1691,6 +1712,12 @@ export default function Workspace({
       uiDispatch,
     }),
     [uiState],
+  );
+
+  const maskPreview = useMaskPreview();
+  const maskContextValue = useMemo(
+    () => ({ ...maskPreview, ...maskNotifyContextValue }),
+    [maskPreview, maskNotifyContextValue],
   );
 
   const canvasCursor = useToolCursor({ target: "canvas" });
@@ -1853,349 +1880,351 @@ export default function Workspace({
       >
         <HoverContext value={hoverContextValue}>
           <CoreContext value={coreContextValue}>
-            <UIContext value={uiContextValue}>
-              <MaskPreviewProvider>
-                <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
-                  <div
-                    style={{
-                      width: "100%",
-                      height: 1,
-                      background: "rgba(255,255,255,0.1)",
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    gridRow: "3 / span 2",
-                    gridColumn: "1",
-                    overflowY: "auto",
-                  }}
-                >
-                  {uiState.showTimeline ? (
-                    <TimelineArea />
-                  ) : (
-                    <>
-                      <div
-                        style={{
-                          zIndex: Z_INDEX.FLOATING_CONTROLS,
-                          position: "fixed",
-                          bottom: minifiedControlsSize.playBottom,
-                          left: minifiedControlsSize.playLeft,
-                          width: minifiedControlsSize.playContainer,
-                          height: minifiedControlsSize.playContainer,
-                          borderRadius: "50%",
-                          border: "1px solid rgba(255, 255, 255, 0.1)",
-                          background: "rgb(32, 32, 32)",
-                          boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
-                        }}
-                      >
-                        <SvgRepo
-                          svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
-                          containerStyle={{
-                            width: minifiedControlsSize.playSvg,
-                            height: minifiedControlsSize.playSvg,
-                            cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
-                          }}
-                          scale={0.5}
-                          scaleToContaier={true}
-                          onContainerClick={handlePlayAll}
-                        />
-                      </div>
-                      <div
-                        style={{
-                          zIndex: Z_INDEX.FLOATING_CONTROLS,
-                          position: "fixed",
-                          bottom: minifiedControlsSize.recordingBottom,
-                          right: uiState.showMediaBrowser
-                            ? minifiedControlsSize.recordingRight1
-                            : minifiedControlsSize.recordingRight2,
-                          width: minifiedControlsSize.recordingWidth,
-                          height: minifiedControlsSize.recordingHeight,
-                          borderRadius: "50%",
-                          border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
-                          background: uiState.recordingLight
-                            ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
-                            : "none",
-                          boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
-                        }}
-                      />
-                    </>
-                  )}
-                </div>
-                <div
-                  style={{
-                    gridRow: "2",
-                    gridColumn: "1 / -1",
-                    width: "100%",
-                  }}
-                >
-                  <Titlebar />
-                </div>
-                <div
-                  style={{
-                    gridRow: "3",
-                    gridColumn: "2",
-                    width: "100%",
-                    overflowX: "auto",
-                  }}
-                >
-                  <Subtitlebar />
-                </div>
-                {/* canvas area */}
-                <div
-                  ref={canvasAreaRef}
-                  style={{
-                    gridRow: "4",
-                    gridColumn: "2",
-                    overflowY: "auto",
-                    position: "relative",
-                    width: "100%",
-                    height: "100%",
-                    cursor: canvasCursor,
-                  }}
-                >
-                  <div
-                    className={
-                      styles[
-                        `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
-                      ]
-                    }
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: coreState.project.canvas_width,
-                      height: coreState.project.canvas_height,
-                      zIndex: Z_INDEX.CANVAS_BG,
-                    }}
-                  />
-                  {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+            <SocketContext value={socketContextValue}>
+              <UIContext value={uiContextValue}>
+                <MaskContext value={maskContextValue}>
+                  <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
                     <div
+                      style={{
+                        width: "100%",
+                        height: 1,
+                        background: "rgba(255,255,255,0.1)",
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      gridRow: "3 / span 2",
+                      gridColumn: "1",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {uiState.showTimeline ? (
+                      <TimelineArea />
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            zIndex: Z_INDEX.FLOATING_CONTROLS,
+                            position: "fixed",
+                            bottom: minifiedControlsSize.playBottom,
+                            left: minifiedControlsSize.playLeft,
+                            width: minifiedControlsSize.playContainer,
+                            height: minifiedControlsSize.playContainer,
+                            borderRadius: "50%",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            background: "rgb(32, 32, 32)",
+                            boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
+                          }}
+                        >
+                          <SvgRepo
+                            svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
+                            containerStyle={{
+                              width: minifiedControlsSize.playSvg,
+                              height: minifiedControlsSize.playSvg,
+                              cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
+                            }}
+                            scale={0.5}
+                            scaleToContaier={true}
+                            onContainerClick={handlePlayAll}
+                          />
+                        </div>
+                        <div
+                          style={{
+                            zIndex: Z_INDEX.FLOATING_CONTROLS,
+                            position: "fixed",
+                            bottom: minifiedControlsSize.recordingBottom,
+                            right: uiState.showMediaBrowser
+                              ? minifiedControlsSize.recordingRight1
+                              : minifiedControlsSize.recordingRight2,
+                            width: minifiedControlsSize.recordingWidth,
+                            height: minifiedControlsSize.recordingHeight,
+                            borderRadius: "50%",
+                            border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
+                            background: uiState.recordingLight
+                              ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
+                              : "none",
+                            boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      gridRow: "2",
+                      gridColumn: "1 / -1",
+                      width: "100%",
+                    }}
+                  >
+                    <Titlebar />
+                  </div>
+                  <div
+                    style={{
+                      gridRow: "3",
+                      gridColumn: "2",
+                      width: "100%",
+                      overflowX: "auto",
+                    }}
+                  >
+                    <Subtitlebar />
+                  </div>
+                  {/* canvas area */}
+                  <div
+                    ref={canvasAreaRef}
+                    style={{
+                      gridRow: "4",
+                      gridColumn: "2",
+                      overflowY: "auto",
+                      position: "relative",
+                      width: "100%",
+                      height: "100%",
+                      cursor: canvasCursor,
+                    }}
+                  >
+                    <div
+                      className={
+                        styles[
+                          `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
+                        ]
+                      }
                       style={{
                         position: "absolute",
                         top: 0,
                         left: 0,
-                        width: "min-content",
-                        height: "min-content",
-                        zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                        pointerEvents:
-                          uiState.tool.type === "mask" &&
-                          !uiState.tool.capturingMeshSection &&
-                          !uiState.tool.editingTopology &&
-                          uiState.browserElement?.type !== "img"
-                            ? "none"
-                            : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
-                              ? "none"
-                              : "auto",
+                        width: coreState.project.canvas_width,
+                        height: coreState.project.canvas_height,
+                        zIndex: Z_INDEX.CANVAS_BG,
                       }}
-                    >
-                      <Canvas />
-                    </div>
-                  )}
-                  {/* camera frame */}
-                  <DraggableCamera
-                    contextId={"draggable-camera-context-id"}
-                    nodeId={"draggable-camera-node-id"}
-                    svgElementsRef={svgElementsRef}
-                    imgElementsRef={imgElementsRef}
-                    framesCacheRef={framesCacheRef}
-                    zIndex={Z_INDEX.CAMERA_FRAME}
-                    onNewPosition={async function (newPosition: { x: number; y: number }) {
-                      const rollback: LaurusProjectResult = {
-                        ...coreState.project,
-                      };
-                      const newProject: LaurusProjectResult = {
-                        ...coreState.project,
-                        frame_left: newPosition.x,
-                        frame_top: newPosition.y,
-                      };
-                      if (coreState.project.project_id) {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: newProject,
-                        });
-                        const updated = await updateProject(
-                          coreState.apiOrigin,
-                          coreState.accessToken,
-                          newProject.project_id,
-                          { ...newProject },
-                        );
-                        if (!updated) {
+                    />
+                    {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "min-content",
+                          height: "min-content",
+                          zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
+                          pointerEvents:
+                            uiState.tool.type === "mask" &&
+                            !uiState.tool.capturingMeshSection &&
+                            !uiState.tool.editingTopology &&
+                            uiState.browserElement?.type !== "img"
+                              ? "none"
+                              : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                                ? "none"
+                                : "auto",
+                        }}
+                      >
+                        <Canvas />
+                      </div>
+                    )}
+                    {/* camera frame */}
+                    <DraggableCamera
+                      contextId={"draggable-camera-context-id"}
+                      nodeId={"draggable-camera-node-id"}
+                      svgElementsRef={svgElementsRef}
+                      imgElementsRef={imgElementsRef}
+                      framesCacheRef={framesCacheRef}
+                      zIndex={Z_INDEX.CAMERA_FRAME}
+                      onNewPosition={async function (newPosition: { x: number; y: number }) {
+                        const rollback: LaurusProjectResult = {
+                          ...coreState.project,
+                        };
+                        const newProject: LaurusProjectResult = {
+                          ...coreState.project,
+                          frame_left: newPosition.x,
+                          frame_top: newPosition.y,
+                        };
+                        if (coreState.project.project_id) {
                           dispatch({
                             type: CoreActionType.SetProject,
-                            value: rollback,
+                            value: newProject,
                           });
-                        }
-                      } else {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: newProject,
-                        });
-                        const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
-                          ...newProject,
-                        });
-                        if (created) {
-                          dispatch({
-                            type: CoreActionType.SetProject,
-                            value: { ...created },
-                          });
+                          const updated = await updateProject(
+                            coreState.apiOrigin,
+                            coreState.accessToken,
+                            newProject.project_id,
+                            { ...newProject },
+                          );
+                          if (!updated) {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: rollback,
+                            });
+                          }
                         } else {
                           dispatch({
                             type: CoreActionType.SetProject,
-                            value: { ...rollback },
+                            value: newProject,
                           });
-                        }
-                      }
-                    }}
-                    disabled={uiState.tool.type != "move"}
-                  />
-                  <>
-                    {Array.from(coreState.project.imgs.entries()).map((e) => {
-                      const [key, meta] = e;
-                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                        return;
-                      const imgData = coreState.canvasImgs.get(key);
-                      if (imgData) {
-                        return (
-                          <div key={key}>
-                            <DraggableProjectImg
-                              mediaKey={key}
-                              data={imgData}
-                              meta={meta}
-                              zIndex={
-                                uiState.tool.type === "marquee" && uiState.tool.stack
-                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                              }
-                              imgElementsRef={imgElementsRef}
-                              framesCacheRef={framesCacheRef}
-                              refKey={key}
-                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                            />
-                          </div>
-                        );
-                      }
-                    })}
-                    {Array.from(coreState.project.svgs.entries()).map((e) => {
-                      const [key, meta] = e;
-                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                        return;
-                      const svgData = coreState.canvasSvgs.get(key);
-                      if (!svgData) return;
-                      let decodedString = "";
-                      try {
-                        decodedString = decodeURIComponent(
-                          atob(svgData.markup)
-                            .split("")
-                            .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-                            .join(""),
-                        );
-                      } catch (error) {
-                        console.log("Failed to decode svg markup", {
-                          media_key: meta.media_key,
-                          error,
-                        });
-                      }
-                      if (decodedString) {
-                        return (
-                          <div key={key}>
-                            <DraggableProjectSvg
-                              mediaKey={key}
-                              decodedString={decodedString}
-                              meta={meta}
-                              zIndex={
-                                uiState.tool.type === "marquee" && uiState.tool.stack
-                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                              }
-                              svgElementsRef={svgElementsRef}
-                              framesCacheRef={framesCacheRef}
-                              refKey={key}
-                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                            />
-                          </div>
-                        );
-                      }
-                    })}
-                    {Array.from(coreState.project.masks.entries()).map((e) => {
-                      const [key, meta] = e;
-                      const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                      if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                        return;
-                      const maskData = coreState.canvasMasks.get(key);
-                      if (!maskData) return;
-                      return (
-                        <div key={key}>
-                          <DraggableProjectMask
-                            mediaKey={key}
-                            meta={meta}
-                            maskData={maskData}
-                            zIndex={
-                              uiState.tool.type === "marquee" && uiState.tool.stack
-                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                            }
-                            maskHandlesRef={maskHandlesRef}
-                            maskElementsRef={maskElementsRef}
-                            framesCacheRef={framesCacheRef}
-                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                          />
-                        </div>
-                      );
-                    })}
-                  </>
-                </div>
-                {uiState.showMediaBrowser && (
-                  <div
-                    style={{
-                      gridRow: "3 / span 2",
-                      gridColumn: "3",
-                      width: "100%",
-                      height: "100%",
-                    }}
-                  >
-                    <MediaBrowser
-                      framesCacheRef={framesCacheRef}
-                      refreshIconRef={refreshIconRef}
-                      onNextPage={async () => {
-                        switch (uiState.mediaBrowserFilter) {
-                          case "img": {
-                            await handleImgPageRequest();
-                            break;
-                          }
-                          case "svg": {
-                            await handleSvgPageRequest();
-                            break;
+                          const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
+                            ...newProject,
+                          });
+                          if (created) {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: { ...created },
+                            });
+                          } else {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: { ...rollback },
+                            });
                           }
                         }
                       }}
+                      disabled={uiState.tool.type != "move"}
                     />
+                    <>
+                      {Array.from(coreState.project.imgs.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const imgData = coreState.canvasImgs.get(key);
+                        if (imgData) {
+                          return (
+                            <div key={key}>
+                              <DraggableProjectImg
+                                mediaKey={key}
+                                data={imgData}
+                                meta={meta}
+                                zIndex={
+                                  uiState.tool.type === "marquee" && uiState.tool.stack
+                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                }
+                                imgElementsRef={imgElementsRef}
+                                framesCacheRef={framesCacheRef}
+                                refKey={key}
+                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                              />
+                            </div>
+                          );
+                        }
+                      })}
+                      {Array.from(coreState.project.svgs.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const svgData = coreState.canvasSvgs.get(key);
+                        if (!svgData) return;
+                        let decodedString = "";
+                        try {
+                          decodedString = decodeURIComponent(
+                            atob(svgData.markup)
+                              .split("")
+                              .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                              .join(""),
+                          );
+                        } catch (error) {
+                          console.log("Failed to decode svg markup", {
+                            media_key: meta.media_key,
+                            error,
+                          });
+                        }
+                        if (decodedString) {
+                          return (
+                            <div key={key}>
+                              <DraggableProjectSvg
+                                mediaKey={key}
+                                decodedString={decodedString}
+                                meta={meta}
+                                zIndex={
+                                  uiState.tool.type === "marquee" && uiState.tool.stack
+                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                }
+                                svgElementsRef={svgElementsRef}
+                                framesCacheRef={framesCacheRef}
+                                refKey={key}
+                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                              />
+                            </div>
+                          );
+                        }
+                      })}
+                      {Array.from(coreState.project.masks.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const maskData = coreState.canvasMasks.get(key);
+                        if (!maskData) return;
+                        return (
+                          <div key={key}>
+                            <DraggableProjectMask
+                              mediaKey={key}
+                              meta={meta}
+                              maskData={maskData}
+                              zIndex={
+                                uiState.tool.type === "marquee" && uiState.tool.stack
+                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                              }
+                              maskHandlesRef={maskHandlesRef}
+                              maskElementsRef={maskElementsRef}
+                              framesCacheRef={framesCacheRef}
+                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                            />
+                          </div>
+                        );
+                      })}
+                    </>
                   </div>
-                )}
-                {/* right panel */}
-                <div
-                  style={{
-                    gridRow: "3 / span 2",
-                    gridColumn: "4",
-                  }}
-                >
-                  <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
-                </div>
-                {/* mediabar */}
-                <div
-                  style={{
-                    gridRow: "5",
-                    gridColumn: "span 4",
-                    display: "grid",
-                    ...dynamicSizes.statusbar.container,
-                  }}
-                >
-                  <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
-                </div>
-              </MaskPreviewProvider>
-            </UIContext>
+                  {uiState.showMediaBrowser && (
+                    <div
+                      style={{
+                        gridRow: "3 / span 2",
+                        gridColumn: "3",
+                        width: "100%",
+                        height: "100%",
+                      }}
+                    >
+                      <MediaBrowser
+                        framesCacheRef={framesCacheRef}
+                        refreshIconRef={refreshIconRef}
+                        onNextPage={async () => {
+                          switch (uiState.mediaBrowserFilter) {
+                            case "img": {
+                              await handleImgPageRequest();
+                              break;
+                            }
+                            case "svg": {
+                              await handleSvgPageRequest();
+                              break;
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  {/* right panel */}
+                  <div
+                    style={{
+                      gridRow: "3 / span 2",
+                      gridColumn: "4",
+                    }}
+                  >
+                    <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
+                  </div>
+                  {/* mediabar */}
+                  <div
+                    style={{
+                      gridRow: "5",
+                      gridColumn: "span 4",
+                      display: "grid",
+                      ...dynamicSizes.statusbar.container,
+                    }}
+                  >
+                    <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
+                  </div>
+                </MaskContext>
+              </UIContext>
+            </SocketContext>
           </CoreContext>
         </HoverContext>
       </div>

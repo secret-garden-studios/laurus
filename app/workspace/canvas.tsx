@@ -131,38 +131,20 @@ function isBadFrame(
 
 export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
-  const { coreState, dispatch, captureMeshSection, createTopologyPeak } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
-  const mask = useContext(MaskContext);
+  const { captureMeshSection, createPeak, ...mask } = useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
-  // Which silhouette a topology drag draws, false when the topology tool is off (see TopologyMode).
   const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
 
-  // A fresh mask-drop from the img-browser (see handleMaskDrop below) -- a browser image has no
-  // project entry to read a frame off of, so the drop circle's own computed frame is held here
-  // just long enough for the live preview below to render at that exact spot, until triggerMask's
-  // persistMask places the real static mask there (see mask.status === "done" below).
   const [pendingMaskDrop, setPendingMaskDrop] = useState<
     { imgData: LaurusImgResult; frame: { width: number; height: number; top: number; left: number } } | undefined
   >(undefined);
 
-  // Keyed off selectedImgKeys rather than activeElement -- that's what the img context menu's
-  // "mask" cell actually masks (see its handleMaskClick), so the live preview needs to watch the
-  // same thing or it silently never shows up for an image that was only ever alt-selected, not
-  // plain-clicked.
-  //
-  // Hidden once mask.status reaches "done": triggerMask's persistMask runs synchronously off that
-  // same "complete" event (see useMaskPreview's onComplete), placing a real static mask at the
-  // exact same frame/position liveMaskFrame/liveMaskDndPosition already mirror. Leaving this live
-  // overlay mounted after that point meant two WebGL canvases -- this one and the freshly-placed
-  // static one, which still has to open its own GL context and async-load its own texture --
-  // rendering on top of each other at the same spot, which is what read as a flicker on the mask
-  // right as masking finished. mask.start() flips status back to "connecting" immediately if the
-  // user re-masks the same image, so this comes right back for another streaming pass.
   const activeMaskImg = useMemo(() => {
     if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1 || mask.status === "done") return undefined;
     const key = Array.from(selectedImgKeys)[0];
@@ -172,16 +154,11 @@ export default function Canvas() {
     return { key, meta, imgData };
   }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs, mask.status]);
 
-  // Same idea as activeMaskImg, for a mask dropped straight from the img-browser instead of
-  // triggered off an already-placed project image -- see handleMaskDrop/pendingMaskDrop above.
   const activeBrowserMaskDrop = useMemo(() => {
     if (uiState.tool.type !== "mask" || mask.status === "done" || activeMaskImg) return undefined;
     return pendingMaskDrop;
   }, [uiState.tool.type, mask.status, activeMaskImg, pendingMaskDrop]);
 
-  // Mirrors triggerMask's persistMask defaulting exactly, so the live preview lands at the
-  // same place/size the placed result will -- without this, the preview always sits on the
-  // source image and only jumps to the position/size override once masking finishes.
   const liveMaskFrame = useMemo(() => {
     const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
     if (!frame) return undefined;
@@ -204,14 +181,6 @@ export default function Canvas() {
 
   const liveMaskKey = activeMaskImg?.key ?? activeBrowserMaskDrop?.imgData.media_key;
 
-  // Deliberately not re-created every time `mask` itself changes reference -- it does, on
-  // every single triangle/status update, because useMaskPreview's provider re-renders and
-  // hands out a fresh wrapper object each time. What ProjectMaskItem's live GL effect actually
-  // reads off it (meshRefs, textureMixRef) are refs that stay the same underlying objects
-  // regardless, so a "stale" wrapper is functionally identical to a fresh one here. Without this
-  // memo, ProjectMaskItem saw a "new" source prop on every triangle and tore down + rebuilt its
-  // entire WebGL context (including a fresh async texture reload) each time -- the actual cause of
-  // the streaming flicker and the "reverts to the plain image, pauses" glitch right at completion.
   const liveMaskSource = useMemo<ProjectMaskItemSource | undefined>(() => {
     const imgData = activeMaskImg?.imgData ?? activeBrowserMaskDrop?.imgData;
     if (!imgData) return undefined;
@@ -247,9 +216,6 @@ export default function Canvas() {
           break;
         }
         case "mask": {
-          // Capturing a mesh-section or editing topology (both drag a circle over an existing
-          // placed mask) take priority over dropping a fresh mask in from an armed browser
-          // thumbnail -- see handleMouseUp's own comment.
           if (
             !uiState.tool.capturingMeshSection &&
             !uiState.tool.editingTopology &&
@@ -506,10 +472,6 @@ export default function Canvas() {
     ],
   );
 
-  // Marquee-drop equivalent for the mask tool -- masks a still-unplaced browser image directly,
-  // landing the result at the drawn circle's frame instead of importing the source image into the
-  // project first (see img-browser's onImgClick, which arms uiState.browserElement without
-  // importing anything).
   const handleMaskDrop = useCallback(
     (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
       const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
@@ -517,23 +479,12 @@ export default function Canvas() {
         return;
       }
       const frame = { width: newFrame.width, height: newFrame.height, top: newFrame.y, left: newFrame.x };
-      // Held onto so the live streaming preview (activeBrowserMaskDrop above) knows where to
-      // render before any project mask exists to read a frame off of.
       setPendingMaskDrop({ imgData, frame });
       triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 });
     },
     [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
   );
 
-  // Re-expresses a circle drawn in main-canvas space (same space `anchor`/dropArea already live
-  // in, and the same space this drawing canvas's own getBoundingClientRect() lives in) into the
-  // target mask's own mesh-buffer-pixel space. Rather than re-derive the mask's on-screen rect
-  // from project placement metadata (top/left/scale/frame offsets -- several assumptions that can
-  // silently drift out of sync with what's actually rendered), this measures the mask's real DOM
-  // canvas directly (found via the data-mask-key attribute project-mask-item.tsx sets on it), the
-  // same way that component's own onMouseMove handler already converts screen coordinates into
-  // mesh-buffer-pixel space for the mouse-driven light source. Shared by both the capture and
-  // topology-peak draw gestures below, which otherwise differ only in what they do with the result.
   function screenCircleToMeshSpace(
     maskKey: string,
     drawingCanvas: HTMLCanvasElement,
@@ -546,9 +497,6 @@ export default function Canvas() {
     const maskRect = maskCanvasEl.getBoundingClientRect();
     if (maskRect.width === 0 || maskRect.height === 0) return undefined;
 
-    // dropArea.cx/cy are relative to the drawing canvas's own top-left (see calcMousePosition) --
-    // reconstruct a viewport-relative position and re-express it relative to the mask canvas's own
-    // top-left instead.
     const localX = dropArea.cx + drawingRect.left - maskRect.left;
     const localY = dropArea.cy + drawingRect.top - maskRect.top;
 
@@ -562,10 +510,6 @@ export default function Canvas() {
     };
   }
 
-  // Captures whichever triangles of the one selected mask's mesh fall inside the drag circle and
-  // immediately persists them -- drawing the circle *is* the confirmation, no separate confirm
-  // step (see workspace.client.tsx's captureMeshSection). Shown optimistically as a mesh highlight
-  // in project-mask-item.tsx while the request is in flight.
   const handleLightSourceCapture = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
@@ -579,23 +523,11 @@ export default function Canvas() {
 
       const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
       if (polygonIndices.size === 0) return;
-
-      // The drawn circle's own diameter becomes the capture's `size` -- both its light core and,
-      // from here on, the circle Lightsourcebar's size slider re-runs this same membership test
-      // with. Already mesh-space (screenCircleToMeshSpace), which is the space `size` is measured
-      // in.
       captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
     [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
   );
 
-  // Draws a new topology peak at the drag circle's epicenter/radius and immediately persists it,
-  // seeded at whatever shape Lightsourcebar's own peak sliders are currently staged at
-  // (uiState.stagedPeak) -- mirrors handleLightSourceCapture's own "drawing is confirmation"
-  // reasoning, but unlike a capture there's no triangle-index membership that decides what it looks
-  // like: a peak is a term in a continuous height field the shaders evaluate from its epicenter,
-  // radius, elevation and falloff (see mask-gl.ts's PEAK_FIELD_GLSL), so the drawn circle
-  // contributes only the first two and the mesh's own triangulation contributes nothing at all.
   const handleTopologyCapture = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
@@ -607,17 +539,12 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      createTopologyPeak(maskKey, meshCircle, {
+      createPeak(maskKey, meshCircle, {
         ...uiState.stagedPeak,
-        // The staged silhouette is armed by browsing an svg rather than by a deliberate "draw this
-        // shape" act (see Maskbar's shape cell), so which mode the drag is in -- not merely whether
-        // something happens to be staged -- is what decides between it and a circle. Without this,
-        // arming an svg for a marquee drop would silently reshape every peak the plain "peak" mode
-        // drew afterwards.
         shape: topologyMode === "shape" ? uiState.stagedPeak.shape : "",
       });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createTopologyPeak, uiState.stagedPeak, topologyMode],
+    [selectedMaskKeys, coreState.canvasMasks, createPeak, uiState.stagedPeak, topologyMode],
   );
 
   const handleDuplicateDrop = useCallback(
@@ -832,10 +759,6 @@ export default function Canvas() {
             break;
           }
 
-          // Marquee-drag equivalent of the marquee tool's own img drop, straight off an armed
-          // img-browser thumbnail (see img-browser's onImgClick) -- masks the source image
-          // directly, landing it at the drawn circle's frame, without ever creating a project img
-          // entry for it (see useMaskPersist/handleMaskDrop below).
           if (uiState.browserElement?.type === "img") {
             const key = uiState.browserElement.value.media_key;
             const imgData = uiState.browserImgs.find((s) => s.media_key === key);
@@ -895,8 +818,6 @@ export default function Canvas() {
           key={liveMaskKey}
           dndId={`dnd-node-live-mask-${liveMaskKey}`}
           dndPosition={liveMaskDndPosition}
-          // Only needs to sit above the marquee drawing canvas it's a sibling of here -- placed
-          // masks' own stacking (by project order) is handled where they're actually rendered.
           zIndex={1}
           mediaKey={liveMaskKey}
           frame={liveMaskFrame}

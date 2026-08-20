@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { convertTime, CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { dellaRespira, dmSans } from "../../fonts";
 import { updateScale, LaurusLoopType, LaurusScaleEquation, LaurusScaleResult } from "../workspace.server";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
@@ -14,29 +14,10 @@ import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-s
 import { CoreActionType } from "../states/core-state";
 import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
 
-// Which kind of media this unit is currently editing the scale of. Not state and not persisted --
-// it's read off whichever carousel entry the display is showing, exactly the way
-// light-source-unit.tsx reads its own capture/peak split off the same place, and for the same
-// reason: an entry *is* an img/svg/mask/capture/peak, and that settles which parameters there are
-// to edit. Deriving rather than storing is also what makes the two gestures the user expects for
-// free -- stepping the chevrons onto a different kind of media, or activating one from the canvas,
-// both move the display, and the target follows without either path having to know about it.
-//
-// Scale means something different per kind, which is what this gates: an img/svg/mask has a
-// whole-element transform with independent width and height, while a capture (whose sx multiplies
-// its glow) and a peak (whose sx multiplies its radius) are both single-axis -- see
-// targetHasScaleHeight below.
 export type ScaleUnitTarget = CarouselEntry["type"];
 
-// The order the unitbar's target button walks. Fixed rather than read off the carousel, which is
-// ordered by canvas position (see workspace.client.tsx's initCarouselEntries) and so interleaves
-// the types with no order of its own to borrow.
 const SCALE_TARGET_ORDER: ScaleUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
 
-// Whether this target has a second, independent axis to scale. A capture's sx multiplies its glow
-// and a peak's multiplies its radius -- both radial, so there is no height for a sy to mean
-// anything about, and the h slider is left unrendered rather than shown wired to nothing. Shared
-// with scale-unitbar.tsx, whose aspect-ratio link has nothing to link in the same case.
 export function targetHasScaleHeight(target: ScaleUnitTarget): boolean {
   return target !== "capture" && target !== "peak";
 }
@@ -64,26 +45,19 @@ interface ScaleUnit {
   carouselIndexInit: number;
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
-  const {
-    coreState,
-    dispatch,
-    notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
-  } = useContext(CoreContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  // Same "no predicate, every entry type wires" rule move uses -- see move-unit.tsx's own
-  // useCarouselIndex call.
+
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     scale.scale_id,
   );
-  // Whatever the display is showing is what this unit is editing -- see ScaleUnitTarget. The "img"
-  // fallback is for a carousel with nothing on it at all, where there's no equation to wire either
-  // way and the full parameter set is the right thing to leave standing.
+
   const target: ScaleUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
   const hasHeight = targetHasScaleHeight(target);
   const [mainControls] = useState(true);
@@ -186,21 +160,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "mask": {
-          // The whole mask, wired the same way an img/svg wires its own bare key -- see
-          // effects-utils.ts's comment on why this never collides with a capture's own
-          // maskCaptureInputId-keyed math below.
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "capture": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
-          // Each capture on a mask is its own carousel entry (see CarouselEntry) and needs its own
-          // math -- keying purely off the mask's element key would collapse every capture on the
-          // same mask onto the same equation. See maskCaptureInputId.
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
-        // A scale equation wired to a peak multiplies that peak's own radius -- the same
-        // relative-not-absolute role sx plays for a capture's glow (see project-mask-item.tsx's
-        // scaleMultiplier). Keyed per peak, see maskPeakInputId.
         case "peak": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
@@ -256,11 +221,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     return scale.math.has(carouselEntryKey) ? scale.math.get(carouselEntryKey)!.scale_y.toFixed(3) : undefined;
   }, [carouselEntryKey, scale.math]);
 
-  // Makes `carouselEntry` the app's active element, tagged as activated by this unit. Extracted
-  // from setActiveElementIfNull below so the target toggle can reuse it -- see toggleTarget.
-  // Mirrors light-source-unit.tsx's own activateEntry on the selection question too: activating a
-  // capture or a peak also selects it, while the svg/img/mask cases leave the selection alone (see
-  // LaurusSelectedElement).
   const activateEntry = useCallback(
     (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
@@ -301,9 +261,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           break;
         }
         case "capture": {
-          // Must be type "capture" (not "mask") here -- see light-source-unit.tsx's own
-          // setActiveElementIfNull for why getting this wrong would let this component's next
-          // render silently snap the active capture back to whichever one happens to sit first.
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
             type: "capture",
@@ -323,7 +280,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
           break;
         }
-        // Mirrors "capture" above exactly -- see unit-display.tsx's own "peak" case.
         case "peak": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
@@ -361,17 +317,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     }
   }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
 
-  // Switching target *is* moving the carousel -- each kind of media lives on its own carousel
-  // entries and the target is read back off whichever one is showing (see ScaleUnitTarget), so
-  // there's no separate mode to flip. The chevrons already walk every entry; this is the shortcut
-  // past however many entries of the kinds in between sit in the way.
-  //
-  // Walks SCALE_TARGET_ORDER forward from the current target and stops at the first kind the
-  // carousel actually has an entry of, so kinds this project has none of (no masks placed, no peaks
-  // drawn) are skipped rather than making the button dead. Within a kind it prefers an entry this
-  // effect already has math for, mirroring EffectUnit's own carouselIndexInit rule ("show me the
-  // equation that exists"), and otherwise lands on the nearest one. With no other kind present at
-  // all, nothing moves.
   const toggleTarget = useCallback(() => {
     const startIndex = SCALE_TARGET_ORDER.indexOf(target);
     for (let offset = 1; offset <= SCALE_TARGET_ORDER.length; offset++) {
@@ -386,14 +331,9 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           ? withMathIndex
           : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
       const nextEntry = uiState.carouselEntries[nextIndex];
-      // nearestNavigableIndex falls back to the index it was handed when nothing qualifies, so
-      // this is also the "carousel has no entry of this kind" test -- move on to the next kind.
       if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
 
       setLocalIndex(nextIndex);
-      // While this unit is the one holding the active element, the carousel follows that element
-      // rather than the local index (see useCarouselIndex) -- so the jump above would be silently
-      // ignored unless the active element moves with it.
       if (uiState.activeElement?.locallyActivatedEffectKey === scale.scale_id) {
         activateEntry(nextEntry);
       }
@@ -426,9 +366,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         if (!img) return [1, 1];
         return [img.scale_x, img.scale_y];
       }
-      // A capture or peak has no scale of its own -- scale acts on the mesh's own whole-element
-      // transform (see this file's own carouselEntryKey), the same one a "mask"-typed active
-      // element already targets, so all three variants share this case.
       case "mask":
       case "capture":
       case "peak": {
@@ -522,11 +459,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       }
       updateTrackpads(initControls);
     })();
-    // `target` is a dependency even though nothing above reads it: moving between kinds of media
-    // mounts or unmounts the h slider, and updateTrackpads can only position a track that exists.
-    // carouselEntryKey covers that move on its own in every case a key resolves, but not between
-    // two entries that resolve to none -- so this is belt and braces against a newly-revealed h
-    // track sitting at whatever cursor it last had.
   }, [carouselEntryKey, scale.math, updateTrackpads, currentControls, target]);
 
   return (
@@ -677,9 +609,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   containerRef={scaleXTrackRef}
                   cursor={scaleXCursor}
                   onCursorMove={(newCursor) => {
-                    // The h readout is deliberately not part of this guard -- it's unmounted (and
-                    // its ref null) on a single-axis target, where the w readout still has to
-                    // track the drag. See targetHasScaleHeight.
                     if (!scaleXTrackRef.current || !scaleXRef.current) return;
                     const newScaleValue = getScaleXValue(
                       newCursor.x,
@@ -706,10 +635,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       scale_x: newScaleXValue,
                     };
                     let newScaleYValue: number | undefined = undefined;
-                    // Gated on the target having a height at all, not just on the aspect link:
-                    // dragging w on a capture or a peak must leave scale_y alone rather than
-                    // quietly writing a coupled value into a field that target's own slider never
-                    // shows (and that its geometry has no use for). See targetHasScaleHeight.
                     if (!unlockAspectRatio && hasHeight) {
                       const d = getActiveScale();
                       const r = d[0] / d[1];
@@ -747,10 +672,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={scaleXTitle}
                 />
-                {/* height -- only for the targets that have one. A capture's sx multiplies its
-                    glow and a peak's multiplies its radius, both radial, so there's nothing for a
-                    second axis to mean and the slider is left unrendered rather than shown wired
-                    to a field nothing reads. See targetHasScaleHeight. */}
                 {hasHeight && (
                   <>
                     <div
