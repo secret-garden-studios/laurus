@@ -584,7 +584,7 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                     : "rgba(255, 255, 255, 0.3)",
               }}
             >
-              <div>{selectOption}</div>
+              <div>{selectOption === "light_source" ? "shader" : selectOption}</div>
               {
                 <SvgRepo
                   svg={(() => {
