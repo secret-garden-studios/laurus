@@ -7,6 +7,10 @@ import {
   LaurusLightSourceEquation,
   LaurusLightSourceResult,
   LaurusLoopType,
+  PEAK_BLACK_POINT_DEFAULT,
+  toEquationPeakBlackPoint,
+  toPeakBlackPoint,
+  toPeakBlackPointEquationFields,
   updateLightSource,
 } from "../workspace.server";
 import {
@@ -39,6 +43,10 @@ export interface LightSourceUnitControls {
   peak_elevation: number;
   peak_radius: number;
   peak_falloff: number;
+  peak_black_point_r: number;
+  peak_black_point_g: number;
+  peak_black_point_b: number;
+  peak_black_point_a: number;
   time: number;
   loop: LaurusLoopType;
   limit_factor: number;
@@ -56,8 +64,11 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   peak_elevation: 0,
   peak_radius: 0,
   peak_falloff: MIN_MASK_PEAK_FALLOFF,
+  ...toPeakBlackPointEquationFields(PEAK_BLACK_POINT_DEFAULT),
   limit_factor: MIN_LIMIT_FACTOR,
 };
+
+const MAX_VISIBLE_PARAM_SLIDERS = 4;
 
 const isLightSourceCarouselEntry = (entry: CarouselEntry) => entry.type === "capture" || entry.type === "peak";
 const isCaptureCarouselEntry = (entry: CarouselEntry) => entry.type === "capture";
@@ -90,6 +101,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     peak_elevation: defaultLightSourceEquation.peak_elevation,
     peak_radius: defaultLightSourceEquation.peak_radius,
     peak_falloff: defaultLightSourceEquation.peak_falloff,
+    peak_black_point_r: defaultLightSourceEquation.peak_black_point_r,
+    peak_black_point_g: defaultLightSourceEquation.peak_black_point_g,
+    peak_black_point_b: defaultLightSourceEquation.peak_black_point_b,
+    peak_black_point_a: defaultLightSourceEquation.peak_black_point_a,
     time: 0.000001,
     loop: defaultLightSourceEquation.loop,
     limit_factor: defaultLightSourceEquation.limit_factor,
@@ -292,6 +307,34 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const elevationRef = useRef<HTMLDivElement | null>(null);
+
+  const { getInverseTrackValue: getBlackPointValue, getInverseTrackCursor: getBlackPointCursor } = useTrackpadState(
+    dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
+    1,
+  );
+  const blackPointRTrackRef = useRef<HTMLDivElement | null>(null);
+  const [blackPointRCursor, setBlackPointRCursor] = useState({ x: 0, y: 0 });
+  const blackPointRRef = useRef<HTMLDivElement | null>(null);
+  const blackPointGTrackRef = useRef<HTMLDivElement | null>(null);
+  const [blackPointGCursor, setBlackPointGCursor] = useState({ x: 0, y: 0 });
+  const blackPointGRef = useRef<HTMLDivElement | null>(null);
+  const blackPointBTrackRef = useRef<HTMLDivElement | null>(null);
+  const [blackPointBCursor, setBlackPointBCursor] = useState({ x: 0, y: 0 });
+  const blackPointBRef = useRef<HTMLDivElement | null>(null);
+  const blackPointATrackRef = useRef<HTMLDivElement | null>(null);
+  const [blackPointACursor, setBlackPointACursor] = useState({ x: 0, y: 0 });
+  const blackPointARef = useRef<HTMLDivElement | null>(null);
+  const blackPointTitles = useMemo(() => {
+    const equation = lightSource.math.get(carouselEntryKey);
+    if (!equation) return undefined;
+    const blackPoint = toEquationPeakBlackPoint(equation);
+    return {
+      r: blackPoint.r.toFixed(2),
+      g: blackPoint.g.toFixed(2),
+      b: blackPoint.b.toFixed(2),
+      a: blackPoint.a.toFixed(2),
+    };
+  }, [carouselEntryKey, lightSource.math]);
 
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
@@ -513,6 +556,30 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           y: 0,
         });
       }
+      if (blackPointRTrackRef.current) {
+        setBlackPointRCursor({
+          y: getBlackPointCursor(newControls.peak_black_point_r, blackPointRTrackRef.current.clientHeight),
+          x: 0,
+        });
+      }
+      if (blackPointGTrackRef.current) {
+        setBlackPointGCursor({
+          y: getBlackPointCursor(newControls.peak_black_point_g, blackPointGTrackRef.current.clientHeight),
+          x: 0,
+        });
+      }
+      if (blackPointBTrackRef.current) {
+        setBlackPointBCursor({
+          y: getBlackPointCursor(newControls.peak_black_point_b, blackPointBTrackRef.current.clientHeight),
+          x: 0,
+        });
+      }
+      if (blackPointATrackRef.current) {
+        setBlackPointACursor({
+          y: getBlackPointCursor(newControls.peak_black_point_a, blackPointATrackRef.current.clientHeight),
+          x: 0,
+        });
+      }
     },
     [
       getSizeCursor,
@@ -523,6 +590,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       getPeakRadiusCursor,
       getPeakFalloffCursor,
       getElevationCursor,
+      getBlackPointCursor,
     ],
   );
 
@@ -539,6 +607,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.peak_elevation = activeEquation.peak_elevation;
         initControls.peak_radius = activeEquation.peak_radius;
         initControls.peak_falloff = activeEquation.peak_falloff;
+        initControls.peak_black_point_r = activeEquation.peak_black_point_r;
+        initControls.peak_black_point_g = activeEquation.peak_black_point_g;
+        initControls.peak_black_point_b = activeEquation.peak_black_point_b;
+        initControls.peak_black_point_a = activeEquation.peak_black_point_a;
         initControls.time = activeEquation.time / 1000;
         initControls.loop = activeEquation.loop;
         initControls.limit_factor = activeEquation.limit_factor;
@@ -550,6 +622,11 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.peak_elevation = activePeak?.elevation ?? defaultLightSourceEquation.peak_elevation;
         initControls.peak_radius = activePeak?.radius ?? defaultLightSourceEquation.peak_radius;
         initControls.peak_falloff = activePeak?.falloff ?? defaultLightSourceEquation.peak_falloff;
+        const blackPoint = activePeak ? toPeakBlackPoint(activePeak) : PEAK_BLACK_POINT_DEFAULT;
+        initControls.peak_black_point_r = blackPoint.r;
+        initControls.peak_black_point_g = blackPoint.g;
+        initControls.peak_black_point_b = blackPoint.b;
+        initControls.peak_black_point_a = blackPoint.a;
         initControls.time = defaultLightSourceEquation.time;
         initControls.loop = defaultLightSourceEquation.loop;
         initControls.limit_factor = defaultLightSourceEquation.limit_factor;
@@ -574,6 +651,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         peak_elevation: activePeak.elevation,
         peak_radius: activePeak.radius,
         peak_falloff: activePeak.falloff,
+        ...toPeakBlackPointEquationFields(toPeakBlackPoint(activePeak)),
       };
     }
     if (activeCapture) {
@@ -597,7 +675,11 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         | "capture_darkness"
         | "peak_elevation"
         | "peak_radius"
-        | "peak_falloff",
+        | "peak_falloff"
+        | "peak_black_point_r"
+        | "peak_black_point_g"
+        | "peak_black_point_b"
+        | "peak_black_point_a",
       newValue: number,
     ) => {
       const activeKey = carouselEntryKey;
@@ -652,6 +734,12 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                   style={{
                     height: "100%",
                     display: "flex",
+                    maxWidth:
+                      dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
+                      dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
+                      dynamicSizes.paramFlex.paddingInline * 2,
+                    overflowX: "auto",
+                    overflowY: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >
@@ -712,6 +800,102 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={peakFalloffTitle}
                         liveTitleRef={peakFalloffRef}
+                      />
+                      <ParameterSliderY
+                        resolution={{ ...uiState.resolution }}
+                        label={"r"}
+                        hash={`${lightSource.light_source_id}|peak|black-point-r`}
+                        size={dynamicSizes.paramSlider}
+                        trackRef={blackPointRTrackRef}
+                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
+                        cursor={blackPointRCursor}
+                        onNewCursor={(newCursor) => {
+                          setBlackPointRCursor({ ...newCursor, x: 0 });
+                          if (!blackPointRTrackRef.current) return;
+                          const newVal = getBlackPointValue(newCursor.y, blackPointRTrackRef.current.clientHeight, 0);
+                          setCurrentControls((v) => ({ ...v, peak_black_point_r: newVal }));
+                          saveLightSourceField("peak_black_point_r", newVal);
+                        }}
+                        onCursorMove={(c) => {
+                          if (!blackPointRTrackRef.current || !blackPointRRef.current) return;
+                          const val = getBlackPointValue(c.y, blackPointRTrackRef.current.clientHeight, 0);
+                          blackPointRRef.current.innerHTML = val.toFixed(2);
+                        }}
+                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                        title={blackPointTitles?.r}
+                        liveTitleRef={blackPointRRef}
+                      />
+                      <ParameterSliderY
+                        resolution={{ ...uiState.resolution }}
+                        label={"g"}
+                        hash={`${lightSource.light_source_id}|peak|black-point-g`}
+                        size={dynamicSizes.paramSlider}
+                        trackRef={blackPointGTrackRef}
+                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
+                        cursor={blackPointGCursor}
+                        onNewCursor={(newCursor) => {
+                          setBlackPointGCursor({ ...newCursor, x: 0 });
+                          if (!blackPointGTrackRef.current) return;
+                          const newVal = getBlackPointValue(newCursor.y, blackPointGTrackRef.current.clientHeight, 0);
+                          setCurrentControls((v) => ({ ...v, peak_black_point_g: newVal }));
+                          saveLightSourceField("peak_black_point_g", newVal);
+                        }}
+                        onCursorMove={(c) => {
+                          if (!blackPointGTrackRef.current || !blackPointGRef.current) return;
+                          const val = getBlackPointValue(c.y, blackPointGTrackRef.current.clientHeight, 0);
+                          blackPointGRef.current.innerHTML = val.toFixed(2);
+                        }}
+                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                        title={blackPointTitles?.g}
+                        liveTitleRef={blackPointGRef}
+                      />
+                      <ParameterSliderY
+                        resolution={{ ...uiState.resolution }}
+                        label={"b"}
+                        hash={`${lightSource.light_source_id}|peak|black-point-b`}
+                        size={dynamicSizes.paramSlider}
+                        trackRef={blackPointBTrackRef}
+                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
+                        cursor={blackPointBCursor}
+                        onNewCursor={(newCursor) => {
+                          setBlackPointBCursor({ ...newCursor, x: 0 });
+                          if (!blackPointBTrackRef.current) return;
+                          const newVal = getBlackPointValue(newCursor.y, blackPointBTrackRef.current.clientHeight, 0);
+                          setCurrentControls((v) => ({ ...v, peak_black_point_b: newVal }));
+                          saveLightSourceField("peak_black_point_b", newVal);
+                        }}
+                        onCursorMove={(c) => {
+                          if (!blackPointBTrackRef.current || !blackPointBRef.current) return;
+                          const val = getBlackPointValue(c.y, blackPointBTrackRef.current.clientHeight, 0);
+                          blackPointBRef.current.innerHTML = val.toFixed(2);
+                        }}
+                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                        title={blackPointTitles?.b}
+                        liveTitleRef={blackPointBRef}
+                      />
+                      <ParameterSliderY
+                        resolution={{ ...uiState.resolution }}
+                        label={"a"}
+                        hash={`${lightSource.light_source_id}|peak|black-point-a`}
+                        size={dynamicSizes.paramSlider}
+                        trackRef={blackPointATrackRef}
+                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
+                        cursor={blackPointACursor}
+                        onNewCursor={(newCursor) => {
+                          setBlackPointACursor({ ...newCursor, x: 0 });
+                          if (!blackPointATrackRef.current) return;
+                          const newVal = getBlackPointValue(newCursor.y, blackPointATrackRef.current.clientHeight, 0);
+                          setCurrentControls((v) => ({ ...v, peak_black_point_a: newVal }));
+                          saveLightSourceField("peak_black_point_a", newVal);
+                        }}
+                        onCursorMove={(c) => {
+                          if (!blackPointATrackRef.current || !blackPointARef.current) return;
+                          const val = getBlackPointValue(c.y, blackPointATrackRef.current.clientHeight, 0);
+                          blackPointARef.current.innerHTML = val.toFixed(2);
+                        }}
+                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                        title={blackPointTitles?.a}
+                        liveTitleRef={blackPointARef}
                       />
                     </>
                   ) : (

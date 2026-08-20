@@ -288,19 +288,6 @@ export async function deleteSvg(
 
 /* /media/masks */
 
-/** One triangle of the mesh interior. `d` goes straight into `new Path2D(d)`.
- * `capture_id` is 0 if this triangle isn't part of any of the mask's
- * "captures" (client-selected subsections of the mesh, e.g. light source
- * regions -- see MaskMediaResult_V1_0.captures), otherwise the id of the
- * capture it belongs to -- see MaskCaptureUpdateRequest_V1_0.
- *
- * `peak_id` mirrors `capture_id` for the mask's topology peaks (see
- * Peak_V1_0 and MaskPeakUpdateRequest_V1_0): 0 if not part of any peak,
- * otherwise the id of the peak it belongs to. Bookkeeping only (highlighting,
- * future effect-wiring) -- a peak's shape comes from the height field
- * mask-gl.ts's shaders evaluate from cx/cy/radius/elevation/falloff as
- * uniforms, a continuous function of position that never consults which
- * polygons carry its id. */
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
@@ -311,16 +298,6 @@ export interface PolygonPath_V1_0 {
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
-/** One named, client-selected subsection of a mask's mesh (e.g. a light
- * source region). `id` is referenced by any number of the mask's own
- * PolygonPath_V1_0.capture_id fields.
- *
- * `size`/`intensity`/`falloff`/`darkness` are this capture's own resting
- * light appearance -- the seed a wired "light_source" effect's equation
- * ramps from, the same way a ProjectMask_V1_0's own capture_preview_*
- * fields are the seed for the mesh-wide mouse-hover preview instead (see
- * ProjectMask_V1_0). Lightsourcebar's "capture" dials read and write these
- * fields directly. */
 export interface Capture_V1_0 {
   id: number;
   name: string;
@@ -331,29 +308,6 @@ export interface Capture_V1_0 {
 }
 export type LaurusCapture = Capture_V1_0;
 
-/** One client-placed topology adjustment: one term of the signed height field
- * `h(x, y)` the mask's shaders evaluate to give the mesh its relief. An
- * epicenter (`cx`/`cy`, in the mask's own mesh space, same as
- * PolygonPath_V1_0's `d` strings), the `radius` its influence reaches, the
- * signed `elevation` at that epicenter (negative is a dent/crater, not an
- * error), and the `falloff` exponent shaping how it decays to nothing at the
- * rim:
- *
- *     h(p) = sum over peaks of  elevation * (1 - u^2)^falloff,
- *            u = min(|p - (cx, cy)| / radius, 1)
- *
- * The whole field is a uniform-driven, continuous function of position: the
- * server stores these five numbers and computes nothing from them, and both
- * of mask-gl.ts's shader stages read the same one -- the vertex stage to
- * displace geometry, the fragment stage to take the field's analytic gradient
- * and light the perturbed surface normal (which is where the illusion of a
- * bump actually comes from; see PEAK_FIELD_GLSL there). Because the field is
- * a function of position alone, nothing about the mesh's own triangulation can
- * change the shape a peak takes.
- *
- * PolygonPath_V1_0.peak_id mirrors Capture_V1_0's own polygon tagging, but
- * only for bookkeeping (highlighting, future effect-wiring); it never feeds
- * the field. See MaskPeakUpdateRequest_V1_0. */
 export interface Peak_V1_0 {
   id: number;
   name: string;
@@ -362,37 +316,7 @@ export interface Peak_V1_0 {
   radius: number;
   elevation: number;
   falloff: number;
-  /** This peak's custom silhouette, or `""` for a circle -- which generalizes
-   * `radius` from one distance into a distance per direction:
-   *
-   *     u = |p - (cx, cy)| / (radius * rho(theta))
-   *
-   * `rho` is in (0, 1] with a maximum of exactly 1, so `radius` still means
-   * this peak's furthest reach and an empty shape reproduces the circle above
-   * exactly rather than approximately -- shaped peaks are a generalization of
-   * the circle, not a second mode beside it.
-   *
-   * A normalized closed `M ... L ... Z` polygon, already centered on the origin
-   * and scaled so its own furthest point sits at radius 1 (see
-   * canvas-media/peak-shape.ts, which authors it from an svg and re-samples it
-   * on load). The server stores this string and computes nothing from it; the
-   * client samples it into an angular table and uploads that as texture data
-   * for both shader stages to read (see peakShapeAt in mask-gl.ts). */
   shape: string;
-  /** This peak's own black point, each channel 0-1 -- the darkest colour the
-   * peak's shading can reach, standing in for the black everything outside a
-   * peak still falls to.
-   *
-   * A black point in the photographic sense rather than a tint: the shader
-   * rescales the peak's whole tonal range onto [black point, white], so the
-   * floor lands exactly on this colour, highlights still reach pure white, and
-   * every tone between is carried proportionally. Set it green and the peak
-   * renders as shades of green running up to white, with black unreachable
-   * anywhere inside it (see liftToBlackPoint in mask-gl.ts).
-   *
-   * Flat rather than nested because this interface is the wire shape, and the
-   * server stores four floats (see RedisPeak); toPeakBlackPoint below is what
-   * turns them back into one value for everything that reads them. */
   black_point_r: number;
   black_point_g: number;
   black_point_b: number;
@@ -400,17 +324,6 @@ export interface Peak_V1_0 {
 }
 export type LaurusPeak = Peak_V1_0;
 
-/** One peak's black point, gathered back up out of Peak_V1_0's four flat wire
- * fields. Every consumer on this side wants it as one value -- it travels as a
- * unit through PendingTopologyEdit, the staged peak, and the shader's own vec4
- * uniform -- and passing four loose numbers around is the same transposition
- * hazard MaskPeakUpdateRequest_V1_0 already exists to avoid (see
- * useMaskPeakSockets' own note on why that request is an object).
- *
- * `a` is how strongly the black point is applied rather than a compositing
- * opacity: at 0 the peak shades exactly as it did before this field existed, so
- * the swatch is off rather than black, and at 1 the peak's floor sits fully on
- * the colour. Values between fade the floor back toward black proportionally. */
 export interface PeakBlackPoint_V1_0 {
   r: number;
   g: number;
@@ -419,16 +332,8 @@ export interface PeakBlackPoint_V1_0 {
 }
 export type LaurusPeakBlackPoint = PeakBlackPoint_V1_0;
 
-/** No black point at all -- what a peak drawn before the swatch existed loads
- * as, and what a freshly drawn one starts at. The alpha is the load-bearing
- * part (see PeakBlackPoint_V1_0); the colour channels are only along for the
- * ride until someone opens the swatch. Mirrors the identical per-field defaults
- * on the server's own RedisPeak/Peak/PeakUpdate models, the same way
- * PEAK_FALLOFF_DEFAULT does. */
 export const PEAK_BLACK_POINT_DEFAULT: PeakBlackPoint_V1_0 = { r: 0, g: 0, b: 0, a: 0 };
 
-/** The one place a peak's four wire fields become a black point, so nothing
- * downstream has to know they were ever flat. */
 export function toPeakBlackPoint(peak: Peak_V1_0): PeakBlackPoint_V1_0 {
   return {
     r: peak.black_point_r,
@@ -438,62 +343,14 @@ export function toPeakBlackPoint(peak: Peak_V1_0): PeakBlackPoint_V1_0 {
   };
 }
 
-/** Exponent of a peak's radial profile `k(u) = (1 - u^2)^falloff` that
- * reproduces the smooth dome `(1 - u^2)^2`, whose slope vanishes at *both* the
- * epicenter and the rim -- that C1 join at the rim is what lets a peak sit in
- * the middle of the mesh with no crease ring around it.
- *
- * Lives here beside Peak_V1_0 rather than in mask-gl.ts with the rest of the
- * peak constants because it's the *schema* default: it's what normalizeMaskResult
- * backfills onto a peak persisted before falloff existed, mirroring the identical
- * default on the server's own RedisPeak/Peak/PeakUpdate models. mask-gl.ts (which
- * already imports from this module, so the dependency can only point this way)
- * owns the *authoring* bounds instead -- see MIN/MAX_MASK_PEAK_FALLOFF there. */
 export const PEAK_FALLOFF_DEFAULT = 2.0;
 
-/**
- * One sample of a silhouette's outward alpha falloff: `offset` pixels outside
- * the curve, the source is `opacity` opaque. Reproduced by stroking the curve
- * at `lineWidth = offset * 2` -- a stroke is centred on its path, so
- * half-width `offset` reaches exactly that far out.
- */
 export interface GlowStop_V1_0 {
   offset: number;
   opacity: number;
 }
 export type LaurusGlowStop = GlowStop_V1_0;
 
-/**
- * One closed, smoothly curved silhouette region, as cubic Bezier path data
- * (`M ... C ... Z`, one subpath per ring: the outer ring first, then any
- * holes, wound for the default nonzero fill rule).
- *
- * A triangle mesh's boundary is a chain of straight chords, so a curved edge
- * comes out visibly faceted no matter how many triangles are spent on it.
- * This is that same edge described smoothly. Fill it as a backing, then clip
- * the mesh to it -- on a 2d context that is `ctx.clip(new Path2D(curve.d))`;
- * on WebGL there is no clip, so rasterize it into a mask instead (see
- * uploadCurveMask in mask-gl.ts).
- *
- * `glow` is the soft falloff living outside that clip -- a glow, a drop
- * shadow, any alpha the hard silhouette edge cuts off -- measured off the
- * source rather than assumed, since the profile's shape is the whole
- * character of the effect. Empty when there was none worth reproducing.
- * `glow_color` is the colour of the light actually spilling out, which is
- * often nothing like the subject's own (a shadow is dark, a neon glow
- * saturated), so it is carried separately. Draw the bands widest first,
- * before the fill, compensating for the overlap between them:
- *
- *     ctx.lineJoin = "round";        // or big offsets spike at corners
- *     ctx.strokeStyle = curve.glow_color;
- *     let covered = 0;
- *     for (const stop of [...curve.glow].sort((a, b) => b.offset - a.offset)) {
- *       ctx.globalAlpha = (stop.opacity - covered) / (1 - covered);
- *       ctx.lineWidth = stop.offset * 2;
- *       ctx.stroke(outline);
- *       covered = stop.opacity;
- *     }
- */
 export interface CurvePath_V1_0 {
   d: string;
   fill: string;
@@ -522,15 +379,6 @@ export interface MaskMediaResult_V1_0 {
 }
 export type LaurusMaskResult = MaskMediaResult_V1_0;
 
-/** A mask document exactly as it can actually come off the wire, which is not the same shape as
- * MaskMediaResult_V1_0: that interface describes the *current* schema, while what's sitting in the
- * database spans every schema a mask was ever saved under. Several generations of drift are live --
- * documents from before topology peaks existed carry no `peaks` key at all, documents from
- * before the height field's falloff existed carry peaks without one, documents from before
- * custom shapes existed carry peaks without a `shape`, documents from before the black point
- * existed carry peaks without its four channels, and documents from before `name` existed carry
- * peaks without one. Spelling them all out as optional here is what lets normalizeMaskResult read
- * them without a cast. */
 type RawPeak_V1_0 = Omit<Peak_V1_0, "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}`> & {
   name?: string;
   falloff?: number;
@@ -542,27 +390,6 @@ type RawPeak_V1_0 = Omit<Peak_V1_0, "name" | "falloff" | "shape" | `black_point_
 };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: RawPeak_V1_0[] };
 
-// The one place both of those generations get repaired, so nothing downstream has to know they
-// exist. Every raw parse of a mask document (below, plus the socket response handlers in
-// useMaskCaptureSockets/useMaskPeakSockets) goes through this: a legacy mask loads with no peaks of
-// its own instead of crashing the first time ProjectMaskItem's render() tries to .map over an
-// undefined array, and a pre-falloff peak loads as the default dome instead of reaching the shader
-// with falloff undefined (which NaNs the whole height field, taking the mesh's geometry with it).
-//
-// Deliberately no longer short-circuits on `mask.peaks` being present: a document can have peaks
-// and still predate falloff, so the peaks array always gets walked. The server backfills the same
-// defaults via its own model defaults -- this is the client-side belt to that suspenders.
-//
-// `shape` backfills to "" rather than to undefined so that "is this peak a circle" is one check
-// everywhere downstream (a falsy string) instead of two. Unlike falloff, an absent shape cannot NaN
-// the field -- rho is only consulted when a shape is present -- so this one is about keeping the
-// type honest rather than about repairing a document that would otherwise render wrong.
-//
-// The black point's four channels backfill for the same type-honesty reason, and its alpha is the
-// one that matters: at 0 the shader leaves the peak shading exactly as it did before the swatch
-// existed (see peakBlackPoint in mask-gl.ts), so a pre-swatch peak needs no special case anywhere
-// downstream either. An absent channel reaching the shader as undefined would NaN the vec4 the way
-// an absent falloff NaNs the field, so this one *is* also a repair.
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
@@ -619,8 +446,6 @@ export async function getMasks(baseUrl: string | undefined, mediaId: string) {
   }
 }
 
-/** Bulk hydration for a project's masks dict -- one round trip for every mask's
- * mask_media_id, instead of one getMask call per mask. */
 export async function getMasksByIds(baseUrl: string | undefined, maskMediaIds: string[]) {
   if (maskMediaIds.length === 0) return [];
   try {
@@ -670,18 +495,10 @@ export async function deleteMask(
   }
 }
 
-/** Smallest capture id not already used by any of this mask's own captures
- * -- how the client mints a new light source's identity, the same way
- * polygon array indices already stand in for a stable id elsewhere in this
- * feature (see PolygonPath_V1_0's own doc comment): no server-side
- * allocator needed since a mask's own captures list is always read before
- * a new one is created. */
 export function nextCaptureId(captures: Capture_V1_0[]): number {
   return 1 + captures.reduce((max, c) => Math.max(max, c.id), 0);
 }
 
-/** Smallest peak id not already used by any of this mask's own peaks -- the
- * same "no server-side allocator needed" reasoning as nextCaptureId. */
 export function nextPeakId(peaks: Peak_V1_0[]): number {
   return 1 + peaks.reduce((max, p) => Math.max(max, p.id), 0);
 }
@@ -691,20 +508,10 @@ export function nextPeakId(peaks: Peak_V1_0[]): number {
 export interface MaskRequest_V1_0 {
   img_media_id: string;
   max_triangle_area?: number;
-  /** vertex budget -- higher means finer triangles and a closer match to the source image. */
   detail_points?: number;
   canny_low?: number;
   canny_high?: number;
-  /**
-   * Alpha at or above which a pixel is inside the silhouette the curves trace.
-   * 128 puts the outline down the middle of an antialiased edge.
-   */
   alpha_threshold?: number;
-  /**
-   * How tightly the curves hug the traced silhouette, as a fraction of its
-   * perimeter. Lower means more, shorter Bezier segments and a closer fit;
-   * higher means a smoother, looser outline.
-   */
   curve_tolerance?: number;
 }
 export type LaurusMaskRequest = MaskRequest_V1_0;
@@ -715,7 +522,7 @@ export interface MaskGroupStart_V1_0 {
   group_index: number;
   group_count: number;
 }
-/** See CurvePath_V1_0. Always streamed before any triangle. */
+
 export interface MaskCurve_V1_0 {
   type: "curve";
   color: string;
@@ -756,19 +563,6 @@ export interface MaskImageHandlers {
   onError?: (message: string) => void;
 }
 
-/**
- * Opens a websocket to /media/masks/mask and streams the silhouette
- * curves and triangle mesh for img_media_id back through the given handlers
- * as they're produced. Returns the underlying WebSocket so the caller can
- * close it early (e.g. on unmount); it closes itself once a "complete"
- * message is received.
- *
- * onCurve always fires before the first onTriangle, because that is the order
- * the two have to be drawn in: the curves define the silhouette the mesh is
- * clipped to, so they have to be in hand before anything is painted inside
- * them. An image with no alpha channel has no silhouette to trace and so
- * produces no curves at all -- just the mesh.
- */
 export function maskImage(
   baseUrl: string | undefined,
   accessToken: string | undefined,
@@ -829,15 +623,6 @@ export function maskImage(
 
 /* /media/masks/{mask_media_id}/captures (websocket) */
 
-/** Full-replace which of a mask's own polygons (by array index) belong to
- * the single capture identified by capture_id -- e.g. a light source region
- * selected by dragging a circle over the mesh, or relocating one -- leaving
- * the mask's other captures untouched. Upserts a captures registry entry
- * named `name` with the given `size`/`intensity`/`falloff`/`darkness` (see
- * Capture_V1_0). An empty polygon_indices array clears this one capture.
- * Sent any number of times over the life of one mask's capture socket --
- * see useMaskCaptureSockets, which owns that socket and this message's
- * request/response pairing. */
 export interface MaskCaptureUpdateRequest_V1_0 {
   capture_id: number;
   name: string;
@@ -859,48 +644,6 @@ export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, acc
 
 /* /media/masks/{mask_media_id}/peaks (websocket) */
 
-/** Full-replace upsert (or, when `remove` is set, deletion) of the single peak
- * identified by peak_id -- e.g. a topology bump dragged out over the mesh, or
- * relocated/re-elevated/re-shaped -- leaving the mask's other peaks untouched.
- * Sent any number of times over the life of one mask's peak socket -- see
- * useMaskPeakSockets, which owns that socket and this message's
- * request/response pairing (mirrors useMaskCaptureSockets exactly).
- *
- * `remove` is the delete signal, and it's a field of its own rather than the
- * `radius <= 0` sentinel this used to overload for two reasons: a radius is now
- * directly authored by a slider the user can drag to its own floor (so the
- * sentinel would be reachable by accident), and a zero radius is degenerate in
- * the height field itself (`u = dist / radius`), so it was never a legitimate
- * value that merely happened to be spoken for. The server still honours
- * `radius <= 0` as a legacy delete so a stale cached client's delete doesn't
- * persist an invisible peak, but this client never sends it that way.
- *
- * `polygon_indices` mirrors MaskCaptureUpdateRequest_V1_0.polygon_indices:
- * which of the mask's own polygons (by array index) carry this peak's id.
- * Bookkeeping only -- never read back to compute the field. Callers derive
- * this from the same circle being sent as cx/cy/radius rather than running
- * a separate selection gesture -- see captureTriangleIndicesInCircle in
- * light-source-capture.ts, which already does exactly this test for
- * captures and takes an arbitrary circle. Note this has to be recomputed
- * whenever `radius` changes, not just when the epicenter moves: a resize
- * changes which polygons fall inside the circle.
- *
- * `shape` is this peak's custom silhouette, or `""` for a circle (see
- * Peak_V1_0.shape). It goes out on *every* update rather than only on the one
- * that authored it, because this request is a full-replace upsert rather than
- * a partial verb: leaving it off a later move or resize would clear the shape
- * rather than leave it alone.
- *
- * `black_point_*` is this peak's own black point (see Peak_V1_0), and rides
- * along on every update for that same full-replace reason -- a caller that only
- * sent it from the swatch would have every elevation nudge, epicenter drag and
- * radius change silently reset it. Flat here because this is the wire shape;
- * callers carrying it as one value spread it in through toPeakBlackPointFields
- * below rather than listing the four by hand at each send.
- *
- * `name` rides along for the same full-replace reason -- see Peak_V1_0. Every call site sends
- * either the peak's own existing name (looked up from the mask's current peaks) or, for a peak with
- * none on record yet, a synthesized `peak ${peak_id}`. */
 export interface MaskPeakUpdateRequest_V1_0 {
   peak_id: number;
   name: string;
@@ -918,13 +661,6 @@ export interface MaskPeakUpdateRequest_V1_0 {
   polygon_indices: number[];
 }
 
-/** A black point, flattened back into the four wire fields a peak update sends.
- * The inverse of toPeakBlackPoint, and the reason both exist: every one of the
- * four call sites that sends a peak update carries its black point as one value,
- * so without this each would restate the same four-line spread -- which is
- * exactly the enumeration hazard useMaskPeakSockets' own comment describes,
- * where a field added to the request is invisible at a call site that lists keys
- * and gets cleared on every unrelated edit. */
 export function toPeakBlackPointFields(blackPoint: PeakBlackPoint_V1_0) {
   return {
     black_point_r: blackPoint.r,
@@ -1846,15 +1582,13 @@ export interface LightSourceSolution_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  /** A light_source equation wired to a topology peak (input_id
-   * "<mask_key>:peak:<peak_id>", see maskPeakInputId in effects-utils.ts) ramps
-   * these three instead of the four capture_* fields above, which stay at
-   * zero for a peak-flavored equation. One solution type rather than two, so a
-   * caller never has to branch on which flavor it solved before reading the
-   * result -- mirrors the server's own LightSourceSolution. */
   peak_elevation: number;
   peak_radius: number;
   peak_falloff: number;
+  peak_black_point_r: number;
+  peak_black_point_g: number;
+  peak_black_point_b: number;
+  peak_black_point_a: number;
 }
 export interface LightSourceEquation_V1_0 {
   input_id: string;
@@ -1866,17 +1600,40 @@ export interface LightSourceEquation_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  /** The peak shape this equation ramps toward, for a peak-flavored input_id --
-   * see LightSourceSolution_V1_0 above. Absolute targets, not deltas: the ramp
-   * starts from the peak's own persisted elevation/radius/falloff (the server's
-   * resolve_light_source_seed) and lands exactly here. */
   peak_elevation: number;
   peak_radius: number;
   peak_falloff: number;
+  peak_black_point_r: number;
+  peak_black_point_g: number;
+  peak_black_point_b: number;
+  peak_black_point_a: number;
   loop: LaurusLoopType;
   solution: LightSourceSolution_V1_0[];
   limit_factor: number;
 }
+export function toPeakBlackPointEquationFields(blackPoint: PeakBlackPoint_V1_0) {
+  return {
+    peak_black_point_r: blackPoint.r,
+    peak_black_point_g: blackPoint.g,
+    peak_black_point_b: blackPoint.b,
+    peak_black_point_a: blackPoint.a,
+  };
+}
+
+export function toEquationPeakBlackPoint(fields: {
+  peak_black_point_r: number;
+  peak_black_point_g: number;
+  peak_black_point_b: number;
+  peak_black_point_a: number;
+}): PeakBlackPoint_V1_0 {
+  return {
+    r: fields.peak_black_point_r,
+    g: fields.peak_black_point_g,
+    b: fields.peak_black_point_b,
+    a: fields.peak_black_point_a,
+  };
+}
+
 export interface LightSource_V1_0 {
   /**
    * s
@@ -2085,23 +1842,21 @@ interface Frame_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  // Only ever non-neutral on a frame solved for a peak-flavored input_id (see
-  // LightSourceSolution_V1_0) -- every other effect's frames leave them at the neutral
-  // "no relief change" values below, the same way they leave sx/sy at 1.
   peak_elevation: number;
   peak_radius: number;
   peak_falloff: number;
+  peak_black_point_r: number;
+  peak_black_point_g: number;
+  peak_black_point_b: number;
+  peak_black_point_a: number;
   input_id: string;
 }
 
-// What a frame carries for peak fields when nothing peak-flavored solved it -- elevation/radius
-// at 0 (a peak of no size, i.e. no displacement at all) and the schema's own smooth-dome falloff,
-// matching the server's own NEUTRAL_FRAME. Spread into every non-light_source frame builder below
-// so a caller reading frame.peak_* never has to distinguish "unsolved" from "solved to nothing".
 const NEUTRAL_PEAK_FRAME = {
   peak_elevation: 0,
   peak_radius: 0,
   peak_falloff: PEAK_FALLOFF_DEFAULT,
+  ...toPeakBlackPointEquationFields(PEAK_BLACK_POINT_DEFAULT),
 };
 export async function getScaleFrames(
   baseUrl: string | undefined,

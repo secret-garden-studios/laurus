@@ -60,6 +60,7 @@ import {
   LaurusPeak,
   LaurusPeakBlackPoint,
   LaurusPolygonPath,
+  toEquationPeakBlackPoint,
   toPeakBlackPoint,
   toPeakBlackPointFields,
 } from "../workspace.server";
@@ -222,7 +223,10 @@ export function ProjectMaskItem({
   const wiredMoveRef = useRef(false);
   const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
   const playbackPeaksRef = useRef<
-    Map<number, { cx: number; cy: number; elevation: number; radius: number; falloff: number }>
+    Map<
+      number,
+      { cx: number; cy: number; elevation: number; radius: number; falloff: number; blackPoint: LaurusPeakBlackPoint }
+    >
   >(new Map());
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
   const captureDragRef = useRef<
@@ -327,7 +331,7 @@ export function ProjectMaskItem({
           elevation: playing.elevation,
           falloff: playing.falloff,
           shape,
-          blackPoint: toPeakBlackPoint(peak),
+          blackPoint: playing.blackPoint,
         };
       }
       return pending && pending.peakId === peak.id
@@ -886,6 +890,9 @@ export function ProjectMaskItem({
                   const elevation = lightSourcePoint?.peak_elevation ?? peak.elevation;
                   const radius = lightSourcePoint?.peak_radius ?? peak.radius;
                   const falloff = lightSourcePoint?.peak_falloff ?? peak.falloff;
+                  const blackPoint = lightSourcePoint
+                    ? toEquationPeakBlackPoint(lightSourcePoint)
+                    : toPeakBlackPoint(peak);
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
                   playbackPeaksRef.current.set(t.peakId, {
@@ -894,6 +901,7 @@ export function ProjectMaskItem({
                     elevation,
                     radius: radius * scaleMultiplier,
                     falloff,
+                    blackPoint,
                   });
                 });
                 render();

@@ -134,7 +134,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           },
           paramFlex: {
             gap: 38,
-            padding: "20px 15px",
+            paddingBlock: 20,
+            paddingInline: 15,
           },
           paramSlider: {
             containerHeight: "100%",
@@ -173,7 +174,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           },
           paramFlex: {
             gap: 26,
-            padding: "14px 10px",
+            paddingBlock: 14,
+            paddingInline: 10,
           },
           paramSlider: {
             containerHeight: "100%",
@@ -211,7 +213,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           param: { padding: "0 18px 10px 10px" },
           paramFlex: {
             gap: 26,
-            padding: "14px 10px",
+            paddingBlock: 14,
+            paddingInline: 10,
           },
           paramSlider: {
             containerHeight: "100%",
