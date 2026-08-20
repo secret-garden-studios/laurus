@@ -19,6 +19,9 @@ import {
   GLState,
   initGLState,
   loadImageTexture,
+  HIGHLIGHT_MOVING_COLOR,
+  HIGHLIGHT_SELECTED_COLOR,
+  HIGHLIGHT_SIBLING_COLOR,
   MaskLightSource,
   parsePathPoints,
   PeakGeometryInput,
@@ -61,8 +64,6 @@ import {
   toPeakBlackPointFields,
 } from "../workspace.server";
 import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
-
-const DIM_HIGHLIGHT = 0.35;
 
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
@@ -264,6 +265,7 @@ export function ProjectMaskItem({
     | undefined
   >(undefined);
   const peakCommitInFlightRef = useRef<Set<number>>(new Set());
+  const suppressNextClickRef = useRef(false);
   const [isDraggingTopology, setIsDraggingTopology] = useState(false);
   const peaksRef = useRef<LaurusPeak[]>([]);
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
@@ -508,9 +510,9 @@ export function ProjectMaskItem({
     if (latestSource.kind !== "static") return;
     const { gl } = state;
 
-    const highlights = new Float32Array(vertexCount);
+    const highlights = new Float32Array(vertexCount * 4);
     const vertexRanges = vertexRangesRef.current;
-    const paint = (indices: Set<number>, intensity: number) => {
+    const paint = (indices: Set<number>, color: readonly [number, number, number, number]) => {
       indices.forEach((polygonIndex) => {
         const range = vertexRanges[polygonIndex];
         if (!range) return;
@@ -518,7 +520,7 @@ export function ProjectMaskItem({
         for (let v = 0; v < count; v++) {
           const vertex = startVertex + v;
           if (vertex >= vertexCount) continue;
-          highlights[vertex] = intensity;
+          highlights.set(color, vertex * 4);
         }
       });
     };
@@ -529,11 +531,11 @@ export function ProjectMaskItem({
       const activeCaptureId = selectedCaptureIdRef.current;
       capturesRef.current.forEach((indices, captureId) => {
         if (captureId === editingCaptureId) return;
-        paint(indices, captureId === activeCaptureId ? 1 : DIM_HIGHLIGHT);
+        paint(indices, captureId === activeCaptureId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
     if (pendingCapture && pendingCapture.size > 0) {
-      paint(pendingCapture, 1);
+      paint(pendingCapture, HIGHLIGHT_MOVING_COLOR);
     }
 
     const pendingTopology = pendingTopologyRef.current;
@@ -541,11 +543,11 @@ export function ProjectMaskItem({
       const activePeakId = selectedPeakIdRef.current;
       peaksMapRef.current.forEach((indices, peakId) => {
         if (peakId === pendingTopology?.peakId) return;
-        paint(indices, peakId === activePeakId ? 1 : DIM_HIGHLIGHT);
+        paint(indices, peakId === activePeakId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
     if (pendingTopology) {
-      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
+      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), HIGHLIGHT_MOVING_COLOR);
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
@@ -973,7 +975,7 @@ export function ProjectMaskItem({
         vertexRangesRef.current = mesh.vertexRanges;
         uploadStaticMaskMesh(state, mesh);
         gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount), gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
 
         if (maskData.curves.length > 0 && colorCtx) {
           const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
@@ -1229,7 +1231,7 @@ export function ProjectMaskItem({
           gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(centroidsRef.current), gl.DYNAMIC_DRAW);
           vertexCountRef.current = positionsRef.current.length / 2;
           gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
-          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current), gl.DYNAMIC_DRAW);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current * 4), gl.DYNAMIC_DRAW);
           dirtyRef.current = false;
         }
 
@@ -1314,6 +1316,10 @@ export function ProjectMaskItem({
             height={canvasSize.height}
             data-mask-key={source.kind === "static" ? mediaKey : undefined}
             onClick={(e) => {
+              if (suppressNextClickRef.current) {
+                suppressNextClickRef.current = false;
+                return;
+              }
               if (source.kind !== "static") return;
               const hitSubElement = (): Extract<LaurusSelectedElement, { type: "capture" | "peak" }> | undefined => {
                 if (source.kind !== "static") return undefined;
@@ -1453,6 +1459,7 @@ export function ProjectMaskItem({
               }
             }}
             onPointerDown={(e) => {
+              suppressNextClickRef.current = false;
               if (source.kind !== "static") return;
               const isTopologyTool = uiState.tool.type === "mask" && uiState.tool.editingTopology;
               const isMoveTool = uiState.tool.type === "move";
@@ -1548,6 +1555,7 @@ export function ProjectMaskItem({
             onPointerUp={(e) => {
               const peakDrag = peakDragRef.current;
               if (peakDrag && e.pointerId === peakDrag.pointerId && source.kind === "static") {
+                suppressNextClickRef.current = true;
                 if (peakDrag.rafId !== undefined) cancelAnimationFrame(peakDrag.rafId);
                 e.currentTarget.releasePointerCapture(e.pointerId);
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
@@ -1600,17 +1608,10 @@ export function ProjectMaskItem({
                   if (updated) {
                     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
                     notifyMaskPeaksUpdated(mediaKey, updated);
-                    uiDispatch({
-                      type: UIActionType.SetSelectedElement,
-                      value: { key: mediaKey, type: "peak", peakId },
-                    });
                     if (uiState.lightSourcePreview) {
                       uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                       notifyMaskLightSourcePreviewToggled(false);
                     }
-                    notifyMaskSelectionChanged(mediaKey);
-                    notifyMaskSelectedPeakChanged(mediaKey, peakId);
-                    notifyMaskSelectedCaptureChanged(mediaKey, undefined);
                   }
                   dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
                   notifyMaskPendingTopologyCleared(mediaKey);
@@ -1619,6 +1620,7 @@ export function ProjectMaskItem({
               }
               const drag = captureDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId || source.kind !== "static") return;
+              suppressNextClickRef.current = true;
               if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
               e.currentTarget.releasePointerCapture(e.pointerId);
               const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
@@ -1658,17 +1660,10 @@ export function ProjectMaskItem({
                 if (updated) {
                   dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
                   notifyMaskCaptureUpdated(mediaKey, updated);
-                  uiDispatch({
-                    type: UIActionType.SetSelectedElement,
-                    value: { key: mediaKey, type: "capture", captureId },
-                  });
                   if (uiState.lightSourcePreview) {
                     uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                     notifyMaskLightSourcePreviewToggled(false);
                   }
-                  notifyMaskSelectionChanged(mediaKey);
-                  notifyMaskSelectedCaptureChanged(mediaKey, captureId);
-                  notifyMaskSelectedPeakChanged(mediaKey, undefined);
                   lastKnownCaptureRef.current.set(captureId, {
                     indices: finalIndices,
                     circle: {
