@@ -524,23 +524,28 @@ export function ProjectMaskItem({
     };
 
     const pendingCapture = pendingCaptureRef.current;
-    if (pendingCapture && pendingCapture.size > 0) {
-      paint(pendingCapture, 1);
-    } else if (selectedHighlightRef.current) {
+    const editingCaptureId = pendingCapture ? (pendingCaptureIdRef.current ?? selectedCaptureIdRef.current) : undefined;
+    if (selectedHighlightRef.current) {
       const activeCaptureId = selectedCaptureIdRef.current;
       capturesRef.current.forEach((indices, captureId) => {
+        if (captureId === editingCaptureId) return;
         paint(indices, captureId === activeCaptureId ? 1 : DIM_HIGHLIGHT);
       });
     }
+    if (pendingCapture && pendingCapture.size > 0) {
+      paint(pendingCapture, 1);
+    }
 
     const pendingTopology = pendingTopologyRef.current;
-    if (pendingTopology) {
-      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
-    } else if (selectedHighlightRef.current) {
+    if (selectedHighlightRef.current) {
       const activePeakId = selectedPeakIdRef.current;
       peaksMapRef.current.forEach((indices, peakId) => {
+        if (peakId === pendingTopology?.peakId) return;
         paint(indices, peakId === activePeakId ? 1 : DIM_HIGHLIGHT);
       });
+    }
+    if (pendingTopology) {
+      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), 1);
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
