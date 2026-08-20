@@ -757,14 +757,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectSvgIsTransformed(m);
       }
-      case "mask": {
+      case "mask":
+      case "capture":
+      case "peak": {
         const m = coreState.project.masks.get(media.key);
         if (!m) return false;
         return projectMaskIsTransformed(m);
-      }
-      case "capture":
-      case "peak": {
-        return false;
       }
     }
   }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks, media.key, media.type]);
@@ -809,7 +807,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         }
         break;
       }
-      case "mask": {
+      case "mask":
+      case "capture":
+      case "peak": {
         const m = newMasks.get(media.key);
         if (!m) return;
         if (projectMaskIsTransformed(m)) {
@@ -842,7 +842,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
   const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
-  const disabledCellStyle: CSSProperties = { color: "rgba(127,127,127, 1)", cursor: "default" };
 
   const cellStyle: CSSProperties = {
     display: "flex",
@@ -1101,20 +1100,18 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     </div>
                   )}
                   <div
-                    style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
-                    className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
+                    style={{ ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
                     onClick={() => {
-                      if (isCaptureOrPeak) return;
                       updateMediaOrder(isAltPressed ? "top" : "increment");
                     }}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
-                    style={{ ...cellStyle, ...(isCaptureOrPeak && disabledCellStyle) }}
-                    className={isCaptureOrPeak ? "" : styles["animated-nav-dark"]}
+                    style={{ ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
                     onClick={() => {
-                      if (isCaptureOrPeak) return;
                       updateMediaOrder(isAltPressed ? "bottom" : "decrement");
                     }}
                   >
