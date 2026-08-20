@@ -2026,6 +2026,8 @@ export default function Workspace({
                       nodeId={"draggable-camera-node-id"}
                       svgElementsRef={svgElementsRef}
                       imgElementsRef={imgElementsRef}
+                      maskElementsRef={maskElementsRef}
+                      maskHandlesRef={maskHandlesRef}
                       framesCacheRef={framesCacheRef}
                       zIndex={Z_INDEX.CAMERA_FRAME}
                       onNewPosition={async function (newPosition: { x: number; y: number }) {
