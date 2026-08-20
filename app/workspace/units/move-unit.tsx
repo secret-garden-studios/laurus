@@ -49,6 +49,8 @@ export const defaultMoveEquation: LaurusMoveEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+const MAX_VISIBLE_PARAM_SLIDERS = 4;
+
 interface MoveUnit {
   move: LaurusMoveResult;
   carouselIndexInit: number;
@@ -457,6 +459,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   style={{
                     height: "100%",
                     display: "flex",
+                    maxWidth:
+                      dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
+                      dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
+                      dynamicSizes.paramFlex.paddingInline * 2,
+                    overflowX: "auto",
+                    overflowY: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >
