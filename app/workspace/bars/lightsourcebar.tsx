@@ -18,7 +18,6 @@ import {
   peakTriangleIndices,
 } from "../canvas-media/light-source-capture";
 import { LaurusMaskResult, LaurusPeakBlackPoint, toPeakBlackPoint, toPeakBlackPointFields } from "../workspace.server";
-import { ColorSwatch } from "@/app/components/color-swatch";
 import Toggle from "@/app/components/toggle";
 import {
   CAPTURE_DARKNESS_MAX,
@@ -192,11 +191,20 @@ export default function LightSourcebar() {
       : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
   const isPeakParamDisabled = !selectedPeak && !isTopologyOn;
-  const elevationValue = selectedPeak?.elevation ?? uiState.stagedPeak.elevation;
-  const peakFalloffValue = selectedPeak?.falloff ?? uiState.stagedPeak.falloff;
-  const radiusValue = selectedPeak?.radius;
+
+  const pendingPeakEdit =
+    selectedPeak &&
+    selectedPeakMaskKey !== undefined &&
+    coreState.pendingTopologyEdit?.maskKey === selectedPeakMaskKey &&
+    coreState.pendingTopologyEdit?.peakId === selectedPeak.id
+      ? coreState.pendingTopologyEdit
+      : undefined;
+  const elevationValue = pendingPeakEdit?.elevation ?? selectedPeak?.elevation ?? uiState.stagedPeak.elevation;
+  const peakFalloffValue = pendingPeakEdit?.falloff ?? selectedPeak?.falloff ?? uiState.stagedPeak.falloff;
+  const radiusValue = pendingPeakEdit?.radius ?? selectedPeak?.radius;
   const isRadiusDisabled = !selectedPeak;
-  const blackPointValue = selectedPeak ? toPeakBlackPoint(selectedPeak) : uiState.stagedPeak.blackPoint;
+  const blackPointValue =
+    pendingPeakEdit?.blackPoint ?? (selectedPeak ? toPeakBlackPoint(selectedPeak) : uiState.stagedPeak.blackPoint);
   const selectedSubElement =
     selectedElement?.type === "capture"
       ? `capture|${selectedElement.key}|${selectedElement.captureId}`
@@ -204,12 +212,15 @@ export default function LightSourcebar() {
         ? `peak|${selectedElement.key}|${selectedElement.peakId}`
         : undefined;
   const [prevSelectedSubElement, setPrevSelectedSubElement] = useState<string | undefined>(undefined);
+
+  // beta: render-phase state adjustment pattern
   if (selectedSubElement !== prevSelectedSubElement) {
     setPrevSelectedSubElement(selectedSubElement);
     if (selectedSubElement !== undefined) {
       setTarget(selectedSubElement.startsWith("peak|") ? "peak" : "capture");
     }
   }
+
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingPreviewRef = useRef(false);
   const persistPreviewQueue = useCallback(async () => {
@@ -691,6 +702,42 @@ export default function LightSourcebar() {
   };
   const peakFalloffTitle = peakFalloffValue.toFixed(2);
   const peakFalloffRef = useRef<HTMLDivElement | null>(null);
+
+  const blackPointRTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getBlackPointRValue, getTrackCursor: getBlackPointRCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  const blackPointRCursor = { x: getBlackPointRCursor(blackPointValue.r, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const blackPointRTitle = blackPointValue.r.toFixed(2);
+  const blackPointRRef = useRef<HTMLDivElement | null>(null);
+
+  const blackPointGTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getBlackPointGValue, getTrackCursor: getBlackPointGCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  const blackPointGCursor = { x: getBlackPointGCursor(blackPointValue.g, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const blackPointGTitle = blackPointValue.g.toFixed(2);
+  const blackPointGRef = useRef<HTMLDivElement | null>(null);
+
+  const blackPointBTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getBlackPointBValue, getTrackCursor: getBlackPointBCursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  const blackPointBCursor = { x: getBlackPointBCursor(blackPointValue.b, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const blackPointBTitle = blackPointValue.b.toFixed(2);
+  const blackPointBRef = useRef<HTMLDivElement | null>(null);
+
+  const blackPointATrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getBlackPointAValue, getTrackCursor: getBlackPointACursor } = useTrackpadState(
+    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
+    1,
+  );
+  const blackPointACursor = { x: getBlackPointACursor(blackPointValue.a, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const blackPointATitle = blackPointValue.a.toFixed(2);
+  const blackPointARef = useRef<HTMLDivElement | null>(null);
 
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewSizeValue, getTrackCursor: getPreviewSizeCursor } = useTrackpadState(
@@ -1339,20 +1386,144 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the darkest color a peak can reach"}
+              title={"the strength of red in the selected peak's black point"}
               style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
-              {"black point"}
+              {"r"}
             </span>
-            <ColorSwatch
+            <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-r|${selectedPeak?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
-              chipSize={dynamicSizes.svgSize.height}
-              value={blackPointValue}
-              onPreview={(next) => previewPeakChange({ blackPoint: next })}
-              onChange={(next) => savePeakField({ blackPoint: next })}
+              containerRef={blackPointRTrackRef}
+              cursor={blackPointRCursor}
+              onCursorMove={(newCursor) => {
+                if (!blackPointRTrackRef.current) return;
+                const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
+                previewPeakChange({ blackPoint: { ...blackPointValue, r: newValue } });
+                if (blackPointRRef.current) blackPointRRef.current.innerHTML = newValue.toFixed(2);
+              }}
+              onNewCursor={(newCursor) => {
+                if (!blackPointRTrackRef.current) return;
+                const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
+                savePeakField({ blackPoint: { ...blackPointValue, r: newValue } });
+              }}
               disabled={isPeakParamDisabled}
+              title={blackPointRTitle}
+              liveTitleRef={blackPointRRef}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              title={"the strength of green in the selected peak's black point"}
+              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"g"}
+            </span>
+            <ParameterSliderX
+              resolution={{ ...uiState.resolution }}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-g|${selectedPeak?.id ?? "staged"}`}
+              size={dynamicSizes.paramSize}
+              containerRef={blackPointGTrackRef}
+              cursor={blackPointGCursor}
+              onCursorMove={(newCursor) => {
+                if (!blackPointGTrackRef.current) return;
+                const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
+                previewPeakChange({ blackPoint: { ...blackPointValue, g: newValue } });
+                if (blackPointGRef.current) blackPointGRef.current.innerHTML = newValue.toFixed(2);
+              }}
+              onNewCursor={(newCursor) => {
+                if (!blackPointGTrackRef.current) return;
+                const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
+                savePeakField({ blackPoint: { ...blackPointValue, g: newValue } });
+              }}
+              disabled={isPeakParamDisabled}
+              title={blackPointGTitle}
+              liveTitleRef={blackPointGRef}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              title={"the strength of blue in the selected peak's black point"}
+              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"b"}
+            </span>
+            <ParameterSliderX
+              resolution={{ ...uiState.resolution }}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-b|${selectedPeak?.id ?? "staged"}`}
+              size={dynamicSizes.paramSize}
+              containerRef={blackPointBTrackRef}
+              cursor={blackPointBCursor}
+              onCursorMove={(newCursor) => {
+                if (!blackPointBTrackRef.current) return;
+                const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
+                previewPeakChange({ blackPoint: { ...blackPointValue, b: newValue } });
+                if (blackPointBRef.current) blackPointBRef.current.innerHTML = newValue.toFixed(2);
+              }}
+              onNewCursor={(newCursor) => {
+                if (!blackPointBTrackRef.current) return;
+                const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
+                savePeakField({ blackPoint: { ...blackPointValue, b: newValue } });
+              }}
+              disabled={isPeakParamDisabled}
+              title={blackPointBTitle}
+              liveTitleRef={blackPointBRef}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              title={
+                "how strongly the selected peak's black point is applied -- 0 leaves the peak unaffected, 100% drives its floor fully to that colour"
+              }
+              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"a"}
+            </span>
+            <ParameterSliderX
+              resolution={{ ...uiState.resolution }}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-a|${selectedPeak?.id ?? "staged"}`}
+              size={dynamicSizes.paramSize}
+              containerRef={blackPointATrackRef}
+              cursor={blackPointACursor}
+              onCursorMove={(newCursor) => {
+                if (!blackPointATrackRef.current) return;
+                const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
+                previewPeakChange({ blackPoint: { ...blackPointValue, a: newValue } });
+                if (blackPointARef.current) blackPointARef.current.innerHTML = newValue.toFixed(2);
+              }}
+              onNewCursor={(newCursor) => {
+                if (!blackPointATrackRef.current) return;
+                const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
+                savePeakField({ blackPoint: { ...blackPointValue, a: newValue } });
+              }}
+              disabled={isPeakParamDisabled}
+              title={blackPointATitle}
+              liveTitleRef={blackPointARef}
             />
           </div>
         </>
