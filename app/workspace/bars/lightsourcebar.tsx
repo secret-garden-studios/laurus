@@ -19,6 +19,7 @@ import {
 } from "../canvas-media/light-source-capture";
 import { LaurusMaskResult, LaurusPeakBlackPoint, toPeakBlackPoint, toPeakBlackPointFields } from "../workspace.server";
 import { ColorSwatch } from "@/app/components/color-swatch";
+import Toggle from "@/app/components/toggle";
 import {
   CAPTURE_DARKNESS_MAX,
   CAPTURE_FALLOFF_MAX,
@@ -39,6 +40,9 @@ export default function LightSourcebar() {
   const {
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
     notifyMaskCaptureUpdated,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
@@ -47,7 +51,7 @@ export default function LightSourcebar() {
     notifyMaskPeaksUpdated,
     ...mask
   } = useContext(MaskContext);
-  const [target, setTarget] = useState<"preview" | "capture" | "peak">("capture");
+  const [target, setTarget] = useState<"capture" | "peak">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -167,31 +171,32 @@ export default function LightSourcebar() {
 
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedElement = uiState.selectedElement;
-  const activeCaptureMaskKey = selectedElement?.type === "capture" ? selectedElement.key : undefined;
+  const selectedCaptureMaskKey = selectedElement?.type === "capture" ? selectedElement.key : undefined;
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const targetMaskKey = activeCaptureMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
+  const targetMaskKey = selectedCaptureMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
-  const activeCaptureMaskData =
-    activeCaptureMaskKey !== undefined ? coreState.canvasMasks.get(activeCaptureMaskKey) : undefined;
-  const activeCapture =
+  const selectedCaptureMaskData =
+    selectedCaptureMaskKey !== undefined ? coreState.canvasMasks.get(selectedCaptureMaskKey) : undefined;
+  const selectedCapture =
     selectedElement?.type === "capture"
-      ? activeCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
+      ? selectedCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
       : undefined;
-  const isCaptureParamDisabled = !activeCapture;
-  const activePeakMaskKey = selectedElement?.type === "peak" ? selectedElement.key : undefined;
-  const activePeakMaskData = activePeakMaskKey !== undefined ? coreState.canvasMasks.get(activePeakMaskKey) : undefined;
-  const activePeak =
+  const isCaptureParamDisabled = !selectedCapture;
+  const selectedPeakMaskKey = selectedElement?.type === "peak" ? selectedElement.key : undefined;
+  const selectedPeakMaskData =
+    selectedPeakMaskKey !== undefined ? coreState.canvasMasks.get(selectedPeakMaskKey) : undefined;
+  const selectedPeak =
     selectedElement?.type === "peak"
-      ? activePeakMaskData?.peaks.find((p) => p.id === selectedElement.peakId)
+      ? selectedPeakMaskData?.peaks.find((p) => p.id === selectedElement.peakId)
       : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
-  const isPeakParamDisabled = !activePeak && !isTopologyOn;
-  const elevationValue = activePeak?.elevation ?? uiState.stagedPeak.elevation;
-  const peakFalloffValue = activePeak?.falloff ?? uiState.stagedPeak.falloff;
-  const radiusValue = activePeak?.radius;
-  const isRadiusDisabled = !activePeak;
-  const blackPointValue = activePeak ? toPeakBlackPoint(activePeak) : uiState.stagedPeak.blackPoint;
+  const isPeakParamDisabled = !selectedPeak && !isTopologyOn;
+  const elevationValue = selectedPeak?.elevation ?? uiState.stagedPeak.elevation;
+  const peakFalloffValue = selectedPeak?.falloff ?? uiState.stagedPeak.falloff;
+  const radiusValue = selectedPeak?.radius;
+  const isRadiusDisabled = !selectedPeak;
+  const blackPointValue = selectedPeak ? toPeakBlackPoint(selectedPeak) : uiState.stagedPeak.blackPoint;
   const selectedSubElement =
     selectedElement?.type === "capture"
       ? `capture|${selectedElement.key}|${selectedElement.captureId}`
@@ -351,21 +356,21 @@ export default function LightSourcebar() {
 
   const saveCaptureField = useCallback(
     (field: "size" | "intensity" | "falloff" | "darkness", value: number) => {
-      if (activeCaptureMaskKey === undefined || !activeCapture || !activeCaptureMaskData) return;
-      const patched = { ...activeCapture, [field]: value };
-      const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
-      const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
-      dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
-      notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
-      const polygonIndices = activeCaptureMaskData.polygons.reduce<number[]>((acc, p, i) => {
-        if (p.capture_id === activeCapture.id) acc.push(i);
+      if (selectedCaptureMaskKey === undefined || !selectedCapture || !selectedCaptureMaskData) return;
+      const patched = { ...selectedCapture, [field]: value };
+      const newCaptures = selectedCaptureMaskData.captures.map((c) => (c.id === selectedCapture.id ? patched : c));
+      const newMaskData: LaurusMaskResult = { ...selectedCaptureMaskData, captures: newCaptures };
+      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedCaptureMaskKey, value: newMaskData });
+      notifyMaskCaptureUpdated(selectedCaptureMaskKey, newMaskData);
+      const polygonIndices = selectedCaptureMaskData.polygons.reduce<number[]>((acc, p, i) => {
+        if (p.capture_id === selectedCapture.id) acc.push(i);
         return acc;
       }, []);
       pendingCaptureSaveRef.current = {
-        maskKey: activeCaptureMaskKey,
-        maskMediaId: activeCaptureMaskData.mask_media_id,
-        captureId: activeCapture.id,
-        name: activeCapture.name,
+        maskKey: selectedCaptureMaskKey,
+        maskMediaId: selectedCaptureMaskData.mask_media_id,
+        captureId: selectedCapture.id,
+        name: selectedCapture.name,
         polygonIndices,
         size: patched.size,
         intensity: patched.intensity,
@@ -376,9 +381,9 @@ export default function LightSourcebar() {
       void persistCaptureQueue();
     },
     [
-      activeCaptureMaskKey,
-      activeCapture,
-      activeCaptureMaskData,
+      selectedCaptureMaskKey,
+      selectedCapture,
+      selectedCaptureMaskData,
       dispatch,
       notifyMaskCaptureUpdated,
       persistCaptureQueue,
@@ -387,67 +392,67 @@ export default function LightSourcebar() {
 
   const captureResizeAnchorRef = useRef<{ captureId: number; cx: number; cy: number } | null>(null);
   const captureResizeAnchor = useCallback(() => {
-    if (!activeCapture || !activeCaptureMaskData) return undefined;
+    if (!selectedCapture || !selectedCaptureMaskData) return undefined;
     const held = captureResizeAnchorRef.current;
-    if (held && held.captureId === activeCapture.id) return held;
-    const circle = capturedRegionCircle(activeCaptureMaskData.polygons, activeCapture.id);
+    if (held && held.captureId === selectedCapture.id) return held;
+    const circle = capturedRegionCircle(selectedCaptureMaskData.polygons, selectedCapture.id);
     if (!circle) return undefined;
-    const anchor = { captureId: activeCapture.id, cx: circle.cx, cy: circle.cy };
+    const anchor = { captureId: selectedCapture.id, cx: circle.cx, cy: circle.cy };
     captureResizeAnchorRef.current = anchor;
     return anchor;
-  }, [activeCapture, activeCaptureMaskData]);
+  }, [selectedCapture, selectedCaptureMaskData]);
 
   const captureIndicesForSize = useCallback(
     (size: number): number[] | undefined => {
-      if (!activeCaptureMaskData) return undefined;
+      if (!selectedCaptureMaskData) return undefined;
       const anchor = captureResizeAnchor();
       if (!anchor) return undefined;
-      const indices = captureTriangleIndicesInCircle(activeCaptureMaskData.polygons, {
+      const indices = captureTriangleIndicesInCircle(selectedCaptureMaskData.polygons, {
         cx: anchor.cx,
         cy: anchor.cy,
         radius: size / 2,
       });
       return indices.size === 0 ? undefined : [...indices];
     },
-    [activeCaptureMaskData, captureResizeAnchor],
+    [selectedCaptureMaskData, captureResizeAnchor],
   );
 
   const previewCaptureSizeChange = useCallback(
     (size: number) => {
-      if (activeCaptureMaskKey === undefined || !activeCapture) return;
+      if (selectedCaptureMaskKey === undefined || !selectedCapture) return;
       const polygonIndices = captureIndicesForSize(size);
       if (!polygonIndices) return;
-      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices), activeCapture.id);
+      notifyMaskPendingCaptureSet(selectedCaptureMaskKey, new Set(polygonIndices), selectedCapture.id);
     },
-    [activeCaptureMaskKey, activeCapture, captureIndicesForSize, notifyMaskPendingCaptureSet],
+    [selectedCaptureMaskKey, selectedCapture, captureIndicesForSize, notifyMaskPendingCaptureSet],
   );
 
   const saveCaptureSizeField = useCallback(
     (size: number) => {
-      if (activeCaptureMaskKey === undefined || !activeCapture || !activeCaptureMaskData) return;
+      if (selectedCaptureMaskKey === undefined || !selectedCapture || !selectedCaptureMaskData) return;
       const polygonIndices = captureIndicesForSize(size);
       if (!polygonIndices) {
         captureResizeAnchorRef.current = null;
-        notifyMaskPendingCaptureCleared(activeCaptureMaskKey);
+        notifyMaskPendingCaptureCleared(selectedCaptureMaskKey);
         return;
       }
 
-      const patched = { ...activeCapture, size };
-      const newCaptures = activeCaptureMaskData.captures.map((c) => (c.id === activeCapture.id ? patched : c));
-      const newMaskData: LaurusMaskResult = { ...activeCaptureMaskData, captures: newCaptures };
-      dispatch({ type: CoreActionType.SetCanvasMask, key: activeCaptureMaskKey, value: newMaskData });
-      notifyMaskCaptureUpdated(activeCaptureMaskKey, newMaskData);
+      const patched = { ...selectedCapture, size };
+      const newCaptures = selectedCaptureMaskData.captures.map((c) => (c.id === selectedCapture.id ? patched : c));
+      const newMaskData: LaurusMaskResult = { ...selectedCaptureMaskData, captures: newCaptures };
+      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedCaptureMaskKey, value: newMaskData });
+      notifyMaskCaptureUpdated(selectedCaptureMaskKey, newMaskData);
       dispatch({
         type: CoreActionType.SetPendingLightSourceCapture,
-        value: { maskKey: activeCaptureMaskKey, captureId: activeCapture.id, polygonIndices },
+        value: { maskKey: selectedCaptureMaskKey, captureId: selectedCapture.id, polygonIndices },
       });
-      notifyMaskPendingCaptureSet(activeCaptureMaskKey, new Set(polygonIndices), activeCapture.id);
+      notifyMaskPendingCaptureSet(selectedCaptureMaskKey, new Set(polygonIndices), selectedCapture.id);
 
       pendingCaptureSaveRef.current = {
-        maskKey: activeCaptureMaskKey,
-        maskMediaId: activeCaptureMaskData.mask_media_id,
-        captureId: activeCapture.id,
-        name: activeCapture.name,
+        maskKey: selectedCaptureMaskKey,
+        maskMediaId: selectedCaptureMaskData.mask_media_id,
+        captureId: selectedCapture.id,
+        name: selectedCapture.name,
         polygonIndices,
         size: patched.size,
         intensity: patched.intensity,
@@ -459,9 +464,9 @@ export default function LightSourcebar() {
       void persistCaptureQueue();
     },
     [
-      activeCaptureMaskKey,
-      activeCapture,
-      activeCaptureMaskData,
+      selectedCaptureMaskKey,
+      selectedCapture,
+      selectedCaptureMaskData,
       captureIndicesForSize,
       dispatch,
       notifyMaskCaptureUpdated,
@@ -471,18 +476,18 @@ export default function LightSourcebar() {
     ],
   );
 
-  const captureSizeValue = activeCapture?.size ?? 0;
-  const captureIntensityValue = activeCapture?.intensity ?? 0;
+  const captureSizeValue = selectedCapture?.size ?? 0;
+  const captureIntensityValue = selectedCapture?.intensity ?? 0;
   const handleCaptureIntensityChange = useCallback(
     (value: number) => saveCaptureField("intensity", value),
     [saveCaptureField],
   );
-  const captureFalloffValue = activeCapture?.falloff ?? 0;
+  const captureFalloffValue = selectedCapture?.falloff ?? 0;
   const handleCaptureFalloffChange = useCallback(
     (value: number) => saveCaptureField("falloff", value),
     [saveCaptureField],
   );
-  const captureDarknessValue = activeCapture?.darkness ?? 0;
+  const captureDarknessValue = selectedCapture?.darkness ?? 0;
   const handleCaptureDarknessChange = useCallback(
     (value: number) => saveCaptureField("darkness", value),
     [saveCaptureField],
@@ -561,20 +566,20 @@ export default function LightSourcebar() {
 
   const mergePeakPatch = useCallback(
     (patch: PeakPatch): PendingTopologyEdit | undefined => {
-      if (activePeakMaskKey === undefined || !activePeak) return undefined;
+      if (selectedPeakMaskKey === undefined || !selectedPeak) return undefined;
       return {
-        maskKey: activePeakMaskKey,
-        peakId: activePeak.id,
-        cx: activePeak.cx,
-        cy: activePeak.cy,
-        radius: patch.radius ?? activePeak.radius,
-        elevation: patch.elevation ?? activePeak.elevation,
-        falloff: patch.falloff ?? activePeak.falloff,
-        shape: activePeak.shape,
-        blackPoint: patch.blackPoint ?? toPeakBlackPoint(activePeak),
+        maskKey: selectedPeakMaskKey,
+        peakId: selectedPeak.id,
+        cx: selectedPeak.cx,
+        cy: selectedPeak.cy,
+        radius: patch.radius ?? selectedPeak.radius,
+        elevation: patch.elevation ?? selectedPeak.elevation,
+        falloff: patch.falloff ?? selectedPeak.falloff,
+        shape: selectedPeak.shape,
+        blackPoint: patch.blackPoint ?? toPeakBlackPoint(selectedPeak),
       };
     },
-    [activePeakMaskKey, activePeak],
+    [selectedPeakMaskKey, selectedPeak],
   );
 
   const savePeakField = useCallback(
@@ -655,10 +660,12 @@ export default function LightSourcebar() {
     [getElevationCursor],
   );
   const elevationCursor = { x: elevationToTrack(elevationValue, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const elevationTitle = elevationValue.toFixed(0);
+  const elevationRef = useRef<HTMLDivElement | null>(null);
 
   const radiusTrackRef = useRef<HTMLDivElement | null>(null);
-  const radiusMax = activePeakMaskData
-    ? Math.max(MIN_MASK_PEAK_RADIUS_PX + 1, Math.min(activePeakMaskData.width, activePeakMaskData.height))
+  const radiusMax = selectedPeakMaskData
+    ? Math.max(MIN_MASK_PEAK_RADIUS_PX + 1, Math.min(selectedPeakMaskData.width, selectedPeakMaskData.height))
     : MIN_MASK_PEAK_RADIUS_PX + 1;
   const { getTrackValue: getRadiusValue, getTrackCursor: getRadiusCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
@@ -669,6 +676,8 @@ export default function LightSourcebar() {
     x: getRadiusCursor((radiusValue ?? 0) - MIN_MASK_PEAK_RADIUS_PX, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const radiusTitle = (radiusValue ?? 0).toFixed(0) + "px";
+  const radiusRef = useRef<HTMLDivElement | null>(null);
 
   const peakFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const peakFalloffSpan = MAX_MASK_PEAK_FALLOFF - MIN_MASK_PEAK_FALLOFF;
@@ -680,6 +689,8 @@ export default function LightSourcebar() {
     x: getPeakFalloffCursor(peakFalloffValue - MIN_MASK_PEAK_FALLOFF, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const peakFalloffTitle = peakFalloffValue.toFixed(2);
+  const peakFalloffRef = useRef<HTMLDivElement | null>(null);
 
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewSizeValue, getTrackCursor: getPreviewSizeCursor } = useTrackpadState(
@@ -690,6 +701,8 @@ export default function LightSourcebar() {
     x: getPreviewSizeCursor(previewSizeValue - CAPTURE_PREVIEW_SIZE_MIN, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const previewSizeTitle = previewSizeValue.toFixed(1);
+  const previewSizeRef = useRef<HTMLDivElement | null>(null);
 
   const previewIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewIntensityValue, getTrackCursor: getPreviewIntensityCursor } = useTrackpadState(
@@ -700,6 +713,8 @@ export default function LightSourcebar() {
     x: getPreviewIntensityCursor(previewIntensityValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const previewIntensityTitle = previewIntensityValue.toFixed(2);
+  const previewIntensityRef = useRef<HTMLDivElement | null>(null);
 
   const previewFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewFalloffValue, getTrackCursor: getPreviewFalloffCursor } = useTrackpadState(
@@ -713,6 +728,8 @@ export default function LightSourcebar() {
     ),
     y: 0,
   };
+  const previewFalloffTitle = previewFalloffValue.toFixed(1);
+  const previewFalloffRef = useRef<HTMLDivElement | null>(null);
 
   const previewDarknessTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewDarknessValue, getTrackCursor: getPreviewDarknessCursor } = useTrackpadState(
@@ -723,9 +740,11 @@ export default function LightSourcebar() {
     x: getPreviewDarknessCursor(previewDarknessValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const previewDarknessTitle = previewDarknessValue.toFixed(2);
+  const previewDarknessRef = useRef<HTMLDivElement | null>(null);
 
-  const captureSizeMax = activeCaptureMaskData
-    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
+  const captureSizeMax = selectedCaptureMaskData
+    ? Math.min(selectedCaptureMaskData.width, selectedCaptureMaskData.height)
     : CAPTURE_SIZE_MAX;
   const captureSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getCaptureSizeValue, getTrackCursor: getCaptureSizeCursor } = useTrackpadState(
@@ -733,6 +752,8 @@ export default function LightSourcebar() {
     captureSizeMax,
   );
   const captureSizeCursor = { x: getCaptureSizeCursor(captureSizeValue, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const captureSizeTitle = captureSizeValue.toFixed(1);
+  const captureSizeRef = useRef<HTMLDivElement | null>(null);
 
   const captureIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getCaptureIntensityValue, getTrackCursor: getCaptureIntensityCursor } = useTrackpadState(
@@ -743,9 +764,11 @@ export default function LightSourcebar() {
     x: getCaptureIntensityCursor(captureIntensityValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const captureIntensityTitle = captureIntensityValue.toFixed(2);
+  const captureIntensityRef = useRef<HTMLDivElement | null>(null);
 
-  const captureFalloffMax = activeCaptureMaskData
-    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
+  const captureFalloffMax = selectedCaptureMaskData
+    ? Math.min(selectedCaptureMaskData.width, selectedCaptureMaskData.height)
     : CAPTURE_FALLOFF_MAX;
   const captureFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getCaptureFalloffValue, getTrackCursor: getCaptureFalloffCursor } = useTrackpadState(
@@ -756,6 +779,8 @@ export default function LightSourcebar() {
     x: getCaptureFalloffCursor(captureFalloffValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const captureFalloffTitle = captureFalloffValue.toFixed(1);
+  const captureFalloffRef = useRef<HTMLDivElement | null>(null);
 
   const captureDarknessTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getCaptureDarknessValue, getTrackCursor: getCaptureDarknessCursor } = useTrackpadState(
@@ -766,6 +791,8 @@ export default function LightSourcebar() {
     x: getCaptureDarknessCursor(captureDarknessValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
+  const captureDarknessTitle = captureDarknessValue.toFixed(2);
+  const captureDarknessRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div
@@ -781,20 +808,15 @@ export default function LightSourcebar() {
         title={
           target === "capture"
             ? "targeting captures -- double-click for peaks"
-            : target === "peak"
-              ? "targeting peaks -- double-click for the capture-preview"
-              : "targeting the capture-preview -- double-click for captures"
+            : "targeting peaks -- double-click for captures"
         }
         onDoubleClick={() => {
-          const nextTarget = target === "capture" ? "peak" : target === "peak" ? "preview" : "capture";
-          setTarget(nextTarget);
-          uiDispatch({ type: UIActionType.SetLightSourcePreview, value: nextTarget === "preview" });
-          notifyMaskLightSourcePreviewToggled(nextTarget === "preview");
+          setTarget(target === "capture" ? "peak" : "capture");
         }}
         style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
       >
         <SvgRepo
-          svg={target === "capture" ? asterisk300() : target === "peak" ? antigravity300() : asterisk300()}
+          svg={target === "capture" ? asterisk300() : antigravity300()}
           containerStyle={{
             width: dynamicSizes.svgSize.width,
             height: dynamicSizes.svgSize.height,
@@ -803,7 +825,7 @@ export default function LightSourcebar() {
           scaleToContaier={true}
         />
       </div>
-      {target === "preview" ? (
+      {target === "capture" ? (
         <>
           <div
             style={{
@@ -813,261 +835,391 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span>{"preview"}</span>
-          </div>
-          <div
-            title={
-              isPreviewControlsDisabled
-                ? "select or generate a mesh to set the size of its epicenter's bright core"
-                : "size of the epicenter's bright core, in on-screen pixels"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1 }}>{"size"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${targetMaskKey ?? "lightsourcebar"}|preview-size`}
-              size={dynamicSizes.paramSize}
-              containerRef={previewSizeTrackRef}
-              cursor={previewSizeCursor}
-              onNewCursor={(newCursor) => {
-                if (!previewSizeTrackRef.current) return;
-                const newValue =
-                  getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
-                  CAPTURE_PREVIEW_SIZE_MIN;
-                handlePreviewSizeChange(newValue);
+            <span
+              title={
+                uiState.lightSourcePreview
+                  ? "mouse over a mask to preview the light source there -- turn off to edit the selected capture's own starting parameters"
+                  : "editing the selected capture's own starting parameters -- turn on to preview the light source by hovering a mask"
+              }
+              style={{
+                textShadow: uiState.lightSourcePreview ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                userSelect: "none",
               }}
-              disabled={isPreviewControlsDisabled}
+            >
+              {"preview"}
+            </span>
+            <Toggle
+              value={uiState.lightSourcePreview}
+              onClick={() => {
+                const next = !uiState.lightSourcePreview;
+                uiDispatch({ type: UIActionType.SetLightSourcePreview, value: next });
+                notifyMaskLightSourcePreviewToggled(next);
+                if (next && (selectedElement?.type === "capture" || selectedElement?.type === "peak")) {
+                  uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
+                  notifyMaskSelectionChanged(selectedElement.key);
+                  notifyMaskSelectedCaptureChanged(selectedElement.key, undefined);
+                  notifyMaskSelectedPeakChanged(selectedElement.key, undefined);
+                }
+              }}
+              trackStyles={{ ...dynamicSizes.toggle.track }}
+              buttonStyles={{ ...dynamicSizes.toggle.button }}
+              translateX={dynamicSizes.toggle.translateX}
             />
           </div>
-          <div
-            title={
-              isPreviewControlsDisabled
-                ? "select or generate a mesh to set the brightness of its epicenter's core"
-                : "brightness of the epicenter's core -- 100% is pure white"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1 }}>{"intensity"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${targetMaskKey ?? "lightsourcebar"}|preview-intensity`}
-              size={dynamicSizes.paramSize}
-              containerRef={previewIntensityTrackRef}
-              cursor={previewIntensityCursor}
-              onNewCursor={(newCursor) => {
-                if (!previewIntensityTrackRef.current) return;
-                const newValue = getPreviewIntensityValue(newCursor.x, previewIntensityTrackRef.current.clientWidth, 0);
-                handlePreviewIntensityChange(newValue);
-              }}
-              disabled={isPreviewControlsDisabled}
-            />
-          </div>
-          <div
-            title={
-              isPreviewControlsDisabled
-                ? "select or generate a mesh to set how far its darkening falloffs out beyond the core"
-                : "distance the darkening takes to falloff out beyond the core, in on-screen pixels -- independent of canvas size"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1 }}>{"falloff"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${targetMaskKey ?? "lightsourcebar"}|preview-falloff`}
-              size={dynamicSizes.paramSize}
-              containerRef={previewFalloffTrackRef}
-              cursor={previewFalloffCursor}
-              onNewCursor={(newCursor) => {
-                if (!previewFalloffTrackRef.current) return;
-                const newValue =
-                  getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
-                  CAPTURE_PREVIEW_FALLOFF_MIN;
-                handlePreviewFalloffChange(newValue);
-              }}
-              disabled={isPreviewControlsDisabled}
-            />
-          </div>
-          <div
-            title={
-              isPreviewControlsDisabled
-                ? "select or generate a mesh to set the strength of its darkening at the far edge of the falloff"
-                : "strength of the darkening at the far edge of the falloff -- 100% drives it fully to black"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1 }}>{"darkness"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${targetMaskKey ?? "lightsourcebar"}|preview-darkness`}
-              size={dynamicSizes.paramSize}
-              containerRef={previewDarknessTrackRef}
-              cursor={previewDarknessCursor}
-              onNewCursor={(newCursor) => {
-                if (!previewDarknessTrackRef.current) return;
-                const newValue = getPreviewDarknessValue(newCursor.x, previewDarknessTrackRef.current.clientWidth, 0);
-                handlePreviewDarknessChange(newValue);
-              }}
-              disabled={isPreviewControlsDisabled}
-            />
-          </div>
-        </>
-      ) : target === "capture" ? (
-        <>
-          <div
-            title={
-              isCaptureParamDisabled
-                ? "meta-click a capture on the mesh to resize it"
-                : "how wide this capture is -- resizes the region of triangles it owns, and with it the epicenter core a wired light_source effect ramps from"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isCaptureParamDisabled ? 0.3 : 1 }}>{"size"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${activeCaptureMaskKey ?? "lightsourcebar"}|capture-size|${activeCapture?.id ?? "none"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={captureSizeTrackRef}
-              cursor={captureSizeCursor}
-              onCursorMove={(newCursor) => {
-                if (!captureSizeTrackRef.current) return;
-                const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
-                previewCaptureSizeChange(newValue);
-              }}
-              onNewCursor={(newCursor) => {
-                if (!captureSizeTrackRef.current) return;
-                const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
-                saveCaptureSizeField(newValue);
-              }}
-              disabled={isCaptureParamDisabled}
-            />
-          </div>
-          <div
-            title={
-              isCaptureParamDisabled
-                ? "meta-click a capture on the mesh to set the brightness of its own epicenter's core"
-                : "brightness of this capture's own epicenter core -- 100% is pure white"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isCaptureParamDisabled ? 0.3 : 1 }}>{"intensity"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${activeCaptureMaskKey ?? "lightsourcebar"}|capture-intensity|${activeCapture?.id ?? "none"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={captureIntensityTrackRef}
-              cursor={captureIntensityCursor}
-              onNewCursor={(newCursor) => {
-                if (!captureIntensityTrackRef.current) return;
-                const newValue = getCaptureIntensityValue(newCursor.x, captureIntensityTrackRef.current.clientWidth, 0);
-                handleCaptureIntensityChange(newValue);
-              }}
-              disabled={isCaptureParamDisabled}
-            />
-          </div>
-          <div
-            title={
-              isCaptureParamDisabled
-                ? "meta-click a capture on the mesh to set how far its own darkening falloffs out beyond the core"
-                : "distance this capture's own darkening takes to falloff out beyond the core, in on-screen pixels"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isCaptureParamDisabled ? 0.3 : 1 }}>{"falloff"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${activeCaptureMaskKey ?? "lightsourcebar"}|capture-falloff|${activeCapture?.id ?? "none"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={captureFalloffTrackRef}
-              cursor={captureFalloffCursor}
-              onNewCursor={(newCursor) => {
-                if (!captureFalloffTrackRef.current) return;
-                const newValue = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
-                handleCaptureFalloffChange(newValue);
-              }}
-              disabled={isCaptureParamDisabled}
-            />
-          </div>
-          <div
-            title={
-              isCaptureParamDisabled
-                ? "meta-click a capture on the mesh to set the strength of its own darkening at the far edge of the falloff"
-                : "strength of this capture's own darkening at the far edge of the falloff -- 100% drives it fully to black"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span style={{ opacity: isCaptureParamDisabled ? 0.3 : 1 }}>{"darkness"}</span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${activeCaptureMaskKey ?? "lightsourcebar"}|capture-darkness|${activeCapture?.id ?? "none"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={captureDarknessTrackRef}
-              cursor={captureDarknessCursor}
-              onNewCursor={(newCursor) => {
-                if (!captureDarknessTrackRef.current) return;
-                const newValue = getCaptureDarknessValue(newCursor.x, captureDarknessTrackRef.current.clientWidth, 0);
-                handleCaptureDarknessChange(newValue);
-              }}
-              disabled={isCaptureParamDisabled}
-            />
-          </div>
+          {uiState.lightSourcePreview ? (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isPreviewControlsDisabled
+                      ? "select or generate a mesh to set the size of its epicenter's bright core"
+                      : "size of the epicenter's bright core, in on-screen pixels"
+                  }
+                  style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"size"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${targetMaskKey ?? "lightsourcebar"}|preview-size`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={previewSizeTrackRef}
+                  cursor={previewSizeCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!previewSizeTrackRef.current || !previewSizeRef.current) return;
+                    const val =
+                      getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
+                      CAPTURE_PREVIEW_SIZE_MIN;
+                    previewSizeRef.current.innerHTML = val.toFixed(1);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!previewSizeTrackRef.current) return;
+                    const newValue =
+                      getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
+                      CAPTURE_PREVIEW_SIZE_MIN;
+                    handlePreviewSizeChange(newValue);
+                  }}
+                  disabled={isPreviewControlsDisabled}
+                  title={previewSizeTitle}
+                  liveTitleRef={previewSizeRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isPreviewControlsDisabled
+                      ? "select or generate a mesh to set the brightness of its epicenter's core"
+                      : "brightness of the epicenter's core -- 100% is pure white"
+                  }
+                  style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"intensity"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${targetMaskKey ?? "lightsourcebar"}|preview-intensity`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={previewIntensityTrackRef}
+                  cursor={previewIntensityCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!previewIntensityTrackRef.current || !previewIntensityRef.current) return;
+                    const val = getPreviewIntensityValue(newCursor.x, previewIntensityTrackRef.current.clientWidth, 0);
+                    previewIntensityRef.current.innerHTML = val.toFixed(2);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!previewIntensityTrackRef.current) return;
+                    const newValue = getPreviewIntensityValue(
+                      newCursor.x,
+                      previewIntensityTrackRef.current.clientWidth,
+                      0,
+                    );
+                    handlePreviewIntensityChange(newValue);
+                  }}
+                  disabled={isPreviewControlsDisabled}
+                  title={previewIntensityTitle}
+                  liveTitleRef={previewIntensityRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isPreviewControlsDisabled
+                      ? "select or generate a mesh to set how far its darkening falloffs out beyond the core"
+                      : "distance the darkening takes to falloff out beyond the core, in on-screen pixels -- independent of canvas size"
+                  }
+                  style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"falloff"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${targetMaskKey ?? "lightsourcebar"}|preview-falloff`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={previewFalloffTrackRef}
+                  cursor={previewFalloffCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!previewFalloffTrackRef.current || !previewFalloffRef.current) return;
+                    const val =
+                      getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
+                      CAPTURE_PREVIEW_FALLOFF_MIN;
+                    previewFalloffRef.current.innerHTML = val.toFixed(1);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!previewFalloffTrackRef.current) return;
+                    const newValue =
+                      getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
+                      CAPTURE_PREVIEW_FALLOFF_MIN;
+                    handlePreviewFalloffChange(newValue);
+                  }}
+                  disabled={isPreviewControlsDisabled}
+                  title={previewFalloffTitle}
+                  liveTitleRef={previewFalloffRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isPreviewControlsDisabled
+                      ? "select or generate a mesh to set the strength of its darkening at the far edge of the falloff"
+                      : "strength of the darkening at the far edge of the falloff -- 100% drives it fully to black"
+                  }
+                  style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"darkness"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${targetMaskKey ?? "lightsourcebar"}|preview-darkness`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={previewDarknessTrackRef}
+                  cursor={previewDarknessCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!previewDarknessTrackRef.current || !previewDarknessRef.current) return;
+                    const val = getPreviewDarknessValue(newCursor.x, previewDarknessTrackRef.current.clientWidth, 0);
+                    previewDarknessRef.current.innerHTML = val.toFixed(2);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!previewDarknessTrackRef.current) return;
+                    const newValue = getPreviewDarknessValue(
+                      newCursor.x,
+                      previewDarknessTrackRef.current.clientWidth,
+                      0,
+                    );
+                    handlePreviewDarknessChange(newValue);
+                  }}
+                  disabled={isPreviewControlsDisabled}
+                  title={previewDarknessTitle}
+                  liveTitleRef={previewDarknessRef}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isCaptureParamDisabled
+                      ? "select a capture on the mesh to resize it"
+                      : "how wide this capture is -- resizes the region of triangles it owns, and with it the epicenter core a wired light_source effect ramps from"
+                  }
+                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"size"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-size|${selectedCapture?.id ?? "none"}`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={captureSizeTrackRef}
+                  cursor={captureSizeCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!captureSizeTrackRef.current) return;
+                    const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
+                    previewCaptureSizeChange(newValue);
+                    if (captureSizeRef.current) captureSizeRef.current.innerHTML = newValue.toFixed(1);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!captureSizeTrackRef.current) return;
+                    const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
+                    saveCaptureSizeField(newValue);
+                  }}
+                  disabled={isCaptureParamDisabled}
+                  title={captureSizeTitle}
+                  liveTitleRef={captureSizeRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isCaptureParamDisabled
+                      ? "select a capture on the mesh to set the brightness of its own epicenter's core"
+                      : "brightness of this capture's own epicenter core -- 100% is pure white"
+                  }
+                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"intensity"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-intensity|${selectedCapture?.id ?? "none"}`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={captureIntensityTrackRef}
+                  cursor={captureIntensityCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!captureIntensityTrackRef.current || !captureIntensityRef.current) return;
+                    const val = getCaptureIntensityValue(newCursor.x, captureIntensityTrackRef.current.clientWidth, 0);
+                    captureIntensityRef.current.innerHTML = val.toFixed(2);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!captureIntensityTrackRef.current) return;
+                    const newValue = getCaptureIntensityValue(
+                      newCursor.x,
+                      captureIntensityTrackRef.current.clientWidth,
+                      0,
+                    );
+                    handleCaptureIntensityChange(newValue);
+                  }}
+                  disabled={isCaptureParamDisabled}
+                  title={captureIntensityTitle}
+                  liveTitleRef={captureIntensityRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isCaptureParamDisabled
+                      ? "select a capture on the mesh to set how far its own darkening falloffs out beyond the core"
+                      : "distance this capture's own darkening takes to falloff out beyond the core, in on-screen pixels"
+                  }
+                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"falloff"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-falloff|${selectedCapture?.id ?? "none"}`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={captureFalloffTrackRef}
+                  cursor={captureFalloffCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!captureFalloffTrackRef.current || !captureFalloffRef.current) return;
+                    const val = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
+                    captureFalloffRef.current.innerHTML = val.toFixed(1);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!captureFalloffTrackRef.current) return;
+                    const newValue = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
+                    handleCaptureFalloffChange(newValue);
+                  }}
+                  disabled={isCaptureParamDisabled}
+                  title={captureFalloffTitle}
+                  liveTitleRef={captureFalloffRef}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isCaptureParamDisabled
+                      ? "select a capture on the mesh to set the strength of its own darkening at the far edge of the falloff"
+                      : "strength of this capture's own darkening at the far edge of the falloff -- 100% drives it fully to black"
+                  }
+                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"darkness"}
+                </span>
+                <ParameterSliderX
+                  resolution={{ ...uiState.resolution }}
+                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-darkness|${selectedCapture?.id ?? "none"}`}
+                  size={dynamicSizes.paramSize}
+                  containerRef={captureDarknessTrackRef}
+                  cursor={captureDarknessCursor}
+                  onCursorMove={(newCursor) => {
+                    if (!captureDarknessTrackRef.current || !captureDarknessRef.current) return;
+                    const val = getCaptureDarknessValue(newCursor.x, captureDarknessTrackRef.current.clientWidth, 0);
+                    captureDarknessRef.current.innerHTML = val.toFixed(2);
+                  }}
+                  onNewCursor={(newCursor) => {
+                    if (!captureDarknessTrackRef.current) return;
+                    const newValue = getCaptureDarknessValue(
+                      newCursor.x,
+                      captureDarknessTrackRef.current.clientWidth,
+                      0,
+                    );
+                    handleCaptureDarknessChange(newValue);
+                  }}
+                  disabled={isCaptureParamDisabled}
+                  title={captureDarknessTitle}
+                  liveTitleRef={captureDarknessRef}
+                />
+              </div>
+            </>
+          )}
         </>
       ) : (
         <>
           <div
-            title={
-              isPeakParamDisabled
-                ? "enable topology to set the elevation new peaks are drawn at, or adjust the active one"
-                : activePeak
-                  ? "the active peak's own elevation -- negative dents the surface inward. drag a circle elsewhere on the mesh to place another"
-                  : "the elevation the next circle you drag out will be created at -- negative dents the surface inward"
-            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -1075,18 +1227,18 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"elevation"}</span>
+            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}>{"elevation"}</span>
             <ParameterSliderXPlusMinus
               resolution={{ ...uiState.resolution }}
-              hash={`${activePeakMaskKey ?? "lightsourcebar"}|elevation|${activePeak?.id ?? "staged"}`}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|elevation|${selectedPeak?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={elevationTrackRef}
               cursor={elevationCursor}
               onCursorMove={(newCursor) => {
                 if (!elevationTrackRef.current) return;
-                previewPeakChange({
-                  elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth),
-                });
+                const newValue = elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth);
+                previewPeakChange({ elevation: newValue });
+                if (elevationRef.current) elevationRef.current.innerHTML = newValue.toFixed(0);
               }}
               onNewCursor={(newCursor) => {
                 if (!elevationTrackRef.current) return;
@@ -1095,14 +1247,11 @@ export default function LightSourcebar() {
                 });
               }}
               disabled={isPeakParamDisabled}
+              title={elevationTitle}
+              liveTitleRef={elevationRef}
             />
           </div>
           <div
-            title={
-              isRadiusDisabled
-                ? "select a peak to resize it -- a new peak's radius comes from the circle you drag out"
-                : "how far the active peak's own influence reaches"
-            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -1111,10 +1260,15 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isRadiusDisabled ? 0.3 : 1 }}>{"radius"}</span>
+            <span
+              title={"how far the selected peak's own influence reaches"}
+              style={{ opacity: isRadiusDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"radius"}
+            </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${activePeakMaskKey ?? "lightsourcebar"}|radius|${activePeak?.id ?? "staged"}`}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|radius|${selectedPeak?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={radiusTrackRef}
               cursor={radiusCursor}
@@ -1123,6 +1277,7 @@ export default function LightSourcebar() {
                 const newValue =
                   MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
                 previewPeakChange({ radius: newValue });
+                if (radiusRef.current) radiusRef.current.innerHTML = newValue.toFixed(0) + "px";
               }}
               onNewCursor={(newCursor) => {
                 if (!radiusTrackRef.current) return;
@@ -1131,14 +1286,11 @@ export default function LightSourcebar() {
                 savePeakField({ radius: newValue });
               }}
               disabled={isRadiusDisabled}
+              title={radiusTitle}
+              liveTitleRef={radiusRef}
             />
           </div>
           <div
-            title={
-              isPeakParamDisabled
-                ? "enable topology to shape the profile new peaks are drawn with, or adjust the active one"
-                : "the active peak's own profile -- low is a broad dome with a visible rim, high is a needle"
-            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -1147,10 +1299,15 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"falloff"}</span>
+            <span
+              title={"the selected peak's own profile - low is a broad dome with a visible rim, high is a needle"}
+              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"falloff"}
+            </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${activePeakMaskKey ?? "lightsourcebar"}|peak-falloff|${activePeak?.id ?? "staged"}`}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-falloff|${selectedPeak?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={peakFalloffTrackRef}
               cursor={peakFalloffCursor}
@@ -1159,6 +1316,7 @@ export default function LightSourcebar() {
                 const newValue =
                   MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
                 previewPeakChange({ falloff: newValue });
+                if (peakFalloffRef.current) peakFalloffRef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
                 if (!peakFalloffTrackRef.current) return;
@@ -1167,16 +1325,11 @@ export default function LightSourcebar() {
                 savePeakField({ falloff: newValue });
               }}
               disabled={isPeakParamDisabled}
+              title={peakFalloffTitle}
+              liveTitleRef={peakFalloffRef}
             />
           </div>
           <div
-            title={
-              isPeakParamDisabled
-                ? "enable topology to set the black point new peaks are drawn with, or adjust the active one"
-                : activePeak
-                  ? "the active peak's own black point -- the darkest colour this peak can reach. its shading runs from here up to white, never to black. alpha is how strongly it applies"
-                  : "the black point the next circle you drag out will be created with -- the darkest colour that peak can reach, its shading running from there up to white rather than to black"
-            }
             style={{
               display: "flex",
               alignItems: "center",
@@ -1185,10 +1338,15 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1 }}>{"black point"}</span>
+            <span
+              title={"the darkest color a peak can reach"}
+              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+            >
+              {"black point"}
+            </span>
             <ColorSwatch
               resolution={{ ...uiState.resolution }}
-              hash={`${activePeakMaskKey ?? "lightsourcebar"}|peak-black-point|${activePeak?.id ?? "staged"}`}
+              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point|${selectedPeak?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               chipSize={dynamicSizes.svgSize.height}
               value={blackPointValue}

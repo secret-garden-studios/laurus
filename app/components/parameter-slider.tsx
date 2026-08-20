@@ -363,6 +363,7 @@ interface ParameterSliderX {
   onCursorMove?: (newCursor: { x: number; y: number }) => void;
   disabled?: boolean;
   title?: string;
+  liveTitleRef?: RefObject<HTMLDivElement | null>;
 }
 export function ParameterSliderX({
   resolution,
@@ -374,6 +375,7 @@ export function ParameterSliderX({
   onCursorMove,
   disabled,
   title,
+  liveTitleRef,
 }: ParameterSliderX) {
   return (
     <>
@@ -413,6 +415,7 @@ export function ParameterSliderX({
             onMove={onCursorMove}
             disabled={disabled}
             title={title}
+            liveTitleRef={liveTitleRef}
           />
         </div>
         {/* label*/}

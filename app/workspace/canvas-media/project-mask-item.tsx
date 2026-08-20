@@ -193,6 +193,7 @@ export function ProjectMaskItem({
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskPeaksUpdated,
+    notifyMaskLightSourcePreviewToggled,
   } = useContext(MaskContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
     useContext(HoverContext);
@@ -1321,6 +1322,10 @@ export function ProjectMaskItem({
               };
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
+                if ((selected.type === "capture" || selected.type === "peak") && uiState.lightSourcePreview) {
+                  uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
+                  notifyMaskLightSourcePreviewToggled(false);
+                }
                 notifyMaskSelectionChanged(mediaKey);
                 notifyMaskSelectedCaptureChanged(
                   mediaKey,
@@ -1594,6 +1599,10 @@ export function ProjectMaskItem({
                       type: UIActionType.SetSelectedElement,
                       value: { key: mediaKey, type: "peak", peakId },
                     });
+                    if (uiState.lightSourcePreview) {
+                      uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
+                      notifyMaskLightSourcePreviewToggled(false);
+                    }
                     notifyMaskSelectionChanged(mediaKey);
                     notifyMaskSelectedPeakChanged(mediaKey, peakId);
                     notifyMaskSelectedCaptureChanged(mediaKey, undefined);
@@ -1648,6 +1657,10 @@ export function ProjectMaskItem({
                     type: UIActionType.SetSelectedElement,
                     value: { key: mediaKey, type: "capture", captureId },
                   });
+                  if (uiState.lightSourcePreview) {
+                    uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
+                    notifyMaskLightSourcePreviewToggled(false);
+                  }
                   notifyMaskSelectionChanged(mediaKey);
                   notifyMaskSelectedCaptureChanged(mediaKey, captureId);
                   notifyMaskSelectedPeakChanged(mediaKey, undefined);
