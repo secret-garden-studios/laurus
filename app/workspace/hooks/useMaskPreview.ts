@@ -35,6 +35,16 @@ export interface MaskSizeOverride {
   height: number | undefined;
 }
 
+/** How an edge-detected peak should look once the server raises it. The
+ *  server decides *where* the peaks go; these say what they look like, and
+ *  they come from the client so an auto-raised peak is indistinguishable
+ *  from one dragged out by hand (see uiState.stagedPeak). Ignored unless
+ *  edgePeaks is on. */
+export interface EdgePeakSeed {
+  elevation: number;
+  falloff: number;
+}
+
 export function useMaskPreview(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
@@ -91,6 +101,19 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   const setCaptureDarkness = useCallback((value: number) => {
     captureDarknessRef.current = value;
     setCaptureDarknessState(value);
+  }, []);
+
+  // Deliberately not cleared by reset(), like `resolution` and unlike every
+  // appearance field above: both are settings for how the *next* mesh is
+  // generated rather than state belonging to the current one, and reset()
+  // runs whenever the selected image changes -- so clearing it here would
+  // switch the toggle off under anyone masking a series of images.
+  const [edgePeaks, setEdgePeaksState] = useState(false);
+  const edgePeaksRef = useRef(false);
+
+  const setEdgePeaks = useCallback((value: boolean) => {
+    edgePeaksRef.current = value;
+    setEdgePeaksState(value);
   }, []);
 
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
@@ -154,7 +177,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   }, [setTextureMix, setCaptureSize, setCaptureIntensity, setCaptureFalloff, setCaptureDarkness]);
 
   const start = useCallback(
-    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void) => {
+    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, peakSeed?: EdgePeakSeed) => {
       positionsRef.current = [];
       colorsRef.current = [];
       barycentricsRef.current = [];
@@ -178,13 +201,18 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       socketRef.current = maskImage(
         apiOrigin,
         accessToken,
-        resolutionFactor === 1
-          ? { img_media_id: img.img_media_id }
-          : {
-              img_media_id: img.img_media_id,
-              max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
-              detail_points: BASE_DETAIL_POINTS * resolutionFactor,
-            },
+        {
+          img_media_id: img.img_media_id,
+          ...(resolutionFactor === 1
+            ? {}
+            : {
+                max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
+                detail_points: BASE_DETAIL_POINTS * resolutionFactor,
+              }),
+          ...(edgePeaksRef.current && peakSeed
+            ? { edge_peaks: true, peak_elevation: peakSeed.elevation, peak_falloff: peakSeed.falloff }
+            : {}),
+        },
         {
           onGroupStart: () => {
             setStatus("streaming");
@@ -284,6 +312,8 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setSize,
     resolution,
     setResolution,
+    edgePeaks,
+    setEdgePeaks,
     start,
     reset,
     meshRefs: {

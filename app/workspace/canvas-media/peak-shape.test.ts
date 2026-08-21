@@ -351,6 +351,84 @@ describe("the persisted shape round-trips", () => {
   });
 });
 
+describe("a peak shape authored by the server", () => {
+  /** The exact format the server emits Peak.shape in for a detected region:
+   *  the region's outer extent measured in PEAK_SHAPE_SAMPLES directions and
+   *  emitted as a closed M/L/Z polygon, already centred on its own centroid
+   *  and scaled so its furthest point sits at 1. See peak_shape_path and
+   *  region_peak_geometry in the server's peak_math.py.
+   *
+   *  Reproduced here rather than fixtured because what is under test is the
+   *  contract, not any one image: a shape built this way has to be one this
+   *  module accepts, or the peak silently renders as a plain circle and
+   *  nothing anywhere reports why. */
+  function serverStyleShapePath(rho: number[]): string {
+    const format = (n: number): string => {
+      const trimmed = n.toFixed(5).replace(/0+$/, "").replace(/\.$/, "");
+      return trimmed === "-0" ? "0" : trimmed;
+    };
+    return (
+      rho
+        .map((r, i) => {
+          const angle = sampleAngle(i, rho.length);
+          return `${i === 0 ? "M" : "L"}${format(r * Math.cos(angle))},${format(r * Math.sin(angle))}`;
+        })
+        .join("") + "Z"
+    );
+  }
+
+  /** `centred` marks a profile whose polygon has its centroid at the origin
+   *  it was built around. Only those can have their table compared entry by
+   *  entry: this module re-derives rho about the polygon's own centroid, so
+   *  for a lopsided outline the reconstructed table is measured from a
+   *  different point and simply is not the same table -- it still describes
+   *  the same region, which is what renders. */
+  const profiles: [string, (theta: number) => number, boolean][] = [
+    ["a round region", () => 1, true],
+    ["a lobed blob", (t) => 0.7 + 0.3 * Math.cos(4 * t), true],
+    ["an elongated region", (t) => 1 / Math.hypot(Math.cos(t), 2.5 * Math.sin(t)), true],
+    ["a region with one long spur", (t) => (Math.abs(t) < 0.3 ? 1 : 0.35), false],
+  ];
+
+  for (const [name, profile, centred] of profiles) {
+    it(`is accepted and re-sampled for ${name}`, () => {
+      const raw = Array.from({ length: PEAK_SHAPE_SAMPLES }, (_, i) => profile(sampleAngle(i, PEAK_SHAPE_SAMPLES)));
+      const peak = Math.max(...raw);
+      const rho = raw.map((r) => r / peak);
+
+      const shape = samplePeakShapePath(serverStyleShapePath(rho));
+      assert.ok(shape, `${name} must survive the parser -- the peak renders as a circle otherwise`);
+      assert.equal(shape.rho.length, PEAK_SHAPE_SAMPLES);
+
+      // rho topping out at 1 is what keeps Peak.radius meaning "the peak's
+      // furthest reach". Not exactly 1: the maximum is taken over
+      // PEAK_SHAPE_VALIDATION_SAMPLES rays but stored at PEAK_SHAPE_SAMPLES
+      // of them, so a shape whose extreme falls between two stored
+      // directions normalizes a fraction of a percent short.
+      assert.ok(Math.abs(Math.max(...shape.rho) - 1) < 5e-3, `max rho was ${Math.max(...shape.rho)}`);
+      assert.ok(Math.min(...shape.rho) > 0, "rho must stay positive");
+
+      if (centred) {
+        for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+          assert.ok(Math.abs(shape.rho[i] - rho[i]) < 0.02, `rho drifted at ${i}: ${rho[i]} vs ${shape.rho[i]}`);
+        }
+        return;
+      }
+      // lopsided: check the region survived rather than the table.
+      // Re-normalizing an already-normalized path must be a no-op.
+      const reloaded = samplePeakShapePath(shape.path);
+      assert.ok(reloaded);
+      for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+        assert.ok(Math.abs(shape.rho[i] - reloaded.rho[i]) < 1e-3, `unstable at ${i}`);
+      }
+    });
+  }
+
+  it("reads an empty shape as the plain circle the server means by it", () => {
+    assert.equal(cachedPeakShape(""), undefined);
+  });
+});
+
 describe("cachedPeakShape -- the render path's entry point", () => {
   it("treats the empty path as a circle without consulting the cache", () => {
     assert.equal(cachedPeakShape(""), undefined);

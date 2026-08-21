@@ -16,7 +16,7 @@ export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" 
 
 export function useMaskPersist() {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiDispatch } = useContext(UIContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
   const { setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const { position, size } = mask;
@@ -61,6 +61,13 @@ export function useMaskPersist() {
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: newKey } });
+      // Peaks the server raised from detected edges arrive already saved on
+      // the mask, so unlike createPeak's own path nothing has enrolled them
+      // in the carousel yet -- without this they exist and render but have
+      // no entry to select or wire an effect to.
+      for (const peak of result.peaks) {
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: newKey, peakId: peak.id } });
+      }
       setSelectedMaskKeys(new Set([newKey]));
 
       (async () => {
@@ -106,10 +113,13 @@ export function useMaskPersist() {
     (img: LaurusImgResult, sourceFrame: MaskSourceFrame) => {
       if (isMaskBusy) return;
       const initialTextureMix = mask.textureMix;
-      mask.start(img, (result) => persistMask(sourceFrame, result));
+      mask.start(img, (result) => persistMask(sourceFrame, result), {
+        elevation: uiState.stagedPeak.elevation,
+        falloff: uiState.stagedPeak.falloff,
+      });
       mask.setTextureMix(initialTextureMix);
     },
-    [isMaskBusy, mask, persistMask],
+    [isMaskBusy, mask, persistMask, uiState.stagedPeak.elevation, uiState.stagedPeak.falloff],
   );
 
   return { triggerMask, isMaskBusy };

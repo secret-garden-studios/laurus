@@ -513,6 +513,9 @@ export interface MaskRequest_V1_0 {
   canny_high?: number;
   alpha_threshold?: number;
   curve_tolerance?: number;
+  edge_peaks?: boolean;
+  peak_elevation?: number;
+  peak_falloff?: number;
 }
 export type LaurusMaskRequest = MaskRequest_V1_0;
 
@@ -540,6 +543,13 @@ export interface MaskTriangle_V1_0 {
   d: string;
   points: [number, number][];
 }
+export interface MaskPeak_V1_0 {
+  type: "peak";
+  peak: Peak_V1_0;
+  polygon_indices: number[];
+  peak_index: number;
+  peak_count: number;
+}
 export interface MaskComplete_V1_0 {
   type: "complete";
   result: MaskMediaResult_V1_0;
@@ -549,7 +559,7 @@ export interface MaskError_V1_0 {
   message: string;
 }
 export type MaskMessage_V1_0 =
-  MaskGroupStart_V1_0 | MaskCurve_V1_0 | MaskTriangle_V1_0 | MaskComplete_V1_0 | MaskError_V1_0;
+  MaskGroupStart_V1_0 | MaskCurve_V1_0 | MaskTriangle_V1_0 | MaskPeak_V1_0 | MaskComplete_V1_0 | MaskError_V1_0;
 
 function toWebSocketUrl(baseUrl: string): string {
   return baseUrl.replace(/^http/, "ws");
@@ -559,6 +569,7 @@ export interface MaskImageHandlers {
   onGroupStart?: (event: MaskGroupStart_V1_0) => void;
   onCurve?: (event: MaskCurve_V1_0) => void;
   onTriangle?: (event: MaskTriangle_V1_0) => void;
+  onPeak?: (event: MaskPeak_V1_0) => void;
   onComplete?: (event: MaskComplete_V1_0) => void;
   onError?: (message: string) => void;
 }
@@ -604,6 +615,9 @@ export function maskImage(
         break;
       case "triangle":
         handlers.onTriangle?.(message);
+        break;
+      case "peak":
+        handlers.onPeak?.(message);
         break;
       case "complete":
         handlers.onComplete?.({ ...message, result: normalizeMaskResult(message.result) });

@@ -308,6 +308,8 @@ const defaultMaskPreview: UseMaskPreview = {
   setSize: () => {},
   resolution: MASK_RESOLUTION_DEFAULT,
   setResolution: () => {},
+  edgePeaks: false,
+  setEdgePeaks: () => {},
   start: () => {},
   reset: () => {},
   meshRefs: {

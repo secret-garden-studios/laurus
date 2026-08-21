@@ -265,6 +265,8 @@ export default function Maskbar() {
   const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
   const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
   const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
+  const isEdgesDisabled = !imgMeta && !isArmedForMaskDrop;
+  const isEdgesOn = mask.edgePeaks;
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
@@ -623,6 +625,38 @@ export default function Maskbar() {
               );
             })}
           </div>
+        </div>
+        <div
+          title={
+            isEdgesDisabled
+              ? "select an image to mask, or arm one from the browser, to raise peaks from its edges"
+              : "detect the image's edges while generating, fill the areas they enclose with polygons, and " +
+                'raise a peak over each of the largest -- the same peaks the "peak" tool draws by hand'
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span
+            style={{
+              opacity: isEdgesDisabled ? 0.3 : 1,
+              textShadow: isEdgesOn && !isEdgesDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+            }}
+          >
+            {"edges"}
+          </span>
+          <Toggle
+            value={isEdgesOn}
+            onClick={() => mask.setEdgePeaks(!isEdgesOn)}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+            disabled={isEdgesDisabled}
+          />
         </div>
         <div
           title={
