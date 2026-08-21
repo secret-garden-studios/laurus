@@ -8,14 +8,17 @@ import {
   cancelCircle,
   contentPaste,
   fileCopy,
+  image200,
   playArrow,
+  polyline200,
   remove,
   syncAlt,
+  texture300,
   updateCounterClockwise,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { RotateUnitControls, defaultRotateEquation } from "../rotate-unit";
+import { RotateUnitControls, RotateUnitTarget, defaultRotateEquation } from "../rotate-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
   getRotateFrames,
@@ -38,6 +41,8 @@ interface RotateUnitbar {
   setCurrentControls: Dispatch<SetStateAction<RotateUnitControls>>;
   counterClockwise: boolean;
   setCounterClockwise: Dispatch<SetStateAction<boolean>>;
+  target: RotateUnitTarget;
+  onToggleTarget: () => void;
 }
 
 export default function RotateUnitbar({
@@ -49,10 +54,23 @@ export default function RotateUnitbar({
   setCurrentControls,
   counterClockwise,
   setCounterClockwise,
+  target,
+  onToggleTarget,
 }: RotateUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+    }
+  }, [target]);
 
   const [dynamicSizes] = useState(() => {
     const ds = getDynamicUnitSizes(uiState.resolution);
@@ -209,6 +227,30 @@ export default function RotateUnitbar({
         }}
       >
         <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
           title="loop"
           onDoubleClick={() => {
             if (rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
@@ -235,7 +277,6 @@ export default function RotateUnitbar({
             position: "relative",
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >

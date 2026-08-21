@@ -1,5 +1,5 @@
 import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
-import { HoverContext, UIContext } from "../workspace.client";
+import { HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
@@ -7,6 +7,7 @@ import { UIActionType } from "../states/ui-state";
 
 export default function Marqueebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -219,8 +220,9 @@ export default function Marqueebar() {
           },
         },
       });
+      notifyMaskToolChanged(uiState.tool.type);
     }
-  }, [uiState.tool, uiDispatch]);
+  }, [uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
   const updateToolSize = useCallback(() => {
     if (uiState.tool.type === "marquee") {
@@ -237,8 +239,9 @@ export default function Marqueebar() {
           },
         },
       });
+      notifyMaskToolChanged(uiState.tool.type);
     }
-  }, [uiState.tool, uiDispatch]);
+  }, [uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
   return (
     <>
@@ -308,6 +311,7 @@ export default function Marqueebar() {
                       ...(newPositionValue && { stack: false, select: false }),
                     },
                   });
+                  notifyMaskToolChanged(uiState.tool.type);
                   if (newPositionValue && !uiState.tool.duplicate) {
                     setSelectedImgKeys(new Set());
                     setSelectedSvgKeys(new Set());
@@ -411,6 +415,7 @@ export default function Marqueebar() {
                       ...(newSizeValue && { stack: false, select: false, duplicate: false }),
                     },
                   });
+                  notifyMaskToolChanged(uiState.tool.type);
                   if (newSizeValue) {
                     setSelectedImgKeys(new Set());
                     setSelectedSvgKeys(new Set());
@@ -515,6 +520,7 @@ export default function Marqueebar() {
                   type: UIActionType.SetTool,
                   value: newValue,
                 });
+                notifyMaskToolChanged(newValue.type);
                 if (newStack) {
                   setSelectedImgKeys(new Set());
                   setSelectedSvgKeys(new Set());
@@ -575,6 +581,7 @@ export default function Marqueebar() {
                   type: UIActionType.SetTool,
                   value: newValue,
                 });
+                notifyMaskToolChanged(newValue.type);
                 if (newSelect) {
                   setSelectedImgKeys(new Set());
                   setSelectedSvgKeys(new Set());
@@ -631,6 +638,7 @@ export default function Marqueebar() {
                   type: UIActionType.SetTool,
                   value: newValue,
                 });
+                notifyMaskToolChanged(newValue.type);
               }
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}

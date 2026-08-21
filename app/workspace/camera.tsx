@@ -3,9 +3,13 @@ import { RefObject, useContext } from "react";
 import { UIContext, CoreContext } from "./workspace.client";
 import { CSS as DndCss } from "@dnd-kit/utilities";
 import styles from "../app.module.css";
-import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
+import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
+import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
+import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
+import { MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { Z_INDEX } from "./workspace.config";
 import { LaurusFrame } from "./workspace.server";
+import { beginBodyDragCursor, dragFallbackCursor, endBodyDragCursor } from "./hooks/useToolCursor";
 
 interface CameraDragOverlay {
   id: string;
@@ -30,7 +34,7 @@ function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDrag
       {...listeners}
       style={{
         ...dndCss,
-        cursor: disabled ? "" : isDragging ? "grabbing" : "grab",
+        cursor: dragFallbackCursor({ dragDisabled: disabled, isDragging }),
         position: "absolute",
         width: containerSize.width,
         height: containerSize.height,
@@ -45,6 +49,8 @@ interface DraggableCamera {
   nodeId: string;
   svgElementsRef: RefObject<Map<string, SVGSVGElement> | null>;
   imgElementsRef: RefObject<Map<string, HTMLImageElement> | null>;
+  maskElementsRef: RefObject<Map<string, HTMLCanvasElement> | null>;
+  maskHandlesRef: RefObject<Map<string, Set<MaskImperativeHandle>> | null>;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
   zIndex: number;
   onNewPosition: (newPosition: { x: number; y: number }) => void;
@@ -55,6 +61,8 @@ export default function DraggableCamera({
   nodeId,
   svgElementsRef,
   imgElementsRef,
+  maskElementsRef,
+  maskHandlesRef,
   framesCacheRef,
   zIndex,
   onNewPosition,
@@ -68,11 +76,9 @@ export default function DraggableCamera({
       <DndContext
         id={contextId}
         sensors={sensors}
-        onDragStart={() => {
-          document.body.style.cursor = "grabbing";
-        }}
+        onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
-          document.body.style.cursor = "";
+          endBodyDragCursor();
           const delta = e.delta;
           const newPosition = {
             x: Math.min(
@@ -160,6 +166,26 @@ export default function DraggableCamera({
                       </div>
                     );
                   }
+                })}
+                {Array.from(coreState.project.masks.entries()).map((e) => {
+                  const [key, meta] = e;
+                  const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                  if (meta.top < 0 || meta.left < 0 || showContextMenu) return;
+                  const maskData = coreState.canvasMasks.get(key);
+                  if (!maskData) return;
+                  return (
+                    <div key={key}>
+                      <DraggableProjectMask
+                        mediaKey={key}
+                        meta={meta}
+                        maskData={maskData}
+                        zIndex={meta.order + zIndex + Z_INDEX.CAMERA_ITEMS_OFFSET}
+                        maskHandlesRef={maskHandlesRef}
+                        maskElementsRef={maskElementsRef}
+                        framesCacheRef={framesCacheRef}
+                      />
+                    </div>
+                  );
                 })}
               </>
             )}

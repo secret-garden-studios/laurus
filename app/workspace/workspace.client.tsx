@@ -22,22 +22,48 @@ import {
   LaurusMediaGroupResult,
   LaurusMixState,
   LaurusSvgResult,
+  LaurusMaskResult,
   searchImgs,
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
   searchSvgs,
+  nextCaptureId,
+  nextPeakId,
+  MaskCaptureUpdateRequest_V1_0,
+  MaskPeakUpdateRequest_V1_0,
+  LaurusPeakBlackPoint,
+  toPeakBlackPoint,
+  toPeakBlackPointFields,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
 import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
-import { DraggableProjectImg, DraggableProjectSvg } from "./draggable-media";
+import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
+import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
+import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
+import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
+import { useToolCursor } from "./hooks/useToolCursor";
+import { deleteMaskPeakEffects, parseMaskCaptureInputId, parseMaskPeakInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
+import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
+import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
+import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
+import { peakTriangleIndices } from "./canvas-media/light-source-capture";
+import {
+  CAPTURE_DARKNESS_DEFAULT,
+  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_FALLOFF_TO_SIZE_RATIO,
+  CAPTURE_INTENSITY_DEFAULT,
+  CAPTURE_SIZE_CSS_PX_DEFAULT,
+  MIN_MASK_PEAK_RADIUS_PX,
+  TEXTURE_MIX_DEFAULT,
+} from "./mask-gl";
 import {
   ProjectResult_V1_0,
   updateProject,
@@ -48,6 +74,7 @@ import {
   LaurusProjectImg,
   LaurusProjectResult,
   LaurusProjectSvg,
+  LaurusProjectMask,
 } from "../projects/projects.server";
 import { MeDependencies, ProjectDependencies } from "../page";
 import {
@@ -57,11 +84,19 @@ import {
   UIActionType,
   UIState,
   defaultMarqueeTool,
+  defaultMaskTool,
   defaultUIState,
   ProjectMediaContextMenu,
   LaurusTool,
 } from "./states/ui-state";
-import { CoreAction, CoreActionType, CoreState, coreContextReducer, defaultCoreState } from "./states/core-state";
+import {
+  CoreAction,
+  CoreActionType,
+  CoreState,
+  PendingTopologyEdit,
+  coreContextReducer,
+  defaultCoreState,
+} from "./states/core-state";
 import { RESOLUTION } from "../landing.config";
 import { defaultProject } from "../projects/states/core-state";
 
@@ -142,6 +177,8 @@ export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): K
 export interface HoverContextProps {
   mostRecentlyEnteredEffectUnitKey: string | undefined;
   setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
+  mostRecentlyHoveredMaskKey: string | undefined;
+  setMostRecentlyHoveredMaskKey: (key: string | undefined) => void;
   isMetaKeyPressed: boolean;
   isAltKeyPressed: boolean;
   selectedEffectUnitKeys: Set<string>;
@@ -150,11 +187,15 @@ export interface HoverContextProps {
   setSelectedImgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectedSvgKeys: Set<string>;
   setSelectedSvgKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+  selectedMaskKeys: Set<string>;
+  setSelectedMaskKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 export const HoverContext = createContext<HoverContextProps>({
   mostRecentlyEnteredEffectUnitKey: undefined,
   setMostRecentlyEnteredEffectUnitKey: () => {},
+  mostRecentlyHoveredMaskKey: undefined,
+  setMostRecentlyHoveredMaskKey: () => {},
   isMetaKeyPressed: false,
   isAltKeyPressed: false,
   selectedEffectUnitKeys: new Set<string>(),
@@ -163,6 +204,8 @@ export const HoverContext = createContext<HoverContextProps>({
   setSelectedImgKeys: () => {},
   selectedSvgKeys: new Set<string>(),
   setSelectedSvgKeys: () => {},
+  selectedMaskKeys: new Set<string>(),
+  setSelectedMaskKeys: () => {},
 });
 
 export interface CoreContextProps {
@@ -187,6 +230,48 @@ export const CoreContext = createContext<CoreContextProps>({
   cancelFrameDownload: () => {},
 });
 
+export interface SocketContextProps {
+  sendMaskCaptureUpdate: (
+    maskMediaId: string,
+    request: MaskCaptureUpdateRequest_V1_0,
+  ) => Promise<LaurusMaskResult | undefined>;
+  closeMaskCaptureSocket: (maskMediaId: string) => void;
+  sendMaskPeakUpdate: (
+    maskMediaId: string,
+    update: MaskPeakUpdateRequest_V1_0,
+  ) => Promise<LaurusMaskResult | undefined>;
+  closeMaskPeakSocket: (maskMediaId: string) => void;
+}
+
+export const SocketContext = createContext<SocketContextProps>({
+  sendMaskCaptureUpdate: async () => undefined,
+  closeMaskCaptureSocket: () => {},
+  sendMaskPeakUpdate: async () => undefined,
+  closeMaskPeakSocket: () => {},
+});
+
+export interface MaskNotifyValue {
+  captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
+  createPeak: (
+    maskKey: string,
+    circle: { cx: number; cy: number; radius: number },
+    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
+  ) => Promise<void>;
+  deletePeak: (maskKey: string, peakId: number) => Promise<void>;
+  notifyMaskToolChanged: (toolType: string) => void;
+  notifyMaskSelectionChanged: (key: string | undefined) => void;
+  notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
+  notifyMaskSelectedPeakChanged: (maskKey: string, peakId: number | undefined) => void;
+  notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>, captureId?: number) => void;
+  notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
+  notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+  notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
+  notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
+  notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
+  notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
+  notifyMaskPeaksUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+}
+
 export interface UIContextProps {
   uiState: UIState;
   uiDispatch: React.Dispatch<UIAction>;
@@ -197,22 +282,96 @@ export const UIContext = createContext<UIContextProps>({
   uiDispatch: () => {},
 });
 
+const defaultMaskPreview: UseMaskPreview = {
+  status: "idle",
+  triangleCount: 0,
+  result: undefined,
+  errorMessage: undefined,
+  textureMix: TEXTURE_MIX_DEFAULT,
+  setTextureMix: () => {},
+  textureMixRef: { current: TEXTURE_MIX_DEFAULT },
+  captureSize: CAPTURE_SIZE_CSS_PX_DEFAULT,
+  setCaptureSize: () => {},
+  captureSizeRef: { current: CAPTURE_SIZE_CSS_PX_DEFAULT },
+  captureIntensity: CAPTURE_INTENSITY_DEFAULT,
+  setCaptureIntensity: () => {},
+  captureIntensityRef: { current: CAPTURE_INTENSITY_DEFAULT },
+  captureFalloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  setCaptureFalloff: () => {},
+  captureFalloffRef: { current: CAPTURE_FALLOFF_CSS_PX_DEFAULT },
+  captureDarkness: CAPTURE_DARKNESS_DEFAULT,
+  setCaptureDarkness: () => {},
+  captureDarknessRef: { current: CAPTURE_DARKNESS_DEFAULT },
+  position: { value: false, x: undefined, y: undefined },
+  setPosition: () => {},
+  size: { value: false, width: undefined, height: undefined },
+  setSize: () => {},
+  resolution: MASK_RESOLUTION_DEFAULT,
+  setResolution: () => {},
+  start: () => {},
+  reset: () => {},
+  meshRefs: {
+    positionsRef: { current: [] },
+    colorsRef: { current: [] },
+    barycentricsRef: { current: [] },
+    uvsRef: { current: [] },
+    centroidsRef: { current: [] },
+    vertexCountRef: { current: 0 },
+    dirtyRef: { current: false },
+    curvesRef: { current: [] },
+    glowColorRef: { current: [1, 1, 1] },
+  },
+};
+
+const defaultMaskNotifyValue: MaskNotifyValue = {
+  captureMeshSection: async () => {},
+  createPeak: async () => {},
+  deletePeak: async () => {},
+  notifyMaskToolChanged: () => {},
+  notifyMaskSelectionChanged: () => {},
+  notifyMaskSelectedCaptureChanged: () => {},
+  notifyMaskSelectedPeakChanged: () => {},
+  notifyMaskPendingCaptureSet: () => {},
+  notifyMaskPendingCaptureCleared: () => {},
+  notifyMaskCaptureUpdated: () => {},
+  notifyMaskAppearanceChanged: () => {},
+  notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskPendingTopologySet: () => {},
+  notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskPeaksUpdated: () => {},
+};
+
+export interface MaskContextProps extends UseMaskPreview, MaskNotifyValue {}
+
+export const MaskContext = createContext<MaskContextProps>({
+  ...defaultMaskPreview,
+  ...defaultMaskNotifyValue,
+});
+
 function initProject(p: ProjectResult_V1_0) {
   const projectImgsInit: Map<string, LaurusProjectImg> = new Map(p.imgs.entries().map((e) => [e[0], { ...e[1] }]));
 
   const projectSvgsInit: Map<string, LaurusProjectSvg> = new Map(p.svgs.entries().map((e) => [e[0], { ...e[1] }]));
 
+  const projectMasksInit: Map<string, LaurusProjectMask> = new Map(
+    (p.masks ?? new Map()).entries().map((e) => [e[0], { ...e[1] }]),
+  );
+
   return {
     ...p,
     imgs: projectImgsInit,
     svgs: projectSvgsInit,
+    masks: projectMasksInit,
     frame_width: p.frame_width > 0 && p.frame_width <= p.canvas_width ? p.frame_width : defaultProject.frame_width,
     frame_height:
       p.frame_height > 0 && p.frame_height <= p.canvas_height ? p.frame_height : defaultProject.frame_height,
   };
 }
 
-function initCarouselEntries(project: LaurusProjectResult): CarouselEntry[] {
+function initCarouselEntries(
+  project: LaurusProjectResult,
+  canvasMasks: Map<string, LaurusMaskResult>,
+): CarouselEntry[] {
   const temp: { entry: CarouselEntry; distance: number }[] = [];
   project.imgs.entries().forEach((projectImg) => {
     if (projectImg[1].left < 0 || projectImg[1].top < 0) return;
@@ -236,8 +395,52 @@ function initCarouselEntries(project: LaurusProjectResult): CarouselEntry[] {
       distance,
     });
   });
+  project.masks.entries().forEach((projectMask) => {
+    if (projectMask[1].left < 0 || projectMask[1].top < 0) return;
+    const distance = Math.sqrt(projectMask[1].top ** 2 + projectMask[1].left ** 2);
+    temp.push({
+      entry: {
+        type: "mask",
+        key: projectMask[0],
+      },
+      distance,
+    });
+    const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
+    captures.forEach((capture) => {
+      temp.push({
+        entry: {
+          type: "capture",
+          key: projectMask[0],
+          captureId: capture.id,
+        },
+        distance,
+      });
+    });
+    const peaks = canvasMasks.get(projectMask[0])?.peaks ?? [];
+    peaks.forEach((peak) => {
+      temp.push({
+        entry: {
+          type: "peak",
+          key: projectMask[0],
+          peakId: peak.id,
+        },
+        distance,
+      });
+    });
+  });
   const entries = temp.sort((a, b) => a.distance - b.distance).map((item) => item.entry);
   return entries;
+}
+
+export function getMaskSourceImgIds(
+  masks: Map<string, LaurusProjectMask>,
+  canvasMasks: Map<string, LaurusMaskResult>,
+): Set<string> {
+  return new Set(
+    Array.from(masks.keys())
+      .map((key) => canvasMasks.get(key)?.source_img_media_id)
+      .filter((id): id is string => Boolean(id)),
+  );
 }
 
 interface InitReducer {
@@ -300,6 +503,17 @@ function initReducer({
         },
       });
     });
+    projectDependencies?.lightSources.forEach((e) => {
+      newEffects.push({
+        type: "light_source",
+        key: e.light_source_id,
+        value: {
+          ...e,
+          locked: e.locked,
+          mixState: e.mix ? LaurusMixState.Active : LaurusMixState.None,
+        },
+      });
+    });
   }
   const newEffectGroups: Map<string, LaurusEffectGroupResult> = new Map();
   if (projectDependencies) {
@@ -342,6 +556,31 @@ function initReducer({
         ]),
       )
     : new Map();
+
+  const newCanvasMasks: Map<string, LaurusMaskResult> = projectDependencies
+    ? new Map(
+        (projectDependencies.project.masks ?? new Map<string, LaurusProjectMask>())
+          .entries()
+          .map((e): [string, LaurusMaskResult | undefined] => [
+            e[0],
+            projectDependencies.canvasMasks.find((v) => v.mask_media_id == e[1].media_id),
+          ])
+          .filter((e): e is [string, LaurusMaskResult] => e[1] !== undefined),
+      )
+    : new Map();
+
+  if (projectDependencies) {
+    const placedImgIds = new Set(projectDependencies.project.imgs.values().map((i) => i.img_media_id));
+    getMaskSourceImgIds(projectDependencies.project.masks, newCanvasMasks).forEach((sourceImgMediaId) => {
+      if (placedImgIds.has(sourceImgMediaId) || newCanvasImgs.has(sourceImgMediaId)) {
+        return;
+      }
+      const sourceImg = projectDependencies.canvasImgs.find((i) => i.img_media_id == sourceImgMediaId);
+      if (sourceImg) {
+        newCanvasImgs.set(sourceImgMediaId, { ...sourceImg });
+      }
+    });
+  }
 
   const browserImgIds = new Set(browserDependencies.browserImgs.map((i) => i.img_media_id));
   const browserSvgIds = new Set(browserDependencies.browserSvgs.map((s) => s.svg_media_id));
@@ -430,7 +669,7 @@ function initReducer({
     });
   }
 
-  const newCarouselEntries = initCarouselEntries(newProject);
+  const newCarouselEntries = initCarouselEntries(newProject, newCanvasMasks);
 
   return {
     core: {
@@ -441,6 +680,7 @@ function initReducer({
       mediaGroups: newMediaGroups,
       canvasImgs: newCanvasImgs,
       canvasSvgs: newCanvasSvgs,
+      canvasMasks: newCanvasMasks,
       apiOrigin: apiOrigin,
       timelineUnit: timelineUnits[0],
       timelineMaxValue: timelineValues[1],
@@ -498,9 +738,11 @@ export default function Workspace({
   const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(
     undefined,
   );
+  const [mostRecentlyHoveredMaskKey, setMostRecentlyHoveredMaskKey] = useState<string | undefined>(undefined);
   const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
   const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
   const [selectedSvgKeys, setSelectedSvgKeys] = useState<Set<string>>(new Set<string>());
+  const [selectedMaskKeys, setSelectedMaskKeys] = useState<Set<string>>(new Set<string>());
   const [mediaPageSize] = useState(mediaPageSizeInit);
 
   const [minifiedControlsSize] = useState(() => {
@@ -562,6 +804,14 @@ export default function Workspace({
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
   const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
+  const { sendCaptureUpdate: sendMaskCaptureUpdate, closeSocket: closeMaskCaptureSocket } = useMaskCaptureSockets(
+    coreState.apiOrigin,
+    coreState.accessToken,
+  );
+  const { sendPeakUpdate: sendMaskPeakUpdate, closeSocket: closeMaskPeakSocket } = useMaskPeakSockets(
+    coreState.apiOrigin,
+    coreState.accessToken,
+  );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -593,6 +843,8 @@ export default function Workspace({
   });
   const svgElementsRef = useRef<Map<string, SVGSVGElement>>(null);
   const imgElementsRef = useRef<Map<string, HTMLImageElement>>(null);
+  const maskElementsRef = useRef<Map<string, HTMLCanvasElement>>(null);
+  const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
@@ -714,7 +966,10 @@ export default function Workspace({
           framesFromServer.reverse();
         }
         const keyframes: Keyframe[] = toKeyframes(framesFromServer, false);
-        const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
+        const element =
+          imgElementsRef.current?.get(inputKey) ||
+          svgElementsRef.current?.get(inputKey) ||
+          maskElementsRef.current?.get(inputKey);
         if (element) {
           const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
           const animation = new Animation(keyframeEffect, document.timeline);
@@ -746,6 +1001,17 @@ export default function Workspace({
             if (coreState.project.imgs.has(inputKey) || coreState.project.svgs.has(inputKey)) {
               eligibleItems.add(inputKey);
               globalLimit = Math.max(globalLimit, e.value.end);
+            } else if (
+              (e.type === "move" || e.type === "light_source" || e.type === "scale" || e.type === "rotate") &&
+              coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
+            ) {
+              eligibleItems.add(inputKey);
+              if (
+                parseMaskCaptureInputId(inputKey).captureId === undefined &&
+                parseMaskPeakInputId(inputKey).peakId === undefined
+              ) {
+                globalLimit = Math.max(globalLimit, e.value.end);
+              }
             }
           });
         });
@@ -790,12 +1056,15 @@ export default function Workspace({
               framesCacheRef.current.set(inputKey, [...framesFromServer]);
             }
           }
-          if (reverse) {
-            laurusFrames.reverse();
-          }
-          const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
-          const element = imgElementsRef.current?.get(inputKey) || svgElementsRef.current?.get(inputKey);
+          const element =
+            imgElementsRef.current?.get(inputKey) ||
+            svgElementsRef.current?.get(inputKey) ||
+            maskElementsRef.current?.get(inputKey);
           if (element) {
+            if (reverse) {
+              laurusFrames.reverse();
+            }
+            const keyframes: Keyframe[] = toKeyframes(laurusFrames, false);
             const keyframeEffect = new KeyframeEffect(element, keyframes, animationOptions);
             const animation = new Animation(keyframeEffect, document.timeline);
             newAnimations.push(animation);
@@ -822,6 +1091,7 @@ export default function Workspace({
       coreState.effects,
       coreState.project.fps,
       coreState.project.imgs,
+      coreState.project.masks,
       coreState.project.project_id,
       coreState.project.svgs,
     ],
@@ -830,6 +1100,241 @@ export default function Workspace({
   const cancelFrameDownload = useCallback(() => {
     frameDownloadAbortControllerRef.current?.abort();
   }, []);
+
+  const notifyMaskToolChanged = useCallback((toolType: string) => {
+    maskHandlesRef.current?.forEach((handles) =>
+      handles.forEach((h) => {
+        h.abortCaptureDragForToolChange(toolType);
+        h.abortTopologyDragForToolChange();
+      }),
+    );
+  }, []);
+  const notifyMaskSelectionChanged = useCallback((key: string | undefined) => {
+    maskHandlesRef.current?.forEach((handles, maskKey) =>
+      handles.forEach((h) => h.setSelectedHighlighted(maskKey === key)),
+    );
+  }, []);
+  const notifyMaskSelectedCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedCapture(captureId));
+  }, []);
+  const notifyMaskSelectedPeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedPeak(peakId));
+  }, []);
+  const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>, captureId?: number) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices, captureId));
+  }, []);
+  const notifyMaskPendingCaptureCleared = useCallback((maskKey: string | undefined) => {
+    if (maskKey === undefined) return;
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingCapture());
+  }, []);
+  const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
+  }, []);
+  const notifyMaskAppearanceChanged = useCallback((maskKey: string, override?: MaskAppearanceOverride) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.applyMaskAppearanceDefaults(override));
+  }, []);
+  const notifyMaskLightSourcePreviewToggled = useCallback((enabled: boolean) => {
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.onLightSourcePreviewToggled(enabled)));
+  }, []);
+  const notifyMaskPendingTopologySet = useCallback((maskKey: string, edit: PendingTopologyEdit) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingTopology(edit));
+  }, []);
+  const notifyMaskPendingTopologyCleared = useCallback((maskKey: string | undefined) => {
+    if (maskKey === undefined) return;
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingTopology());
+  }, []);
+  const notifyMaskPeaksUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncPeaks(updated));
+  }, []);
+
+  const captureMeshSection = useCallback(
+    async (maskKey: string, polygonIndices: number[], size: number) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData) return;
+      const maskMeta = coreState.project.masks.get(maskKey);
+      const captureId = nextCaptureId(maskData.captures);
+      const name = `light ${captureId}`;
+
+      dispatch({
+        type: CoreActionType.SetPendingLightSourceCapture,
+        value: { maskKey, captureId, polygonIndices },
+      });
+      notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices), captureId);
+
+      const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, {
+        capture_id: captureId,
+        name,
+        polygon_indices: polygonIndices,
+        size,
+        intensity: maskMeta?.capture_preview_intensity ?? CAPTURE_INTENSITY_DEFAULT,
+        darkness: maskMeta?.capture_preview_darkness ?? CAPTURE_DARKNESS_DEFAULT,
+        falloff: Math.min(size * CAPTURE_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
+      });
+      if (updated) {
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+        notifyMaskCaptureUpdated(maskKey, updated);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
+        uiDispatch({
+          type: UIActionType.SetSelectedElement,
+          value: { key: maskKey, type: "capture", captureId },
+        });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedCaptureChanged(maskKey, captureId);
+        notifyMaskSelectedPeakChanged(maskKey, undefined);
+      }
+      dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
+      notifyMaskPendingCaptureCleared(maskKey);
+      uiDispatch({
+        type: UIActionType.SetTool,
+        value: {
+          type: "mask",
+          capturingMeshSection: false,
+          editingTopology: uiState.tool.type === "mask" ? uiState.tool.editingTopology : false,
+        },
+      });
+      notifyMaskToolChanged("mask");
+    },
+    [
+      coreState.canvasMasks,
+      coreState.project.masks,
+      sendMaskCaptureUpdate,
+      dispatch,
+      uiDispatch,
+      uiState.tool,
+      notifyMaskPendingCaptureSet,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskToolChanged,
+    ],
+  );
+
+  const createPeak = useCallback(
+    async (
+      maskKey: string,
+      circle: { cx: number; cy: number; radius: number },
+      seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
+    ) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData) return;
+      const peakId = nextPeakId(maskData.peaks);
+      const radius = Math.max(circle.radius, MIN_MASK_PEAK_RADIUS_PX);
+      const edit: PendingTopologyEdit = {
+        maskKey,
+        peakId,
+        cx: circle.cx,
+        cy: circle.cy,
+        radius,
+        elevation: seed.elevation,
+        falloff: seed.falloff,
+        shape: seed.shape,
+        blackPoint: seed.blackPoint,
+      };
+
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+      notifyMaskPendingTopologySet(maskKey, edit);
+
+      const polygonIndices = [
+        ...peakTriangleIndices(maskData.polygons, { cx: circle.cx, cy: circle.cy, radius, shape: seed.shape }),
+      ];
+      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
+        peak_id: peakId,
+        name: `peak ${peakId}`,
+        cx: circle.cx,
+        cy: circle.cy,
+        radius,
+        elevation: seed.elevation,
+        falloff: seed.falloff,
+        shape: seed.shape,
+        ...toPeakBlackPointFields(seed.blackPoint),
+        remove: false,
+        polygon_indices: polygonIndices,
+      });
+      if (updated) {
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+        notifyMaskPeaksUpdated(maskKey, updated);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: maskKey, peakId } });
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "peak", peakId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedPeakChanged(maskKey, peakId);
+        notifyMaskSelectedCaptureChanged(maskKey, undefined);
+      }
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+      notifyMaskPendingTopologyCleared(maskKey);
+    },
+    [
+      coreState.canvasMasks,
+      sendMaskPeakUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedCaptureChanged,
+    ],
+  );
+
+  const deletePeak = useCallback(
+    async (maskKey: string, peakId: number) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const peak = maskData?.peaks.find((p) => p.id === peakId);
+      if (!maskData || !peak) return;
+
+      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
+        peak_id: peakId,
+        name: peak.name,
+        cx: peak.cx,
+        cy: peak.cy,
+        radius: peak.radius,
+        elevation: peak.elevation,
+        falloff: peak.falloff,
+        shape: peak.shape,
+        ...toPeakBlackPointFields(toPeakBlackPoint(peak)),
+        remove: true,
+        polygon_indices: [],
+      });
+      if (!updated) return;
+
+      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
+      notifyMaskPeaksUpdated(maskKey, updated);
+      uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, peakId });
+      deleteMaskPeakEffects(maskKey, peakId, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
+      if (
+        uiState.selectedElement?.key === maskKey &&
+        uiState.selectedElement.type === "peak" &&
+        uiState.selectedElement.peakId === peakId
+      ) {
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "mask" } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedPeakChanged(maskKey, undefined);
+      }
+      if (
+        uiState.activeElement?.key === maskKey &&
+        uiState.activeElement.type === "peak" &&
+        uiState.activeElement.peakId === peakId
+      ) {
+        uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+      }
+    },
+    [
+      coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
+      sendMaskPeakUpdate,
+      dispatch,
+      uiDispatch,
+      uiState.activeElement,
+      uiState.selectedElement,
+      notifyMaskPeaksUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
 
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
@@ -889,19 +1394,39 @@ export default function Workspace({
 
     if (uiState.tool.type !== "viewport" && uiState.tool.type !== "none") {
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      notifyMaskToolChanged("none");
+    }
+    if (uiState.activeElement !== undefined) {
+      uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+    }
+    if (uiState.selectedElement !== undefined) {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
+      notifyMaskSelectionChanged(undefined);
     }
 
-    const newAnimations = await getNewAnimations("none", false, true);
-    if (newAnimations.length == 0) {
+    const players: MaskImperativeHandle[] = [];
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
+
+    const [newAnimations, preparedStarts] = await Promise.all([
+      getNewAnimations("none", false, true),
+      Promise.all(players.map((player) => player.preparePlayback())),
+    ]);
+    const readyStarts = preparedStarts.filter((start) => start !== undefined);
+
+    if (newAnimations.length == 0 && readyStarts.length == 0) {
       uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
         value: { type: "stopped" },
       });
       uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+      notifyMaskToolChanged("none");
       return;
     }
-    Promise.all(newAnimations.map((animation) => animation.finished))
+
+    const lightSourceFinished = readyStarts.map((start) => start());
+
+    Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
       .then(() => {
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({
@@ -920,13 +1445,30 @@ export default function Workspace({
       type: UIActionType.SetPlaybackMode,
       value: { type: "playing" },
     });
-  }, [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type, uiState.tool.type]);
+  }, [
+    closeContextMenus,
+    getNewAnimations,
+    handleMixRestoration,
+    uiState.playbackMode.type,
+    uiState.tool.type,
+    uiState.activeElement,
+    uiState.selectedElement,
+    notifyMaskToolChanged,
+    notifyMaskSelectionChanged,
+  ]);
 
   const handlePlayTarget = useCallback(
     async (target: AnimationTarget) => {
       if (uiState.playbackMode.type !== "stopped") return;
       handleMixRestoration();
       closeContextMenus();
+      if (uiState.activeElement !== undefined) {
+        uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+      }
+      if (uiState.selectedElement !== undefined) {
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
+        notifyMaskSelectionChanged(undefined);
+      }
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
         value: { type: "waiting" },
@@ -934,7 +1476,28 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
       const newAnimations = await getNewAnimationsByTarget("none", false, target);
-      if (newAnimations.length == 0) {
+      const { peakId: targetPeakId } = parseMaskPeakInputId(target.inputKey);
+      const targetDrivesLightSource = coreState.effects.some(
+        (effect) =>
+          effect.key === target.effectKey &&
+          (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
+          (parseMaskCaptureInputId(target.inputKey).captureId !== undefined || targetPeakId !== undefined),
+      );
+      const lightSourceFinished: Promise<void>[] = [];
+      if (targetDrivesLightSource) {
+        const { maskKey, captureId } = parseMaskCaptureInputId(target.inputKey);
+        maskHandlesRef.current
+          ?.get(maskKey)
+          ?.forEach((player) =>
+            lightSourceFinished.push(
+              targetPeakId !== undefined
+                ? player.play(target.effectKey, undefined, targetPeakId)
+                : player.play(target.effectKey, captureId),
+            ),
+          );
+      }
+
+      if (newAnimations.length == 0 && lightSourceFinished.length == 0) {
         uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
         uiDispatch({
           type: UIActionType.SetPlaybackMode,
@@ -942,7 +1505,8 @@ export default function Workspace({
         });
         return;
       }
-      Promise.all(newAnimations.map((animation) => animation.finished))
+
+      Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
         .then(() => {
           uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
           uiDispatch({
@@ -962,7 +1526,16 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, getNewAnimationsByTarget, handleMixRestoration, uiState.playbackMode.type],
+    [
+      closeContextMenus,
+      coreState.effects,
+      getNewAnimationsByTarget,
+      handleMixRestoration,
+      uiState.playbackMode.type,
+      uiState.activeElement,
+      uiState.selectedElement,
+      notifyMaskSelectionChanged,
+    ],
   );
 
   const handleFastForwardAll = useCallback(
@@ -1019,6 +1592,10 @@ export default function Workspace({
     if (imgElementsRef.current) {
       imgElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
     }
+    if (maskElementsRef.current) {
+      maskElementsRef.current.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+    }
+    maskHandlesRef.current?.forEach((players) => players.forEach((player) => player.stop()));
     uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
     uiDispatch({
       type: UIActionType.SetPlaybackMode,
@@ -1031,6 +1608,8 @@ export default function Workspace({
     () => ({
       mostRecentlyEnteredEffectUnitKey,
       setMostRecentlyEnteredEffectUnitKey,
+      mostRecentlyHoveredMaskKey,
+      setMostRecentlyHoveredMaskKey,
       isMetaKeyPressed,
       isAltKeyPressed,
       selectedEffectUnitKeys,
@@ -1039,14 +1618,18 @@ export default function Workspace({
       setSelectedImgKeys,
       selectedSvgKeys,
       setSelectedSvgKeys,
+      selectedMaskKeys,
+      setSelectedMaskKeys,
     }),
     [
       mostRecentlyEnteredEffectUnitKey,
+      mostRecentlyHoveredMaskKey,
       isMetaKeyPressed,
       isAltKeyPressed,
       selectedEffectUnitKeys,
       selectedImgKeys,
       selectedSvgKeys,
+      selectedMaskKeys,
     ],
   );
 
@@ -1076,6 +1659,53 @@ export default function Workspace({
     ],
   );
 
+  const socketContextValue = useMemo(
+    () => ({
+      sendMaskCaptureUpdate,
+      closeMaskCaptureSocket,
+      sendMaskPeakUpdate,
+      closeMaskPeakSocket,
+    }),
+    [sendMaskCaptureUpdate, closeMaskCaptureSocket, sendMaskPeakUpdate, closeMaskPeakSocket],
+  );
+
+  const maskNotifyContextValue = useMemo(
+    () => ({
+      captureMeshSection,
+      createPeak,
+      deletePeak,
+      notifyMaskToolChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+      notifyMaskPendingCaptureSet,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
+    }),
+    [
+      captureMeshSection,
+      createPeak,
+      deletePeak,
+      notifyMaskToolChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+      notifyMaskPendingCaptureSet,
+      notifyMaskPendingCaptureCleared,
+      notifyMaskCaptureUpdated,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskPeaksUpdated,
+    ],
+  );
+
   const uiContextValue = useMemo(
     () => ({
       uiState,
@@ -1084,15 +1714,13 @@ export default function Workspace({
     [uiState],
   );
 
-  const canvasCursor = useMemo(() => {
-    return isAltKeyPressed && uiState.tool.type !== "marquee"
-      ? "crosshair"
-      : isMetaKeyPressed && uiState.tool.type !== "viewport"
-        ? "context-menu"
-        : uiState.tool.type === "scale"
-          ? "crosshair"
-          : "";
-  }, [isAltKeyPressed, isMetaKeyPressed, uiState.tool.type]);
+  const maskPreview = useMaskPreview(coreState.apiOrigin, coreState.accessToken);
+  const maskContextValue = useMemo(
+    () => ({ ...maskPreview, ...maskNotifyContextValue }),
+    [maskPreview, maskNotifyContextValue],
+  );
+
+  const canvasCursor = useToolCursor({ target: "canvas" });
 
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
@@ -1120,8 +1748,11 @@ export default function Workspace({
         setSelectedEffectUnitKeys(new Set<string>());
         setSelectedImgKeys(new Set<string>());
         setSelectedSvgKeys(new Set<string>());
+        setSelectedMaskKeys(new Set<string>());
+        notifyMaskSelectionChanged(undefined);
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+          notifyMaskToolChanged(uiState.tool.type);
         }
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key === " " && !isInput) {
@@ -1139,25 +1770,41 @@ export default function Workspace({
       } else if (event.key.toLowerCase() === "m" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "move" ? { type: "none" } : { type: "move" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "r" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "rotate" ? { type: "none" } : { type: "rotate" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "s" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "scale" ? { type: "none" } : { type: "scale" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "v" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "viewport" ? { type: "none" } : { type: "viewport" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
       } else if (event.key.toLowerCase() === "d" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "marquee" ? { type: "none" } : defaultMarqueeTool;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "x" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mix" ? { type: "none" } : { type: "mix" };
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "t" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : defaultMaskTool;
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       }
     };
@@ -1165,14 +1812,25 @@ export default function Workspace({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handlePlayAll, handleStopAll, uiState.playbackMode.type, uiState.tool]);
+  }, [
+    handlePlayAll,
+    handleStopAll,
+    uiState.playbackMode.type,
+    uiState.tool,
+    notifyMaskToolChanged,
+    notifyMaskSelectionChanged,
+  ]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       setIsMetaKeyPressed(e.metaKey);
       setIsAltKeyPressed(e.altKey);
-      if (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) {
+      if (
+        (e.altKey && (uiState.tool.type === "marquee" || uiState.tool.type === "move")) ||
+        (e.metaKey && uiState.tool.type === "move")
+      ) {
         uiDispatch({ type: UIActionType.SetTool, value: { type: "none" } });
+        notifyMaskToolChanged("none");
       }
     };
     const handleBlur = () => {
@@ -1187,7 +1845,7 @@ export default function Workspace({
       window.removeEventListener("keyup", handleKey);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [uiState.tool.type, uiDispatch]);
+  }, [uiState.tool.type, uiDispatch, notifyMaskToolChanged]);
 
   useEffect(() => {
     if (hasInitiatedFrameDownloadRef.current) return;
@@ -1222,310 +1880,349 @@ export default function Workspace({
       >
         <HoverContext value={hoverContextValue}>
           <CoreContext value={coreContextValue}>
-            <UIContext value={uiContextValue}>
-              <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
-                <div
-                  style={{
-                    width: "100%",
-                    height: 1,
-                    background: "rgba(255,255,255,0.1)",
-                  }}
-                />
-              </div>
-              <div
-                style={{
-                  gridRow: "3 / span 2",
-                  gridColumn: "1",
-                  overflowY: "auto",
-                }}
-              >
-                {uiState.showTimeline ? (
-                  <TimelineArea />
-                ) : (
-                  <>
+            <SocketContext value={socketContextValue}>
+              <UIContext value={uiContextValue}>
+                <MaskContext value={maskContextValue}>
+                  <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
                     <div
                       style={{
-                        zIndex: Z_INDEX.FLOATING_CONTROLS,
-                        position: "fixed",
-                        bottom: minifiedControlsSize.playBottom,
-                        left: minifiedControlsSize.playLeft,
-                        width: minifiedControlsSize.playContainer,
-                        height: minifiedControlsSize.playContainer,
-                        borderRadius: "50%",
-                        border: "1px solid rgba(255, 255, 255, 0.1)",
-                        background: "rgb(32, 32, 32)",
-                        boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
-                      }}
-                    >
-                      <SvgRepo
-                        svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
-                        containerStyle={{
-                          width: minifiedControlsSize.playSvg,
-                          height: minifiedControlsSize.playSvg,
-                          cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
-                        }}
-                        scale={0.5}
-                        scaleToContaier={true}
-                        onContainerClick={handlePlayAll}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        zIndex: Z_INDEX.FLOATING_CONTROLS,
-                        position: "fixed",
-                        bottom: minifiedControlsSize.recordingBottom,
-                        right: uiState.showMediaBrowser
-                          ? minifiedControlsSize.recordingRight1
-                          : minifiedControlsSize.recordingRight2,
-                        width: minifiedControlsSize.recordingWidth,
-                        height: minifiedControlsSize.recordingHeight,
-                        borderRadius: "50%",
-                        border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
-                        background: uiState.recordingLight
-                          ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
-                          : "none",
-                        boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
+                        width: "100%",
+                        height: 1,
+                        background: "rgba(255,255,255,0.1)",
                       }}
                     />
-                  </>
-                )}
-              </div>
-              <div
-                style={{
-                  gridRow: "2",
-                  gridColumn: "1 / -1",
-                  width: "100%",
-                }}
-              >
-                <Titlebar />
-              </div>
-              <div
-                style={{
-                  gridRow: "3",
-                  gridColumn: "2",
-                  width: "100%",
-                }}
-              >
-                <Subtitlebar />
-              </div>
-              {/* canvas area */}
-              <div
-                ref={canvasAreaRef}
-                style={{
-                  gridRow: "4",
-                  gridColumn: "2",
-                  overflowY: "auto",
-                  position: "relative",
-                  width: "100%",
-                  height: "100%",
-                  cursor: canvasCursor,
-                }}
-              >
-                <div
-                  className={
-                    styles[
-                      `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
-                    ]
-                  }
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: coreState.project.canvas_width,
-                    height: coreState.project.canvas_height,
-                    zIndex: Z_INDEX.CANVAS_BG,
-                  }}
-                />
-                {uiState.tool.type === "marquee" && (
+                  </div>
                   <div
                     style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "min-content",
-                      height: "min-content",
-                      zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                      pointerEvents: isMetaKeyPressed ? "none" : "auto",
+                      gridRow: "3 / span 2",
+                      gridColumn: "1",
+                      overflowY: "auto",
                     }}
                   >
-                    <Canvas />
+                    {uiState.showTimeline ? (
+                      <TimelineArea />
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            zIndex: Z_INDEX.FLOATING_CONTROLS,
+                            position: "fixed",
+                            bottom: minifiedControlsSize.playBottom,
+                            left: minifiedControlsSize.playLeft,
+                            width: minifiedControlsSize.playContainer,
+                            height: minifiedControlsSize.playContainer,
+                            borderRadius: "50%",
+                            border: "1px solid rgba(255, 255, 255, 0.1)",
+                            background: "rgb(32, 32, 32)",
+                            boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
+                          }}
+                        >
+                          <SvgRepo
+                            svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
+                            containerStyle={{
+                              width: minifiedControlsSize.playSvg,
+                              height: minifiedControlsSize.playSvg,
+                              cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
+                            }}
+                            scale={0.5}
+                            scaleToContaier={true}
+                            onContainerClick={handlePlayAll}
+                          />
+                        </div>
+                        <div
+                          style={{
+                            zIndex: Z_INDEX.FLOATING_CONTROLS,
+                            position: "fixed",
+                            bottom: minifiedControlsSize.recordingBottom,
+                            right: uiState.showMediaBrowser
+                              ? minifiedControlsSize.recordingRight1
+                              : minifiedControlsSize.recordingRight2,
+                            width: minifiedControlsSize.recordingWidth,
+                            height: minifiedControlsSize.recordingHeight,
+                            borderRadius: "50%",
+                            border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
+                            background: uiState.recordingLight
+                              ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
+                              : "none",
+                            boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
-                )}
-                {/* camera frame */}
-                <DraggableCamera
-                  contextId={"draggable-camera-context-id"}
-                  nodeId={"draggable-camera-node-id"}
-                  svgElementsRef={svgElementsRef}
-                  imgElementsRef={imgElementsRef}
-                  framesCacheRef={framesCacheRef}
-                  zIndex={Z_INDEX.CAMERA_FRAME}
-                  onNewPosition={async function (newPosition: { x: number; y: number }) {
-                    const rollback: LaurusProjectResult = {
-                      ...coreState.project,
-                    };
-                    const newProject: LaurusProjectResult = {
-                      ...coreState.project,
-                      frame_left: newPosition.x,
-                      frame_top: newPosition.y,
-                    };
-                    if (coreState.project.project_id) {
-                      dispatch({
-                        type: CoreActionType.SetProject,
-                        value: newProject,
-                      });
-                      const updated = await updateProject(
-                        coreState.apiOrigin,
-                        coreState.accessToken,
-                        newProject.project_id,
-                        { ...newProject },
-                      );
-                      if (!updated) {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: rollback,
-                        });
-                      }
-                    } else {
-                      dispatch({
-                        type: CoreActionType.SetProject,
-                        value: newProject,
-                      });
-                      const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
-                        ...newProject,
-                      });
-                      if (created) {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: { ...created },
-                        });
-                      } else {
-                        dispatch({
-                          type: CoreActionType.SetProject,
-                          value: { ...rollback },
-                        });
-                      }
-                    }
-                  }}
-                  disabled={uiState.tool.type != "move"}
-                />
-                <>
-                  {Array.from(coreState.project.imgs.entries()).map((e) => {
-                    const [key, meta] = e;
-                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
-                    const imgData = coreState.canvasImgs.get(key);
-                    if (imgData) {
-                      return (
-                        <div key={key}>
-                          <DraggableProjectImg
-                            mediaKey={key}
-                            data={imgData}
-                            meta={meta}
-                            zIndex={
-                              uiState.tool.type === "marquee" && uiState.tool.stack
-                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                            }
-                            imgElementsRef={imgElementsRef}
-                            framesCacheRef={framesCacheRef}
-                            refKey={key}
-                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                          />
-                        </div>
-                      );
-                    }
-                  })}
-                  {Array.from(coreState.project.svgs.entries()).map((e) => {
-                    const [key, meta] = e;
-                    const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                    if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
-                    const svgData = coreState.canvasSvgs.get(key);
-                    if (!svgData) return;
-                    let decodedString = "";
-                    try {
-                      decodedString = decodeURIComponent(
-                        atob(svgData.markup)
-                          .split("")
-                          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-                          .join(""),
-                      );
-                    } catch (error) {
-                      console.log("Failed to decode svg markup", {
-                        media_key: meta.media_key,
-                        error,
-                      });
-                    }
-                    if (decodedString) {
-                      return (
-                        <div key={key}>
-                          <DraggableProjectSvg
-                            mediaKey={key}
-                            decodedString={decodedString}
-                            meta={meta}
-                            zIndex={
-                              uiState.tool.type === "marquee" && uiState.tool.stack
-                                ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                            }
-                            svgElementsRef={svgElementsRef}
-                            framesCacheRef={framesCacheRef}
-                            refKey={key}
-                            forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                          />
-                        </div>
-                      );
-                    }
-                  })}
-                </>
-              </div>
-              {uiState.showMediaBrowser && (
-                <div
-                  style={{
-                    gridRow: "3 / span 2",
-                    gridColumn: "3",
-                    width: "100%",
-                    height: "100%",
-                  }}
-                >
-                  <MediaBrowser
-                    framesCacheRef={framesCacheRef}
-                    refreshIconRef={refreshIconRef}
-                    onNextPage={async () => {
-                      switch (uiState.mediaBrowserFilter) {
-                        case "img": {
-                          await handleImgPageRequest();
-                          break;
-                        }
-                        case "svg": {
-                          await handleSvgPageRequest();
-                          break;
-                        }
-                      }
+                  <div
+                    style={{
+                      gridRow: "2",
+                      gridColumn: "1 / -1",
+                      width: "100%",
                     }}
-                  />
-                </div>
-              )}
-              {/* right panel */}
-              <div
-                style={{
-                  gridRow: "3 / span 2",
-                  gridColumn: "4",
-                }}
-              >
-                <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
-              </div>
-              {/* mediabar */}
-              <div
-                style={{
-                  gridRow: "5",
-                  gridColumn: "span 4",
-                  display: "grid",
-                  ...dynamicSizes.statusbar.container,
-                }}
-              >
-                <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
-              </div>
-            </UIContext>
+                  >
+                    <Titlebar />
+                  </div>
+                  <div
+                    style={{
+                      gridRow: "3",
+                      gridColumn: "2",
+                      width: "100%",
+                      overflowX: "auto",
+                    }}
+                  >
+                    <Subtitlebar />
+                  </div>
+                  <div
+                    ref={canvasAreaRef}
+                    style={{
+                      gridRow: "4",
+                      gridColumn: "2",
+                      overflowY: "auto",
+                      position: "relative",
+                      width: "100%",
+                      height: "100%",
+                      cursor: canvasCursor,
+                    }}
+                  >
+                    <div
+                      className={
+                        styles[
+                          `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
+                        ]
+                      }
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: coreState.project.canvas_width,
+                        height: coreState.project.canvas_height,
+                        zIndex: Z_INDEX.CANVAS_BG,
+                      }}
+                    />
+                    {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "min-content",
+                          height: "min-content",
+                          zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
+                          pointerEvents:
+                            uiState.tool.type === "mask" &&
+                            !uiState.tool.capturingMeshSection &&
+                            !uiState.tool.editingTopology &&
+                            uiState.browserElement?.type !== "img"
+                              ? "none"
+                              : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                                ? "none"
+                                : "auto",
+                        }}
+                      >
+                        <Canvas />
+                      </div>
+                    )}
+                    <DraggableCamera
+                      contextId={"draggable-camera-context-id"}
+                      nodeId={"draggable-camera-node-id"}
+                      svgElementsRef={svgElementsRef}
+                      imgElementsRef={imgElementsRef}
+                      maskElementsRef={maskElementsRef}
+                      maskHandlesRef={maskHandlesRef}
+                      framesCacheRef={framesCacheRef}
+                      zIndex={Z_INDEX.CAMERA_FRAME}
+                      onNewPosition={async function (newPosition: { x: number; y: number }) {
+                        const rollback: LaurusProjectResult = {
+                          ...coreState.project,
+                        };
+                        const newProject: LaurusProjectResult = {
+                          ...coreState.project,
+                          frame_left: newPosition.x,
+                          frame_top: newPosition.y,
+                        };
+                        if (coreState.project.project_id) {
+                          dispatch({
+                            type: CoreActionType.SetProject,
+                            value: newProject,
+                          });
+                          const updated = await updateProject(
+                            coreState.apiOrigin,
+                            coreState.accessToken,
+                            newProject.project_id,
+                            { ...newProject },
+                          );
+                          if (!updated) {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: rollback,
+                            });
+                          }
+                        } else {
+                          dispatch({
+                            type: CoreActionType.SetProject,
+                            value: newProject,
+                          });
+                          const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
+                            ...newProject,
+                          });
+                          if (created) {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: { ...created },
+                            });
+                          } else {
+                            dispatch({
+                              type: CoreActionType.SetProject,
+                              value: { ...rollback },
+                            });
+                          }
+                        }
+                      }}
+                      disabled={uiState.tool.type != "move"}
+                    />
+                    <>
+                      {Array.from(coreState.project.imgs.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const imgData = coreState.canvasImgs.get(key);
+                        if (imgData) {
+                          return (
+                            <div key={key}>
+                              <DraggableProjectImg
+                                mediaKey={key}
+                                data={imgData}
+                                meta={meta}
+                                zIndex={
+                                  uiState.tool.type === "marquee" && uiState.tool.stack
+                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                }
+                                imgElementsRef={imgElementsRef}
+                                framesCacheRef={framesCacheRef}
+                                refKey={key}
+                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                              />
+                            </div>
+                          );
+                        }
+                      })}
+                      {Array.from(coreState.project.svgs.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const svgData = coreState.canvasSvgs.get(key);
+                        if (!svgData) return;
+                        let decodedString = "";
+                        try {
+                          decodedString = decodeURIComponent(
+                            atob(svgData.markup)
+                              .split("")
+                              .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                              .join(""),
+                          );
+                        } catch (error) {
+                          console.log("Failed to decode svg markup", {
+                            media_key: meta.media_key,
+                            error,
+                          });
+                        }
+                        if (decodedString) {
+                          return (
+                            <div key={key}>
+                              <DraggableProjectSvg
+                                mediaKey={key}
+                                decodedString={decodedString}
+                                meta={meta}
+                                zIndex={
+                                  uiState.tool.type === "marquee" && uiState.tool.stack
+                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                }
+                                svgElementsRef={svgElementsRef}
+                                framesCacheRef={framesCacheRef}
+                                refKey={key}
+                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                              />
+                            </div>
+                          );
+                        }
+                      })}
+                      {Array.from(coreState.project.masks.entries()).map((e) => {
+                        const [key, meta] = e;
+                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                          return;
+                        const maskData = coreState.canvasMasks.get(key);
+                        if (!maskData) return;
+                        return (
+                          <div key={key}>
+                            <DraggableProjectMask
+                              mediaKey={key}
+                              meta={meta}
+                              maskData={maskData}
+                              zIndex={
+                                uiState.tool.type === "marquee" && uiState.tool.stack
+                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                              }
+                              maskHandlesRef={maskHandlesRef}
+                              maskElementsRef={maskElementsRef}
+                              framesCacheRef={framesCacheRef}
+                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                            />
+                          </div>
+                        );
+                      })}
+                    </>
+                  </div>
+                  {uiState.showMediaBrowser && (
+                    <div
+                      style={{
+                        gridRow: "3 / span 2",
+                        gridColumn: "3",
+                        width: "100%",
+                        height: "100%",
+                      }}
+                    >
+                      <MediaBrowser
+                        framesCacheRef={framesCacheRef}
+                        refreshIconRef={refreshIconRef}
+                        onNextPage={async () => {
+                          switch (uiState.mediaBrowserFilter) {
+                            case "img": {
+                              await handleImgPageRequest();
+                              break;
+                            }
+                            case "svg": {
+                              await handleSvgPageRequest();
+                              break;
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      gridRow: "3 / span 2",
+                      gridColumn: "4",
+                    }}
+                  >
+                    <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
+                  </div>
+                  <div
+                    style={{
+                      gridRow: "5",
+                      gridColumn: "span 4",
+                      display: "grid",
+                      ...dynamicSizes.statusbar.container,
+                    }}
+                  >
+                    <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
+                  </div>
+                </MaskContext>
+              </UIContext>
+            </SocketContext>
           </CoreContext>
         </HoverContext>
       </div>

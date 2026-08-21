@@ -166,7 +166,6 @@ export function ParameterSliderY({
               borderRadius: 8,
             }}
           >
-            {/* Highlighted Glowing Section */}
             <div
               style={{
                 position: "absolute",
@@ -201,7 +200,6 @@ export function ParameterSliderY({
 
 interface ParameterSliderXPlusMinus {
   resolution: LaurusResolution;
-  label?: string;
   hash: string;
   size: {
     capWidth: number | string;
@@ -290,7 +288,6 @@ export function ParameterSliderXPlusMinus({
               liveTitleRef={liveTitleRef}
             />
           </div>
-          {/* label*/}
           <div
             style={{
               zIndex: 1,
@@ -346,7 +343,6 @@ export function ParameterSliderXPlusMinus({
 
 interface ParameterSliderX {
   resolution: LaurusResolution;
-  label?: string;
   hash: string;
   size: {
     capWidth: number | string;
@@ -365,6 +361,7 @@ interface ParameterSliderX {
   onCursorMove?: (newCursor: { x: number; y: number }) => void;
   disabled?: boolean;
   title?: string;
+  liveTitleRef?: RefObject<HTMLDivElement | null>;
 }
 export function ParameterSliderX({
   resolution,
@@ -376,6 +373,7 @@ export function ParameterSliderX({
   onCursorMove,
   disabled,
   title,
+  liveTitleRef,
 }: ParameterSliderX) {
   return (
     <>
@@ -415,9 +413,9 @@ export function ParameterSliderX({
             onMove={onCursorMove}
             disabled={disabled}
             title={title}
+            liveTitleRef={liveTitleRef}
           />
         </div>
-        {/* label*/}
         <div
           style={{
             zIndex: 1,

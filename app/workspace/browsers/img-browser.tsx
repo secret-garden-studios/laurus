@@ -1,5 +1,5 @@
 import { useContext, useState, useMemo, useCallback, useEffect, useRef, RefObject } from "react";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
@@ -12,8 +12,9 @@ export interface ImgBrowser {
 }
 export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
   const { coreState } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -72,18 +73,18 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
         if (showContextMenu) setShowContextMenu(false);
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
+        setSelectedMaskKeys(new Set());
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
-        if (uiState.playbackMode.type == "stopped") {
-          const currentTool = { ...uiState.tool };
-          const newTool: LaurusTool =
-            currentTool.type == "marquee" ? { ...currentTool, duplicate: false } : defaultMarqueeTool;
+        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+          const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
             value: newTool,
           });
+          notifyMaskToolChanged(newTool.type);
         }
       }
     },
@@ -91,10 +92,11 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       browserElementMediaId,
       showContextMenu,
       uiDispatch,
-      uiState.playbackMode.type,
       uiState.tool,
       setSelectedImgKeys,
       setSelectedSvgKeys,
+      setSelectedMaskKeys,
+      notifyMaskToolChanged,
     ],
   );
 
@@ -147,7 +149,8 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       style={{
         padding: dynamicSizes.mediaItemSize.padding,
         display: "flex",
-        justifyContent: "center",
+        flexDirection: "column",
+        alignItems: "center",
       }}
     >
       <div

@@ -1,5 +1,3 @@
-/* /projects */
-
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
 const onNotOk = (status: number) => {
   switch (status) {
@@ -51,6 +49,27 @@ export interface ProjectSvg_V1_0 {
   stroke_width: number;
   description: string;
 }
+export interface ProjectMask_V1_0 {
+  media_id: string;
+  media_group_id: string;
+  width: number;
+  height: number;
+  top: number;
+  left: number;
+  order: number;
+  scale_x: number;
+  scale_y: number;
+  rotate_x: number;
+  rotate_y: number;
+  rotate_z: number;
+  rotate_angle: number;
+  capture_preview_size: number;
+  capture_preview_intensity: number;
+  capture_preview_falloff: number;
+  capture_preview_darkness: number;
+  texture: number;
+  description: string;
+}
 export interface Project_V1_0 {
   name: string;
   canvas_width: number;
@@ -68,6 +87,7 @@ export interface Project_V1_0 {
   fps: number;
   imgs: Map<string, ProjectImg_V1_0>;
   svgs: Map<string, ProjectSvg_V1_0>;
+  masks: Map<string, ProjectMask_V1_0>;
   browse_public_imgs: boolean;
   browse_public_svgs: boolean;
 }
@@ -91,6 +111,7 @@ export interface ProjectResult_V1_0 {
   last_active: string;
   imgs: Map<string, ProjectImg_V1_0>;
   svgs: Map<string, ProjectSvg_V1_0>;
+  masks: Map<string, ProjectMask_V1_0>;
   browse_public_imgs: boolean;
   browse_public_svgs: boolean;
   creator: string;
@@ -130,13 +151,16 @@ export const DEFAULT_CONTEXT_MENU_CONFIG: ContextMenuConfig = {
 };
 export type LaurusProjectImg = ProjectImg_V1_0;
 export type LaurusProjectSvg = ProjectSvg_V1_0;
+export type LaurusProjectMask = ProjectMask_V1_0;
 export interface LaurusProjectResult extends ProjectResult_V1_0 {
   imgs: Map<string, LaurusProjectImg>;
   svgs: Map<string, LaurusProjectSvg>;
+  masks: Map<string, LaurusProjectMask>;
 }
 export interface LaurusProject extends Project_V1_0 {
   imgs: Map<string, LaurusProjectImg>;
   svgs: Map<string, LaurusProjectSvg>;
+  masks: Map<string, LaurusProjectMask>;
 }
 export type LaurusProjectSearch = ProjectSearch_V1_0;
 export type LaurusPin = Pin_V1_0;
@@ -160,6 +184,7 @@ export async function getProjects(baseUrl: string | undefined) {
         ...r,
         imgs: new Map(Object.entries(r.imgs)),
         svgs: new Map(Object.entries(r.svgs)),
+        masks: new Map(Object.entries(r.masks)),
       };
     });
   } catch (error) {
@@ -185,6 +210,7 @@ export async function getProject(baseUrl: string | undefined, projectId: string)
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: new Map(Object.entries(result.masks)),
     };
   } catch (error) {
     console.log({ error });
@@ -203,6 +229,7 @@ export async function createProject(
       ...project,
       imgs: Object.fromEntries(project.imgs),
       svgs: Object.fromEntries(project.svgs),
+      masks: Object.fromEntries(project.masks),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
@@ -221,6 +248,7 @@ export async function createProject(
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: new Map(Object.entries(result.masks)),
     };
   } catch (error) {
     console.log({ error });
@@ -240,6 +268,7 @@ export async function updateProject(
       ...project,
       imgs: Object.fromEntries(project.imgs),
       svgs: Object.fromEntries(project.svgs),
+      masks: Object.fromEntries(project.masks),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
@@ -492,6 +521,7 @@ export async function duplicateProject(
       ...result,
       imgs: new Map(Object.entries(result.imgs)),
       svgs: new Map(Object.entries(result.svgs)),
+      masks: new Map(Object.entries(result.masks)),
     };
   } catch (error) {
     console.log({ error });
@@ -522,6 +552,7 @@ export async function searchProjects(
         ...r,
         imgs: new Map(Object.entries(r.imgs)),
         svgs: new Map(Object.entries(r.svgs)),
+        masks: new Map(Object.entries(r.masks)),
       };
     });
   } catch (error) {

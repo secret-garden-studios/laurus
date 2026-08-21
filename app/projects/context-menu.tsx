@@ -428,7 +428,6 @@ export default function ContextMenu({ project, width, height }: ContextMenuProps
                 {`edited ${new Date(project.last_active).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })} by ${project.last_editor}`}
               </div>
             </div>
-            {/* project stats */}
             <div style={{ display: "grid" }}>
               <div
                 style={{
@@ -465,13 +464,23 @@ export default function ContextMenu({ project, width, height }: ContextMenuProps
                       textShadow: "0 0 1px rgba(255, 255, 255, 1)",
                     }}
                   >
+                    {`${[...project.masks.values()].length}`}
+                  </div>
+                  <div>{`mask`}</div>
+                </div>
+                <div style={{ display: "flex", gap: "1ch" }}>
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                    }}
+                  >
                     {`${coreState.effectsMetadata.get(project.project_id) ?? 0}`}
                   </div>
                   <div>{`fx`}</div>
                 </div>
               </div>
             </div>
-            {/* toolbar */}
             <div
               ref={toolbarContainerRef}
               style={{

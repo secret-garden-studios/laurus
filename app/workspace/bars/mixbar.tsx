@@ -1,10 +1,11 @@
 import { geistMono } from "@/app/fonts";
 import { SvgRepo, allOut, arrowDownwardAlt, check, circle, earthquake, experiment, cycle400 } from "@/app/svg-repo";
 import { useContext, useEffect, useMemo, useState } from "react";
-import { UIContext, CoreContext } from "../workspace.client";
+import { UIContext, CoreContext, MaskContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
 import {
   LaurusEffect,
+  LaurusLightSourceResult,
   LaurusMixState,
   LaurusMoveResult,
   LaurusRotateResult,
@@ -18,6 +19,7 @@ import { CoreActionType } from "../states/core-state";
 
 export default function Mixbar() {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -206,7 +208,6 @@ export default function Mixbar() {
           scaleToContaier={true}
         />
 
-        {/* create menu */}
         {!selectedEffectType && !someActiveMixables && (
           <>
             <SelectionMenu
@@ -217,7 +218,6 @@ export default function Mixbar() {
           </>
         )}
 
-        {/* form */}
         {selectedEffectType && !someActiveMixables && (
           <>
             <div
@@ -403,6 +403,7 @@ export default function Mixbar() {
                         type: UIActionType.SetTool,
                         value: { type: "none" },
                       });
+                      notifyMaskToolChanged("none");
                     }
                   }}
                 />
@@ -411,7 +412,6 @@ export default function Mixbar() {
           </>
         )}
 
-        {/* update menu */}
         {someActiveMixables && (
           <>
             <SelectionMenu
@@ -436,13 +436,11 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
   const { uiState } = useContext(UIContext);
   const selectList = useMemo(() => {
     const prioritySet = new Set<string>(uiState.mixableEffects);
-    const effectNames = uiState.effectNames
-      .filter((e) => e != "skew")
-      .sort((a, b) => {
-        const hasA = prioritySet.has(a) ? 1 : 0;
-        const hasB = prioritySet.has(b) ? 1 : 0;
-        return hasB - hasA;
-      });
+    const effectNames = uiState.effectNames.sort((a, b) => {
+      const hasA = prioritySet.has(a) ? 1 : 0;
+      const hasB = prioritySet.has(b) ? 1 : 0;
+      return hasB - hasA;
+    });
     return [selectHeader, ...effectNames];
   }, [uiState.effectNames, uiState.mixableEffects, selectHeader]);
 
@@ -542,6 +540,14 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                               mixState: newMixState,
                             } as LaurusScaleResult,
                           };
+                        case "light_source":
+                          return {
+                            ...e,
+                            value: {
+                              ...e.value,
+                              mixState: newMixState,
+                            } as LaurusLightSourceResult,
+                          };
                       }
                     })();
                     if (i > -1) {
@@ -575,7 +581,7 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                     : "rgba(255, 255, 255, 0.3)",
               }}
             >
-              <div>{selectOption}</div>
+              <div>{selectOption === "light_source" ? "shader" : selectOption}</div>
               {
                 <SvgRepo
                   svg={(() => {

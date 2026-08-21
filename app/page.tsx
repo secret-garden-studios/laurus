@@ -6,15 +6,19 @@ import {
   ScaleResult_V1_0,
   MoveResult_V1_0,
   RotateResult_V1_0,
+  LightSourceResult_V1_0,
   EffectGroupResult_V1_0,
   ImgMediaResult_V1_0,
   SvgMediaResult_V1_0,
+  MaskMediaResult_V1_0,
   getScales,
   getMoves,
   getRotates,
+  getLightSources,
   getEffectGroups,
   getSvg,
   getImg,
+  getMasksByIds,
 } from "./workspace/workspace.server";
 export const dynamic = "force-dynamic";
 
@@ -43,9 +47,11 @@ export interface ProjectDependencies {
   scales: ScaleResult_V1_0[];
   moves: MoveResult_V1_0[];
   rotates: RotateResult_V1_0[];
+  lightSources: LightSourceResult_V1_0[];
   effectGroups: EffectGroupResult_V1_0[];
   canvasImgs: ImgMediaResult_V1_0[];
   canvasSvgs: SvgMediaResult_V1_0[];
+  canvasMasks: MaskMediaResult_V1_0[];
 }
 export async function fetchProject(
   laurusApi: string | undefined,
@@ -84,12 +90,13 @@ export async function fetchProject(
     const scales = await getScales(laurusApi, newProject.project_id);
     const moves = await getMoves(laurusApi, newProject.project_id);
     const rotates = await getRotates(laurusApi, newProject.project_id);
+    const lightSources = await getLightSources(laurusApi, newProject.project_id);
     const effectGroups = await getEffectGroups(laurusApi, newProject.project_id);
     const svgsArray = Array.from(newProject.svgs.values());
     const canvasSvgs: SvgMediaResult_V1_0[] = [];
     if (fetchMedia) {
       for (let i = 0; i < svgsArray.length; i++) {
-        const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id, svgsArray[i].media_key);
+        const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id);
         if (svgMediaResult) {
           canvasSvgs.push({ ...svgMediaResult });
         }
@@ -99,7 +106,26 @@ export async function fetchProject(
     const canvasImgs: ImgMediaResult_V1_0[] = [];
     if (fetchMedia) {
       for (let i = 0; i < imgsArray.length; i++) {
-        const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id, imgsArray[i].media_key);
+        const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id);
+        if (imgMediaResult) {
+          canvasImgs.push({ ...imgMediaResult });
+        }
+      }
+    }
+    const masksArray = Array.from(newProject.masks.values());
+    let canvasMasks: MaskMediaResult_V1_0[] = [];
+    if (fetchMedia) {
+      const maskMediaIds = masksArray.map((m) => m.media_id);
+      canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
+    }
+    if (fetchMedia) {
+      const placedImgIds = new Set(imgsArray.map((i) => i.img_media_id));
+      const fetchedImgIds = new Set(canvasImgs.map((i) => i.img_media_id));
+      const missingSourceImgIds = new Set(
+        canvasMasks.map((m) => m.source_img_media_id).filter((id) => !placedImgIds.has(id) && !fetchedImgIds.has(id)),
+      );
+      for (const sourceImgMediaId of missingSourceImgIds) {
+        const imgMediaResult = await getImg(laurusApi, sourceImgMediaId);
         if (imgMediaResult) {
           canvasImgs.push({ ...imgMediaResult });
         }
@@ -110,9 +136,11 @@ export async function fetchProject(
       scales: scales ?? [],
       moves: moves ?? [],
       rotates: rotates ?? [],
+      lightSources: lightSources ?? [],
       effectGroups: effectGroups ?? [],
       canvasImgs,
       canvasSvgs,
+      canvasMasks,
     };
   }
 }

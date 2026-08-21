@@ -3,34 +3,21 @@ import {
   updateProject,
   LaurusProjectImg,
   LaurusProjectSvg,
+  LaurusProjectMask,
   LaurusProjectResult,
   DEFAULT_CONTEXT_MENU_CONFIG,
 } from "../projects/projects.server";
-import { CoreContext, LaurusTransform, UIContext } from "./workspace.client";
 import {
-  updateScale,
-  updateMove,
-  updateRotate,
-  LaurusFrame,
-  LaurusImgResult,
-  LaurusMoveResult,
-  LaurusRotateResult,
-  LaurusScaleResult,
-  LaurusSvgResult,
-  LaurusEffect,
-} from "./workspace.server";
+  CoreContext,
+  LaurusTransform,
+  MaskContext,
+  SocketContext,
+  UIContext,
+  getMaskSourceImgIds,
+} from "./workspace.client";
+import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
 import styles from "../app.module.css";
-import { RiToolsLine } from "react-icons/ri";
-import {
-  allOut,
-  browse,
-  earthquake,
-  experiment,
-  keyboardCommandKey,
-  lassoSelect,
-  SvgRepo,
-  cycle400,
-} from "../svg-repo";
+import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
 import {
   LaurusActiveElement,
@@ -41,69 +28,9 @@ import {
   defaultUIState,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
+import { deleteEffects, deleteMaskCaptureEffects } from "./effects-utils";
 
-async function deleteEffects(
-  mediaKey: string,
-  apiOrigin: string | undefined,
-  accessToken: string | undefined,
-  effects: LaurusEffect[],
-  dispatch: Dispatch<CoreAction>,
-) {
-  for (let i = 0; i < effects.length; i++) {
-    const effect = effects[i];
-    if (!effect.value.math.has(mediaKey)) continue;
-    switch (effect.type) {
-      case "scale": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newScale: LaurusScaleResult = { ...effect.value, math: newMath };
-        const updated = await updateScale(apiOrigin, accessToken, effect.key, newScale);
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "scale", key: effect.key, value: { ...newScale } },
-          });
-        }
-        break;
-      }
-      case "move": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newMove: LaurusMoveResult = { ...effect.value, math: newMath };
-        const updated = await updateMove(apiOrigin, accessToken, effect.key, {
-          ...newMove,
-        });
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "move", key: effect.key, value: { ...newMove } },
-          });
-        }
-        break;
-      }
-      case "rotate": {
-        const newMath = new Map(effect.value.math);
-        newMath.delete(mediaKey);
-        const newRotate: LaurusRotateResult = {
-          ...effect.value,
-          math: newMath,
-        };
-        const updated = await updateRotate(apiOrigin, accessToken, effect.key, {
-          ...newRotate,
-        });
-        if (updated) {
-          dispatch({
-            type: CoreActionType.SetEffect,
-            value: { type: "rotate", key: effect.key, value: { ...newRotate } },
-          });
-        }
-        break;
-      }
-    }
-  }
-}
-
-function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch: Dispatch<CoreAction>) {
+function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
   switch (mediaType) {
     case "img": {
       dispatch({ type: CoreActionType.DeleteCanvasImg, key: mediaKey });
@@ -113,19 +40,25 @@ function cleanUpCanvasMedia(mediaType: "img" | "svg", mediaKey: string, dispatch
       dispatch({ type: CoreActionType.DeleteCanvasSvg, key: mediaKey });
       break;
     }
+    case "mask": {
+      dispatch({ type: CoreActionType.DeleteCanvasMask, key: mediaKey });
+      break;
+    }
   }
 }
 
 function cleanUpMediaBrowser(
-  mediaType: "img" | "svg",
+  mediaType: "img" | "svg" | "mask",
   mediaId: string,
   project: LaurusProjectResult,
+  canvasMasks: Map<string, LaurusMaskResult>,
   uiDispatch: Dispatch<UIAction>,
 ) {
   switch (mediaType) {
     case "img": {
       const stillExists = Array.from(project.imgs.values()).some((i) => i.img_media_id === mediaId);
-      if (!project.browse_public_imgs && !stillExists) {
+      const stillNeededForMask = getMaskSourceImgIds(project.masks, canvasMasks).has(mediaId);
+      if (!project.browse_public_imgs && !stillExists && !stillNeededForMask) {
         uiDispatch({ type: UIActionType.DeleteBrowserImg, value: mediaId });
       }
       break;
@@ -135,6 +68,9 @@ function cleanUpMediaBrowser(
       if (!project.browse_public_svgs && !stillExists) {
         uiDispatch({ type: UIActionType.DeleteBrowserSvg, value: mediaId });
       }
+      break;
+    }
+    case "mask": {
       break;
     }
   }
@@ -186,8 +122,20 @@ function projectImgIsTransformed(img: LaurusProjectImg) {
   }
 }
 
+function projectMaskIsTransformed(mask: LaurusProjectMask) {
+  if (mask.scale_x == 1 && mask.scale_y == 1 && mask.rotate_x == 0 && mask.rotate_y == 0 && mask.rotate_z == 0) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
 export type ContextMenuMedia =
-  { type: "img"; key: string; meta: LaurusProjectImg } | { type: "svg"; key: string; meta: LaurusProjectSvg };
+  | { type: "img"; key: string; meta: LaurusProjectImg }
+  | { type: "svg"; key: string; meta: LaurusProjectSvg }
+  | { type: "mask"; key: string; meta: LaurusProjectMask }
+  | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
+  | { type: "peak"; key: string; peakId: number; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -195,12 +143,27 @@ interface ContextMenu {
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { sendMaskCaptureUpdate, closeMaskCaptureSocket, closeMaskPeakSocket } = useContext(SocketContext);
+  const {
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedPeakChanged,
+    notifyMaskCaptureUpdated,
+    deletePeak,
+  } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const active = useMemo<boolean>(() => {
-    return (uiState.activeElement?.key ?? "") == media.key;
-  }, [uiState.activeElement?.key, media.key]);
+    if (uiState.activeElement?.key !== media.key) return false;
+    if (media.type === "capture") {
+      return uiState.activeElement.type === "capture" && uiState.activeElement.captureId === media.captureId;
+    }
+    if (media.type === "peak") {
+      return uiState.activeElement.type === "peak" && uiState.activeElement.peakId === media.peakId;
+    }
+    return true;
+  }, [uiState.activeElement, media]);
   const [isAltPressed, setIsAltPressed] = useState(false);
 
   useEffect(() => {
@@ -286,6 +249,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 12,
+            height: 50,
           },
           footer: {
             div: {
@@ -362,6 +326,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 10,
+            height: 42,
           },
           footer: {
             div: {
@@ -439,6 +404,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           cell: {
             padding: "0px 6px",
             fontSize: 10,
+            height: 40,
           },
           footer: {
             div: {
@@ -456,11 +422,13 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       mediaId: string,
       newSvgs: Map<string, LaurusProjectSvg> | undefined,
       newImgs: Map<string, LaurusProjectImg> | undefined,
+      newMasks: Map<string, LaurusProjectMask> | undefined,
     ) => {
       const newProject: LaurusProjectResult = {
         ...snapshot,
         ...(newSvgs !== undefined && { svgs: newSvgs }),
         ...(newImgs !== undefined && { imgs: newImgs }),
+        ...(newMasks !== undefined && { masks: newMasks }),
       };
       if (newProject.project_id) {
         dispatch({ type: CoreActionType.SetProject, value: newProject });
@@ -476,13 +444,25 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
               value: undefined,
             });
           }
+          if (uiState.selectedElement?.key == media.key) {
+            uiDispatch({
+              type: UIActionType.SetSelectedElement,
+              value: undefined,
+            });
+            notifyMaskSelectionChanged(undefined);
+          }
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
             key: media.key,
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
-          cleanUpCanvasMedia(media.type, media.key, dispatch);
-          cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          if (media.type === "mask") {
+            await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
+          }
+          if (media.type !== "capture" && media.type !== "peak") {
+            cleanUpCanvasMedia(media.type, media.key, dispatch);
+            cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
+          }
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -497,12 +477,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
+      coreState.canvasMasks,
       uiState.activeElement?.key,
+      uiState.selectedElement?.key,
       uiState.browserElement,
       media.key,
       media.type,
       uiDispatch,
       framesCacheRef,
+      notifyMaskSelectionChanged,
     ],
   );
 
@@ -721,10 +704,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       const snapshot = { ...coreState.project };
       const newImgs = new Map(Array.from(snapshot.imgs, ([k, v]) => [k, { ...v }]));
       const newSvgs = new Map(Array.from(snapshot.svgs, ([k, v]) => [k, { ...v }]));
-      const targetItem = newImgs.get(media.key) || newSvgs.get(media.key);
+      const newMasks = new Map(Array.from(snapshot.masks, ([k, v]) => [k, { ...v }]));
+      const targetItem = newImgs.get(media.key) || newSvgs.get(media.key) || newMasks.get(media.key);
       if (!targetItem) return;
-      const allItems = [...newImgs.values(), ...newSvgs.values()];
-      const maxOrder = allItems.length - 1;
+      const allItems = [...newImgs.values(), ...newSvgs.values(), ...newMasks.values()];
+      const maxOrder = Math.max(-1, ...allItems.map((item) => item.order));
 
       if (direction === "decrement") {
         targetItem.order = Math.max(0, targetItem.order - 1);
@@ -749,6 +733,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         ...snapshot,
         imgs: newImgs,
         svgs: newSvgs,
+        masks: newMasks,
       };
       const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
         ...newProject,
@@ -772,13 +757,21 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         if (!m) return false;
         return projectSvgIsTransformed(m);
       }
+      case "mask":
+      case "capture":
+      case "peak": {
+        const m = coreState.project.masks.get(media.key);
+        if (!m) return false;
+        return projectMaskIsTransformed(m);
+      }
     }
-  }, [coreState.project.imgs, coreState.project.svgs, media.key, media.type]);
+  }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks, media.key, media.type]);
 
   const revertMedia = useCallback(async () => {
     const snapshot: LaurusProjectResult = { ...coreState.project };
     const newImgs = new Map(snapshot.imgs);
     const newSvgs = new Map(snapshot.svgs);
+    const newMasks = new Map(snapshot.masks);
     switch (media.type) {
       case "img": {
         const m = newImgs.get(media.key);
@@ -814,11 +807,31 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         }
         break;
       }
+      case "mask":
+      case "capture":
+      case "peak": {
+        const m = newMasks.get(media.key);
+        if (!m) return;
+        if (projectMaskIsTransformed(m)) {
+          const newMask: LaurusProjectMask = {
+            ...m,
+            scale_x: 1,
+            scale_y: 1,
+            rotate_x: 0,
+            rotate_y: 0,
+            rotate_z: 0,
+            rotate_angle: 0,
+          };
+          newMasks.set(media.key, newMask);
+        }
+        break;
+      }
     }
     const newProject: LaurusProjectResult = {
       ...coreState.project,
       imgs: newImgs,
       svgs: newSvgs,
+      masks: newMasks,
     };
     const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
       ...newProject,
@@ -828,14 +841,36 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
+  const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
+
   const cellStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
     borderTop: "1px solid rgba(255,255,255,0.05)",
-    height: "100%",
     cursor: "pointer",
     ...dynamicSizes.cell,
   };
+
+  const header = useMemo(() => {
+    switch (media.type) {
+      case "img":
+      case "svg":
+        return media.meta.media_key;
+      case "mask":
+      case "peak":
+      case "capture": {
+        let h = media.key;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return h;
+        coreState.canvasImgs.forEach((i) => {
+          if (i.img_media_id == mask.source_img_media_id) {
+            h = i.media_key;
+          }
+        });
+        return h;
+      }
+    }
+  }, [coreState.canvasImgs, coreState.canvasMasks, media]);
 
   return (
     <>
@@ -917,7 +952,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {media.meta.media_key}
+                  {header}
                 </div>
                 <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
                   <div>
@@ -994,6 +1029,55 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           break;
                         }
+                        case "mask": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "mask",
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          break;
+                        }
+                        case "capture": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "capture",
+                            captureId: media.captureId,
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          uiDispatch({
+                            type: UIActionType.SetSelectedElement,
+                            value: { key: media.key, type: "capture", captureId: media.captureId },
+                          });
+                          notifyMaskSelectionChanged(media.key);
+                          notifyMaskSelectedCaptureChanged(media.key, media.captureId);
+                          notifyMaskSelectedPeakChanged(media.key, undefined);
+                          break;
+                        }
+                        case "peak": {
+                          const newActiveElement: LaurusActiveElement = {
+                            key: media.key,
+                            type: "peak",
+                            peakId: media.peakId,
+                          };
+                          uiDispatch({
+                            type: UIActionType.SetActiveElement,
+                            value: newActiveElement,
+                          });
+                          uiDispatch({
+                            type: UIActionType.SetSelectedElement,
+                            value: { key: media.key, type: "peak", peakId: media.peakId },
+                          });
+                          notifyMaskSelectionChanged(media.key);
+                          notifyMaskSelectedPeakChanged(media.key, media.peakId);
+                          notifyMaskSelectedCaptureChanged(media.key, undefined);
+                          break;
+                        }
                       }
                     }}
                     trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -1001,115 +1085,171 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
-                  {"swap"}
-                </div>
                 <div
-                  style={{ ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
-                  onClick={() => {
-                    updateMediaOrder(isAltPressed ? "top" : "increment");
-                  }}
-                >
-                  {isAltPressed ? "move to top" : "move up"}
-                </div>
-                <div
-                  style={{ ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
-                  onClick={() => {
-                    updateMediaOrder(isAltPressed ? "bottom" : "decrement");
-                  }}
-                >
-                  {isAltPressed ? "move to bottom" : "move down"}
-                </div>
-                <div
-                  className={revertEnabled ? styles["animated-nav-dark"] : ""}
                   style={{
-                    color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
-                    ...cellStyle,
-                  }}
-                  onClick={() => {
-                    if (!revertEnabled) return;
-                    revertMedia();
+                    display: "grid",
+                    overflowY: "auto",
+                    alignSelf: "start",
+                    height: dynamicSizes.cell.height * 4,
                   }}
                 >
-                  {"revert"}
-                </div>
-                <div
-                  style={{ color: "rgb(242, 83, 83)", ...cellStyle }}
-                  className={styles["animated-nav-dark"]}
-                  onClick={async () => {
-                    const snapshot: LaurusProjectResult = {
-                      ...coreState.project,
-                    };
-                    switch (media.type) {
-                      case "img": {
-                        const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
-                        newImgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs);
-                        break;
+                  {media.type !== "mask" && !isCaptureOrPeak && (
+                    <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
+                      {"swap"}
+                    </div>
+                  )}
+                  <div
+                    style={{ ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
+                    onClick={() => {
+                      updateMediaOrder(isAltPressed ? "top" : "increment");
+                    }}
+                  >
+                    {isAltPressed ? "move to top" : "move up"}
+                  </div>
+                  <div
+                    style={{ ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
+                    onClick={() => {
+                      updateMediaOrder(isAltPressed ? "bottom" : "decrement");
+                    }}
+                  >
+                    {isAltPressed ? "move to bottom" : "move down"}
+                  </div>
+                  <div
+                    className={revertEnabled ? styles["animated-nav-dark"] : ""}
+                    style={{
+                      color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
+                      ...cellStyle,
+                    }}
+                    onClick={() => {
+                      if (!revertEnabled) return;
+                      revertMedia();
+                    }}
+                  >
+                    {"revert"}
+                  </div>
+                  <div
+                    style={{ color: "rgb(242, 83, 83)", ...cellStyle }}
+                    className={styles["animated-nav-dark"]}
+                    onClick={async () => {
+                      const confirmed = confirm("are you sure you want to delete this media?");
+                      if (!confirmed) return;
+                      const snapshot: LaurusProjectResult = {
+                        ...coreState.project,
+                      };
+                      switch (media.type) {
+                        case "img": {
+                          const newImgs: Map<string, LaurusProjectImg> = new Map(snapshot.imgs);
+                          newImgs.delete(media.key);
+                          deleteProjectMedia(snapshot, media.meta.img_media_id, undefined, newImgs, undefined);
+                          break;
+                        }
+                        case "svg": {
+                          const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
+                          newSvgs.delete(media.key);
+                          deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined, undefined);
+                          break;
+                        }
+                        case "mask": {
+                          const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
+                          newMasks.delete(media.key);
+                          closeMaskCaptureSocket(media.meta.media_id);
+                          closeMaskPeakSocket(media.meta.media_id);
+                          deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
+                          break;
+                        }
+                        case "capture": {
+                          const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
+                            media.meta.media_id,
+                            {
+                              capture_id: media.captureId,
+                              name: "",
+                              polygon_indices: [],
+                              size: 0,
+                              intensity: 0,
+                              falloff: 0,
+                              darkness: 0,
+                            },
+                          );
+                          if (!updated) break;
+                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+                          notifyMaskCaptureUpdated(media.key, updated);
+                          await deleteMaskCaptureEffects(
+                            media.key,
+                            media.captureId,
+                            coreState.apiOrigin,
+                            coreState.accessToken,
+                            coreState.effects,
+                            dispatch,
+                          );
+                          if (
+                            uiState.activeElement?.key == media.key &&
+                            uiState.activeElement.type === "capture" &&
+                            uiState.activeElement.captureId === media.captureId
+                          ) {
+                            uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
+                          }
+                          if (
+                            uiState.selectedElement?.key == media.key &&
+                            uiState.selectedElement.type === "capture" &&
+                            uiState.selectedElement.captureId === media.captureId
+                          ) {
+                            uiDispatch({
+                              type: UIActionType.SetSelectedElement,
+                              value: { key: media.key, type: "mask" },
+                            });
+                            notifyMaskSelectionChanged(media.key);
+                            notifyMaskSelectedCaptureChanged(media.key, undefined);
+                          }
+                          uiDispatch({
+                            type: UIActionType.DeleteCarouselEntry,
+                            key: media.key,
+                            captureId: media.captureId,
+                          });
+                          break;
+                        }
+                        case "peak": {
+                          await deletePeak(media.key, media.peakId);
+                          break;
+                        }
                       }
-                      case "svg": {
-                        const newSvgs: Map<string, LaurusProjectSvg> = new Map(snapshot.svgs);
-                        newSvgs.delete(media.key);
-                        deleteProjectMedia(snapshot, media.meta.svg_media_id, newSvgs, undefined);
-                        break;
-                      }
-                    }
-                  }}
-                >
-                  {"delete"}
+                    }}
+                  >
+                    {"delete"}
+                  </div>
                 </div>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "end",
-                    borderTop: "1px solid rgba(255,255,255,0.1)",
                     height: "100%",
                     ...dynamicSizes.footer.div,
                   }}
                 >
-                  {uiState.tool.type == "none" ? (
-                    <div
-                      title="active tool"
-                      style={{
-                        display: "grid",
-                        placeContent: "center",
-                        width: dynamicSizes.footer.svgSize,
-                        height: dynamicSizes.footer.svgSize,
-                      }}
-                    >
-                      <RiToolsLine size={dynamicSizes.footer.svgSize} color="rgb(62, 62, 62)" />
-                    </div>
-                  ) : (
-                    <SvgRepo
-                      title="active tool"
-                      svg={(() => {
-                        switch (uiState.tool.type) {
-                          case "marquee":
-                            return lassoSelect();
-                          case "contextmenu":
-                            return keyboardCommandKey();
-                          case "viewport":
-                            return browse();
-                          case "move":
-                            return earthquake();
-                          case "scale":
-                            return allOut();
-                          case "rotate":
-                            return cycle400();
-                          case "mix":
-                            return experiment();
-                        }
-                      })()}
-                      containerStyle={{
-                        width: dynamicSizes.footer.svgSize,
-                        height: dynamicSizes.footer.svgSize,
-                      }}
-                      scale={1}
-                    />
-                  )}
+                  <SvgRepo
+                    title="media type"
+                    svg={(() => {
+                      switch (media.type) {
+                        case "capture":
+                          return asterisk300();
+                        case "peak":
+                          return antigravity300();
+                        case "img":
+                          return image200();
+                        case "mask":
+                          return texture300();
+                        case "svg":
+                          return polyline200();
+                      }
+                    })()}
+                    containerStyle={{
+                      width: dynamicSizes.footer.svgSize,
+                      height: dynamicSizes.footer.svgSize,
+                    }}
+                    scale={1}
+                  />
                 </div>
               </div>
             </div>
@@ -1237,7 +1377,7 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
           });
           await deleteEffects(media.key, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
           cleanUpCanvasMedia(media.type, media.key, dispatch);
-          cleanUpMediaBrowser(media.type, mediaId, newProject, uiDispatch);
+          cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
           if (uiState.browserElement) {
             cleanUpBrowserElement(mediaId, uiState.browserElement, newProject, uiDispatch);
           }
@@ -1252,6 +1392,7 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
+      coreState.canvasMasks,
       uiState.activeElement?.key,
       uiState.browserElement,
       media.key,
@@ -1319,7 +1460,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
             overflow: "hidden",
           }}
         >
-          {/* Categories Container */}
           <div
             style={{
               display: "flex",

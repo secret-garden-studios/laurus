@@ -10,6 +10,10 @@ export const MOVE_WAVELENGTH_MAX = 1000;
 export const MOVE_DISTANCE_MAX = 3000;
 export const ROTATE_AXIS_MAX = 1;
 export const SCALE_MAX = 15;
+export const CAPTURE_SIZE_MAX = 200;
+export const CAPTURE_INTENSITY_MAX = 1;
+export const CAPTURE_FALLOFF_MAX = 500;
+export const CAPTURE_DARKNESS_MAX = 1;
 export const Z_INDEX = {
   CANVAS_BG: 0,
   CAMERA_FRAME: 1,
@@ -130,7 +134,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           },
           paramFlex: {
             gap: 38,
-            padding: "20px 15px",
+            paddingBlock: 20,
+            paddingInline: 15,
           },
           paramSlider: {
             containerHeight: "100%",
@@ -169,7 +174,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           },
           paramFlex: {
             gap: 26,
-            padding: "14px 10px",
+            paddingBlock: 14,
+            paddingInline: 10,
           },
           paramSlider: {
             containerHeight: "100%",
@@ -207,7 +213,8 @@ export function getDynamicUnitSizes(resolution: WorkspaceResolution) {
           param: { padding: "0 18px 10px 10px" },
           paramFlex: {
             gap: 26,
-            padding: "14px 10px",
+            paddingBlock: 14,
+            paddingInline: 10,
           },
           paramSlider: {
             containerHeight: "100%",

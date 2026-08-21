@@ -3,16 +3,21 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
+  image200,
   link,
   linkOff,
   playArrow,
+  polyline200,
   remove,
+  antigravity300,
   syncAlt,
+  texture300,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
@@ -25,7 +30,7 @@ import {
   LaurusScaleResult,
   updateScale,
 } from "../../workspace.server";
-import { ScaleUnitControls, defaultScaleEquation } from "../scale-unit";
+import { ScaleUnitControls, ScaleUnitTarget, defaultScaleEquation, targetHasScaleHeight } from "../scale-unit";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
@@ -39,6 +44,8 @@ interface ScaleUnitbar {
   setCurrentControls: Dispatch<SetStateAction<ScaleUnitControls>>;
   saveNewEquation: (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => Promise<void>;
   setUnlockAspectRatio: Dispatch<SetStateAction<boolean>>;
+  target: ScaleUnitTarget;
+  onToggleTarget: () => void;
 }
 export default function ScaleUnitbar({
   scale,
@@ -49,6 +56,8 @@ export default function ScaleUnitbar({
   setCurrentControls,
   saveNewEquation,
   setUnlockAspectRatio,
+  target,
+  onToggleTarget,
 }: ScaleUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -78,6 +87,23 @@ export default function ScaleUnitbar({
         };
     }
   });
+
+  const hasHeight = targetHasScaleHeight(target);
+
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+      case "capture":
+        return asterisk300();
+      case "peak":
+        return antigravity300();
+    }
+  }, [target]);
 
   const loopSvg = useMemo((): LaurusClientSvg => {
     const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
@@ -147,8 +173,10 @@ export default function ScaleUnitbar({
     const imgMeta = coreState.project.imgs.get(carouselEntryKey);
     if (imgMeta) return imgMeta.media_group_id;
     const svgMeta = coreState.project.svgs.get(carouselEntryKey);
-    return svgMeta?.media_group_id ?? "";
-  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+    if (svgMeta) return svgMeta.media_group_id;
+    const maskMeta = coreState.project.masks.get(carouselEntryKey);
+    return maskMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const otherGroupKeys = useMemo(() => {
     if (!mediaGroupId) return [];
@@ -158,8 +186,11 @@ export default function ScaleUnitbar({
     const svgKeys = Array.from(coreState.project.svgs.entries())
       .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
       .map(([key]) => key);
-    return [...imgKeys, ...svgKeys];
-  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
+    const maskKeys = Array.from(coreState.project.masks.entries())
+      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
+      .map(([key]) => key);
+    return [...imgKeys, ...svgKeys, ...maskKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const onPasteToGroupClick = useCallback(async () => {
     if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
@@ -206,6 +237,30 @@ export default function ScaleUnitbar({
         }}
       >
         <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
           title={"loop"}
           onDoubleClick={() => {
             if (scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
@@ -229,7 +284,6 @@ export default function ScaleUnitbar({
             position: "relative",
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >
@@ -422,7 +476,7 @@ export default function ScaleUnitbar({
         <div
           title={"link width and height"}
           onClick={() => {
-            if (isAltKeyPressed || scale.locked) return;
+            if (isAltKeyPressed || scale.locked || !hasHeight) return;
             const activeKey = carouselEntryKey;
             if (activeKey && scale.math.has(activeKey)) {
               setUnlockAspectRatio((v) => !v);
@@ -437,7 +491,7 @@ export default function ScaleUnitbar({
           <SvgRepo
             title={"link width and height"}
             svg={
-              scale.math.has(carouselEntryKey)
+              scale.math.has(carouselEntryKey) && hasHeight
                 ? unlockAspectRatio
                   ? linkOff()
                   : link()
@@ -446,7 +500,7 @@ export default function ScaleUnitbar({
                   : link("rgb(62, 62, 62)")
             }
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) && hasHeight ? "pointer" : "",
               ...dynamicSizes.paramButton,
             }}
             scale={1}

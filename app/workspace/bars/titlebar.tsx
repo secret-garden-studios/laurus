@@ -21,6 +21,8 @@ import {
   SvgRepo,
 } from "@/app/svg-repo";
 import { UIActionType } from "../states/ui-state";
+import Maskbar from "./maskbar";
+import LightSourcebar from "./lightsourcebar";
 
 export default function Titlebar() {
   const { coreState, dispatch } = useContext(CoreContext);
@@ -54,6 +56,9 @@ export default function Titlebar() {
             center: {
               padding: "0 0px 0px 15px",
             },
+            mask: {
+              padding: "0 0px 0px 15px",
+            },
             right: {
               padding: "0 15px 0px 15px",
             },
@@ -81,6 +86,9 @@ export default function Titlebar() {
               paddingLeft: 5,
             },
             center: {
+              padding: "0 0px 0px 10px",
+            },
+            mask: {
               padding: "0 0px 0px 10px",
             },
             right: {
@@ -111,6 +119,9 @@ export default function Titlebar() {
               paddingLeft: 5,
             },
             center: {
+              padding: "0 0px 0px 10px",
+            },
+            mask: {
               padding: "0 0px 0px 10px",
             },
             right: {
@@ -174,7 +185,6 @@ export default function Titlebar() {
         ...dynamicSizes.container,
       }}
     >
-      {/* title */}
       <div
         style={{
           padding: "2px 0px",
@@ -202,7 +212,6 @@ export default function Titlebar() {
           onChange={onProjectNameChange}
         />
       </div>
-      {/* content stats */}
       <div
         style={{
           display: "flex",
@@ -307,6 +316,23 @@ export default function Titlebar() {
           style={{
             display: "flex",
             gap: "1ch",
+            ...dynamicSizes.stats.mask,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+            }}
+          >
+            {`${coreState.project.masks.size}`}
+          </div>
+          <div>{`mask`}</div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "1ch",
             ...dynamicSizes.stats.right,
           }}
         >
@@ -390,8 +416,12 @@ export function Subtitlebar() {
               return <Scalebar />;
             case "rotate":
               return <Rotatebar />;
+            case "light_source":
+              return <LightSourcebar />;
             case "mix":
               return <Mixbar />;
+            case "mask":
+              return <Maskbar />;
           }
         })()}
       </div>

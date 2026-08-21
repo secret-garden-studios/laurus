@@ -1,5 +1,5 @@
-import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { CoreContext, HoverContext, UIContext } from "./workspace.client";
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CoreContext, HoverContext, UIContext, MaskContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import {
   updateProject,
@@ -12,6 +12,9 @@ import {
 import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
+import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
+import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
+import { useMaskPersist } from "./hooks/useMaskPersist";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
@@ -130,9 +133,60 @@ export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
+    useContext(HoverContext);
+  const { captureMeshSection, createPeak, ...mask } = useContext(MaskContext);
+  const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
+  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
+
+  const [pendingMaskDrop, setPendingMaskDrop] = useState<
+    { imgData: LaurusImgResult; frame: { width: number; height: number; top: number; left: number } } | undefined
+  >(undefined);
+
+  const activeMaskImg = useMemo(() => {
+    if (uiState.tool.type !== "mask" || selectedImgKeys.size !== 1 || mask.status === "done") return undefined;
+    const key = Array.from(selectedImgKeys)[0];
+    const meta = coreState.project.imgs.get(key);
+    const imgData = coreState.canvasImgs.get(key);
+    if (!meta || !imgData) return undefined;
+    return { key, meta, imgData };
+  }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs, mask.status]);
+
+  const activeBrowserMaskDrop = useMemo(() => {
+    if (uiState.tool.type !== "mask" || mask.status === "done" || activeMaskImg) return undefined;
+    return pendingMaskDrop;
+  }, [uiState.tool.type, mask.status, activeMaskImg, pendingMaskDrop]);
+
+  const liveMaskFrame = useMemo(() => {
+    const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
+    if (!frame) return undefined;
+    return {
+      width: mask.size.value && mask.size.width !== undefined ? mask.size.width : frame.width,
+      height: mask.size.value && mask.size.height !== undefined ? mask.size.height : frame.height,
+      scale_x: activeMaskImg?.meta.scale_x ?? 1,
+      scale_y: activeMaskImg?.meta.scale_y ?? 1,
+    };
+  }, [activeMaskImg, activeBrowserMaskDrop, mask.size]);
+
+  const liveMaskDndPosition = useMemo(() => {
+    const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
+    if (!frame) return undefined;
+    return {
+      x: mask.position.value && mask.position.x !== undefined ? mask.position.x : frame.left,
+      y: mask.position.value && mask.position.y !== undefined ? mask.position.y : frame.top,
+    };
+  }, [activeMaskImg, activeBrowserMaskDrop, mask.position]);
+
+  const liveMaskKey = activeMaskImg?.key ?? activeBrowserMaskDrop?.imgData.media_key;
+
+  const liveMaskSource = useMemo<ProjectMaskItemSource | undefined>(() => {
+    const imgData = activeMaskImg?.imgData ?? activeBrowserMaskDrop?.imgData;
+    if (!imgData) return undefined;
+    return { kind: "live", mask, sourceImg: imgData };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMaskImg, activeBrowserMaskDrop]);
 
   useLayoutEffect(() => {
     const c = drawingCanvasRef.current;
@@ -161,9 +215,22 @@ export default function Canvas() {
           setAnchor({ x: p.x, y: p.y });
           break;
         }
+        case "mask": {
+          if (
+            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.editingTopology &&
+            uiState.browserElement?.type !== "img"
+          )
+            break;
+          const canvas = drawingCanvasRef.current;
+          if (!canvas) return;
+          const p = calcMousePosition(canvas, event);
+          setAnchor({ x: p.x, y: p.y });
+          break;
+        }
       }
     },
-    [uiState.tool.type],
+    [uiState.tool, uiState.browserElement],
   );
 
   const handleMouseMove = useCallback(
@@ -182,9 +249,23 @@ export default function Canvas() {
           ctx.stroke();
           break;
         }
+        case "mask": {
+          if (
+            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.editingTopology &&
+            uiState.browserElement?.type !== "img"
+          )
+            break;
+          const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
       }
     },
-    [anchor, uiState.tool.type],
+    [anchor, uiState.tool, uiState.browserElement],
   );
 
   const handleSvgDrop = useCallback(
@@ -200,7 +281,12 @@ export default function Canvas() {
         height: newFrame.height,
         top: newFrame.y,
         left: newFrame.x,
-        order: Array.from(coreState.project.svgs.values()).reduce((max, s) => Math.max(max, s.order), -1) + 1,
+        order:
+          Math.max(
+            -1,
+            ...Array.from(coreState.project.svgs.values()).map((s) => s.order),
+            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+          ) + 1,
         media_key: svgData.media_key,
         viewbox: svgData.viewbox,
         fill: svgData.fill,
@@ -300,7 +386,12 @@ export default function Canvas() {
         media_group_id: "",
         top: newFrame.y,
         left: newFrame.x,
-        order: Array.from(coreState.project.imgs.values()).reduce((max, i) => Math.max(max, i.order), -1) + 1,
+        order:
+          Math.max(
+            -1,
+            ...Array.from(coreState.project.imgs.values()).map((i) => i.order),
+            ...Array.from(coreState.project.masks.values()).map((v) => v.order),
+          ) + 1,
         rotate_x: 0,
         rotate_y: 0,
         rotate_z: 0,
@@ -381,6 +472,81 @@ export default function Canvas() {
     ],
   );
 
+  const handleMaskDrop = useCallback(
+    (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
+      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
+      if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
+        return;
+      }
+      const frame = { width: newFrame.width, height: newFrame.height, top: newFrame.y, left: newFrame.x };
+      setPendingMaskDrop({ imgData, frame });
+      triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 });
+    },
+    [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
+  );
+
+  function screenCircleToMeshSpace(
+    maskKey: string,
+    drawingCanvas: HTMLCanvasElement,
+    dropArea: ProjectCircle,
+  ): { cx: number; cy: number; radius: number } | undefined {
+    const maskCanvasEl = document.querySelector<HTMLCanvasElement>(`canvas[data-mask-key="${CSS.escape(maskKey)}"]`);
+    if (!maskCanvasEl) return undefined;
+
+    const drawingRect = drawingCanvas.getBoundingClientRect();
+    const maskRect = maskCanvasEl.getBoundingClientRect();
+    if (maskRect.width === 0 || maskRect.height === 0) return undefined;
+
+    const localX = dropArea.cx + drawingRect.left - maskRect.left;
+    const localY = dropArea.cy + drawingRect.top - maskRect.top;
+
+    const scaleX = maskCanvasEl.width / maskRect.width;
+    const scaleY = maskCanvasEl.height / maskRect.height;
+
+    return {
+      cx: localX * scaleX,
+      cy: localY * scaleY,
+      radius: dropArea.radius * scaleX,
+    };
+  }
+
+  const handleLightSourceCapture = useCallback(
+    (dropArea: ProjectCircle) => {
+      if (selectedMaskKeys.size !== 1) return;
+      const maskKey = Array.from(selectedMaskKeys)[0];
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!maskData || !drawingCanvas) return;
+
+      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
+      if (!meshCircle) return;
+
+      const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
+      if (polygonIndices.size === 0) return;
+      captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
+    },
+    [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
+  );
+
+  const handleTopologyCapture = useCallback(
+    (dropArea: ProjectCircle) => {
+      if (selectedMaskKeys.size !== 1) return;
+      const maskKey = Array.from(selectedMaskKeys)[0];
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!maskData || !drawingCanvas) return;
+
+      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
+      if (!meshCircle) return;
+
+      createPeak(maskKey, meshCircle, {
+        ...uiState.stagedPeak,
+        shape: topologyMode === "shape" ? uiState.stagedPeak.shape : "",
+      });
+    },
+    [selectedMaskKeys, coreState.canvasMasks, createPeak, uiState.stagedPeak, topologyMode],
+  );
+
   const handleDuplicateDrop = useCallback(
     async (dropArea: ProjectCircle) => {
       const snapshot = coreState.project;
@@ -417,6 +583,7 @@ export default function Canvas() {
         -1,
         ...Array.from(snapshot.imgs.values()).map((i) => i.order),
         ...Array.from(snapshot.svgs.values()).map((s) => s.order),
+        ...Array.from(snapshot.masks.values()).map((v) => v.order),
       );
 
       const newImgs = new Map(snapshot.imgs);
@@ -577,6 +744,30 @@ export default function Canvas() {
           }
           break;
         }
+        case "mask": {
+          const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          if (newRadius < minRadius) break;
+          const dropArea: ProjectCircle = { cx: anchor.x, cy: anchor.y, radius: newRadius };
+
+          if (uiState.tool.capturingMeshSection) {
+            handleLightSourceCapture(dropArea);
+            break;
+          }
+
+          if (uiState.tool.editingTopology) {
+            handleTopologyCapture(dropArea);
+            break;
+          }
+
+          if (uiState.browserElement?.type === "img") {
+            const key = uiState.browserElement.value.media_key;
+            const imgData = uiState.browserImgs.find((s) => s.media_key === key);
+            if (imgData) {
+              handleMaskDrop(imgData, dropArea);
+            }
+          }
+          break;
+        }
       }
       setAnchor(undefined);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -590,12 +781,15 @@ export default function Canvas() {
       minRadius,
       coreState.project.imgs,
       coreState.project.svgs,
+      handleLightSourceCapture,
+      handleTopologyCapture,
       selectedImgKeys,
       selectedSvgKeys,
       setSelectedImgKeys,
       setSelectedSvgKeys,
       handleSvgDrop,
       handleImgDrop,
+      handleMaskDrop,
       handleDuplicateDrop,
       uiDispatch,
     ],
@@ -619,6 +813,17 @@ export default function Canvas() {
           onMouseDown={handleMouseDown}
         />
       </div>
+      {liveMaskKey && liveMaskFrame && liveMaskDndPosition && liveMaskSource && (
+        <ProjectMaskItem
+          key={liveMaskKey}
+          dndId={`dnd-node-live-mask-${liveMaskKey}`}
+          dndPosition={liveMaskDndPosition}
+          zIndex={1}
+          mediaKey={liveMaskKey}
+          frame={liveMaskFrame}
+          source={liveMaskSource}
+        />
+      )}
     </>
   );
 }

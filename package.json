@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "node --experimental-strip-types --test 'app/**/*.test.ts'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

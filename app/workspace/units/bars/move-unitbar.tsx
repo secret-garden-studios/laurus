@@ -3,6 +3,8 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  antigravity300,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
@@ -11,9 +13,12 @@ import {
   earthquake,
   ellipseFillZero,
   fileCopy,
+  image200,
   playArrow,
+  polyline200,
   remove,
   syncAlt,
+  texture300,
   updateDisabled,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
@@ -28,7 +33,7 @@ import {
   updateMove,
 } from "../../workspace.server";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
-import { MoveUnitControls, defaultMoveEquation } from "../move-unit";
+import { MoveUnitControls, MoveUnitTarget, defaultMoveEquation } from "../move-unit";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
@@ -39,6 +44,8 @@ interface MoveUnitbar {
   updateTrackpads: (newControls: MoveUnitControls) => void;
   currentControls: MoveUnitControls;
   setCurrentControls: Dispatch<SetStateAction<MoveUnitControls>>;
+  target: MoveUnitTarget;
+  onToggleTarget: () => void;
 }
 
 export default function MoveUnitbar({
@@ -48,10 +55,27 @@ export default function MoveUnitbar({
   updateTrackpads,
   currentControls,
   setCurrentControls,
+  target,
+  onToggleTarget,
 }: MoveUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image200();
+      case "svg":
+        return polyline200();
+      case "mask":
+        return texture300();
+      case "capture":
+        return asterisk300();
+      case "peak":
+        return antigravity300();
+    }
+  }, [target]);
 
   const [dynamicSizes] = useState(() => {
     const ds = getDynamicUnitSizes(uiState.resolution);
@@ -238,6 +262,30 @@ export default function MoveUnitbar({
         }}
       >
         <div
+          title={`targeting ${target} -- double-click for the next kind of media`}
+          onDoubleClick={() => {
+            if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            onToggleTarget();
+          }}
+          style={{
+            display: "grid",
+            placeContent: "center",
+            borderTopRightRadius: 6,
+            ...dynamicSizes.paramButtonContainer,
+          }}
+        >
+          <SvgRepo
+            title={target}
+            svg={targetSvg}
+            containerStyle={{
+              cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
+              ...dynamicSizes.paramButton,
+            }}
+            scale={0.85}
+            scaleToContaier={true}
+          />
+        </div>
+        <div
           title={"shape"}
           onDoubleClick={() => {
             if (move.locked || isAltKeyPressed) return;
@@ -258,7 +306,6 @@ export default function MoveUnitbar({
           style={{
             display: "grid",
             placeContent: "center",
-            borderTopRightRadius: 6,
             ...dynamicSizes.paramButtonContainer,
           }}
         >

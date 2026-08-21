@@ -10,13 +10,14 @@ import {
   useLayoutEffect,
 } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, UIContext } from "../workspace.client";
+import { CoreContext, MaskContext, UIContext, getMaskSourceImgIds } from "../workspace.client";
 import styles from "../../app.module.css";
 import { publicIcon, refresh200, sort300, SvgRepo } from "../../svg-repo";
-import { createImg, createSvg, LaurusFrame, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
+import { createImg, LaurusFrame, LaurusImgResult, LaurusSvgResult } from "../workspace.server";
 import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import { LaurusTool, UIActionType, defaultMarqueeTool, defaultUIState } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { createAndRegisterSvg } from "../svg-upload-utils";
 import MediaGroupBrowser, { MediaGroupSkeleton } from "./media-group-browser";
 import ImgBrowser from "./img-browser";
 import SvgBrowser from "./svg-browser";
@@ -53,49 +54,6 @@ export function parseMediaSortValue(
   }
   const matchExists = sortOptions.some((option) => option.value === inputString);
   return matchExists ? (inputString as MediaSortValue) : fallback;
-}
-
-function dataUrlToFile(dataUrl: string, filename: string): File {
-  const arr = dataUrl.split(",");
-  const mime = arr[0].match(/:(.*?);/)?.[1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-
-  return new File([u8arr], filename, { type: mime });
-}
-
-async function rasterizeSvg(svgXml: string, width: number = 1120, height: number = 1120): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const svgBlob = new Blob([svgXml], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Could not get canvas context"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      const pngDataUrl = canvas.toDataURL("image/png");
-      URL.revokeObjectURL(url);
-      resolve(pngDataUrl);
-    };
-
-    img.onerror = (err) => {
-      console.log({ err });
-      reject(err);
-    };
-    img.src = url;
-  });
 }
 
 function sortByNameAz(a: LaurusImgResult | LaurusSvgResult, b: LaurusImgResult | LaurusSvgResult) {
@@ -160,6 +118,7 @@ interface MediaBrowser {
 }
 export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPage }: MediaBrowser) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -326,32 +285,19 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                 width = Math.round(width * scale);
                 height = Math.round(height * scale);
               }
-              const pngDataUrl = await rasterizeSvg(svgString, width, height);
-              const svgFile: File = dataUrlToFile(pngDataUrl, `${file.name.split(".")[0]}.png`);
-              const created = await createSvg(coreState.apiOrigin, coreState.accessToken, {
-                svg: file,
-                raster: svgFile,
-              });
+              const created = await createAndRegisterSvg(
+                coreState.apiOrigin,
+                coreState.accessToken,
+                uiState,
+                uiDispatch,
+                notifyMaskToolChanged,
+                file,
+                svgString,
+                width,
+                height,
+                file.name.split(".")[0],
+              );
               if (created) {
-                const existingSvg = uiState.browserSvgs.find((v) => v.media_key === created.media_key);
-                if (existingSvg && existingSvg.svg_media_id !== created.svg_media_id) {
-                  uiDispatch({
-                    type: UIActionType.DeleteBrowserSvg,
-                    value: existingSvg.svg_media_id,
-                  });
-                }
-                uiDispatch({
-                  type: UIActionType.AddBrowserSvg,
-                  value: created,
-                  first: false,
-                });
-                uiDispatch({
-                  type: UIActionType.SetBrowserElement,
-                  value: { type: "svg", value: { ...created } },
-                });
-                const currentTool = { ...uiState.tool };
-                const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
-                uiDispatch({ type: UIActionType.SetTool, value: newTool });
                 if (++actualSvgUploads == expectedSvgUploads) {
                   setMediaUploading(false);
                 }
@@ -387,6 +333,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               const currentTool = { ...uiState.tool };
               const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
               uiDispatch({ type: UIActionType.SetTool, value: newTool });
+              notifyMaskToolChanged(newTool.type);
               if (++actualImgUploads == expectedImgUploads) {
                 setMediaUploading(false);
               }
@@ -400,7 +347,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
         }
       }
     },
-    [coreState.apiOrigin, coreState.accessToken, uiState.browserSvgs, uiState.tool, uiState.browserImgs, uiDispatch],
+    [coreState.apiOrigin, coreState.accessToken, uiState, uiDispatch, notifyMaskToolChanged],
   );
 
   const onPublicImgToggle = useCallback(async () => {
@@ -430,10 +377,10 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
       }
     }
     if (!newBrowsePublicImgs && newProjectIdAck) {
-      const newBrowserImgs = uiState.browserImgs.filter((b) =>
-        Array.from(newProject.imgs.values())
-          .flatMap((v) => v.img_media_id)
-          .includes(b.img_media_id),
+      const placedImgIds = new Set(Array.from(newProject.imgs.values()).map((v) => v.img_media_id));
+      const maskSourceImgIds = getMaskSourceImgIds(newProject.masks, coreState.canvasMasks);
+      const newBrowserImgs = uiState.browserImgs.filter(
+        (b) => placedImgIds.has(b.img_media_id) || maskSourceImgIds.has(b.img_media_id),
       );
       uiDispatch({ type: UIActionType.SetBrowserImgs, value: newBrowserImgs });
       uiDispatch({
@@ -447,6 +394,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
     setMediaSort("none");
   }, [
     coreState.project,
+    coreState.canvasMasks,
     coreState.apiOrigin,
     coreState.accessToken,
     dispatch,
@@ -574,14 +522,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
       }}
       onDrop={handleUpload}
     >
-      {/* content container */}
       <div
         style={{
           display: "grid",
           overflowY: "auto",
         }}
       >
-        {/* uploading light */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -620,7 +566,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               );
           }
         })()}
-        {/* content body */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -682,18 +627,22 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                       color: "rgba(220, 220, 220, 1)",
                     }}
                   >
-                    {sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
-                      const img = media as LaurusImgResult;
-                      const publicImg: boolean = !Array.from(coreState.project.imgs.values())
-                        .flatMap((i) => i.img_media_id)
-                        .includes(img.img_media_id);
-                      if (publicImg && !coreState.project.browse_public_imgs) return;
-                      return (
-                        <div key={i}>
-                          <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
-                        </div>
-                      );
-                    })}
+                    {(() => {
+                      const maskSourceImgIds = getMaskSourceImgIds(coreState.project.masks, coreState.canvasMasks);
+                      return sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
+                        const img = media as LaurusImgResult;
+                        const isProjectImg = Array.from(coreState.project.imgs.values())
+                          .flatMap((i) => i.img_media_id)
+                          .includes(img.img_media_id);
+                        const publicImg: boolean = !isProjectImg && !maskSourceImgIds.has(img.img_media_id);
+                        if (publicImg && !coreState.project.browse_public_imgs) return;
+                        return (
+                          <div key={i}>
+                            <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </>
               );
@@ -727,7 +676,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               );
           }
         })()}
-        {/* observer (auto refresh) */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -773,7 +721,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
           }
         })()}
       </div>
-      {/* input area */}
       {(() => {
         switch (uiState.mediaBrowserFilter) {
           case "frame":

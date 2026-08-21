@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, convertTime, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { updateMove, LaurusLoopType, LaurusShapeType, LaurusMoveEquation, LaurusMoveResult } from "../workspace.server";
 import Dial from "../../components/dial";
@@ -13,10 +13,15 @@ import {
   MOVE_FREQUENCY_MAX,
   MOVE_WAVELENGTH_MAX,
 } from "../workspace.config";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import MoveUnitbar from "./bars/move-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+
+export type MoveUnitTarget = CarouselEntry["type"];
+
+const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
 
 export interface MoveUnitControls {
   amplitude: number;
@@ -44,20 +49,25 @@ export const defaultMoveEquation: LaurusMoveEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+const MAX_VISIBLE_PARAM_SLIDERS = 4;
+
 interface MoveUnit {
   move: LaurusMoveResult;
   carouselIndexInit: number;
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     move.move_id,
   );
+  const target: MoveUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<MoveUnitControls>({
     ...defaultMoveEquation,
@@ -112,13 +122,23 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        case "mask": {
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        case "capture": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+        }
+        case "peak": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
+        }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
   const [amplitudeCursor, setAmplitudeCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } = useTrackpadState(
@@ -130,7 +150,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const amplitudeRef = useRef<HTMLDivElement | null>(null);
 
-  // param 2
   const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
   const [frequencyCursor, setFrequencyCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } = useTrackpadState(
@@ -142,7 +161,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const frequencyRef = useRef<HTMLDivElement | null>(null);
 
-  // param 3
   const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
   const [wavelengthCursor, setWavelengthCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } = useTrackpadState(
@@ -154,7 +172,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const wavelengthRef = useRef<HTMLDivElement | null>(null);
 
-  // param 4
   const distanceTrackRef = useRef<HTMLDivElement | null>(null);
   const [distanceCursor, setDistanceCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } = useTrackpadState(
@@ -166,7 +183,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const distanceRef = useRef<HTMLDivElement | null>(null);
 
-  // param 5
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -183,16 +199,14 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main param
   const [angle, setAngle] = useState(0);
   const angleTitle = useMemo(() => {
     return move.math.has(carouselEntryKey) ? move.math.get(carouselEntryKey)!.angle.toFixed(0) + "°" : undefined;
   }, [carouselEntryKey, move.math]);
   const angleRef = useRef<HTMLDivElement | null>(null);
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -218,9 +232,108 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           break;
         }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: move.move_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+        case "capture": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "capture",
+            locallyActivatedEffectKey: move.move_id,
+            captureId: carouselEntry.captureId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          break;
+        }
+        case "peak": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "peak",
+            locallyActivatedEffectKey: move.move_id,
+            peakId: carouselEntry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
+          break;
+        }
       }
+    },
+    [
+      move.move_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, move.move_id, uiDispatch]);
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  const toggleTarget = useCallback(() => {
+    const startIndex = MOVE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= MOVE_TARGET_ORDER.length; offset++) {
+      const candidate = MOVE_TARGET_ORDER[(startIndex + offset) % MOVE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && move.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      if (uiState.activeElement?.locallyActivatedEffectKey === move.move_id) {
+        activateEntry(nextEntry);
+      }
+      return;
+    }
+  }, [
+    target,
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    move.math,
+    move.move_id,
+    setLocalIndex,
+    activateEntry,
+  ]);
 
   const saveNewEquation = useCallback(
     async (rollback: LaurusMoveResult, newEquation: LaurusMoveEquation) => {
@@ -317,15 +430,8 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     >
       {mainControls ? (
         <>
-          <UnitDisplay
-            carouselIndex={carouselIndex}
-            effectKey={move.move_id}
-            localIndex={localIndex}
-            onNewLocalIndex={setLocalIndex}
-          />
-          {/* controls */}
+          <UnitDisplay carouselIndex={carouselIndex} effectKey={move.move_id} onNewLocalIndex={setLocalIndex} />
           <div style={{ display: "grid" }}>
-            {/* parameters */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -345,6 +451,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   style={{
                     height: "100%",
                     display: "flex",
+                    maxWidth:
+                      dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
+                      dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
+                      dynamicSizes.paramFlex.paddingInline * 2,
+                    overflowX: "auto",
+                    overflowY: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >
@@ -548,7 +660,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   />
                 </div>
                 <div />
-                {/* toolbar */}
                 <MoveUnitbar
                   move={move}
                   carouselEntryKey={carouselEntryKey}
@@ -556,10 +667,11 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   setCurrentControls={setCurrentControls}
                   updateTrackpads={updateTrackpads}
                   saveNewEquation={saveNewEquation}
+                  target={target}
+                  onToggleTarget={toggleTarget}
                 />
               </div>
             </div>
-            {/* main control */}
             {shapeType != LaurusShapeType.circle && (
               <div style={{ ...dynamicSizes.param }}>
                 <div
@@ -646,7 +758,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

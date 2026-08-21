@@ -15,6 +15,9 @@ import {
   lassoSelect,
   SvgRepo,
   cycle400,
+  polyline200,
+  asterisk200,
+  asterisk300,
 } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
@@ -139,6 +142,8 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                           return earthquake();
                         case "rotate":
                           return cycle400();
+                        case "light_source":
+                          return asterisk300();
                       }
                     })()}
                     containerStyle={{
@@ -252,6 +257,10 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                   return cycle400();
                 case "mix":
                   return experiment();
+                case "mask":
+                  return polyline200();
+                case "light_source":
+                  return asterisk200();
               }
             })()}
             containerStyle={{

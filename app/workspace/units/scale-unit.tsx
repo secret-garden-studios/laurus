@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertTime, CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { convertTime, CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { dellaRespira, dmSans } from "../../fonts";
 import { updateScale, LaurusLoopType, LaurusScaleEquation, LaurusScaleResult } from "../workspace.server";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/useComplexTrackpadState";
@@ -8,10 +8,19 @@ import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/pa
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.server";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+
+export type ScaleUnitTarget = CarouselEntry["type"];
+
+const SCALE_TARGET_ORDER: ScaleUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
+
+export function targetHasScaleHeight(target: ScaleUnitTarget): boolean {
+  return target !== "capture" && target !== "peak";
+}
 
 export interface ScaleUnitControls {
   scale_x: number;
@@ -31,20 +40,28 @@ export const defaultScaleEquation: LaurusScaleEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+const MAX_VISIBLE_PARAM_SLIDERS = 4;
+
 interface ScaleUnit {
   scale: LaurusScaleResult;
   carouselIndexInit: number;
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     scale.scale_id,
   );
+
+  const target: ScaleUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
+  const hasHeight = targetHasScaleHeight(target);
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<ScaleUnitControls>({
     scale_x: defaultScaleEquation.scale_x,
@@ -144,13 +161,23 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        case "mask": {
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        case "capture": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+        }
+        case "peak": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
+        }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -167,7 +194,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
   }, [carouselEntryKey, scale.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main params
   const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({
     fineTuningLimit: 2,
   });
@@ -195,9 +221,8 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     return scale.math.has(carouselEntryKey) ? scale.math.get(carouselEntryKey)!.scale_y.toFixed(3) : undefined;
   }, [carouselEntryKey, scale.math]);
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -223,9 +248,107 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           });
           break;
         }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: scale.scale_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+        case "capture": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "capture",
+            locallyActivatedEffectKey: scale.scale_id,
+            captureId: carouselEntry.captureId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          break;
+        }
+        case "peak": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "peak",
+            locallyActivatedEffectKey: scale.scale_id,
+            peakId: carouselEntry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
+          break;
+        }
       }
+    },
+    [
+      scale.scale_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, scale.scale_id, uiDispatch]);
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  const toggleTarget = useCallback(() => {
+    const startIndex = SCALE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= SCALE_TARGET_ORDER.length; offset++) {
+      const candidate = SCALE_TARGET_ORDER[(startIndex + offset) % SCALE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && scale.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      if (uiState.activeElement?.locallyActivatedEffectKey === scale.scale_id) {
+        activateEntry(nextEntry);
+      }
+      return;
+    }
+  }, [
+    target,
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    scale.math,
+    scale.scale_id,
+    setLocalIndex,
+    activateEntry,
+  ]);
 
   const getActiveScale = useCallback((): [number, number] => {
     if (!uiState.activeElement) return [1, 1];
@@ -242,6 +365,13 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         const img = snapshot.imgs.get(activeElement.key);
         if (!img) return [1, 1];
         return [img.scale_x, img.scale_y];
+      }
+      case "mask":
+      case "capture":
+      case "peak": {
+        const mask = snapshot.masks.get(activeElement.key);
+        if (!mask) return [1, 1];
+        return [mask.scale_x, mask.scale_y];
       }
     }
   }, [uiState.activeElement, coreState.project]);
@@ -329,7 +459,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       }
       updateTrackpads(initControls);
     })();
-  }, [carouselEntryKey, scale.math, updateTrackpads, currentControls]);
+  }, [carouselEntryKey, scale.math, updateTrackpads, currentControls, target]);
 
   return (
     <div
@@ -342,15 +472,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     >
       {mainControls ? (
         <>
-          {/* display */}
-          <UnitDisplay
-            carouselIndex={carouselIndex}
-            effectKey={scale.scale_id}
-            localIndex={localIndex}
-            onNewLocalIndex={setLocalIndex}
-          />
-          {/* controls */}
-          {/* parameters */}
+          <UnitDisplay carouselIndex={carouselIndex} effectKey={scale.scale_id} onNewLocalIndex={setLocalIndex} />
           <div style={{ ...dynamicSizes.param }}>
             <div
               style={{
@@ -369,6 +491,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 style={{
                   height: "100%",
                   display: "flex",
+                  maxWidth:
+                    dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
+                    dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
+                    dynamicSizes.paramFlex.paddingInline * 2,
+                  overflowX: "auto",
+                  overflowY: "hidden",
                   ...dynamicSizes.paramFlex,
                 }}
               >
@@ -440,7 +568,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
                     }}
                   >
-                    {"w"}
+                    {`${target === "peak" || target === "capture" ? "s" : "w"}`}
                   </div>
                   <input
                     className={dellaRespira.className}
@@ -479,13 +607,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 </div>
                 <ParameterSliderXPlusMinus
                   resolution={{ ...uiState.resolution }}
-                  label={"zoom"}
                   hash={`${scale.scale_id}|p2`}
                   size={dynamicSizes.scaleParam}
                   containerRef={scaleXTrackRef}
                   cursor={scaleXCursor}
                   onCursorMove={(newCursor) => {
-                    if (!scaleXTrackRef.current || !scaleXRef.current || !scaleYRef.current) return;
+                    if (!scaleXTrackRef.current || !scaleXRef.current) return;
                     const newScaleValue = getScaleXValue(
                       newCursor.x,
                       scaleXTrackRef.current.clientWidth,
@@ -493,7 +620,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                     );
                     scaleXRef.current.value = newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
 
-                    if (!unlockAspectRatio) {
+                    if (!unlockAspectRatio && scaleYRef.current) {
                       scaleYRef.current.value =
                         newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
                     }
@@ -511,7 +638,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       scale_x: newScaleXValue,
                     };
                     let newScaleYValue: number | undefined = undefined;
-                    if (!unlockAspectRatio) {
+                    if (!unlockAspectRatio && hasHeight) {
                       const d = getActiveScale();
                       const r = d[0] / d[1];
                       const newYCursor = newCursor.x / r;
@@ -548,135 +675,138 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={scaleXTitle}
                 />
-                <div
-                  style={{
-                    display: "flex",
-                    marginTop: dynamicSizes.scaleParamDisplay.marginTop,
-                    gap: dynamicSizes.scaleParamDisplay.flexGap,
-                  }}
-                >
-                  <div
-                    className={dmSans.className}
-                    style={{
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      display: "grid",
-                      alignContent: "center",
-                      color: "rgb(220, 220, 220)",
-                      fontWeight: "bold",
-                      fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
-                    }}
-                  >
-                    {"h"}
-                  </div>
-                  <input
-                    className={dellaRespira.className}
-                    id={`scale-y-input-${scale.scale_id}`}
-                    disabled
-                    ref={scaleYRef}
-                    type="text"
-                    placeholder="0.00"
-                    style={{
-                      textAlign: "right",
-                      background: "none",
-                      color: "rgba(255, 255, 255, 0.7)",
-                      border: "none",
-                      outline: "none",
-                      display: "inline-block",
-                      overflowX: "scroll",
-                      letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
-                      fontSize: dynamicSizes.scaleParamDisplay.fontSize,
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      width: "6ch",
-                      textShadow: "2px 2px 3px rgba(10,10,10,1)",
-                    }}
-                  />
-                  <div
-                    className={dmSans.className}
-                    style={{
-                      height: dynamicSizes.scaleParamDisplay.inputHeight,
-                      display: "grid",
-                      alignContent: "center",
-                      color: "rgb(240, 240, 240)",
-                      fontSize: dynamicSizes.scaleParamDisplay.unitFontSize,
-                    }}
-                  >
-                    <i>{"x"}</i>
-                  </div>
-                </div>
-                <ParameterSliderXPlusMinus
-                  resolution={{ ...uiState.resolution }}
-                  label={"zoom"}
-                  hash={`${scale.scale_id}|p3`}
-                  size={dynamicSizes.scaleParam}
-                  containerRef={scaleYTrackRef}
-                  cursor={scaleYCursor}
-                  onCursorMove={(newCursor) => {
-                    if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
-                    const newScaleValue = getScaleYValue(
-                      newCursor.x,
-                      scaleYTrackRef.current.clientWidth,
-                      complexTrackpadOptions,
-                    );
-                    scaleYRef.current.value = newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
+                {hasHeight && (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        marginTop: dynamicSizes.scaleParamDisplay.marginTop,
+                        gap: dynamicSizes.scaleParamDisplay.flexGap,
+                      }}
+                    >
+                      <div
+                        className={dmSans.className}
+                        style={{
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          display: "grid",
+                          alignContent: "center",
+                          color: "rgb(220, 220, 220)",
+                          fontWeight: "bold",
+                          fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
+                        }}
+                      >
+                        {"h"}
+                      </div>
+                      <input
+                        className={dellaRespira.className}
+                        id={`scale-y-input-${scale.scale_id}`}
+                        disabled
+                        ref={scaleYRef}
+                        type="text"
+                        placeholder="0.00"
+                        style={{
+                          textAlign: "right",
+                          background: "none",
+                          color: "rgba(255, 255, 255, 0.7)",
+                          border: "none",
+                          outline: "none",
+                          display: "inline-block",
+                          overflowX: "scroll",
+                          letterSpacing: `${dynamicSizes.scaleParamDisplay.letterSpacing}px`,
+                          fontSize: dynamicSizes.scaleParamDisplay.fontSize,
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          width: "6ch",
+                          textShadow: "2px 2px 3px rgba(10,10,10,1)",
+                        }}
+                      />
+                      <div
+                        className={dmSans.className}
+                        style={{
+                          height: dynamicSizes.scaleParamDisplay.inputHeight,
+                          display: "grid",
+                          alignContent: "center",
+                          color: "rgb(240, 240, 240)",
+                          fontSize: dynamicSizes.scaleParamDisplay.unitFontSize,
+                        }}
+                      >
+                        <i>{"x"}</i>
+                      </div>
+                    </div>
+                    <ParameterSliderXPlusMinus
+                      resolution={{ ...uiState.resolution }}
+                      hash={`${scale.scale_id}|p3`}
+                      size={dynamicSizes.scaleParam}
+                      containerRef={scaleYTrackRef}
+                      cursor={scaleYCursor}
+                      onCursorMove={(newCursor) => {
+                        if (!scaleYTrackRef.current || !scaleYRef.current || !scaleXRef.current) return;
+                        const newScaleValue = getScaleYValue(
+                          newCursor.x,
+                          scaleYTrackRef.current.clientWidth,
+                          complexTrackpadOptions,
+                        );
+                        scaleYRef.current.value =
+                          newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
 
-                    if (!unlockAspectRatio) {
-                      scaleXRef.current.value =
-                        newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
-                    }
-                  }}
-                  onNewCursor={(newCursor) => {
-                    setScaleYCursor({ ...newCursor, y: 0 });
-                    if (!scaleYTrackRef.current) return;
-                    const newScaleYValue = getScaleYValue(
-                      newCursor.x,
-                      scaleYTrackRef.current.clientWidth,
-                      complexTrackpadOptions,
-                    );
-                    const newControls: ScaleUnitControls = {
-                      ...currentControls,
-                      scale_y: newScaleYValue,
-                    };
-                    let newScaleXValue: number | undefined = undefined;
-                    if (!unlockAspectRatio) {
-                      const d = getActiveScale();
-                      const r = d[0] / d[1];
-                      const newXCursor = newCursor.x * r;
-                      const newXValue = newScaleYValue / r;
-                      setScaleXCursor({ x: newXCursor, y: 0 });
-                      newScaleXValue = newXValue;
-                      newControls.scale_x = newXValue;
-                    }
-                    setCurrentControls(newControls);
-                    const activeKey = carouselEntryKey;
-                    if (activeKey) {
-                      const snapshot: LaurusScaleResult = { ...scale };
-                      const activeEquation = snapshot.math.get(activeKey);
-                      if (activeEquation) {
-                        const newEquation = {
-                          ...activeEquation,
-                          scale_y: newScaleYValue,
-                          ...(newScaleXValue != undefined && {
-                            scale_x: newScaleXValue,
-                          }),
-                        };
-                        saveNewEquation(snapshot, newEquation);
-                      } else {
-                        const newEquation = {
-                          ...defaultScaleEquation,
-                          input_id: activeKey,
-                          scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
+                        if (!unlockAspectRatio) {
+                          scaleXRef.current.value =
+                            newScaleValue >= 10 ? newScaleValue.toFixed(2) : newScaleValue.toFixed(3);
+                        }
+                      }}
+                      onNewCursor={(newCursor) => {
+                        setScaleYCursor({ ...newCursor, y: 0 });
+                        if (!scaleYTrackRef.current) return;
+                        const newScaleYValue = getScaleYValue(
+                          newCursor.x,
+                          scaleYTrackRef.current.clientWidth,
+                          complexTrackpadOptions,
+                        );
+                        const newControls: ScaleUnitControls = {
+                          ...currentControls,
                           scale_y: newScaleYValue,
                         };
-                        saveNewEquation(snapshot, newEquation);
-                      }
-                    }
-                  }}
-                  disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                  title={scaleYTitle}
-                />
+                        let newScaleXValue: number | undefined = undefined;
+                        if (!unlockAspectRatio) {
+                          const d = getActiveScale();
+                          const r = d[0] / d[1];
+                          const newXCursor = newCursor.x * r;
+                          const newXValue = newScaleYValue / r;
+                          setScaleXCursor({ x: newXCursor, y: 0 });
+                          newScaleXValue = newXValue;
+                          newControls.scale_x = newXValue;
+                        }
+                        setCurrentControls(newControls);
+                        const activeKey = carouselEntryKey;
+                        if (activeKey) {
+                          const snapshot: LaurusScaleResult = { ...scale };
+                          const activeEquation = snapshot.math.get(activeKey);
+                          if (activeEquation) {
+                            const newEquation = {
+                              ...activeEquation,
+                              scale_y: newScaleYValue,
+                              ...(newScaleXValue != undefined && {
+                                scale_x: newScaleXValue,
+                              }),
+                            };
+                            saveNewEquation(snapshot, newEquation);
+                          } else {
+                            const newEquation = {
+                              ...defaultScaleEquation,
+                              input_id: activeKey,
+                              scale_x: newScaleXValue != undefined ? newScaleXValue : 1,
+                              scale_y: newScaleYValue,
+                            };
+                            saveNewEquation(snapshot, newEquation);
+                          }
+                        }
+                      }}
+                      disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
+                      title={scaleYTitle}
+                    />
+                  </>
+                )}
               </div>
               <div />
-              {/* toolbar */}
               <ScaleUnitbar
                 scale={scale}
                 carouselEntryKey={carouselEntryKey}
@@ -686,13 +816,14 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 setCurrentControls={setCurrentControls}
                 setUnlockAspectRatio={setUnlockAspectRatio}
                 saveNewEquation={saveNewEquation}
+                target={target}
+                onToggleTarget={toggleTarget}
               />
             </div>
           </div>
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

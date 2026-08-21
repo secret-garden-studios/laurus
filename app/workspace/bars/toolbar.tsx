@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { UIContext } from "../workspace.client";
+import { MaskContext, UIContext } from "../workspace.client";
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import {
@@ -14,8 +14,10 @@ import {
   lassoSelect300,
   browse,
   bookmarkStacks200,
+  texture200,
+  asterisk200,
 } from "../../svg-repo";
-import { defaultMarqueeTool, UIActionType } from "../states/ui-state";
+import { defaultMarqueeTool, defaultMaskTool, UIActionType } from "../states/ui-state";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
 import Navbar from "@/app/navbar";
@@ -26,6 +28,7 @@ interface Toolbar {
 }
 export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const [tooltipDelay] = useState(1000);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -86,7 +89,6 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
           />
         </div>
-        {/* page tools */}
         <div>
           <ToolbarButton
             selected={uiState.tool.type == "marquee"}
@@ -103,11 +105,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: defaultMarqueeTool,
                 });
+                notifyMaskToolChanged(defaultMarqueeTool.type);
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
@@ -140,8 +144,67 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   Marquee Tool
                 </h4>
                 <p>
-                  Drop media from the <strong>browser</strong> into an area on the canvas, or select existing media on
-                  the canvas.
+                  Drop media from the <strong>browser</strong> into an area on the canvas, or select multiple pieces of
+                  existing media on the canvas.
+                </p>
+              </div>
+            )}
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "mask"}
+            svg={{
+              svg: texture200(),
+              scale: 0.55,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              if (uiState.tool.type == "mask") {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "none" },
+                });
+                notifyMaskToolChanged("none");
+              } else {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: defaultMaskTool,
+                });
+                notifyMaskToolChanged(defaultMaskTool.type);
+              }
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            tooltipId="mask-tool-tooltip"
+          />
+          <Tooltip
+            className={dellaRespira.className}
+            id="mask-tool-tooltip"
+            delayShow={tooltipDelay}
+            style={{
+              backgroundColor: "rgb(40, 40, 40)",
+              color: "rgb(227, 227, 227)",
+              fontSize: dynamicSizes.tooltipFont2,
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+              maxWidth: "300px",
+              zIndex: 99,
+            }}
+            render={() => (
+              <div style={{ padding: 4, width: "100%" }}>
+                <h4
+                  style={{
+                    marginBottom: dynamicSizes.tooltipMarginBottom,
+                    color: "rgb(255, 255, 255)",
+                    fontSize: dynamicSizes.tooltipFont,
+                  }}
+                >
+                  Mask Tool
+                </h4>
+                <p>
+                  Convert media from the <strong>browser</strong> into a mask while dropping it on the canvas. Define
+                  light sources on existing masks or sculpt their surface.
                 </p>
               </div>
             )}
@@ -161,11 +224,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "contextmenu" },
                 });
+                notifyMaskToolChanged("contextmenu");
               }
             }}
             resolution={{ ...uiState.resolution }}
@@ -186,11 +251,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "viewport" },
                 });
+                notifyMaskToolChanged("viewport");
               }
             }}
             resolution={{ ...uiState.resolution }}
@@ -241,11 +308,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "move" },
                 });
+                notifyMaskToolChanged("move");
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
@@ -267,11 +336,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "scale" },
                 });
+                notifyMaskToolChanged("scale");
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
@@ -282,7 +353,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             selected={uiState.tool.type == "rotate"}
             svg={{
               svg: cycle200(),
-              scale: 0.55,
+              scale: 0.525,
               cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
             }}
             onClick={() => {
@@ -293,16 +364,74 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "rotate" },
                 });
+                notifyMaskToolChanged("rotate");
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
             title="rotate tool"
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "light_source"}
+            svg={{
+              svg: asterisk200(),
+              scale: 0.65,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              if (uiState.tool.type == "light_source") {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "none" },
+                });
+                notifyMaskToolChanged("none");
+              } else {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "light_source" },
+                });
+                notifyMaskToolChanged("light_source");
+              }
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            tooltipId="light-source-tool-tooltip"
+          />
+          <Tooltip
+            className={dellaRespira.className}
+            id="light-source-tool-tooltip"
+            delayShow={tooltipDelay}
+            style={{
+              backgroundColor: "rgb(40, 40, 40)",
+              color: "rgb(227, 227, 227)",
+              fontSize: dynamicSizes.tooltipFont2,
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+              maxWidth: "300px",
+              zIndex: 99,
+            }}
+            render={() => (
+              <div style={{ padding: 4, width: "100%" }}>
+                <h4
+                  style={{
+                    marginBottom: dynamicSizes.tooltipMarginBottom,
+                    color: "rgb(255, 255, 255)",
+                    fontSize: dynamicSizes.tooltipFont,
+                  }}
+                >
+                  Shader Tool
+                </h4>
+                <p>Select features of an existing mask and control how light interacts with them.</p>
+              </div>
+            )}
           />
           <ToolbarButton
             selected={uiState.tool.type == "mix"}
@@ -319,11 +448,13 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                   type: UIActionType.SetTool,
                   value: { type: "none" },
                 });
+                notifyMaskToolChanged("none");
               } else {
                 uiDispatch({
                   type: UIActionType.SetTool,
                   value: { type: "mix" },
                 });
+                notifyMaskToolChanged("mix");
               }
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
@@ -381,7 +512,6 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 }}
               />
             </div>
-            {/* right panel tools */}
             <div>
               <ToolbarButton
                 selected={uiState.mediaBrowserFilter == "img"}

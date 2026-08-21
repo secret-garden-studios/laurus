@@ -1,9 +1,10 @@
 import { useContext, useState, useMemo, useCallback, useEffect, RefObject } from "react";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
-import { LaurusTool, UIActionType, defaultMarqueeTool } from "../states/ui-state";
+import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
+import { decodeSvgMarkup } from "../canvas-media/peak-shape";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;
@@ -11,6 +12,7 @@ export interface SvgBrowser {
 }
 export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
   const { coreState } = useContext(CoreContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
@@ -75,14 +77,13 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        if (uiState.playbackMode.type == "stopped") {
-          const currentTool = { ...uiState.tool };
-          const newTool: LaurusTool =
-            currentTool.type == "marquee" ? { ...currentTool, duplicate: false } : defaultMarqueeTool;
+        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+          const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
             value: newTool,
           });
+          notifyMaskToolChanged(newTool.type);
         }
       }
     },
@@ -90,10 +91,10 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       browserElementMediaId,
       showContextMenu,
       uiDispatch,
-      uiState.playbackMode.type,
-      uiState.tool,
       setSelectedImgKeys,
       setSelectedSvgKeys,
+      uiState.tool.type,
+      notifyMaskToolChanged,
     ],
   );
 
@@ -109,17 +110,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
     };
   }, []);
 
-  let decodedString = "";
-  try {
-    decodedString = decodeURIComponent(
-      atob(svg.markup)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(""),
-    );
-  } catch (error) {
-    console.log("Failed to decodeURIComponent from svg markup", { error });
-  }
+  const decodedString = decodeSvgMarkup(svg.markup);
   if (!decodedString) return;
   return (
     <div

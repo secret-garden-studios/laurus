@@ -1,15 +1,16 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, convertTime, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../workspace.server";
 import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
-import { useCarouselIndex } from "../hooks/useCarouselIndex";
+import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
-import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
+import { carouselEntryMathKey } from "../effects-utils";
 
 export interface RotateUnitControls {
   x: number;
@@ -33,20 +34,33 @@ export const defaultRotateEquation: LaurusRotateEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
+const MAX_VISIBLE_PARAM_SLIDERS = 4;
+
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "peak";
+
+export type RotateUnitTarget = "img" | "svg" | "mask";
+
+const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask"];
+
 interface RotateUnit {
   rotate: LaurusRotateResult;
   carouselIndexInit: number;
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const { carouselIndex, localIndex, setLocalIndex } = useCarouselIndex(
+  const { carouselIndex, setLocalIndex } = useCarouselIndex(
     uiState.activeElement,
     uiState.carouselEntries,
     carouselIndexInit,
     rotate.rotate_id,
+    isRotateCarouselEntry,
   );
+  const entryType = uiState.carouselEntries[carouselIndex]?.type;
+  const target: RotateUnitTarget = entryType === "svg" || entryType === "mask" ? entryType : "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
     x: 0,
@@ -106,13 +120,19 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "img": {
           return coreState.project.imgs.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
+        case "mask": {
+          return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
+        }
+        case "capture":
+        case "peak": {
+          return "";
+        }
       }
     } else {
       return "";
     }
-  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, carouselIndex]);
+  }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const xTrackRef = useRef<HTMLDivElement | null>(null);
   const [xCursor, setXCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getXValue, getInverseTrackCursor: getXCursor } = useTrackpadState(
@@ -124,7 +144,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const xRef = useRef<HTMLDivElement | null>(null);
 
-  // param 2
   const yTrackRef = useRef<HTMLDivElement | null>(null);
   const [yCursor, setYCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getYValue, getInverseTrackCursor: getYCursor } = useTrackpadState(
@@ -136,7 +155,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const yRef = useRef<HTMLDivElement | null>(null);
 
-  // param 3
   const zTrackRef = useRef<HTMLDivElement | null>(null);
   const [zCursor, setZCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getZValue, getInverseTrackCursor: getZCursor } = useTrackpadState(
@@ -148,7 +166,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const zRef = useRef<HTMLDivElement | null>(null);
 
-  // param 4
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -165,7 +182,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main param
   const [angle, setAngle] = useState(0);
   const angleTitle = useMemo(() => {
     return rotate.math.has(carouselEntryKey) ? rotate.math.get(carouselEntryKey)!.angle.toFixed(0) + "°" : undefined;
@@ -176,9 +192,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     return (rotate.math.get(carouselEntryKey)?.angle ?? 0) < 0 ? true : false;
   });
 
-  const setActiveElementIfNull = useCallback(() => {
-    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
-      const carouselEntry = uiState.carouselEntries[carouselIndex];
+  const activateEntry = useCallback(
+    (carouselEntry: CarouselEntry) => {
       switch (carouselEntry.type) {
         case "svg": {
           const newActiveElement: LaurusActiveElement = {
@@ -204,9 +219,87 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           break;
         }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "mask",
+            locallyActivatedEffectKey: rotate.rotate_id,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          break;
+        }
+        case "capture": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "capture",
+            locallyActivatedEffectKey: rotate.rotate_id,
+            captureId: carouselEntry.captureId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          break;
+        }
       }
+    },
+    [
+      rotate.rotate_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const setActiveElementIfNull = useCallback(() => {
+    if (carouselIndex < uiState.carouselEntries.length && uiState.activeElement == undefined) {
+      activateEntry(uiState.carouselEntries[carouselIndex]);
     }
-  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, rotate.rotate_id, uiDispatch]);
+  }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
+
+  const toggleTarget = useCallback(() => {
+    const startIndex = ROTATE_TARGET_ORDER.indexOf(target);
+    for (let offset = 1; offset <= ROTATE_TARGET_ORDER.length; offset++) {
+      const candidate = ROTATE_TARGET_ORDER[(startIndex + offset) % ROTATE_TARGET_ORDER.length];
+      if (candidate === target) continue;
+      const isCandidateEntry = (entry: CarouselEntry) => entry.type === candidate;
+      const withMathIndex = uiState.carouselEntries.findIndex(
+        (entry) => isCandidateEntry(entry) && rotate.math.has(carouselEntryMathKey(entry)),
+      );
+      const nextIndex =
+        withMathIndex > -1
+          ? withMathIndex
+          : nearestNavigableIndex(uiState.carouselEntries, carouselIndex, isCandidateEntry);
+      const nextEntry = uiState.carouselEntries[nextIndex];
+      if (!nextEntry || !isCandidateEntry(nextEntry)) continue;
+
+      setLocalIndex(nextIndex);
+      if (uiState.activeElement?.locallyActivatedEffectKey === rotate.rotate_id) {
+        activateEntry(nextEntry);
+      }
+      return;
+    }
+  }, [
+    target,
+    carouselIndex,
+    uiState.carouselEntries,
+    uiState.activeElement,
+    rotate.math,
+    rotate.rotate_id,
+    setLocalIndex,
+    activateEntry,
+  ]);
 
   const saveNewEquation = useCallback(
     async (rollback: LaurusRotateResult, newEquation: LaurusRotateEquation) => {
@@ -308,12 +401,10 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           <UnitDisplay
             carouselIndex={carouselIndex}
             effectKey={rotate.rotate_id}
-            localIndex={localIndex}
             onNewLocalIndex={setLocalIndex}
+            isEntryWireable={isRotateCarouselEntry}
           />
-          {/* controls */}
           <div style={{ display: "grid" }}>
-            {/* parameters */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -332,6 +423,12 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   style={{
                     height: "100%",
                     display: "flex",
+                    maxWidth:
+                      dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
+                      dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
+                      dynamicSizes.paramFlex.paddingInline * 2,
+                    overflowX: "auto",
+                    overflowY: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >
@@ -490,7 +587,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   />
                 </div>
                 <div />
-                {/* toolbar */}
                 <RotateUnitbar
                   rotate={rotate}
                   carouselEntryKey={carouselEntryKey}
@@ -500,10 +596,11 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   setCurrentControls={setCurrentControls}
                   counterClockwise={counterClockwise}
                   setCounterClockwise={setCounterClockwise}
+                  target={target}
+                  onToggleTarget={toggleTarget}
                 />
               </div>
             </div>
-            {/* main control */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -590,7 +687,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

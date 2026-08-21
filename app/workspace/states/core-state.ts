@@ -5,8 +5,48 @@ import {
   LaurusImgResult,
   LaurusMediaGroupResult,
   LaurusSvgResult,
+  LaurusMaskResult,
+  LaurusPeakBlackPoint,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
+import {
+  CAPTURE_DARKNESS_DEFAULT,
+  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  CAPTURE_INTENSITY_DEFAULT,
+  CAPTURE_SIZE_CSS_PX_DEFAULT,
+} from "../mask-gl";
+
+export interface CaptureValue {
+  size: number;
+  intensity: number;
+  falloff: number;
+  darkness: number;
+}
+
+export const DEFAULT_CAPTURE_VALUE: CaptureValue = {
+  size: CAPTURE_SIZE_CSS_PX_DEFAULT,
+  intensity: CAPTURE_INTENSITY_DEFAULT,
+  falloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
+  darkness: CAPTURE_DARKNESS_DEFAULT,
+};
+
+export interface PendingLightSourceCapture {
+  maskKey: string;
+  captureId: number;
+  polygonIndices: number[];
+}
+
+export interface PendingTopologyEdit {
+  maskKey: string;
+  peakId: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  elevation: number;
+  falloff: number;
+  shape: string;
+  blackPoint: LaurusPeakBlackPoint;
+}
 
 export interface CoreState {
   apiOrigin: string | undefined;
@@ -14,12 +54,15 @@ export interface CoreState {
   project: LaurusProjectResult;
   canvasImgs: Map<string, LaurusImgResult>;
   canvasSvgs: Map<string, LaurusSvgResult>;
+  canvasMasks: Map<string, LaurusMaskResult>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
   mediaGroups: Map<string, LaurusMediaGroupResult>;
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
+  pendingLightSourceCapture: PendingLightSourceCapture | undefined;
+  pendingTopologyEdit: PendingTopologyEdit | undefined;
 }
 
 export const defaultCoreState: CoreState = {
@@ -28,12 +71,15 @@ export const defaultCoreState: CoreState = {
   project: defaultProject,
   canvasImgs: new Map(),
   canvasSvgs: new Map(),
+  canvasMasks: new Map(),
   effects: [],
   effectGroups: new Map(),
   mediaGroups: new Map(),
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
+  pendingLightSourceCapture: undefined,
+  pendingTopologyEdit: undefined,
 };
 
 export enum CoreActionType {
@@ -45,10 +91,14 @@ export enum CoreActionType {
   SetCanvasSvg,
   DeleteCanvasSvg,
   SetCanvasSvgs,
+  SetCanvasMask,
+  DeleteCanvasMask,
+  SetCanvasMasks,
   SetProjectImg,
   SetProjectSvg,
   DeleteProjectImg,
   DeleteProjectSvg,
+  DeleteProjectMask,
   SetLightFrameBackground,
   SetEffects,
   SetEffect,
@@ -60,6 +110,8 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
+  SetPendingLightSourceCapture,
+  SetPendingTopologyEdit,
 }
 
 export type CoreAction =
@@ -71,8 +123,12 @@ export type CoreAction =
   | { type: CoreActionType.SetCanvasSvg; key: string; value: LaurusSvgResult }
   | { type: CoreActionType.DeleteCanvasSvg; key: string }
   | { type: CoreActionType.SetCanvasSvgs; value: Map<string, LaurusSvgResult> }
+  | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusMaskResult }
+  | { type: CoreActionType.DeleteCanvasMask; key: string }
+  | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusMaskResult> }
   | { type: CoreActionType.DeleteProjectImg; key: string }
   | { type: CoreActionType.DeleteProjectSvg; key: string }
+  | { type: CoreActionType.DeleteProjectMask; key: string }
   | {
       type: CoreActionType.SetEffects;
       value: LaurusEffect[];
@@ -86,7 +142,9 @@ export type CoreAction =
   | { type: CoreActionType.DeleteMediaGroup; key: string }
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
-  | { type: CoreActionType.SetInputsToRender; value: Set<string> };
+  | { type: CoreActionType.SetInputsToRender; value: Set<string> }
+  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined }
+  | { type: CoreActionType.SetPendingTopologyEdit; value: PendingTopologyEdit | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
   switch (action.type) {
@@ -150,6 +208,44 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
       return {
         ...state,
         canvasSvgs: new Map(action.value),
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.SetCanvasMask: {
+      const newMasks = new Map(state.canvasMasks);
+      newMasks.set(action.key, action.value);
+      return {
+        ...state,
+        canvasMasks: newMasks,
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.DeleteCanvasMask: {
+      const newMasks = new Map(state.canvasMasks);
+      newMasks.delete(action.key);
+      return {
+        ...state,
+        canvasMasks: newMasks,
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.SetCanvasMasks: {
+      return {
+        ...state,
+        canvasMasks: new Map(action.value),
+        inputsToRender: new Set<string>(["*"]),
+      };
+    }
+    case CoreActionType.DeleteProjectMask: {
+      const newMasks = new Map(state.project.masks);
+      newMasks.delete(action.key);
+      const newProject: LaurusProjectResult = {
+        ...state.project,
+        masks: newMasks,
+      };
+      return {
+        ...state,
+        project: newProject,
         inputsToRender: new Set<string>(["*"]),
       };
     }
@@ -275,6 +371,12 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         ...state,
         inputsToRender: action.value,
       };
+    }
+    case CoreActionType.SetPendingLightSourceCapture: {
+      return { ...state, pendingLightSourceCapture: action.value };
+    }
+    case CoreActionType.SetPendingTopologyEdit: {
+      return { ...state, pendingTopologyEdit: action.value };
     }
   }
 }

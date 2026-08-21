@@ -1,23 +1,192 @@
 import { useContext, useState, useCallback } from "react";
-import { SvgRepo, chevronLeft, chevronRight } from "../../svg-repo";
-import { CoreContext, HoverContext, UIContext } from "../workspace.client";
+import { dmSans } from "@/app/fonts";
+import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
+import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
-import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
+import { parsePathPoints } from "../mask-gl";
+import { LaurusMaskResult } from "../workspace.server";
+import { CoreState } from "../states/core-state";
+
+function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browserImgs"], sourceImgMediaId: string) {
+  for (const [key, img] of coreState.project.imgs) {
+    if (img.img_media_id === sourceImgMediaId) {
+      return coreState.canvasImgs.get(key)?.src;
+    }
+  }
+  return browserImgs.find((img) => img.img_media_id === sourceImgMediaId)?.src;
+}
+
+function PeakOrCaptureThumbnail({
+  title,
+  polygonCount,
+  name,
+  sourceImgMediaId,
+  icon,
+  style,
+  onClick,
+}: {
+  title: string;
+  polygonCount: number;
+  name: string;
+  sourceImgMediaId: string;
+  icon: LaurusClientSvg;
+  style: React.CSSProperties;
+  onClick: () => void;
+}) {
+  const { isAltKeyPressed } = useContext(HoverContext);
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+  const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, sourceImgMediaId);
+  const iconSize = Math.round((typeof style.width === "number" ? style.width : 200) * 0.4);
+  return (
+    <div
+      title={title}
+      onClick={onClick}
+      style={{
+        ...style,
+        position: "relative",
+        display: "grid",
+        placeContent: "center",
+        cursor: isAltKeyPressed ? "crosshair" : "pointer",
+      }}
+    >
+      <LaurusImage
+        draggable={false}
+        alt={sourceImgSrc ?? ""}
+        src={sourceImgSrc ?? ""}
+        fill
+        style={{
+          objectFit: "cover",
+        }}
+      />
+
+      <div
+        className={dmSans.className}
+        style={{
+          position: "absolute",
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0, 0, 0, 0.4)",
+          backdropFilter: "blur(8px)",
+        }}
+      />
+      <SvgRepo
+        svg={icon}
+        scale={1}
+        scaleToContaier
+        containerStyle={{
+          position: "relative",
+          width: iconSize,
+          height: iconSize,
+          filter: "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          bottom: 16,
+          left: 4,
+          right: 4,
+          fontSize: 12,
+          letterSpacing: 2,
+          display: "grid",
+          flexDirection: "column",
+          alignContent: "space-between",
+          justifyContent: "center",
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      >
+        <div
+          style={{
+            textShadow: "0px 0px 1px rgba(255, 255, 255, 0.9)",
+            maxWidth: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            textAlign: "center",
+          }}
+        >
+          {`${name}`}
+        </div>
+        <div
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            display: "flex",
+            gap: 4,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: "bold",
+              textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+            }}
+          >
+            {`${polygonCount}`}
+          </div>
+          {`polygons`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MaskThumbnail({
+  mediaKey,
+  maskData,
+  isAltKeyPressed,
+  style,
+  onClick,
+}: {
+  mediaKey: string;
+  maskData: LaurusMaskResult;
+  isAltKeyPressed: boolean;
+  style: React.CSSProperties;
+  onClick: () => void;
+}) {
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+
+  const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, maskData.source_img_media_id);
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: "relative",
+        cursor: isAltKeyPressed ? "crosshair" : "pointer",
+        ...style,
+      }}
+    >
+      <LaurusImage draggable={false} alt={mediaKey} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+    </div>
+  );
+}
 
 interface UnitDisplay {
   carouselIndex: number;
   effectKey: string;
-  localIndex: number;
   onNewLocalIndex: (v: number) => void;
+  isEntryWireable?: (entry: CarouselEntry) => boolean;
 }
-export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNewLocalIndex }: UnitDisplay) {
+export default function UnitDisplay({
+  carouselIndex,
+  effectKey,
+  onNewLocalIndex,
+  isEntryWireable = () => true,
+}: UnitDisplay) {
   const { coreState } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
-
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
       if (uiState.carouselEntries.length <= newCarouselIndex) return;
@@ -60,9 +229,102 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           });
           break;
         }
+        case "mask": {
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "mask",
+            locallyActivatedEffectKey: effectKey,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "mask" },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedCaptureChanged(entry.key, undefined);
+          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
+          break;
+        }
+        case "capture": {
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "capture",
+            locallyActivatedEffectKey: effectKey,
+            captureId: entry.captureId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "capture", captureId: entry.captureId },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedCaptureChanged(entry.key, entry.captureId);
+          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
+          break;
+        }
+        case "peak": {
+          const newActiveElement: LaurusActiveElement = {
+            key: entry.key,
+            type: "peak",
+            locallyActivatedEffectKey: effectKey,
+            peakId: entry.peakId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: entry.key, type: "peak", peakId: entry.peakId },
+          });
+          notifyMaskSelectionChanged(entry.key);
+          notifyMaskSelectedPeakChanged(entry.key, entry.peakId);
+          notifyMaskSelectedCaptureChanged(entry.key, undefined);
+          uiDispatch({
+            type: UIActionType.SetProjectContextMenu,
+            key: entry.key,
+            showContextMenu: true,
+          });
+          break;
+        }
       }
     },
-    [uiState.carouselEntries, effectKey, uiDispatch],
+    [
+      uiState.carouselEntries,
+      effectKey,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedPeakChanged,
+    ],
+  );
+
+  const findNavigableIndex = useCallback(
+    (fromIndex: number, direction: 1 | -1): number | undefined => {
+      let i = fromIndex + direction;
+      while (i >= 0 && i < uiState.carouselEntries.length) {
+        if (isEntryWireable(uiState.carouselEntries[i])) return i;
+        i += direction;
+      }
+      return undefined;
+    },
+    [uiState.carouselEntries, isEntryWireable],
   );
 
   const hideContextMenu = useCallback(
@@ -74,6 +336,17 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
       });
     },
     [uiDispatch],
+  );
+
+  const hideOtherContextMenus = useCallback(
+    (activeIndex: number) => {
+      if (activeIndex < 0 || activeIndex >= uiState.carouselEntries.length) return;
+      const activeKey = uiState.carouselEntries[activeIndex].key;
+      uiState.carouselEntries.forEach((ce) => {
+        if (ce.key !== activeKey) hideContextMenu(ce);
+      });
+    },
+    [uiState.carouselEntries, hideContextMenu],
   );
 
   return (
@@ -99,9 +372,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           >
             <SvgRepo
               title={"select previous"}
-              svg={
-                uiState.carouselEntries.length == 0 || carouselIndex == 0 ? chevronLeft("rgb(67,67,67)") : chevronLeft()
-              }
+              svg={findNavigableIndex(carouselIndex, -1) === undefined ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
               containerStyle={{
                 width: 30,
                 height: 30,
@@ -110,18 +381,14 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
               scale={1}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
-                const newIndex = Math.max(carouselIndex - 1, 0);
-                const newLocalIndex = Math.max(localIndex - 1, 0);
-                onNewLocalIndex(newLocalIndex);
+                const newIndex = findNavigableIndex(carouselIndex, -1);
+                if (newIndex === undefined) return;
+                onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
-                const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
-                inactives.forEach((ce) => {
-                  hideContextMenu(ce);
-                });
+                hideOtherContextMenus(newIndex);
               }}
             />
           </div>
-          {/* active element */}
           <div
             style={{
               width: "100%",
@@ -144,10 +411,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
-                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
-                          inactives.forEach((ce) => {
-                            hideContextMenu(ce);
-                          });
+                          hideOtherContextMenus(i);
                         }}
                         style={{
                           position: "relative",
@@ -183,13 +447,81 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
                         onContainerClick={() => {
                           if (isAltKeyPressed) return;
                           setActiveElement(i);
-                          const inactives = uiState.carouselEntries.filter((_, index) => index !== i);
-                          inactives.forEach((ce) => {
-                            hideContextMenu(ce);
-                          });
+                          hideOtherContextMenus(i);
                         }}
                         scale={1}
                         scaleToContaier={true}
+                      />
+                    );
+                  }
+                  case "mask": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    if (!maskData) break;
+                    return (
+                      <MaskThumbnail
+                        key={c.key}
+                        mediaKey={c.key}
+                        maskData={maskData}
+                        isAltKeyPressed={isAltKeyPressed}
+                        style={dynamicSizes.displayImg}
+                        onClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          hideOtherContextMenus(i);
+                        }}
+                      />
+                    );
+                  }
+                  case "capture": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    if (!maskData) break;
+                    const capturedPolygons = maskData.polygons.filter((p) => p.capture_id === c.captureId);
+                    if (capturedPolygons.length === 0) break;
+                    const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
+                    if (capturedPoints.length === 0) break;
+                    const capture = maskData.captures.find((cap) => cap.id === c.captureId);
+                    return (
+                      <PeakOrCaptureThumbnail
+                        key={`${c.key}-capture-${c.captureId}`}
+                        title="mesh capture"
+                        polygonCount={capturedPolygons.length}
+                        name={capture?.name ?? `light ${c.captureId}`}
+                        sourceImgMediaId={maskData.source_img_media_id}
+                        icon={asterisk200("rgb(255, 255, 255)")}
+                        style={dynamicSizes.displayImg}
+                        onClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          hideOtherContextMenus(i);
+                        }}
+                      />
+                    );
+                  }
+                  case "peak": {
+                    const projectMask = coreState.project.masks.get(c.key);
+                    if (!projectMask) break;
+                    const maskData = coreState.canvasMasks.get(c.key);
+                    const peak = maskData?.peaks.find((p) => p.id === c.peakId);
+                    if (!maskData || !peak) break;
+                    const coveredPolygonCount = maskData.polygons.filter((p) => p.peak_id === c.peakId).length;
+                    return (
+                      <PeakOrCaptureThumbnail
+                        key={`${c.key}-peak-${c.peakId}`}
+                        title="mesh peak"
+                        polygonCount={coveredPolygonCount}
+                        name={peak.name}
+                        sourceImgMediaId={maskData.source_img_media_id}
+                        icon={antigravity200("rgb(255, 255, 255)")}
+                        style={dynamicSizes.displayImg}
+                        onClick={() => {
+                          if (isAltKeyPressed) return;
+                          setActiveElement(i);
+                          hideOtherContextMenus(i);
+                        }}
                       />
                     );
                   }
@@ -207,11 +539,7 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
           >
             <SvgRepo
               title={"select next"}
-              svg={
-                uiState.carouselEntries.length == 0 || carouselIndex >= uiState.carouselEntries.length - 1
-                  ? chevronRight("rgb(67,67,67)")
-                  : chevronRight()
-              }
+              svg={findNavigableIndex(carouselIndex, 1) === undefined ? chevronRight("rgb(67,67,67)") : chevronRight()}
               containerStyle={{
                 width: 30,
                 height: 30,
@@ -220,14 +548,11 @@ export default function UnitDisplay({ carouselIndex, effectKey, localIndex, onNe
               scale={1}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
-                const newIndex = Math.min(carouselIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
-                const newLocalIndex = Math.min(localIndex + 1, Math.max(uiState.carouselEntries.length - 1, 0));
-                onNewLocalIndex(newLocalIndex);
+                const newIndex = findNavigableIndex(carouselIndex, 1);
+                if (newIndex === undefined) return;
+                onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
-                const inactives = uiState.carouselEntries.filter((_, index) => index !== newIndex);
-                inactives.forEach((ce) => {
-                  hideContextMenu(ce);
-                });
+                hideOtherContextMenus(newIndex);
               }}
             />
           </div>

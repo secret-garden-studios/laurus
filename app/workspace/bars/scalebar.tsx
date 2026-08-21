@@ -1,6 +1,11 @@
 import { ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { ComplexTrackpadOptions, useComplexTrackpadState } from "@/app/hooks/useComplexTrackpadState";
-import { LaurusProjectImg, LaurusProjectResult, LaurusProjectSvg } from "@/app/projects/projects.server";
+import {
+  LaurusProjectImg,
+  LaurusProjectMask,
+  LaurusProjectResult,
+  LaurusProjectSvg,
+} from "@/app/projects/projects.server";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,17 +18,19 @@ import { CoreActionType } from "../states/core-state";
 export default function Scalebar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
   const target = useMemo(() => {
     return selectedImgKeys.size > 0
       ? { key: Array.from(selectedImgKeys)[0], type: "img" as const }
       : selectedSvgKeys.size > 0
         ? { key: Array.from(selectedSvgKeys)[0], type: "svg" as const }
-        : null;
-  }, [selectedImgKeys, selectedSvgKeys]);
+        : selectedMaskKeys.size > 0
+          ? { key: Array.from(selectedMaskKeys)[0], type: "mask" as const }
+          : null;
+  }, [selectedImgKeys, selectedSvgKeys, selectedMaskKeys]);
   const isMultiSelect = useMemo(
-    () => selectedImgKeys.size + selectedSvgKeys.size > 1,
-    [selectedImgKeys, selectedSvgKeys],
+    () => selectedImgKeys.size + selectedSvgKeys.size + selectedMaskKeys.size > 1,
+    [selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
   );
   const [relativeScaleX, setRelativeScaleX] = useState(1);
   const [relativeScaleY, setRelativeScaleY] = useState(1);
@@ -31,12 +38,14 @@ export default function Scalebar() {
   const [appliedScaleY, setAppliedScaleY] = useState(1);
   const [prevImgKeys, setPrevImgKeys] = useState(selectedImgKeys);
   const [prevSvgKeys, setPrevSvgKeys] = useState(selectedSvgKeys);
+  const [prevMaskKeys, setPrevMaskKeys] = useState(selectedMaskKeys);
   const [isSaving, setIsSaving] = useState(false);
 
   // beta: render-phase state adjustment pattern
-  if (selectedImgKeys !== prevImgKeys || selectedSvgKeys !== prevSvgKeys) {
+  if (selectedImgKeys !== prevImgKeys || selectedSvgKeys !== prevSvgKeys || selectedMaskKeys !== prevMaskKeys) {
     setPrevImgKeys(selectedImgKeys);
     setPrevSvgKeys(selectedSvgKeys);
+    setPrevMaskKeys(selectedMaskKeys);
     setRelativeScaleX(1);
     setRelativeScaleY(1);
     setAppliedScaleX(1);
@@ -232,9 +241,10 @@ export default function Scalebar() {
       const snapshot: LaurusProjectResult = { ...coreState.project };
       const newImgs = new Map(snapshot.imgs);
       const newSvgs = new Map(snapshot.svgs);
+      const newMasks = new Map(snapshot.masks);
 
-      const updateItem = (key: string, type: "img" | "svg") => {
-        const m = type === "img" ? newImgs.get(key) : newSvgs.get(key);
+      const updateItem = (key: string, type: "img" | "svg" | "mask") => {
+        const m = type === "img" ? newImgs.get(key) : type === "svg" ? newSvgs.get(key) : newMasks.get(key);
         if (!m) return;
 
         let nextScaleX = m.scale_x;
@@ -254,28 +264,43 @@ export default function Scalebar() {
           if (scaleY !== undefined) nextScaleY = scaleY;
         }
 
-        if (type === "img") {
-          newImgs.set(key, {
-            ...(m as LaurusProjectImg),
-            scale_x: nextScaleX,
-            scale_y: nextScaleY,
-          });
-        } else {
-          newSvgs.set(key, {
-            ...(m as LaurusProjectSvg),
-            scale_x: nextScaleX,
-            scale_y: nextScaleY,
-          });
+        switch (type) {
+          case "img": {
+            newImgs.set(key, {
+              ...(m as LaurusProjectImg),
+              scale_x: nextScaleX,
+              scale_y: nextScaleY,
+            });
+            break;
+          }
+          case "mask": {
+            newMasks.set(key, {
+              ...(m as LaurusProjectMask),
+              scale_x: nextScaleX,
+              scale_y: nextScaleY,
+            });
+            break;
+          }
+          case "svg": {
+            newSvgs.set(key, {
+              ...(m as LaurusProjectSvg),
+              scale_x: nextScaleX,
+              scale_y: nextScaleY,
+            });
+            break;
+          }
         }
       };
 
       selectedImgKeys.forEach((key) => updateItem(key, "img"));
       selectedSvgKeys.forEach((key) => updateItem(key, "svg"));
+      selectedMaskKeys.forEach((key) => updateItem(key, "mask"));
 
       const newProject: LaurusProjectResult = {
         ...snapshot,
         imgs: newImgs,
         svgs: newSvgs,
+        masks: newMasks,
       };
       try {
         const saved = await updateProject(
@@ -307,6 +332,7 @@ export default function Scalebar() {
       dispatch,
       selectedImgKeys,
       selectedSvgKeys,
+      selectedMaskKeys,
       isMultiSelect,
       appliedScaleX,
       appliedScaleY,
@@ -315,8 +341,8 @@ export default function Scalebar() {
   );
 
   const isSelectionEmpty = useMemo(() => {
-    return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0;
-  }, [selectedImgKeys.size, selectedSvgKeys.size]);
+    return selectedImgKeys.size === 0 && selectedSvgKeys.size === 0 && selectedMaskKeys.size === 0;
+  }, [selectedImgKeys.size, selectedSvgKeys.size, selectedMaskKeys.size]);
 
   const getActiveDimensions = useCallback(
     (newScaleValue: [number, number]): [number, number] => {
@@ -328,6 +354,10 @@ export default function Scalebar() {
         const svg = snapshot.svgs.get(target.key);
         if (!svg) return [0, 0];
         return [svg.width * newScaleValue[0], svg.height * newScaleValue[1]];
+      } else if (target.type === "mask") {
+        const mask = snapshot.masks.get(target.key);
+        if (!mask) return [0, 0];
+        return [mask.width * newScaleValue[0], mask.height * newScaleValue[1]];
       } else {
         const img = snapshot.imgs.get(target.key);
         if (!img) return [0, 0];
@@ -346,6 +376,10 @@ export default function Scalebar() {
       const svg = snapshot.svgs.get(target.key);
       if (!svg) return [1, 1];
       return [svg.scale_x, svg.scale_y];
+    } else if (target.type === "mask") {
+      const mask = snapshot.masks.get(target.key);
+      if (!mask) return [1, 1];
+      return [mask.scale_x, mask.scale_y];
     } else {
       const img = snapshot.imgs.get(target.key);
       if (!img) return [1, 1];
@@ -462,7 +496,6 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            label={"zoom"}
             hash={`${target?.key ?? "scalebar"}|scalex`}
             size={dynamicSizes.paramSize}
             containerRef={scaleXTrackRef}
@@ -551,7 +584,6 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            label={"zoom"}
             hash={`${target?.key ?? "scalebar"}|scaley`}
             size={dynamicSizes.paramSize}
             containerRef={scaleYTrackRef}

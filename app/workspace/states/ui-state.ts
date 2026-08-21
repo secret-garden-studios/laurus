@@ -3,13 +3,17 @@ import { WorkspaceResolution } from "../workspace.config";
 import { LaurusImgResult, LaurusEffect, LaurusSvgResult } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
+import { PEAK_ELEVATION_DEFAULT } from "../mask-gl";
+import { LaurusPeakBlackPoint, PEAK_BLACK_POINT_DEFAULT, PEAK_FALLOFF_DEFAULT } from "../workspace.server";
+import { buildPeakShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/peak-shape";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
   contextMenuConfig: ContextMenuConfig;
 }
-
 export type LaurusThumbnail = { type: "svg"; value: LaurusSvgResult } | { type: "img"; value: LaurusImgResult };
+
+export type TopologyMode = false | "circle" | "shape";
 
 export type LaurusTool =
   | {
@@ -34,7 +38,9 @@ export type LaurusTool =
   | { type: "move" }
   | { type: "scale" }
   | { type: "rotate" }
-  | { type: "mix" };
+  | { type: "mix" }
+  | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
+  | { type: "light_source" };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
@@ -45,17 +51,34 @@ export const defaultMarqueeTool: LaurusTool = {
   duplicate: false,
 };
 
+export const defaultMaskTool: LaurusTool = {
+  type: "mask",
+  capturingMeshSection: false,
+  editingTopology: false,
+};
+
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
 
 export type LaurusBrowserElement = LaurusThumbnail;
 
-export type LaurusActiveElement = {
-  key: string;
-  type: "svg" | "img";
-  locallyActivatedEffectKey?: string;
-};
+export type LaurusActiveElement =
+  | { key: string; type: "svg"; locallyActivatedEffectKey?: string }
+  | { key: string; type: "img"; locallyActivatedEffectKey?: string }
+  | { key: string; type: "mask"; locallyActivatedEffectKey?: string }
+  | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
+  | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
 
-export type CarouselEntry = { type: "svg"; key: string } | { type: "img"; key: string };
+export type LaurusSelectedElement =
+  | { key: string; type: "mask" }
+  | { key: string; type: "capture"; captureId: number }
+  | { key: string; type: "peak"; peakId: number };
+
+export type CarouselEntry =
+  | { type: "svg"; key: string }
+  | { type: "img"; key: string }
+  | { type: "mask"; key: string }
+  | { type: "capture"; key: string; captureId: number }
+  | { type: "peak"; key: string; peakId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
@@ -68,6 +91,7 @@ export interface UIState {
   tool: LaurusTool;
   browserElement: LaurusBrowserElement | undefined;
   activeElement: LaurusActiveElement | undefined;
+  selectedElement: LaurusSelectedElement | undefined;
   effectNames: string[];
   effectClipboard: LaurusEffect | undefined;
   recordingLight: boolean;
@@ -82,6 +106,8 @@ export interface UIState {
   showMediaBrowser: boolean;
   showTimeline: boolean;
   mediaBrowserFilter: MediaBrowserFilter;
+  lightSourcePreview: boolean;
+  stagedPeak: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint };
 }
 
 export const defaultUIState: UIState = {
@@ -95,6 +121,7 @@ export const defaultUIState: UIState = {
   effectClipboard: undefined,
   browserElement: undefined,
   activeElement: undefined,
+  selectedElement: undefined,
   recordingLight: false,
   timelineUnits: [],
   timelineValues: [],
@@ -111,6 +138,13 @@ export const defaultUIState: UIState = {
   showMediaBrowser: true,
   showTimeline: true,
   mediaBrowserFilter: "img",
+  lightSourcePreview: false,
+  stagedPeak: {
+    elevation: PEAK_ELEVATION_DEFAULT,
+    falloff: PEAK_FALLOFF_DEFAULT,
+    shape: "",
+    blackPoint: PEAK_BLACK_POINT_DEFAULT,
+  },
 };
 
 export enum UIActionType {
@@ -126,6 +160,7 @@ export enum UIActionType {
   SetTool,
   SetBrowserElement,
   SetActiveElement,
+  SetSelectedElement,
   SetLightFrameBackground,
   SetEffectClipboard,
   SetRecordingLight,
@@ -144,6 +179,8 @@ export enum UIActionType {
   SetShowMediaBrowser,
   SetShowTimeline,
   SetMediaBrowserFilter,
+  SetLightSourcePreview,
+  SetStagedPeak,
 }
 
 export type UIAction =
@@ -165,11 +202,15 @@ export type UIAction =
       type: UIActionType.SetActiveElement;
       value: LaurusActiveElement | undefined;
     }
+  | {
+      type: UIActionType.SetSelectedElement;
+      value: LaurusSelectedElement | undefined;
+    }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
-  | { type: UIActionType.DeleteCarouselEntry; key: string }
+  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number; peakId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
@@ -190,7 +231,17 @@ export type UIAction =
     }
   | { type: UIActionType.SetShowMediaBrowser; value: boolean }
   | { type: UIActionType.SetShowTimeline; value: boolean }
-  | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter };
+  | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter }
+  | { type: UIActionType.SetLightSourcePreview; value: boolean }
+  | { type: UIActionType.SetStagedPeak; value: Partial<UIState["stagedPeak"]> };
+
+function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
+  if (element?.type !== "svg") return "";
+  const decoded = decodeSvgMarkup(element.value.markup);
+  if (!decoded) return "";
+  const built = buildPeakShapeFromMarkup(decoded);
+  return built.ok ? built.shape.path : "";
+}
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
@@ -267,10 +318,17 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, tool: { ...action.value } };
     }
     case UIActionType.SetBrowserElement: {
-      return { ...state, browserElement: action.value };
+      return {
+        ...state,
+        browserElement: action.value,
+        stagedPeak: { ...state.stagedPeak, shape: stagedShapePathFor(action.value) },
+      };
     }
     case UIActionType.SetActiveElement: {
       return { ...state, activeElement: action.value };
+    }
+    case UIActionType.SetSelectedElement: {
+      return { ...state, selectedElement: action.value };
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };
@@ -288,7 +346,12 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       };
     }
     case UIActionType.DeleteCarouselEntry: {
-      const newEntries = [...state.carouselEntries].filter((m) => m.key != action.key);
+      const newEntries = state.carouselEntries.filter((m) => {
+        if (m.key !== action.key) return true;
+        if (action.captureId !== undefined) return !(m.type === "capture" && m.captureId === action.captureId);
+        if (action.peakId !== undefined) return !(m.type === "peak" && m.peakId === action.peakId);
+        return false;
+      });
       return { ...state, carouselEntries: newEntries };
     }
     case UIActionType.SetPlaybackMode: {
@@ -350,6 +413,12 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetMediaBrowserFilter: {
       return { ...state, mediaBrowserFilter: action.value };
+    }
+    case UIActionType.SetLightSourcePreview: {
+      return { ...state, lightSourcePreview: action.value };
+    }
+    case UIActionType.SetStagedPeak: {
+      return { ...state, stagedPeak: { ...state.stagedPeak, ...action.value } };
     }
   }
 }
