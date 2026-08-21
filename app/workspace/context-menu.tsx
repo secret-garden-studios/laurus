@@ -1085,7 +1085,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     translateX={dynamicSizes.toggle.translateX}
                   />
                 </div>
-                {/* toolbar */}
                 <div
                   style={{
                     display: "grid",
@@ -1461,7 +1460,6 @@ export function BrowserContextMenu({ media, position, framesCacheRef }: BrowserC
             overflow: "hidden",
           }}
         >
-          {/* Categories Container */}
           <div
             style={{
               display: "flex",

@@ -19,13 +19,8 @@ import {
 
 export type MaskStatus = "idle" | "connecting" | "streaming" | "done" | "error";
 
-/** "1x"/"2x"/"3x" -- how much finer the generated mesh should be relative to the server's own
- * defaults. 2x/3x scale max_triangle_area and detail_points to divide the mesh into 2x/3x as
- * many points; see the request built in start() below. */
 export type MaskResolutionFactor = 1 | 2 | 3;
 export const MASK_RESOLUTION_DEFAULT: MaskResolutionFactor = 1;
-// Mirrors the server's own MaskRequest defaults (app/pydantic_schemas.py) -- 1x sends no override
-// at all, so the server's defaults apply exactly as before this control existed.
 const BASE_MAX_TRIANGLE_AREA = 600.0;
 const BASE_DETAIL_POINTS = 3000;
 
@@ -40,14 +35,6 @@ export interface MaskSizeOverride {
   height: number | undefined;
 }
 
-/**
- * Owns the /media/masks/mask websocket and the mesh data it streams back, independent of
- * any specific <canvas>/GL context -- the GL rendering itself lives in canvas.tsx (see
- * MaskUnitbar and Canvas), which reads the refs this hook exposes on every animation frame.
- * Splitting it this way lets the "Mask" trigger button (in the unitbar) and the WebGL
- * preview (layered into the main canvas) live in different parts of the tree while sharing one
- * in-flight masking.
- */
 export function useMaskPreview(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
@@ -66,8 +53,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   const [triangleCount, setTriangleCount] = useState(0);
   const [result, setResult] = useState<LaurusMaskResult | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
-  // Mirrored into a ref so the GL render loop (set up once per overlay mount) can read the live
-  // slider value every frame without being torn down and re-created each time it moves.
   const [textureMix, setTextureMixState] = useState(TEXTURE_MIX_DEFAULT);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
 
@@ -76,7 +61,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setTextureMixState(value);
   }, []);
 
-  // Same mirrored state+ref pattern as textureMix, for Maskbar's epicenter size/intensity sliders.
   const [captureSize, setCaptureSizeState] = useState(CAPTURE_SIZE_CSS_PX_DEFAULT);
   const captureSizeRef = useRef(CAPTURE_SIZE_CSS_PX_DEFAULT);
 
@@ -109,9 +93,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setCaptureDarknessState(value);
   }, []);
 
-  // Mirrored state+ref like textureMix/captureSize above, but never reset in reset()/start() --
-  // this is a standing quality preference the user dials in once, not a per-run override tied to
-  // a specific mesh the way position/size are, so a fresh mask trigger should keep using it.
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
   const resolutionRef = useRef<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
 
@@ -120,11 +101,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setResolutionState(value);
   }, []);
 
-  // Where/how big the generated mask should land, overriding the default of overlaying it
-  // directly on top of the source image at the image's own frame. Lives here (rather than as
-  // local state in Maskbar) so the live preview in canvas.tsx can read the same values and
-  // match, instead of always showing the un-overridden overlay while streaming and only jumping
-  // to the override once the result is persisted.
   const [position, setPosition] = useState<MaskPositionOverride>({
     value: false,
     x: undefined,
@@ -178,11 +154,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   }, [setTextureMix, setCaptureSize, setCaptureIntensity, setCaptureFalloff, setCaptureDarkness]);
 
   const start = useCallback(
-    // onComplete fires exactly once, straight off the websocket's one and only "complete"
-    // message -- callers that need to act on the finished result (e.g. Maskbar persisting
-    // it) should hook this rather than watching `status`/`result` in a useEffect, which re-fires
-    // on every remount that still finds status "done" from a previous run with no way to tell
-    // "already handled" from "new" without extra bookkeeping.
     (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void) => {
       positionsRef.current = [];
       colorsRef.current = [];
@@ -222,18 +193,9 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             curvesRef.current.push(event);
             if (event.glow_color) {
               const colorCtx = getColorCtx();
-              // One glow colour for the image: the server measures the falloff
-              // across the whole alpha channel, so every curve reports the same
-              // one and the shader only needs a uniform.
               if (colorCtx) glowColorRef.current = colorToRGB01(colorCtx, event.glow_color);
             }
 
-            // A backing quad over the whole image, pushed before any triangle
-            // arrives so the mesh paints on top of it. The mask trims it to the
-            // silhouette, and what's left visible is only the sliver between the
-            // mesh's straight boundary chords and the curve they're inscribed in
-            // -- without it that sliver would read as a transparent fringe
-            // nibbling the smooth edge we just went to the trouble of making.
             if (curvesRef.current.length === 1) {
               const colorCtx = getColorCtx();
               const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
@@ -245,21 +207,11 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
                 [img.width, img.height],
                 [0, img.height],
               ];
-              // Each corner carries its own position as its "centroid" rather than one shared
-              // value -- see the matching comment in buildStaticMaskMesh (mask-gl.ts). A single
-              // shared centroid (e.g. the image's own center) reads wrong wherever the fringe's
-              // true position isn't near that center: too bright on whichever side sits farthest
-              // from a light source (the shadow never seems to reach it), and too dark right next
-              // to a light source pushed toward a mask edge (the sliver there lags behind how lit
-              // the real mesh beside it is, since it's being evaluated as if it sat at the image's
-              // center instead of at the edge).
               for (const [x, y] of corners) {
                 positionsRef.current.push(x, y);
                 colorsRef.current.push(r, g, b);
                 uvsRef.current.push(x / img.width, 1 - y / img.height);
                 centroidsRef.current.push(x, y);
-                // All-ones barycentrics keep edgeDist at 1 across the quad, so
-                // the wireframe doesn't draw an outline around the backing.
                 barycentricsRef.current.push(1, 1, 1);
               }
               dirtyRef.current = true;

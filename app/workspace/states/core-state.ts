@@ -16,10 +16,6 @@ import {
   CAPTURE_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
-// One mesh's light source parameters -- the shape of ProjectMask_V1_0's own
-// capture_preview_size/intensity/falloff/darkness fields (the mask's persisted preview-toggle
-// starting appearance, see LightSourcebar/Scalebar), and of the live in-flight useMaskPreview
-// values before a mask exists yet to persist to.
 export interface CaptureValue {
   size: number;
   intensity: number;
@@ -34,31 +30,12 @@ export const DEFAULT_CAPTURE_VALUE: CaptureValue = {
   darkness: CAPTURE_DARKNESS_DEFAULT,
 };
 
-// A light-source-capture drag that's mid-flight to the server -- drawing/redrawing a capture
-// persists it immediately (see canvas.tsx's handleLightSourceCapture and workspace.client.tsx's
-// captureMeshSection), and this holds the optimistic preview while that request is outstanding.
-// `polygonIndices` are indices into the target mask's own `LaurusMaskResult.polygons` array, not
-// yet-uploaded triangle data.
 export interface PendingLightSourceCapture {
   maskKey: string;
   captureId: number;
   polygonIndices: number[];
 }
 
-// A topology peak edit (creation, move, or a reshape from any of Lightsourcebar's peak sliders)
-// that's mid-flight to the server -- drawing a peak persists it immediately (see canvas.tsx's
-// handleTopologyCapture and workspace.client.tsx's createTopologyPeak), and dragging an existing
-// peak's epicenter or any of its parameters does the same (project-mask-item.tsx,
-// lightsourcebar.tsx).
-// Mirrors PendingLightSourceCapture's role exactly: holds the optimistic preview while the request
-// is outstanding, in the same mesh-local coordinate space as Peak_V1_0 itself.
-//
-// Carries every field of the height field a peak contributes, not just the ones a given gesture
-// happens to be changing, because this is what ProjectMaskItem hands the shader as that peak's
-// uniforms while the request is outstanding (see resolvePeakUniforms there) -- a partial edit would
-// render the peak with a missing parameter rather than a pending one. That's also why this is the
-// whole preview mechanism now: the shader evaluates the field from these numbers directly, so an
-// optimistic edit *is* the preview, with no geometry rebuild between the two.
 export interface PendingTopologyEdit {
   maskKey: string;
   peakId: number;
@@ -67,20 +44,7 @@ export interface PendingTopologyEdit {
   radius: number;
   elevation: number;
   falloff: number;
-  /** The peak's custom silhouette, or "" for a circle (see Peak_V1_0.shape).
-   *
-   * Carried even though no gesture can currently *change* a shape mid-edit, because a pending edit for
-   * a peak that doesn't exist yet is how a freshly drawn peak is previewed before the server has
-   * answered (see resolvePeakUniforms in project-mask-item.tsx) -- and drawing is exactly when a shape
-   * is chosen. Without it, a shaped peak would draw as a circle and then pop into its real outline the
-   * moment the socket replied. */
   shape: string;
-  /** The peak's black point (see Peak_V1_0's own black_point_* fields).
-   *
-   * Unlike `shape`, this one *is* changed mid-edit -- dragging a channel in Lightsourcebar's swatch
-   * previews through here on every tick, the same way the elevation/radius/falloff sliders do -- so
-   * it is carried for both reasons at once: to preview an edit to it, and so that a freshly drawn
-   * peak's own black point survives the round trip before the server has answered. */
   blackPoint: LaurusPeakBlackPoint;
 }
 

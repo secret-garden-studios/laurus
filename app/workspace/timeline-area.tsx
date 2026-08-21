@@ -593,7 +593,6 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
       >
         <EffectGroupTitlebar effectGroupId={effectGroupId} effectGroupResult={effectGroupResult} />
       </div>
-      {/* effects */}
       <div
         style={{
           display: "grid",

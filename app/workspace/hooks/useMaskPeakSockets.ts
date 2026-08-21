@@ -7,26 +7,6 @@ import {
   toMaskPeakSocketUrl,
 } from "../workspace.server";
 
-/**
- * Owns one persistent websocket per mask for peak create/move/reshape/delete,
- * opened lazily the first time sendPeakUpdate is called for a given
- * mask_media_id and kept open afterwards -- mirrors useMaskCaptureSockets
- * exactly (see its own doc comment for why a mask's peaks, like its
- * captures, are edited repeatedly over the life of an editing session
- * rather than through a one-shot socket, and why a simple FIFO queue of
- * resolvers is enough to pair replies back up without per-message ids).
- *
- * On that last point specifically, since peaks now get edited far more often
- * than captures do: the FIFO pairing stays sound because every producer awaits
- * its own send before issuing the next one for a given mask (Maskbar coalesces
- * slider edits through a queue that awaits, the drag commit awaits, and the
- * delete helper awaits), so at most one request per mask is ever in flight and
- * there is never an ordering for the queue to get wrong. What deliberately does
- * *not* come through here is the live preview a slider drag paints -- that's a
- * shader uniform update with no server round trip at all (see mask-gl.ts's
- * PEAK_FIELD_GLSL), which is exactly what keeps this socket's traffic down to
- * one message per committed edit.
- */
 export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
   const queuesRef = useRef<Map<string, Array<(result: LaurusMaskResult | undefined) => void>>>(new Map());
@@ -92,29 +72,12 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
     [apiOrigin, accessToken],
   );
 
-  // Takes the whole request as one object rather than as positional parameters (which the peak's
-  // own growth to five geometric fields plus a delete flag had pushed to nine) for a specific
-  // reason beyond arity: every field of a peak update is a number, and several of them can
-  // legitimately be 0, so a positional call site offered no protection at all against a transposed
-  // pair -- and the flavour of that bug is a peak that silently lands somewhere else or takes the
-  // wrong shape, with nothing to catch it but the eye. MaskPeakUpdateRequest_V1_0 is already the
-  // exact wire shape, so this is also the JSON body's own type rather than a parallel one to keep
-  // in sync, and snake_case at the boundary is now the only transformation happening here.
   const sendPeakUpdate = useCallback(
     (maskMediaId: string, update: MaskPeakUpdateRequest_V1_0): Promise<LaurusMaskResult | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
         queuesRef.current.get(maskMediaId)?.push(resolve);
-        // Serialized wholesale rather than field-by-field. It used to be an explicit object literal
-        // listing each key, which was pure ceremony -- MaskPeakUpdateRequest_V1_0 is already the exact
-        // wire shape in the exact wire casing, so the literal restated the type without adding a
-        // single transformation. What it did add was the failure mode repolygon exists to prevent on
-        // the server (see its docstring there): a field added to the request type is *invisible* at a
-        // call site that enumerates keys. Nothing errors and nothing type-checks differently -- the
-        // new field is simply never sent, and because this request is a full-replace upsert, the
-        // server then clears it on every unrelated edit. `shape` was very nearly the second casualty
-        // of exactly that.
         const send = () => socket.send(JSON.stringify(update));
         if (socket.readyState === WebSocket.OPEN) {
           send();

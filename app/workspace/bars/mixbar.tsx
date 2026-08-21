@@ -208,7 +208,6 @@ export default function Mixbar() {
           scaleToContaier={true}
         />
 
-        {/* create menu */}
         {!selectedEffectType && !someActiveMixables && (
           <>
             <SelectionMenu
@@ -219,7 +218,6 @@ export default function Mixbar() {
           </>
         )}
 
-        {/* form */}
         {selectedEffectType && !someActiveMixables && (
           <>
             <div
@@ -414,7 +412,6 @@ export default function Mixbar() {
           </>
         )}
 
-        {/* update menu */}
         {someActiveMixables && (
           <>
             <SelectionMenu

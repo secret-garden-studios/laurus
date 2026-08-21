@@ -428,7 +428,6 @@ export default function ContextMenu({ project, width, height }: ContextMenuProps
                 {`edited ${new Date(project.last_active).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })} by ${project.last_editor}`}
               </div>
             </div>
-            {/* project stats */}
             <div style={{ display: "grid" }}>
               <div
                 style={{
@@ -482,7 +481,6 @@ export default function ContextMenu({ project, width, height }: ContextMenuProps
                 </div>
               </div>
             </div>
-            {/* toolbar */}
             <div
               ref={toolbarContainerRef}
               style={{

@@ -25,12 +25,6 @@ interface DraggableProjectMask {
   maskElementsRef?: RefObject<Map<string, HTMLCanvasElement> | null>;
   forceAbsolutePosition?: boolean;
 }
-/**
- * Move-tool dragging and drag-driven context-menu repositioning for a mask -- mirrors
- * DraggableProjectImg/Svg structurally, though click handling itself (alt-select, meta-click,
- * tool-driven activation, context-menu open/close) lives entirely in ProjectMaskItem now, not
- * here -- see its own `meta` prop doc comment for why.
- */
 export function DraggableProjectMask({
   mediaKey,
   meta,
@@ -101,19 +95,12 @@ export function DraggableProjectMask({
     transformedBounds,
   ]);
 
-  // Memoized rather than passed as inline object literals -- ProjectMaskItem's GL-context
-  // setup effect keys off `source` (and ends up re-running whenever it sees a "new" one), so a
-  // fresh object every render here would tear down and rebuild the WebGL context (including a
-  // fresh async texture reload) on every unrelated re-render of this component, not just when the
-  // mask's actual data changes.
   const frame = useMemo(
     () => ({ width: meta.width, height: meta.height, scale_x: meta.scale_x, scale_y: meta.scale_y }),
     [meta.width, meta.height, meta.scale_x, meta.scale_y],
   );
   const source = useMemo<ProjectMaskItemSource>(() => ({ kind: "static", maskData }), [maskData]);
 
-  // Mirrors DraggableProjectImg/Svg's own highestOrder exactly -- see ProjectMaskItem's maxZIndex
-  // comment for why this mask's context menu needs it.
   const highestOrder = useMemo(() => {
     let max = 0;
     for (const img of coreState.project.imgs.values()) {

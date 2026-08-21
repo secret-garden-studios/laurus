@@ -389,7 +389,6 @@ export default function UnitDisplay({
               }}
             />
           </div>
-          {/* active element */}
           <div
             style={{
               width: "100%",

@@ -89,7 +89,6 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
           />
         </div>
-        {/* page tools */}
         <div>
           <ToolbarButton
             selected={uiState.tool.type == "marquee"}
@@ -513,7 +512,6 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 }}
               />
             </div>
-            {/* right panel tools */}
             <div>
               <ToolbarButton
                 selected={uiState.mediaBrowserFilter == "img"}

@@ -1969,7 +1969,6 @@ export default function Workspace({
                   >
                     <Subtitlebar />
                   </div>
-                  {/* canvas area */}
                   <div
                     ref={canvasAreaRef}
                     style={{
@@ -2020,7 +2019,6 @@ export default function Workspace({
                         <Canvas />
                       </div>
                     )}
-                    {/* camera frame */}
                     <DraggableCamera
                       contextId={"draggable-camera-context-id"}
                       nodeId={"draggable-camera-node-id"}
@@ -2204,7 +2202,6 @@ export default function Workspace({
                       />
                     </div>
                   )}
-                  {/* right panel */}
                   <div
                     style={{
                       gridRow: "3 / span 2",
@@ -2213,7 +2210,6 @@ export default function Workspace({
                   >
                     <Toolbar handleMixRestoration={handleMixRestoration} me={me.me} />
                   </div>
-                  {/* mediabar */}
                   <div
                     style={{
                       gridRow: "5",

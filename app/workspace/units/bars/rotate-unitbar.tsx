@@ -41,10 +41,6 @@ interface RotateUnitbar {
   setCurrentControls: Dispatch<SetStateAction<RotateUnitControls>>;
   counterClockwise: boolean;
   setCounterClockwise: Dispatch<SetStateAction<boolean>>;
-  // Which kind of media the unit is editing, and the toggle for it -- owned by the unit (it's the
-  // unit's parameters *and* its carousel that move together, see its own toggleTarget), driven
-  // from the button below exactly the way ScaleUnitbar's own target button drives which parameters
-  // scale-unit.tsx shows.
   target: RotateUnitTarget;
   onToggleTarget: () => void;
 }
@@ -65,9 +61,6 @@ export default function RotateUnitbar({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
 
-  // Mirrors context-menu.tsx's own per-media-type icons -- the same three ScaleUnitbar's own
-  // targetSvg uses for img/svg/mask, minus the capture/peak cases rotate can never target (see
-  // RotateUnitTarget).
   const targetSvg = useMemo((): LaurusClientSvg => {
     switch (target) {
       case "img":
@@ -233,11 +226,6 @@ export default function RotateUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
-        {/* Double-click, not click, mirroring ScaleUnitbar's own target button -- switching target
-            swaps which parameters the unit shows and re-points the carousel, so it's deliberately
-            not a single stray click away. Navigating the carousel onto a different kind of media
-            (the chevrons, or an activation from the canvas) moves the target on its own without
-            going through here -- see RotateUnitTarget. */}
         <div
           title={`targeting ${target} -- double-click for the next kind of media`}
           onDoubleClick={() => {

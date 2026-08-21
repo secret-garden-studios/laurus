@@ -522,14 +522,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
       }}
       onDrop={handleUpload}
     >
-      {/* content container */}
       <div
         style={{
           display: "grid",
           overflowY: "auto",
         }}
       >
-        {/* uploading light */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -568,7 +566,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               );
           }
         })()}
-        {/* content body */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -631,9 +628,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                     }}
                   >
                     {(() => {
-                      // A mask's source image should stay visible here even when it was never
-                      // placed on the canvas (e.g. a mask dropped straight off a public img
-                      // thumbnail) -- otherwise it vanishes the moment "browse public imgs" is off.
                       const maskSourceImgIds = getMaskSourceImgIds(coreState.project.masks, coreState.canvasMasks);
                       return sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
                         const img = media as LaurusImgResult;
@@ -682,7 +676,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
               );
           }
         })()}
-        {/* observer (auto refresh) */}
         {(() => {
           switch (uiState.mediaBrowserFilter) {
             case "frame":
@@ -728,7 +721,6 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
           }
         })()}
       </div>
-      {/* input area */}
       {(() => {
         switch (uiState.mediaBrowserFilter) {
           case "frame":

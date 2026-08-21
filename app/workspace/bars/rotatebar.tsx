@@ -11,11 +11,6 @@ export default function Rotatebar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
-  // Same selection source of truth as Scalebar -- selectedImgKeys/selectedSvgKeys/selectedMaskKeys
-  // from HoverContext, rather than uiState.activeElement -- so the target here (and its blue-outline
-  // highlight) stays consistent no matter which tool made the selection. Unlike Scalebar, Rotatebar
-  // still only edits a single element at a time: with several items selected, it targets the first
-  // key (same priority order Scalebar uses) rather than applying a relative change to all of them.
   const target = useMemo(() => {
     return selectedImgKeys.size > 0
       ? { key: Array.from(selectedImgKeys)[0], type: "img" as const }

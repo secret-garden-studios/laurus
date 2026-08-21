@@ -630,10 +630,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   );
 }
 
-// A mask has no thumbnail of its own -- shows the img its mesh was generated from instead. Only
-// resolves it from what's already in memory (a still-placed project img, or the currently-browsed
-// media page) -- same source project-mask-item.tsx checks first before falling back to a network
-// fetch for its own GL texture load. LaurusImage's own "not found" placeholder covers the miss.
 function MaskGroupThumbnail({
   mask,
   onContextMenuClick,

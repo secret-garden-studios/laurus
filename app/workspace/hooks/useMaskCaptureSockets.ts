@@ -7,18 +7,6 @@ import {
   toMaskCaptureSocketUrl,
 } from "../workspace.server";
 
-/**
- * Owns one persistent websocket per mask for capture create/move/delete,
- * opened lazily the first time sendCaptureUpdate is called for a given
- * mask_media_id and kept open afterwards -- unlike the one-shot mask-
- * creation socket in useMaskPreview, a mask's captures are edited
- * repeatedly over the life of an editing session, so there's no single
- * "complete" message that closes it. Each socket answers requests in the
- * order they were sent (guaranteed by both WebSocket's own delivery order
- * and the server's receive-process-send loop, which fully answers one
- * request before reading the next), so a simple FIFO queue of resolvers is
- * enough to pair replies back up without needing per-message ids.
- */
 export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
   const queuesRef = useRef<Map<string, Array<(result: LaurusMaskResult | undefined) => void>>>(new Map());

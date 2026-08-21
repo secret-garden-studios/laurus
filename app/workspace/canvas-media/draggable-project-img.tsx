@@ -399,10 +399,6 @@ export function DraggableProjectImg({
             break;
           }
           case "rotate": {
-            // Toggles selectedImgKeys the same way the "scale" case above does, so Rotatebar's
-            // blue-outline highlighting stays consistent no matter which tool made the selection
-            // (see Scalebar). SetActiveElement below is untouched -- other consumers (rotate-unit's
-            // carousel, etc.) still key off it independently of this selection set.
             setSelectedImgKeys((prev) => {
               const next = new Set(prev);
               if (next.has(mediaKey)) {

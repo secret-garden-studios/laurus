@@ -139,7 +139,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     }
   }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const amplitudeTrackRef = useRef<HTMLDivElement | null>(null);
   const [amplitudeCursor, setAmplitudeCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getAmplitudeValue, getInverseTrackCursor: getAmplitudeCursor } = useTrackpadState(
@@ -151,7 +150,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const amplitudeRef = useRef<HTMLDivElement | null>(null);
 
-  // param 2
   const frequencyTrackRef = useRef<HTMLDivElement | null>(null);
   const [frequencyCursor, setFrequencyCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getFrequencyValue, getInverseTrackCursor: getFrequencyCursor } = useTrackpadState(
@@ -163,7 +161,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const frequencyRef = useRef<HTMLDivElement | null>(null);
 
-  // param 3
   const wavelengthTrackRef = useRef<HTMLDivElement | null>(null);
   const [wavelengthCursor, setWavelengthCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getWavelengthValue, getInverseTrackCursor: getWavelengthCursor } = useTrackpadState(
@@ -175,7 +172,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const wavelengthRef = useRef<HTMLDivElement | null>(null);
 
-  // param 4
   const distanceTrackRef = useRef<HTMLDivElement | null>(null);
   const [distanceCursor, setDistanceCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getDistanceValue, getInverseTrackCursor: getDistanceCursor } = useTrackpadState(
@@ -187,7 +183,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const distanceRef = useRef<HTMLDivElement | null>(null);
 
-  // param 5
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -204,7 +199,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   }, [carouselEntryKey, move.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main param
   const [angle, setAngle] = useState(0);
   const angleTitle = useMemo(() => {
     return move.math.has(carouselEntryKey) ? move.math.get(carouselEntryKey)!.angle.toFixed(0) + "°" : undefined;
@@ -437,9 +431,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
       {mainControls ? (
         <>
           <UnitDisplay carouselIndex={carouselIndex} effectKey={move.move_id} onNewLocalIndex={setLocalIndex} />
-          {/* controls */}
           <div style={{ display: "grid" }}>
-            {/* parameters */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -668,7 +660,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   />
                 </div>
                 <div />
-                {/* toolbar */}
                 <MoveUnitbar
                   move={move}
                   carouselEntryKey={carouselEntryKey}
@@ -681,7 +672,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                 />
               </div>
             </div>
-            {/* main control */}
             {shapeType != LaurusShapeType.circle && (
               <div style={{ ...dynamicSizes.param }}>
                 <div
@@ -768,7 +758,6 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

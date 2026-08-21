@@ -37,15 +37,8 @@ interface LightSourceUnitbar {
   updateTrackpads: (newControls: LightSourceUnitControls) => void;
   currentControls: LightSourceUnitControls;
   setCurrentControls: Dispatch<SetStateAction<LightSourceUnitControls>>;
-  // Which flavor of equation the unit is editing, and the toggle for it -- owned by the unit (it's
-  // the unit's sliders *and* its carousel that move together, see its own toggleTarget), driven
-  // from the button below the same way MoveUnitbar's own "shape" button drives which parameters
-  // move-unit.tsx shows.
   target: LightSourceUnitTarget;
   onToggleTarget: () => void;
-  // What a from-scratch equation for whatever the carousel is currently on starts as -- the plain
-  // defaults for a capture, the active peak's own current shape for a peak. See the unit's own
-  // newEquationSeed for why a peak can't just use the defaults.
   newEquationSeed: LaurusLightSourceEquation;
 }
 
@@ -580,9 +573,6 @@ export default function LightSourceUnitbar({
                 ...snapshot,
                 math: newMath,
               };
-              // The seed, not the bare defaults -- clearing a peak's equation should leave its
-              // sliders reading the shape the peak actually has (which is what an unwired peak
-              // shows), not collapsed at zero/a degenerate falloff.
               const defaultControls: LightSourceUnitControls = {
                 ...newEquationSeed,
                 time: 0,

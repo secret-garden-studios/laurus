@@ -178,7 +178,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     }
   }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -195,7 +194,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
   }, [carouselEntryKey, scale.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main params
   const [complexTrackpadOptions] = useState<ComplexTrackpadOptions>({
     fineTuningLimit: 2,
   });
@@ -474,10 +472,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     >
       {mainControls ? (
         <>
-          {/* display */}
           <UnitDisplay carouselIndex={carouselIndex} effectKey={scale.scale_id} onNewLocalIndex={setLocalIndex} />
-          {/* controls */}
-          {/* parameters */}
           <div style={{ ...dynamicSizes.param }}>
             <div
               style={{
@@ -812,7 +807,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 )}
               </div>
               <div />
-              {/* toolbar */}
               <ScaleUnitbar
                 scale={scale}
                 carouselEntryKey={carouselEntryKey}
@@ -830,7 +824,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

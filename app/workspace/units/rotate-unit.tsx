@@ -133,7 +133,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     }
   }, [uiState.carouselEntries, coreState.project.imgs, coreState.project.svgs, coreState.project.masks, carouselIndex]);
 
-  // param 1
   const xTrackRef = useRef<HTMLDivElement | null>(null);
   const [xCursor, setXCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getXValue, getInverseTrackCursor: getXCursor } = useTrackpadState(
@@ -145,7 +144,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const xRef = useRef<HTMLDivElement | null>(null);
 
-  // param 2
   const yTrackRef = useRef<HTMLDivElement | null>(null);
   const [yCursor, setYCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getYValue, getInverseTrackCursor: getYCursor } = useTrackpadState(
@@ -157,7 +155,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const yRef = useRef<HTMLDivElement | null>(null);
 
-  // param 3
   const zTrackRef = useRef<HTMLDivElement | null>(null);
   const [zCursor, setZCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getZValue, getInverseTrackCursor: getZCursor } = useTrackpadState(
@@ -169,7 +166,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const zRef = useRef<HTMLDivElement | null>(null);
 
-  // param 4
   const timeUpperLimit = useMemo(() => {
     return convertTime(coreState.timelineMaxValue, coreState.timelineUnit, "sec");
   }, [coreState.timelineMaxValue, coreState.timelineUnit]);
@@ -186,7 +182,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   }, [carouselEntryKey, rotate.math]);
   const timeRef = useRef<HTMLDivElement | null>(null);
 
-  // main param
   const [angle, setAngle] = useState(0);
   const angleTitle = useMemo(() => {
     return rotate.math.has(carouselEntryKey) ? rotate.math.get(carouselEntryKey)!.angle.toFixed(0) + "°" : undefined;
@@ -409,9 +404,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             onNewLocalIndex={setLocalIndex}
             isEntryWireable={isRotateCarouselEntry}
           />
-          {/* controls */}
           <div style={{ display: "grid" }}>
-            {/* parameters */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -594,7 +587,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   />
                 </div>
                 <div />
-                {/* toolbar */}
                 <RotateUnitbar
                   rotate={rotate}
                   carouselEntryKey={carouselEntryKey}
@@ -609,7 +601,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                 />
               </div>
             </div>
-            {/* main control */}
             <div style={{ ...dynamicSizes.param }}>
               <div
                 style={{
@@ -696,7 +687,6 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         </>
       ) : (
         <>
-          {/* deep controls */}
           <DeepControls />
         </>
       )}

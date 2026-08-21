@@ -185,7 +185,6 @@ export default function Titlebar() {
         ...dynamicSizes.container,
       }}
     >
-      {/* title */}
       <div
         style={{
           padding: "2px 0px",
@@ -213,7 +212,6 @@ export default function Titlebar() {
           onChange={onProjectNameChange}
         />
       </div>
-      {/* content stats */}
       <div
         style={{
           display: "flex",

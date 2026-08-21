@@ -166,7 +166,6 @@ export function ParameterSliderY({
               borderRadius: 8,
             }}
           >
-            {/* Highlighted Glowing Section */}
             <div
               style={{
                 position: "absolute",
@@ -289,7 +288,6 @@ export function ParameterSliderXPlusMinus({
               liveTitleRef={liveTitleRef}
             />
           </div>
-          {/* label*/}
           <div
             style={{
               zIndex: 1,
@@ -418,7 +416,6 @@ export function ParameterSliderX({
             liveTitleRef={liveTitleRef}
           />
         </div>
-        {/* label*/}
         <div
           style={{
             zIndex: 1,

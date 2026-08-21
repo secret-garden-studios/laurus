@@ -1,5 +1,3 @@
-/* /projects */
-
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
 const onNotOk = (status: number) => {
   switch (status) {

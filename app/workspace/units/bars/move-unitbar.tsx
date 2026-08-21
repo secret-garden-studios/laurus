@@ -44,10 +44,6 @@ interface MoveUnitbar {
   updateTrackpads: (newControls: MoveUnitControls) => void;
   currentControls: MoveUnitControls;
   setCurrentControls: Dispatch<SetStateAction<MoveUnitControls>>;
-  // Which kind of media the unit is editing, and the toggle for it -- owned by the unit (it's the
-  // unit's parameters *and* its carousel that move together, see its own toggleTarget), driven
-  // from the button below exactly the way ScaleUnitbar's own target button drives which parameters
-  // scale-unit.tsx shows.
   target: MoveUnitTarget;
   onToggleTarget: () => void;
 }
@@ -66,10 +62,6 @@ export default function MoveUnitbar({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
 
-  // Mirrors context-menu.tsx's own per-media-type icons, except for a capture -- which shares
-  // svg's polyline there, no use here where the point is telling the two apart. That one and the
-  // peak take Lightsourcebar's own capture/peak pair instead, the same icons scale-unitbar.tsx's
-  // own targetSvg uses for the identical job.
   const targetSvg = useMemo((): LaurusClientSvg => {
     switch (target) {
       case "img":
@@ -269,11 +261,6 @@ export default function MoveUnitbar({
           borderBottomRightRadius: 6,
         }}
       >
-        {/* Double-click, not click, mirroring ScaleUnitbar's own target button -- switching target
-            swaps which parameters the unit shows and re-points the carousel, so it's deliberately
-            not a single stray click away. Navigating the carousel onto a different kind of media
-            (the chevrons, or an activation from the canvas) moves the target on its own without
-            going through here -- see MoveUnitTarget. */}
         <div
           title={`targeting ${target} -- double-click for the next kind of media`}
           onDoubleClick={() => {
