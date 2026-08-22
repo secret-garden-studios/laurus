@@ -5,28 +5,12 @@ import { UIActionType, advanceObjectReview } from "../states/ui-state";
 import { postObjectReviewDecision } from "../workspace.server";
 import { applyObjectDelta } from "../canvas-media/mask-delta";
 
-/** Orchestrates one accept/reject decision on the candidate the review
- *  panel currently has on screen: computes the manual clean-up diff against
- *  the candidate's own (untouched) polygon_indices, posts the decision, and
- *  on acceptance applies the returned mask the same way a hand-drawn object
- *  would be (see createObject in workspace.client.tsx). The pure
- *  batch/cycle advance itself lives in the RecordObjectReviewDecision
- *  reducer case (states/ui-state.ts) -- this hook is only the async/network
- *  side of making a decision. */
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyReviewZoomChanged } =
-    useContext(MaskContext);
+  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyReviewZoomChanged } = useContext(MaskContext);
 
   const review = uiState.objectReview;
-  // A decision is only allowed once the previous one has been acknowledged.
-  // Deciding is a two-click-per-second interaction on a panel that advances
-  // under the cursor, so without this a second click lands on a candidate the
-  // panel has already moved past and records a decision against the wrong
-  // object. The ref is what actually gates -- state only drives the disabled
-  // styling, and would not have updated yet by the time a fast second click
-  // arrives.
   const decidingRef = useRef(false);
   const [isDeciding, setIsDeciding] = useState(false);
 
@@ -58,8 +42,6 @@ export function useObjectReview() {
         decidingRef.current = false;
         setIsDeciding(false);
       }
-      // Left on the same candidate deliberately: the decision never reached
-      // Redis, so advancing would silently drop it.
       if (!response) return;
 
       const maskData = coreState.canvasMasks.get(review.maskKey);
@@ -73,9 +55,6 @@ export function useObjectReview() {
         });
       }
       uiDispatch({ type: UIActionType.RecordObjectReviewDecision, decision });
-      // The canvas is told what to highlight next directly, from the same rule
-      // the reducer advances by, rather than watching the session for a change
-      // it already knows is coming.
       const decided = new Map(review.decisions);
       decided.set(candidate.object.id, decision);
       const next = advanceObjectReview(review, decided);
@@ -106,12 +85,6 @@ export function useObjectReview() {
     [uiDispatch],
   );
 
-  // Called on every pointer-move frame while the zoom slider is being
-  // dragged. This bypasses uiDispatch entirely -- routing every frame of a
-  // drag through the reducer would re-render every mask, img and svg on the
-  // canvas each time, which is what made the slider feel laggy. setZoom
-  // above still fires once, when the drag ends, to commit the value the rest
-  // of the app (the slider's own resting position, a later re-render) reads.
   const previewZoom = useCallback(
     (value: number) => {
       if (!review) return;
@@ -120,10 +93,6 @@ export function useObjectReview() {
     [review, notifyReviewZoomChanged],
   );
 
-  // While a review is up it takes over the canvas (see the interaction
-  // canvas's pointerEvents in workspace.client.tsx), so there has to be a way
-  // out of it that does not require deciding every remaining candidate.
-  // Undecided candidates simply keep no decision recorded in Redis.
   const endReview = useCallback(() => {
     if (review) notifyMaskObjectReviewPreview(review.maskKey, undefined);
     uiDispatch({ type: UIActionType.EndObjectReview });

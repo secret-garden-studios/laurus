@@ -41,9 +41,6 @@ const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  // The persist queues below drain across awaits, and each delta has to be
-  // applied to whatever the mask looks like *then* -- a Map captured when the
-  // queue started would drop any edit that landed while it was in flight.
   const latestCanvasMasksRef = useRef(coreState.canvasMasks);
   latestCanvasMasksRef.current = coreState.canvasMasks;
   const { sendMaskCaptureUpdate, sendMaskObjectUpdate } = useContext(SocketContext);

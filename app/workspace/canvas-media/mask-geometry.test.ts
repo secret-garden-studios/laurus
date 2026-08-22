@@ -160,8 +160,6 @@ describe("mask deltas -- patching only what an edit touched", () => {
       last_editor: "stef",
     });
 
-    // Only polygon 0 was retagged, so 1 and 2 are the same objects as before
-    // and nothing had to be reparsed.
     assert.notEqual(patched.polygons[0], mask.polygons[0]);
     assert.equal(patched.polygons[1], mask.polygons[1]);
     assert.equal(patched.polygons[2], mask.polygons[2]);

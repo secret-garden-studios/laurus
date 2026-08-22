@@ -352,16 +352,6 @@ describe("the persisted shape round-trips", () => {
 });
 
 describe("an object shape authored by the server", () => {
-  /** The exact format the server emits Object.shape in for a detected region:
-   *  the region's outer extent measured in OBJECT_SHAPE_SAMPLES directions and
-   *  emitted as a closed M/L/Z polygon, already centred on its own centroid
-   *  and scaled so its furthest point sits at 1. See object_shape_path and
-   *  region_object_geometry in the server's object_math.py.
-   *
-   *  Reproduced here rather than fixtured because what is under test is the
-   *  contract, not any one image: a shape built this way has to be one this
-   *  module accepts, or the object silently renders as a plain circle and
-   *  nothing anywhere reports why. */
   function serverStyleShapePath(rho: number[]): string {
     const format = (n: number): string => {
       const trimmed = n.toFixed(5).replace(/0+$/, "").replace(/\.$/, "");
@@ -377,12 +367,6 @@ describe("an object shape authored by the server", () => {
     );
   }
 
-  /** `centred` marks a profile whose polygon has its centroid at the origin
-   *  it was built around. Only those can have their table compared entry by
-   *  entry: this module re-derives rho about the polygon's own centroid, so
-   *  for a lopsided outline the reconstructed table is measured from a
-   *  different point and simply is not the same table -- it still describes
-   *  the same region, which is what renders. */
   const profiles: [string, (theta: number) => number, boolean][] = [
     ["a round region", () => 1, true],
     ["a lobed blob", (t) => 0.7 + 0.3 * Math.cos(4 * t), true],
@@ -400,11 +384,6 @@ describe("an object shape authored by the server", () => {
       assert.ok(shape, `${name} must survive the parser -- the object renders as a circle otherwise`);
       assert.equal(shape.rho.length, OBJECT_SHAPE_SAMPLES);
 
-      // rho topping out at 1 is what keeps Object.radius meaning "the object's
-      // furthest reach". Not exactly 1: the maximum is taken over
-      // OBJECT_SHAPE_VALIDATION_SAMPLES rays but stored at OBJECT_SHAPE_SAMPLES
-      // of them, so a shape whose extreme falls between two stored
-      // directions normalizes a fraction of a percent short.
       assert.ok(Math.abs(Math.max(...shape.rho) - 1) < 5e-3, `max rho was ${Math.max(...shape.rho)}`);
       assert.ok(Math.min(...shape.rho) > 0, "rho must stay positive");
 
@@ -414,8 +393,6 @@ describe("an object shape authored by the server", () => {
         }
         return;
       }
-      // lopsided: check the region survived rather than the table.
-      // Re-normalizing an already-normalized path must be a no-op.
       const reloaded = sampleObjectShapePath(shape.path);
       assert.ok(reloaded);
       for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {

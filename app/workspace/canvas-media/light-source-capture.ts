@@ -3,13 +3,6 @@ import { LaurusObject, LaurusPolygonPath } from "../workspace.server";
 import { cachedObjectShape } from "./object-shape";
 import { centroidOf } from "./mask-geometry";
 
-/** Membership and hit-test queries over a mask's triangles.
- *
- *  Everything here takes already-parsed geometry (see mask-geometry.ts)
- *  rather than a polygons array to parse: these run on interaction --
- *  per click, and per animation frame during a drag -- so re-deriving the
- *  same numbers inside each helper is the one thing they must not do. */
-
 function pointInTriangle(
   px: number,
   py: number,
@@ -25,12 +18,6 @@ function pointInTriangle(
   return !(hasNeg && hasPos);
 }
 
-/** Which single triangle a point landed in, exact rather than
- *  nearest-centroid -- unlike the capture/object hit tests below, this has to
- *  tell adjacent triangles apart right up to their shared edge, which a
- *  closest-centroid test gets wrong for a thin sliver beside a large
- *  neighbor. Used by the object-review clean-up interaction to toggle one
- *  polygon's membership in the candidate being reviewed. */
 export function polygonIndexAtPoint(points: [number, number][][], point: [number, number]): number | undefined {
   const [px, py] = point;
   for (let i = 0; i < points.length; i++) {
@@ -89,10 +76,6 @@ export function captureCenterFromCentroids(
   return centroidOf(members);
 }
 
-/** The centroid of an arbitrary set of polygons, weighted by vertex rather
- *  than by triangle -- what the light source rests on. Walks `indices`
- *  instead of filtering every polygon, so it costs the size of the capture
- *  rather than the size of the mask. */
 export function centerOfIndices(
   points: [number, number][][],
   indices: Set<number>,

@@ -27,8 +27,6 @@ export const Z_INDEX = {
   INTERACTION_CANVAS: 1000,
   ITEMS_STACKING_OFFSET: 1001,
   CONTEXT_MENU_OFFSET: 2000,
-  // Above the context menu because object review is modal-ish: while it is
-  // up it owns the canvas, and nothing it sits over is actionable anyway.
   OBJECT_REVIEW_PANEL: 3000,
 } as const;
 

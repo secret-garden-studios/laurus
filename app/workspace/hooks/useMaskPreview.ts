@@ -37,11 +37,6 @@ export interface MaskSizeOverride {
   height: number | undefined;
 }
 
-/** How an edge-detected object should look once the server raises it. The
- *  server decides *where* the objects go; these say what they look like, and
- *  they come from the client so an auto-raised object is indistinguishable
- *  from one dragged out by hand (see uiState.stagedObject). Ignored unless
- *  edgeObjects is on. */
 export interface EdgeObjectSeed {
   elevation: number;
   falloff: number;
@@ -106,11 +101,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setCaptureDarknessState(value);
   }, []);
 
-  // Deliberately not cleared by reset(), like `resolution` and unlike every
-  // appearance field above: both are settings for how the *next* mesh is
-  // generated rather than state belonging to the current one, and reset()
-  // runs whenever the selected image changes -- so clearing it here would
-  // switch the toggle off under anyone masking a series of images.
   const [edgeObjects, setEdgeObjectsState] = useState(false);
   const edgeObjectsRef = useRef(false);
 
@@ -267,10 +257,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             dirtyRef.current = true;
             setTriangleCount((n) => n + 1);
           },
-          // Ref only, deliberately not state: nothing renders from the
-          // candidate list until the review starts (persistMask reads the ref
-          // once), so setting state here would re-render the whole workspace
-          // tree once per streamed object for no visible change.
           onObject: (event: MaskObject_V1_0) => {
             objectCandidatesRef.current = [
               ...objectCandidatesRef.current,

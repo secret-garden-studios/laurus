@@ -482,8 +482,6 @@ export default function UnitDisplay({
                     const capturedPolygons = maskData.polygons.filter((p) => p.capture_id === c.captureId);
                     if (capturedPolygons.length === 0) break;
                     const capturedGeometry = maskGeometry(maskData);
-                    // Only an emptiness test -- it used to flatten every
-                    // captured polygon's parsed points just to check `.length`.
                     const hasCapturedGeometry = maskData.polygons.some(
                       (p, index) => p.capture_id === c.captureId && (capturedGeometry.points[index]?.length ?? 0) > 0,
                     );

@@ -1053,15 +1053,7 @@ export function buildStaticMaskMesh(
     objects: ObjectGeometryInput[];
   },
   colorCtx: CanvasRenderingContext2D,
-  /** Already-welded point groups for this mask (see mask-geometry.ts). The
-   *  parse and weld depend only on the polygons' path data, which no object
-   *  or capture edit ever changes, so a caller rebuilding the mesh after such
-   *  an edit passes the groups it already has rather than paying for them
-   *  again. Omit it and they are derived here as before. */
   precomputed?: { corners: [number, number][]; polygonPointSets: [number, number][][] },
-  /** Per-polygon fill in RGB01, indexed like `polygons`. Same reasoning as
-   *  `precomputed`: fills do not change under an edit, and resolving one costs
-   *  a canvas fillStyle round-trip per polygon. */
   precomputedColors?: [number, number, number][],
 ): {
   positions: number[];

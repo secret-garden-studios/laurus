@@ -1143,13 +1143,6 @@ export default function Workspace({
   const notifyMaskObjectReviewPreview = useCallback((maskKey: string, indices: Set<number> | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices));
   }, []);
-  // Driven straight from the zoom slider's own onCursorMove, once per pointer
-  // frame -- routing that through uiDispatch instead would re-render every
-  // consumer of UIContext (every mask, img and svg on the canvas) on every
-  // pixel of the drag, which is what made the slide feel laggy. Mutating the
-  // scaled wrapper's own transform directly sidesteps that: the committed
-  // value in uiState.objectReview.zoom (and the one-time re-render it causes)
-  // still lands once the drag ends, via setZoom in useObjectReview.
   const notifyReviewZoomChanged = useCallback((zoom: number) => {
     const node = canvasScaleRef.current;
     if (node) node.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
@@ -1770,11 +1763,6 @@ export default function Workspace({
 
   const canvasCursor = useToolCursor({ target: "canvas" });
 
-  // 1 whenever no review is up, which is what keeps the canvas wrappers below
-  // inert outside a review. This is the committed value -- it only changes
-  // once a drag ends (see setZoom in useObjectReview); the live value during
-  // a drag is written straight to canvasScaleRef's own transform by
-  // notifyReviewZoomChanged above, without going through uiDispatch.
   const reviewZoom = uiState.objectReview?.zoom ?? 1;
   const previousReviewZoomRef = useRef(reviewZoom);
   useLayoutEffect(() => {
@@ -1782,9 +1770,6 @@ export default function Workspace({
     const previous = previousReviewZoomRef.current;
     previousReviewZoomRef.current = reviewZoom;
     if (!area || previous === reviewZoom) return;
-    // Zooming about the top-left corner would throw whatever the reviewer was
-    // looking at off screen, which is the opposite of the point -- so hold the
-    // middle of the viewport still and let the scroll offsets absorb it.
     const centerX = (area.scrollLeft + area.clientWidth / 2) / previous;
     const centerY = (area.scrollTop + area.clientHeight / 2) / previous;
     area.scrollLeft = centerX * reviewZoom - area.clientWidth / 2;
@@ -2104,10 +2089,6 @@ export default function Workspace({
                               height: "min-content",
                               zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
                               pointerEvents:
-                                // An object review owns the canvas while it is up:
-                                // its clean-up clicks have to reach the mask's own
-                                // triangles, which sit far below this overlay's
-                                // z-index and would otherwise never see the click.
                                 uiState.objectReview !== undefined
                                   ? "none"
                                   : uiState.tool.type === "mask" &&

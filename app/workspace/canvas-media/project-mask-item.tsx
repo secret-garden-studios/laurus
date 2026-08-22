@@ -104,13 +104,6 @@ function buildObjectsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>
   return byObject;
 }
 
-/** What the *mesh* depends on across every object, and nothing else.
- *
- *  The triangulation is subdivided around objects (see subdivideMeshForObjects),
- *  so it changes only when an object's position, reach or profile changes.
- *  Renaming an object, describing it, retagging which polygons it owns, or
- *  editing its black point all leave the triangulation identical -- and those
- *  are the majority of edits, including every accept/reject in a review. */
 function objectsMeshSignature(objects: LaurusObject[]): string {
   return objects.map((o) => `${o.id}:${o.cx},${o.cy},${o.radius},${o.elevation},${o.falloff},${o.shape}`).join("|");
 }
@@ -294,13 +287,8 @@ export function ProjectMaskItem({
   const capturesMetaRef = useRef<Map<number, LaurusCapture>>(new Map());
   const selectedCaptureIdRef = useRef<number | undefined>(undefined);
   const objectsMapRef = useRef<Map<number, Set<number>>>(new Map());
-  // The mask's parsed triangles, shared with every other consumer through
-  // mask-geometry's cache -- held in a ref only so the per-frame paths below
-  // reach it without a stale closure, not as a second copy of it.
   const maskGeometryRef = useRef<MaskGeometry>({ corners: [], points: [], centroids: [] });
   const objectsMeshSignatureRef = useRef<string>("");
-  // Two persistent highlight buffers: what recolorHighlight paints into, and
-  // what the GPU currently holds, so the two can be diffed into a small upload.
   const highlightScratchRef = useRef<Float32Array>(new Float32Array(0));
   const highlightUploadedRef = useRef<Float32Array>(new Float32Array(0));
   const selectedObjectIdRef = useRef<number | undefined>(undefined);
@@ -493,8 +481,6 @@ export function ProjectMaskItem({
     dragDisabled,
     isDragging: isDragging || isDraggingCapture || isDraggingTopology,
   });
-  // Object review is a modal-ish overlay independent of whatever tool is
-  // otherwise active, so its crosshair takes over regardless of tool state.
   const isReviewingThisMask = source.kind === "static" && uiState.objectReview?.maskKey === mediaKey;
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
 
@@ -535,11 +521,6 @@ export function ProjectMaskItem({
     if (latestSource.kind !== "static") return;
     const { gl } = state;
 
-    // Painted into a persistent scratch buffer and diffed against what the GPU
-    // already holds, so a highlight change uploads only the vertices that
-    // actually changed. A review clean-up click toggles one triangle; without
-    // this it allocated and re-uploaded the entire highlight attribute (four
-    // floats per vertex, for every vertex in the mask) to do it.
     const length = vertexCount * 4;
     const resized = highlightScratchRef.current.length !== length;
     if (resized) {
@@ -595,8 +576,6 @@ export function ProjectMaskItem({
     const uploaded = highlightUploadedRef.current;
     gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
     if (resized) {
-      // The attribute itself changed size (the mesh was rebuilt), so the
-      // buffer has to be reallocated rather than patched.
       gl.bufferData(gl.ARRAY_BUFFER, highlights, gl.STATIC_DRAW);
       uploaded.set(highlights);
     } else {
@@ -607,9 +586,7 @@ export function ProjectMaskItem({
         if (first < 0) first = i;
         last = i;
       }
-      // Nothing about the highlight changed -- not even a redraw is owed.
       if (first < 0) return;
-      // Widen to whole vertices so the upload lines up with the attribute.
       const start = first - (first % 4);
       const end = last + (4 - (last % 4));
       uploaded.set(highlights.subarray(start, end), start);
@@ -1056,11 +1033,6 @@ export function ProjectMaskItem({
         uploadStaticMaskMesh(state, mesh);
         gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
-        // That just zeroed the highlight on the GPU behind recolorHighlight's
-        // back. It keeps a mirror of what it last uploaded so it can patch
-        // only what changed, and a stale mirror would make it conclude there
-        // was nothing to re-upload and leave the highlight blank -- so the
-        // mirror is dropped here, forcing the next paint to upload in full.
         highlightScratchRef.current = new Float32Array(0);
         highlightUploadedRef.current = new Float32Array(0);
 
@@ -1134,10 +1106,6 @@ export function ProjectMaskItem({
         maskGeometryRef.current = maskGeometry(maskData);
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
-        // Seeded once here, alongside every other highlight input, because a
-        // review can already be under way when this mask mounts (it is started
-        // by the very generation that created it). Every later change arrives
-        // through setObjectReviewPreview on the handle above.
         objectReviewPreviewRef.current =
           uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview.currentIndices : undefined;
 
@@ -1231,10 +1199,6 @@ export function ProjectMaskItem({
             objectsMapRef.current = buildObjectsMap(updated.polygons);
             const geometry = maskGeometry(updated);
             maskGeometryRef.current = geometry;
-            // Only a change to the objects' own geometry can move a vertex.
-            // Everything else -- an accept/reject retagging polygons, a rename,
-            // a black point -- leaves the triangulation byte-identical, so the
-            // mesh is left alone and only the highlight is repainted.
             const signature = objectsMeshSignature(updated.objects);
             const glState = glStateRef.current;
             if (glState && colorCtx && signature !== objectsMeshSignatureRef.current) {
@@ -1434,11 +1398,6 @@ export function ProjectMaskItem({
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 const index = point ? polygonIndexAtPoint(maskGeometryRef.current.points, point) : undefined;
                 if (index !== undefined) {
-                  // Repaint straight away off this mask's own copy of the
-                  // membership, then tell the session. The click and the
-                  // highlight are the same gesture, so it should not wait on a
-                  // dispatch and a re-render to land -- and the reducer arrives
-                  // at exactly this set for the state that the decision reads.
                   const previewed = new Set(objectReviewPreviewRef.current ?? []);
                   if (previewed.has(index)) previewed.delete(index);
                   else previewed.add(index);

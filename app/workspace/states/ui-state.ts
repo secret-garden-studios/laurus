@@ -83,16 +83,6 @@ export type CarouselEntry =
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
-/** One live accept/reject review over a mask's edge-detected candidates.
- *  `candidates` and each candidate's own polygon_indices are the permanent,
- *  never-mutated record of what was auto-generated; `currentIndices` is the
- *  reviewer's live, editable membership for the candidate on screen right
- *  now (seeded from that candidate's polygon_indices, then toggled by
- *  manual clean-up clicks), so a diff against the two is always available
- *  when a decision is made. `decisions` is keyed by object id rather than
- *  candidate index so it stays meaningful across batches. Batch/cycle
- *  progression (16, then next-N-rejected, up to 3 cycles) lives in the
- *  reducer for RecordObjectReviewDecision below, not here. */
 export interface ObjectReviewSession {
   maskMediaId: string;
   maskKey: string;
@@ -103,12 +93,6 @@ export interface ObjectReviewSession {
   cycle: number;
   currentIndex: number;
   currentIndices: Set<number>;
-  /** Magnification of the whole canvas while reviewing, so individual
-   *  triangles are big enough to pick out. Lives on the session rather than
-   *  in global UI state because it is scoped to the review: the canvas is
-   *  scaled by a css transform, which dnd-kit's drag maths does not account
-   *  for, and dragging is already disabled for the duration (see
-   *  OBJECT_REVIEW_ZOOM_* in workspace.config). */
   zoom: number;
 }
 
@@ -291,18 +275,8 @@ function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
 }
 
 export type ObjectReviewAdvance =
-  | { done: true }
-  | { done: false; batchStart: number; batchSize: number; cycle: number; currentIndex: number };
+  { done: true } | { done: false; batchStart: number; batchSize: number; cycle: number; currentIndex: number };
 
-/** Where a review goes after the candidate on screen is decided: the next one
- *  in this batch, or the first of a backfill batch sized to however many of
- *  this batch were rejected, or nowhere (three cycles spent, nothing rejected,
- *  or no candidates left).
- *
- *  Pure, and exported, because two callers have to agree on it: the reducer
- *  that moves the session on, and whoever has to push the new membership at
- *  the canvas. Deriving it twice would be a duplicate of the one rule that
- *  decides what the reviewer sees next. */
 export function advanceObjectReview(
   review: ObjectReviewSession,
   decisions: Map<number, "accepted" | "rejected">,

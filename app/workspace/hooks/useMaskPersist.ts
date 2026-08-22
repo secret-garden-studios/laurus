@@ -61,21 +61,12 @@ export function useMaskPersist() {
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: newKey } });
-      // Objects already saved on the mask (there normally are none here --
-      // a fresh edge-detected mask holds its candidates back for review, see
-      // below -- but a duplicated/copied mask could arrive with some) still
-      // need a carousel entry to be selectable, same as one accepted through
-      // review gets via RecordObjectReviewDecision's own AddCarouselEntry.
       for (const object of result.objects) {
         uiDispatch({
           type: UIActionType.AddCarouselEntry,
           value: { type: "object", key: newKey, objectId: object.id },
         });
       }
-      // Edge-detected candidates arrive separately from the saved mask (see
-      // useMaskPreview's onObject handler) and are never auto-accepted --
-      // kick off the interactive accept/reject review instead of enrolling
-      // them directly.
       if (mask.objectCandidatesRef.current.length > 0) {
         uiDispatch({
           type: UIActionType.StartObjectReview,

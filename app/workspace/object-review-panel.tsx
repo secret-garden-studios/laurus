@@ -21,19 +21,7 @@ function formatZoom(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, "") + "x";
 }
 
-/** Sequential accept/reject review of one mask's edge-detected candidates:
- *  one object on screen at a time, highlighted on the canvas by
- *  project-mask-item.tsx's own objectReviewPreviewRef wiring. Clicking a
- *  triangle on the canvas toggles it into/out of the candidate being
- *  reviewed (see project-mask-item.tsx's onClick short-circuit) -- this
- *  panel only surfaces progress, the description prompt, and the two
- *  decisions themselves. */
 export default function ObjectReviewPanel() {
-  // The description is read off the input only when a decision is made.
-  // Nothing downstream cares about it before then, so it is deliberately
-  // uncontrolled: routing it through state meant a dispatch per keystroke,
-  // which re-rendered every consumer of the ui context -- every mask on the
-  // canvas included -- to show a character in a text box.
   const descriptionRef = useRef<HTMLInputElement>(null);
 
   const { uiState } = useContext(UIContext);
@@ -41,10 +29,6 @@ export default function ObjectReviewPanel() {
 
   const zoomTrackRef = useRef<HTMLDivElement | null>(null);
   const zoomTitleRef = useRef<HTMLDivElement | null>(null);
-  // Uncontrolled on purpose, like descriptionRef above: this is written to
-  // directly on every pointer-move frame while dragging (see onCursorMove
-  // below), and a reactive `{...}` child here would fight that write on the
-  // next unrelated re-render this panel happens to receive.
   const zoomValueRef = useRef<HTMLSpanElement>(null);
   const [zoomCursor, setZoomCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getZoomTrackValue, getTrackCursor: getZoomTrackCursor } = useTrackpadState(
@@ -60,10 +44,6 @@ export default function ObjectReviewPanel() {
     [getZoomTrackCursor],
   );
 
-  // Keeps the slider's resting position (and the read-out beside it) in sync
-  // with the committed zoom -- on review start, and again once a drag ends
-  // and setZoom below has landed. Never fires mid-drag: previewZoom does not
-  // touch review.zoom, only the mask's own live transform.
   useLayoutEffect(() => {
     if (!review || !zoomTrackRef.current) return;
     setZoomCursor({ x: getZoomCursor(review.zoom, zoomTrackRef.current.clientWidth), y: 0 });
@@ -76,8 +56,6 @@ export default function ObjectReviewPanel() {
 
   const accept = () => {
     const description = descriptionRef.current?.value.trim() ?? "";
-    // Enforced here rather than by disabling the button, which would need the
-    // text in state to know whether it is empty.
     if (!description) {
       descriptionRef.current?.focus();
       return;
@@ -90,9 +68,6 @@ export default function ObjectReviewPanel() {
       style={{
         zIndex: Z_INDEX.OBJECT_REVIEW_PANEL,
         position: "fixed",
-        // Anchored to the bottom rather than the top so it never sits over
-        // the maskbar, which is what the titlebar renders while the mask
-        // tool -- the tool a review always starts under -- is active.
         bottom: 24,
         left: "50%",
         transform: "translateX(-50%)",
@@ -159,8 +134,6 @@ export default function ObjectReviewPanel() {
         />
       </div>
       <input
-        // Keyed on the candidate so advancing remounts it empty -- the reset
-        // an effect would otherwise have to do.
         key={review.currentIndex}
         ref={descriptionRef}
         type="text"
