@@ -13,7 +13,8 @@ import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
-import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
+import { indicesInCircleFromCentroids } from "./canvas-media/light-source-capture";
+import { maskGeometry } from "./canvas-media/mask-geometry";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
@@ -135,7 +136,7 @@ export default function Canvas() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
-  const { captureMeshSection, createPeak, ...mask } = useContext(MaskContext);
+  const { captureMeshSection, createObject, ...mask } = useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
@@ -521,7 +522,7 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
+      const polygonIndices = indicesInCircleFromCentroids(maskGeometry(maskData).centroids, meshCircle);
       if (polygonIndices.size === 0) return;
       captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
@@ -539,12 +540,12 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      createPeak(maskKey, meshCircle, {
-        ...uiState.stagedPeak,
-        shape: topologyMode === "shape" ? uiState.stagedPeak.shape : "",
+      createObject(maskKey, meshCircle, {
+        ...uiState.stagedObject,
+        shape: topologyMode === "shape" ? uiState.stagedObject.shape : "",
       });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createPeak, uiState.stagedPeak, topologyMode],
+    [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject, topologyMode],
   );
 
   const handleDuplicateDrop = useCallback(

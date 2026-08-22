@@ -36,7 +36,7 @@ export const defaultRotateEquation: LaurusRotateEquation = {
 
 const MAX_VISIBLE_PARAM_SLIDERS = 4;
 
-const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "peak";
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "object";
 
 export type RotateUnitTarget = "img" | "svg" | "mask";
 
@@ -48,7 +48,7 @@ interface RotateUnit {
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -124,7 +124,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
         case "capture":
-        case "peak": {
+        case "object": {
           return "";
         }
       }
@@ -248,7 +248,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
-          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -258,7 +258,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
       uiDispatch,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 

@@ -1,26 +1,44 @@
-import { parsePathPoints, peakShapeRhoAt } from "../mask-gl";
-import { LaurusPeak, LaurusPolygonPath } from "../workspace.server";
-import { cachedPeakShape } from "./peak-shape";
+import { objectShapeRhoAt } from "../mask-gl";
+import { LaurusObject, LaurusPolygonPath } from "../workspace.server";
+import { cachedObjectShape } from "./object-shape";
+import { centroidOf } from "./mask-geometry";
 
-function centroidOf(points: [number, number][]): [number, number] {
-  return [
-    points.reduce((sum, [x]) => sum + x, 0) / points.length,
-    points.reduce((sum, [, y]) => sum + y, 0) / points.length,
-  ];
+/** Membership and hit-test queries over a mask's triangles.
+ *
+ *  Everything here takes already-parsed geometry (see mask-geometry.ts)
+ *  rather than a polygons array to parse: these run on interaction --
+ *  per click, and per animation frame during a drag -- so re-deriving the
+ *  same numbers inside each helper is the one thing they must not do. */
+
+function pointInTriangle(
+  px: number,
+  py: number,
+  [ax, ay]: [number, number],
+  [bx, by]: [number, number],
+  [cx, cy]: [number, number],
+): boolean {
+  const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+  const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+  const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
 }
 
-export function captureTriangleIndicesInCircle(
-  polygons: LaurusPolygonPath[],
-  circle: { cx: number; cy: number; radius: number },
-): Set<number> {
-  return indicesInCircleFromCentroids(polygonCentroids(polygons), circle);
-}
-
-export function polygonCentroids(polygons: LaurusPolygonPath[]): [number, number][] {
-  return polygons.map((polygon) => {
-    const points = parsePathPoints(polygon.d);
-    return points.length === 0 ? ([NaN, NaN] as [number, number]) : centroidOf(points);
-  });
+/** Which single triangle a point landed in, exact rather than
+ *  nearest-centroid -- unlike the capture/object hit tests below, this has to
+ *  tell adjacent triangles apart right up to their shared edge, which a
+ *  closest-centroid test gets wrong for a thin sliver beside a large
+ *  neighbor. Used by the object-review clean-up interaction to toggle one
+ *  polygon's membership in the candidate being reviewed. */
+export function polygonIndexAtPoint(points: [number, number][][], point: [number, number]): number | undefined {
+  const [px, py] = point;
+  for (let i = 0; i < points.length; i++) {
+    const triangle = points[i];
+    if (triangle.length !== 3) continue;
+    if (pointInTriangle(px, py, triangle[0], triangle[1], triangle[2])) return i;
+  }
+  return undefined;
 }
 
 export function indicesInCircleFromCentroids(
@@ -36,30 +54,26 @@ export function indicesInCircleFromCentroids(
   return indices;
 }
 
-export interface PeakRegion {
+export interface ObjectRegion {
   cx: number;
   cy: number;
   radius: number;
   shape: string;
 }
 
-export function indicesInPeakFromCentroids(centroids: [number, number][], peak: PeakRegion): Set<number> {
-  const shape = peak.shape ? cachedPeakShape(peak.shape) : undefined;
-  if (!shape) return indicesInCircleFromCentroids(centroids, peak);
+export function indicesInObjectFromCentroids(centroids: [number, number][], object: ObjectRegion): Set<number> {
+  const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
+  if (!shape) return indicesInCircleFromCentroids(centroids, object);
   const indices = new Set<number>();
   centroids.forEach(([x, y], i) => {
-    const dx = x - peak.cx;
-    const dy = y - peak.cy;
+    const dx = x - object.cx;
+    const dy = y - object.cy;
     const distance = Math.hypot(dx, dy);
-    if (distance <= peak.radius * peakShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)) {
+    if (distance <= object.radius * objectShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)) {
       indices.add(i);
     }
   });
   return indices;
-}
-
-export function peakTriangleIndices(polygons: LaurusPolygonPath[], peak: PeakRegion): Set<number> {
-  return indicesInPeakFromCentroids(polygonCentroids(polygons), peak);
 }
 
 export function captureCenterFromCentroids(
@@ -75,57 +89,97 @@ export function captureCenterFromCentroids(
   return centroidOf(members);
 }
 
+/** The centroid of an arbitrary set of polygons, weighted by vertex rather
+ *  than by triangle -- what the light source rests on. Walks `indices`
+ *  instead of filtering every polygon, so it costs the size of the capture
+ *  rather than the size of the mask. */
+export function centerOfIndices(
+  points: [number, number][][],
+  indices: Set<number>,
+): { x: number; y: number } | undefined {
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  indices.forEach((index) => {
+    const triangle = points[index];
+    if (!triangle) return;
+    for (const [px, py] of triangle) {
+      sumX += px;
+      sumY += py;
+      count++;
+    }
+  });
+  if (count === 0) return undefined;
+  return { x: sumX / count, y: sumY / count };
+}
+
 export function capturedRegionCircle(
   polygons: LaurusPolygonPath[],
+  centroids: [number, number][],
   captureId: number,
 ): { cx: number; cy: number; radius: number } | undefined {
-  const centroids = polygons
-    .filter((p) => p.capture_id === captureId)
-    .map((p) => parsePathPoints(p.d))
-    .filter((points) => points.length > 0)
-    .map(centroidOf);
-  if (centroids.length === 0) return undefined;
-  const [cx, cy] = centroidOf(centroids);
-  const radius = Math.max(...centroids.map(([x, y]) => Math.hypot(x - cx, y - cy)));
+  const members: [number, number][] = [];
+  polygons.forEach((p, i) => {
+    if (p.capture_id !== captureId) return;
+    const centroid = centroids[i];
+    if (centroid && !Number.isNaN(centroid[0]) && !Number.isNaN(centroid[1])) members.push(centroid);
+  });
+  if (members.length === 0) return undefined;
+  const [cx, cy] = centroidOf(members);
+  const radius = Math.max(...members.map(([x, y]) => Math.hypot(x - cx, y - cy)));
   return { cx, cy, radius };
 }
 
-export function captureIdAtPoint(polygons: LaurusPolygonPath[], point: [number, number]): number | undefined {
+export function captureIdAtPoint(
+  polygons: LaurusPolygonPath[],
+  points: [number, number][][],
+  point: [number, number],
+): number | undefined {
   const [px, py] = point;
   const orderedCaptureIds: number[] = [];
-  const pointsByCapture = new Map<number, [number, number][]>();
-  polygons.forEach((p) => {
+  const boundsByCapture = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
+  polygons.forEach((p, i) => {
     if (p.capture_id === 0) return;
-    if (!pointsByCapture.has(p.capture_id)) orderedCaptureIds.push(p.capture_id);
-    const points = pointsByCapture.get(p.capture_id) ?? [];
-    points.push(...parsePathPoints(p.d));
-    pointsByCapture.set(p.capture_id, points);
+    const triangle = points[i];
+    if (!triangle || triangle.length === 0) return;
+    let bounds = boundsByCapture.get(p.capture_id);
+    if (!bounds) {
+      orderedCaptureIds.push(p.capture_id);
+      bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+      boundsByCapture.set(p.capture_id, bounds);
+    }
+    for (const [x, y] of triangle) {
+      if (x < bounds.minX) bounds.minX = x;
+      if (x > bounds.maxX) bounds.maxX = x;
+      if (y < bounds.minY) bounds.minY = y;
+      if (y > bounds.maxY) bounds.maxY = y;
+    }
   });
   for (const captureId of orderedCaptureIds) {
-    const points = pointsByCapture.get(captureId) ?? [];
-    if (points.length === 0) continue;
-    const xs = points.map(([x]) => x);
-    const ys = points.map(([, y]) => y);
-    if (px >= Math.min(...xs) && px <= Math.max(...xs) && py >= Math.min(...ys) && py <= Math.max(...ys)) {
+    const bounds = boundsByCapture.get(captureId);
+    if (!bounds) continue;
+    if (px >= bounds.minX && px <= bounds.maxX && py >= bounds.minY && py <= bounds.maxY) {
       return captureId;
     }
   }
   return undefined;
 }
 
-export function peakIdAtPoint(peaks: LaurusPeak[], point: [number, number]): number | undefined {
+export function objectIdAtPoint(objects: LaurusObject[], point: [number, number]): number | undefined {
   const [px, py] = point;
   let bestId: number | undefined;
   let bestReach = Infinity;
-  for (const peak of peaks) {
-    const dx = px - peak.cx;
-    const dy = py - peak.cy;
+  for (const object of objects) {
+    const dx = px - object.cx;
+    const dy = py - object.cy;
     const distance = Math.hypot(dx, dy);
-    const shape = peak.shape ? cachedPeakShape(peak.shape) : undefined;
-    const reach = shape ? peak.radius * peakShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0) : peak.radius;
+    const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
+    const reach = shape
+      ? object.radius * objectShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)
+      : object.radius;
     if (distance > reach) continue;
     if (reach >= bestReach) continue;
-    bestId = peak.id;
+    bestId = object.id;
     bestReach = reach;
   }
   return bestId;

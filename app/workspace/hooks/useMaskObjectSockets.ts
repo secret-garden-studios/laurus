@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
-  LaurusMaskResult,
-  MaskPeakSocketMessage_V1_0,
-  MaskPeakUpdateRequest_V1_0,
-  normalizeMaskResult,
-  toMaskPeakSocketUrl,
+  MaskObjectSocketMessage_V1_0,
+  MaskObjectUpdateRequest_V1_0,
+  ObjectUpdateDelta_V1_0,
+  normalizeObject,
+  toMaskObjectSocketUrl,
 } from "../workspace.server";
 
-export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
+export function useMaskObjectSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
-  const queuesRef = useRef<Map<string, Array<(result: LaurusMaskResult | undefined) => void>>>(new Map());
+  const queuesRef = useRef<Map<string, Array<(delta: ObjectUpdateDelta_V1_0 | undefined) => void>>>(new Map());
 
   const closeSocket = useCallback((maskMediaId: string) => {
     socketsRef.current.get(maskMediaId)?.close();
@@ -34,16 +34,16 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
       if (!apiOrigin || !accessToken) return undefined;
       let socket: WebSocket;
       try {
-        socket = new WebSocket(toMaskPeakSocketUrl(apiOrigin, maskMediaId, accessToken));
+        socket = new WebSocket(toMaskObjectSocketUrl(apiOrigin, maskMediaId, accessToken));
       } catch (error) {
         console.log({ error });
         return undefined;
       }
-      const resolveNext = (result: LaurusMaskResult | undefined) => {
-        queuesRef.current.get(maskMediaId)?.shift()?.(result);
+      const resolveNext = (delta: ObjectUpdateDelta_V1_0 | undefined) => {
+        queuesRef.current.get(maskMediaId)?.shift()?.(delta);
       };
       socket.onmessage = (event: MessageEvent<string>) => {
-        let message: MaskPeakSocketMessage_V1_0;
+        let message: MaskObjectSocketMessage_V1_0;
         try {
           message = JSON.parse(event.data);
         } catch (error) {
@@ -51,8 +51,11 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
           resolveNext(undefined);
           return;
         }
-        if (message.type === "peak_update_complete") {
-          resolveNext(normalizeMaskResult(message.result));
+        if (message.type === "object_update_complete") {
+          resolveNext({
+            ...message.delta,
+            object: message.delta.object ? normalizeObject(message.delta.object) : null,
+          });
         } else {
           console.log({ error: message.message });
           resolveNext(undefined);
@@ -72,8 +75,8 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
     [apiOrigin, accessToken],
   );
 
-  const sendPeakUpdate = useCallback(
-    (maskMediaId: string, update: MaskPeakUpdateRequest_V1_0): Promise<LaurusMaskResult | undefined> => {
+  const sendObjectUpdate = useCallback(
+    (maskMediaId: string, update: MaskObjectUpdateRequest_V1_0): Promise<ObjectUpdateDelta_V1_0 | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
@@ -89,7 +92,7 @@ export function useMaskPeakSockets(apiOrigin: string | undefined, accessToken: s
     [getSocket],
   );
 
-  return { sendPeakUpdate, closeSocket };
+  return { sendObjectUpdate, closeSocket };
 }
 
-export type UseMaskPeakSockets = ReturnType<typeof useMaskPeakSockets>;
+export type UseMaskObjectSockets = ReturnType<typeof useMaskObjectSockets>;

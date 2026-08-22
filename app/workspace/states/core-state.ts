@@ -6,7 +6,7 @@ import {
   LaurusMediaGroupResult,
   LaurusSvgResult,
   LaurusMaskResult,
-  LaurusPeakBlackPoint,
+  LaurusObjectBlackPoint,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
@@ -38,14 +38,14 @@ export interface PendingLightSourceCapture {
 
 export interface PendingTopologyEdit {
   maskKey: string;
-  peakId: number;
+  objectId: number;
   cx: number;
   cy: number;
   radius: number;
   elevation: number;
   falloff: number;
   shape: string;
-  blackPoint: LaurusPeakBlackPoint;
+  blackPoint: LaurusObjectBlackPoint;
 }
 
 export interface CoreState {

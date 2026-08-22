@@ -100,7 +100,7 @@ export default function ScaleUnitbar({
         return texture300();
       case "capture":
         return asterisk300();
-      case "peak":
+      case "object":
         return antigravity300();
     }
   }, [target]);

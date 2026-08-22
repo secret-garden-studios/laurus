@@ -8,7 +8,7 @@ import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
-import { PeakShapeResult, buildPeakShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/peak-shape";
+import { ObjectShapeResult, buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -266,7 +266,7 @@ export default function Maskbar() {
   const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
   const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
   const isEdgesDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isEdgesOn = mask.edgePeaks;
+  const isEdgesOn = mask.edgeObjects;
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
@@ -279,11 +279,11 @@ export default function Maskbar() {
 
   const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
   const armedMarkup = armedSvg?.markup;
-  const armedShape = useMemo<PeakShapeResult | undefined>(() => {
+  const armedShape = useMemo<ObjectShapeResult | undefined>(() => {
     if (!armedMarkup) return undefined;
     const decoded = decodeSvgMarkup(armedMarkup);
     if (!decoded) return { ok: false, reason: "the svg's markup could not be read" };
-    return buildPeakShapeFromMarkup(decoded);
+    return buildObjectShapeFromMarkup(decoded);
   }, [armedMarkup]);
   const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
   const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
@@ -629,9 +629,9 @@ export default function Maskbar() {
         <div
           title={
             isEdgesDisabled
-              ? "select an image to mask, or arm one from the browser, to raise peaks from its edges"
+              ? "select an image to mask, or arm one from the browser, to raise objects from its edges"
               : "detect the image's edges while generating, fill the areas they enclose with polygons, and " +
-                'raise a peak over each of the largest -- the same peaks the "peak" tool draws by hand'
+                'raise an object over each of the largest -- the same objects the "object" tool draws by hand'
           }
           style={{
             display: "flex",
@@ -651,7 +651,7 @@ export default function Maskbar() {
           </span>
           <Toggle
             value={isEdgesOn}
-            onClick={() => mask.setEdgePeaks(!isEdgesOn)}
+            onClick={() => mask.setEdgeObjects(!isEdgesOn)}
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
@@ -738,7 +738,7 @@ export default function Maskbar() {
           title={
             isTopologyDisabled
               ? "select a mesh to adjust its topology"
-              : 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for peaks shaped like an svg instead'
+              : 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for objects shaped like an svg instead'
           }
           style={{
             display: "flex",
@@ -753,7 +753,7 @@ export default function Maskbar() {
               textShadow: isTopologyOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
             }}
           >
-            {"peak"}
+            {"object"}
           </span>
           <Toggle
             value={isTopologyOn}
@@ -779,12 +779,12 @@ export default function Maskbar() {
         <div
           title={
             isTopologyDisabled
-              ? "select a mesh to give its peaks a custom shape"
+              ? "select a mesh to give its objects a custom shape"
               : shapeError
-                ? `${armedSvg?.media_key ?? "this svg"} can't shape a peak: ${shapeError}`
+                ? `${armedSvg?.media_key ?? "this svg"} can't shape an object: ${shapeError}`
                 : armedShape?.ok
-                  ? `drag a circle over this mesh to raise a peak shaped like ${armedSvg?.media_key}'s outline instead of a round one`
-                  : "pick an svg in the browser to shape new peaks like its outline"
+                  ? `drag a circle over this mesh to raise an object shaped like ${armedSvg?.media_key}'s outline instead of a round one`
+                  : "pick an svg in the browser to shape new objects like its outline"
           }
           style={{
             display: "flex",

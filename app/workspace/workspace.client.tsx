@@ -28,12 +28,14 @@ import {
   LaurusSvgPageSearch,
   searchSvgs,
   nextCaptureId,
-  nextPeakId,
+  nextObjectId,
+  CaptureUpdateDelta_V1_0,
+  ObjectUpdateDelta_V1_0,
   MaskCaptureUpdateRequest_V1_0,
-  MaskPeakUpdateRequest_V1_0,
-  LaurusPeakBlackPoint,
-  toPeakBlackPoint,
-  toPeakBlackPointFields,
+  MaskObjectUpdateRequest_V1_0,
+  LaurusObjectBlackPoint,
+  toObjectBlackPoint,
+  toObjectBlackPointFields,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
@@ -44,8 +46,9 @@ import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
-import { deleteMaskPeakEffects, parseMaskCaptureInputId, parseMaskPeakInputId } from "./effects-utils";
+import { deleteMaskObjectEffects, parseMaskCaptureInputId, parseMaskObjectInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
+import ObjectReviewPanel from "./object-review-panel";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
@@ -53,15 +56,17 @@ import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
 import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
-import { useMaskPeakSockets } from "./hooks/useMaskPeakSockets";
-import { peakTriangleIndices } from "./canvas-media/light-source-capture";
+import { useMaskObjectSockets } from "./hooks/useMaskObjectSockets";
+import { indicesInObjectFromCentroids } from "./canvas-media/light-source-capture";
+import { maskGeometry } from "./canvas-media/mask-geometry";
+import { applyCaptureDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
   CAPTURE_DARKNESS_DEFAULT,
   CAPTURE_FALLOFF_CSS_PX_DEFAULT,
   CAPTURE_FALLOFF_TO_SIZE_RATIO,
   CAPTURE_INTENSITY_DEFAULT,
   CAPTURE_SIZE_CSS_PX_DEFAULT,
-  MIN_MASK_PEAK_RADIUS_PX,
+  MIN_MASK_OBJECT_RADIUS_PX,
   TEXTURE_MIX_DEFAULT,
 } from "./mask-gl";
 import {
@@ -234,34 +239,34 @@ export interface SocketContextProps {
   sendMaskCaptureUpdate: (
     maskMediaId: string,
     request: MaskCaptureUpdateRequest_V1_0,
-  ) => Promise<LaurusMaskResult | undefined>;
+  ) => Promise<CaptureUpdateDelta_V1_0 | undefined>;
   closeMaskCaptureSocket: (maskMediaId: string) => void;
-  sendMaskPeakUpdate: (
+  sendMaskObjectUpdate: (
     maskMediaId: string,
-    update: MaskPeakUpdateRequest_V1_0,
-  ) => Promise<LaurusMaskResult | undefined>;
-  closeMaskPeakSocket: (maskMediaId: string) => void;
+    update: MaskObjectUpdateRequest_V1_0,
+  ) => Promise<ObjectUpdateDelta_V1_0 | undefined>;
+  closeMaskObjectSocket: (maskMediaId: string) => void;
 }
 
 export const SocketContext = createContext<SocketContextProps>({
   sendMaskCaptureUpdate: async () => undefined,
   closeMaskCaptureSocket: () => {},
-  sendMaskPeakUpdate: async () => undefined,
-  closeMaskPeakSocket: () => {},
+  sendMaskObjectUpdate: async () => undefined,
+  closeMaskObjectSocket: () => {},
 });
 
 export interface MaskNotifyValue {
   captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
-  createPeak: (
+  createObject: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
+    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint },
   ) => Promise<void>;
-  deletePeak: (maskKey: string, peakId: number) => Promise<void>;
+  deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
   notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
-  notifyMaskSelectedPeakChanged: (maskKey: string, peakId: number | undefined) => void;
+  notifyMaskSelectedObjectChanged: (maskKey: string, objectId: number | undefined) => void;
   notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>, captureId?: number) => void;
   notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
   notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
@@ -269,7 +274,7 @@ export interface MaskNotifyValue {
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
-  notifyMaskPeaksUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+  notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
 
 export interface UIContextProps {
@@ -286,6 +291,7 @@ const defaultMaskPreview: UseMaskPreview = {
   status: "idle",
   triangleCount: 0,
   result: undefined,
+  objectCandidatesRef: { current: [] },
   errorMessage: undefined,
   textureMix: TEXTURE_MIX_DEFAULT,
   setTextureMix: () => {},
@@ -308,8 +314,8 @@ const defaultMaskPreview: UseMaskPreview = {
   setSize: () => {},
   resolution: MASK_RESOLUTION_DEFAULT,
   setResolution: () => {},
-  edgePeaks: false,
-  setEdgePeaks: () => {},
+  edgeObjects: false,
+  setEdgeObjects: () => {},
   start: () => {},
   reset: () => {},
   meshRefs: {
@@ -327,12 +333,12 @@ const defaultMaskPreview: UseMaskPreview = {
 
 const defaultMaskNotifyValue: MaskNotifyValue = {
   captureMeshSection: async () => {},
-  createPeak: async () => {},
-  deletePeak: async () => {},
+  createObject: async () => {},
+  deleteObject: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskSelectionChanged: () => {},
   notifyMaskSelectedCaptureChanged: () => {},
-  notifyMaskSelectedPeakChanged: () => {},
+  notifyMaskSelectedObjectChanged: () => {},
   notifyMaskPendingCaptureSet: () => {},
   notifyMaskPendingCaptureCleared: () => {},
   notifyMaskCaptureUpdated: () => {},
@@ -340,7 +346,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskLightSourcePreviewToggled: () => {},
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
-  notifyMaskPeaksUpdated: () => {},
+  notifyMaskObjectsUpdated: () => {},
 };
 
 export interface MaskContextProps extends UseMaskPreview, MaskNotifyValue {}
@@ -418,13 +424,13 @@ function initCarouselEntries(
         distance,
       });
     });
-    const peaks = canvasMasks.get(projectMask[0])?.peaks ?? [];
-    peaks.forEach((peak) => {
+    const objects = canvasMasks.get(projectMask[0])?.objects ?? [];
+    objects.forEach((object) => {
       temp.push({
         entry: {
-          type: "peak",
+          type: "object",
           key: projectMask[0],
-          peakId: peak.id,
+          objectId: object.id,
         },
         distance,
       });
@@ -810,7 +816,7 @@ export default function Workspace({
     coreState.apiOrigin,
     coreState.accessToken,
   );
-  const { sendPeakUpdate: sendMaskPeakUpdate, closeSocket: closeMaskPeakSocket } = useMaskPeakSockets(
+  const { sendObjectUpdate: sendMaskObjectUpdate, closeSocket: closeMaskObjectSocket } = useMaskObjectSockets(
     coreState.apiOrigin,
     coreState.accessToken,
   );
@@ -1010,7 +1016,7 @@ export default function Workspace({
               eligibleItems.add(inputKey);
               if (
                 parseMaskCaptureInputId(inputKey).captureId === undefined &&
-                parseMaskPeakInputId(inputKey).peakId === undefined
+                parseMaskObjectInputId(inputKey).objectId === undefined
               ) {
                 globalLimit = Math.max(globalLimit, e.value.end);
               }
@@ -1119,8 +1125,8 @@ export default function Workspace({
   const notifyMaskSelectedCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedCapture(captureId));
   }, []);
-  const notifyMaskSelectedPeakChanged = useCallback((maskKey: string, peakId: number | undefined) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedPeak(peakId));
+  const notifyMaskSelectedObjectChanged = useCallback((maskKey: string, objectId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedObject(objectId));
   }, []);
   const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>, captureId?: number) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices, captureId));
@@ -1145,8 +1151,8 @@ export default function Workspace({
     if (maskKey === undefined) return;
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingTopology());
   }, []);
-  const notifyMaskPeaksUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncPeaks(updated));
+  const notifyMaskObjectsUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncObjects(updated));
   }, []);
 
   const captureMeshSection = useCallback(
@@ -1173,8 +1179,9 @@ export default function Workspace({
         falloff: Math.min(size * CAPTURE_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
       });
       if (updated) {
-        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
-        notifyMaskCaptureUpdated(maskKey, updated);
+        const patched = applyCaptureDelta(maskData, updated);
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskCaptureUpdated(maskKey, patched);
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
         uiDispatch({
           type: UIActionType.SetSelectedElement,
@@ -1182,7 +1189,7 @@ export default function Workspace({
         });
         notifyMaskSelectionChanged(maskKey);
         notifyMaskSelectedCaptureChanged(maskKey, captureId);
-        notifyMaskSelectedPeakChanged(maskKey, undefined);
+        notifyMaskSelectedObjectChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
       notifyMaskPendingCaptureCleared(maskKey);
@@ -1206,26 +1213,26 @@ export default function Workspace({
       notifyMaskPendingCaptureSet,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
       notifyMaskToolChanged,
     ],
   );
 
-  const createPeak = useCallback(
+  const createObject = useCallback(
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint },
+      seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint },
     ) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
-      const peakId = nextPeakId(maskData.peaks);
-      const radius = Math.max(circle.radius, MIN_MASK_PEAK_RADIUS_PX);
+      const objectId = nextObjectId(maskData.objects);
+      const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
       const edit: PendingTopologyEdit = {
         maskKey,
-        peakId,
+        objectId,
         cx: circle.cx,
         cy: circle.cy,
         radius,
@@ -1239,28 +1246,35 @@ export default function Workspace({
       notifyMaskPendingTopologySet(maskKey, edit);
 
       const polygonIndices = [
-        ...peakTriangleIndices(maskData.polygons, { cx: circle.cx, cy: circle.cy, radius, shape: seed.shape }),
+        ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
+          cx: circle.cx,
+          cy: circle.cy,
+          radius,
+          shape: seed.shape,
+        }),
       ];
-      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
-        peak_id: peakId,
-        name: `peak ${peakId}`,
+      const updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
+        object_id: objectId,
+        name: `object ${objectId}`,
         cx: circle.cx,
         cy: circle.cy,
         radius,
         elevation: seed.elevation,
         falloff: seed.falloff,
         shape: seed.shape,
-        ...toPeakBlackPointFields(seed.blackPoint),
+        ...toObjectBlackPointFields(seed.blackPoint),
+        description: "",
         remove: false,
         polygon_indices: polygonIndices,
       });
       if (updated) {
-        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
-        notifyMaskPeaksUpdated(maskKey, updated);
-        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: maskKey, peakId } });
-        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "peak", peakId } });
+        const patched = applyObjectDelta(maskData, updated);
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskObjectsUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "object", key: maskKey, objectId } });
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
         notifyMaskSelectionChanged(maskKey);
-        notifyMaskSelectedPeakChanged(maskKey, peakId);
+        notifyMaskSelectedObjectChanged(maskKey, objectId);
         notifyMaskSelectedCaptureChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
@@ -1268,56 +1282,65 @@ export default function Workspace({
     },
     [
       coreState.canvasMasks,
-      sendMaskPeakUpdate,
+      sendMaskObjectUpdate,
       dispatch,
       uiDispatch,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
-      notifyMaskPeaksUpdated,
+      notifyMaskObjectsUpdated,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
       notifyMaskSelectedCaptureChanged,
     ],
   );
 
-  const deletePeak = useCallback(
-    async (maskKey: string, peakId: number) => {
+  const deleteObject = useCallback(
+    async (maskKey: string, objectId: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
-      const peak = maskData?.peaks.find((p) => p.id === peakId);
-      if (!maskData || !peak) return;
+      const object = maskData?.objects.find((p) => p.id === objectId);
+      if (!maskData || !object) return;
 
-      const updated = await sendMaskPeakUpdate(maskData.mask_media_id, {
-        peak_id: peakId,
-        name: peak.name,
-        cx: peak.cx,
-        cy: peak.cy,
-        radius: peak.radius,
-        elevation: peak.elevation,
-        falloff: peak.falloff,
-        shape: peak.shape,
-        ...toPeakBlackPointFields(toPeakBlackPoint(peak)),
+      const updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
+        object_id: objectId,
+        name: object.name,
+        cx: object.cx,
+        cy: object.cy,
+        radius: object.radius,
+        elevation: object.elevation,
+        falloff: object.falloff,
+        shape: object.shape,
+        ...toObjectBlackPointFields(toObjectBlackPoint(object)),
+        description: object.description,
         remove: true,
         polygon_indices: [],
       });
       if (!updated) return;
 
-      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: updated });
-      notifyMaskPeaksUpdated(maskKey, updated);
-      uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, peakId });
-      deleteMaskPeakEffects(maskKey, peakId, coreState.apiOrigin, coreState.accessToken, coreState.effects, dispatch);
+      const patched = applyObjectDelta(maskData, updated);
+      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+      notifyMaskObjectsUpdated(maskKey, patched);
+      uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, objectId });
+      deleteMaskObjectEffects(
+        maskKey,
+        objectId,
+        coreState.apiOrigin,
+        coreState.accessToken,
+        coreState.effects,
+        dispatch,
+      );
       if (
         uiState.selectedElement?.key === maskKey &&
-        uiState.selectedElement.type === "peak" &&
-        uiState.selectedElement.peakId === peakId
+        uiState.selectedElement.type === "object" &&
+        uiState.selectedElement.objectId === objectId
       ) {
         uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "mask" } });
         notifyMaskSelectionChanged(maskKey);
-        notifyMaskSelectedPeakChanged(maskKey, undefined);
+        notifyMaskSelectedObjectChanged(maskKey, undefined);
       }
       if (
         uiState.activeElement?.key === maskKey &&
-        uiState.activeElement.type === "peak" &&
-        uiState.activeElement.peakId === peakId
+        uiState.activeElement.type === "object" &&
+        uiState.activeElement.objectId === objectId
       ) {
         uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
       }
@@ -1327,14 +1350,14 @@ export default function Workspace({
       coreState.apiOrigin,
       coreState.accessToken,
       coreState.effects,
-      sendMaskPeakUpdate,
+      sendMaskObjectUpdate,
       dispatch,
       uiDispatch,
       uiState.activeElement,
       uiState.selectedElement,
-      notifyMaskPeaksUpdated,
+      notifyMaskObjectsUpdated,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -1478,12 +1501,12 @@ export default function Workspace({
       uiDispatch({ type: UIActionType.SetRecordingLight, value: true });
 
       const newAnimations = await getNewAnimationsByTarget("none", false, target);
-      const { peakId: targetPeakId } = parseMaskPeakInputId(target.inputKey);
+      const { objectId: targetObjectId } = parseMaskObjectInputId(target.inputKey);
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>
           effect.key === target.effectKey &&
           (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
-          (parseMaskCaptureInputId(target.inputKey).captureId !== undefined || targetPeakId !== undefined),
+          (parseMaskCaptureInputId(target.inputKey).captureId !== undefined || targetObjectId !== undefined),
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
@@ -1492,8 +1515,8 @@ export default function Workspace({
           ?.get(maskKey)
           ?.forEach((player) =>
             lightSourceFinished.push(
-              targetPeakId !== undefined
-                ? player.play(target.effectKey, undefined, targetPeakId)
+              targetObjectId !== undefined
+                ? player.play(target.effectKey, undefined, targetObjectId)
                 : player.play(target.effectKey, captureId),
             ),
           );
@@ -1665,21 +1688,21 @@ export default function Workspace({
     () => ({
       sendMaskCaptureUpdate,
       closeMaskCaptureSocket,
-      sendMaskPeakUpdate,
-      closeMaskPeakSocket,
+      sendMaskObjectUpdate,
+      closeMaskObjectSocket,
     }),
-    [sendMaskCaptureUpdate, closeMaskCaptureSocket, sendMaskPeakUpdate, closeMaskPeakSocket],
+    [sendMaskCaptureUpdate, closeMaskCaptureSocket, sendMaskObjectUpdate, closeMaskObjectSocket],
   );
 
   const maskNotifyContextValue = useMemo(
     () => ({
       captureMeshSection,
-      createPeak,
-      deletePeak,
+      createObject,
+      deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
@@ -1687,16 +1710,16 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
-      notifyMaskPeaksUpdated,
+      notifyMaskObjectsUpdated,
     }),
     [
       captureMeshSection,
-      createPeak,
-      deletePeak,
+      createObject,
+      deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
       notifyMaskPendingCaptureSet,
       notifyMaskPendingCaptureCleared,
       notifyMaskCaptureUpdated,
@@ -1704,7 +1727,7 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
-      notifyMaskPeaksUpdated,
+      notifyMaskObjectsUpdated,
     ],
   );
 
@@ -1961,6 +1984,7 @@ export default function Workspace({
                   >
                     <Titlebar />
                   </div>
+                  <ObjectReviewPanel />
                   <div
                     style={{
                       gridRow: "3",
@@ -2008,14 +2032,20 @@ export default function Workspace({
                           height: "min-content",
                           zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
                           pointerEvents:
-                            uiState.tool.type === "mask" &&
-                            !uiState.tool.capturingMeshSection &&
-                            !uiState.tool.editingTopology &&
-                            uiState.browserElement?.type !== "img"
+                            // An object review owns the canvas while it is up:
+                            // its clean-up clicks have to reach the mask's own
+                            // triangles, which sit far below this overlay's
+                            // z-index and would otherwise never see the click.
+                            uiState.objectReview !== undefined
                               ? "none"
-                              : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                              : uiState.tool.type === "mask" &&
+                                  !uiState.tool.capturingMeshSection &&
+                                  !uiState.tool.editingTopology &&
+                                  uiState.browserElement?.type !== "img"
                                 ? "none"
-                                : "auto",
+                                : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                                  ? "none"
+                                  : "auto",
                         }}
                       >
                         <Canvas />

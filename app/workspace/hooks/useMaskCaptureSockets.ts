@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
-  LaurusMaskResult,
+  CaptureUpdateDelta_V1_0,
   MaskCaptureSocketMessage_V1_0,
   MaskCaptureUpdateRequest_V1_0,
-  normalizeMaskResult,
   toMaskCaptureSocketUrl,
 } from "../workspace.server";
 
 export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
-  const queuesRef = useRef<Map<string, Array<(result: LaurusMaskResult | undefined) => void>>>(new Map());
+  const queuesRef = useRef<Map<string, Array<(delta: CaptureUpdateDelta_V1_0 | undefined) => void>>>(new Map());
 
   const closeSocket = useCallback((maskMediaId: string) => {
     socketsRef.current.get(maskMediaId)?.close();
@@ -39,8 +38,8 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
         console.log({ error });
         return undefined;
       }
-      const resolveNext = (result: LaurusMaskResult | undefined) => {
-        queuesRef.current.get(maskMediaId)?.shift()?.(result);
+      const resolveNext = (delta: CaptureUpdateDelta_V1_0 | undefined) => {
+        queuesRef.current.get(maskMediaId)?.shift()?.(delta);
       };
       socket.onmessage = (event: MessageEvent<string>) => {
         let message: MaskCaptureSocketMessage_V1_0;
@@ -52,7 +51,7 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
           return;
         }
         if (message.type === "capture_update_complete") {
-          resolveNext(normalizeMaskResult(message.result));
+          resolveNext(message.delta);
         } else {
           console.log({ error: message.message });
           resolveNext(undefined);
@@ -73,7 +72,7 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
   );
 
   const sendCaptureUpdate = useCallback(
-    (maskMediaId: string, request: MaskCaptureUpdateRequest_V1_0): Promise<LaurusMaskResult | undefined> => {
+    (maskMediaId: string, request: MaskCaptureUpdateRequest_V1_0): Promise<CaptureUpdateDelta_V1_0 | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {

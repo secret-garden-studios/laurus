@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LaurusImgResult,
   LaurusMaskResult,
+  LaurusObjectReviewCandidate,
   MaskComplete_V1_0,
   MaskCurve_V1_0,
   MaskError_V1_0,
+  MaskObject_V1_0,
   MaskTriangle_V1_0,
   maskImage,
 } from "../workspace.server";
@@ -35,12 +37,12 @@ export interface MaskSizeOverride {
   height: number | undefined;
 }
 
-/** How an edge-detected peak should look once the server raises it. The
- *  server decides *where* the peaks go; these say what they look like, and
- *  they come from the client so an auto-raised peak is indistinguishable
- *  from one dragged out by hand (see uiState.stagedPeak). Ignored unless
- *  edgePeaks is on. */
-export interface EdgePeakSeed {
+/** How an edge-detected object should look once the server raises it. The
+ *  server decides *where* the objects go; these say what they look like, and
+ *  they come from the client so an auto-raised object is indistinguishable
+ *  from one dragged out by hand (see uiState.stagedObject). Ignored unless
+ *  edgeObjects is on. */
+export interface EdgeObjectSeed {
   elevation: number;
   falloff: number;
 }
@@ -58,6 +60,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   const dirtyRef = useRef(false);
   const curvesRef = useRef<MaskCurve_V1_0[]>([]);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
+  const objectCandidatesRef = useRef<LaurusObjectReviewCandidate[]>([]);
 
   const [status, setStatus] = useState<MaskStatus>("idle");
   const [triangleCount, setTriangleCount] = useState(0);
@@ -108,12 +111,12 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   // generated rather than state belonging to the current one, and reset()
   // runs whenever the selected image changes -- so clearing it here would
   // switch the toggle off under anyone masking a series of images.
-  const [edgePeaks, setEdgePeaksState] = useState(false);
-  const edgePeaksRef = useRef(false);
+  const [edgeObjects, setEdgeObjectsState] = useState(false);
+  const edgeObjectsRef = useRef(false);
 
-  const setEdgePeaks = useCallback((value: boolean) => {
-    edgePeaksRef.current = value;
-    setEdgePeaksState(value);
+  const setEdgeObjects = useCallback((value: boolean) => {
+    edgeObjectsRef.current = value;
+    setEdgeObjectsState(value);
   }, []);
 
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
@@ -163,6 +166,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     dirtyRef.current = true;
     curvesRef.current = [];
     glowColorRef.current = [1, 1, 1];
+    objectCandidatesRef.current = [];
     setTriangleCount(0);
     setResult(undefined);
     setErrorMessage(undefined);
@@ -177,7 +181,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   }, [setTextureMix, setCaptureSize, setCaptureIntensity, setCaptureFalloff, setCaptureDarkness]);
 
   const start = useCallback(
-    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, peakSeed?: EdgePeakSeed) => {
+    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, objectSeed?: EdgeObjectSeed) => {
       positionsRef.current = [];
       colorsRef.current = [];
       barycentricsRef.current = [];
@@ -186,6 +190,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       dirtyRef.current = true;
       curvesRef.current = [];
       glowColorRef.current = [1, 1, 1];
+      objectCandidatesRef.current = [];
       setTriangleCount(0);
       setResult(undefined);
       setErrorMessage(undefined);
@@ -209,8 +214,8 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
                 max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
                 detail_points: BASE_DETAIL_POINTS * resolutionFactor,
               }),
-          ...(edgePeaksRef.current && peakSeed
-            ? { edge_peaks: true, peak_elevation: peakSeed.elevation, peak_falloff: peakSeed.falloff }
+          ...(edgeObjectsRef.current && objectSeed
+            ? { edge_objects: true, object_elevation: objectSeed.elevation, object_falloff: objectSeed.falloff }
             : {}),
         },
         {
@@ -262,6 +267,16 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             dirtyRef.current = true;
             setTriangleCount((n) => n + 1);
           },
+          // Ref only, deliberately not state: nothing renders from the
+          // candidate list until the review starts (persistMask reads the ref
+          // once), so setting state here would re-render the whole workspace
+          // tree once per streamed object for no visible change.
+          onObject: (event: MaskObject_V1_0) => {
+            objectCandidatesRef.current = [
+              ...objectCandidatesRef.current,
+              { object: event.object, polygon_indices: event.polygon_indices },
+            ];
+          },
           onComplete: (event: MaskComplete_V1_0) => {
             setStatus("done");
             setResult(event.result);
@@ -290,6 +305,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     status,
     triangleCount,
     result,
+    objectCandidatesRef,
     errorMessage,
     textureMix,
     setTextureMix,
@@ -312,8 +328,8 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setSize,
     resolution,
     setResolution,
-    edgePeaks,
-    setEdgePeaks,
+    edgeObjects,
+    setEdgeObjects,
     start,
     reset,
     meshRefs: {

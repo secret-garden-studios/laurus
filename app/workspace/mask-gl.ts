@@ -1,5 +1,5 @@
-import type { MaskCurve_V1_0, PeakBlackPoint_V1_0 } from "./workspace.server";
-import type { PeakShape } from "./canvas-media/peak-shape";
+import type { MaskCurve_V1_0, ObjectBlackPoint_V1_0 } from "./workspace.server";
+import type { ObjectShape } from "./canvas-media/object-shape";
 
 export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
 export const CAPTURE_INTENSITY_DEFAULT = 0.05;
@@ -8,24 +8,24 @@ export const CAPTURE_DARKNESS_DEFAULT = 0.2;
 export const CAPTURE_FALLOFF_TO_SIZE_RATIO = CAPTURE_FALLOFF_CSS_PX_DEFAULT / CAPTURE_SIZE_CSS_PX_DEFAULT;
 export const TEXTURE_MIX_DEFAULT = 0.5;
 export const MAX_MASK_LIGHT_SOURCES = 8;
-export const MAX_MASK_PEAKS = 16;
-export const PEAK_ELEVATION_DEFAULT = 80;
-export const MAX_MASK_PEAK_ELEVATION = 300;
-export const MIN_MASK_PEAK_FALLOFF = 1.0;
-export const MAX_MASK_PEAK_FALLOFF = 6.0;
-export const MIN_MASK_PEAK_RADIUS_PX = 8;
-export const MASK_PEAK_SWELL = 0.5;
-export const MASK_PEAK_SWELL_LIMIT = 0.9;
-export const PEAK_SHAPE_SLOPE_RANGE = 8.0;
-export const PEAK_SHAPE_MIN_RHO = 0.05;
-export const PEAK_GRADIENT_LIMIT = 32.0;
-export const PEAK_BLACK_POINT_RELIEF_K = 1e-3;
-export const PEAK_BLACK_POINT_HALO_MAX = 0.2;
-export const PEAK_BLACK_POINT_HALO_EASE = 0.35;
-export const PEAK_BLACK_POINT_HALO_FADE = 1.5;
+export const MAX_MASK_OBJECTS = 16;
+export const OBJECT_ELEVATION_DEFAULT = 80;
+export const MAX_MASK_OBJECT_ELEVATION = 300;
+export const MIN_MASK_OBJECT_FALLOFF = 1.0;
+export const MAX_MASK_OBJECT_FALLOFF = 6.0;
+export const MIN_MASK_OBJECT_RADIUS_PX = 8;
+export const MASK_OBJECT_SWELL = 0.5;
+export const MASK_OBJECT_SWELL_LIMIT = 0.9;
+export const OBJECT_SHAPE_SLOPE_RANGE = 8.0;
+export const OBJECT_SHAPE_MIN_RHO = 0.05;
+export const OBJECT_GRADIENT_LIMIT = 32.0;
+export const OBJECT_BLACK_POINT_RELIEF_K = 1e-3;
+export const OBJECT_BLACK_POINT_HALO_MAX = 0.2;
+export const OBJECT_BLACK_POINT_HALO_EASE = 0.35;
+export const OBJECT_BLACK_POINT_HALO_FADE = 1.5;
 export const MASK_BUMP_STRENGTH = 0.85;
 export const MASK_LIGHT_HEIGHT_SCALE = 1.0;
-export const PEAK_SUBDIVISION_TOLERANCE_PX = 0.75;
+export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
 export const MASK_STROKE_WIDTH_PX = 1.0;
 export const MASK_HIGHLIGHT_STROKE_WIDTH_PX = 3.0;
 export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.0, 0.2];
@@ -42,42 +42,42 @@ export interface Shader {
   fragment: string;
 }
 
-const PEAK_FIELD_GLSL = `
-#define MAX_MASK_PEAKS ${MAX_MASK_PEAKS}
-#define MASK_PEAK_SWELL ${glFloat(MASK_PEAK_SWELL)}
-#define MASK_PEAK_SWELL_LIMIT ${glFloat(MASK_PEAK_SWELL_LIMIT)}
-#define PEAK_SHAPE_SLOPE_RANGE ${glFloat(PEAK_SHAPE_SLOPE_RANGE)}
-#define PEAK_SHAPE_MIN_RHO ${glFloat(PEAK_SHAPE_MIN_RHO)}
-#define PEAK_GRADIENT_LIMIT ${glFloat(PEAK_GRADIENT_LIMIT)}
-#define PEAK_FIELD_PI 3.141592653589793
+const OBJECT_FIELD_GLSL = `
+#define MAX_MASK_OBJECTS ${MAX_MASK_OBJECTS}
+#define MASK_OBJECT_SWELL ${glFloat(MASK_OBJECT_SWELL)}
+#define MASK_OBJECT_SWELL_LIMIT ${glFloat(MASK_OBJECT_SWELL_LIMIT)}
+#define OBJECT_SHAPE_SLOPE_RANGE ${glFloat(OBJECT_SHAPE_SLOPE_RANGE)}
+#define OBJECT_SHAPE_MIN_RHO ${glFloat(OBJECT_SHAPE_MIN_RHO)}
+#define OBJECT_GRADIENT_LIMIT ${glFloat(OBJECT_GRADIENT_LIMIT)}
+#define OBJECT_FIELD_PI 3.141592653589793
 
-uniform mediump vec4 u_peaks[MAX_MASK_PEAKS];
-uniform mediump float u_peakFalloffs[MAX_MASK_PEAKS];
-uniform mediump int u_peakCount;
+uniform mediump vec4 u_objects[MAX_MASK_OBJECTS];
+uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
+uniform mediump int u_objectCount;
 
-uniform mediump sampler2D u_peakShapes;
-uniform mediump float u_peakShapeRows[MAX_MASK_PEAKS];
-uniform mediump float u_peakShapeSamples;
+uniform mediump sampler2D u_objectShapes;
+uniform mediump float u_objectShapeRows[MAX_MASK_OBJECTS];
+uniform mediump float u_objectShapeSamples;
 
-float decodePeakShape16(vec2 bytes) {
+float decodeObjectShape16(vec2 bytes) {
   return bytes.x + bytes.y * (1.0 / 255.0);
 }
 
-vec2 peakShapeAt(float row, float theta) {
+vec2 objectShapeAt(float row, float theta) {
   if (row < 0.0) return vec2(1.0, 0.0);
-  float t = (theta + PEAK_FIELD_PI) / (2.0 * PEAK_FIELD_PI) * u_peakShapeSamples;
+  float t = (theta + OBJECT_FIELD_PI) / (2.0 * OBJECT_FIELD_PI) * u_objectShapeSamples;
   float index = floor(t);
-  float v = (row + 0.5) / float(MAX_MASK_PEAKS);
-  vec4 lower = texture2D(u_peakShapes, vec2((index + 0.5) / u_peakShapeSamples, v));
-  vec4 upper = texture2D(u_peakShapes, vec2((index + 1.5) / u_peakShapeSamples, v));
+  float v = (row + 0.5) / float(MAX_MASK_OBJECTS);
+  vec4 lower = texture2D(u_objectShapes, vec2((index + 0.5) / u_objectShapeSamples, v));
+  vec4 upper = texture2D(u_objectShapes, vec2((index + 1.5) / u_objectShapeSamples, v));
   vec2 pair = mix(
-    vec2(decodePeakShape16(lower.rg), decodePeakShape16(lower.ba)),
-    vec2(decodePeakShape16(upper.rg), decodePeakShape16(upper.ba)),
+    vec2(decodeObjectShape16(lower.rg), decodeObjectShape16(lower.ba)),
+    vec2(decodeObjectShape16(upper.rg), decodeObjectShape16(upper.ba)),
     t - index);
-  return vec2(max(pair.x, PEAK_SHAPE_MIN_RHO), (pair.y * 2.0 - 1.0) * PEAK_SHAPE_SLOPE_RANGE);
+  return vec2(max(pair.x, OBJECT_SHAPE_MIN_RHO), (pair.y * 2.0 - 1.0) * OBJECT_SHAPE_SLOPE_RANGE);
 }
 
-vec2 peakProfile(float u, float falloff) {
+vec2 objectProfile(float u, float falloff) {
   float s = max(1.0 - u * u, 0.0);
   float sSafe = max(s, 1e-4);
   float k = pow(sSafe, falloff);
@@ -85,45 +85,45 @@ vec2 peakProfile(float u, float falloff) {
   return vec2(k, dk);
 }
 
-vec3 peakField(vec2 p) {
+vec3 objectField(vec2 p) {
   vec3 field = vec3(0.0);
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
-    float elevation = u_peaks[i].w;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    vec2 toPoint = p - u_objects[i].xy;
+    float elevation = u_objects[i].w;
     float dist = length(toPoint);
     float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    vec2 shape = peakShapeAt(u_peakShapeRows[i], theta);
-    float radius = u_peaks[i].z * shape.x;
+    vec2 shape = objectShapeAt(u_objectShapeRows[i], theta);
+    float radius = u_objects[i].z * shape.x;
     float u = dist / radius;
     if (u >= 1.0) continue;
-    vec2 profile = peakProfile(u, u_peakFalloffs[i]);
+    vec2 profile = objectProfile(u, u_objectFalloffs[i]);
     field.z += elevation * profile.x;
     if (dist > 1e-4) {
       vec2 radial = toPoint / dist;
       vec2 tangential = vec2(-radial.y, radial.x);
-      vec2 gradU = radial / radius - tangential * (shape.y / (u_peaks[i].z * shape.x * shape.x));
-      gradU = clamp(gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
+      vec2 gradU = radial / radius - tangential * (shape.y / (u_objects[i].z * shape.x * shape.x));
+      gradU = clamp(gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
       field.xy = clamp(
-        field.xy + (elevation * profile.y) * gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
+        field.xy + (elevation * profile.y) * gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
     }
   }
   return field;
 }
 
-vec2 peakSwell(vec2 p) {
+vec2 objectSwell(vec2 p) {
   vec2 swell = vec2(0.0);
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    vec2 toPoint = p - u_objects[i].xy;
     float dist = length(toPoint);
     float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
+    float radius = u_objects[i].z * objectShapeAt(u_objectShapeRows[i], theta).x;
     float u = dist / radius;
     if (u >= 1.0) continue;
-    float height = u_peaks[i].w * peakProfile(u, u_peakFalloffs[i]).x;
+    float height = u_objects[i].w * objectProfile(u, u_objectFalloffs[i]).x;
     float coefficient = clamp(
-      MASK_PEAK_SWELL * height / radius, -MASK_PEAK_SWELL_LIMIT, MASK_PEAK_SWELL_LIMIT);
+      MASK_OBJECT_SWELL * height / radius, -MASK_OBJECT_SWELL_LIMIT, MASK_OBJECT_SWELL_LIMIT);
     swell += coefficient * toPoint;
   }
   return swell;
@@ -147,9 +147,9 @@ varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying vec4 v_highlight;
 varying vec2 v_meshPos;
-${PEAK_FIELD_GLSL}
+${OBJECT_FIELD_GLSL}
 void main() {
-  vec2 displaced = a_position + peakSwell(a_position);
+  vec2 displaced = a_position + objectSwell(a_position);
   vec2 zeroToOne = displaced / u_resolution;
   vec2 clipSpace = zeroToOne * 2.0 - 1.0;
   gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);
@@ -157,7 +157,7 @@ void main() {
   v_barycentric = a_barycentric;
   v_uv = a_uv;
   v_meshPos = a_position;
-  vec2 centroid = a_centroid + peakSwell(a_centroid);
+  vec2 centroid = a_centroid + objectSwell(a_centroid);
   v_lightSourcePos = vec2(centroid.x, u_resolution.y - centroid.y);
   v_highlight = a_highlight;
 }
@@ -165,7 +165,7 @@ void main() {
   fragment: `
 #extension GL_OES_standard_derivatives : enable
 precision mediump float;
-${PEAK_FIELD_GLSL}
+${OBJECT_FIELD_GLSL}
 varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
@@ -201,34 +201,34 @@ uniform sampler2D u_mask;
 uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
-uniform vec4 u_peakBlackPoints[MAX_MASK_PEAKS];
+uniform vec4 u_objectBlackPoints[MAX_MASK_OBJECTS];
 
-#define BLACK_POINT_HALO_MAX ${glFloat(PEAK_BLACK_POINT_HALO_MAX)}
-#define BLACK_POINT_HALO_EASE ${glFloat(PEAK_BLACK_POINT_HALO_EASE)}
-#define BLACK_POINT_HALO_FADE ${glFloat(PEAK_BLACK_POINT_HALO_FADE)}
-#define BLACK_POINT_RELIEF_K ${glFloat(PEAK_BLACK_POINT_RELIEF_K)}
-#define PEAK_FALLOFF_MIN ${glFloat(MIN_MASK_PEAK_FALLOFF)}
-#define PEAK_FALLOFF_MAX ${glFloat(MAX_MASK_PEAK_FALLOFF)}
+#define BLACK_POINT_HALO_MAX ${glFloat(OBJECT_BLACK_POINT_HALO_MAX)}
+#define BLACK_POINT_HALO_EASE ${glFloat(OBJECT_BLACK_POINT_HALO_EASE)}
+#define BLACK_POINT_HALO_FADE ${glFloat(OBJECT_BLACK_POINT_HALO_FADE)}
+#define BLACK_POINT_RELIEF_K ${glFloat(OBJECT_BLACK_POINT_RELIEF_K)}
+#define OBJECT_FALLOFF_MIN ${glFloat(MIN_MASK_OBJECT_FALLOFF)}
+#define OBJECT_FALLOFF_MAX ${glFloat(MAX_MASK_OBJECT_FALLOFF)}
 
-vec4 peakBlackPoint(vec2 p) {
+vec4 objectBlackPoint(vec2 p) {
   vec3 color = vec3(0.0);
   float total = 0.0;
   float weight = 0.0;
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    vec2 toPoint = p - u_objects[i].xy;
     float dist = length(toPoint);
     float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
+    float radius = u_objects[i].z * objectShapeAt(u_objectShapeRows[i], theta).x;
     float u = dist / radius;
-    float falloff = max(u_peakFalloffs[i], PEAK_FALLOFF_MIN);
+    float falloff = max(u_objectFalloffs[i], OBJECT_FALLOFF_MIN);
     float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
-    float haloT = clamp((falloff - PEAK_FALLOFF_MIN) / (PEAK_FALLOFF_MAX - PEAK_FALLOFF_MIN), 0.0, 1.0);
+    float haloT = clamp((falloff - OBJECT_FALLOFF_MIN) / (OBJECT_FALLOFF_MAX - OBJECT_FALLOFF_MIN), 0.0, 1.0);
     float halo = BLACK_POINT_HALO_MAX * pow(haloT, BLACK_POINT_HALO_EASE);
     if (u >= reliefEnd + halo) continue;
     float t = clamp((u - reliefEnd) / max(halo, 1e-4), 0.0, 1.0);
-    float w = pow(1.0 - t, BLACK_POINT_HALO_FADE) * u_peakBlackPoints[i].a;
-    color += u_peakBlackPoints[i].rgb * w;
+    float w = pow(1.0 - t, BLACK_POINT_HALO_FADE) * u_objectBlackPoints[i].a;
+    color += u_objectBlackPoints[i].rgb * w;
     total += w;
     weight = max(weight, w);
   }
@@ -250,7 +250,7 @@ void main() {
   vec2 screenUV = gl_FragCoord.xy / u_resolution;
   vec3 base = u_hasTexture > 0.5 ? texture2D(u_texture, screenUV).rgb : v_color;
 
-  vec3 field = peakField(v_meshPos);
+  vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
   vec3 surface = vec3(v_meshPos, field.z);
   float bumpLit = 0.0;
@@ -278,7 +278,7 @@ void main() {
   }
 
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec4 blackPoint = peakBlackPoint(v_meshPos);
+  vec4 blackPoint = objectBlackPoint(v_meshPos);
   vec3 shaded = liftToBlackPoint(lit - leastShadow - bumpShade, blackPoint);
   vec3 strokeColor = liftToBlackPoint(STROKE_COLOR - leastShadow - bumpShade, blackPoint);
   vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
@@ -346,15 +346,15 @@ export interface GLState {
   lightSourceIntensitiesLoc: WebGLUniformLocation;
   lightSourceDarknessesLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
-  peaksLoc: WebGLUniformLocation;
-  peakFalloffsLoc: WebGLUniformLocation;
-  peakCountLoc: WebGLUniformLocation;
-  peakShapesLoc: WebGLUniformLocation;
-  peakShapeRowsLoc: WebGLUniformLocation;
-  peakShapeSamplesLoc: WebGLUniformLocation;
-  peakBlackPointsLoc: WebGLUniformLocation;
-  peakShapeTexture: WebGLTexture;
-  peakShapeSignature: string;
+  objectsLoc: WebGLUniformLocation;
+  objectFalloffsLoc: WebGLUniformLocation;
+  objectCountLoc: WebGLUniformLocation;
+  objectShapesLoc: WebGLUniformLocation;
+  objectShapeRowsLoc: WebGLUniformLocation;
+  objectShapeSamplesLoc: WebGLUniformLocation;
+  objectBlackPointsLoc: WebGLUniformLocation;
+  objectShapeTexture: WebGLTexture;
+  objectShapeSignature: string;
   supportsVertexTextures: boolean;
   textureMixLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
@@ -364,7 +364,11 @@ export interface GLState {
   glowColorLoc: WebGLUniformLocation;
 }
 
-export function encodePeakShapeTexture(shapes: (PeakShape | undefined)[], samples: number, rows: number): Uint8Array {
+export function encodeObjectShapeTexture(
+  shapes: (ObjectShape | undefined)[],
+  samples: number,
+  rows: number,
+): Uint8Array {
   const data = new Uint8Array(samples * rows * 4);
   shapes.forEach((shape, row) => {
     if (!shape || row >= rows) return;
@@ -372,7 +376,7 @@ export function encodePeakShapeTexture(shapes: (PeakShape | undefined)[], sample
       const offset = (row * samples + i) * 4;
       const rho = Math.min(Math.max(shape.rho[i] ?? 1, 0), 1);
       const slope = shape.rhoPrime[i] ?? 0;
-      const biased = Math.min(Math.max(slope / PEAK_SHAPE_SLOPE_RANGE, -1), 1) * 0.5 + 0.5;
+      const biased = Math.min(Math.max(slope / OBJECT_SHAPE_SLOPE_RANGE, -1), 1) * 0.5 + 0.5;
       const rhoScaled = rho * 255;
       const slopeScaled = biased * 255;
       data[offset] = Math.floor(rhoScaled);
@@ -406,9 +410,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvLoc = gl.getAttribLocation(program, "a_uv");
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
-  const peakShapeTexture = gl.createTexture();
-  if (!peakShapeTexture) return undefined;
-  gl.bindTexture(gl.TEXTURE_2D, peakShapeTexture);
+  const objectShapeTexture = gl.createTexture();
+  if (!objectShapeTexture) return undefined;
+  gl.bindTexture(gl.TEXTURE_2D, objectShapeTexture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
@@ -421,13 +425,13 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
   const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
-  const peaksLoc = gl.getUniformLocation(program, "u_peaks");
-  const peakFalloffsLoc = gl.getUniformLocation(program, "u_peakFalloffs");
-  const peakCountLoc = gl.getUniformLocation(program, "u_peakCount");
-  const peakShapesLoc = gl.getUniformLocation(program, "u_peakShapes");
-  const peakShapeRowsLoc = gl.getUniformLocation(program, "u_peakShapeRows");
-  const peakShapeSamplesLoc = gl.getUniformLocation(program, "u_peakShapeSamples");
-  const peakBlackPointsLoc = gl.getUniformLocation(program, "u_peakBlackPoints");
+  const objectsLoc = gl.getUniformLocation(program, "u_objects");
+  const objectFalloffsLoc = gl.getUniformLocation(program, "u_objectFalloffs");
+  const objectCountLoc = gl.getUniformLocation(program, "u_objectCount");
+  const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
+  const objectShapeRowsLoc = gl.getUniformLocation(program, "u_objectShapeRows");
+  const objectShapeSamplesLoc = gl.getUniformLocation(program, "u_objectShapeSamples");
+  const objectBlackPointsLoc = gl.getUniformLocation(program, "u_objectBlackPoints");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
@@ -448,13 +452,13 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceIntensitiesLoc ||
     !lightSourceDarknessesLoc ||
     !lightSourceCountLoc ||
-    !peaksLoc ||
-    !peakFalloffsLoc ||
-    !peakCountLoc ||
-    !peakShapesLoc ||
-    !peakShapeRowsLoc ||
-    !peakShapeSamplesLoc ||
-    !peakBlackPointsLoc ||
+    !objectsLoc ||
+    !objectFalloffsLoc ||
+    !objectCountLoc ||
+    !objectShapesLoc ||
+    !objectShapeRowsLoc ||
+    !objectShapeSamplesLoc ||
+    !objectBlackPointsLoc ||
     !textureMixLoc ||
     !textureLoc ||
     !hasTextureLoc ||
@@ -486,15 +490,15 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceIntensitiesLoc,
     lightSourceDarknessesLoc,
     lightSourceCountLoc,
-    peaksLoc,
-    peakFalloffsLoc,
-    peakCountLoc,
-    peakShapesLoc,
-    peakShapeRowsLoc,
-    peakShapeSamplesLoc,
-    peakBlackPointsLoc,
-    peakShapeTexture,
-    peakShapeSignature: "",
+    objectsLoc,
+    objectFalloffsLoc,
+    objectCountLoc,
+    objectShapesLoc,
+    objectShapeRowsLoc,
+    objectShapeSamplesLoc,
+    objectBlackPointsLoc,
+    objectShapeTexture,
+    objectShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
     textureMixLoc,
     textureLoc,
@@ -517,7 +521,7 @@ export interface MaskLightSource {
 export interface DrawMaskMeshOptions {
   vertexCount: number;
   lightSources: MaskLightSource[];
-  peaks: PeakGeometryInput[];
+  objects: ObjectGeometryInput[];
   textureMix: number;
   texture: WebGLTexture | undefined;
   maskTexture: WebGLTexture | undefined;
@@ -558,33 +562,33 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
   }
 
-  const activePeaks = options.peaks
-    .filter(isActivePeak)
+  const activeObjects = options.objects
+    .filter(isActiveObject)
     .sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation))
-    .slice(0, MAX_MASK_PEAKS);
-  gl.uniform1i(state.peakCountLoc, activePeaks.length);
-  if (activePeaks.length > 0) {
-    const peaks = new Float32Array(activePeaks.length * 4);
-    const falloffs = new Float32Array(activePeaks.length);
-    const blackPoints = new Float32Array(activePeaks.length * 4);
-    activePeaks.forEach((peak, i) => {
-      peaks[i * 4] = peak.cx;
-      peaks[i * 4 + 1] = peak.cy;
-      peaks[i * 4 + 2] = Math.max(peak.radius, 1);
-      peaks[i * 4 + 3] = peak.elevation;
-      falloffs[i] = Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF);
-      blackPoints[i * 4] = peak.blackPoint?.r ?? 0;
-      blackPoints[i * 4 + 1] = peak.blackPoint?.g ?? 0;
-      blackPoints[i * 4 + 2] = peak.blackPoint?.b ?? 0;
-      blackPoints[i * 4 + 3] = peak.blackPoint?.a ?? 0;
+    .slice(0, MAX_MASK_OBJECTS);
+  gl.uniform1i(state.objectCountLoc, activeObjects.length);
+  if (activeObjects.length > 0) {
+    const objects = new Float32Array(activeObjects.length * 4);
+    const falloffs = new Float32Array(activeObjects.length);
+    const blackPoints = new Float32Array(activeObjects.length * 4);
+    activeObjects.forEach((object, i) => {
+      objects[i * 4] = object.cx;
+      objects[i * 4 + 1] = object.cy;
+      objects[i * 4 + 2] = Math.max(object.radius, 1);
+      objects[i * 4 + 3] = object.elevation;
+      falloffs[i] = Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF);
+      blackPoints[i * 4] = object.blackPoint?.r ?? 0;
+      blackPoints[i * 4 + 1] = object.blackPoint?.g ?? 0;
+      blackPoints[i * 4 + 2] = object.blackPoint?.b ?? 0;
+      blackPoints[i * 4 + 3] = object.blackPoint?.a ?? 0;
     });
-    gl.uniform4fv(state.peaksLoc, peaks);
-    gl.uniform1fv(state.peakFalloffsLoc, falloffs);
-    gl.uniform4fv(state.peakBlackPointsLoc, blackPoints);
+    gl.uniform4fv(state.objectsLoc, objects);
+    gl.uniform1fv(state.objectFalloffsLoc, falloffs);
+    gl.uniform4fv(state.objectBlackPointsLoc, blackPoints);
   }
 
-  const shapeRows = new Float32Array(MAX_MASK_PEAKS).fill(-1);
-  const shapes = activePeaks.map((peak) => peak.shape);
+  const shapeRows = new Float32Array(MAX_MASK_OBJECTS).fill(-1);
+  const shapes = activeObjects.map((object) => object.shape);
   const usableShapes = state.supportsVertexTextures ? shapes : shapes.map(() => undefined);
   const samples = usableShapes.find((shape) => shape !== undefined)?.rho.length;
   if (samples !== undefined) {
@@ -593,26 +597,26 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     });
     const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
     gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, state.peakShapeTexture);
-    if (signature !== state.peakShapeSignature) {
+    gl.bindTexture(gl.TEXTURE_2D, state.objectShapeTexture);
+    if (signature !== state.objectShapeSignature) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
         gl.RGBA,
         samples,
-        MAX_MASK_PEAKS,
+        MAX_MASK_OBJECTS,
         0,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        encodePeakShapeTexture(usableShapes, samples, MAX_MASK_PEAKS),
+        encodeObjectShapeTexture(usableShapes, samples, MAX_MASK_OBJECTS),
       );
-      state.peakShapeSignature = signature;
+      state.objectShapeSignature = signature;
     }
-    gl.uniform1i(state.peakShapesLoc, 2);
-    gl.uniform1f(state.peakShapeSamplesLoc, samples);
+    gl.uniform1i(state.objectShapesLoc, 2);
+    gl.uniform1f(state.objectShapeSamplesLoc, samples);
   }
-  gl.uniform1fv(state.peakShapeRowsLoc, shapeRows);
+  gl.uniform1fv(state.objectShapeRowsLoc, shapeRows);
 
   gl.uniform1f(state.textureMixLoc, options.textureMix);
 
@@ -818,51 +822,51 @@ function assembleMaskMeshPositions(
   return { positions, uvs, centroids };
 }
 
-export interface PeakGeometryInput {
+export interface ObjectGeometryInput {
   cx: number;
   cy: number;
   radius: number;
   elevation: number;
   falloff: number;
-  shape?: PeakShape;
-  blackPoint?: PeakBlackPoint_V1_0;
+  shape?: ObjectShape;
+  blackPoint?: ObjectBlackPoint_V1_0;
 }
 
-export function isActivePeak(peak: PeakGeometryInput): boolean {
-  return peak.radius > 0 && peak.elevation !== 0;
+export function isActiveObject(object: ObjectGeometryInput): boolean {
+  return object.radius > 0 && object.elevation !== 0;
 }
 
-export function peakProfileK(u: number, falloff: number): number {
+export function objectProfileK(u: number, falloff: number): number {
   const s = Math.max(1 - u * u, 0);
   return Math.pow(Math.max(s, 1e-4), falloff);
 }
 
-export function peakShapeRhoAt(shape: PeakShape | undefined, theta: number): number {
+export function objectShapeRhoAt(shape: ObjectShape | undefined, theta: number): number {
   if (!shape) return 1;
   const samples = shape.rho.length;
   const t = ((theta + Math.PI) / (2 * Math.PI)) * samples;
   const index = Math.floor(t);
   const lower = shape.rho[((index % samples) + samples) % samples];
   const upper = shape.rho[(((index + 1) % samples) + samples) % samples];
-  return Math.max(lower + (upper - lower) * (t - index), PEAK_SHAPE_MIN_RHO);
+  return Math.max(lower + (upper - lower) * (t - index), OBJECT_SHAPE_MIN_RHO);
 }
 
-export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[]): [number, number] {
+export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {
   let dx = 0;
   let dy = 0;
-  for (const peak of peaks) {
-    const toPointX = point[0] - peak.cx;
-    const toPointY = point[1] - peak.cy;
+  for (const object of objects) {
+    const toPointX = point[0] - object.cx;
+    const toPointY = point[1] - object.cy;
     const dist = Math.hypot(toPointX, toPointY);
-    const radius = peak.shape
-      ? peak.radius * peakShapeRhoAt(peak.shape, dist > 1e-4 ? Math.atan2(toPointY, toPointX) : 0)
-      : peak.radius;
+    const radius = object.shape
+      ? object.radius * objectShapeRhoAt(object.shape, dist > 1e-4 ? Math.atan2(toPointY, toPointX) : 0)
+      : object.radius;
     const u = dist / radius;
     if (u >= 1) continue;
-    const height = peak.elevation * peakProfileK(u, Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF));
+    const height = object.elevation * objectProfileK(u, Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF));
     const coefficient = Math.min(
-      Math.max((MASK_PEAK_SWELL * height) / peak.radius, -MASK_PEAK_SWELL_LIMIT),
-      MASK_PEAK_SWELL_LIMIT,
+      Math.max((MASK_OBJECT_SWELL * height) / object.radius, -MASK_OBJECT_SWELL_LIMIT),
+      MASK_OBJECT_SWELL_LIMIT,
     );
     dx += coefficient * toPointX;
     dy += coefficient * toPointY;
@@ -872,13 +876,13 @@ export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[])
 
 const MAX_EDGE_SUBDIVISION_POINTS = 6;
 
-function edgeSwellSag(a: [number, number], b: [number, number], peaks: PeakGeometryInput[]): number {
-  const swellA = peakSwellAt(a, peaks);
-  const swellB = peakSwellAt(b, peaks);
+function edgeSwellSag(a: [number, number], b: [number, number], objects: ObjectGeometryInput[]): number {
+  const swellA = objectSwellAt(a, objects);
+  const swellB = objectSwellAt(b, objects);
   let worst = 0;
   for (const t of [0.25, 0.5, 0.75]) {
     const at: [number, number] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    const swellAt = peakSwellAt(at, peaks);
+    const swellAt = objectSwellAt(at, objects);
     worst = Math.max(
       worst,
       Math.hypot(
@@ -890,10 +894,10 @@ function edgeSwellSag(a: [number, number], b: [number, number], peaks: PeakGeome
   return worst;
 }
 
-function edgeSubdivisionCount(a: [number, number], b: [number, number], peaks: PeakGeometryInput[]): number {
-  const sag = edgeSwellSag(a, b, peaks);
-  if (!(sag > PEAK_SUBDIVISION_TOLERANCE_PX)) return 0;
-  return Math.min(Math.ceil(Math.sqrt(sag / PEAK_SUBDIVISION_TOLERANCE_PX)) - 1, MAX_EDGE_SUBDIVISION_POINTS);
+function edgeSubdivisionCount(a: [number, number], b: [number, number], objects: ObjectGeometryInput[]): number {
+  const sag = edgeSwellSag(a, b, objects);
+  if (!(sag > OBJECT_SUBDIVISION_TOLERANCE_PX)) return 0;
+  return Math.min(Math.ceil(Math.sqrt(sag / OBJECT_SUBDIVISION_TOLERANCE_PX)) - 1, MAX_EDGE_SUBDIVISION_POINTS);
 }
 
 function pointsAlongEdge(a: [number, number], b: [number, number], n: number): [number, number][] {
@@ -920,7 +924,7 @@ function edgeKey(idA: number, idB: number): string {
 
 function computeEdgeSubdivisionCounts(
   triangles: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): { ids: Map<[number, number], number>; counts: Map<string, number> } {
   const ids = new Map<[number, number], number>();
   const counts = new Map<string, number>();
@@ -934,7 +938,7 @@ function computeEdgeSubdivisionCounts(
       const a = tri[i];
       const b = tri[j];
       const key = edgeKey(pointId(a, ids), pointId(b, ids));
-      if (!counts.has(key)) counts.set(key, edgeSubdivisionCount(a, b, peaks));
+      if (!counts.has(key)) counts.set(key, edgeSubdivisionCount(a, b, objects));
     }
   }
   return { ids, counts };
@@ -973,18 +977,18 @@ function isStrictlyInsideTriangle(point: [number, number], tri: [number, number]
 function fanTriangulate(
   loop: [number, number][],
   tri: [number, number][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): [number, number][][] {
   if (loop.length === 3) return [[loop[0], loop[1], loop[2]]];
 
   let anchor: [number, number] | undefined;
   let bestElevation = 0;
-  for (const peak of peaks) {
-    const epicenter: [number, number] = [peak.cx, peak.cy];
-    if (Math.abs(peak.elevation) <= bestElevation) continue;
+  for (const object of objects) {
+    const epicenter: [number, number] = [object.cx, object.cy];
+    if (Math.abs(object.elevation) <= bestElevation) continue;
     if (!isStrictlyInsideTriangle(epicenter, tri)) continue;
     anchor = epicenter;
-    bestElevation = Math.abs(peak.elevation);
+    bestElevation = Math.abs(object.elevation);
   }
   const center: [number, number] = anchor ?? [
     loop.reduce((sum, [x]) => sum + x, 0) / loop.length,
@@ -998,31 +1002,31 @@ function fanTriangulate(
   return triangles;
 }
 
-function subdivideForPeaks(
+function subdivideForObjects(
   triangles: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): { outputTriangles: [number, number][][]; outputCounts: number[] } {
-  const { ids, counts } = computeEdgeSubdivisionCounts(triangles, peaks);
+  const { ids, counts } = computeEdgeSubdivisionCounts(triangles, objects);
   const outputTriangles: [number, number][][] = [];
   const outputCounts: number[] = [];
   for (const tri of triangles) {
-    const fanned = fanTriangulate(boundaryLoopForTriangle(tri, ids, counts), tri, peaks);
+    const fanned = fanTriangulate(boundaryLoopForTriangle(tri, ids, counts), tri, objects);
     outputTriangles.push(...fanned);
     outputCounts.push(fanned.length);
   }
   return { outputTriangles, outputCounts };
 }
 
-export function subdivideMeshForPeaks(
+export function subdivideMeshForObjects(
   corners: [number, number][],
   polygonPointSets: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): {
   corners: [number, number][];
   polygonPointSets: [number, number][][];
   polygonOutputCounts: number[];
 } {
-  const active = peaks.filter(isActivePeak);
+  const active = objects.filter(isActiveObject);
   if (active.length === 0) {
     return { corners, polygonPointSets, polygonOutputCounts: polygonPointSets.map(() => 1) };
   }
@@ -1030,7 +1034,7 @@ export function subdivideMeshForPeaks(
   const cornerTriangles: [number, number][][] = [];
   for (let i = 0; i + 3 <= corners.length; i += 3) cornerTriangles.push(corners.slice(i, i + 3));
 
-  const { outputTriangles, outputCounts } = subdivideForPeaks([...cornerTriangles, ...polygonPointSets], active);
+  const { outputTriangles, outputCounts } = subdivideForObjects([...cornerTriangles, ...polygonPointSets], active);
 
   const cornerOutputCount = outputCounts.slice(0, cornerTriangles.length).reduce((sum, n) => sum + n, 0);
   return {
@@ -1046,9 +1050,19 @@ export function buildStaticMaskMesh(
     height: number;
     polygons: { d: string; fill: string }[];
     curves: { d: string; fill: string }[];
-    peaks: PeakGeometryInput[];
+    objects: ObjectGeometryInput[];
   },
   colorCtx: CanvasRenderingContext2D,
+  /** Already-welded point groups for this mask (see mask-geometry.ts). The
+   *  parse and weld depend only on the polygons' path data, which no object
+   *  or capture edit ever changes, so a caller rebuilding the mesh after such
+   *  an edit passes the groups it already has rather than paying for them
+   *  again. Omit it and they are derived here as before. */
+  precomputed?: { corners: [number, number][]; polygonPointSets: [number, number][][] },
+  /** Per-polygon fill in RGB01, indexed like `polygons`. Same reasoning as
+   *  `precomputed`: fills do not change under an edit, and resolving one costs
+   *  a canvas fillStyle round-trip per polygon. */
+  precomputedColors?: [number, number, number][],
 ): {
   positions: number[];
   colors: number[];
@@ -1058,13 +1072,13 @@ export function buildStaticMaskMesh(
   vertexCount: number;
   vertexRanges: [number, number][];
 } {
-  const built = buildWeldedMaskPointGroups(maskData);
+  const built = precomputed ?? buildWeldedMaskPointGroups(maskData);
   let corners = built.corners;
   let polygonPointSets = built.polygonPointSets;
   let polygonOutputCounts = polygonPointSets.map(() => 1);
 
-  if (maskData.peaks.some(isActivePeak)) {
-    const subdivided = subdivideMeshForPeaks(corners, polygonPointSets, maskData.peaks);
+  if (maskData.objects.some(isActiveObject)) {
+    const subdivided = subdivideMeshForObjects(corners, polygonPointSets, maskData.objects);
     corners = subdivided.corners;
     polygonPointSets = subdivided.polygonPointSets;
     polygonOutputCounts = subdivided.polygonOutputCounts;
@@ -1085,7 +1099,7 @@ export function buildStaticMaskMesh(
   const vertexRanges: [number, number][] = [];
   let vertex = corners.length;
   maskData.polygons.forEach((polygon, i) => {
-    const [r, g, b] = colorToRGB01(colorCtx, polygon.fill);
+    const [r, g, b] = precomputedColors?.[i] ?? colorToRGB01(colorCtx, polygon.fill);
     const outputCount = polygonOutputCounts[i] ?? 1;
     for (let t = 0; t < outputCount; t++) {
       colors.push(r, g, b, r, g, b, r, g, b);

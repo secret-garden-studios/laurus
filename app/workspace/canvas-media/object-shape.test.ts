@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  PEAK_SHAPE_SAMPLES,
-  buildPeakShapeFromMarkup,
-  buildPeakShapeFromRings,
+  OBJECT_SHAPE_SAMPLES,
+  buildObjectShapeFromMarkup,
+  buildObjectShapeFromRings,
   extractPathData,
   flattenPathData,
   polygonArea,
   polygonCentroid,
   sampleAngle,
-  samplePeakShapePath,
-  cachedPeakShape,
-} from "./peak-shape.ts";
+  sampleObjectShapePath,
+  cachedObjectShape,
+} from "./object-shape.ts";
 
 function circleRing(radius: number, center: [number, number] = [0, 0], points = 720): [number, number][] {
   return Array.from({ length: points }, (_, i) => {
@@ -199,21 +199,21 @@ describe("polygonArea / polygonCentroid", () => {
   });
 });
 
-describe("buildPeakShapeFromRings -- sampling rho(theta)", () => {
+describe("buildObjectShapeFromRings -- sampling rho(theta)", () => {
   it("samples a circle as rho identically 1", () => {
-    const result = buildPeakShapeFromRings([circleRing(37, [12, -5])]);
+    const result = buildObjectShapeFromRings([circleRing(37, [12, -5])]);
     assert.ok(result.ok);
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
       assert.ok(Math.abs(result.shape.rho[i] - 1) < 1e-4, `rho[${i}] = ${result.shape.rho[i]}`);
       assert.ok(Math.abs(result.shape.rhoPrime[i]) < 1e-2, `rhoPrime[${i}] = ${result.shape.rhoPrime[i]}`);
     }
   });
 
   it("samples a square as its closed form", () => {
-    const result = buildPeakShapeFromRings([squareRing(20)]);
+    const result = buildObjectShapeFromRings([squareRing(20)]);
     assert.ok(result.ok);
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
-      const theta = sampleAngle(i, PEAK_SHAPE_SAMPLES);
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
+      const theta = sampleAngle(i, OBJECT_SHAPE_SAMPLES);
       const expected = 1 / (Math.SQRT2 * Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))));
       assert.ok(
         Math.abs(result.shape.rho[i] - expected) < 1e-5,
@@ -224,7 +224,7 @@ describe("buildPeakShapeFromRings -- sampling rho(theta)", () => {
 
   it("normalizes so the maximum is exactly 1 and nothing exceeds it", () => {
     for (const ring of [squareRing(3), starRing(10, 4), circleRing(7)]) {
-      const result = buildPeakShapeFromRings([ring]);
+      const result = buildObjectShapeFromRings([ring]);
       assert.ok(result.ok);
       const max = Math.max(...result.shape.rho);
       assert.ok(max <= 1 + 1e-6, `rho exceeded 1 (${max})`);
@@ -234,12 +234,12 @@ describe("buildPeakShapeFromRings -- sampling rho(theta)", () => {
   });
 
   it("keeps a star's lobes", () => {
-    const result = buildPeakShapeFromRings([starRing(10, 4)]);
+    const result = buildObjectShapeFromRings([starRing(10, 4)]);
     assert.ok(result.ok);
     let maxima = 0;
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
-      const previous = result.shape.rho[(i - 1 + PEAK_SHAPE_SAMPLES) % PEAK_SHAPE_SAMPLES];
-      const next = result.shape.rho[(i + 1) % PEAK_SHAPE_SAMPLES];
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
+      const previous = result.shape.rho[(i - 1 + OBJECT_SHAPE_SAMPLES) % OBJECT_SHAPE_SAMPLES];
+      const next = result.shape.rho[(i + 1) % OBJECT_SHAPE_SAMPLES];
       if (result.shape.rho[i] > previous && result.shape.rho[i] >= next) maxima++;
     }
     assert.equal(maxima, 5, "a five-pointed star should sample to five lobes");
@@ -247,57 +247,57 @@ describe("buildPeakShapeFromRings -- sampling rho(theta)", () => {
   });
 
   it("differentiates rho by central difference across the wrap", () => {
-    const result = buildPeakShapeFromRings([starRing(10, 4)]);
+    const result = buildObjectShapeFromRings([starRing(10, 4)]);
     assert.ok(result.ok);
-    const step = (2 * Math.PI) / PEAK_SHAPE_SAMPLES;
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
-      const next = result.shape.rho[(i + 1) % PEAK_SHAPE_SAMPLES];
-      const previous = result.shape.rho[(i - 1 + PEAK_SHAPE_SAMPLES) % PEAK_SHAPE_SAMPLES];
+    const step = (2 * Math.PI) / OBJECT_SHAPE_SAMPLES;
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
+      const next = result.shape.rho[(i + 1) % OBJECT_SHAPE_SAMPLES];
+      const previous = result.shape.rho[(i - 1 + OBJECT_SHAPE_SAMPLES) % OBJECT_SHAPE_SAMPLES];
       assert.ok(Math.abs(result.shape.rhoPrime[i] - (next - previous) / (2 * step)) < 1e-4, `at index ${i}`);
     }
   });
 
   it("picks the largest region as the silhouette regardless of document order", () => {
-    const result = buildPeakShapeFromRings([squareRing(1), circleRing(50)]);
+    const result = buildObjectShapeFromRings([squareRing(1), circleRing(50)]);
     assert.ok(result.ok);
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
       assert.ok(Math.abs(result.shape.rho[i] - 1) < 1e-4, "should have sampled the circle, not the tiny square");
     }
   });
 });
 
-describe("buildPeakShapeFromRings -- the gates", () => {
+describe("buildObjectShapeFromRings -- the gates", () => {
   it("refuses a silhouette that is not star-shaped", () => {
-    const result = buildPeakShapeFromRings([horseshoeRing(10, 6)]);
+    const result = buildObjectShapeFromRings([horseshoeRing(10, 6)]);
     assert.ok(!result.ok);
     assert.match(result.reason, /star-shaped|enclose/);
   });
 
   it("refuses a shape with a hole", () => {
-    const result = buildPeakShapeFromRings([circleRing(20), circleRing(9)]);
+    const result = buildObjectShapeFromRings([circleRing(20), circleRing(9)]);
     assert.ok(!result.ok);
     assert.match(result.reason, /a hole/);
   });
 
   it("refuses several detached pieces", () => {
-    const result = buildPeakShapeFromRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
+    const result = buildObjectShapeFromRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
     assert.ok(!result.ok);
     assert.match(result.reason, /separate pieces/);
   });
 
   it("ignores a stray speck rather than refusing over it", () => {
-    const result = buildPeakShapeFromRings([circleRing(100), squareRing(0.3)]);
+    const result = buildObjectShapeFromRings([circleRing(100), squareRing(0.3)]);
     assert.ok(result.ok, result.ok ? "" : result.reason);
   });
 
   it("refuses an svg with no path at all", () => {
-    const result = buildPeakShapeFromMarkup(`<circle cx="5" cy="5" r="4"/>`);
+    const result = buildObjectShapeFromMarkup(`<circle cx="5" cy="5" r="4"/>`);
     assert.ok(!result.ok);
     assert.match(result.reason, /no <path>/);
   });
 
   it("refuses an outline with no enclosed area", () => {
-    const result = buildPeakShapeFromRings([
+    const result = buildObjectShapeFromRings([
       [
         [0, 0],
         [10, 0],
@@ -312,11 +312,11 @@ describe("buildPeakShapeFromRings -- the gates", () => {
 describe("the persisted shape round-trips", () => {
   it("re-samples from its own normalized path to the same table", () => {
     for (const ring of [squareRing(20), starRing(10, 4), circleRing(13, [40, 40])]) {
-      const authored = buildPeakShapeFromRings([ring]);
+      const authored = buildObjectShapeFromRings([ring]);
       assert.ok(authored.ok);
-      const reloaded = samplePeakShapePath(authored.shape.path);
+      const reloaded = sampleObjectShapePath(authored.shape.path);
       assert.ok(reloaded, "a shape this module just authored must re-sample");
-      for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+      for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
         assert.ok(
           Math.abs(authored.shape.rho[i] - reloaded.rho[i]) < 1e-4,
           `rho drifted at ${i}: ${authored.shape.rho[i]} vs ${reloaded.rho[i]}`,
@@ -327,7 +327,7 @@ describe("the persisted shape round-trips", () => {
   });
 
   it("centers the persisted path on the origin at unit maximum radius", () => {
-    const authored = buildPeakShapeFromRings([starRing(80, 30)]);
+    const authored = buildObjectShapeFromRings([starRing(80, 30)]);
     assert.ok(authored.ok);
     const points = flattenPathData(authored.shape.path)[0];
     const [cx, cy] = polygonCentroid(points);
@@ -338,11 +338,11 @@ describe("the persisted shape round-trips", () => {
   it("survives the full markup path", () => {
     const worstFlatteningDip = 1 - Math.cos(Math.PI / 96);
     const markup = `<path d="M50,0 A50,50 0 1 1 -50,0 A50,50 0 1 1 50,0 Z"/>`;
-    const result = buildPeakShapeFromMarkup(markup);
+    const result = buildObjectShapeFromMarkup(markup);
     assert.ok(result.ok, result.ok ? "" : result.reason);
     assert.ok(worstFlatteningDip < 1e-3, "a half-circle arc should flatten to well under 0.1% radius error");
     const float32Slack = 1e-6;
-    for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
       assert.ok(
         result.shape.rho[i] >= 1 - worstFlatteningDip - float32Slack && result.shape.rho[i] <= 1 + float32Slack,
         `a circular svg should sample flat, got ${result.shape.rho[i]} at index ${i}`,
@@ -351,16 +351,16 @@ describe("the persisted shape round-trips", () => {
   });
 });
 
-describe("a peak shape authored by the server", () => {
-  /** The exact format the server emits Peak.shape in for a detected region:
-   *  the region's outer extent measured in PEAK_SHAPE_SAMPLES directions and
+describe("an object shape authored by the server", () => {
+  /** The exact format the server emits Object.shape in for a detected region:
+   *  the region's outer extent measured in OBJECT_SHAPE_SAMPLES directions and
    *  emitted as a closed M/L/Z polygon, already centred on its own centroid
-   *  and scaled so its furthest point sits at 1. See peak_shape_path and
-   *  region_peak_geometry in the server's peak_math.py.
+   *  and scaled so its furthest point sits at 1. See object_shape_path and
+   *  region_object_geometry in the server's object_math.py.
    *
    *  Reproduced here rather than fixtured because what is under test is the
    *  contract, not any one image: a shape built this way has to be one this
-   *  module accepts, or the peak silently renders as a plain circle and
+   *  module accepts, or the object silently renders as a plain circle and
    *  nothing anywhere reports why. */
   function serverStyleShapePath(rho: number[]): string {
     const format = (n: number): string => {
@@ -392,68 +392,68 @@ describe("a peak shape authored by the server", () => {
 
   for (const [name, profile, centred] of profiles) {
     it(`is accepted and re-sampled for ${name}`, () => {
-      const raw = Array.from({ length: PEAK_SHAPE_SAMPLES }, (_, i) => profile(sampleAngle(i, PEAK_SHAPE_SAMPLES)));
-      const peak = Math.max(...raw);
-      const rho = raw.map((r) => r / peak);
+      const raw = Array.from({ length: OBJECT_SHAPE_SAMPLES }, (_, i) => profile(sampleAngle(i, OBJECT_SHAPE_SAMPLES)));
+      const object = Math.max(...raw);
+      const rho = raw.map((r) => r / object);
 
-      const shape = samplePeakShapePath(serverStyleShapePath(rho));
-      assert.ok(shape, `${name} must survive the parser -- the peak renders as a circle otherwise`);
-      assert.equal(shape.rho.length, PEAK_SHAPE_SAMPLES);
+      const shape = sampleObjectShapePath(serverStyleShapePath(rho));
+      assert.ok(shape, `${name} must survive the parser -- the object renders as a circle otherwise`);
+      assert.equal(shape.rho.length, OBJECT_SHAPE_SAMPLES);
 
-      // rho topping out at 1 is what keeps Peak.radius meaning "the peak's
+      // rho topping out at 1 is what keeps Object.radius meaning "the object's
       // furthest reach". Not exactly 1: the maximum is taken over
-      // PEAK_SHAPE_VALIDATION_SAMPLES rays but stored at PEAK_SHAPE_SAMPLES
+      // OBJECT_SHAPE_VALIDATION_SAMPLES rays but stored at OBJECT_SHAPE_SAMPLES
       // of them, so a shape whose extreme falls between two stored
       // directions normalizes a fraction of a percent short.
       assert.ok(Math.abs(Math.max(...shape.rho) - 1) < 5e-3, `max rho was ${Math.max(...shape.rho)}`);
       assert.ok(Math.min(...shape.rho) > 0, "rho must stay positive");
 
       if (centred) {
-        for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+        for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
           assert.ok(Math.abs(shape.rho[i] - rho[i]) < 0.02, `rho drifted at ${i}: ${rho[i]} vs ${shape.rho[i]}`);
         }
         return;
       }
       // lopsided: check the region survived rather than the table.
       // Re-normalizing an already-normalized path must be a no-op.
-      const reloaded = samplePeakShapePath(shape.path);
+      const reloaded = sampleObjectShapePath(shape.path);
       assert.ok(reloaded);
-      for (let i = 0; i < PEAK_SHAPE_SAMPLES; i++) {
+      for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
         assert.ok(Math.abs(shape.rho[i] - reloaded.rho[i]) < 1e-3, `unstable at ${i}`);
       }
     });
   }
 
   it("reads an empty shape as the plain circle the server means by it", () => {
-    assert.equal(cachedPeakShape(""), undefined);
+    assert.equal(cachedObjectShape(""), undefined);
   });
 });
 
-describe("cachedPeakShape -- the render path's entry point", () => {
+describe("cachedObjectShape -- the render path's entry point", () => {
   it("treats the empty path as a circle without consulting the cache", () => {
-    assert.equal(cachedPeakShape(""), undefined);
+    assert.equal(cachedObjectShape(""), undefined);
   });
 
   it("returns the identical object on repeated calls", () => {
-    const authored = buildPeakShapeFromRings([starRing(10, 4)]);
+    const authored = buildObjectShapeFromRings([starRing(10, 4)]);
     assert.ok(authored.ok);
-    const first = cachedPeakShape(authored.shape.path);
+    const first = cachedObjectShape(authored.shape.path);
     assert.ok(first, "a shape this module just authored must re-sample");
-    assert.equal(cachedPeakShape(authored.shape.path), first);
+    assert.equal(cachedObjectShape(authored.shape.path), first);
   });
 
   it("caches a shape that fails to re-sample, rather than retrying forever", () => {
     const unusable = "M0,0L1,0L2,0Z";
-    assert.equal(cachedPeakShape(unusable), undefined);
-    assert.equal(cachedPeakShape(unusable), undefined);
+    assert.equal(cachedObjectShape(unusable), undefined);
+    assert.equal(cachedObjectShape(unusable), undefined);
   });
 
-  it("shares one table between peaks wearing the same silhouette", () => {
-    const first = buildPeakShapeFromRings([squareRing(20)]);
-    const second = buildPeakShapeFromRings([squareRing(5)]);
+  it("shares one table between objects wearing the same silhouette", () => {
+    const first = buildObjectShapeFromRings([squareRing(20)]);
+    const second = buildObjectShapeFromRings([squareRing(5)]);
     assert.ok(first.ok);
     assert.ok(second.ok);
     assert.equal(second.shape.path, first.shape.path, "normalization should erase the size difference");
-    assert.equal(cachedPeakShape(second.shape.path), cachedPeakShape(first.shape.path));
+    assert.equal(cachedObjectShape(second.shape.path), cachedObjectShape(first.shape.path));
   });
 });

@@ -1,11 +1,11 @@
 import { LaurusCropSvg } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
-import { LaurusImgResult, LaurusEffect, LaurusSvgResult } from "../workspace.server";
+import { LaurusImgResult, LaurusEffect, LaurusSvgResult, LaurusObjectReviewCandidate } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
-import { PEAK_ELEVATION_DEFAULT } from "../mask-gl";
-import { LaurusPeakBlackPoint, PEAK_BLACK_POINT_DEFAULT, PEAK_FALLOFF_DEFAULT } from "../workspace.server";
-import { buildPeakShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/peak-shape";
+import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
+import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT, OBJECT_FALLOFF_DEFAULT } from "../workspace.server";
+import { buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
@@ -66,21 +66,44 @@ export type LaurusActiveElement =
   | { key: string; type: "img"; locallyActivatedEffectKey?: string }
   | { key: string; type: "mask"; locallyActivatedEffectKey?: string }
   | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
-  | { key: string; type: "peak"; peakId: number; locallyActivatedEffectKey?: string };
+  | { key: string; type: "object"; objectId: number; locallyActivatedEffectKey?: string };
 
 export type LaurusSelectedElement =
   | { key: string; type: "mask" }
   | { key: string; type: "capture"; captureId: number }
-  | { key: string; type: "peak"; peakId: number };
+  | { key: string; type: "object"; objectId: number };
 
 export type CarouselEntry =
   | { type: "svg"; key: string }
   | { type: "img"; key: string }
   | { type: "mask"; key: string }
   | { type: "capture"; key: string; captureId: number }
-  | { type: "peak"; key: string; peakId: number };
+  | { type: "object"; key: string; objectId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
+
+/** One live accept/reject review over a mask's edge-detected candidates.
+ *  `candidates` and each candidate's own polygon_indices are the permanent,
+ *  never-mutated record of what was auto-generated; `currentIndices` is the
+ *  reviewer's live, editable membership for the candidate on screen right
+ *  now (seeded from that candidate's polygon_indices, then toggled by
+ *  manual clean-up clicks), so a diff against the two is always available
+ *  when a decision is made. `decisions` is keyed by object id rather than
+ *  candidate index so it stays meaningful across batches. Batch/cycle
+ *  progression (16, then next-N-rejected, up to 3 cycles) lives in the
+ *  reducer for RecordObjectReviewDecision below, not here. */
+export interface ObjectReviewSession {
+  maskMediaId: string;
+  maskKey: string;
+  candidates: LaurusObjectReviewCandidate[];
+  decisions: Map<number, "accepted" | "rejected">;
+  batchStart: number;
+  batchSize: number;
+  cycle: number;
+  currentIndex: number;
+  currentIndices: Set<number>;
+  draftDescription: string;
+}
 
 export interface UIState {
   lightFrameBackground: boolean;
@@ -107,7 +130,8 @@ export interface UIState {
   showTimeline: boolean;
   mediaBrowserFilter: MediaBrowserFilter;
   lightSourcePreview: boolean;
-  stagedPeak: { elevation: number; falloff: number; shape: string; blackPoint: LaurusPeakBlackPoint };
+  stagedObject: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint };
+  objectReview: ObjectReviewSession | undefined;
 }
 
 export const defaultUIState: UIState = {
@@ -139,12 +163,13 @@ export const defaultUIState: UIState = {
   showTimeline: true,
   mediaBrowserFilter: "img",
   lightSourcePreview: false,
-  stagedPeak: {
-    elevation: PEAK_ELEVATION_DEFAULT,
-    falloff: PEAK_FALLOFF_DEFAULT,
+  stagedObject: {
+    elevation: OBJECT_ELEVATION_DEFAULT,
+    falloff: OBJECT_FALLOFF_DEFAULT,
     shape: "",
-    blackPoint: PEAK_BLACK_POINT_DEFAULT,
+    blackPoint: OBJECT_BLACK_POINT_DEFAULT,
   },
+  objectReview: undefined,
 };
 
 export enum UIActionType {
@@ -180,7 +205,12 @@ export enum UIActionType {
   SetShowTimeline,
   SetMediaBrowserFilter,
   SetLightSourcePreview,
-  SetStagedPeak,
+  SetStagedObject,
+  StartObjectReview,
+  ToggleObjectReviewPolygon,
+  SetObjectReviewDraftDescription,
+  RecordObjectReviewDecision,
+  EndObjectReview,
 }
 
 export type UIAction =
@@ -210,7 +240,7 @@ export type UIAction =
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
-  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number; peakId?: number }
+  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number; objectId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
@@ -233,13 +263,23 @@ export type UIAction =
   | { type: UIActionType.SetShowTimeline; value: boolean }
   | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter }
   | { type: UIActionType.SetLightSourcePreview; value: boolean }
-  | { type: UIActionType.SetStagedPeak; value: Partial<UIState["stagedPeak"]> };
+  | { type: UIActionType.SetStagedObject; value: Partial<UIState["stagedObject"]> }
+  | {
+      type: UIActionType.StartObjectReview;
+      maskMediaId: string;
+      maskKey: string;
+      candidates: LaurusObjectReviewCandidate[];
+    }
+  | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
+  | { type: UIActionType.SetObjectReviewDraftDescription; value: string }
+  | { type: UIActionType.RecordObjectReviewDecision; decision: "accepted" | "rejected" }
+  | { type: UIActionType.EndObjectReview };
 
 function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
   if (element?.type !== "svg") return "";
   const decoded = decodeSvgMarkup(element.value.markup);
   if (!decoded) return "";
-  const built = buildPeakShapeFromMarkup(decoded);
+  const built = buildObjectShapeFromMarkup(decoded);
   return built.ok ? built.shape.path : "";
 }
 
@@ -321,7 +361,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return {
         ...state,
         browserElement: action.value,
-        stagedPeak: { ...state.stagedPeak, shape: stagedShapePathFor(action.value) },
+        stagedObject: { ...state.stagedObject, shape: stagedShapePathFor(action.value) },
       };
     }
     case UIActionType.SetActiveElement: {
@@ -349,7 +389,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const newEntries = state.carouselEntries.filter((m) => {
         if (m.key !== action.key) return true;
         if (action.captureId !== undefined) return !(m.type === "capture" && m.captureId === action.captureId);
-        if (action.peakId !== undefined) return !(m.type === "peak" && m.peakId === action.peakId);
+        if (action.objectId !== undefined) return !(m.type === "object" && m.objectId === action.objectId);
         return false;
       });
       return { ...state, carouselEntries: newEntries };
@@ -417,8 +457,93 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetLightSourcePreview: {
       return { ...state, lightSourcePreview: action.value };
     }
-    case UIActionType.SetStagedPeak: {
-      return { ...state, stagedPeak: { ...state.stagedPeak, ...action.value } };
+    case UIActionType.SetStagedObject: {
+      return { ...state, stagedObject: { ...state.stagedObject, ...action.value } };
+    }
+    case UIActionType.StartObjectReview: {
+      if (action.candidates.length === 0) return state;
+      const batchSize = Math.min(MAX_MASK_OBJECTS, action.candidates.length);
+      return {
+        ...state,
+        objectReview: {
+          maskMediaId: action.maskMediaId,
+          maskKey: action.maskKey,
+          candidates: action.candidates,
+          decisions: new Map(),
+          batchStart: 0,
+          batchSize,
+          cycle: 1,
+          currentIndex: 0,
+          currentIndices: new Set(action.candidates[0].polygon_indices),
+          draftDescription: "",
+        },
+      };
+    }
+    case UIActionType.ToggleObjectReviewPolygon: {
+      const review = state.objectReview;
+      if (!review) return state;
+      const currentIndices = new Set(review.currentIndices);
+      if (currentIndices.has(action.index)) {
+        currentIndices.delete(action.index);
+      } else {
+        currentIndices.add(action.index);
+      }
+      return { ...state, objectReview: { ...review, currentIndices } };
+    }
+    case UIActionType.SetObjectReviewDraftDescription: {
+      const review = state.objectReview;
+      if (!review) return state;
+      return { ...state, objectReview: { ...review, draftDescription: action.value } };
+    }
+    case UIActionType.RecordObjectReviewDecision: {
+      const review = state.objectReview;
+      if (!review) return state;
+      const candidate = review.candidates[review.currentIndex];
+      if (!candidate || review.decisions.has(candidate.object.id)) return state;
+
+      const decisions = new Map(review.decisions);
+      decisions.set(candidate.object.id, action.decision);
+
+      const batchEnd = review.batchStart + review.batchSize;
+      const nextIndex = review.currentIndex + 1;
+      if (nextIndex < batchEnd) {
+        return {
+          ...state,
+          objectReview: {
+            ...review,
+            decisions,
+            currentIndex: nextIndex,
+            currentIndices: new Set(review.candidates[nextIndex].polygon_indices),
+            draftDescription: "",
+          },
+        };
+      }
+
+      let rejected = 0;
+      for (let i = review.batchStart; i < batchEnd; i++) {
+        if (decisions.get(review.candidates[i].object.id) === "rejected") rejected++;
+      }
+      const nextBatchStart = batchEnd;
+      if (review.cycle >= 3 || rejected === 0 || nextBatchStart >= review.candidates.length) {
+        return { ...state, objectReview: undefined };
+      }
+      const nextBatchSize = Math.min(rejected, review.candidates.length - nextBatchStart);
+      return {
+        ...state,
+        objectReview: {
+          ...review,
+          decisions,
+          batchStart: nextBatchStart,
+          batchSize: nextBatchSize,
+          cycle: review.cycle + 1,
+          currentIndex: nextBatchStart,
+          currentIndices: new Set(review.candidates[nextBatchStart].polygon_indices),
+          draftDescription: "",
+        },
+      };
+    }
+    case UIActionType.EndObjectReview: {
+      return { ...state, objectReview: undefined };
     }
   }
 }

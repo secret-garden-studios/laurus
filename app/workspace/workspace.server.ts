@@ -294,7 +294,7 @@ export interface PolygonPath_V1_0 {
   stroke: string;
   stroke_width: number;
   capture_id: number;
-  peak_id: number;
+  object_id: number;
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
@@ -308,7 +308,7 @@ export interface Capture_V1_0 {
 }
 export type LaurusCapture = Capture_V1_0;
 
-export interface Peak_V1_0 {
+export interface Object_V1_0 {
   id: number;
   name: string;
   cx: number;
@@ -321,29 +321,30 @@ export interface Peak_V1_0 {
   black_point_g: number;
   black_point_b: number;
   black_point_a: number;
+  description: string;
 }
-export type LaurusPeak = Peak_V1_0;
+export type LaurusObject = Object_V1_0;
 
-export interface PeakBlackPoint_V1_0 {
+export interface ObjectBlackPoint_V1_0 {
   r: number;
   g: number;
   b: number;
   a: number;
 }
-export type LaurusPeakBlackPoint = PeakBlackPoint_V1_0;
+export type LaurusObjectBlackPoint = ObjectBlackPoint_V1_0;
 
-export const PEAK_BLACK_POINT_DEFAULT: PeakBlackPoint_V1_0 = { r: 0, g: 0, b: 0, a: 0 };
+export const OBJECT_BLACK_POINT_DEFAULT: ObjectBlackPoint_V1_0 = { r: 0, g: 0, b: 0, a: 0 };
 
-export function toPeakBlackPoint(peak: Peak_V1_0): PeakBlackPoint_V1_0 {
+export function toObjectBlackPoint(object: Object_V1_0): ObjectBlackPoint_V1_0 {
   return {
-    r: peak.black_point_r,
-    g: peak.black_point_g,
-    b: peak.black_point_b,
-    a: peak.black_point_a,
+    r: object.black_point_r,
+    g: object.black_point_g,
+    b: object.black_point_b,
+    a: object.black_point_a,
   };
 }
 
-export const PEAK_FALLOFF_DEFAULT = 2.0;
+export const OBJECT_FALLOFF_DEFAULT = 2.0;
 
 export interface GlowStop_V1_0 {
   offset: number;
@@ -373,13 +374,16 @@ export interface MaskMediaResult_V1_0 {
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
   captures: Capture_V1_0[];
-  peaks: Peak_V1_0[];
+  objects: Object_V1_0[];
   creator: string;
   last_editor: string;
 }
 export type LaurusMaskResult = MaskMediaResult_V1_0;
 
-type RawPeak_V1_0 = Omit<Peak_V1_0, "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}`> & {
+type RawObject_V1_0 = Omit<
+  Object_V1_0,
+  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description"
+> & {
   name?: string;
   falloff?: number;
   shape?: string;
@@ -387,22 +391,28 @@ type RawPeak_V1_0 = Omit<Peak_V1_0, "name" | "falloff" | "shape" | `black_point_
   black_point_g?: number;
   black_point_b?: number;
   black_point_a?: number;
+  description?: string;
 };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "peaks"> & { peaks?: RawPeak_V1_0[] };
+type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
+
+export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
+  return {
+    ...object,
+    name: object.name ?? `object ${object.id}`,
+    falloff: object.falloff ?? OBJECT_FALLOFF_DEFAULT,
+    shape: object.shape ?? "",
+    black_point_r: object.black_point_r ?? OBJECT_BLACK_POINT_DEFAULT.r,
+    black_point_g: object.black_point_g ?? OBJECT_BLACK_POINT_DEFAULT.g,
+    black_point_b: object.black_point_b ?? OBJECT_BLACK_POINT_DEFAULT.b,
+    black_point_a: object.black_point_a ?? OBJECT_BLACK_POINT_DEFAULT.a,
+    description: object.description ?? "",
+  };
+}
 
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
-    peaks: (mask.peaks ?? []).map((peak) => ({
-      ...peak,
-      name: peak.name ?? `peak ${peak.id}`,
-      falloff: peak.falloff ?? PEAK_FALLOFF_DEFAULT,
-      shape: peak.shape ?? "",
-      black_point_r: peak.black_point_r ?? PEAK_BLACK_POINT_DEFAULT.r,
-      black_point_g: peak.black_point_g ?? PEAK_BLACK_POINT_DEFAULT.g,
-      black_point_b: peak.black_point_b ?? PEAK_BLACK_POINT_DEFAULT.b,
-      black_point_a: peak.black_point_a ?? PEAK_BLACK_POINT_DEFAULT.a,
-    })),
+    objects: (mask.objects ?? []).map(normalizeObject),
   };
 }
 
@@ -499,8 +509,8 @@ export function nextCaptureId(captures: Capture_V1_0[]): number {
   return 1 + captures.reduce((max, c) => Math.max(max, c.id), 0);
 }
 
-export function nextPeakId(peaks: Peak_V1_0[]): number {
-  return 1 + peaks.reduce((max, p) => Math.max(max, p.id), 0);
+export function nextObjectId(objects: Object_V1_0[]): number {
+  return 1 + objects.reduce((max, p) => Math.max(max, p.id), 0);
 }
 
 /* /media/masks/mask (websocket) */
@@ -513,9 +523,9 @@ export interface MaskRequest_V1_0 {
   canny_high?: number;
   alpha_threshold?: number;
   curve_tolerance?: number;
-  edge_peaks?: boolean;
-  peak_elevation?: number;
-  peak_falloff?: number;
+  edge_objects?: boolean;
+  object_elevation?: number;
+  object_falloff?: number;
 }
 export type LaurusMaskRequest = MaskRequest_V1_0;
 
@@ -543,12 +553,12 @@ export interface MaskTriangle_V1_0 {
   d: string;
   points: [number, number][];
 }
-export interface MaskPeak_V1_0 {
-  type: "peak";
-  peak: Peak_V1_0;
+export interface MaskObject_V1_0 {
+  type: "object";
+  object: Object_V1_0;
   polygon_indices: number[];
-  peak_index: number;
-  peak_count: number;
+  object_index: number;
+  object_count: number;
 }
 export interface MaskComplete_V1_0 {
   type: "complete";
@@ -559,7 +569,7 @@ export interface MaskError_V1_0 {
   message: string;
 }
 export type MaskMessage_V1_0 =
-  MaskGroupStart_V1_0 | MaskCurve_V1_0 | MaskTriangle_V1_0 | MaskPeak_V1_0 | MaskComplete_V1_0 | MaskError_V1_0;
+  MaskGroupStart_V1_0 | MaskCurve_V1_0 | MaskTriangle_V1_0 | MaskObject_V1_0 | MaskComplete_V1_0 | MaskError_V1_0;
 
 function toWebSocketUrl(baseUrl: string): string {
   return baseUrl.replace(/^http/, "ws");
@@ -569,7 +579,7 @@ export interface MaskImageHandlers {
   onGroupStart?: (event: MaskGroupStart_V1_0) => void;
   onCurve?: (event: MaskCurve_V1_0) => void;
   onTriangle?: (event: MaskTriangle_V1_0) => void;
-  onPeak?: (event: MaskPeak_V1_0) => void;
+  onObject?: (event: MaskObject_V1_0) => void;
   onComplete?: (event: MaskComplete_V1_0) => void;
   onError?: (message: string) => void;
 }
@@ -616,8 +626,8 @@ export function maskImage(
       case "triangle":
         handlers.onTriangle?.(message);
         break;
-      case "peak":
-        handlers.onPeak?.(message);
+      case "object":
+        handlers.onObject?.(message);
         break;
       case "complete":
         handlers.onComplete?.({ ...message, result: normalizeMaskResult(message.result) });
@@ -646,9 +656,34 @@ export interface MaskCaptureUpdateRequest_V1_0 {
   falloff: number;
   darkness: number;
 }
+/** What one object or capture edit changed, rather than the whole mask it
+ *  changed it in -- see MaskEditDelta server-side. `tagged_polygon_indices` is
+ *  the record's full polygon membership after the edit;
+ *  `cleared_polygon_indices` are the polygons that carried it and no longer
+ *  do. Applying both patches exactly the entries that moved, which is what
+ *  keeps an edit off the whole-mask path. */
+export interface MaskEditDelta_V1_0 {
+  tagged_polygon_indices: number[];
+  cleared_polygon_indices: number[];
+  last_active: string;
+  last_editor: string;
+}
+
+export interface ObjectUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
+  object_id: number;
+  object: Object_V1_0 | null;
+  removed: boolean;
+}
+
+export interface CaptureUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
+  capture_id: number;
+  capture: Capture_V1_0 | null;
+  removed: boolean;
+}
+
 export interface MaskCaptureUpdateComplete_V1_0 {
   type: "capture_update_complete";
-  result: MaskMediaResult_V1_0;
+  delta: CaptureUpdateDelta_V1_0;
 }
 export type MaskCaptureSocketMessage_V1_0 = MaskCaptureUpdateComplete_V1_0 | MaskError_V1_0;
 
@@ -656,10 +691,10 @@ export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, acc
   return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/captures?token=${encodeURIComponent(accessToken)}`;
 }
 
-/* /media/masks/{mask_media_id}/peaks (websocket) */
+/* /media/masks/{mask_media_id}/objects (websocket) */
 
-export interface MaskPeakUpdateRequest_V1_0 {
-  peak_id: number;
+export interface MaskObjectUpdateRequest_V1_0 {
+  object_id: number;
   name: string;
   cx: number;
   cy: number;
@@ -671,11 +706,12 @@ export interface MaskPeakUpdateRequest_V1_0 {
   black_point_g: number;
   black_point_b: number;
   black_point_a: number;
+  description: string;
   remove: boolean;
   polygon_indices: number[];
 }
 
-export function toPeakBlackPointFields(blackPoint: PeakBlackPoint_V1_0) {
+export function toObjectBlackPointFields(blackPoint: ObjectBlackPoint_V1_0) {
   return {
     black_point_r: blackPoint.r,
     black_point_g: blackPoint.g,
@@ -683,14 +719,81 @@ export function toPeakBlackPointFields(blackPoint: PeakBlackPoint_V1_0) {
     black_point_a: blackPoint.a,
   };
 }
-export interface MaskPeakUpdateComplete_V1_0 {
-  type: "peak_update_complete";
-  result: MaskMediaResult_V1_0;
+export interface MaskObjectUpdateComplete_V1_0 {
+  type: "object_update_complete";
+  delta: ObjectUpdateDelta_V1_0;
 }
-export type MaskPeakSocketMessage_V1_0 = MaskPeakUpdateComplete_V1_0 | MaskError_V1_0;
+export type MaskObjectSocketMessage_V1_0 = MaskObjectUpdateComplete_V1_0 | MaskError_V1_0;
 
-export function toMaskPeakSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
-  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/peaks?token=${encodeURIComponent(accessToken)}`;
+export function toMaskObjectSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
+  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/objects?token=${encodeURIComponent(accessToken)}`;
+}
+
+/* /media/masks/{mask_media_id}/object-review */
+
+export interface ObjectReviewCandidate_V1_0 {
+  object: Object_V1_0;
+  polygon_indices: number[];
+}
+export type LaurusObjectReviewCandidate = ObjectReviewCandidate_V1_0;
+
+export interface ObjectReviewDecision_V1_0 {
+  object_id: number;
+  decision: "accepted" | "rejected";
+  added_polygon_indices: number[];
+  removed_polygon_indices: number[];
+  decided_at: string;
+}
+
+export interface ObjectReviewState_V1_0 {
+  mask_media_id: string;
+  candidates: ObjectReviewCandidate_V1_0[];
+  decisions: ObjectReviewDecision_V1_0[];
+}
+
+export interface ObjectReviewDecisionResponse_V1_0 {
+  review: ObjectReviewState_V1_0;
+  /** Populated only on acceptance -- a rejection changes no mask state. */
+  delta: ObjectUpdateDelta_V1_0 | null;
+}
+
+export async function postObjectReviewDecision(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  objectId: number,
+  decision: "accepted" | "rejected",
+  description?: string,
+  addedPolygonIndices?: number[],
+  removedPolygonIndices?: number[],
+): Promise<ObjectReviewDecisionResponse_V1_0 | undefined> {
+  try {
+    const url = `${baseUrl}/media/masks/${maskMediaId}/object-review/decisions`;
+    const body = JSON.stringify({
+      object_id: objectId,
+      decision,
+      description,
+      added_polygon_indices: addedPolygonIndices ?? [],
+      removed_polygon_indices: removedPolygonIndices ?? [],
+    });
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "POST");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) return undefined;
+    const raw: ObjectReviewDecisionResponse_V1_0 = await response.json();
+    return {
+      review: raw.review,
+      delta: raw.delta ? { ...raw.delta, object: raw.delta.object ? normalizeObject(raw.delta.object) : null } : null,
+    };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
 }
 
 /* /media/groups */
@@ -1596,13 +1699,13 @@ export interface LightSourceSolution_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  peak_elevation: number;
-  peak_radius: number;
-  peak_falloff: number;
-  peak_black_point_r: number;
-  peak_black_point_g: number;
-  peak_black_point_b: number;
-  peak_black_point_a: number;
+  object_elevation: number;
+  object_radius: number;
+  object_falloff: number;
+  object_black_point_r: number;
+  object_black_point_g: number;
+  object_black_point_b: number;
+  object_black_point_a: number;
 }
 export interface LightSourceEquation_V1_0 {
   input_id: string;
@@ -1614,37 +1717,37 @@ export interface LightSourceEquation_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  peak_elevation: number;
-  peak_radius: number;
-  peak_falloff: number;
-  peak_black_point_r: number;
-  peak_black_point_g: number;
-  peak_black_point_b: number;
-  peak_black_point_a: number;
+  object_elevation: number;
+  object_radius: number;
+  object_falloff: number;
+  object_black_point_r: number;
+  object_black_point_g: number;
+  object_black_point_b: number;
+  object_black_point_a: number;
   loop: LaurusLoopType;
   solution: LightSourceSolution_V1_0[];
   limit_factor: number;
 }
-export function toPeakBlackPointEquationFields(blackPoint: PeakBlackPoint_V1_0) {
+export function toObjectBlackPointEquationFields(blackPoint: ObjectBlackPoint_V1_0) {
   return {
-    peak_black_point_r: blackPoint.r,
-    peak_black_point_g: blackPoint.g,
-    peak_black_point_b: blackPoint.b,
-    peak_black_point_a: blackPoint.a,
+    object_black_point_r: blackPoint.r,
+    object_black_point_g: blackPoint.g,
+    object_black_point_b: blackPoint.b,
+    object_black_point_a: blackPoint.a,
   };
 }
 
-export function toEquationPeakBlackPoint(fields: {
-  peak_black_point_r: number;
-  peak_black_point_g: number;
-  peak_black_point_b: number;
-  peak_black_point_a: number;
-}): PeakBlackPoint_V1_0 {
+export function toEquationObjectBlackPoint(fields: {
+  object_black_point_r: number;
+  object_black_point_g: number;
+  object_black_point_b: number;
+  object_black_point_a: number;
+}): ObjectBlackPoint_V1_0 {
   return {
-    r: fields.peak_black_point_r,
-    g: fields.peak_black_point_g,
-    b: fields.peak_black_point_b,
-    a: fields.peak_black_point_a,
+    r: fields.object_black_point_r,
+    g: fields.object_black_point_g,
+    b: fields.object_black_point_b,
+    a: fields.object_black_point_a,
   };
 }
 
@@ -1856,21 +1959,21 @@ interface Frame_V1_0 {
   capture_intensity: number;
   capture_falloff: number;
   capture_darkness: number;
-  peak_elevation: number;
-  peak_radius: number;
-  peak_falloff: number;
-  peak_black_point_r: number;
-  peak_black_point_g: number;
-  peak_black_point_b: number;
-  peak_black_point_a: number;
+  object_elevation: number;
+  object_radius: number;
+  object_falloff: number;
+  object_black_point_r: number;
+  object_black_point_g: number;
+  object_black_point_b: number;
+  object_black_point_a: number;
   input_id: string;
 }
 
-const NEUTRAL_PEAK_FRAME = {
-  peak_elevation: 0,
-  peak_radius: 0,
-  peak_falloff: PEAK_FALLOFF_DEFAULT,
-  ...toPeakBlackPointEquationFields(PEAK_BLACK_POINT_DEFAULT),
+const NEUTRAL_OBJECT_FRAME = {
+  object_elevation: 0,
+  object_radius: 0,
+  object_falloff: OBJECT_FALLOFF_DEFAULT,
+  ...toObjectBlackPointEquationFields(OBJECT_BLACK_POINT_DEFAULT),
 };
 export async function getScaleFrames(
   baseUrl: string | undefined,
@@ -1894,7 +1997,7 @@ export async function getScaleFrames(
     capture_intensity: 0,
     capture_falloff: 0,
     capture_darkness: 0,
-    ...NEUTRAL_PEAK_FRAME,
+    ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
 }
@@ -1919,7 +2022,7 @@ export async function getMoveFrames(
     capture_intensity: 0,
     capture_falloff: 0,
     capture_darkness: 0,
-    ...NEUTRAL_PEAK_FRAME,
+    ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
 }
@@ -1945,7 +2048,7 @@ export async function getRotateFrames(
     capture_intensity: 0,
     capture_falloff: 0,
     capture_darkness: 0,
-    ...NEUTRAL_PEAK_FRAME,
+    ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
 }

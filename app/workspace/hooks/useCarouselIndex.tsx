@@ -38,8 +38,8 @@ export const useCarouselIndex = (
     if (activeElement?.type === "capture") {
       return c.type === "capture" && c.captureId === activeElement.captureId;
     }
-    if (activeElement?.type === "peak") {
-      return c.type === "peak" && c.peakId === activeElement.peakId;
+    if (activeElement?.type === "object") {
+      return c.type === "object" && c.objectId === activeElement.objectId;
     }
     return true;
   });

@@ -4,7 +4,7 @@ import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
-import { decodeSvgMarkup } from "../canvas-media/peak-shape";
+import { decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;

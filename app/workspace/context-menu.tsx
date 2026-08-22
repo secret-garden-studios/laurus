@@ -15,7 +15,15 @@ import {
   UIContext,
   getMaskSourceImgIds,
 } from "./workspace.client";
-import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
+import {
+  CaptureUpdateDelta_V1_0,
+  LaurusFrame,
+  LaurusImgResult,
+  LaurusMaskResult,
+  LaurusSvgResult,
+  deleteMask,
+} from "./workspace.server";
+import { applyCaptureDelta } from "./canvas-media/mask-delta";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -135,7 +143,7 @@ export type ContextMenuMedia =
   | { type: "svg"; key: string; meta: LaurusProjectSvg }
   | { type: "mask"; key: string; meta: LaurusProjectMask }
   | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
-  | { type: "peak"; key: string; peakId: number; meta: LaurusProjectMask };
+  | { type: "object"; key: string; objectId: number; meta: LaurusProjectMask };
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -143,13 +151,13 @@ interface ContextMenu {
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskCaptureUpdate, closeMaskCaptureSocket, closeMaskPeakSocket } = useContext(SocketContext);
+  const { sendMaskCaptureUpdate, closeMaskCaptureSocket, closeMaskObjectSocket } = useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
     notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
+    notifyMaskSelectedObjectChanged,
     notifyMaskCaptureUpdated,
-    deletePeak,
+    deleteObject,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
@@ -159,8 +167,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     if (media.type === "capture") {
       return uiState.activeElement.type === "capture" && uiState.activeElement.captureId === media.captureId;
     }
-    if (media.type === "peak") {
-      return uiState.activeElement.type === "peak" && uiState.activeElement.peakId === media.peakId;
+    if (media.type === "object") {
+      return uiState.activeElement.type === "object" && uiState.activeElement.objectId === media.objectId;
     }
     return true;
   }, [uiState.activeElement, media]);
@@ -459,7 +467,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (media.type === "mask") {
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
-          if (media.type !== "capture" && media.type !== "peak") {
+          if (media.type !== "capture" && media.type !== "object") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
           }
@@ -759,7 +767,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       }
       case "mask":
       case "capture":
-      case "peak": {
+      case "object": {
         const m = coreState.project.masks.get(media.key);
         if (!m) return false;
         return projectMaskIsTransformed(m);
@@ -809,7 +817,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       }
       case "mask":
       case "capture":
-      case "peak": {
+      case "object": {
         const m = newMasks.get(media.key);
         if (!m) return;
         if (projectMaskIsTransformed(m)) {
@@ -841,7 +849,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
-  const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
+  const isCaptureOrObject = media.type === "capture" || media.type === "object";
 
   const cellStyle: CSSProperties = {
     display: "flex",
@@ -857,7 +865,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       case "svg":
         return media.meta.media_key;
       case "mask":
-      case "peak":
+      case "object":
       case "capture": {
         let h = media.key;
         const mask = coreState.canvasMasks.get(media.key);
@@ -1056,14 +1064,14 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           notifyMaskSelectionChanged(media.key);
                           notifyMaskSelectedCaptureChanged(media.key, media.captureId);
-                          notifyMaskSelectedPeakChanged(media.key, undefined);
+                          notifyMaskSelectedObjectChanged(media.key, undefined);
                           break;
                         }
-                        case "peak": {
+                        case "object": {
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
-                            type: "peak",
-                            peakId: media.peakId,
+                            type: "object",
+                            objectId: media.objectId,
                           };
                           uiDispatch({
                             type: UIActionType.SetActiveElement,
@@ -1071,10 +1079,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           uiDispatch({
                             type: UIActionType.SetSelectedElement,
-                            value: { key: media.key, type: "peak", peakId: media.peakId },
+                            value: { key: media.key, type: "object", objectId: media.objectId },
                           });
                           notifyMaskSelectionChanged(media.key);
-                          notifyMaskSelectedPeakChanged(media.key, media.peakId);
+                          notifyMaskSelectedObjectChanged(media.key, media.objectId);
                           notifyMaskSelectedCaptureChanged(media.key, undefined);
                           break;
                         }
@@ -1093,7 +1101,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     height: dynamicSizes.cell.height * 4,
                   }}
                 >
-                  {media.type !== "mask" && !isCaptureOrPeak && (
+                  {media.type !== "mask" && !isCaptureOrObject && (
                     <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                       {"swap"}
                     </div>
@@ -1155,12 +1163,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
                           newMasks.delete(media.key);
                           closeMaskCaptureSocket(media.meta.media_id);
-                          closeMaskPeakSocket(media.meta.media_id);
+                          closeMaskObjectSocket(media.meta.media_id);
                           deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
                           break;
                         }
                         case "capture": {
-                          const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
+                          const updated: CaptureUpdateDelta_V1_0 | undefined = await sendMaskCaptureUpdate(
                             media.meta.media_id,
                             {
                               capture_id: media.captureId,
@@ -1172,9 +1180,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                               darkness: 0,
                             },
                           );
-                          if (!updated) break;
-                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
-                          notifyMaskCaptureUpdated(media.key, updated);
+                          const captureMaskData = coreState.canvasMasks.get(media.key);
+                          if (!updated || !captureMaskData) break;
+                          const patchedCaptureMask = applyCaptureDelta(captureMaskData, updated);
+                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patchedCaptureMask });
+                          notifyMaskCaptureUpdated(media.key, patchedCaptureMask);
                           await deleteMaskCaptureEffects(
                             media.key,
                             media.captureId,
@@ -1209,8 +1219,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           break;
                         }
-                        case "peak": {
-                          await deletePeak(media.key, media.peakId);
+                        case "object": {
+                          await deleteObject(media.key, media.objectId);
                           break;
                         }
                       }
@@ -1234,7 +1244,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                       switch (media.type) {
                         case "capture":
                           return asterisk300();
-                        case "peak":
+                        case "object":
                           return antigravity300();
                         case "img":
                           return image200();

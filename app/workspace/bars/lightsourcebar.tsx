@@ -7,17 +7,24 @@ import { SvgRepo, asterisk300, antigravity300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import {
-  MAX_MASK_PEAK_ELEVATION,
-  MAX_MASK_PEAK_FALLOFF,
-  MIN_MASK_PEAK_FALLOFF,
-  MIN_MASK_PEAK_RADIUS_PX,
+  MAX_MASK_OBJECT_ELEVATION,
+  MAX_MASK_OBJECT_FALLOFF,
+  MIN_MASK_OBJECT_FALLOFF,
+  MIN_MASK_OBJECT_RADIUS_PX,
 } from "../mask-gl";
 import {
   capturedRegionCircle,
-  captureTriangleIndicesInCircle,
-  peakTriangleIndices,
+  indicesInCircleFromCentroids,
+  indicesInObjectFromCentroids,
 } from "../canvas-media/light-source-capture";
-import { LaurusMaskResult, LaurusPeakBlackPoint, toPeakBlackPoint, toPeakBlackPointFields } from "../workspace.server";
+import { maskGeometry } from "../canvas-media/mask-geometry";
+import { applyCaptureDelta, applyObjectDelta } from "../canvas-media/mask-delta";
+import {
+  LaurusMaskResult,
+  LaurusObjectBlackPoint,
+  toObjectBlackPoint,
+  toObjectBlackPointFields,
+} from "../workspace.server";
 import Toggle from "@/app/components/toggle";
 import {
   CAPTURE_DARKNESS_MAX,
@@ -34,23 +41,28 @@ const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskCaptureUpdate, sendMaskPeakUpdate } = useContext(SocketContext);
+  // The persist queues below drain across awaits, and each delta has to be
+  // applied to whatever the mask looks like *then* -- a Map captured when the
+  // queue started would drop any edit that landed while it was in flight.
+  const latestCanvasMasksRef = useRef(coreState.canvasMasks);
+  latestCanvasMasksRef.current = coreState.canvasMasks;
+  const { sendMaskCaptureUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
   const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
   const {
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
     notifyMaskSelectionChanged,
     notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
+    notifyMaskSelectedObjectChanged,
     notifyMaskCaptureUpdated,
     notifyMaskPendingCaptureSet,
     notifyMaskPendingCaptureCleared,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
-    notifyMaskPeaksUpdated,
+    notifyMaskObjectsUpdated,
     ...mask
   } = useContext(MaskContext);
-  const [target, setTarget] = useState<"capture" | "peak">("capture");
+  const [target, setTarget] = useState<"capture" | "object">("capture");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -182,34 +194,35 @@ export default function LightSourcebar() {
       ? selectedCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
       : undefined;
   const isCaptureParamDisabled = !selectedCapture;
-  const selectedPeakMaskKey = selectedElement?.type === "peak" ? selectedElement.key : undefined;
-  const selectedPeakMaskData =
-    selectedPeakMaskKey !== undefined ? coreState.canvasMasks.get(selectedPeakMaskKey) : undefined;
-  const selectedPeak =
-    selectedElement?.type === "peak"
-      ? selectedPeakMaskData?.peaks.find((p) => p.id === selectedElement.peakId)
+  const selectedObjectMaskKey = selectedElement?.type === "object" ? selectedElement.key : undefined;
+  const selectedObjectMaskData =
+    selectedObjectMaskKey !== undefined ? coreState.canvasMasks.get(selectedObjectMaskKey) : undefined;
+  const selectedObject =
+    selectedElement?.type === "object"
+      ? selectedObjectMaskData?.objects.find((p) => p.id === selectedElement.objectId)
       : undefined;
   const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
-  const isPeakParamDisabled = !selectedPeak && !isTopologyOn;
+  const isObjectParamDisabled = !selectedObject && !isTopologyOn;
 
-  const pendingPeakEdit =
-    selectedPeak &&
-    selectedPeakMaskKey !== undefined &&
-    coreState.pendingTopologyEdit?.maskKey === selectedPeakMaskKey &&
-    coreState.pendingTopologyEdit?.peakId === selectedPeak.id
+  const pendingObjectEdit =
+    selectedObject &&
+    selectedObjectMaskKey !== undefined &&
+    coreState.pendingTopologyEdit?.maskKey === selectedObjectMaskKey &&
+    coreState.pendingTopologyEdit?.objectId === selectedObject.id
       ? coreState.pendingTopologyEdit
       : undefined;
-  const elevationValue = pendingPeakEdit?.elevation ?? selectedPeak?.elevation ?? uiState.stagedPeak.elevation;
-  const peakFalloffValue = pendingPeakEdit?.falloff ?? selectedPeak?.falloff ?? uiState.stagedPeak.falloff;
-  const radiusValue = pendingPeakEdit?.radius ?? selectedPeak?.radius;
-  const isRadiusDisabled = !selectedPeak;
+  const elevationValue = pendingObjectEdit?.elevation ?? selectedObject?.elevation ?? uiState.stagedObject.elevation;
+  const objectFalloffValue = pendingObjectEdit?.falloff ?? selectedObject?.falloff ?? uiState.stagedObject.falloff;
+  const radiusValue = pendingObjectEdit?.radius ?? selectedObject?.radius;
+  const isRadiusDisabled = !selectedObject;
   const blackPointValue =
-    pendingPeakEdit?.blackPoint ?? (selectedPeak ? toPeakBlackPoint(selectedPeak) : uiState.stagedPeak.blackPoint);
+    pendingObjectEdit?.blackPoint ??
+    (selectedObject ? toObjectBlackPoint(selectedObject) : uiState.stagedObject.blackPoint);
   const selectedSubElement =
     selectedElement?.type === "capture"
       ? `capture|${selectedElement.key}|${selectedElement.captureId}`
-      : selectedElement?.type === "peak"
-        ? `peak|${selectedElement.key}|${selectedElement.peakId}`
+      : selectedElement?.type === "object"
+        ? `object|${selectedElement.key}|${selectedElement.objectId}`
         : undefined;
   const [prevSelectedSubElement, setPrevSelectedSubElement] = useState<string | undefined>(undefined);
 
@@ -217,7 +230,7 @@ export default function LightSourcebar() {
   if (selectedSubElement !== prevSelectedSubElement) {
     setPrevSelectedSubElement(selectedSubElement);
     if (selectedSubElement !== undefined) {
-      setTarget(selectedSubElement.startsWith("peak|") ? "peak" : "capture");
+      setTarget(selectedSubElement.startsWith("object|") ? "object" : "capture");
     }
   }
 
@@ -349,9 +362,11 @@ export default function LightSourcebar() {
           falloff: toSave.falloff,
           darkness: toSave.darkness,
         });
-        if (updated) {
-          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: updated });
-          notifyMaskCaptureUpdated(toSave.maskKey, updated);
+        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
+        if (updated && maskData) {
+          const patched = applyCaptureDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
+          notifyMaskCaptureUpdated(toSave.maskKey, patched);
         } else {
           console.error("failed to save capture change", { capture_id: toSave.captureId });
         }
@@ -406,7 +421,11 @@ export default function LightSourcebar() {
     if (!selectedCapture || !selectedCaptureMaskData) return undefined;
     const held = captureResizeAnchorRef.current;
     if (held && held.captureId === selectedCapture.id) return held;
-    const circle = capturedRegionCircle(selectedCaptureMaskData.polygons, selectedCapture.id);
+    const circle = capturedRegionCircle(
+      selectedCaptureMaskData.polygons,
+      maskGeometry(selectedCaptureMaskData).centroids,
+      selectedCapture.id,
+    );
     if (!circle) return undefined;
     const anchor = { captureId: selectedCapture.id, cx: circle.cx, cy: circle.cy };
     captureResizeAnchorRef.current = anchor;
@@ -418,7 +437,7 @@ export default function LightSourcebar() {
       if (!selectedCaptureMaskData) return undefined;
       const anchor = captureResizeAnchor();
       if (!anchor) return undefined;
-      const indices = captureTriangleIndicesInCircle(selectedCaptureMaskData.polygons, {
+      const indices = indicesInCircleFromCentroids(maskGeometry(selectedCaptureMaskData).centroids, {
         cx: anchor.cx,
         cy: anchor.cy,
         radius: size / 2,
@@ -504,15 +523,15 @@ export default function LightSourcebar() {
     [saveCaptureField],
   );
 
-  type PeakPatch = {
+  type ObjectPatch = {
     elevation?: number;
     radius?: number;
     falloff?: number;
-    blackPoint?: LaurusPeakBlackPoint;
+    blackPoint?: LaurusObjectBlackPoint;
   };
 
-  const toStagedPeakPatch = useCallback(
-    (patch: PeakPatch) => ({
+  const toStagedObjectPatch = useCallback(
+    (patch: ObjectPatch) => ({
       ...(patch.elevation !== undefined ? { elevation: patch.elevation } : {}),
       ...(patch.falloff !== undefined ? { falloff: patch.falloff } : {}),
       ...(patch.blackPoint !== undefined ? { blackPoint: patch.blackPoint } : {}),
@@ -520,34 +539,35 @@ export default function LightSourcebar() {
     [],
   );
 
-  interface PendingPeakSave {
+  interface PendingObjectSave {
     maskKey: string;
     maskMediaId: string;
-    peakId: number;
+    objectId: number;
     name: string;
+    description: string;
     cx: number;
     cy: number;
     radius: number;
     elevation: number;
     falloff: number;
     shape: string;
-    blackPoint: LaurusPeakBlackPoint;
+    blackPoint: LaurusObjectBlackPoint;
     polygonIndices: number[];
   }
 
-  const pendingPeakSaveRef = useRef<PendingPeakSave | null>(null);
-  const isPersistingPeakRef = useRef(false);
-  const persistPeakQueue = useCallback(async () => {
-    if (isPersistingPeakRef.current) return;
-    isPersistingPeakRef.current = true;
+  const pendingObjectSaveRef = useRef<PendingObjectSave | null>(null);
+  const isPersistingObjectRef = useRef(false);
+  const persistObjectQueue = useCallback(async () => {
+    if (isPersistingObjectRef.current) return;
+    isPersistingObjectRef.current = true;
     let settledMaskKey: string | undefined;
     try {
-      while (pendingPeakSaveRef.current) {
-        const toSave = pendingPeakSaveRef.current;
-        pendingPeakSaveRef.current = null;
+      while (pendingObjectSaveRef.current) {
+        const toSave = pendingObjectSaveRef.current;
+        pendingObjectSaveRef.current = null;
         settledMaskKey = toSave.maskKey;
-        const updated = await sendMaskPeakUpdate(toSave.maskMediaId, {
-          peak_id: toSave.peakId,
+        const updated = await sendMaskObjectUpdate(toSave.maskMediaId, {
+          object_id: toSave.objectId,
           name: toSave.name,
           cx: toSave.cx,
           cy: toSave.cy,
@@ -555,49 +575,52 @@ export default function LightSourcebar() {
           elevation: toSave.elevation,
           falloff: toSave.falloff,
           shape: toSave.shape,
-          ...toPeakBlackPointFields(toSave.blackPoint),
+          ...toObjectBlackPointFields(toSave.blackPoint),
+          description: toSave.description,
           remove: false,
           polygon_indices: toSave.polygonIndices,
         });
-        if (updated) {
-          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: updated });
-          notifyMaskPeaksUpdated(toSave.maskKey, updated);
+        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
+        if (updated && maskData) {
+          const patched = applyObjectDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
+          notifyMaskObjectsUpdated(toSave.maskKey, patched);
         } else {
-          console.error("failed to save peak change", { peak_id: toSave.peakId });
+          console.error("failed to save object change", { object_id: toSave.objectId });
         }
       }
     } finally {
-      isPersistingPeakRef.current = false;
+      isPersistingObjectRef.current = false;
       if (settledMaskKey !== undefined) {
         dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
         notifyMaskPendingTopologyCleared(settledMaskKey);
       }
     }
-  }, [sendMaskPeakUpdate, dispatch, notifyMaskPeaksUpdated, notifyMaskPendingTopologyCleared]);
+  }, [sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, notifyMaskPendingTopologyCleared]);
 
-  const mergePeakPatch = useCallback(
-    (patch: PeakPatch): PendingTopologyEdit | undefined => {
-      if (selectedPeakMaskKey === undefined || !selectedPeak) return undefined;
+  const mergeObjectPatch = useCallback(
+    (patch: ObjectPatch): PendingTopologyEdit | undefined => {
+      if (selectedObjectMaskKey === undefined || !selectedObject) return undefined;
       return {
-        maskKey: selectedPeakMaskKey,
-        peakId: selectedPeak.id,
-        cx: selectedPeak.cx,
-        cy: selectedPeak.cy,
-        radius: patch.radius ?? selectedPeak.radius,
-        elevation: patch.elevation ?? selectedPeak.elevation,
-        falloff: patch.falloff ?? selectedPeak.falloff,
-        shape: selectedPeak.shape,
-        blackPoint: patch.blackPoint ?? toPeakBlackPoint(selectedPeak),
+        maskKey: selectedObjectMaskKey,
+        objectId: selectedObject.id,
+        cx: selectedObject.cx,
+        cy: selectedObject.cy,
+        radius: patch.radius ?? selectedObject.radius,
+        elevation: patch.elevation ?? selectedObject.elevation,
+        falloff: patch.falloff ?? selectedObject.falloff,
+        shape: selectedObject.shape,
+        blackPoint: patch.blackPoint ?? toObjectBlackPoint(selectedObject),
       };
     },
-    [selectedPeakMaskKey, selectedPeak],
+    [selectedObjectMaskKey, selectedObject],
   );
 
-  const savePeakField = useCallback(
-    (patch: PeakPatch) => {
-      const edit = mergePeakPatch(patch);
+  const saveObjectField = useCallback(
+    (patch: ObjectPatch) => {
+      const edit = mergeObjectPatch(patch);
       if (!edit) {
-        uiDispatch({ type: UIActionType.SetStagedPeak, value: toStagedPeakPatch(patch) });
+        uiDispatch({ type: UIActionType.SetStagedObject, value: toStagedObjectPatch(patch) });
         return;
       }
       const maskData = coreState.canvasMasks.get(edit.maskKey);
@@ -606,14 +629,15 @@ export default function LightSourcebar() {
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(edit.maskKey, edit);
 
-      const existingPeak = maskData.peaks.find((p) => p.id === edit.peakId);
-      const peakName = existingPeak?.name ?? `peak ${edit.peakId}`;
+      const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
+      const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
-      pendingPeakSaveRef.current = {
+      pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
         maskMediaId: maskData.mask_media_id,
-        peakId: edit.peakId,
-        name: peakName,
+        objectId: edit.objectId,
+        name: objectName,
+        description: existingObject?.description ?? "",
         cx: edit.cx,
         cy: edit.cy,
         radius: edit.radius,
@@ -622,7 +646,7 @@ export default function LightSourcebar() {
         shape: edit.shape,
         blackPoint: edit.blackPoint,
         polygonIndices: [
-          ...peakTriangleIndices(maskData.polygons, {
+          ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
             cx: edit.cx,
             cy: edit.cy,
             radius: edit.radius,
@@ -630,44 +654,44 @@ export default function LightSourcebar() {
           }),
         ],
       };
-      void persistPeakQueue();
+      void persistObjectQueue();
     },
     [
-      mergePeakPatch,
+      mergeObjectPatch,
       coreState.canvasMasks,
       dispatch,
       notifyMaskPendingTopologySet,
       uiDispatch,
-      persistPeakQueue,
-      toStagedPeakPatch,
+      persistObjectQueue,
+      toStagedObjectPatch,
     ],
   );
 
-  const previewPeakChange = useCallback(
-    (patch: PeakPatch) => {
-      const edit = mergePeakPatch(patch);
+  const previewObjectChange = useCallback(
+    (patch: ObjectPatch) => {
+      const edit = mergeObjectPatch(patch);
       if (edit) {
         notifyMaskPendingTopologySet(edit.maskKey, edit);
       } else {
-        uiDispatch({ type: UIActionType.SetStagedPeak, value: toStagedPeakPatch(patch) });
+        uiDispatch({ type: UIActionType.SetStagedObject, value: toStagedObjectPatch(patch) });
       }
     },
-    [mergePeakPatch, notifyMaskPendingTopologySet, uiDispatch, toStagedPeakPatch],
+    [mergeObjectPatch, notifyMaskPendingTopologySet, uiDispatch, toStagedObjectPatch],
   );
 
   const elevationTrackRef = useRef<HTMLDivElement | null>(null);
 
-  const elevationSpan = MAX_MASK_PEAK_ELEVATION * 2;
+  const elevationSpan = MAX_MASK_OBJECT_ELEVATION * 2;
   const { getTrackValue: getElevationValue, getTrackCursor: getElevationCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     elevationSpan,
   );
   const elevationFromTrack = useCallback(
-    (cursorX: number, trackWidth: number) => getElevationValue(cursorX, trackWidth, 0) - MAX_MASK_PEAK_ELEVATION,
+    (cursorX: number, trackWidth: number) => getElevationValue(cursorX, trackWidth, 0) - MAX_MASK_OBJECT_ELEVATION,
     [getElevationValue],
   );
   const elevationToTrack = useCallback(
-    (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_PEAK_ELEVATION, trackWidth),
+    (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_OBJECT_ELEVATION, trackWidth),
     [getElevationCursor],
   );
   const elevationCursor = { x: elevationToTrack(elevationValue, dynamicSizes.paramSize.containerWidth), y: 0 };
@@ -675,33 +699,33 @@ export default function LightSourcebar() {
   const elevationRef = useRef<HTMLDivElement | null>(null);
 
   const radiusTrackRef = useRef<HTMLDivElement | null>(null);
-  const radiusMax = selectedPeakMaskData
-    ? Math.max(MIN_MASK_PEAK_RADIUS_PX + 1, Math.min(selectedPeakMaskData.width, selectedPeakMaskData.height))
-    : MIN_MASK_PEAK_RADIUS_PX + 1;
+  const radiusMax = selectedObjectMaskData
+    ? Math.max(MIN_MASK_OBJECT_RADIUS_PX + 1, Math.min(selectedObjectMaskData.width, selectedObjectMaskData.height))
+    : MIN_MASK_OBJECT_RADIUS_PX + 1;
   const { getTrackValue: getRadiusValue, getTrackCursor: getRadiusCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    radiusMax - MIN_MASK_PEAK_RADIUS_PX,
+    radiusMax - MIN_MASK_OBJECT_RADIUS_PX,
   );
 
   const radiusCursor = {
-    x: getRadiusCursor((radiusValue ?? 0) - MIN_MASK_PEAK_RADIUS_PX, dynamicSizes.paramSize.containerWidth),
+    x: getRadiusCursor((radiusValue ?? 0) - MIN_MASK_OBJECT_RADIUS_PX, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
   const radiusTitle = (radiusValue ?? 0).toFixed(0) + "px";
   const radiusRef = useRef<HTMLDivElement | null>(null);
 
-  const peakFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const peakFalloffSpan = MAX_MASK_PEAK_FALLOFF - MIN_MASK_PEAK_FALLOFF;
-  const { getTrackValue: getPeakFalloffValue, getTrackCursor: getPeakFalloffCursor } = useTrackpadState(
+  const objectFalloffTrackRef = useRef<HTMLDivElement | null>(null);
+  const objectFalloffSpan = MAX_MASK_OBJECT_FALLOFF - MIN_MASK_OBJECT_FALLOFF;
+  const { getTrackValue: getObjectFalloffValue, getTrackCursor: getObjectFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    peakFalloffSpan,
+    objectFalloffSpan,
   );
-  const peakFalloffCursor = {
-    x: getPeakFalloffCursor(peakFalloffValue - MIN_MASK_PEAK_FALLOFF, dynamicSizes.paramSize.containerWidth),
+  const objectFalloffCursor = {
+    x: getObjectFalloffCursor(objectFalloffValue - MIN_MASK_OBJECT_FALLOFF, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const peakFalloffTitle = peakFalloffValue.toFixed(2);
-  const peakFalloffRef = useRef<HTMLDivElement | null>(null);
+  const objectFalloffTitle = objectFalloffValue.toFixed(2);
+  const objectFalloffRef = useRef<HTMLDivElement | null>(null);
 
   const blackPointRTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getBlackPointRValue, getTrackCursor: getBlackPointRCursor } = useTrackpadState(
@@ -854,11 +878,11 @@ export default function LightSourcebar() {
       <div
         title={
           target === "capture"
-            ? "targeting captures -- double-click for peaks"
-            : "targeting peaks -- double-click for captures"
+            ? "targeting captures -- double-click for objects"
+            : "targeting objects -- double-click for captures"
         }
         onDoubleClick={() => {
-          setTarget(target === "capture" ? "peak" : "capture");
+          setTarget(target === "capture" ? "object" : "capture");
         }}
         style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
       >
@@ -901,11 +925,11 @@ export default function LightSourcebar() {
                 const next = !uiState.lightSourcePreview;
                 uiDispatch({ type: UIActionType.SetLightSourcePreview, value: next });
                 notifyMaskLightSourcePreviewToggled(next);
-                if (next && (selectedElement?.type === "capture" || selectedElement?.type === "peak")) {
+                if (next && (selectedElement?.type === "capture" || selectedElement?.type === "object")) {
                   uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
                   notifyMaskSelectionChanged(selectedElement.key);
                   notifyMaskSelectedCaptureChanged(selectedElement.key, undefined);
-                  notifyMaskSelectedPeakChanged(selectedElement.key, undefined);
+                  notifyMaskSelectedObjectChanged(selectedElement.key, undefined);
                 }
               }}
               trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -1274,26 +1298,26 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}>{"elevation"}</span>
+            <span style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}>{"elevation"}</span>
             <ParameterSliderXPlusMinus
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|elevation|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|elevation|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={elevationTrackRef}
               cursor={elevationCursor}
               onCursorMove={(newCursor) => {
                 if (!elevationTrackRef.current) return;
                 const newValue = elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth);
-                previewPeakChange({ elevation: newValue });
+                previewObjectChange({ elevation: newValue });
                 if (elevationRef.current) elevationRef.current.innerHTML = newValue.toFixed(0);
               }}
               onNewCursor={(newCursor) => {
                 if (!elevationTrackRef.current) return;
-                savePeakField({
+                saveObjectField({
                   elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth),
                 });
               }}
-              disabled={isPeakParamDisabled}
+              disabled={isObjectParamDisabled}
               title={elevationTitle}
               liveTitleRef={elevationRef}
             />
@@ -1308,29 +1332,29 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"how far the selected peak's own influence reaches"}
+              title={"how far the selected object's own influence reaches"}
               style={{ opacity: isRadiusDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"radius"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|radius|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|radius|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={radiusTrackRef}
               cursor={radiusCursor}
               onCursorMove={(newCursor) => {
                 if (!radiusTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
-                previewPeakChange({ radius: newValue });
+                  MIN_MASK_OBJECT_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
+                previewObjectChange({ radius: newValue });
                 if (radiusRef.current) radiusRef.current.innerHTML = newValue.toFixed(0) + "px";
               }}
               onNewCursor={(newCursor) => {
                 if (!radiusTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
-                savePeakField({ radius: newValue });
+                  MIN_MASK_OBJECT_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
+                saveObjectField({ radius: newValue });
               }}
               disabled={isRadiusDisabled}
               title={radiusTitle}
@@ -1347,33 +1371,35 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the selected peak's own profile - low is a broad dome with a visible rim, high is a needle"}
-              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              title={"the selected object's own profile - low is a broad dome with a visible rim, high is a needle"}
+              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"falloff"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-falloff|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-falloff|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
-              containerRef={peakFalloffTrackRef}
-              cursor={peakFalloffCursor}
+              containerRef={objectFalloffTrackRef}
+              cursor={objectFalloffCursor}
               onCursorMove={(newCursor) => {
-                if (!peakFalloffTrackRef.current) return;
+                if (!objectFalloffTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
-                previewPeakChange({ falloff: newValue });
-                if (peakFalloffRef.current) peakFalloffRef.current.innerHTML = newValue.toFixed(2);
+                  MIN_MASK_OBJECT_FALLOFF +
+                  getObjectFalloffValue(newCursor.x, objectFalloffTrackRef.current.clientWidth, 0);
+                previewObjectChange({ falloff: newValue });
+                if (objectFalloffRef.current) objectFalloffRef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
-                if (!peakFalloffTrackRef.current) return;
+                if (!objectFalloffTrackRef.current) return;
                 const newValue =
-                  MIN_MASK_PEAK_FALLOFF + getPeakFalloffValue(newCursor.x, peakFalloffTrackRef.current.clientWidth, 0);
-                savePeakField({ falloff: newValue });
+                  MIN_MASK_OBJECT_FALLOFF +
+                  getObjectFalloffValue(newCursor.x, objectFalloffTrackRef.current.clientWidth, 0);
+                saveObjectField({ falloff: newValue });
               }}
-              disabled={isPeakParamDisabled}
-              title={peakFalloffTitle}
-              liveTitleRef={peakFalloffRef}
+              disabled={isObjectParamDisabled}
+              title={objectFalloffTitle}
+              liveTitleRef={objectFalloffRef}
             />
           </div>
           <div
@@ -1386,29 +1412,29 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of red in the selected peak's black point"}
-              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              title={"the strength of red in the selected object's black point"}
+              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"r"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-r|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-r|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={blackPointRTrackRef}
               cursor={blackPointRCursor}
               onCursorMove={(newCursor) => {
                 if (!blackPointRTrackRef.current) return;
                 const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
-                previewPeakChange({ blackPoint: { ...blackPointValue, r: newValue } });
+                previewObjectChange({ blackPoint: { ...blackPointValue, r: newValue } });
                 if (blackPointRRef.current) blackPointRRef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
                 if (!blackPointRTrackRef.current) return;
                 const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
-                savePeakField({ blackPoint: { ...blackPointValue, r: newValue } });
+                saveObjectField({ blackPoint: { ...blackPointValue, r: newValue } });
               }}
-              disabled={isPeakParamDisabled}
+              disabled={isObjectParamDisabled}
               title={blackPointRTitle}
               liveTitleRef={blackPointRRef}
             />
@@ -1423,29 +1449,29 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of green in the selected peak's black point"}
-              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              title={"the strength of green in the selected object's black point"}
+              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"g"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-g|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-g|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={blackPointGTrackRef}
               cursor={blackPointGCursor}
               onCursorMove={(newCursor) => {
                 if (!blackPointGTrackRef.current) return;
                 const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
-                previewPeakChange({ blackPoint: { ...blackPointValue, g: newValue } });
+                previewObjectChange({ blackPoint: { ...blackPointValue, g: newValue } });
                 if (blackPointGRef.current) blackPointGRef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
                 if (!blackPointGTrackRef.current) return;
                 const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
-                savePeakField({ blackPoint: { ...blackPointValue, g: newValue } });
+                saveObjectField({ blackPoint: { ...blackPointValue, g: newValue } });
               }}
-              disabled={isPeakParamDisabled}
+              disabled={isObjectParamDisabled}
               title={blackPointGTitle}
               liveTitleRef={blackPointGRef}
             />
@@ -1460,29 +1486,29 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of blue in the selected peak's black point"}
-              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              title={"the strength of blue in the selected object's black point"}
+              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"b"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-b|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-b|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={blackPointBTrackRef}
               cursor={blackPointBCursor}
               onCursorMove={(newCursor) => {
                 if (!blackPointBTrackRef.current) return;
                 const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
-                previewPeakChange({ blackPoint: { ...blackPointValue, b: newValue } });
+                previewObjectChange({ blackPoint: { ...blackPointValue, b: newValue } });
                 if (blackPointBRef.current) blackPointBRef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
                 if (!blackPointBTrackRef.current) return;
                 const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
-                savePeakField({ blackPoint: { ...blackPointValue, b: newValue } });
+                saveObjectField({ blackPoint: { ...blackPointValue, b: newValue } });
               }}
-              disabled={isPeakParamDisabled}
+              disabled={isObjectParamDisabled}
               title={blackPointBTitle}
               liveTitleRef={blackPointBRef}
             />
@@ -1498,30 +1524,30 @@ export default function LightSourcebar() {
           >
             <span
               title={
-                "how strongly the selected peak's black point is applied -- 0 leaves the peak unaffected, 100% drives its floor fully to that colour"
+                "how strongly the selected object's black point is applied -- 0 leaves the object unaffected, 100% drives its floor fully to that colour"
               }
-              style={{ opacity: isPeakParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"a"}
             </span>
             <ParameterSliderX
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedPeakMaskKey ?? "lightsourcebar"}|peak-black-point-a|${selectedPeak?.id ?? "staged"}`}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-a|${selectedObject?.id ?? "staged"}`}
               size={dynamicSizes.paramSize}
               containerRef={blackPointATrackRef}
               cursor={blackPointACursor}
               onCursorMove={(newCursor) => {
                 if (!blackPointATrackRef.current) return;
                 const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
-                previewPeakChange({ blackPoint: { ...blackPointValue, a: newValue } });
+                previewObjectChange({ blackPoint: { ...blackPointValue, a: newValue } });
                 if (blackPointARef.current) blackPointARef.current.innerHTML = newValue.toFixed(2);
               }}
               onNewCursor={(newCursor) => {
                 if (!blackPointATrackRef.current) return;
                 const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
-                savePeakField({ blackPoint: { ...blackPointValue, a: newValue } });
+                saveObjectField({ blackPoint: { ...blackPointValue, a: newValue } });
               }}
-              disabled={isPeakParamDisabled}
+              disabled={isObjectParamDisabled}
               title={blackPointATitle}
               liveTitleRef={blackPointARef}
             />

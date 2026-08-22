@@ -61,12 +61,28 @@ export function useMaskPersist() {
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: newKey } });
-      // Peaks the server raised from detected edges arrive already saved on
-      // the mask, so unlike createPeak's own path nothing has enrolled them
-      // in the carousel yet -- without this they exist and render but have
-      // no entry to select or wire an effect to.
-      for (const peak of result.peaks) {
-        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "peak", key: newKey, peakId: peak.id } });
+      // Objects already saved on the mask (there normally are none here --
+      // a fresh edge-detected mask holds its candidates back for review, see
+      // below -- but a duplicated/copied mask could arrive with some) still
+      // need a carousel entry to be selectable, same as one accepted through
+      // review gets via RecordObjectReviewDecision's own AddCarouselEntry.
+      for (const object of result.objects) {
+        uiDispatch({
+          type: UIActionType.AddCarouselEntry,
+          value: { type: "object", key: newKey, objectId: object.id },
+        });
+      }
+      // Edge-detected candidates arrive separately from the saved mask (see
+      // useMaskPreview's onObject handler) and are never auto-accepted --
+      // kick off the interactive accept/reject review instead of enrolling
+      // them directly.
+      if (mask.objectCandidatesRef.current.length > 0) {
+        uiDispatch({
+          type: UIActionType.StartObjectReview,
+          maskMediaId: result.mask_media_id,
+          maskKey: newKey,
+          candidates: mask.objectCandidatesRef.current,
+        });
       }
       setSelectedMaskKeys(new Set([newKey]));
 
@@ -104,6 +120,7 @@ export function useMaskPersist() {
       mask.captureFalloff,
       mask.captureDarkness,
       mask.textureMix,
+      mask.objectCandidatesRef,
     ],
   );
 
@@ -114,12 +131,12 @@ export function useMaskPersist() {
       if (isMaskBusy) return;
       const initialTextureMix = mask.textureMix;
       mask.start(img, (result) => persistMask(sourceFrame, result), {
-        elevation: uiState.stagedPeak.elevation,
-        falloff: uiState.stagedPeak.falloff,
+        elevation: uiState.stagedObject.elevation,
+        falloff: uiState.stagedObject.falloff,
       });
       mask.setTextureMix(initialTextureMix);
     },
-    [isMaskBusy, mask, persistMask, uiState.stagedPeak.elevation, uiState.stagedPeak.falloff],
+    [isMaskBusy, mask, persistMask, uiState.stagedObject.elevation, uiState.stagedObject.falloff],
   );
 
   return { triggerMask, isMaskBusy };

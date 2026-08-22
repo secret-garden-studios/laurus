@@ -6,7 +6,7 @@ import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
-import { parsePathPoints } from "../mask-gl";
+import { maskGeometry } from "../canvas-media/mask-geometry";
 import { LaurusMaskResult } from "../workspace.server";
 import { CoreState } from "../states/core-state";
 
@@ -19,7 +19,7 @@ function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browser
   return browserImgs.find((img) => img.img_media_id === sourceImgMediaId)?.src;
 }
 
-function PeakOrCaptureThumbnail({
+function ObjectOrCaptureThumbnail({
   title,
   polygonCount,
   name,
@@ -182,7 +182,7 @@ export default function UnitDisplay({
   isEntryWireable = () => true,
 }: UnitDisplay) {
   const { coreState } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -245,7 +245,7 @@ export default function UnitDisplay({
           });
           notifyMaskSelectionChanged(entry.key);
           notifyMaskSelectedCaptureChanged(entry.key, undefined);
-          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          notifyMaskSelectedObjectChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -270,7 +270,7 @@ export default function UnitDisplay({
           });
           notifyMaskSelectionChanged(entry.key);
           notifyMaskSelectedCaptureChanged(entry.key, entry.captureId);
-          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          notifyMaskSelectedObjectChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -278,12 +278,12 @@ export default function UnitDisplay({
           });
           break;
         }
-        case "peak": {
+        case "object": {
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
-            type: "peak",
+            type: "object",
             locallyActivatedEffectKey: effectKey,
-            peakId: entry.peakId,
+            objectId: entry.objectId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -291,10 +291,10 @@ export default function UnitDisplay({
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: entry.key, type: "peak", peakId: entry.peakId },
+            value: { key: entry.key, type: "object", objectId: entry.objectId },
           });
           notifyMaskSelectionChanged(entry.key);
-          notifyMaskSelectedPeakChanged(entry.key, entry.peakId);
+          notifyMaskSelectedObjectChanged(entry.key, entry.objectId);
           notifyMaskSelectedCaptureChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
@@ -311,7 +311,7 @@ export default function UnitDisplay({
       uiDispatch,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -481,11 +481,16 @@ export default function UnitDisplay({
                     if (!maskData) break;
                     const capturedPolygons = maskData.polygons.filter((p) => p.capture_id === c.captureId);
                     if (capturedPolygons.length === 0) break;
-                    const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
-                    if (capturedPoints.length === 0) break;
+                    const capturedGeometry = maskGeometry(maskData);
+                    // Only an emptiness test -- it used to flatten every
+                    // captured polygon's parsed points just to check `.length`.
+                    const hasCapturedGeometry = maskData.polygons.some(
+                      (p, index) => p.capture_id === c.captureId && (capturedGeometry.points[index]?.length ?? 0) > 0,
+                    );
+                    if (!hasCapturedGeometry) break;
                     const capture = maskData.captures.find((cap) => cap.id === c.captureId);
                     return (
-                      <PeakOrCaptureThumbnail
+                      <ObjectOrCaptureThumbnail
                         key={`${c.key}-capture-${c.captureId}`}
                         title="mesh capture"
                         polygonCount={capturedPolygons.length}
@@ -501,19 +506,19 @@ export default function UnitDisplay({
                       />
                     );
                   }
-                  case "peak": {
+                  case "object": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
                     const maskData = coreState.canvasMasks.get(c.key);
-                    const peak = maskData?.peaks.find((p) => p.id === c.peakId);
-                    if (!maskData || !peak) break;
-                    const coveredPolygonCount = maskData.polygons.filter((p) => p.peak_id === c.peakId).length;
+                    const object = maskData?.objects.find((p) => p.id === c.objectId);
+                    if (!maskData || !object) break;
+                    const coveredPolygonCount = maskData.polygons.filter((p) => p.object_id === c.objectId).length;
                     return (
-                      <PeakOrCaptureThumbnail
-                        key={`${c.key}-peak-${c.peakId}`}
-                        title="mesh peak"
+                      <ObjectOrCaptureThumbnail
+                        key={`${c.key}-object-${c.objectId}`}
+                        title="mesh object"
                         polygonCount={coveredPolygonCount}
-                        name={peak.name}
+                        name={object.name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={antigravity200("rgb(255, 255, 255)")}
                         style={dynamicSizes.displayImg}

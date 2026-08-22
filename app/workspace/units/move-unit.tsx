@@ -17,11 +17,11 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import MoveUnitbar from "./bars/move-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey, maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskCaptureInputId, maskObjectInputId } from "../effects-utils";
 
 export type MoveUnitTarget = CarouselEntry["type"];
 
-const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "peak"];
+const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "object"];
 
 export interface MoveUnitControls {
   amplitude: number;
@@ -57,7 +57,7 @@ interface MoveUnit {
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -129,9 +129,9 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
           return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
         }
-        case "peak": {
+        case "object": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
-          return maskKey ? maskPeakInputId(maskKey, carouselEntry.peakId) : "";
+          return maskKey ? maskObjectInputId(maskKey, carouselEntry.objectId) : "";
         }
       }
     } else {
@@ -261,15 +261,15 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
-          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
-        case "peak": {
+        case "object": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "peak",
+            type: "object",
             locallyActivatedEffectKey: move.move_id,
-            peakId: carouselEntry.peakId,
+            objectId: carouselEntry.objectId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -277,10 +277,10 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "peak", peakId: carouselEntry.peakId },
+            value: { key: carouselEntry.key, type: "object", objectId: carouselEntry.objectId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedPeakChanged(newActiveElement.key, carouselEntry.peakId);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
           notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
           break;
         }
@@ -291,7 +291,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
       uiDispatch,
       notifyMaskSelectionChanged,
       notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 

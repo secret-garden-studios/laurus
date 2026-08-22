@@ -1,15 +1,15 @@
-export const PEAK_SHAPE_SAMPLES = 128;
-export const PEAK_SHAPE_VALIDATION_SAMPLES = PEAK_SHAPE_SAMPLES * 4;
+export const OBJECT_SHAPE_SAMPLES = 128;
+export const OBJECT_SHAPE_VALIDATION_SAMPLES = OBJECT_SHAPE_SAMPLES * 4;
 const CURVE_SEGMENTS = 48;
 const STRAY_SUBPATH_AREA_FRACTION = 0.01;
 
-export interface PeakShape {
+export interface ObjectShape {
   path: string;
   rho: Float32Array;
   rhoPrime: Float32Array;
 }
 
-export type PeakShapeResult = { ok: true; shape: PeakShape } | { ok: false; reason: string };
+export type ObjectShapeResult = { ok: true; shape: ObjectShape } | { ok: false; reason: string };
 
 interface Cursor {
   d: string;
@@ -434,10 +434,13 @@ function differentiateWrapped(values: Float32Array): Float32Array {
   return out;
 }
 
-export function buildPeakShapeFromRings(rings: [number, number][][], samples = PEAK_SHAPE_SAMPLES): PeakShapeResult {
+export function buildObjectShapeFromRings(
+  rings: [number, number][][],
+  samples = OBJECT_SHAPE_SAMPLES,
+): ObjectShapeResult {
   const usable = rings.filter((ring) => ring.length >= 3 && Math.abs(polygonArea(ring)) > 0);
   if (usable.length === 0) {
-    return { ok: false, reason: "no closed region found in the svg -- a peak shape needs a filled outline" };
+    return { ok: false, reason: "no closed region found in the svg -- an object shape needs a filled outline" };
   }
 
   const byArea = [...usable].sort((a, b) => Math.abs(polygonArea(b)) - Math.abs(polygonArea(a)));
@@ -452,12 +455,12 @@ export function buildPeakShapeFromRings(rings: [number, number][][], samples = P
       ok: false,
       reason: allInside
         ? `the svg's outline has ${competing.length === 1 ? "a hole" : `${competing.length} holes`} cut out of ` +
-          "it -- a peak shape must be one solid outline, so try a filled version of the same shape"
-        : `the svg is ${competing.length + 1} separate pieces -- a peak shape must be a single solid outline`,
+          "it -- an object shape must be one solid outline, so try a filled version of the same shape"
+        : `the svg is ${competing.length + 1} separate pieces -- an object shape must be a single solid outline`,
     };
   }
 
-  const validation = sampleAngularRadii(silhouette, PEAK_SHAPE_VALIDATION_SAMPLES);
+  const validation = sampleAngularRadii(silhouette, OBJECT_SHAPE_VALIDATION_SAMPLES);
   if (!validation.ok) return validation;
 
   const sampled = sampleAngularRadii(silhouette, samples);
@@ -491,28 +494,28 @@ export function decodeSvgMarkup(markup: string): string {
   }
 }
 
-export function buildPeakShapeFromMarkup(markup: string, samples = PEAK_SHAPE_SAMPLES): PeakShapeResult {
+export function buildObjectShapeFromMarkup(markup: string, samples = OBJECT_SHAPE_SAMPLES): ObjectShapeResult {
   const paths = extractPathData(markup);
   if (paths.length === 0) {
     return { ok: false, reason: "the svg has no <path> element to take a shape from" };
   }
-  return buildPeakShapeFromRings(
+  return buildObjectShapeFromRings(
     paths.flatMap((d) => flattenPathData(d)),
     samples,
   );
 }
 
-export function samplePeakShapePath(path: string, samples = PEAK_SHAPE_SAMPLES): PeakShape | undefined {
-  const result = buildPeakShapeFromRings(flattenPathData(path), samples);
+export function sampleObjectShapePath(path: string, samples = OBJECT_SHAPE_SAMPLES): ObjectShape | undefined {
+  const result = buildObjectShapeFromRings(flattenPathData(path), samples);
   return result.ok ? result.shape : undefined;
 }
 
-const shapeCache = new Map<string, PeakShape | undefined>();
+const shapeCache = new Map<string, ObjectShape | undefined>();
 
-export function cachedPeakShape(path: string): PeakShape | undefined {
+export function cachedObjectShape(path: string): ObjectShape | undefined {
   if (!path) return undefined;
   if (shapeCache.has(path)) return shapeCache.get(path);
-  const shape = samplePeakShapePath(path);
+  const shape = sampleObjectShapePath(path);
   shapeCache.set(path, shape);
   return shape;
 }

@@ -17,17 +17,17 @@ export function maskCaptureInputId(maskKey: string, captureId: number): string {
   return `${maskKey}:${captureId}`;
 }
 
-export function maskPeakInputId(maskKey: string, peakId: number): string {
-  return `${maskKey}:peak:${peakId}`;
+export function maskObjectInputId(maskKey: string, objectId: number): string {
+  return `${maskKey}:object:${objectId}`;
 }
 
-export function parseMaskPeakInputId(inputId: string): { maskKey: string; peakId: number | undefined } {
-  const separatorIndex = inputId.indexOf(":peak:");
-  if (separatorIndex === -1) return { maskKey: inputId, peakId: undefined };
-  const peakId = Number(inputId.slice(separatorIndex + ":peak:".length));
+export function parseMaskObjectInputId(inputId: string): { maskKey: string; objectId: number | undefined } {
+  const separatorIndex = inputId.indexOf(":object:");
+  if (separatorIndex === -1) return { maskKey: inputId, objectId: undefined };
+  const objectId = Number(inputId.slice(separatorIndex + ":object:".length));
   return {
     maskKey: inputId.slice(0, separatorIndex),
-    peakId: Number.isFinite(peakId) ? peakId : undefined,
+    objectId: Number.isFinite(objectId) ? objectId : undefined,
   };
 }
 
@@ -45,8 +45,8 @@ export function carouselEntryMathKey(entry: CarouselEntry): string {
   switch (entry.type) {
     case "capture":
       return maskCaptureInputId(entry.key, entry.captureId);
-    case "peak":
-      return maskPeakInputId(entry.key, entry.peakId);
+    case "object":
+      return maskObjectInputId(entry.key, entry.objectId);
     default:
       return entry.key;
   }
@@ -159,14 +159,14 @@ export async function deleteMaskCaptureEffects(
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }
 
-export async function deleteMaskPeakEffects(
+export async function deleteMaskObjectEffects(
   maskKey: string,
-  peakId: number,
+  objectId: number,
   apiOrigin: string | undefined,
   accessToken: string | undefined,
   effects: LaurusEffect[],
   dispatch: Dispatch<CoreAction>,
 ) {
-  const inputId = maskPeakInputId(maskKey, peakId);
+  const inputId = maskObjectInputId(maskKey, objectId);
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }
