@@ -15,8 +15,7 @@ export const CAPTURE_INTENSITY_MAX = 1;
 export const CAPTURE_FALLOFF_MAX = 500;
 export const CAPTURE_DARKNESS_MAX = 1;
 export const OBJECT_REVIEW_ZOOM_MIN = 1;
-export const OBJECT_REVIEW_ZOOM_MAX = 8;
-export const OBJECT_REVIEW_ZOOM_STEP = 0.25;
+export const OBJECT_REVIEW_ZOOM_MAX = 5;
 export const Z_INDEX = {
   CANVAS_BG: 0,
   CAMERA_FRAME: 1,

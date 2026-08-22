@@ -1,6 +1,25 @@
-import { useRef } from "react";
+import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useObjectReview } from "./hooks/useObjectReview";
-import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, OBJECT_REVIEW_ZOOM_STEP, Z_INDEX } from "./workspace.config";
+import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, Z_INDEX } from "./workspace.config";
+import { UIContext } from "./workspace.client";
+import { useTrackpadState } from "../hooks/useTrackpadState";
+import { ParameterSliderX } from "../components/parameter-slider";
+
+const ZOOM_SLIDER_SIZE = {
+  capWidth: 13,
+  capHeight: 13,
+  capBorderOffset: 0,
+  containerWidth: 140,
+  containerHeight: 20,
+  trackHeight: 1,
+  tickHeight: 0,
+  tickLeft: 0,
+  svgSize: { width: 14, height: 14 },
+};
+
+function formatZoom(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, "") + "x";
+}
 
 /** Sequential accept/reject review of one mask's edge-detected candidates:
  *  one object on screen at a time, highlighted on the canvas by
@@ -17,7 +36,39 @@ export default function ObjectReviewPanel() {
   // canvas included -- to show a character in a text box.
   const descriptionRef = useRef<HTMLInputElement>(null);
 
-  const { review, isDeciding, decideCurrentObject, setZoom, endReview } = useObjectReview();
+  const { uiState } = useContext(UIContext);
+  const { review, isDeciding, decideCurrentObject, setZoom, previewZoom, endReview } = useObjectReview();
+
+  const zoomTrackRef = useRef<HTMLDivElement | null>(null);
+  const zoomTitleRef = useRef<HTMLDivElement | null>(null);
+  // Uncontrolled on purpose, like descriptionRef above: this is written to
+  // directly on every pointer-move frame while dragging (see onCursorMove
+  // below), and a reactive `{...}` child here would fight that write on the
+  // next unrelated re-render this panel happens to receive.
+  const zoomValueRef = useRef<HTMLSpanElement>(null);
+  const [zoomCursor, setZoomCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getZoomTrackValue, getTrackCursor: getZoomTrackCursor } = useTrackpadState(
+    ZOOM_SLIDER_SIZE.capWidth - ZOOM_SLIDER_SIZE.capBorderOffset,
+    OBJECT_REVIEW_ZOOM_MAX - OBJECT_REVIEW_ZOOM_MIN,
+  );
+  const getZoomValue = useCallback(
+    (cursorX: number, trackWidth: number) => getZoomTrackValue(cursorX, trackWidth, 0) + OBJECT_REVIEW_ZOOM_MIN,
+    [getZoomTrackValue],
+  );
+  const getZoomCursor = useCallback(
+    (value: number, trackWidth: number) => getZoomTrackCursor(value - OBJECT_REVIEW_ZOOM_MIN, trackWidth),
+    [getZoomTrackCursor],
+  );
+
+  // Keeps the slider's resting position (and the read-out beside it) in sync
+  // with the committed zoom -- on review start, and again once a drag ends
+  // and setZoom below has landed. Never fires mid-drag: previewZoom does not
+  // touch review.zoom, only the mask's own live transform.
+  useLayoutEffect(() => {
+    if (!review || !zoomTrackRef.current) return;
+    setZoomCursor({ x: getZoomCursor(review.zoom, zoomTrackRef.current.clientWidth), y: 0 });
+    if (zoomValueRef.current) zoomValueRef.current.textContent = formatZoom(review.zoom);
+  }, [review, getZoomCursor]);
 
   if (!review) return null;
 
@@ -83,18 +134,29 @@ export default function ObjectReviewPanel() {
       <div style={{ color: "rgb(160, 160, 160)" }}>click a triangle to add or remove it from this object</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgb(160, 160, 160)" }}>
         <span>zoom</span>
-        <input
-          type="range"
-          min={OBJECT_REVIEW_ZOOM_MIN}
-          max={OBJECT_REVIEW_ZOOM_MAX}
-          step={OBJECT_REVIEW_ZOOM_STEP}
-          value={review.zoom}
-          onChange={(e) => setZoom(Number(e.currentTarget.value))}
-          style={{ flex: 1, accentColor: "rgb(160, 160, 160)" }}
+        <ParameterSliderX
+          resolution={{ ...uiState.resolution }}
+          hash={`object-review|${review.maskKey}|zoom`}
+          size={ZOOM_SLIDER_SIZE}
+          containerRef={zoomTrackRef}
+          cursor={zoomCursor}
+          onCursorMove={(newCursor) => {
+            if (!zoomTrackRef.current) return;
+            const value = getZoomValue(newCursor.x, zoomTrackRef.current.clientWidth);
+            previewZoom(value);
+            if (zoomTitleRef.current) zoomTitleRef.current.innerHTML = formatZoom(value);
+            if (zoomValueRef.current) zoomValueRef.current.textContent = formatZoom(value);
+          }}
+          onNewCursor={(newCursor) => {
+            setZoomCursor({ ...newCursor, y: 0 });
+            if (!zoomTrackRef.current) return;
+            const value = getZoomValue(newCursor.x, zoomTrackRef.current.clientWidth);
+            previewZoom(value);
+            setZoom(value);
+          }}
+          title={formatZoom(review.zoom)}
+          liveTitleRef={zoomTitleRef}
         />
-        <span style={{ width: 34, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-          {review.zoom.toFixed(2).replace(/\.?0+$/, "")}x
-        </span>
       </div>
       <input
         // Keyed on the candidate so advancing remounts it empty -- the reset

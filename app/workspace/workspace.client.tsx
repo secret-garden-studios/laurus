@@ -275,6 +275,7 @@ export interface MaskNotifyValue {
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
   notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined) => void;
+  notifyReviewZoomChanged: (zoom: number) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
 
@@ -348,6 +349,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
   notifyMaskObjectReviewPreview: () => {},
+  notifyReviewZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
 };
 
@@ -856,6 +858,7 @@ export default function Workspace({
   const maskElementsRef = useRef<Map<string, HTMLCanvasElement>>(null);
   const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
+  const canvasScaleRef = useRef<HTMLDivElement | null>(null);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
   const hasInitiatedFrameDownloadRef = useRef(false);
@@ -1139,6 +1142,17 @@ export default function Workspace({
   }, []);
   const notifyMaskObjectReviewPreview = useCallback((maskKey: string, indices: Set<number> | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices));
+  }, []);
+  // Driven straight from the zoom slider's own onCursorMove, once per pointer
+  // frame -- routing that through uiDispatch instead would re-render every
+  // consumer of UIContext (every mask, img and svg on the canvas) on every
+  // pixel of the drag, which is what made the slide feel laggy. Mutating the
+  // scaled wrapper's own transform directly sidesteps that: the committed
+  // value in uiState.objectReview.zoom (and the one-time re-render it causes)
+  // still lands once the drag ends, via setZoom in useObjectReview.
+  const notifyReviewZoomChanged = useCallback((zoom: number) => {
+    const node = canvasScaleRef.current;
+    if (node) node.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
   }, []);
   const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
@@ -1716,6 +1730,7 @@ export default function Workspace({
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
       notifyMaskObjectReviewPreview,
+      notifyReviewZoomChanged,
       notifyMaskObjectsUpdated,
     }),
     [
@@ -1734,6 +1749,7 @@ export default function Workspace({
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
       notifyMaskObjectReviewPreview,
+      notifyReviewZoomChanged,
       notifyMaskObjectsUpdated,
     ],
   );
@@ -1755,7 +1771,10 @@ export default function Workspace({
   const canvasCursor = useToolCursor({ target: "canvas" });
 
   // 1 whenever no review is up, which is what keeps the canvas wrappers below
-  // inert outside a review.
+  // inert outside a review. This is the committed value -- it only changes
+  // once a drag ends (see setZoom in useObjectReview); the live value during
+  // a drag is written straight to canvasScaleRef's own transform by
+  // notifyReviewZoomChanged above, without going through uiDispatch.
   const reviewZoom = uiState.objectReview?.zoom ?? 1;
   const previousReviewZoomRef = useRef(reviewZoom);
   useLayoutEffect(() => {
@@ -2049,6 +2068,7 @@ export default function Workspace({
                       }}
                     >
                       <div
+                        ref={canvasScaleRef}
                         style={{
                           position: "absolute",
                           top: 0,

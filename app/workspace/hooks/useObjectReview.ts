@@ -16,7 +16,8 @@ import { applyObjectDelta } from "../canvas-media/mask-delta";
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview } = useContext(MaskContext);
+  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyReviewZoomChanged } =
+    useContext(MaskContext);
 
   const review = uiState.objectReview;
   // A decision is only allowed once the previous one has been acknowledged.
@@ -105,6 +106,20 @@ export function useObjectReview() {
     [uiDispatch],
   );
 
+  // Called on every pointer-move frame while the zoom slider is being
+  // dragged. This bypasses uiDispatch entirely -- routing every frame of a
+  // drag through the reducer would re-render every mask, img and svg on the
+  // canvas each time, which is what made the slider feel laggy. setZoom
+  // above still fires once, when the drag ends, to commit the value the rest
+  // of the app (the slider's own resting position, a later re-render) reads.
+  const previewZoom = useCallback(
+    (value: number) => {
+      if (!review) return;
+      notifyReviewZoomChanged(value);
+    },
+    [review, notifyReviewZoomChanged],
+  );
+
   // While a review is up it takes over the canvas (see the interaction
   // canvas's pointerEvents in workspace.client.tsx), so there has to be a way
   // out of it that does not require deciding every remaining candidate.
@@ -114,5 +129,5 @@ export function useObjectReview() {
     uiDispatch({ type: UIActionType.EndObjectReview });
   }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
 
-  return { review, isDeciding, decideCurrentObject, togglePolygon, setZoom, endReview };
+  return { review, isDeciding, decideCurrentObject, togglePolygon, setZoom, previewZoom, endReview };
 }
