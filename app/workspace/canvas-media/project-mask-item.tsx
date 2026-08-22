@@ -11,7 +11,7 @@ import {
   getNewContextMenuConfig,
 } from "../workspace.client";
 import { useToolCursor } from "../hooks/useToolCursor";
-import { RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   buildStaticMaskMesh,
   colorToRGB01,
@@ -153,6 +153,7 @@ export interface MaskImperativeHandle {
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
+  setObjectReviewPreview: (indices: Set<number> | undefined) => void;
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
@@ -616,18 +617,6 @@ export function ProjectMaskItem({
     }
     render();
   }, [render]);
-
-  // The object-review clean-up preview lives outside the imperative-handle
-  // system the rest of this file's highlight state uses (setSelectedObject,
-  // setPendingCapture, etc.) because it is driven by uiState directly rather
-  // than by a parent pushing updates through the mask's own handle -- review
-  // is a rare, modal-like interaction, not a hot path worth that machinery.
-  useEffect(() => {
-    if (source.kind !== "static") return;
-    objectReviewPreviewRef.current =
-      uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview.currentIndices : undefined;
-    recolorHighlight();
-  }, [uiState.objectReview, mediaKey, source.kind, recolorHighlight]);
 
   const applyDefaultCaptureValue = useCallback(() => {
     if (source.kind !== "static") return;
@@ -1145,6 +1134,12 @@ export function ProjectMaskItem({
         maskGeometryRef.current = maskGeometry(maskData);
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
+        // Seeded once here, alongside every other highlight input, because a
+        // review can already be under way when this mask mounts (it is started
+        // by the very generation that created it). Every later change arrives
+        // through setObjectReviewPreview on the handle above.
+        objectReviewPreviewRef.current =
+          uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview.currentIndices : undefined;
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
@@ -1222,6 +1217,10 @@ export function ProjectMaskItem({
           },
           clearPendingTopology: () => {
             pendingTopologyRef.current = undefined;
+            recolorHighlight();
+          },
+          setObjectReviewPreview: (indices) => {
+            objectReviewPreviewRef.current = indices;
             recolorHighlight();
           },
           syncObjects: (updated) => {
@@ -1435,6 +1434,16 @@ export function ProjectMaskItem({
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 const index = point ? polygonIndexAtPoint(maskGeometryRef.current.points, point) : undefined;
                 if (index !== undefined) {
+                  // Repaint straight away off this mask's own copy of the
+                  // membership, then tell the session. The click and the
+                  // highlight are the same gesture, so it should not wait on a
+                  // dispatch and a re-render to land -- and the reducer arrives
+                  // at exactly this set for the state that the decision reads.
+                  const previewed = new Set(objectReviewPreviewRef.current ?? []);
+                  if (previewed.has(index)) previewed.delete(index);
+                  else previewed.add(index);
+                  objectReviewPreviewRef.current = previewed;
+                  recolorHighlight();
                   uiDispatch({ type: UIActionType.ToggleObjectReviewPolygon, index });
                 }
                 return;

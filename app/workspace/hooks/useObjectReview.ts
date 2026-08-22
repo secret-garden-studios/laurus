@@ -1,7 +1,7 @@
 import { useCallback, useContext, useRef, useState } from "react";
 import { CoreContext, MaskContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { UIActionType, advanceObjectReview } from "../states/ui-state";
 import { postObjectReviewDecision } from "../workspace.server";
 import { applyObjectDelta } from "../canvas-media/mask-delta";
 
@@ -16,7 +16,7 @@ import { applyObjectDelta } from "../canvas-media/mask-delta";
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskObjectsUpdated } = useContext(MaskContext);
+  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview } = useContext(MaskContext);
 
   const review = uiState.objectReview;
   // A decision is only allowed once the previous one has been acknowledged.
@@ -30,7 +30,7 @@ export function useObjectReview() {
   const [isDeciding, setIsDeciding] = useState(false);
 
   const decideCurrentObject = useCallback(
-    async (decision: "accepted" | "rejected") => {
+    async (decision: "accepted" | "rejected", description?: string) => {
       if (!review || decidingRef.current) return;
       const candidate = review.candidates[review.currentIndex];
       if (!candidate) return;
@@ -49,7 +49,7 @@ export function useObjectReview() {
           review.maskMediaId,
           candidate.object.id,
           decision,
-          decision === "accepted" ? review.draftDescription.trim() : undefined,
+          decision === "accepted" ? description : undefined,
           added,
           removed,
         );
@@ -72,6 +72,16 @@ export function useObjectReview() {
         });
       }
       uiDispatch({ type: UIActionType.RecordObjectReviewDecision, decision });
+      // The canvas is told what to highlight next directly, from the same rule
+      // the reducer advances by, rather than watching the session for a change
+      // it already knows is coming.
+      const decided = new Map(review.decisions);
+      decided.set(candidate.object.id, decision);
+      const next = advanceObjectReview(review, decided);
+      notifyMaskObjectReviewPreview(
+        review.maskKey,
+        next.done ? undefined : new Set(review.candidates[next.currentIndex].polygon_indices),
+      );
     },
     [
       review,
@@ -81,12 +91,8 @@ export function useObjectReview() {
       dispatch,
       uiDispatch,
       notifyMaskObjectsUpdated,
+      notifyMaskObjectReviewPreview,
     ],
-  );
-
-  const setDraftDescription = useCallback(
-    (value: string) => uiDispatch({ type: UIActionType.SetObjectReviewDraftDescription, value }),
-    [uiDispatch],
   );
 
   const togglePolygon = useCallback(
@@ -103,7 +109,10 @@ export function useObjectReview() {
   // canvas's pointerEvents in workspace.client.tsx), so there has to be a way
   // out of it that does not require deciding every remaining candidate.
   // Undecided candidates simply keep no decision recorded in Redis.
-  const endReview = useCallback(() => uiDispatch({ type: UIActionType.EndObjectReview }), [uiDispatch]);
+  const endReview = useCallback(() => {
+    if (review) notifyMaskObjectReviewPreview(review.maskKey, undefined);
+    uiDispatch({ type: UIActionType.EndObjectReview });
+  }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
 
-  return { review, isDeciding, decideCurrentObject, setDraftDescription, togglePolygon, setZoom, endReview };
+  return { review, isDeciding, decideCurrentObject, togglePolygon, setZoom, endReview };
 }

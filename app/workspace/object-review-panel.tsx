@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useObjectReview } from "./hooks/useObjectReview";
 import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, OBJECT_REVIEW_ZOOM_STEP, Z_INDEX } from "./workspace.config";
 
@@ -9,12 +10,29 @@ import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, OBJECT_REVIEW_ZOOM_STEP
  *  panel only surfaces progress, the description prompt, and the two
  *  decisions themselves. */
 export default function ObjectReviewPanel() {
-  const { review, isDeciding, decideCurrentObject, setDraftDescription, setZoom, endReview } = useObjectReview();
+  // The description is read off the input only when a decision is made.
+  // Nothing downstream cares about it before then, so it is deliberately
+  // uncontrolled: routing it through state meant a dispatch per keystroke,
+  // which re-rendered every consumer of the ui context -- every mask on the
+  // canvas included -- to show a character in a text box.
+  const descriptionRef = useRef<HTMLInputElement>(null);
+
+  const { review, isDeciding, decideCurrentObject, setZoom, endReview } = useObjectReview();
 
   if (!review) return null;
 
   const positionInBatch = review.currentIndex - review.batchStart + 1;
-  const canAccept = review.draftDescription.trim().length > 0 && !isDeciding;
+
+  const accept = () => {
+    const description = descriptionRef.current?.value.trim() ?? "";
+    // Enforced here rather than by disabling the button, which would need the
+    // text in state to know whether it is empty.
+    if (!description) {
+      descriptionRef.current?.focus();
+      return;
+    }
+    void decideCurrentObject("accepted", description);
+  };
 
   return (
     <div
@@ -79,11 +97,17 @@ export default function ObjectReviewPanel() {
         </span>
       </div>
       <input
+        // Keyed on the candidate so advancing remounts it empty -- the reset
+        // an effect would otherwise have to do.
+        key={review.currentIndex}
+        ref={descriptionRef}
         type="text"
         placeholder="describe this object..."
-        value={review.draftDescription}
-        onChange={(e) => setDraftDescription(e.currentTarget.value)}
+        defaultValue=""
         autoComplete="off"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") accept();
+        }}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -114,16 +138,16 @@ export default function ObjectReviewPanel() {
         </button>
         <button
           type="button"
-          disabled={!canAccept}
-          onClick={() => void decideCurrentObject("accepted")}
+          disabled={isDeciding}
+          onClick={accept}
           style={{
             flex: 1,
             padding: "8px 0",
             borderRadius: 4,
             border: "none",
-            background: canAccept ? "rgb(67, 67, 67)" : "rgba(67, 67, 67, 0.4)",
-            color: canAccept ? "rgb(255, 255, 255)" : "rgb(120, 120, 120)",
-            cursor: canAccept ? "pointer" : isDeciding ? "progress" : "not-allowed",
+            background: isDeciding ? "rgba(67, 67, 67, 0.4)" : "rgb(67, 67, 67)",
+            color: isDeciding ? "rgb(120, 120, 120)" : "rgb(255, 255, 255)",
+            cursor: isDeciding ? "progress" : "pointer",
           }}
         >
           accept

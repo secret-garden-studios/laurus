@@ -103,7 +103,6 @@ export interface ObjectReviewSession {
   cycle: number;
   currentIndex: number;
   currentIndices: Set<number>;
-  draftDescription: string;
   /** Magnification of the whole canvas while reviewing, so individual
    *  triangles are big enough to pick out. Lives on the session rather than
    *  in global UI state because it is scoped to the review: the canvas is
@@ -216,7 +215,6 @@ export enum UIActionType {
   SetStagedObject,
   StartObjectReview,
   ToggleObjectReviewPolygon,
-  SetObjectReviewDraftDescription,
   SetObjectReviewZoom,
   RecordObjectReviewDecision,
   EndObjectReview,
@@ -280,7 +278,6 @@ export type UIAction =
       candidates: LaurusObjectReviewCandidate[];
     }
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
-  | { type: UIActionType.SetObjectReviewDraftDescription; value: string }
   | { type: UIActionType.SetObjectReviewZoom; value: number }
   | { type: UIActionType.RecordObjectReviewDecision; decision: "accepted" | "rejected" }
   | { type: UIActionType.EndObjectReview };
@@ -291,6 +288,50 @@ function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
   if (!decoded) return "";
   const built = buildObjectShapeFromMarkup(decoded);
   return built.ok ? built.shape.path : "";
+}
+
+export type ObjectReviewAdvance =
+  | { done: true }
+  | { done: false; batchStart: number; batchSize: number; cycle: number; currentIndex: number };
+
+/** Where a review goes after the candidate on screen is decided: the next one
+ *  in this batch, or the first of a backfill batch sized to however many of
+ *  this batch were rejected, or nowhere (three cycles spent, nothing rejected,
+ *  or no candidates left).
+ *
+ *  Pure, and exported, because two callers have to agree on it: the reducer
+ *  that moves the session on, and whoever has to push the new membership at
+ *  the canvas. Deriving it twice would be a duplicate of the one rule that
+ *  decides what the reviewer sees next. */
+export function advanceObjectReview(
+  review: ObjectReviewSession,
+  decisions: Map<number, "accepted" | "rejected">,
+): ObjectReviewAdvance {
+  const batchEnd = review.batchStart + review.batchSize;
+  const nextIndex = review.currentIndex + 1;
+  if (nextIndex < batchEnd) {
+    return {
+      done: false,
+      batchStart: review.batchStart,
+      batchSize: review.batchSize,
+      cycle: review.cycle,
+      currentIndex: nextIndex,
+    };
+  }
+
+  let rejected = 0;
+  for (let i = review.batchStart; i < batchEnd; i++) {
+    if (decisions.get(review.candidates[i].object.id) === "rejected") rejected++;
+  }
+  const nextBatchStart = batchEnd;
+  if (review.cycle >= 3 || rejected === 0 || nextBatchStart >= review.candidates.length) return { done: true };
+  return {
+    done: false,
+    batchStart: nextBatchStart,
+    batchSize: Math.min(rejected, review.candidates.length - nextBatchStart),
+    cycle: review.cycle + 1,
+    currentIndex: nextBatchStart,
+  };
 }
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
@@ -485,7 +526,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           cycle: 1,
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
-          draftDescription: "",
           zoom: OBJECT_REVIEW_ZOOM_MIN,
         },
       };
@@ -500,11 +540,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         currentIndices.add(action.index);
       }
       return { ...state, objectReview: { ...review, currentIndices } };
-    }
-    case UIActionType.SetObjectReviewDraftDescription: {
-      const review = state.objectReview;
-      if (!review) return state;
-      return { ...state, objectReview: { ...review, draftDescription: action.value } };
     }
     case UIActionType.SetObjectReviewZoom: {
       const review = state.objectReview;
@@ -522,41 +557,18 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const decisions = new Map(review.decisions);
       decisions.set(candidate.object.id, action.decision);
 
-      const batchEnd = review.batchStart + review.batchSize;
-      const nextIndex = review.currentIndex + 1;
-      if (nextIndex < batchEnd) {
-        return {
-          ...state,
-          objectReview: {
-            ...review,
-            decisions,
-            currentIndex: nextIndex,
-            currentIndices: new Set(review.candidates[nextIndex].polygon_indices),
-            draftDescription: "",
-          },
-        };
-      }
-
-      let rejected = 0;
-      for (let i = review.batchStart; i < batchEnd; i++) {
-        if (decisions.get(review.candidates[i].object.id) === "rejected") rejected++;
-      }
-      const nextBatchStart = batchEnd;
-      if (review.cycle >= 3 || rejected === 0 || nextBatchStart >= review.candidates.length) {
-        return { ...state, objectReview: undefined };
-      }
-      const nextBatchSize = Math.min(rejected, review.candidates.length - nextBatchStart);
+      const next = advanceObjectReview(review, decisions);
+      if (next.done) return { ...state, objectReview: undefined };
       return {
         ...state,
         objectReview: {
           ...review,
           decisions,
-          batchStart: nextBatchStart,
-          batchSize: nextBatchSize,
-          cycle: review.cycle + 1,
-          currentIndex: nextBatchStart,
-          currentIndices: new Set(review.candidates[nextBatchStart].polygon_indices),
-          draftDescription: "",
+          batchStart: next.batchStart,
+          batchSize: next.batchSize,
+          cycle: next.cycle,
+          currentIndex: next.currentIndex,
+          currentIndices: new Set(review.candidates[next.currentIndex].polygon_indices),
         },
       };
     }

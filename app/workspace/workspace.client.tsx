@@ -274,6 +274,7 @@ export interface MaskNotifyValue {
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
+  notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
 
@@ -346,6 +347,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskLightSourcePreviewToggled: () => {},
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskObjectReviewPreview: () => {},
   notifyMaskObjectsUpdated: () => {},
 };
 
@@ -1135,6 +1137,9 @@ export default function Workspace({
     if (maskKey === undefined) return;
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingCapture());
   }, []);
+  const notifyMaskObjectReviewPreview = useCallback((maskKey: string, indices: Set<number> | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices));
+  }, []);
   const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
   }, []);
@@ -1710,6 +1715,7 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskObjectReviewPreview,
       notifyMaskObjectsUpdated,
     }),
     [
@@ -1727,6 +1733,7 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskObjectReviewPreview,
       notifyMaskObjectsUpdated,
     ],
   );
