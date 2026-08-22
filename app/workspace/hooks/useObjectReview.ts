@@ -94,11 +94,16 @@ export function useObjectReview() {
     [uiDispatch],
   );
 
+  const setZoom = useCallback(
+    (value: number) => uiDispatch({ type: UIActionType.SetObjectReviewZoom, value }),
+    [uiDispatch],
+  );
+
   // While a review is up it takes over the canvas (see the interaction
   // canvas's pointerEvents in workspace.client.tsx), so there has to be a way
   // out of it that does not require deciding every remaining candidate.
   // Undecided candidates simply keep no decision recorded in Redis.
   const endReview = useCallback(() => uiDispatch({ type: UIActionType.EndObjectReview }), [uiDispatch]);
 
-  return { review, isDeciding, decideCurrentObject, setDraftDescription, togglePolygon, endReview };
+  return { review, isDeciding, decideCurrentObject, setDraftDescription, togglePolygon, setZoom, endReview };
 }

@@ -4,6 +4,7 @@ import { LaurusImgResult, LaurusEffect, LaurusSvgResult, LaurusObjectReviewCandi
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
+import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN } from "../workspace.config";
 import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT, OBJECT_FALLOFF_DEFAULT } from "../workspace.server";
 import { buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
@@ -103,6 +104,13 @@ export interface ObjectReviewSession {
   currentIndex: number;
   currentIndices: Set<number>;
   draftDescription: string;
+  /** Magnification of the whole canvas while reviewing, so individual
+   *  triangles are big enough to pick out. Lives on the session rather than
+   *  in global UI state because it is scoped to the review: the canvas is
+   *  scaled by a css transform, which dnd-kit's drag maths does not account
+   *  for, and dragging is already disabled for the duration (see
+   *  OBJECT_REVIEW_ZOOM_* in workspace.config). */
+  zoom: number;
 }
 
 export interface UIState {
@@ -209,6 +217,7 @@ export enum UIActionType {
   StartObjectReview,
   ToggleObjectReviewPolygon,
   SetObjectReviewDraftDescription,
+  SetObjectReviewZoom,
   RecordObjectReviewDecision,
   EndObjectReview,
 }
@@ -272,6 +281,7 @@ export type UIAction =
     }
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
   | { type: UIActionType.SetObjectReviewDraftDescription; value: string }
+  | { type: UIActionType.SetObjectReviewZoom; value: number }
   | { type: UIActionType.RecordObjectReviewDecision; decision: "accepted" | "rejected" }
   | { type: UIActionType.EndObjectReview };
 
@@ -476,6 +486,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
           draftDescription: "",
+          zoom: OBJECT_REVIEW_ZOOM_MIN,
         },
       };
     }
@@ -494,6 +505,13 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const review = state.objectReview;
       if (!review) return state;
       return { ...state, objectReview: { ...review, draftDescription: action.value } };
+    }
+    case UIActionType.SetObjectReviewZoom: {
+      const review = state.objectReview;
+      if (!review) return state;
+      const zoom = Math.min(OBJECT_REVIEW_ZOOM_MAX, Math.max(OBJECT_REVIEW_ZOOM_MIN, action.value));
+      if (zoom === review.zoom) return state;
+      return { ...state, objectReview: { ...review, zoom } };
     }
     case UIActionType.RecordObjectReviewDecision: {
       const review = state.objectReview;

@@ -1747,6 +1747,24 @@ export default function Workspace({
 
   const canvasCursor = useToolCursor({ target: "canvas" });
 
+  // 1 whenever no review is up, which is what keeps the canvas wrappers below
+  // inert outside a review.
+  const reviewZoom = uiState.objectReview?.zoom ?? 1;
+  const previousReviewZoomRef = useRef(reviewZoom);
+  useLayoutEffect(() => {
+    const area = canvasAreaRef.current;
+    const previous = previousReviewZoomRef.current;
+    previousReviewZoomRef.current = reviewZoom;
+    if (!area || previous === reviewZoom) return;
+    // Zooming about the top-left corner would throw whatever the reviewer was
+    // looking at off screen, which is the opposite of the point -- so hold the
+    // middle of the viewport still and let the scroll offsets absorb it.
+    const centerX = (area.scrollLeft + area.clientWidth / 2) / previous;
+    const centerY = (area.scrollTop + area.clientHeight / 2) / previous;
+    area.scrollLeft = centerX * reviewZoom - area.clientWidth / 2;
+    area.scrollTop = centerY * reviewZoom - area.clientHeight / 2;
+  }, [reviewZoom]);
+
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
       if (canvasAreaRef.current && (coreState.project.frame_top < 0 || coreState.project.frame_left < 0)) {
@@ -2007,205 +2025,234 @@ export default function Workspace({
                       cursor: canvasCursor,
                     }}
                   >
+                    {/* Two wrappers so an object review can magnify the canvas
+                        to pick out single triangles: the outer one carries the
+                        scaled size, which is what gives the scroll container
+                        something bigger to scroll through (a transform alone
+                        changes no layout), and the inner one does the scaling.
+                        At 1x the transform is left off entirely rather than
+                        set to scale(1), so nothing here creates a containing
+                        block for fixed-position descendants unless the canvas
+                        is actually zoomed. */}
                     <div
-                      className={
-                        styles[
-                          `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
-                        ]
-                      }
                       style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: coreState.project.canvas_width,
-                        height: coreState.project.canvas_height,
-                        zIndex: Z_INDEX.CANVAS_BG,
+                        position: "relative",
+                        width: coreState.project.canvas_width * reviewZoom,
+                        height: coreState.project.canvas_height * reviewZoom,
                       }}
-                    />
-                    {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+                    >
                       <div
                         style={{
                           position: "absolute",
                           top: 0,
                           left: 0,
-                          width: "min-content",
-                          height: "min-content",
-                          zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                          pointerEvents:
-                            // An object review owns the canvas while it is up:
-                            // its clean-up clicks have to reach the mask's own
-                            // triangles, which sit far below this overlay's
-                            // z-index and would otherwise never see the click.
-                            uiState.objectReview !== undefined
-                              ? "none"
-                              : uiState.tool.type === "mask" &&
-                                  !uiState.tool.capturingMeshSection &&
-                                  !uiState.tool.editingTopology &&
-                                  uiState.browserElement?.type !== "img"
-                                ? "none"
-                                : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
-                                  ? "none"
-                                  : "auto",
+                          width: coreState.project.canvas_width,
+                          height: coreState.project.canvas_height,
+                          transform: reviewZoom === 1 ? undefined : `scale(${reviewZoom})`,
+                          transformOrigin: "0 0",
                         }}
                       >
-                        <Canvas />
-                      </div>
-                    )}
-                    <DraggableCamera
-                      contextId={"draggable-camera-context-id"}
-                      nodeId={"draggable-camera-node-id"}
-                      svgElementsRef={svgElementsRef}
-                      imgElementsRef={imgElementsRef}
-                      maskElementsRef={maskElementsRef}
-                      maskHandlesRef={maskHandlesRef}
-                      framesCacheRef={framesCacheRef}
-                      zIndex={Z_INDEX.CAMERA_FRAME}
-                      onNewPosition={async function (newPosition: { x: number; y: number }) {
-                        const rollback: LaurusProjectResult = {
-                          ...coreState.project,
-                        };
-                        const newProject: LaurusProjectResult = {
-                          ...coreState.project,
-                          frame_left: newPosition.x,
-                          frame_top: newPosition.y,
-                        };
-                        if (coreState.project.project_id) {
-                          dispatch({
-                            type: CoreActionType.SetProject,
-                            value: newProject,
-                          });
-                          const updated = await updateProject(
-                            coreState.apiOrigin,
-                            coreState.accessToken,
-                            newProject.project_id,
-                            { ...newProject },
-                          );
-                          if (!updated) {
-                            dispatch({
-                              type: CoreActionType.SetProject,
-                              value: rollback,
-                            });
+                        <div
+                          className={
+                            styles[
+                              `${uiState.resolution.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`
+                            ]
                           }
-                        } else {
-                          dispatch({
-                            type: CoreActionType.SetProject,
-                            value: newProject,
-                          });
-                          const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
-                            ...newProject,
-                          });
-                          if (created) {
-                            dispatch({
-                              type: CoreActionType.SetProject,
-                              value: { ...created },
-                            });
-                          } else {
-                            dispatch({
-                              type: CoreActionType.SetProject,
-                              value: { ...rollback },
-                            });
-                          }
-                        }
-                      }}
-                      disabled={uiState.tool.type != "move"}
-                    />
-                    <>
-                      {Array.from(coreState.project.imgs.entries()).map((e) => {
-                        const [key, meta] = e;
-                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                          return;
-                        const imgData = coreState.canvasImgs.get(key);
-                        if (imgData) {
-                          return (
-                            <div key={key}>
-                              <DraggableProjectImg
-                                mediaKey={key}
-                                data={imgData}
-                                meta={meta}
-                                zIndex={
-                                  uiState.tool.type === "marquee" && uiState.tool.stack
-                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                                }
-                                imgElementsRef={imgElementsRef}
-                                framesCacheRef={framesCacheRef}
-                                refKey={key}
-                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                              />
-                            </div>
-                          );
-                        }
-                      })}
-                      {Array.from(coreState.project.svgs.entries()).map((e) => {
-                        const [key, meta] = e;
-                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                          return;
-                        const svgData = coreState.canvasSvgs.get(key);
-                        if (!svgData) return;
-                        let decodedString = "";
-                        try {
-                          decodedString = decodeURIComponent(
-                            atob(svgData.markup)
-                              .split("")
-                              .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-                              .join(""),
-                          );
-                        } catch (error) {
-                          console.log("Failed to decode svg markup", {
-                            media_key: meta.media_key,
-                            error,
-                          });
-                        }
-                        if (decodedString) {
-                          return (
-                            <div key={key}>
-                              <DraggableProjectSvg
-                                mediaKey={key}
-                                decodedString={decodedString}
-                                meta={meta}
-                                zIndex={
-                                  uiState.tool.type === "marquee" && uiState.tool.stack
-                                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                                }
-                                svgElementsRef={svgElementsRef}
-                                framesCacheRef={framesCacheRef}
-                                refKey={key}
-                                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                              />
-                            </div>
-                          );
-                        }
-                      })}
-                      {Array.from(coreState.project.masks.entries()).map((e) => {
-                        const [key, meta] = e;
-                        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                          return;
-                        const maskData = coreState.canvasMasks.get(key);
-                        if (!maskData) return;
-                        return (
-                          <div key={key}>
-                            <DraggableProjectMask
-                              mediaKey={key}
-                              meta={meta}
-                              maskData={maskData}
-                              zIndex={
-                                uiState.tool.type === "marquee" && uiState.tool.stack
-                                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                              }
-                              maskHandlesRef={maskHandlesRef}
-                              maskElementsRef={maskElementsRef}
-                              framesCacheRef={framesCacheRef}
-                              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                            />
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: coreState.project.canvas_width,
+                            height: coreState.project.canvas_height,
+                            zIndex: Z_INDEX.CANVAS_BG,
+                          }}
+                        />
+                        {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "min-content",
+                              height: "min-content",
+                              zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
+                              pointerEvents:
+                                // An object review owns the canvas while it is up:
+                                // its clean-up clicks have to reach the mask's own
+                                // triangles, which sit far below this overlay's
+                                // z-index and would otherwise never see the click.
+                                uiState.objectReview !== undefined
+                                  ? "none"
+                                  : uiState.tool.type === "mask" &&
+                                      !uiState.tool.capturingMeshSection &&
+                                      !uiState.tool.editingTopology &&
+                                      uiState.browserElement?.type !== "img"
+                                    ? "none"
+                                    : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                                      ? "none"
+                                      : "auto",
+                            }}
+                          >
+                            <Canvas />
                           </div>
-                        );
-                      })}
-                    </>
+                        )}
+                        <DraggableCamera
+                          contextId={"draggable-camera-context-id"}
+                          nodeId={"draggable-camera-node-id"}
+                          svgElementsRef={svgElementsRef}
+                          imgElementsRef={imgElementsRef}
+                          maskElementsRef={maskElementsRef}
+                          maskHandlesRef={maskHandlesRef}
+                          framesCacheRef={framesCacheRef}
+                          zIndex={Z_INDEX.CAMERA_FRAME}
+                          onNewPosition={async function (newPosition: { x: number; y: number }) {
+                            const rollback: LaurusProjectResult = {
+                              ...coreState.project,
+                            };
+                            const newProject: LaurusProjectResult = {
+                              ...coreState.project,
+                              frame_left: newPosition.x,
+                              frame_top: newPosition.y,
+                            };
+                            if (coreState.project.project_id) {
+                              dispatch({
+                                type: CoreActionType.SetProject,
+                                value: newProject,
+                              });
+                              const updated = await updateProject(
+                                coreState.apiOrigin,
+                                coreState.accessToken,
+                                newProject.project_id,
+                                { ...newProject },
+                              );
+                              if (!updated) {
+                                dispatch({
+                                  type: CoreActionType.SetProject,
+                                  value: rollback,
+                                });
+                              }
+                            } else {
+                              dispatch({
+                                type: CoreActionType.SetProject,
+                                value: newProject,
+                              });
+                              const created = await createProject(coreState.apiOrigin, coreState.accessToken, {
+                                ...newProject,
+                              });
+                              if (created) {
+                                dispatch({
+                                  type: CoreActionType.SetProject,
+                                  value: { ...created },
+                                });
+                              } else {
+                                dispatch({
+                                  type: CoreActionType.SetProject,
+                                  value: { ...rollback },
+                                });
+                              }
+                            }
+                          }}
+                          disabled={uiState.tool.type != "move"}
+                        />
+                        <>
+                          {Array.from(coreState.project.imgs.entries()).map((e) => {
+                            const [key, meta] = e;
+                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                              return;
+                            const imgData = coreState.canvasImgs.get(key);
+                            if (imgData) {
+                              return (
+                                <div key={key}>
+                                  <DraggableProjectImg
+                                    mediaKey={key}
+                                    data={imgData}
+                                    meta={meta}
+                                    zIndex={
+                                      uiState.tool.type === "marquee" && uiState.tool.stack
+                                        ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                        : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                    }
+                                    imgElementsRef={imgElementsRef}
+                                    framesCacheRef={framesCacheRef}
+                                    refKey={key}
+                                    forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                                  />
+                                </div>
+                              );
+                            }
+                          })}
+                          {Array.from(coreState.project.svgs.entries()).map((e) => {
+                            const [key, meta] = e;
+                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                              return;
+                            const svgData = coreState.canvasSvgs.get(key);
+                            if (!svgData) return;
+                            let decodedString = "";
+                            try {
+                              decodedString = decodeURIComponent(
+                                atob(svgData.markup)
+                                  .split("")
+                                  .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+                                  .join(""),
+                              );
+                            } catch (error) {
+                              console.log("Failed to decode svg markup", {
+                                media_key: meta.media_key,
+                                error,
+                              });
+                            }
+                            if (decodedString) {
+                              return (
+                                <div key={key}>
+                                  <DraggableProjectSvg
+                                    mediaKey={key}
+                                    decodedString={decodedString}
+                                    meta={meta}
+                                    zIndex={
+                                      uiState.tool.type === "marquee" && uiState.tool.stack
+                                        ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                        : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                    }
+                                    svgElementsRef={svgElementsRef}
+                                    framesCacheRef={framesCacheRef}
+                                    refKey={key}
+                                    forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                                  />
+                                </div>
+                              );
+                            }
+                          })}
+                          {Array.from(coreState.project.masks.entries()).map((e) => {
+                            const [key, meta] = e;
+                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
+                              return;
+                            const maskData = coreState.canvasMasks.get(key);
+                            if (!maskData) return;
+                            return (
+                              <div key={key}>
+                                <DraggableProjectMask
+                                  mediaKey={key}
+                                  meta={meta}
+                                  maskData={maskData}
+                                  zIndex={
+                                    uiState.tool.type === "marquee" && uiState.tool.stack
+                                      ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                                      : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                                  }
+                                  maskHandlesRef={maskHandlesRef}
+                                  maskElementsRef={maskElementsRef}
+                                  framesCacheRef={framesCacheRef}
+                                  forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+                                />
+                              </div>
+                            );
+                          })}
+                        </>
+                      </div>
+                    </div>
                   </div>
                   {uiState.showMediaBrowser && (
                     <div

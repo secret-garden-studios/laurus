@@ -1,5 +1,5 @@
 import { useObjectReview } from "./hooks/useObjectReview";
-import { Z_INDEX } from "./workspace.config";
+import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, OBJECT_REVIEW_ZOOM_STEP, Z_INDEX } from "./workspace.config";
 
 /** Sequential accept/reject review of one mask's edge-detected candidates:
  *  one object on screen at a time, highlighted on the canvas by
@@ -9,7 +9,7 @@ import { Z_INDEX } from "./workspace.config";
  *  panel only surfaces progress, the description prompt, and the two
  *  decisions themselves. */
 export default function ObjectReviewPanel() {
-  const { review, isDeciding, decideCurrentObject, setDraftDescription, endReview } = useObjectReview();
+  const { review, isDeciding, decideCurrentObject, setDraftDescription, setZoom, endReview } = useObjectReview();
 
   if (!review) return null;
 
@@ -63,6 +63,21 @@ export default function ObjectReviewPanel() {
         </button>
       </div>
       <div style={{ color: "rgb(160, 160, 160)" }}>click a triangle to add or remove it from this object</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgb(160, 160, 160)" }}>
+        <span>zoom</span>
+        <input
+          type="range"
+          min={OBJECT_REVIEW_ZOOM_MIN}
+          max={OBJECT_REVIEW_ZOOM_MAX}
+          step={OBJECT_REVIEW_ZOOM_STEP}
+          value={review.zoom}
+          onChange={(e) => setZoom(Number(e.currentTarget.value))}
+          style={{ flex: 1, accentColor: "rgb(160, 160, 160)" }}
+        />
+        <span style={{ width: 34, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+          {review.zoom.toFixed(2).replace(/\.?0+$/, "")}x
+        </span>
+      </div>
       <input
         type="text"
         placeholder="describe this object..."
