@@ -755,7 +755,7 @@ export default function Canvas() {
             break;
           }
 
-          if (uiState.tool.editingTopology) {
+          if (uiState.tool.editingTopology && selectedMaskKeys.size === 1) {
             handleTopologyCapture(dropArea);
             break;
           }
@@ -784,6 +784,7 @@ export default function Canvas() {
       coreState.project.svgs,
       handleLightSourceCapture,
       handleTopologyCapture,
+      selectedMaskKeys,
       selectedImgKeys,
       selectedSvgKeys,
       setSelectedImgKeys,

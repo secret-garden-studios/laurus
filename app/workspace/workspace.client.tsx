@@ -322,8 +322,6 @@ const defaultMaskPreview: UseMaskPreview = {
   setSize: () => {},
   resolution: MASK_RESOLUTION_DEFAULT,
   setResolution: () => {},
-  edgeObjects: false,
-  setEdgeObjects: () => {},
   start: () => {},
   reset: () => {},
   meshRefs: {
@@ -1256,6 +1254,16 @@ export default function Workspace({
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
+      const polygonIndices = [
+        ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
+          cx: circle.cx,
+          cy: circle.cy,
+          radius,
+          shape: seed.shape,
+        }),
+      ];
+      if (polygonIndices.length === 0) return;
+
       const edit: PendingTopologyEdit = {
         maskKey,
         objectId,
@@ -1271,14 +1279,6 @@ export default function Workspace({
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(maskKey, edit);
 
-      const polygonIndices = [
-        ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
-          cx: circle.cx,
-          cy: circle.cy,
-          radius,
-          shape: seed.shape,
-        }),
-      ];
       const updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
         object_id: objectId,
         name: `object ${objectId}`,

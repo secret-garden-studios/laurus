@@ -6,7 +6,7 @@ import { ParameterSliderX } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { TopologyMode, UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { ObjectShapeResult, buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
@@ -265,17 +265,18 @@ export default function Maskbar() {
   const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
   const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
   const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isEdgesDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isEdgesOn = mask.edgeObjects;
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
-  const isCaptureDisabled = selectedMaskKey === undefined;
+  const hasSelectedMask = selectedMaskKey !== undefined;
+  const isTextureDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
+  const isCaptureDisabled = !hasSelectedMask;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
-  const isTopologyDisabled = selectedMaskKey === undefined;
+  const isTopologyDisabled = !hasSelectedMask;
   const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
-  const isTopologyOn = topologyMode === "circle";
   const isShapeOn = topologyMode === "shape";
+  const canSeedEdgeObjects = Boolean(imgMeta) || isArmedForMaskDrop;
+  const isObjectsOn = topologyMode === "circle";
+  const isObjectsDisabled = !hasSelectedMask && !canSeedEdgeObjects;
 
   const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
   const armedMarkup = armedSvg?.markup;
@@ -373,14 +374,23 @@ export default function Maskbar() {
   }, [selectedImgKey]);
 
   useEffect(() => {
-    if (selectedMaskKey !== undefined) return;
-    if (uiState.tool.type !== "mask" || (!uiState.tool.capturingMeshSection && !uiState.tool.editingTopology)) return;
+    if (uiState.tool.type !== "mask") return;
+    const nextTopology: TopologyMode =
+      uiState.tool.editingTopology === "circle"
+        ? hasSelectedMask || canSeedEdgeObjects
+          ? "circle"
+          : false
+        : uiState.tool.editingTopology === "shape" && hasSelectedMask
+          ? "shape"
+          : false;
+    const nextCapture = hasSelectedMask && uiState.tool.capturingMeshSection;
+    if (nextTopology === uiState.tool.editingTopology && nextCapture === uiState.tool.capturingMeshSection) return;
     uiDispatch({
       type: UIActionType.SetTool,
-      value: { type: "mask", capturingMeshSection: false, editingTopology: false },
+      value: { type: "mask", capturingMeshSection: nextCapture, editingTopology: nextTopology },
     });
     notifyMaskToolChanged("mask");
-  }, [selectedMaskKey, uiState.tool, uiDispatch, notifyMaskToolChanged]);
+  }, [hasSelectedMask, canSeedEdgeObjects, uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
   return (
     <>
@@ -628,38 +638,6 @@ export default function Maskbar() {
         </div>
         <div
           title={
-            isEdgesDisabled
-              ? "select an image to mask, or arm one from the browser, to raise objects from its edges"
-              : "detect the image's edges while generating, fill the areas they enclose with polygons, and " +
-                'raise an object over each of the largest -- the same objects the "object" tool draws by hand'
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              opacity: isEdgesDisabled ? 0.3 : 1,
-              textShadow: isEdgesOn && !isEdgesDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"edges"}
-          </span>
-          <Toggle
-            value={isEdgesOn}
-            onClick={() => mask.setEdgeObjects(!isEdgesOn)}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isEdgesDisabled}
-          />
-        </div>
-        <div
-          title={
             isTextureDisabled
               ? "select or generate a mesh to adjust its wireframe overlay"
               : "0% hides the mesh's triangle wireframe, 100% draws it fully in over the source image"
@@ -736,9 +714,12 @@ export default function Maskbar() {
         </div>
         <div
           title={
-            isTopologyDisabled
-              ? "select a mesh to adjust its topology"
-              : 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for objects shaped like an svg instead'
+            isObjectsDisabled
+              ? "select a mesh to raise objects onto it, or arm an image from the browser to raise objects from its edges"
+              : hasSelectedMask
+                ? 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for objects shaped like an svg instead'
+                : "with no mesh selected, detect the image's edges while generating, fill the areas they enclose " +
+                  "with polygons, and raise an object over each of the largest to review one by one"
           }
           style={{
             display: "flex",
@@ -750,16 +731,17 @@ export default function Maskbar() {
         >
           <span
             style={{
-              textShadow: isTopologyOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              opacity: isObjectsDisabled ? 0.3 : 1,
+              textShadow: isObjectsOn && !isObjectsDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
             }}
           >
-            {"object"}
+            {"objects"}
           </span>
           <Toggle
-            value={isTopologyOn}
+            value={isObjectsOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
-              const newTopologyMode = isTopologyOn ? false : "circle";
+              const newTopologyMode = isObjectsOn ? false : "circle";
               uiDispatch({
                 type: UIActionType.SetTool,
                 value: {
@@ -773,7 +755,7 @@ export default function Maskbar() {
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
-            disabled={isTopologyDisabled}
+            disabled={isObjectsDisabled}
           />
         </div>
         <div

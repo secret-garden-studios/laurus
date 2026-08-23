@@ -121,18 +121,22 @@ export function useMaskPersist() {
   );
 
   const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
+  const wantsEdgeObjects = uiState.tool.type === "mask" && uiState.tool.editingTopology === "circle";
 
   const triggerMask = useCallback(
     (img: LaurusImgResult, sourceFrame: MaskSourceFrame) => {
       if (isMaskBusy) return;
       const initialTextureMix = mask.textureMix;
-      mask.start(img, (result) => persistMask(sourceFrame, result), {
-        elevation: uiState.stagedObject.elevation,
-        falloff: uiState.stagedObject.falloff,
-      });
+      mask.start(
+        img,
+        (result) => persistMask(sourceFrame, result),
+        wantsEdgeObjects
+          ? { elevation: uiState.stagedObject.elevation, falloff: uiState.stagedObject.falloff }
+          : undefined,
+      );
       mask.setTextureMix(initialTextureMix);
     },
-    [isMaskBusy, mask, persistMask, uiState.stagedObject.elevation, uiState.stagedObject.falloff],
+    [isMaskBusy, mask, persistMask, wantsEdgeObjects, uiState.stagedObject.elevation, uiState.stagedObject.falloff],
   );
 
   return { triggerMask, isMaskBusy };

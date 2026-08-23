@@ -101,14 +101,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setCaptureDarknessState(value);
   }, []);
 
-  const [edgeObjects, setEdgeObjectsState] = useState(false);
-  const edgeObjectsRef = useRef(false);
-
-  const setEdgeObjects = useCallback((value: boolean) => {
-    edgeObjectsRef.current = value;
-    setEdgeObjectsState(value);
-  }, []);
-
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
   const resolutionRef = useRef<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
 
@@ -204,7 +196,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
                 max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
                 detail_points: BASE_DETAIL_POINTS * resolutionFactor,
               }),
-          ...(edgeObjectsRef.current && objectSeed
+          ...(objectSeed
             ? { edge_objects: true, object_elevation: objectSeed.elevation, object_falloff: objectSeed.falloff }
             : {}),
         },
@@ -314,8 +306,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setSize,
     resolution,
     setResolution,
-    edgeObjects,
-    setEdgeObjects,
     start,
     reset,
     meshRefs: {
