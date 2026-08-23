@@ -36,9 +36,24 @@ function maxSwellReach(object: ObjectGeometryInput): number {
   return object.radius * widest;
 }
 
-function swelled(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {
-  const [dx, dy] = objectSwellAt(point, objects);
-  return [point[0] + dx, point[1] + dy];
+interface MeshSwell {
+  objects: ObjectGeometryInput[];
+  reachSquares: number[];
+}
+
+function meshSwell(objects: ObjectGeometryInput[]): MeshSwell | undefined {
+  const swelling = activeMaskObjects(objects);
+  if (swelling.length === 0) return undefined;
+  return { objects: swelling, reachSquares: swelling.map((object) => maxSwellReach(object) ** 2) };
+}
+
+function swelled(swell: MeshSwell | undefined, point: [number, number]): [number, number] {
+  if (!swell) return point;
+  const [x, y] = point;
+  const moves = swell.objects.some(({ cx, cy }, i) => (x - cx) ** 2 + (y - cy) ** 2 < swell.reachSquares[i]);
+  if (!moves) return point;
+  const [dx, dy] = objectSwellAt(point, swell.objects);
+  return [x + dx, y + dy];
 }
 
 export function swelledPolygonIndexAtPoint(
@@ -46,21 +61,14 @@ export function swelledPolygonIndexAtPoint(
   objects: ObjectGeometryInput[],
   point: [number, number],
 ): number | undefined {
-  const swelling = activeMaskObjects(objects);
-  if (swelling.length === 0) return polygonIndexAtPoint(points, point);
-  const reachSquares = swelling.map((object) => maxSwellReach(object) ** 2);
+  const swell = meshSwell(objects);
+  if (!swell) return polygonIndexAtPoint(points, point);
   const [px, py] = point;
   for (let i = 0; i < points.length; i++) {
     const triangle = points[i];
     if (triangle.length !== 3) continue;
     const [a, b, c] = triangle;
-    const moves = swelling.some(({ cx, cy }, o) =>
-      triangle.some(([x, y]) => (x - cx) ** 2 + (y - cy) ** 2 < reachSquares[o]),
-    );
-    const inside = moves
-      ? pointInTriangle(px, py, swelled(a, swelling), swelled(b, swelling), swelled(c, swelling))
-      : pointInTriangle(px, py, a, b, c);
-    if (inside) return i;
+    if (pointInTriangle(px, py, swelled(swell, a), swelled(swell, b), swelled(swell, c))) return i;
   }
   return undefined;
 }
@@ -153,9 +161,11 @@ export function capturedRegionCircle(
 export function captureIdAtPoint(
   polygons: LaurusPolygonPath[],
   points: [number, number][][],
+  objects: ObjectGeometryInput[],
   point: [number, number],
 ): number | undefined {
   const [px, py] = point;
+  const swell = meshSwell(objects);
   const orderedCaptureIds: number[] = [];
   const boundsByCapture = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
   polygons.forEach((p, i) => {
@@ -168,7 +178,8 @@ export function captureIdAtPoint(
       bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
       boundsByCapture.set(p.capture_id, bounds);
     }
-    for (const [x, y] of triangle) {
+    for (const corner of triangle) {
+      const [x, y] = swelled(swell, corner);
       if (x < bounds.minX) bounds.minX = x;
       if (x > bounds.maxX) bounds.maxX = x;
       if (y < bounds.minY) bounds.minY = y;

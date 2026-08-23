@@ -1455,7 +1455,12 @@ export function ProjectMaskItem({
                 if (!point) return undefined;
                 const objectId = objectIdAtPoint(objectsRef.current, point);
                 if (objectId !== undefined) return { key: mediaKey, type: "object", objectId };
-                const captureId = captureIdAtPoint(source.maskData.polygons, maskGeometryRef.current.points, point);
+                const captureId = captureIdAtPoint(
+                  source.maskData.polygons,
+                  maskGeometryRef.current.points,
+                  resolveObjectUniforms(),
+                  point,
+                );
                 if (captureId !== undefined) return { key: mediaKey, type: "capture", captureId };
                 return undefined;
               };
@@ -1642,10 +1647,12 @@ export function ProjectMaskItem({
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
               const [bufferX, bufferY] = point;
-              const captureId = captureIdAtPoint(source.maskData.polygons, maskGeometryRef.current.points, [
-                bufferX,
-                bufferY,
-              ]);
+              const captureId = captureIdAtPoint(
+                source.maskData.polygons,
+                maskGeometryRef.current.points,
+                resolveObjectUniforms(),
+                [bufferX, bufferY],
+              );
               if (captureId === undefined) return;
               if (captureCommitInFlightRef.current.has(captureId)) return;
               const originalIndices = new Set<number>();
