@@ -45,6 +45,8 @@ export function useObjectReview() {
       }
       if (!response) return;
 
+      dispatch({ type: CoreActionType.SetObjectReview, maskMediaId: review.maskMediaId, value: response.review });
+
       const maskData = coreState.canvasMasks.get(review.maskKey);
       if (decision === "accepted" && response.delta && maskData) {
         const patched = applyObjectDelta(maskData, response.delta);

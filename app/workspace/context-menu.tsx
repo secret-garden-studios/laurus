@@ -20,6 +20,7 @@ import {
   LaurusFrame,
   LaurusImgResult,
   LaurusMaskResult,
+  LaurusObjectReview,
   LaurusSvgResult,
   deleteMask,
 } from "./workspace.server";
@@ -31,9 +32,11 @@ import {
   LaurusActiveElement,
   LaurusBrowserElement,
   LaurusThumbnail,
+  ObjectReviewSession,
   UIAction,
   UIActionType,
   defaultUIState,
+  resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
 import { deleteEffects, deleteMaskCaptureEffects } from "./effects-utils";
@@ -144,6 +147,11 @@ export type ContextMenuMedia =
   | { type: "mask"; key: string; meta: LaurusProjectMask }
   | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
   | { type: "object"; key: string; objectId: number; meta: LaurusProjectMask };
+type PendingObjectReview = {
+  state: LaurusObjectReview;
+  decisions: Map<number, "accepted" | "rejected">;
+  resumed: ObjectReviewSession;
+};
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -865,6 +873,34 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return { maskMediaId: maskData.mask_media_id, object, polygonIndices };
   }, [coreState.canvasMasks, media, uiState.objectReview]);
 
+  const reviewMaskMediaId = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.mask_media_id;
+  }, [coreState.canvasMasks, media]);
+
+  const pendingReview = useMemo((): PendingObjectReview | undefined => {
+    if (!reviewMaskMediaId) return undefined;
+    const state = coreState.objectReviews.get(reviewMaskMediaId);
+    if (!state) return undefined;
+    const decisions = new Map(state.decisions.map((d) => [d.object_id, d.decision]));
+    const resumed = resumeObjectReview(reviewMaskMediaId, media.key, state.candidates, decisions);
+    return resumed ? { state, decisions, resumed } : undefined;
+  }, [reviewMaskMediaId, media.key, coreState.objectReviews]);
+
+  const reviewableMask = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    if (uiState.objectReview !== undefined) return undefined;
+    if (!reviewMaskMediaId || !pendingReview) return undefined;
+    return { maskMediaId: reviewMaskMediaId, pending: pendingReview };
+  }, [media, uiState.objectReview, reviewMaskMediaId, pendingReview]);
+
+  const reviewTitle = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    if (uiState.objectReview !== undefined) return "finish the review in progress first";
+    if (!pendingReview) return "no pending review for this mask";
+    return "resume the object review for this mask";
+  }, [media.type, uiState.objectReview, pendingReview]);
+
   const cellStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -872,6 +908,32 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     cursor: "pointer",
     ...dynamicSizes.cell,
   };
+
+  const reviewButton = (
+    <div
+      className={reviewableMask ? styles["animated-nav-dark"] : ""}
+      style={{
+        color: reviewableMask ? "inherit" : "rgba(127,127,127, 1)",
+        ...cellStyle,
+      }}
+      title={reviewTitle}
+      onClick={() => {
+        if (!reviewableMask) return;
+        const { pending } = reviewableMask;
+        uiDispatch({
+          type: UIActionType.ResumeObjectReview,
+          maskMediaId: reviewableMask.maskMediaId,
+          maskKey: media.key,
+          candidates: pending.state.candidates,
+          decisions: pending.decisions,
+        });
+        notifyMaskObjectReviewPreview(media.key, pending.resumed.currentIndices);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      }}
+    >
+      {"review"}
+    </div>
+  );
 
   const header = useMemo(() => {
     switch (media.type) {
@@ -1115,6 +1177,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     height: dynamicSizes.cell.height * 4,
                   }}
                 >
+                  {media.type === "mask" && reviewButton}
                   {media.type !== "mask" && !isCaptureOrObject && (
                     <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                       {"swap"}

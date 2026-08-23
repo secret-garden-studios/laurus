@@ -7,6 +7,7 @@ import {
   LaurusSvgResult,
   LaurusMaskResult,
   LaurusObjectBlackPoint,
+  LaurusObjectReview,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
@@ -56,6 +57,7 @@ export interface CoreState {
   canvasImgs: Map<string, LaurusImgResult>;
   canvasSvgs: Map<string, LaurusSvgResult>;
   canvasMasks: Map<string, LaurusMaskResult>;
+  objectReviews: Map<string, LaurusObjectReview>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
   mediaGroups: Map<string, LaurusMediaGroupResult>;
@@ -73,6 +75,7 @@ export const defaultCoreState: CoreState = {
   canvasImgs: new Map(),
   canvasSvgs: new Map(),
   canvasMasks: new Map(),
+  objectReviews: new Map(),
   effects: [],
   effectGroups: new Map(),
   mediaGroups: new Map(),
@@ -95,6 +98,8 @@ export enum CoreActionType {
   SetCanvasMask,
   DeleteCanvasMask,
   SetCanvasMasks,
+  SetObjectReview,
+  SetObjectReviews,
   SetProjectImg,
   SetProjectSvg,
   DeleteProjectImg,
@@ -127,6 +132,8 @@ export type CoreAction =
   | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusMaskResult }
   | { type: CoreActionType.DeleteCanvasMask; key: string }
   | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusMaskResult> }
+  | { type: CoreActionType.SetObjectReview; maskMediaId: string; value: LaurusObjectReview }
+  | { type: CoreActionType.SetObjectReviews; value: Map<string, LaurusObjectReview> }
   | { type: CoreActionType.DeleteProjectImg; key: string }
   | { type: CoreActionType.DeleteProjectSvg; key: string }
   | { type: CoreActionType.DeleteProjectMask; key: string }
@@ -236,6 +243,14 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         canvasMasks: new Map(action.value),
         inputsToRender: new Set<string>(["*"]),
       };
+    }
+    case CoreActionType.SetObjectReview: {
+      const newObjectReviews = new Map(state.objectReviews);
+      newObjectReviews.set(action.maskMediaId, action.value);
+      return { ...state, objectReviews: newObjectReviews };
+    }
+    case CoreActionType.SetObjectReviews: {
+      return { ...state, objectReviews: new Map(action.value) };
     }
     case CoreActionType.DeleteProjectMask: {
       const newMasks = new Map(state.project.masks);

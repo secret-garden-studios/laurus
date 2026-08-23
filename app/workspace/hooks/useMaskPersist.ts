@@ -68,6 +68,11 @@ export function useMaskPersist() {
         });
       }
       if (mask.objectCandidatesRef.current.length > 0) {
+        dispatch({
+          type: CoreActionType.SetObjectReview,
+          maskMediaId: result.mask_media_id,
+          value: { mask_media_id: result.mask_media_id, candidates: mask.objectCandidatesRef.current, decisions: [] },
+        });
         uiDispatch({
           type: UIActionType.StartObjectReview,
           maskMediaId: result.mask_media_id,

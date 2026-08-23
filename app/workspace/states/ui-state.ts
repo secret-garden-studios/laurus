@@ -212,6 +212,7 @@ export enum UIActionType {
   SetObjectReviewZoom,
   RecordObjectReviewDecision,
   EndObjectReview,
+  ResumeObjectReview,
 }
 
 export type UIAction =
@@ -281,7 +282,14 @@ export type UIAction =
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
   | { type: UIActionType.SetObjectReviewZoom; value: number }
   | { type: UIActionType.RecordObjectReviewDecision; decision: "accepted" | "rejected" }
-  | { type: UIActionType.EndObjectReview };
+  | { type: UIActionType.EndObjectReview }
+  | {
+      type: UIActionType.ResumeObjectReview;
+      maskMediaId: string;
+      maskKey: string;
+      candidates: LaurusObjectReviewCandidate[];
+      decisions: Map<number, "accepted" | "rejected">;
+    };
 
 function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
   if (element?.type !== "svg") return "";
@@ -323,6 +331,47 @@ export function advanceObjectReview(
     cycle: review.cycle + 1,
     currentIndex: nextBatchStart,
   };
+}
+
+export function resumeObjectReview(
+  maskMediaId: string,
+  maskKey: string,
+  candidates: LaurusObjectReviewCandidate[],
+  decisions: Map<number, "accepted" | "rejected">,
+): ObjectReviewSession | undefined {
+  if (candidates.length === 0) return undefined;
+  let session: ObjectReviewSession = {
+    mode: "review",
+    maskMediaId,
+    maskKey,
+    candidates,
+    decisions: new Map(),
+    batchStart: 0,
+    batchSize: Math.min(MAX_MASK_OBJECTS, candidates.length),
+    cycle: 1,
+    currentIndex: 0,
+    currentIndices: new Set(candidates[0].polygon_indices),
+    zoom: OBJECT_REVIEW_ZOOM_MIN,
+  };
+  for (;;) {
+    const candidate = session.candidates[session.currentIndex];
+    const decision = decisions.get(candidate.object.id);
+    if (decision === undefined) {
+      return { ...session, currentIndices: new Set(candidate.polygon_indices) };
+    }
+    const decided = new Map(session.decisions);
+    decided.set(candidate.object.id, decision);
+    const next = advanceObjectReview(session, decided);
+    if (next.done) return undefined;
+    session = {
+      ...session,
+      decisions: decided,
+      batchStart: next.batchStart,
+      batchSize: next.batchSize,
+      cycle: next.cycle,
+      currentIndex: next.currentIndex,
+    };
+  }
 }
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
@@ -585,6 +634,10 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.EndObjectReview: {
       return { ...state, objectReview: undefined };
+    }
+    case UIActionType.ResumeObjectReview: {
+      const resumed = resumeObjectReview(action.maskMediaId, action.maskKey, action.candidates, action.decisions);
+      return resumed ? { ...state, objectReview: resumed } : state;
     }
   }
 }

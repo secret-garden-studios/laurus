@@ -748,10 +748,10 @@ export interface ObjectReviewState_V1_0 {
   candidates: ObjectReviewCandidate_V1_0[];
   decisions: ObjectReviewDecision_V1_0[];
 }
+export type LaurusObjectReview = ObjectReviewState_V1_0;
 
 export interface ObjectReviewDecisionResponse_V1_0 {
   review: ObjectReviewState_V1_0;
-  /** Populated only on acceptance -- a rejection changes no mask state. */
   delta: ObjectUpdateDelta_V1_0 | null;
 }
 
@@ -788,6 +788,30 @@ export async function postObjectReviewDecision(
       review: raw.review,
       delta: raw.delta ? { ...raw.delta, object: raw.delta.object ? normalizeObject(raw.delta.object) : null } : null,
     };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+export async function getObjectReview(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+): Promise<ObjectReviewState_V1_0 | undefined> {
+  try {
+    const url = `${baseUrl}/media/masks/${maskMediaId}/object-review`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "GET");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "GET");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) return undefined;
+    const raw: ObjectReviewState_V1_0 = await response.json();
+    return raw;
   } catch (error) {
     console.log({ error });
     return undefined;

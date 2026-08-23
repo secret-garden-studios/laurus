@@ -23,6 +23,7 @@ import {
   LaurusMixState,
   LaurusSvgResult,
   LaurusMaskResult,
+  LaurusObjectReview,
   searchImgs,
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
@@ -581,6 +582,10 @@ function initReducer({
       )
     : new Map();
 
+  const newObjectReviews: Map<string, LaurusObjectReview> = projectDependencies
+    ? new Map(projectDependencies.objectReviews.map((r) => [r.mask_media_id, r]))
+    : new Map();
+
   if (projectDependencies) {
     const placedImgIds = new Set(projectDependencies.project.imgs.values().map((i) => i.img_media_id));
     getMaskSourceImgIds(projectDependencies.project.masks, newCanvasMasks).forEach((sourceImgMediaId) => {
@@ -693,6 +698,7 @@ function initReducer({
       canvasImgs: newCanvasImgs,
       canvasSvgs: newCanvasSvgs,
       canvasMasks: newCanvasMasks,
+      objectReviews: newObjectReviews,
       apiOrigin: apiOrigin,
       timelineUnit: timelineUnits[0],
       timelineMaxValue: timelineValues[1],
