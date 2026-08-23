@@ -339,9 +339,9 @@ export function resumeObjectReview(
   candidates: LaurusObjectReviewCandidate[],
   decisions: Map<number, "accepted" | "rejected">,
 ): ObjectReviewSession | undefined {
-  if (candidates.length === 0 || isObjectReviewFull(decisions)) return undefined;
-  const currentIndex = candidates.findIndex((c) => !decisions.has(c.object.id));
-  if (currentIndex < 0) return undefined;
+  if (candidates.length === 0) return undefined;
+  const undecidedIndex = candidates.findIndex((c) => !decisions.has(c.object.id));
+  const currentIndex = undecidedIndex >= 0 && !isObjectReviewFull(decisions) ? undecidedIndex : 0;
   return {
     mode: "review",
     maskMediaId,

@@ -903,7 +903,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     if (media.type !== "mask") return undefined;
     if (uiState.objectReview !== undefined) return "finish the review in progress first";
     if (!pendingReview) return "no pending review for this mask";
-    return "resume the object review for this mask";
+    const allDecided = pendingReview.state.candidates.every((c) => pendingReview.decisions.has(c.object.id));
+    return allDecided ? "reopen the completed object review for this mask" : "resume the object review for this mask";
   }, [media.type, uiState.objectReview, pendingReview]);
 
   const cellStyle: CSSProperties = {
