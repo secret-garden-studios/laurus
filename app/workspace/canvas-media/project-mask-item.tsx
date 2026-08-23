@@ -155,7 +155,7 @@ export interface MaskImperativeHandle {
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
-  setObjectReviewPreview: (indices: Set<number> | undefined) => void;
+  setObjectReviewPreview: (indices: Set<number> | undefined, editObjectId?: number) => void;
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
@@ -291,6 +291,7 @@ export function ProjectMaskItem({
   const objectsRef = useRef<LaurusObject[]>([]);
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
+  const objectEditIdRef = useRef<number | undefined>(undefined);
   const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
   const pendingCaptureIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
@@ -590,6 +591,7 @@ export function ProjectMaskItem({
       const activeObjectId = selectedObjectIdRef.current;
       objectsMapRef.current.forEach((indices, objectId) => {
         if (objectId === pendingTopology?.objectId) return;
+        if (objectId === objectEditIdRef.current) return;
         paint(indices, objectId === activeObjectId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
@@ -1141,6 +1143,10 @@ export function ProjectMaskItem({
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
         objectReviewPreviewRef.current =
           uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview.currentIndices : undefined;
+        objectEditIdRef.current =
+          uiState.objectReview?.maskKey === mediaKey && uiState.objectReview.mode === "edit"
+            ? uiState.objectReview.candidates[0]?.object.id
+            : undefined;
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
@@ -1220,8 +1226,9 @@ export function ProjectMaskItem({
             pendingTopologyRef.current = undefined;
             recolorHighlight();
           },
-          setObjectReviewPreview: (indices) => {
+          setObjectReviewPreview: (indices, editObjectId) => {
             objectReviewPreviewRef.current = indices;
+            objectEditIdRef.current = editObjectId;
             recolorHighlight();
           },
           syncObjects: (updated) => {

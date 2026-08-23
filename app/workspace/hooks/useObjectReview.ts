@@ -1,14 +1,15 @@
 import { useCallback, useContext, useRef, useState } from "react";
-import { CoreContext, MaskContext, UIContext } from "../workspace.client";
+import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType, advanceObjectReview } from "../states/ui-state";
-import { postObjectReviewDecision } from "../workspace.server";
+import { postObjectReviewDecision, toObjectBlackPoint, toObjectBlackPointFields } from "../workspace.server";
 import { applyObjectDelta } from "../canvas-media/mask-delta";
 
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyReviewZoomChanged } = useContext(MaskContext);
+  const { sendMaskObjectUpdate } = useContext(SocketContext);
 
   const review = uiState.objectReview;
   const decidingRef = useRef(false);
@@ -16,7 +17,7 @@ export function useObjectReview() {
 
   const decideCurrentObject = useCallback(
     async (decision: "accepted" | "rejected", description?: string) => {
-      if (!review || decidingRef.current) return;
+      if (!review || review.mode !== "review" || decidingRef.current) return;
       const candidate = review.candidates[review.currentIndex];
       if (!candidate) return;
       decidingRef.current = true;
@@ -98,5 +99,54 @@ export function useObjectReview() {
     uiDispatch({ type: UIActionType.EndObjectReview });
   }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
 
-  return { review, isDeciding, decideCurrentObject, togglePolygon, setZoom, previewZoom, endReview };
+  const saveEditedObject = useCallback(
+    async (description: string) => {
+      if (!review || review.mode !== "edit" || decidingRef.current) return;
+      const object = review.candidates[0]?.object;
+      const maskData = coreState.canvasMasks.get(review.maskKey);
+      if (!object || !maskData) return;
+      decidingRef.current = true;
+      setIsDeciding(true);
+
+      let updated;
+      try {
+        updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
+          object_id: object.id,
+          name: object.name,
+          cx: object.cx,
+          cy: object.cy,
+          radius: object.radius,
+          elevation: object.elevation,
+          falloff: object.falloff,
+          shape: object.shape,
+          ...toObjectBlackPointFields(toObjectBlackPoint(object)),
+          description,
+          reviewed: true,
+          remove: false,
+          polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
+        });
+      } finally {
+        decidingRef.current = false;
+        setIsDeciding(false);
+      }
+      if (!updated) return;
+
+      const patched = applyObjectDelta(maskData, updated);
+      dispatch({ type: CoreActionType.SetCanvasMask, key: review.maskKey, value: patched });
+      notifyMaskObjectsUpdated(review.maskKey, patched);
+      endReview();
+    },
+    [review, coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, endReview],
+  );
+
+  return {
+    review,
+    isDeciding,
+    decideCurrentObject,
+    saveEditedObject,
+    togglePolygon,
+    setZoom,
+    previewZoom,
+    endReview,
+  };
 }

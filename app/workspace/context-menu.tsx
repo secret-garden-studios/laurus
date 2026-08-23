@@ -157,6 +157,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     notifyMaskSelectedCaptureChanged,
     notifyMaskSelectedObjectChanged,
     notifyMaskCaptureUpdated,
+    notifyMaskObjectReviewPreview,
     deleteObject,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -851,6 +852,19 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const isCaptureOrObject = media.type === "capture" || media.type === "object";
 
+  const editableObject = useMemo(() => {
+    if (media.type !== "object") return undefined;
+    if (uiState.objectReview !== undefined) return undefined;
+    const maskData = coreState.canvasMasks.get(media.key);
+    const object = maskData?.objects.find((o) => o.id === media.objectId);
+    if (!maskData || !object) return undefined;
+    const polygonIndices: number[] = [];
+    maskData.polygons.forEach((p, i) => {
+      if (p.object_id === object.id) polygonIndices.push(i);
+    });
+    return { maskMediaId: maskData.mask_media_id, object, polygonIndices };
+  }, [coreState.canvasMasks, media, uiState.objectReview]);
+
   const cellStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -1104,6 +1118,38 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   {media.type !== "mask" && !isCaptureOrObject && (
                     <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                       {"swap"}
+                    </div>
+                  )}
+                  {media.type === "object" && (
+                    <div
+                      className={editableObject ? styles["animated-nav-dark"] : ""}
+                      style={{
+                        color: editableObject ? "inherit" : "rgba(127,127,127, 1)",
+                        ...cellStyle,
+                      }}
+                      title={
+                        editableObject
+                          ? "reopen the review panel for this object"
+                          : "finish the review in progress first"
+                      }
+                      onClick={() => {
+                        if (!editableObject) return;
+                        uiDispatch({
+                          type: UIActionType.StartObjectEdit,
+                          maskMediaId: editableObject.maskMediaId,
+                          maskKey: media.key,
+                          object: editableObject.object,
+                          polygonIndices: editableObject.polygonIndices,
+                        });
+                        notifyMaskObjectReviewPreview(
+                          media.key,
+                          new Set(editableObject.polygonIndices),
+                          editableObject.object.id,
+                        );
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+                      }}
+                    >
+                      {"edit"}
                     </div>
                   )}
                   <div

@@ -25,7 +25,8 @@ export default function ObjectReviewPanel() {
   const descriptionRef = useRef<HTMLInputElement>(null);
 
   const { uiState } = useContext(UIContext);
-  const { review, isDeciding, decideCurrentObject, setZoom, previewZoom, endReview } = useObjectReview();
+  const { review, isDeciding, decideCurrentObject, saveEditedObject, setZoom, previewZoom, endReview } =
+    useObjectReview();
 
   const zoomTrackRef = useRef<HTMLDivElement | null>(null);
   const zoomTitleRef = useRef<HTMLDivElement | null>(null);
@@ -52,15 +53,18 @@ export default function ObjectReviewPanel() {
 
   if (!review) return null;
 
+  const candidate = review.candidates[review.currentIndex];
+  const isEdit = review.mode === "edit";
   const positionInBatch = review.currentIndex - review.batchStart + 1;
 
-  const accept = () => {
+  const commit = () => {
     const description = descriptionRef.current?.value.trim() ?? "";
     if (!description) {
       descriptionRef.current?.focus();
       return;
     }
-    void decideCurrentObject("accepted", description);
+    if (isEdit) void saveEditedObject(description);
+    else void decideCurrentObject("accepted", description);
   };
 
   return (
@@ -86,25 +90,31 @@ export default function ObjectReviewPanel() {
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", color: "rgb(160, 160, 160)" }}>
-        <span>
-          object {positionInBatch} of {review.batchSize}
-        </span>
-        <span>cycle {review.cycle} of 3</span>
-        <button
-          type="button"
-          onClick={endReview}
-          title="stop reviewing -- undecided objects are left undecided"
-          style={{
-            border: "none",
-            background: "none",
-            color: "rgb(160, 160, 160)",
-            cursor: "pointer",
-            padding: 0,
-            fontSize: 13,
-          }}
-        >
-          done
-        </button>
+        {isEdit ? (
+          <span>editing {candidate.object.name}</span>
+        ) : (
+          <>
+            <span>
+              object {positionInBatch} of {review.batchSize}
+            </span>
+            <span>cycle {review.cycle} of 3</span>
+            <button
+              type="button"
+              onClick={endReview}
+              title="stop reviewing -- undecided objects are left undecided"
+              style={{
+                border: "none",
+                background: "none",
+                color: "rgb(160, 160, 160)",
+                cursor: "pointer",
+                padding: 0,
+                fontSize: 13,
+              }}
+            >
+              done
+            </button>
+          </>
+        )}
       </div>
       <div style={{ color: "rgb(160, 160, 160)" }}>click a triangle to add or remove it from this object</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgb(160, 160, 160)" }}>
@@ -134,14 +144,14 @@ export default function ObjectReviewPanel() {
         />
       </div>
       <input
-        key={review.currentIndex}
+        key={`${review.mode}|${candidate.object.id}`}
         ref={descriptionRef}
         type="text"
         placeholder="describe this object..."
-        defaultValue=""
+        defaultValue={isEdit ? candidate.object.description : ""}
         autoComplete="off"
         onKeyDown={(e) => {
-          if (e.key === "Enter") accept();
+          if (e.key === "Enter") commit();
         }}
         style={{
           width: "100%",
@@ -158,7 +168,8 @@ export default function ObjectReviewPanel() {
         <button
           type="button"
           disabled={isDeciding}
-          onClick={() => void decideCurrentObject("rejected")}
+          onClick={isEdit ? endReview : () => void decideCurrentObject("rejected")}
+          title={isEdit ? "close without saving -- the object is left as it was" : undefined}
           style={{
             flex: 1,
             padding: "8px 0",
@@ -169,12 +180,12 @@ export default function ObjectReviewPanel() {
             cursor: isDeciding ? "progress" : "pointer",
           }}
         >
-          reject
+          {isEdit ? "cancel" : "reject"}
         </button>
         <button
           type="button"
           disabled={isDeciding}
-          onClick={accept}
+          onClick={commit}
           style={{
             flex: 1,
             padding: "8px 0",
@@ -185,7 +196,7 @@ export default function ObjectReviewPanel() {
             cursor: isDeciding ? "progress" : "pointer",
           }}
         >
-          accept
+          {isEdit ? "save" : "accept"}
         </button>
       </div>
     </div>

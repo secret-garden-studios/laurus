@@ -1,6 +1,12 @@
 import { LaurusCropSvg } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
-import { LaurusImgResult, LaurusEffect, LaurusSvgResult, LaurusObjectReviewCandidate } from "../workspace.server";
+import {
+  LaurusImgResult,
+  LaurusEffect,
+  LaurusSvgResult,
+  LaurusObject,
+  LaurusObjectReviewCandidate,
+} from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
@@ -83,7 +89,10 @@ export type CarouselEntry =
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
+export type ObjectReviewMode = "review" | "edit";
+
 export interface ObjectReviewSession {
+  mode: ObjectReviewMode;
   maskMediaId: string;
   maskKey: string;
   candidates: LaurusObjectReviewCandidate[];
@@ -198,6 +207,7 @@ export enum UIActionType {
   SetLightSourcePreview,
   SetStagedObject,
   StartObjectReview,
+  StartObjectEdit,
   ToggleObjectReviewPolygon,
   SetObjectReviewZoom,
   RecordObjectReviewDecision,
@@ -260,6 +270,13 @@ export type UIAction =
       maskMediaId: string;
       maskKey: string;
       candidates: LaurusObjectReviewCandidate[];
+    }
+  | {
+      type: UIActionType.StartObjectEdit;
+      maskMediaId: string;
+      maskKey: string;
+      object: LaurusObject;
+      polygonIndices: number[];
     }
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
   | { type: UIActionType.SetObjectReviewZoom; value: number }
@@ -491,6 +508,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return {
         ...state,
         objectReview: {
+          mode: "review",
           maskMediaId: action.maskMediaId,
           maskKey: action.maskKey,
           candidates: action.candidates,
@@ -500,6 +518,24 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           cycle: 1,
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
+          zoom: OBJECT_REVIEW_ZOOM_MIN,
+        },
+      };
+    }
+    case UIActionType.StartObjectEdit: {
+      return {
+        ...state,
+        objectReview: {
+          mode: "edit",
+          maskMediaId: action.maskMediaId,
+          maskKey: action.maskKey,
+          candidates: [{ object: action.object, polygon_indices: action.polygonIndices }],
+          decisions: new Map(),
+          batchStart: 0,
+          batchSize: 1,
+          cycle: 1,
+          currentIndex: 0,
+          currentIndices: new Set(action.polygonIndices),
           zoom: OBJECT_REVIEW_ZOOM_MIN,
         },
       };
@@ -525,6 +561,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.RecordObjectReviewDecision: {
       const review = state.objectReview;
       if (!review) return state;
+      if (review.mode === "edit") return { ...state, objectReview: undefined };
       const candidate = review.candidates[review.currentIndex];
       if (!candidate || review.decisions.has(candidate.object.id)) return state;
 
