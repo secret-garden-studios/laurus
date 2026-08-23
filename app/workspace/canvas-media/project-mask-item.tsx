@@ -42,7 +42,7 @@ import {
   indicesInCircleFromCentroids,
   indicesInObjectFromCentroids,
   objectIdAtPoint,
-  polygonIndexAtPoint,
+  swelledPolygonIndexAtPoint,
   translateIndices,
 } from "./light-source-capture";
 import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
@@ -1436,7 +1436,9 @@ export function ProjectMaskItem({
               if (source.kind !== "static") return;
               if (uiState.objectReview?.maskKey === mediaKey) {
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-                const index = point ? polygonIndexAtPoint(maskGeometryRef.current.points, point) : undefined;
+                const index = point
+                  ? swelledPolygonIndexAtPoint(maskGeometryRef.current.points, resolveObjectUniforms(), point)
+                  : undefined;
                 if (index !== undefined) {
                   const previewed = new Set(objectReviewPreviewRef.current ?? []);
                   if (previewed.has(index)) previewed.delete(index);

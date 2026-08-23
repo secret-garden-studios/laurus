@@ -1,4 +1,5 @@
-import { objectShapeRhoAt } from "../mask-gl.ts";
+import { activeMaskObjects, objectShapeRhoAt, objectSwellAt, OBJECT_SHAPE_MIN_RHO } from "../mask-gl.ts";
+import type { ObjectGeometryInput } from "../mask-gl.ts";
 import type { LaurusObject, LaurusPolygonPath } from "../workspace.server";
 import { cachedObjectShape } from "./object-shape.ts";
 import { centroidOf } from "./mask-geometry.ts";
@@ -24,6 +25,42 @@ export function polygonIndexAtPoint(points: [number, number][][], point: [number
     const triangle = points[i];
     if (triangle.length !== 3) continue;
     if (pointInTriangle(px, py, triangle[0], triangle[1], triangle[2])) return i;
+  }
+  return undefined;
+}
+
+function maxSwellReach(object: ObjectGeometryInput): number {
+  if (!object.shape) return object.radius;
+  let widest = OBJECT_SHAPE_MIN_RHO;
+  for (const rho of object.shape.rho) if (rho > widest) widest = rho;
+  return object.radius * widest;
+}
+
+function swelled(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {
+  const [dx, dy] = objectSwellAt(point, objects);
+  return [point[0] + dx, point[1] + dy];
+}
+
+export function swelledPolygonIndexAtPoint(
+  points: [number, number][][],
+  objects: ObjectGeometryInput[],
+  point: [number, number],
+): number | undefined {
+  const swelling = activeMaskObjects(objects);
+  if (swelling.length === 0) return polygonIndexAtPoint(points, point);
+  const reachSquares = swelling.map((object) => maxSwellReach(object) ** 2);
+  const [px, py] = point;
+  for (let i = 0; i < points.length; i++) {
+    const triangle = points[i];
+    if (triangle.length !== 3) continue;
+    const [a, b, c] = triangle;
+    const moves = swelling.some(({ cx, cy }, o) =>
+      triangle.some(([x, y]) => (x - cx) ** 2 + (y - cy) ** 2 < reachSquares[o]),
+    );
+    const inside = moves
+      ? pointInTriangle(px, py, swelled(a, swelling), swelled(b, swelling), swelled(c, swelling))
+      : pointInTriangle(px, py, a, b, c);
+    if (inside) return i;
   }
   return undefined;
 }

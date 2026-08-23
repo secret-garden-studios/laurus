@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { objectSwellAt } from "../mask-gl.ts";
 import { centroidOf } from "./mask-geometry.ts";
 import {
   indexedPolygonIndexAtPoint,
   indicesInObjectFromCentroids,
   polygonIndexAtPoint,
+  swelledPolygonIndexAtPoint,
   translateIndices,
 } from "./light-source-capture.ts";
 
@@ -104,3 +106,47 @@ describe("translateIndices -- moving an object carries its own footprint", () =>
     assert.equal(moved.size, 2);
   });
 });
+
+describe("swelledPolygonIndexAtPoint -- picking the triangle the shader actually drew", () => {
+  const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, shape: undefined, blackPoint: undefined };
+  const raised = { ...flat, elevation: 50 };
+
+  it("falls back to the plain scan when nothing on the mesh is swollen", () => {
+    const { points, centroids } = grid();
+
+    centroids.forEach((centroid) => {
+      assert.equal(
+        swelledPolygonIndexAtPoint(points, [flat], centroid),
+        polygonIndexAtPoint(points, centroid),
+        `centroid ${centroid}`,
+      );
+    });
+  });
+
+  it("picks the triangle whose swollen corners surround the click, not its stored ones", () => {
+    const { points, centroids } = grid();
+    let disagreements = 0;
+
+    points.forEach((triangle, i) => {
+      const drawn = centroidOf(triangle.map((p) => swelled(p, raised)));
+      const picked = swelledPolygonIndexAtPoint(points, [raised], drawn);
+      assert.equal(picked, i, `triangle ${i} drawn at ${drawn}`);
+      if (polygonIndexAtPoint(points, drawn) !== i) disagreements++;
+    });
+
+    assert.ok(disagreements > 0, "the plain scan should have been wrong somewhere, or this proves nothing");
+    assert.equal(centroids.length, points.length);
+  });
+
+  it("still reports nothing for a point off the mesh", () => {
+    const { points } = grid();
+
+    assert.equal(swelledPolygonIndexAtPoint(points, [raised], [-5, -5]), undefined);
+    assert.equal(swelledPolygonIndexAtPoint(points, [raised], [COLS * CELL + 5, 5]), undefined);
+  });
+});
+
+function swelled(point: [number, number], object: Parameters<typeof objectSwellAt>[1][number]): [number, number] {
+  const [dx, dy] = objectSwellAt(point, [object]);
+  return [point[0] + dx, point[1] + dy];
+}

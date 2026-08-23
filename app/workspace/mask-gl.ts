@@ -562,10 +562,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
   }
 
-  const activeObjects = options.objects
-    .filter(isActiveObject)
-    .sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation))
-    .slice(0, MAX_MASK_OBJECTS);
+  const activeObjects = activeMaskObjects(options.objects);
   gl.uniform1i(state.objectCountLoc, activeObjects.length);
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
@@ -834,6 +831,13 @@ export interface ObjectGeometryInput {
 
 export function isActiveObject(object: ObjectGeometryInput): boolean {
   return object.radius > 0 && object.elevation !== 0;
+}
+
+export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return objects
+    .filter(isActiveObject)
+    .sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation))
+    .slice(0, MAX_MASK_OBJECTS);
 }
 
 export function objectProfileK(u: number, falloff: number): number {
