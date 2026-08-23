@@ -549,6 +549,7 @@ export default function LightSourcebar() {
     falloff: number;
     shape: string;
     blackPoint: LaurusObjectBlackPoint;
+    reviewed: boolean;
     polygonIndices: number[];
   }
 
@@ -574,6 +575,7 @@ export default function LightSourcebar() {
           shape: toSave.shape,
           ...toObjectBlackPointFields(toSave.blackPoint),
           description: toSave.description,
+          reviewed: toSave.reviewed,
           remove: false,
           polygon_indices: toSave.polygonIndices,
         });
@@ -629,6 +631,26 @@ export default function LightSourcebar() {
       const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
       const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
+      const regionUnchanged =
+        existingObject !== undefined &&
+        existingObject.cx === edit.cx &&
+        existingObject.cy === edit.cy &&
+        existingObject.radius === edit.radius &&
+        existingObject.shape === edit.shape;
+      const polygonIndices = regionUnchanged
+        ? maskData.polygons.reduce<number[]>((indices, p, i) => {
+            if (p.object_id === edit.objectId) indices.push(i);
+            return indices;
+          }, [])
+        : [
+            ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
+              cx: edit.cx,
+              cy: edit.cy,
+              radius: edit.radius,
+              shape: edit.shape,
+            }),
+          ];
+
       pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
         maskMediaId: maskData.mask_media_id,
@@ -642,14 +664,8 @@ export default function LightSourcebar() {
         falloff: edit.falloff,
         shape: edit.shape,
         blackPoint: edit.blackPoint,
-        polygonIndices: [
-          ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
-            cx: edit.cx,
-            cy: edit.cy,
-            radius: edit.radius,
-            shape: edit.shape,
-          }),
-        ],
+        reviewed: existingObject?.reviewed ?? false,
+        polygonIndices,
       };
       void persistObjectQueue();
     },

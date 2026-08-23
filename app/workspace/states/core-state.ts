@@ -46,6 +46,7 @@ export interface PendingTopologyEdit {
   falloff: number;
   shape: string;
   blackPoint: LaurusObjectBlackPoint;
+  polygonIndices?: Set<number>;
 }
 
 export interface CoreState {

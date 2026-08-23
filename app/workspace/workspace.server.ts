@@ -322,6 +322,7 @@ export interface Object_V1_0 {
   black_point_b: number;
   black_point_a: number;
   description: string;
+  reviewed: boolean;
 }
 export type LaurusObject = Object_V1_0;
 
@@ -382,7 +383,7 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 
 type RawObject_V1_0 = Omit<
   Object_V1_0,
-  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description"
+  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description" | "reviewed"
 > & {
   name?: string;
   falloff?: number;
@@ -392,6 +393,7 @@ type RawObject_V1_0 = Omit<
   black_point_b?: number;
   black_point_a?: number;
   description?: string;
+  reviewed?: boolean;
 };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
 
@@ -406,6 +408,7 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     black_point_b: object.black_point_b ?? OBJECT_BLACK_POINT_DEFAULT.b,
     black_point_a: object.black_point_a ?? OBJECT_BLACK_POINT_DEFAULT.a,
     description: object.description ?? "",
+    reviewed: object.reviewed ?? false,
   };
 }
 
@@ -656,12 +659,6 @@ export interface MaskCaptureUpdateRequest_V1_0 {
   falloff: number;
   darkness: number;
 }
-/** What one object or capture edit changed, rather than the whole mask it
- *  changed it in -- see MaskEditDelta server-side. `tagged_polygon_indices` is
- *  the record's full polygon membership after the edit;
- *  `cleared_polygon_indices` are the polygons that carried it and no longer
- *  do. Applying both patches exactly the entries that moved, which is what
- *  keeps an edit off the whole-mask path. */
 export interface MaskEditDelta_V1_0 {
   tagged_polygon_indices: number[];
   cleared_polygon_indices: number[];
@@ -707,6 +704,7 @@ export interface MaskObjectUpdateRequest_V1_0 {
   black_point_b: number;
   black_point_a: number;
   description: string;
+  reviewed: boolean;
   remove: boolean;
   polygon_indices: number[];
 }

@@ -92,6 +92,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         black_point_b: 0,
         black_point_a: 0,
         description: "a thing",
+        reviewed: false,
       },
       removed: false,
       tagged_polygon_indices: [0, 1],
@@ -126,6 +127,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         black_point_b: 0,
         black_point_a: 0,
         description: "",
+        reviewed: false,
       },
     ];
 

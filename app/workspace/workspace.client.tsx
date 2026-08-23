@@ -1276,6 +1276,7 @@ export default function Workspace({
         shape: seed.shape,
         ...toObjectBlackPointFields(seed.blackPoint),
         description: "",
+        reviewed: false,
         remove: false,
         polygon_indices: polygonIndices,
       });
@@ -1323,6 +1324,7 @@ export default function Workspace({
         shape: object.shape,
         ...toObjectBlackPointFields(toObjectBlackPoint(object)),
         description: object.description,
+        reviewed: object.reviewed,
         remove: true,
         polygon_indices: [],
       });
