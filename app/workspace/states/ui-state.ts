@@ -103,6 +103,13 @@ export interface ObjectReviewSession {
   currentIndex: number;
   currentIndices: Set<number>;
   zoom: number;
+  redoRequested: boolean;
+}
+
+export function isObjectReviewLocked(review: ObjectReviewSession): boolean {
+  if (review.mode !== "review" || review.redoRequested) return false;
+  const candidate = review.candidates[review.currentIndex];
+  return candidate !== undefined && review.decisions.has(candidate.object.id);
 }
 
 export interface UIState {
@@ -209,6 +216,8 @@ export enum UIActionType {
   StartObjectReview,
   StartObjectEdit,
   ToggleObjectReviewPolygon,
+  SetObjectReviewIndex,
+  RequestObjectReviewRedo,
   SetObjectReviewZoom,
   RecordObjectReviewDecision,
   EndObjectReview,
@@ -280,8 +289,14 @@ export type UIAction =
       polygonIndices: number[];
     }
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
+  | { type: UIActionType.SetObjectReviewIndex; index: number; currentIndices?: Set<number> }
+  | { type: UIActionType.RequestObjectReviewRedo }
   | { type: UIActionType.SetObjectReviewZoom; value: number }
-  | { type: UIActionType.RecordObjectReviewDecision; decision: "accepted" | "rejected" }
+  | {
+      type: UIActionType.RecordObjectReviewDecision;
+      decision: "accepted" | "rejected";
+      nextCurrentIndices?: Set<number>;
+    }
   | { type: UIActionType.EndObjectReview }
   | {
       type: UIActionType.ResumeObjectReview;
@@ -352,6 +367,7 @@ export function resumeObjectReview(
     currentIndex: 0,
     currentIndices: new Set(candidates[0].polygon_indices),
     zoom: OBJECT_REVIEW_ZOOM_MIN,
+    redoRequested: false,
   };
   for (;;) {
     const candidate = session.candidates[session.currentIndex];
@@ -568,6 +584,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
           zoom: OBJECT_REVIEW_ZOOM_MIN,
+          redoRequested: false,
         },
       };
     }
@@ -586,12 +603,13 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: 0,
           currentIndices: new Set(action.polygonIndices),
           zoom: OBJECT_REVIEW_ZOOM_MIN,
+          redoRequested: false,
         },
       };
     }
     case UIActionType.ToggleObjectReviewPolygon: {
       const review = state.objectReview;
-      if (!review) return state;
+      if (!review || isObjectReviewLocked(review)) return state;
       const currentIndices = new Set(review.currentIndices);
       if (currentIndices.has(action.index)) {
         currentIndices.delete(action.index);
@@ -599,6 +617,27 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         currentIndices.add(action.index);
       }
       return { ...state, objectReview: { ...review, currentIndices } };
+    }
+    case UIActionType.SetObjectReviewIndex: {
+      const review = state.objectReview;
+      if (!review) return state;
+      const batchEnd = review.batchStart + review.batchSize;
+      const index = Math.min(batchEnd - 1, Math.max(review.batchStart, action.index));
+      if (index === review.currentIndex) return state;
+      return {
+        ...state,
+        objectReview: {
+          ...review,
+          currentIndex: index,
+          currentIndices: action.currentIndices ?? new Set(review.candidates[index].polygon_indices),
+          redoRequested: false,
+        },
+      };
+    }
+    case UIActionType.RequestObjectReviewRedo: {
+      const review = state.objectReview;
+      if (!review || !isObjectReviewLocked(review)) return state;
+      return { ...state, objectReview: { ...review, redoRequested: true } };
     }
     case UIActionType.SetObjectReviewZoom: {
       const review = state.objectReview;
@@ -612,7 +651,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (!review) return state;
       if (review.mode === "edit") return { ...state, objectReview: undefined };
       const candidate = review.candidates[review.currentIndex];
-      if (!candidate || review.decisions.has(candidate.object.id)) return state;
+      if (!candidate) return state;
 
       const decisions = new Map(review.decisions);
       decisions.set(candidate.object.id, action.decision);
@@ -628,7 +667,8 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           batchSize: next.batchSize,
           cycle: next.cycle,
           currentIndex: next.currentIndex,
-          currentIndices: new Set(review.candidates[next.currentIndex].polygon_indices),
+          currentIndices: action.nextCurrentIndices ?? new Set(review.candidates[next.currentIndex].polygon_indices),
+          redoRequested: false,
         },
       };
     }

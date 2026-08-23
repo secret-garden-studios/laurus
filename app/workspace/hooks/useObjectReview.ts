@@ -1,9 +1,27 @@
 import { useCallback, useContext, useRef, useState } from "react";
 import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType, advanceObjectReview } from "../states/ui-state";
+import { UIActionType, advanceObjectReview, isObjectReviewLocked } from "../states/ui-state";
 import { postObjectReviewDecision, toObjectBlackPoint, toObjectBlackPointFields } from "../workspace.server";
 import { applyObjectDelta } from "../canvas-media/mask-delta";
+
+function polygonIndicesForObject(polygons: { object_id: number }[] | undefined, objectId: number): Set<number> {
+  const indices = new Set<number>();
+  polygons?.forEach((p, i) => {
+    if (p.object_id === objectId) indices.add(i);
+  });
+  return indices;
+}
+
+function reviewPreviewFor(
+  candidate: { object: { id: number }; polygon_indices: number[] },
+  decided: boolean,
+  polygons: { object_id: number }[] | undefined,
+): { current: Set<number>; diffBase: Set<number> | undefined } {
+  const proposed = new Set(candidate.polygon_indices);
+  if (!decided) return { current: proposed, diffBase: undefined };
+  return { current: polygonIndicesForObject(polygons, candidate.object.id), diffBase: proposed };
+}
 
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
@@ -14,6 +32,15 @@ export function useObjectReview() {
   const review = uiState.objectReview;
   const decidingRef = useRef(false);
   const [isDeciding, setIsDeciding] = useState(false);
+
+  const currentCandidate = review?.candidates[review.currentIndex];
+  const currentDecision = currentCandidate ? review?.decisions.get(currentCandidate.object.id) : undefined;
+  const isLocked = review ? isObjectReviewLocked(review) : false;
+  const currentDescription =
+    currentDecision === "accepted" && currentCandidate
+      ? (coreState.canvasMasks.get(review?.maskKey ?? "")?.objects.find((o) => o.id === currentCandidate.object.id)
+          ?.description ?? currentCandidate.object.description)
+      : undefined;
 
   const decideCurrentObject = useCallback(
     async (decision: "accepted" | "rejected", description?: string) => {
@@ -57,14 +84,20 @@ export function useObjectReview() {
           value: { type: "object", key: review.maskKey, objectId: candidate.object.id },
         });
       }
-      uiDispatch({ type: UIActionType.RecordObjectReviewDecision, decision });
       const decided = new Map(review.decisions);
       decided.set(candidate.object.id, decision);
       const next = advanceObjectReview(review, decided);
-      notifyMaskObjectReviewPreview(
-        review.maskKey,
-        next.done ? undefined : new Set(review.candidates[next.currentIndex].polygon_indices),
-      );
+
+      const preview = next.done
+        ? undefined
+        : reviewPreviewFor(
+            review.candidates[next.currentIndex],
+            decided.has(review.candidates[next.currentIndex].object.id),
+            coreState.canvasMasks.get(review.maskKey)?.polygons,
+          );
+
+      uiDispatch({ type: UIActionType.RecordObjectReviewDecision, decision, nextCurrentIndices: preview?.current });
+      notifyMaskObjectReviewPreview(review.maskKey, preview?.current, undefined, preview?.diffBase);
     },
     [
       review,
@@ -82,6 +115,38 @@ export function useObjectReview() {
     (index: number) => uiDispatch({ type: UIActionType.ToggleObjectReviewPolygon, index }),
     [uiDispatch],
   );
+
+  const goToIndex = useCallback(
+    (index: number) => {
+      if (!review) return;
+      const batchEnd = review.batchStart + review.batchSize;
+      const clamped = Math.min(batchEnd - 1, Math.max(review.batchStart, index));
+      if (clamped === review.currentIndex) return;
+      const candidate = review.candidates[clamped];
+      const preview = reviewPreviewFor(
+        candidate,
+        review.decisions.has(candidate.object.id),
+        coreState.canvasMasks.get(review.maskKey)?.polygons,
+      );
+      uiDispatch({ type: UIActionType.SetObjectReviewIndex, index: clamped, currentIndices: preview.current });
+      notifyMaskObjectReviewPreview(review.maskKey, preview.current, undefined, preview.diffBase);
+    },
+    [review, uiDispatch, notifyMaskObjectReviewPreview, coreState.canvasMasks],
+  );
+
+  const requestRedo = useCallback(() => {
+    if (!review || !isObjectReviewLocked(review)) return;
+    uiDispatch({ type: UIActionType.RequestObjectReviewRedo });
+    notifyMaskObjectReviewPreview(review.maskKey, review.currentIndices, undefined, undefined);
+  }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
+
+  const goToPreviousCandidate = useCallback(() => {
+    if (review) goToIndex(review.currentIndex - 1);
+  }, [review, goToIndex]);
+
+  const goToNextCandidate = useCallback(() => {
+    if (review) goToIndex(review.currentIndex + 1);
+  }, [review, goToIndex]);
 
   const setZoom = useCallback(
     (value: number) => uiDispatch({ type: UIActionType.SetObjectReviewZoom, value }),
@@ -144,9 +209,15 @@ export function useObjectReview() {
   return {
     review,
     isDeciding,
+    currentDecision,
+    currentDescription,
+    isLocked,
+    requestRedo,
     decideCurrentObject,
     saveEditedObject,
     togglePolygon,
+    goToPreviousCandidate,
+    goToNextCandidate,
     setZoom,
     previewZoom,
     endReview,

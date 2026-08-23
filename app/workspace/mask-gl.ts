@@ -32,6 +32,7 @@ export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.
 export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 1.0];
 export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 0.35];
 export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
+export const HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR: [number, number, number, number] = [0.984314, 0.65098, 0.152941, 1.0];
 
 function glFloat(n: number): string {
   return n.toFixed(6);

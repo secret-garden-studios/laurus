@@ -275,7 +275,12 @@ export interface MaskNotifyValue {
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
-  notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined, editObjectId?: number) => void;
+  notifyMaskObjectReviewPreview: (
+    maskKey: string,
+    indices: Set<number> | undefined,
+    editObjectId?: number,
+    diffBase?: Set<number>,
+  ) => void;
   notifyReviewZoomChanged: (zoom: number) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
@@ -1147,8 +1152,8 @@ export default function Workspace({
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingCapture());
   }, []);
   const notifyMaskObjectReviewPreview = useCallback(
-    (maskKey: string, indices: Set<number> | undefined, editObjectId?: number) => {
-      maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices, editObjectId));
+    (maskKey: string, indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => {
+      maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices, editObjectId, diffBase));
     },
     [],
   );

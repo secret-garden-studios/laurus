@@ -4,6 +4,13 @@ import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, Z_INDEX } from "./works
 import { UIContext } from "./workspace.client";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { ParameterSliderX } from "../components/parameter-slider";
+import { SvgRepo, checkCircle, chevronLeft, chevronRight } from "../svg-repo";
+
+const DECISION_COLOR = {
+  none: "rgb(67, 67, 67)",
+  accepted: "rgb(76, 175, 80)",
+  rejected: "rgb(211, 71, 71)",
+} as const;
 
 const ZOOM_SLIDER_SIZE = {
   capWidth: 13,
@@ -25,8 +32,21 @@ export default function ObjectReviewPanel() {
   const descriptionRef = useRef<HTMLInputElement>(null);
 
   const { uiState } = useContext(UIContext);
-  const { review, isDeciding, decideCurrentObject, saveEditedObject, setZoom, previewZoom, endReview } =
-    useObjectReview();
+  const {
+    review,
+    isDeciding,
+    currentDecision,
+    currentDescription,
+    isLocked,
+    requestRedo,
+    decideCurrentObject,
+    saveEditedObject,
+    goToPreviousCandidate,
+    goToNextCandidate,
+    setZoom,
+    previewZoom,
+    endReview,
+  } = useObjectReview();
 
   const zoomTrackRef = useRef<HTMLDivElement | null>(null);
   const zoomTitleRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +76,8 @@ export default function ObjectReviewPanel() {
   const candidate = review.candidates[review.currentIndex];
   const isEdit = review.mode === "edit";
   const positionInBatch = review.currentIndex - review.batchStart + 1;
+  const hasDecision = !isEdit && currentDecision !== undefined;
+  const redoRequested = hasDecision && !isLocked;
 
   const commit = () => {
     const description = descriptionRef.current?.value.trim() ?? "";
@@ -94,8 +116,30 @@ export default function ObjectReviewPanel() {
           <span>editing {candidate.object.name}</span>
         ) : (
           <>
-            <span>
+            <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <SvgRepo
+                title="previous candidate"
+                svg={positionInBatch <= 1 ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
+                containerStyle={{
+                  width: 18,
+                  height: 18,
+                  cursor: positionInBatch <= 1 ? "default" : "pointer",
+                }}
+                scale={0.75}
+                onContainerClick={positionInBatch <= 1 ? undefined : goToPreviousCandidate}
+              />
               object {positionInBatch} of {review.batchSize}
+              <SvgRepo
+                title="next candidate"
+                svg={positionInBatch >= review.batchSize ? chevronRight("rgb(67,67,67)") : chevronRight()}
+                containerStyle={{
+                  width: 18,
+                  height: 18,
+                  cursor: positionInBatch >= review.batchSize ? "default" : "pointer",
+                }}
+                scale={0.75}
+                onContainerClick={positionInBatch >= review.batchSize ? undefined : goToNextCandidate}
+              />
             </span>
             <span>cycle {review.cycle} of 3</span>
             <button
@@ -116,7 +160,36 @@ export default function ObjectReviewPanel() {
           </>
         )}
       </div>
-      <div style={{ color: "rgb(160, 160, 160)" }}>click a triangle to add or remove it from this object</div>
+      <div
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "rgb(160, 160, 160)" }}
+      >
+        <span>
+          {isLocked
+            ? "already decided -- highlighted triangles differ from the original"
+            : "click a triangle to add or remove it from this object"}
+        </span>
+        {!isEdit && (
+          <div onDoubleClick={requestRedo} style={{ display: "flex", flexShrink: 0 }}>
+            <SvgRepo
+              title={
+                !hasDecision
+                  ? "no decision made yet"
+                  : redoRequested
+                    ? `${currentDecision} -- edit the triangles, then accept or reject to record a new decision`
+                    : `already ${currentDecision} -- double-click to unlock and decide again`
+              }
+              svg={checkCircle(DECISION_COLOR[currentDecision ?? "none"])}
+              containerStyle={{
+                width: 18,
+                height: 18,
+                cursor: hasDecision ? "pointer" : "default",
+                opacity: redoRequested ? 0.55 : 1,
+              }}
+              scale={0.7}
+            />
+          </div>
+        )}
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgb(160, 160, 160)" }}>
         <span>zoom</span>
         <ParameterSliderX
@@ -148,7 +221,9 @@ export default function ObjectReviewPanel() {
         ref={descriptionRef}
         type="text"
         placeholder="describe this object..."
-        defaultValue={isEdit ? candidate.object.description : ""}
+        defaultValue={
+          isEdit ? candidate.object.description : currentDecision === "accepted" ? (currentDescription ?? "") : ""
+        }
         autoComplete="off"
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
@@ -167,33 +242,40 @@ export default function ObjectReviewPanel() {
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
-          disabled={isDeciding}
+          disabled={isDeciding || isLocked}
           onClick={isEdit ? endReview : () => void decideCurrentObject("rejected")}
-          title={isEdit ? "close without saving -- the object is left as it was" : undefined}
+          title={
+            isEdit
+              ? "close without saving -- the object is left as it was"
+              : isLocked
+                ? "double-click the check mark to make a new decision"
+                : undefined
+          }
           style={{
             flex: 1,
             padding: "8px 0",
             borderRadius: 4,
             border: "1px solid rgba(255, 255, 255, 0.15)",
             background: "rgb(24, 24, 24)",
-            color: isDeciding ? "rgb(120, 120, 120)" : "inherit",
-            cursor: isDeciding ? "progress" : "pointer",
+            color: isDeciding || isLocked ? "rgb(120, 120, 120)" : "inherit",
+            cursor: isDeciding ? "progress" : isLocked ? "not-allowed" : "pointer",
           }}
         >
           {isEdit ? "cancel" : "reject"}
         </button>
         <button
           type="button"
-          disabled={isDeciding}
+          disabled={isDeciding || isLocked}
           onClick={commit}
+          title={!isEdit && isLocked ? "double-click the check mark to make a new decision" : undefined}
           style={{
             flex: 1,
             padding: "8px 0",
             borderRadius: 4,
             border: "none",
-            background: isDeciding ? "rgba(67, 67, 67, 0.4)" : "rgb(67, 67, 67)",
-            color: isDeciding ? "rgb(120, 120, 120)" : "rgb(255, 255, 255)",
-            cursor: isDeciding ? "progress" : "pointer",
+            background: isDeciding || isLocked ? "rgba(67, 67, 67, 0.4)" : "rgb(67, 67, 67)",
+            color: isDeciding || isLocked ? "rgb(120, 120, 120)" : "rgb(255, 255, 255)",
+            cursor: isDeciding ? "progress" : isLocked ? "not-allowed" : "pointer",
           }}
         >
           {isEdit ? "save" : "accept"}

@@ -20,6 +20,7 @@ import {
   initGLState,
   loadImageTexture,
   HIGHLIGHT_MOVING_COLOR,
+  HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR,
   HIGHLIGHT_SELECTED_COLOR,
   HIGHLIGHT_SIBLING_COLOR,
   MaskLightSource,
@@ -29,7 +30,7 @@ import {
   uploadStaticMaskMesh,
 } from "../mask-gl";
 import { CoreActionType, DEFAULT_CAPTURE_VALUE, PendingTopologyEdit } from "../states/core-state";
-import { LaurusActiveElement, LaurusSelectedElement, UIActionType } from "../states/ui-state";
+import { LaurusActiveElement, LaurusSelectedElement, UIActionType, isObjectReviewLocked } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
@@ -155,7 +156,7 @@ export interface MaskImperativeHandle {
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
-  setObjectReviewPreview: (indices: Set<number> | undefined, editObjectId?: number) => void;
+  setObjectReviewPreview: (indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => void;
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
@@ -291,6 +292,7 @@ export function ProjectMaskItem({
   const objectsRef = useRef<LaurusObject[]>([]);
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
+  const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
   const objectEditIdRef = useRef<number | undefined>(undefined);
   const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
   const pendingCaptureIdRef = useRef<number | undefined>(undefined);
@@ -511,7 +513,10 @@ export function ProjectMaskItem({
     dragDisabled,
     isDragging: isDragging || isDraggingCapture || isDraggingTopology,
   });
-  const isReviewingThisMask = source.kind === "static" && uiState.objectReview?.maskKey === mediaKey;
+  const isReviewingThisMask =
+    source.kind === "static" &&
+    uiState.objectReview?.maskKey === mediaKey &&
+    !isObjectReviewLocked(uiState.objectReview);
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
 
   const render = useCallback(() => {
@@ -604,7 +609,20 @@ export function ProjectMaskItem({
     }
 
     const objectReviewPreview = objectReviewPreviewRef.current;
-    if (objectReviewPreview && objectReviewPreview.size > 0) {
+    const objectReviewDiffBase = objectReviewDiffBaseRef.current;
+    if (objectReviewDiffBase) {
+      const unchanged = new Set<number>();
+      const edited = new Set<number>();
+      objectReviewPreview?.forEach((index) => {
+        if (objectReviewDiffBase.has(index)) unchanged.add(index);
+        else edited.add(index);
+      });
+      objectReviewDiffBase.forEach((index) => {
+        if (!objectReviewPreview?.has(index)) edited.add(index);
+      });
+      paint(unchanged, HIGHLIGHT_SELECTED_COLOR);
+      paint(edited, HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR);
+    } else if (objectReviewPreview?.size) {
       paint(objectReviewPreview, HIGHLIGHT_SELECTED_COLOR);
     }
 
@@ -1141,8 +1159,12 @@ export function ProjectMaskItem({
         maskGeometryRef.current = maskGeometry(maskData);
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
-        objectReviewPreviewRef.current =
-          uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview.currentIndices : undefined;
+        const reviewHere = uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview : undefined;
+        objectReviewPreviewRef.current = reviewHere?.currentIndices;
+        objectReviewDiffBaseRef.current =
+          reviewHere && isObjectReviewLocked(reviewHere)
+            ? new Set(reviewHere.candidates[reviewHere.currentIndex].polygon_indices)
+            : undefined;
         objectEditIdRef.current =
           uiState.objectReview?.maskKey === mediaKey && uiState.objectReview.mode === "edit"
             ? uiState.objectReview.candidates[0]?.object.id
@@ -1226,8 +1248,9 @@ export function ProjectMaskItem({
             pendingTopologyRef.current = undefined;
             recolorHighlight();
           },
-          setObjectReviewPreview: (indices, editObjectId) => {
+          setObjectReviewPreview: (indices, editObjectId, diffBase) => {
             objectReviewPreviewRef.current = indices;
+            objectReviewDiffBaseRef.current = diffBase;
             objectEditIdRef.current = editObjectId;
             recolorHighlight();
           },
@@ -1435,6 +1458,7 @@ export function ProjectMaskItem({
               }
               if (source.kind !== "static") return;
               if (uiState.objectReview?.maskKey === mediaKey) {
+                if (isObjectReviewLocked(uiState.objectReview)) return;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 const index = point
                   ? swelledPolygonIndexAtPoint(maskGeometryRef.current.points, resolveObjectUniforms(), point)
