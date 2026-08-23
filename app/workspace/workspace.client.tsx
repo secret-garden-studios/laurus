@@ -281,7 +281,7 @@ export interface MaskNotifyValue {
     editObjectId?: number,
     diffBase?: Set<number>,
   ) => void;
-  notifyReviewZoomChanged: (zoom: number) => void;
+  notifyCanvasZoomChanged: (zoom: number) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
 
@@ -353,7 +353,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
   notifyMaskObjectReviewPreview: () => {},
-  notifyReviewZoomChanged: () => {},
+  notifyCanvasZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
 };
 
@@ -867,7 +867,9 @@ export default function Workspace({
   const maskElementsRef = useRef<Map<string, HTMLCanvasElement>>(null);
   const maskHandlesRef = useRef<Map<string, Set<MaskImperativeHandle>>>(null);
   const canvasAreaRef = useRef<HTMLDivElement>(null);
+  const canvasSizeRef = useRef<HTMLDivElement | null>(null);
   const canvasScaleRef = useRef<HTMLDivElement | null>(null);
+  const appliedCanvasZoomRef = useRef(1);
   const framesCacheRef = useRef<Map<string, LaurusFrame[]>>(new Map());
   const refreshIconRef = useRef<SVGSVGElement | null>(null);
   const hasInitiatedFrameDownloadRef = useRef(false);
@@ -1155,9 +1157,35 @@ export default function Workspace({
     },
     [],
   );
-  const notifyReviewZoomChanged = useCallback((zoom: number) => {
+
+  const notifyCanvasZoomChanged = useCallback((zoom: number) => {
     const node = canvasScaleRef.current;
-    if (node) node.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
+    const sizer = canvasSizeRef.current;
+    const area = canvasAreaRef.current;
+    if (!node) return;
+    const previous = appliedCanvasZoomRef.current;
+    appliedCanvasZoomRef.current = zoom;
+
+    let anchorX = 0;
+    let anchorY = 0;
+    if (area && sizer) {
+      const areaRect = area.getBoundingClientRect();
+      const sizerRect = sizer.getBoundingClientRect();
+      anchorX = (areaRect.left + area.clientWidth / 2 - sizerRect.left) / previous;
+      anchorY = (areaRect.top + area.clientHeight / 2 - sizerRect.top) / previous;
+    }
+
+    node.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
+    if (sizer) {
+      sizer.style.width = `${node.offsetWidth * zoom}px`;
+      sizer.style.height = `${node.offsetHeight * zoom}px`;
+    }
+
+    if (!area || !sizer || previous === zoom) return;
+    const areaRect = area.getBoundingClientRect();
+    const sizerRect = sizer.getBoundingClientRect();
+    area.scrollLeft += sizerRect.left + anchorX * zoom - (areaRect.left + area.clientWidth / 2);
+    area.scrollTop += sizerRect.top + anchorY * zoom - (areaRect.top + area.clientHeight / 2);
   }, []);
   const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
@@ -1739,7 +1767,7 @@ export default function Workspace({
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
       notifyMaskObjectReviewPreview,
-      notifyReviewZoomChanged,
+      notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
     }),
     [
@@ -1758,7 +1786,7 @@ export default function Workspace({
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
       notifyMaskObjectReviewPreview,
-      notifyReviewZoomChanged,
+      notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
     ],
   );
@@ -1779,18 +1807,10 @@ export default function Workspace({
 
   const canvasCursor = useToolCursor({ target: "canvas" });
 
-  const reviewZoom = uiState.objectReview?.zoom ?? 1;
-  const previousReviewZoomRef = useRef(reviewZoom);
+  const canvasZoom = uiState.canvasZoom;
   useLayoutEffect(() => {
-    const area = canvasAreaRef.current;
-    const previous = previousReviewZoomRef.current;
-    previousReviewZoomRef.current = reviewZoom;
-    if (!area || previous === reviewZoom) return;
-    const centerX = (area.scrollLeft + area.clientWidth / 2) / previous;
-    const centerY = (area.scrollTop + area.clientHeight / 2) / previous;
-    area.scrollLeft = centerX * reviewZoom - area.clientWidth / 2;
-    area.scrollTop = centerY * reviewZoom - area.clientHeight / 2;
-  }, [reviewZoom]);
+    notifyCanvasZoomChanged(canvasZoom);
+  }, [canvasZoom, notifyCanvasZoomChanged]);
 
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
@@ -2047,25 +2067,21 @@ export default function Workspace({
                       gridColumn: "2",
                       overflowY: "auto",
                       position: "relative",
+                      display: "flex",
                       width: "100%",
                       height: "100%",
                       cursor: canvasCursor,
+                      background: "rgba(16, 16, 16, 1)",
                     }}
                   >
-                    {/* Two wrappers so an object review can magnify the canvas
-                        to pick out single triangles: the outer one carries the
-                        scaled size, which is what gives the scroll container
-                        something bigger to scroll through (a transform alone
-                        changes no layout), and the inner one does the scaling.
-                        At 1x the transform is left off entirely rather than
-                        set to scale(1), so nothing here creates a containing
-                        block for fixed-position descendants unless the canvas
-                        is actually zoomed. */}
                     <div
+                      ref={canvasSizeRef}
                       style={{
                         position: "relative",
-                        width: coreState.project.canvas_width * reviewZoom,
-                        height: coreState.project.canvas_height * reviewZoom,
+                        flexShrink: 0,
+                        margin: "auto",
+                        width: coreState.project.canvas_width * canvasZoom,
+                        height: coreState.project.canvas_height * canvasZoom,
                       }}
                     >
                       <div
@@ -2076,7 +2092,7 @@ export default function Workspace({
                           left: 0,
                           width: coreState.project.canvas_width,
                           height: coreState.project.canvas_height,
-                          transform: reviewZoom === 1 ? undefined : `scale(${reviewZoom})`,
+                          transform: canvasZoom === 1 ? undefined : `scale(${canvasZoom})`,
                           transformOrigin: "0 0",
                         }}
                       >

@@ -10,7 +10,7 @@ import {
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
-import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN } from "../workspace.config";
+import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
 import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT, OBJECT_FALLOFF_DEFAULT } from "../workspace.server";
 import { buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
@@ -99,7 +99,6 @@ export interface ObjectReviewSession {
   decisions: Map<number, "accepted" | "rejected">;
   currentIndex: number;
   currentIndices: Set<number>;
-  zoom: number;
   redoRequested: boolean;
 }
 
@@ -134,6 +133,7 @@ export interface UIState {
   showTimeline: boolean;
   mediaBrowserFilter: MediaBrowserFilter;
   lightSourcePreview: boolean;
+  canvasZoom: number;
   stagedObject: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint };
   objectReview: ObjectReviewSession | undefined;
 }
@@ -167,6 +167,7 @@ export const defaultUIState: UIState = {
   showTimeline: true,
   mediaBrowserFilter: "img",
   lightSourcePreview: false,
+  canvasZoom: CANVAS_ZOOM_DEFAULT,
   stagedObject: {
     elevation: OBJECT_ELEVATION_DEFAULT,
     falloff: OBJECT_FALLOFF_DEFAULT,
@@ -209,13 +210,13 @@ export enum UIActionType {
   SetShowTimeline,
   SetMediaBrowserFilter,
   SetLightSourcePreview,
+  SetCanvasZoom,
   SetStagedObject,
   StartObjectReview,
   StartObjectEdit,
   ToggleObjectReviewPolygon,
   SetObjectReviewIndex,
   RequestObjectReviewRedo,
-  SetObjectReviewZoom,
   RecordObjectReviewDecision,
   EndObjectReview,
   ResumeObjectReview,
@@ -271,6 +272,7 @@ export type UIAction =
   | { type: UIActionType.SetShowTimeline; value: boolean }
   | { type: UIActionType.SetMediaBrowserFilter; value: MediaBrowserFilter }
   | { type: UIActionType.SetLightSourcePreview; value: boolean }
+  | { type: UIActionType.SetCanvasZoom; value: number }
   | { type: UIActionType.SetStagedObject; value: Partial<UIState["stagedObject"]> }
   | {
       type: UIActionType.StartObjectReview;
@@ -288,7 +290,6 @@ export type UIAction =
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
   | { type: UIActionType.SetObjectReviewIndex; index: number; currentIndices?: Set<number> }
   | { type: UIActionType.RequestObjectReviewRedo }
-  | { type: UIActionType.SetObjectReviewZoom; value: number }
   | {
       type: UIActionType.RecordObjectReviewDecision;
       decision: "accepted" | "rejected";
@@ -350,7 +351,6 @@ export function resumeObjectReview(
     decisions: new Map(decisions),
     currentIndex,
     currentIndices: new Set(candidates[currentIndex].polygon_indices),
-    zoom: OBJECT_REVIEW_ZOOM_MIN,
     redoRequested: false,
   };
 }
@@ -529,6 +529,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetLightSourcePreview: {
       return { ...state, lightSourcePreview: action.value };
     }
+    case UIActionType.SetCanvasZoom: {
+      const canvasZoom = Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, action.value));
+      if (canvasZoom === state.canvasZoom) return state;
+      return { ...state, canvasZoom };
+    }
     case UIActionType.SetStagedObject: {
       return { ...state, stagedObject: { ...state.stagedObject, ...action.value } };
     }
@@ -544,7 +549,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           decisions: new Map(),
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
-          zoom: OBJECT_REVIEW_ZOOM_MIN,
           redoRequested: false,
         },
       };
@@ -560,7 +564,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           decisions: new Map(),
           currentIndex: 0,
           currentIndices: new Set(action.polygonIndices),
-          zoom: OBJECT_REVIEW_ZOOM_MIN,
           redoRequested: false,
         },
       };
@@ -595,13 +598,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const review = state.objectReview;
       if (!review || !isObjectReviewLocked(review)) return state;
       return { ...state, objectReview: { ...review, redoRequested: true } };
-    }
-    case UIActionType.SetObjectReviewZoom: {
-      const review = state.objectReview;
-      if (!review) return state;
-      const zoom = Math.min(OBJECT_REVIEW_ZOOM_MAX, Math.max(OBJECT_REVIEW_ZOOM_MIN, action.value));
-      if (zoom === review.zoom) return state;
-      return { ...state, objectReview: { ...review, zoom } };
     }
     case UIActionType.RecordObjectReviewDecision: {
       const review = state.objectReview;

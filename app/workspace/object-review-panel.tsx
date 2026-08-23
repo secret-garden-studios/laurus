@@ -1,9 +1,6 @@
-import { useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { useObjectReview } from "./hooks/useObjectReview";
-import { OBJECT_REVIEW_ZOOM_MAX, OBJECT_REVIEW_ZOOM_MIN, Z_INDEX } from "./workspace.config";
-import { UIContext } from "./workspace.client";
-import { useTrackpadState } from "../hooks/useTrackpadState";
-import { ParameterSliderX } from "../components/parameter-slider";
+import { Z_INDEX } from "./workspace.config";
 import { SvgRepo, checkCircle, chevronLeft, chevronRight } from "../svg-repo";
 import { MAX_MASK_OBJECTS } from "./mask-gl";
 import { acceptedObjectCount } from "./states/ui-state";
@@ -14,26 +11,9 @@ const DECISION_COLOR = {
   rejected: "rgb(211, 71, 71)",
 } as const;
 
-const ZOOM_SLIDER_SIZE = {
-  capWidth: 13,
-  capHeight: 13,
-  capBorderOffset: 0,
-  containerWidth: 140,
-  containerHeight: 20,
-  trackHeight: 1,
-  tickHeight: 0,
-  tickLeft: 0,
-  svgSize: { width: 14, height: 14 },
-};
-
-function formatZoom(value: number): string {
-  return value.toFixed(2).replace(/\.?0+$/, "") + "x";
-}
-
 export default function ObjectReviewPanel() {
   const descriptionRef = useRef<HTMLInputElement>(null);
 
-  const { uiState } = useContext(UIContext);
   const {
     review,
     isDeciding,
@@ -45,33 +25,8 @@ export default function ObjectReviewPanel() {
     saveEditedObject,
     goToPreviousCandidate,
     goToNextCandidate,
-    setZoom,
-    previewZoom,
     endReview,
   } = useObjectReview();
-
-  const zoomTrackRef = useRef<HTMLDivElement | null>(null);
-  const zoomTitleRef = useRef<HTMLDivElement | null>(null);
-  const zoomValueRef = useRef<HTMLSpanElement>(null);
-  const [zoomCursor, setZoomCursor] = useState({ x: 0, y: 0 });
-  const { getTrackValue: getZoomTrackValue, getTrackCursor: getZoomTrackCursor } = useTrackpadState(
-    ZOOM_SLIDER_SIZE.capWidth - ZOOM_SLIDER_SIZE.capBorderOffset,
-    OBJECT_REVIEW_ZOOM_MAX - OBJECT_REVIEW_ZOOM_MIN,
-  );
-  const getZoomValue = useCallback(
-    (cursorX: number, trackWidth: number) => getZoomTrackValue(cursorX, trackWidth, 0) + OBJECT_REVIEW_ZOOM_MIN,
-    [getZoomTrackValue],
-  );
-  const getZoomCursor = useCallback(
-    (value: number, trackWidth: number) => getZoomTrackCursor(value - OBJECT_REVIEW_ZOOM_MIN, trackWidth),
-    [getZoomTrackCursor],
-  );
-
-  useLayoutEffect(() => {
-    if (!review || !zoomTrackRef.current) return;
-    setZoomCursor({ x: getZoomCursor(review.zoom, zoomTrackRef.current.clientWidth), y: 0 });
-    if (zoomValueRef.current) zoomValueRef.current.textContent = formatZoom(review.zoom);
-  }, [review, getZoomCursor]);
 
   if (!review) return null;
 
@@ -195,32 +150,6 @@ export default function ObjectReviewPanel() {
             />
           </div>
         )}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgb(160, 160, 160)" }}>
-        <span>zoom</span>
-        <ParameterSliderX
-          resolution={{ ...uiState.resolution }}
-          hash={`object-review|${review.maskKey}|zoom`}
-          size={ZOOM_SLIDER_SIZE}
-          containerRef={zoomTrackRef}
-          cursor={zoomCursor}
-          onCursorMove={(newCursor) => {
-            if (!zoomTrackRef.current) return;
-            const value = getZoomValue(newCursor.x, zoomTrackRef.current.clientWidth);
-            previewZoom(value);
-            if (zoomTitleRef.current) zoomTitleRef.current.innerHTML = formatZoom(value);
-            if (zoomValueRef.current) zoomValueRef.current.textContent = formatZoom(value);
-          }}
-          onNewCursor={(newCursor) => {
-            setZoomCursor({ ...newCursor, y: 0 });
-            if (!zoomTrackRef.current) return;
-            const value = getZoomValue(newCursor.x, zoomTrackRef.current.clientWidth);
-            previewZoom(value);
-            setZoom(value);
-          }}
-          title={formatZoom(review.zoom)}
-          liveTitleRef={zoomTitleRef}
-        />
       </div>
       <input
         key={`${review.mode}|${candidate.object.id}`}

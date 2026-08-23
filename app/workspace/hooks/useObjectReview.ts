@@ -26,7 +26,7 @@ function reviewPreviewFor(
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyReviewZoomChanged } = useContext(MaskContext);
+  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview } = useContext(MaskContext);
   const { sendMaskObjectUpdate } = useContext(SocketContext);
 
   const review = uiState.objectReview;
@@ -147,19 +147,6 @@ export function useObjectReview() {
     if (review) goToIndex(review.currentIndex + 1);
   }, [review, goToIndex]);
 
-  const setZoom = useCallback(
-    (value: number) => uiDispatch({ type: UIActionType.SetObjectReviewZoom, value }),
-    [uiDispatch],
-  );
-
-  const previewZoom = useCallback(
-    (value: number) => {
-      if (!review) return;
-      notifyReviewZoomChanged(value);
-    },
-    [review, notifyReviewZoomChanged],
-  );
-
   const endReview = useCallback(() => {
     if (review) notifyMaskObjectReviewPreview(review.maskKey, undefined);
     uiDispatch({ type: UIActionType.EndObjectReview });
@@ -217,8 +204,6 @@ export function useObjectReview() {
     togglePolygon,
     goToPreviousCandidate,
     goToNextCandidate,
-    setZoom,
-    previewZoom,
     endReview,
   };
 }
