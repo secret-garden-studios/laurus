@@ -878,6 +878,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return coreState.canvasMasks.get(media.key)?.mask_media_id;
   }, [coreState.canvasMasks, media]);
 
+  const maskObjectCount = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.objects.length;
+  }, [coreState.canvasMasks, media]);
+
   const pendingReview = useMemo((): PendingObjectReview | undefined => {
     if (!reviewMaskMediaId) return undefined;
     const state = coreState.objectReviews.get(reviewMaskMediaId);
@@ -1342,11 +1347,26 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "end",
+                    justifyContent: "space-between",
                     height: "100%",
                     ...dynamicSizes.footer.div,
                   }}
                 >
+                  {maskObjectCount === undefined ? (
+                    <div />
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }} title="objects on this mask">
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${maskObjectCount}`}
+                      </div>
+                      <div>{maskObjectCount === 1 ? "object" : "objects"}</div>
+                    </div>
+                  )}
                   <SvgRepo
                     title="media type"
                     svg={(() => {

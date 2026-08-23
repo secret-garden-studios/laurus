@@ -5,6 +5,8 @@ import { UIContext } from "./workspace.client";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 import { ParameterSliderX } from "../components/parameter-slider";
 import { SvgRepo, checkCircle, chevronLeft, chevronRight } from "../svg-repo";
+import { MAX_MASK_OBJECTS } from "./mask-gl";
+import { acceptedObjectCount } from "./states/ui-state";
 
 const DECISION_COLOR = {
   none: "rgb(67, 67, 67)",
@@ -75,7 +77,9 @@ export default function ObjectReviewPanel() {
 
   const candidate = review.candidates[review.currentIndex];
   const isEdit = review.mode === "edit";
-  const positionInBatch = review.currentIndex - review.batchStart + 1;
+  const position = review.currentIndex + 1;
+  const total = review.candidates.length;
+  const accepted = acceptedObjectCount(review.decisions);
   const hasDecision = !isEdit && currentDecision !== undefined;
   const redoRequested = hasDecision && !isLocked;
 
@@ -119,29 +123,31 @@ export default function ObjectReviewPanel() {
             <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
               <SvgRepo
                 title="previous candidate"
-                svg={positionInBatch <= 1 ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
+                svg={position <= 1 ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
                 containerStyle={{
                   width: 18,
                   height: 18,
-                  cursor: positionInBatch <= 1 ? "default" : "pointer",
+                  cursor: position <= 1 ? "default" : "pointer",
                 }}
                 scale={0.75}
-                onContainerClick={positionInBatch <= 1 ? undefined : goToPreviousCandidate}
+                onContainerClick={position <= 1 ? undefined : goToPreviousCandidate}
               />
-              object {positionInBatch} of {review.batchSize}
+              object {position} of {total}
               <SvgRepo
                 title="next candidate"
-                svg={positionInBatch >= review.batchSize ? chevronRight("rgb(67,67,67)") : chevronRight()}
+                svg={position >= total ? chevronRight("rgb(67,67,67)") : chevronRight()}
                 containerStyle={{
                   width: 18,
                   height: 18,
-                  cursor: positionInBatch >= review.batchSize ? "default" : "pointer",
+                  cursor: position >= total ? "default" : "pointer",
                 }}
                 scale={0.75}
-                onContainerClick={positionInBatch >= review.batchSize ? undefined : goToNextCandidate}
+                onContainerClick={position >= total ? undefined : goToNextCandidate}
               />
             </span>
-            <span>cycle {review.cycle} of 3</span>
+            <span title={`a mask holds at most ${MAX_MASK_OBJECTS} objects -- the review ends once it is full`}>
+              {accepted} of {MAX_MASK_OBJECTS} accepted
+            </span>
             <button
               type="button"
               onClick={endReview}

@@ -97,9 +97,6 @@ export interface ObjectReviewSession {
   maskKey: string;
   candidates: LaurusObjectReviewCandidate[];
   decisions: Map<number, "accepted" | "rejected">;
-  batchStart: number;
-  batchSize: number;
-  cycle: number;
   currentIndex: number;
   currentIndices: Set<number>;
   zoom: number;
@@ -314,38 +311,26 @@ function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
   return built.ok ? built.shape.path : "";
 }
 
-export type ObjectReviewAdvance =
-  { done: true } | { done: false; batchStart: number; batchSize: number; cycle: number; currentIndex: number };
+export type ObjectReviewAdvance = { done: true } | { done: false; currentIndex: number };
+
+export function acceptedObjectCount(decisions: Map<number, "accepted" | "rejected">): number {
+  let accepted = 0;
+  for (const decision of decisions.values()) if (decision === "accepted") accepted++;
+  return accepted;
+}
+
+export function isObjectReviewFull(decisions: Map<number, "accepted" | "rejected">): boolean {
+  return acceptedObjectCount(decisions) >= MAX_MASK_OBJECTS;
+}
 
 export function advanceObjectReview(
   review: ObjectReviewSession,
   decisions: Map<number, "accepted" | "rejected">,
 ): ObjectReviewAdvance {
-  const batchEnd = review.batchStart + review.batchSize;
+  if (isObjectReviewFull(decisions)) return { done: true };
   const nextIndex = review.currentIndex + 1;
-  if (nextIndex < batchEnd) {
-    return {
-      done: false,
-      batchStart: review.batchStart,
-      batchSize: review.batchSize,
-      cycle: review.cycle,
-      currentIndex: nextIndex,
-    };
-  }
-
-  let rejected = 0;
-  for (let i = review.batchStart; i < batchEnd; i++) {
-    if (decisions.get(review.candidates[i].object.id) === "rejected") rejected++;
-  }
-  const nextBatchStart = batchEnd;
-  if (review.cycle >= 3 || rejected === 0 || nextBatchStart >= review.candidates.length) return { done: true };
-  return {
-    done: false,
-    batchStart: nextBatchStart,
-    batchSize: Math.min(rejected, review.candidates.length - nextBatchStart),
-    cycle: review.cycle + 1,
-    currentIndex: nextBatchStart,
-  };
+  if (nextIndex >= review.candidates.length) return { done: true };
+  return { done: false, currentIndex: nextIndex };
 }
 
 export function resumeObjectReview(
@@ -354,40 +339,20 @@ export function resumeObjectReview(
   candidates: LaurusObjectReviewCandidate[],
   decisions: Map<number, "accepted" | "rejected">,
 ): ObjectReviewSession | undefined {
-  if (candidates.length === 0) return undefined;
-  let session: ObjectReviewSession = {
+  if (candidates.length === 0 || isObjectReviewFull(decisions)) return undefined;
+  const currentIndex = candidates.findIndex((c) => !decisions.has(c.object.id));
+  if (currentIndex < 0) return undefined;
+  return {
     mode: "review",
     maskMediaId,
     maskKey,
     candidates,
-    decisions: new Map(),
-    batchStart: 0,
-    batchSize: Math.min(MAX_MASK_OBJECTS, candidates.length),
-    cycle: 1,
-    currentIndex: 0,
-    currentIndices: new Set(candidates[0].polygon_indices),
+    decisions: new Map(decisions),
+    currentIndex,
+    currentIndices: new Set(candidates[currentIndex].polygon_indices),
     zoom: OBJECT_REVIEW_ZOOM_MIN,
     redoRequested: false,
   };
-  for (;;) {
-    const candidate = session.candidates[session.currentIndex];
-    const decision = decisions.get(candidate.object.id);
-    if (decision === undefined) {
-      return { ...session, currentIndices: new Set(candidate.polygon_indices) };
-    }
-    const decided = new Map(session.decisions);
-    decided.set(candidate.object.id, decision);
-    const next = advanceObjectReview(session, decided);
-    if (next.done) return undefined;
-    session = {
-      ...session,
-      decisions: decided,
-      batchStart: next.batchStart,
-      batchSize: next.batchSize,
-      cycle: next.cycle,
-      currentIndex: next.currentIndex,
-    };
-  }
 }
 
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
@@ -569,7 +534,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.StartObjectReview: {
       if (action.candidates.length === 0) return state;
-      const batchSize = Math.min(MAX_MASK_OBJECTS, action.candidates.length);
       return {
         ...state,
         objectReview: {
@@ -578,9 +542,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           maskKey: action.maskKey,
           candidates: action.candidates,
           decisions: new Map(),
-          batchStart: 0,
-          batchSize,
-          cycle: 1,
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
           zoom: OBJECT_REVIEW_ZOOM_MIN,
@@ -597,9 +558,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           maskKey: action.maskKey,
           candidates: [{ object: action.object, polygon_indices: action.polygonIndices }],
           decisions: new Map(),
-          batchStart: 0,
-          batchSize: 1,
-          cycle: 1,
           currentIndex: 0,
           currentIndices: new Set(action.polygonIndices),
           zoom: OBJECT_REVIEW_ZOOM_MIN,
@@ -621,8 +579,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetObjectReviewIndex: {
       const review = state.objectReview;
       if (!review) return state;
-      const batchEnd = review.batchStart + review.batchSize;
-      const index = Math.min(batchEnd - 1, Math.max(review.batchStart, action.index));
+      const index = Math.min(review.candidates.length - 1, Math.max(0, action.index));
       if (index === review.currentIndex) return state;
       return {
         ...state,
@@ -663,9 +620,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         objectReview: {
           ...review,
           decisions,
-          batchStart: next.batchStart,
-          batchSize: next.batchSize,
-          cycle: next.cycle,
           currentIndex: next.currentIndex,
           currentIndices: action.nextCurrentIndices ?? new Set(review.candidates[next.currentIndex].polygon_indices),
           redoRequested: false,

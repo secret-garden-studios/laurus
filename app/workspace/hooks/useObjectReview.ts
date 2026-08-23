@@ -119,8 +119,7 @@ export function useObjectReview() {
   const goToIndex = useCallback(
     (index: number) => {
       if (!review) return;
-      const batchEnd = review.batchStart + review.batchSize;
-      const clamped = Math.min(batchEnd - 1, Math.max(review.batchStart, index));
+      const clamped = Math.min(review.candidates.length - 1, Math.max(0, index));
       if (clamped === review.currentIndex) return;
       const candidate = review.candidates[clamped];
       const preview = reviewPreviewFor(
