@@ -2,12 +2,16 @@ import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useE
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { ParameterSliderX } from "@/app/components/parameter-slider";
-import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
+
+const GRIDLINES_OPTIONS = [
+  { label: "off", value: 0 },
+  { label: "dim", value: 0.5 },
+  { label: "bright", value: 1 },
+] as const;
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -58,17 +62,6 @@ export default function Maskbar() {
               letterSpacing: 1,
             },
           },
-          paramSize: {
-            containerHeight: 38,
-            containerWidth: 190,
-            capWidth: 17,
-            capHeight: 17,
-            capBorderOffset: 0,
-            trackHeight: 1,
-            tickHeight: 0,
-            tickLeft: 2,
-            svgSize: { width: 24, height: 24 },
-          },
         };
       case "midhigh":
         return {
@@ -111,17 +104,6 @@ export default function Maskbar() {
               padding: 4,
               letterSpacing: 1,
             },
-          },
-          paramSize: {
-            capWidth: 13,
-            capHeight: 13,
-            capBorderOffset: 0,
-            containerWidth: 170,
-            containerHeight: 36,
-            trackHeight: 1,
-            tickHeight: 20,
-            tickLeft: 1,
-            svgSize: { width: 20, height: 20 },
           },
         };
       case "low":
@@ -166,17 +148,6 @@ export default function Maskbar() {
               padding: 4,
               letterSpacing: 1,
             },
-          },
-          paramSize: {
-            capWidth: 13,
-            capHeight: 13,
-            capBorderOffset: 0,
-            containerWidth: 170,
-            containerHeight: 36,
-            trackHeight: 1,
-            tickHeight: 20,
-            tickLeft: 1,
-            svgSize: { width: 20, height: 20 },
           },
         };
     }
@@ -267,7 +238,7 @@ export default function Maskbar() {
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const hasSelectedMask = selectedMaskKey !== undefined;
-  const isTextureDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
+  const isGridlinesDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
   const isLightDisabled = !hasSelectedMask;
   const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
   const canSeedEdgeObjects = Boolean(imgMeta) || isArmedForMaskDrop;
@@ -275,29 +246,36 @@ export default function Maskbar() {
   const isObjectsDisabled = !hasSelectedMask && !canSeedEdgeObjects;
 
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
-  const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
-  const pendingTextureSaveRef = useRef<LaurusProjectResult | null>(null);
-  const isPersistingTextureRef = useRef(false);
-  const persistTextureQueue = useCallback(async () => {
-    if (isPersistingTextureRef.current) return;
-    isPersistingTextureRef.current = true;
+  const gridlinesValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
+  const selectedGridlines = useMemo(
+    () =>
+      GRIDLINES_OPTIONS.reduce((closest, option) =>
+        Math.abs(option.value - gridlinesValue) < Math.abs(closest.value - gridlinesValue) ? option : closest,
+      ).value,
+    [gridlinesValue],
+  );
+  const pendingGridlinesSaveRef = useRef<LaurusProjectResult | null>(null);
+  const isPersistingGridlinesRef = useRef(false);
+  const persistGridlinesQueue = useCallback(async () => {
+    if (isPersistingGridlinesRef.current) return;
+    isPersistingGridlinesRef.current = true;
     try {
-      while (pendingTextureSaveRef.current) {
-        const projectToSave = pendingTextureSaveRef.current;
-        pendingTextureSaveRef.current = null;
+      while (pendingGridlinesSaveRef.current) {
+        const projectToSave = pendingGridlinesSaveRef.current;
+        pendingGridlinesSaveRef.current = null;
         const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, projectToSave.project_id, {
           ...projectToSave,
         });
         if (!saved) {
-          console.error("failed to save texture change", { project_id: projectToSave.project_id });
+          console.error("failed to save gridlines change", { project_id: projectToSave.project_id });
         }
       }
     } finally {
-      isPersistingTextureRef.current = false;
+      isPersistingGridlinesRef.current = false;
     }
   }, [coreState.apiOrigin, coreState.accessToken]);
 
-  const saveTextureField = useCallback(
+  const saveGridlinesField = useCallback(
     (value: number) => {
       if (selectedMaskKey === undefined) return;
       const maskMeta = coreState.project.masks.get(selectedMaskKey);
@@ -309,41 +287,22 @@ export default function Maskbar() {
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
-      pendingTextureSaveRef.current = newProject;
-      void persistTextureQueue();
+      pendingGridlinesSaveRef.current = newProject;
+      void persistGridlinesQueue();
     },
-    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistTextureQueue],
+    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
   );
 
-  const handleTextureMixChange = useCallback(
+  const handleGridlinesChange = useCallback(
     (value: number) => {
       if (selectedMaskMeta) {
-        saveTextureField(value);
+        saveGridlinesField(value);
       } else {
         mask.setTextureMix(value);
       }
     },
-    [selectedMaskMeta, saveTextureField, mask],
+    [selectedMaskMeta, saveGridlinesField, mask],
   );
-
-  const previewTextureMixChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
-      } else {
-        mask.setTextureMix(value);
-      }
-    },
-    [selectedMaskKey, mask, notifyMaskAppearanceChanged],
-  );
-
-  const textureTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getTextureValue, getTrackCursor: getTextureCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-
-  const textureCursor = { x: getTextureCursor(textureMixValue, dynamicSizes.paramSize.containerWidth), y: 0 };
 
   useEffect(() => {
     if (mask.status === "connecting" || mask.status === "streaming") return;
@@ -609,9 +568,9 @@ export default function Maskbar() {
         </div>
         <div
           title={
-            isTextureDisabled
+            isGridlinesDisabled
               ? "select or generate a mesh to adjust its wireframe overlay"
-              : "0% hides the mesh's triangle wireframe, 100% draws it fully in over the source image"
+              : "off hides the mesh's triangle wireframe, dim draws it faintly, bright draws it fully in over the source image"
           }
           style={{
             display: "flex",
@@ -621,25 +580,33 @@ export default function Maskbar() {
             ...dynamicSizes.toggle.div,
           }}
         >
-          <span style={{ opacity: isTextureDisabled ? 0.3 : 1 }}>{"texture"}</span>
-          <ParameterSliderX
-            resolution={{ ...uiState.resolution }}
-            hash={`${selectedMaskKey ?? "maskbar"}|texture`}
-            size={dynamicSizes.paramSize}
-            containerRef={textureTrackRef}
-            cursor={textureCursor}
-            onCursorMove={(newCursor) => {
-              if (!textureTrackRef.current) return;
-              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
-              previewTextureMixChange(newValue);
+          <span style={{ opacity: isGridlinesDisabled ? 0.3 : 1 }}>{"gridlines"}</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              letterSpacing: 2,
             }}
-            onNewCursor={(newCursor) => {
-              if (!textureTrackRef.current) return;
-              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
-              handleTextureMixChange(newValue);
-            }}
-            disabled={isTextureDisabled}
-          />
+          >
+            {GRIDLINES_OPTIONS.map((option) => {
+              const isSelected = selectedGridlines === option.value;
+              return (
+                <span
+                  key={option.label}
+                  onClick={isGridlinesDisabled ? undefined : () => handleGridlinesChange(option.value)}
+                  style={{
+                    cursor: isGridlinesDisabled ? "default" : "pointer",
+                    color: isSelected && !isGridlinesDisabled ? "inherit" : "rgb(67,67,67)",
+                    textShadow: isSelected && !isGridlinesDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                    padding: "4px 8px",
+                    ...dynamicSizes.input.label,
+                  }}
+                >
+                  {option.label}
+                </span>
+              );
+            })}
+          </div>
         </div>
         <div
           title={

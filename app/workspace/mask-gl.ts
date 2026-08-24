@@ -11,7 +11,7 @@ export const LIGHT_INTENSITY_DEFAULT = 0.05;
 export const LIGHT_FALLOFF_CSS_PX_DEFAULT = 350;
 export const LIGHT_DARKNESS_DEFAULT = 0.2;
 export const LIGHT_FALLOFF_TO_SIZE_RATIO = LIGHT_FALLOFF_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
-export const TEXTURE_MIX_DEFAULT = 0.5;
+export const TEXTURE_MIX_DEFAULT = 1.0;
 export const MAX_MASK_LIGHT_SOURCES = 8;
 export const MAX_MASK_OBJECTS = 16;
 export const OBJECT_ELEVATION_DEFAULT = 80;
@@ -21,14 +21,8 @@ export const MAX_MASK_OBJECT_FALLOFF = 6.0;
 export const MIN_MASK_OBJECT_RADIUS_PX = 8;
 export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
-// How the sixteen per-object distance tiles are laid out in one texture: a
-// 4x4 grid of OBJECT_SDF_TILE-square tiles, so exactly MAX_MASK_OBJECTS of
-// them and no wasted rows.
 export const OBJECT_SDF_GRID = 4;
 export const OBJECT_SDF_ATLAS = OBJECT_SDF_GRID * OBJECT_SDF_TILE;
-// The signed distance range the 16-bit pair in each texel's red/green spans.
-// A tile's furthest corner from the centre is MARGIN * sqrt(2) away, so
-// nothing inside a tile can exceed this and no real distance is ever clipped.
 export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
 export const OBJECT_GRADIENT_LIMIT = 32.0;
 export const OBJECT_BLACK_POINT_RELIEF_K = 1e-3;
