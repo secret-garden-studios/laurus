@@ -161,6 +161,34 @@ export function cubicRingsToPathData(rings: CubicRing[]): string {
     .join("");
 }
 
+const CIRCLE_KAPPA = (4 / 3) * (Math.SQRT2 - 1);
+
+const CIRCLE_BOW = (() => {
+  const k = CIRCLE_KAPPA;
+  const raw: CubicRing = [
+    { point: [1, 0], inControl: [1, -k], outControl: [1, k] },
+    { point: [0, 1], inControl: [k, 1], outControl: [-k, 1] },
+    { point: [-1, 0], inControl: [-1, k], outControl: [-1, -k] },
+    { point: [0, -1], inControl: [-k, -1], outControl: [k, -1] },
+  ];
+  return Math.max(...flattenCubicRing(raw).map((p) => Math.hypot(p[0], p[1])));
+})();
+
+export function unitCircleRing(): CubicRing {
+  const r = 1 / CIRCLE_BOW;
+  const k = CIRCLE_KAPPA * r;
+  return [
+    { point: [r, 0], inControl: [r, -k], outControl: [r, k] },
+    { point: [0, r], inControl: [k, r], outControl: [-k, r] },
+    { point: [-r, 0], inControl: [-r, k], outControl: [-r, -k] },
+    { point: [0, -r], inControl: [-k, -r], outControl: [k, -r] },
+  ];
+}
+
+export function unitCirclePath(): string {
+  return cubicRingsToPathData([unitCircleRing()]);
+}
+
 /**
  * Fit a closed cubic through every anchor, in order.
  *

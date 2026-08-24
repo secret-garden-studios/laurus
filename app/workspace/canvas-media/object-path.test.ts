@@ -13,6 +13,8 @@ import {
   parseCubicRings,
   ringPieces,
   stitchRing,
+  unitCirclePath,
+  unitCircleRing,
   type CubicRing,
   type Point,
 } from "./object-path.ts";
@@ -622,5 +624,41 @@ describe("ringPieces -- which rings draw which piece", () => {
     assert.ok(stitched);
     const { pieces } = ringPieces(stitched.map((r) => flattenCubicRing(r)));
     assert.equal(pieces.length, 2, "a stitched island read as a hole rather than a piece of its own");
+  });
+});
+
+describe("unitCirclePath -- the outline a dropped object gets", () => {
+  it("is a real circle", () => {
+    // within a thousandth of a true arc is what kappa buys; anything looser
+    // and a dropped object would visibly not be the circle it renders as
+    for (const point of flattenCubicRing(unitCircleRing())) {
+      const reach = Math.hypot(point[0], point[1]);
+      assert.ok(Math.abs(reach - 1) < 1e-3, `${point} is ${reach} from the origin`);
+    }
+  });
+
+  it("is already unit extent, so storing it moves no geometry", () => {
+    // the drop writes this path straight to the object without going through
+    // normalizeEditedRings, so it has to arrive in the space a shape is
+    // stored in or the renderer would rescale the object on its first draw
+    const object = { cx: 200, cy: 150, radius: 50 };
+    const result = normalizeEditedRings([unitCircleRing()], object);
+    assert.ok(result);
+    assert.ok(Math.abs(result.cx - object.cx) < 1e-6, `cx moved to ${result.cx}`);
+    assert.ok(Math.abs(result.cy - object.cy) < 1e-6, `cy moved to ${result.cy}`);
+    assert.ok(Math.abs(result.radius - object.radius) < 1e-6, `radius moved to ${result.radius}`);
+  });
+
+  it("opens in the pen with four anchors to grab", () => {
+    // the whole point of the change: editableRings on the empty path a drop
+    // used to store returns no rings at all, and the editor drew nothing
+    assert.equal(editableRings("").length, 0);
+    const rings = editableRings(unitCirclePath());
+    assert.equal(rings.length, 1);
+    assert.equal(rings[0].length, 4);
+  });
+
+  it("renders, so the relief has a shape to build", () => {
+    assert.ok(sampleObjectShapePath(unitCirclePath()));
   });
 });

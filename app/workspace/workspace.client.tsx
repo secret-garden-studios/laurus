@@ -60,6 +60,7 @@ import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
 import { useMaskObjectSockets } from "./hooks/useMaskObjectSockets";
 import { indicesInObjectFromCentroids } from "./canvas-media/light-source-capture";
 import { maskGeometry } from "./canvas-media/mask-geometry";
+import { unitCirclePath } from "./canvas-media/object-path";
 import { applyCaptureDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
   CAPTURE_DARKNESS_DEFAULT,
@@ -1313,12 +1314,13 @@ export default function Workspace({
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
+      const shape = seed.shape || unitCirclePath();
       const polygonIndices = [
         ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
           cx: circle.cx,
           cy: circle.cy,
           radius,
-          shape: seed.shape,
+          shape,
         }),
       ];
       if (polygonIndices.length === 0) return;
@@ -1331,7 +1333,7 @@ export default function Workspace({
         radius,
         elevation: seed.elevation,
         falloff: seed.falloff,
-        shape: seed.shape,
+        shape,
         blackPoint: seed.blackPoint,
       };
 
@@ -1346,7 +1348,7 @@ export default function Workspace({
         radius,
         elevation: seed.elevation,
         falloff: seed.falloff,
-        shape: seed.shape,
+        shape,
         ...toObjectBlackPointFields(seed.blackPoint),
         description: "",
         reviewed: false,
