@@ -17,11 +17,16 @@ import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
+/* The drawing canvas lives inside the zoom transform, so its client rect is the
+   zoomed one while its buffer stays in unzoomed canvas units. Going through that
+   ratio puts the drop where the cursor actually is at any zoom level. */
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width === 0 ? 1 : canvas.width / rect.width;
+  const scaleY = rect.height === 0 ? 1 : canvas.height / rect.height;
   const p = {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
   };
   return p;
 }
@@ -497,8 +502,12 @@ export default function Canvas() {
     const maskRect = maskCanvasEl.getBoundingClientRect();
     if (maskRect.width === 0 || maskRect.height === 0) return undefined;
 
-    const localX = dropArea.cx + drawingRect.left - maskRect.left;
-    const localY = dropArea.cy + drawingRect.top - maskRect.top;
+    // The drop area is in canvas units; the two rects are both zoomed, so the
+    // circle has to be scaled back up before it can be compared against them.
+    if (drawingRect.width === 0) return undefined;
+    const zoomed = drawingRect.width / drawingCanvas.width;
+    const localX = dropArea.cx * zoomed + drawingRect.left - maskRect.left;
+    const localY = dropArea.cy * zoomed + drawingRect.top - maskRect.top;
 
     const scaleX = maskCanvasEl.width / maskRect.width;
     const scaleY = maskCanvasEl.height / maskRect.height;
@@ -506,7 +515,7 @@ export default function Canvas() {
     return {
       cx: localX * scaleX,
       cy: localY * scaleY,
-      radius: dropArea.radius * scaleX,
+      radius: dropArea.radius * zoomed * scaleX,
     };
   }
 

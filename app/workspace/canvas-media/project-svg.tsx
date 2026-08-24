@@ -8,6 +8,7 @@ import ContextMenu from "../context-menu";
 import { Z_INDEX } from "../workspace.config";
 import { LaurusFrame } from "../workspace.server";
 import { useToolCursor } from "../hooks/useToolCursor";
+import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 
 interface ProjectSvg {
   dndId: string;
@@ -67,10 +68,11 @@ export function ProjectSvg({
       height: meta.height * meta.scale_y,
     };
   }, [meta.height, meta.scale_x, meta.scale_y, meta.width]);
+  const canvasZoom = useCanvasZoomValue();
   const dndCss = {
     left: dndPosition.x,
     top: dndPosition.y,
-    transform: CSS.Translate.toString(dndTransform),
+    transform: CSS.Translate.toString(toCanvasTranslate(dndTransform, canvasZoom)),
     touchAction: "none",
   };
 

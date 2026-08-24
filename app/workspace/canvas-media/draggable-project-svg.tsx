@@ -23,6 +23,7 @@ import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { ProjectSvg } from "./project-svg";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
+import { toCanvasDelta, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 
 interface DraggableProjectSvg {
   mediaKey: string;
@@ -118,6 +119,7 @@ export function DraggableProjectSvg({
   }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const sensors = useSensors(useSensor(PointerSensor));
+  const canvasZoom = useCanvasZoomValue();
 
   const lazyLoadSvgElementsRef = () => {
     if (!svgElementsRef.current) {
@@ -446,7 +448,7 @@ export function DraggableProjectSvg({
         onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
           endBodyDragCursor();
-          const delta = e.delta;
+          const delta = toCanvasDelta(e.delta, canvasZoom);
           onNewSvgPosition(delta.x, delta.y);
         }}
       >

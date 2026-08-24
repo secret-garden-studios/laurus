@@ -11,6 +11,7 @@ import {
   getNewContextMenuConfig,
 } from "../workspace.client";
 import { useToolCursor } from "../hooks/useToolCursor";
+import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   buildStaticMaskMesh,
@@ -522,10 +523,11 @@ export function ProjectMaskItem({
       height: frame.height * frame.scale_y,
     };
   }, [frame.height, frame.scale_x, frame.scale_y, frame.width]);
+  const canvasZoom = useCanvasZoomValue();
   const dndCss = {
     left: dndPosition.x,
     top: dndPosition.y,
-    transform: CSS.Translate.toString(dndTransform),
+    transform: CSS.Translate.toString(toCanvasTranslate(dndTransform, canvasZoom)),
     touchAction: "none",
   };
 

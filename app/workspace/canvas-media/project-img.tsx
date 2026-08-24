@@ -9,6 +9,7 @@ import ContextMenu from "../context-menu";
 import { Z_INDEX } from "../workspace.config";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
 import { useToolCursor } from "../hooks/useToolCursor";
+import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 
 interface ProjectImg {
   dndId: string;
@@ -61,10 +62,11 @@ export function ProjectImg({
     id: dndId,
     disabled: dragDisabled ?? false,
   });
+  const canvasZoom = useCanvasZoomValue();
   const dndCss = {
     left: dndPosition.x,
     top: dndPosition.y,
-    transform: CSS.Translate.toString(dndTransform),
+    transform: CSS.Translate.toString(toCanvasTranslate(dndTransform, canvasZoom)),
     touchAction: "none",
   };
 
