@@ -198,8 +198,8 @@ export default function LightSourcebar() {
     selectedElement?.type === "object"
       ? selectedObjectMaskData?.objects.find((p) => p.id === selectedElement.objectId)
       : undefined;
-  const isTopologyOn = uiState.tool.type === "mask" && uiState.tool.editingTopology;
-  const isObjectParamDisabled = !selectedObject && !isTopologyOn;
+  const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
+  const isObjectParamDisabled = !selectedObject && !isRaisingObjects;
 
   const pendingObjectEdit =
     selectedObject &&

@@ -13,15 +13,12 @@ import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
 import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT, OBJECT_FALLOFF_DEFAULT } from "../workspace.server";
-import { buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
   contextMenuConfig: ContextMenuConfig;
 }
 export type LaurusThumbnail = { type: "svg"; value: LaurusSvgResult } | { type: "img"; value: LaurusImgResult };
-
-export type TopologyMode = false | "circle" | "shape";
 
 export type LaurusTool =
   | {
@@ -47,7 +44,7 @@ export type LaurusTool =
   | { type: "scale" }
   | { type: "rotate" }
   | { type: "mix" }
-  | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
+  | { type: "mask"; capturingMeshSection: boolean; raisingObjects: boolean }
   | { type: "light_source" }
   | { type: "pen"; stitch: boolean; addAnchor: boolean; showAnchors: boolean };
 
@@ -63,7 +60,7 @@ export const defaultMarqueeTool: LaurusTool = {
 export const defaultMaskTool: LaurusTool = {
   type: "mask",
   capturingMeshSection: false,
-  editingTopology: false,
+  raisingObjects: false,
 };
 
 /**
@@ -256,7 +253,7 @@ export interface UIState {
   mediaBrowserFilter: MediaBrowserFilter;
   lightSourcePreview: boolean;
   canvasZoom: number;
-  stagedObject: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint };
+  stagedObject: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint };
   objectReview: ObjectReviewSession | undefined;
 }
 
@@ -293,7 +290,6 @@ export const defaultUIState: UIState = {
   stagedObject: {
     elevation: OBJECT_ELEVATION_DEFAULT,
     falloff: OBJECT_FALLOFF_DEFAULT,
-    shape: "",
     blackPoint: OBJECT_BLACK_POINT_DEFAULT,
   },
   objectReview: undefined,
@@ -434,14 +430,6 @@ export type UIAction =
       decisions: Map<number, "accepted" | "rejected">;
     };
 
-function stagedShapePathFor(element: LaurusBrowserElement | undefined): string {
-  if (element?.type !== "svg") return "";
-  const decoded = decodeSvgMarkup(element.value.markup);
-  if (!decoded) return "";
-  const built = buildObjectShapeFromMarkup(decoded);
-  return built.ok ? built.shape.path : "";
-}
-
 export type ObjectReviewAdvance = { done: true } | { done: false; currentIndex: number };
 
 export function acceptedObjectCount(decisions: Map<number, "accepted" | "rejected">): number {
@@ -569,11 +557,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, tool: { ...action.value } };
     }
     case UIActionType.SetBrowserElement: {
-      return {
-        ...state,
-        browserElement: action.value,
-        stagedObject: { ...state.stagedObject, shape: stagedShapePathFor(action.value) },
-      };
+      return { ...state, browserElement: action.value };
     }
     case UIActionType.SetActiveElement: {
       return { ...state, activeElement: action.value };

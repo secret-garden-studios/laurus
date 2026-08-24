@@ -1413,7 +1413,7 @@ export function ProjectMaskItem({
           abortTopologyDragForToolChange: () => {
             if (!objectDragRef.current) return;
             const tool = latestRef.current.uiState.tool;
-            if (tool.type === "mask" && tool.editingTopology) return;
+            if (tool.type === "mask" && tool.raisingObjects) return;
             abortTopologyDrag();
           },
           setSelectedHighlighted: (active) => {
@@ -1730,7 +1730,7 @@ export function ProjectMaskItem({
                   ? uiState.selectedElement.objectId
                   : undefined;
               const isIdleMaskTool =
-                uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection && !uiState.tool.editingTopology;
+                uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection && !uiState.tool.raisingObjects;
               if (isIdleMaskTool && !isAltKeyPressed && !e.metaKey) {
                 setSelectedMaskKeys(new Set([mediaKey]));
                 if (source.maskData.captures.length > 0) {
@@ -1838,9 +1838,9 @@ export function ProjectMaskItem({
             onPointerDown={(e) => {
               suppressNextClickRef.current = false;
               if (source.kind !== "static") return;
-              const isTopologyTool = uiState.tool.type === "mask" && uiState.tool.editingTopology;
+              const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
               const isMoveTool = uiState.tool.type === "move";
-              if (isTopologyTool || isMoveTool) {
+              if (isRaisingObjects || isMoveTool) {
                 const canvas = e.currentTarget;
                 const point = toBufferPoint(canvas, e.clientX, e.clientY);
                 const objectId = point ? objectIdAtPoint(objectsRef.current, point) : undefined;
@@ -1884,7 +1884,7 @@ export function ProjectMaskItem({
                   setIsDraggingTopology(true);
                   return;
                 }
-                if (isTopologyTool) return;
+                if (isRaisingObjects) return;
               }
               if (uiState.tool.type !== "move") return;
               const canvas = e.currentTarget;

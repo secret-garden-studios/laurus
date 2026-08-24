@@ -4,9 +4,7 @@ import {
   OBJECT_SDF_MARGIN,
   sdfTexelCoordinate,
   signedDistanceField,
-  buildObjectShapeFromMarkup,
   buildObjectShapeFromRings,
-  extractPathData,
   flattenPathData,
   normalizeRings,
   objectShapeDepthAt,
@@ -165,18 +163,6 @@ describe("flattenPathData -- the svg path grammar", () => {
   });
 });
 
-describe("extractPathData", () => {
-  it("finds every path's d, in document order, under either quote style", () => {
-    const markup = `<g><path fill="red" d="M0,0L1,0Z"/><path d='M2,2L3,2Z' /></g>`;
-    assert.deepEqual(extractPathData(markup), ["M0,0L1,0Z", "M2,2L3,2Z"]);
-  });
-
-  it("ignores elements that are not paths, and paths with no d", () => {
-    const markup = `<rect d="M9,9Z"/><path class="x"/><path d="M0,0L1,0Z"/>`;
-    assert.deepEqual(extractPathData(markup), ["M0,0L1,0Z"]);
-  });
-});
-
 describe("polygonArea / polygonCentroid", () => {
   it("measures a square", () => {
     assert.equal(Math.abs(polygonArea(squareRing(5))), 100);
@@ -286,12 +272,6 @@ describe("buildObjectShapeFromRings -- shapes the angular table used to refuse",
     assert.ok(objectShapeDepthAt(result.shape, 0, 0) < 0, "the space between them is not");
   });
 
-  it("still refuses an svg with no path at all", () => {
-    const result = buildObjectShapeFromMarkup(`<circle cx="5" cy="5" r="4"/>`);
-    assert.ok(!result.ok);
-    assert.match(result.reason, /no <path>/);
-  });
-
   it("still refuses an outline with no enclosed area", () => {
     const result = buildObjectShapeFromRings([
       [
@@ -370,13 +350,6 @@ describe("the persisted shape round-trips", () => {
     const reloaded = sampleObjectShapePath(authored.shape.path);
     assert.ok(reloaded);
     assert.ok(objectShapeDepthAt(reloaded, 0, 0) < 0, "the hole is still a hole");
-  });
-
-  it("survives the full markup path", () => {
-    const markup = `<svg><path d="M-1,-1L1,-1L1,1L-1,1Z"/></svg>`;
-    const result = buildObjectShapeFromMarkup(markup);
-    assert.ok(result.ok);
-    assert.ok(Math.abs(objectShapeProfileU(result.shape, 0, 0)) < 0.02);
   });
 });
 

@@ -356,16 +356,6 @@ export function flattenPathData(d: string): [number, number][][] {
   return subpaths;
 }
 
-export function extractPathData(markup: string): string[] {
-  const paths: string[] = [];
-  const re = /<path\b[^>]*?\bd\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(markup))) {
-    const d = match[1] ?? match[2];
-    if (d && d.trim()) paths.push(d);
-  }
-  return paths;
-}
 export function polygonArea(points: [number, number][]): number {
   let sum = 0;
   for (let i = 0; i < points.length; i++) {
@@ -805,17 +795,6 @@ export function decodeSvgMarkup(markup: string): string {
     console.log("Failed to decode svg markup", { error });
     return "";
   }
-}
-
-export function buildObjectShapeFromMarkup(markup: string, tile = OBJECT_SDF_TILE): ObjectShapeResult {
-  const paths = extractPathData(markup);
-  if (paths.length === 0) {
-    return { ok: false, reason: "the svg has no <path> element to take a shape from" };
-  }
-  return buildObjectShapeFromRings(
-    paths.flatMap((d) => flattenPathData(d)),
-    tile,
-  );
 }
 
 export function sampleObjectShapePath(path: string, tile = OBJECT_SDF_TILE): ObjectShape | undefined {

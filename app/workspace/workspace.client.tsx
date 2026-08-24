@@ -262,7 +262,7 @@ export interface MaskNotifyValue {
   createObject: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint },
+    seed: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint },
   ) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
@@ -276,19 +276,6 @@ export interface MaskNotifyValue {
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
-  /**
-   * Recut this mask's mesh along the outline the pen has open on it.
-   *
-   * A request rather than a value, because the geometry it needs -- the welded
-   * mesh points, indexed alongside the polygons -- only exists inside the mask
-   * item that drew them. The penbar knows a retouch was asked for and nothing
-   * else about it.
-   *
-   * Resolves once the recut has been applied, so the control that asked for it
-   * can stay disabled until then. The work is synchronous and takes a couple
-   * of hundred milliseconds over a full mesh -- long enough that without a way
-   * to say "not yet" the button looks broken and gets clicked again.
-   */
   notifyMaskRetouchRequested: (maskKey: string) => Promise<void>;
   notifyMaskObjectReviewPreview: (
     maskKey: string,
@@ -1282,7 +1269,7 @@ export default function Workspace({
         value: {
           type: "mask",
           capturingMeshSection: false,
-          editingTopology: uiState.tool.type === "mask" ? uiState.tool.editingTopology : false,
+          raisingObjects: uiState.tool.type === "mask" ? uiState.tool.raisingObjects : false,
         },
       });
       notifyMaskToolChanged("mask");
@@ -1308,13 +1295,13 @@ export default function Workspace({
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; shape: string; blackPoint: LaurusObjectBlackPoint },
+      seed: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint },
     ) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
-      const shape = seed.shape || unitCirclePath();
+      const shape = unitCirclePath();
       const polygonIndices = [
         ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
           cx: circle.cx,
@@ -2160,7 +2147,7 @@ export default function Workspace({
                                   ? "none"
                                   : uiState.tool.type === "mask" &&
                                       !uiState.tool.capturingMeshSection &&
-                                      !uiState.tool.editingTopology &&
+                                      !uiState.tool.raisingObjects &&
                                       uiState.browserElement?.type !== "img"
                                     ? "none"
                                     : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)

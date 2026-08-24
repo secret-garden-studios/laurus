@@ -140,7 +140,6 @@ export default function Canvas() {
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
-  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
 
   const [pendingMaskDrop, setPendingMaskDrop] = useState<
     { imgData: LaurusImgResult; frame: { width: number; height: number; top: number; left: number } } | undefined
@@ -219,7 +218,7 @@ export default function Canvas() {
         case "mask": {
           if (
             !uiState.tool.capturingMeshSection &&
-            !uiState.tool.editingTopology &&
+            !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
             break;
@@ -253,7 +252,7 @@ export default function Canvas() {
         case "mask": {
           if (
             !uiState.tool.capturingMeshSection &&
-            !uiState.tool.editingTopology &&
+            !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
             break;
@@ -540,12 +539,9 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      createObject(maskKey, meshCircle, {
-        ...uiState.stagedObject,
-        shape: topologyMode === "shape" ? uiState.stagedObject.shape : "",
-      });
+      createObject(maskKey, meshCircle, { ...uiState.stagedObject });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject, topologyMode],
+    [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject],
   );
 
   const handleDuplicateDrop = useCallback(
@@ -755,7 +751,7 @@ export default function Canvas() {
             break;
           }
 
-          if (uiState.tool.editingTopology && selectedMaskKeys.size === 1) {
+          if (uiState.tool.raisingObjects && selectedMaskKeys.size === 1) {
             handleTopologyCapture(dropArea);
             break;
           }

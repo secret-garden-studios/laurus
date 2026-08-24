@@ -121,7 +121,7 @@ export function useMaskPersist() {
   );
 
   const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
-  const wantsEdgeObjects = uiState.tool.type === "mask" && uiState.tool.editingTopology === "circle";
+  const wantsEdgeObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
   const triggerMask = useCallback(
     (img: LaurusImgResult, sourceFrame: MaskSourceFrame) => {

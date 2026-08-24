@@ -6,9 +6,8 @@ import { ParameterSliderX } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
-import { TopologyMode, UIActionType } from "../states/ui-state";
+import { UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
-import { ObjectShapeResult, buildObjectShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -271,30 +270,9 @@ export default function Maskbar() {
   const isTextureDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
   const isCaptureDisabled = !hasSelectedMask;
   const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
-  const isTopologyDisabled = !hasSelectedMask;
-  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
-  const isShapeOn = topologyMode === "shape";
   const canSeedEdgeObjects = Boolean(imgMeta) || isArmedForMaskDrop;
-  const isObjectsOn = topologyMode === "circle";
+  const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectsDisabled = !hasSelectedMask && !canSeedEdgeObjects;
-
-  const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
-  const armedMarkup = armedSvg?.markup;
-  const armedShape = useMemo<ObjectShapeResult | undefined>(() => {
-    if (!armedMarkup) return undefined;
-    const decoded = decodeSvgMarkup(armedMarkup);
-    if (!decoded) return { ok: false, reason: "the svg's markup could not be read" };
-    return buildObjectShapeFromMarkup(decoded);
-  }, [armedMarkup]);
-  const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
-  const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
-
-  useEffect(() => {
-    if (uiState.tool.type !== "mask" || uiState.tool.editingTopology !== "shape") return;
-    if (armedShape?.ok) return;
-    uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, editingTopology: false } });
-    notifyMaskToolChanged("mask");
-  }, [uiState.tool, armedShape, uiDispatch, notifyMaskToolChanged]);
 
   const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
   const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
@@ -375,19 +353,12 @@ export default function Maskbar() {
 
   useEffect(() => {
     if (uiState.tool.type !== "mask") return;
-    const nextTopology: TopologyMode =
-      uiState.tool.editingTopology === "circle"
-        ? hasSelectedMask || canSeedEdgeObjects
-          ? "circle"
-          : false
-        : uiState.tool.editingTopology === "shape" && hasSelectedMask
-          ? "shape"
-          : false;
+    const nextRaising = uiState.tool.raisingObjects && (hasSelectedMask || canSeedEdgeObjects);
     const nextCapture = hasSelectedMask && uiState.tool.capturingMeshSection;
-    if (nextTopology === uiState.tool.editingTopology && nextCapture === uiState.tool.capturingMeshSection) return;
+    if (nextRaising === uiState.tool.raisingObjects && nextCapture === uiState.tool.capturingMeshSection) return;
     uiDispatch({
       type: UIActionType.SetTool,
-      value: { type: "mask", capturingMeshSection: nextCapture, editingTopology: nextTopology },
+      value: { type: "mask", capturingMeshSection: nextCapture, raisingObjects: nextRaising },
     });
     notifyMaskToolChanged("mask");
   }, [hasSelectedMask, canSeedEdgeObjects, uiState.tool, uiDispatch, notifyMaskToolChanged]);
@@ -701,7 +672,7 @@ export default function Maskbar() {
                 value: {
                   ...uiState.tool,
                   capturingMeshSection: newCaptureValue,
-                  editingTopology: newCaptureValue ? false : uiState.tool.editingTopology,
+                  raisingObjects: newCaptureValue ? false : uiState.tool.raisingObjects,
                 },
               });
               notifyMaskToolChanged("mask");
@@ -717,7 +688,7 @@ export default function Maskbar() {
             isObjectsDisabled
               ? "select a mesh to raise objects onto it, or arm an image from the browser to raise objects from its edges"
               : hasSelectedMask
-                ? 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for objects shaped like an svg instead'
+                ? "drag a circle over this mesh to raise that area's elevation, warping the surrounding triangles like a topographic map"
                 : "with no mesh selected, detect the image's edges while generating, fill the areas they enclose " +
                   "with polygons, and raise an object over each of the largest to review one by one"
           }
@@ -741,13 +712,13 @@ export default function Maskbar() {
             value={isObjectsOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
-              const newTopologyMode = isObjectsOn ? false : "circle";
+              const newRaisingObjects = !isObjectsOn;
               uiDispatch({
                 type: UIActionType.SetTool,
                 value: {
                   ...uiState.tool,
-                  editingTopology: newTopologyMode,
-                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
+                  raisingObjects: newRaisingObjects,
+                  capturingMeshSection: newRaisingObjects ? false : uiState.tool.capturingMeshSection,
                 },
               });
               notifyMaskToolChanged("mask");
@@ -756,46 +727,6 @@ export default function Maskbar() {
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
             disabled={isObjectsDisabled}
-          />
-        </div>
-        <div
-          title={
-            isTopologyDisabled
-              ? "select a mesh to give its objects a custom shape"
-              : shapeError
-                ? `${armedSvg?.media_key ?? "this svg"} can't shape an object: ${shapeError}`
-                : armedShape?.ok
-                  ? `drag a circle over this mesh to raise an object shaped like ${armedSvg?.media_key}'s outline instead of a round one`
-                  : "pick an svg in the browser to shape new objects like its outline"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ textShadow: isShapeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"shape"}</span>
-          <Toggle
-            value={isShapeOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newTopologyMode = isShapeOn ? false : "shape";
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  editingTopology: newTopologyMode,
-                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
-                },
-              });
-              notifyMaskToolChanged("mask");
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isShapeDisabled}
           />
         </div>
         <div />
