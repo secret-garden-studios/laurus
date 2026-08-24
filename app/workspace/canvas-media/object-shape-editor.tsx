@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cubicRingsToPathData,
   editableRings,
@@ -41,6 +41,9 @@ interface Grab {
   kind: "anchor" | "in" | "out";
   breakSymmetry: boolean;
   moved: boolean;
+  at?: Point;
+  altKey: boolean;
+  rafId?: number;
 }
 
 export interface ObjectShapeEditorProps {
@@ -136,11 +139,49 @@ export default function ObjectShapeEditor({
     [onPreview],
   );
 
-  const onPointerDown = (event: React.PointerEvent, grab: Omit<Grab, "pointerId" | "breakSymmetry" | "moved">) => {
+  const flushGrab = useCallback(
+    (shouldPreview: boolean) => {
+      const grab = grabRef.current;
+      if (!grab) return;
+      grab.rafId = undefined;
+      const at = grab.at;
+      if (!at) return;
+      grab.at = undefined;
+      const next = ringsRef.current.map((ring, index) => {
+        if (index !== grab.ring) return ring;
+        if (grab.kind === "anchor") return moveAnchor(ring, grab.anchor, at);
+        return moveControl(ring, grab.anchor, grab.kind, at, grab.breakSymmetry || grab.altKey);
+      });
+      applyRings(next);
+      if (shouldPreview) preview(next);
+    },
+    [applyRings, preview],
+  );
+
+  // A grab in flight when the pen closes would otherwise leave its frame
+  // scheduled against an unmounted editor.
+  useEffect(
+    () => () => {
+      const grab = grabRef.current;
+      if (grab?.rafId !== undefined) cancelAnimationFrame(grab.rafId);
+    },
+    [],
+  );
+
+  const onPointerDown = (
+    event: React.PointerEvent,
+    grab: Omit<Grab, "pointerId" | "breakSymmetry" | "moved" | "altKey">,
+  ) => {
     event.stopPropagation();
     event.preventDefault();
     (event.target as Element).setPointerCapture?.(event.pointerId);
-    grabRef.current = { ...grab, pointerId: event.pointerId, breakSymmetry: event.altKey, moved: false };
+    grabRef.current = {
+      ...grab,
+      pointerId: event.pointerId,
+      breakSymmetry: event.altKey,
+      altKey: event.altKey,
+      moved: false,
+    };
   };
 
   const takeStitchAnchor = (ring: number, anchor: number) => {
@@ -188,18 +229,20 @@ export default function ObjectShapeEditor({
     if (!at) return;
     event.stopPropagation();
     grab.moved = true;
-    const next = ringsRef.current.map((ring, index) => {
-      if (index !== grab.ring) return ring;
-      if (grab.kind === "anchor") return moveAnchor(ring, grab.anchor, at);
-      return moveControl(ring, grab.anchor, grab.kind, at, grab.breakSymmetry || event.altKey);
-    });
-    applyRings(next);
-    preview(next);
+    grab.at = at;
+    grab.altKey = event.altKey;
+    if (grab.rafId === undefined) grab.rafId = requestAnimationFrame(() => flushGrab(true));
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
     const grab = grabRef.current;
     if (!grab || grab.pointerId !== event.pointerId) return;
+    // The frame the last sample was waiting on is never going to run, and that
+    // sample is where the anchor was actually let go -- so take it here, and
+    // without a preview, because the commit below renders the same rings at
+    // full resolution a line later.
+    if (grab.rafId !== undefined) cancelAnimationFrame(grab.rafId);
+    flushGrab(false);
     grabRef.current = undefined;
     event.stopPropagation();
     if (!grab.moved) return;

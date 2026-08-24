@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   OBJECT_SDF_MARGIN,
+  sdfTexelCoordinate,
+  signedDistanceField,
   buildObjectShapeFromMarkup,
   buildObjectShapeFromRings,
   extractPathData,
@@ -527,5 +529,94 @@ describe("cachedObjectShape -- the render path's entry point", () => {
       cachedObjectShape(`M${-1 - i / 100},-1L1,-1L1,1L-1,1Z`);
     }
     assert.notEqual(cachedObjectShape(held.shape.path), first, "the untouched entry was evicted");
+  });
+});
+
+describe("the signed distance field's rasterizer", () => {
+  it("measures true distance to the outline, not a texel-grid approximation", () => {
+    // A square of half-extent 0.5 leaves a wide flat interior whose distance to
+    // the nearest edge is exactly `0.5 - |x|` along the x axis.
+    const field = signedDistanceField([squareRing(0.5)], 64);
+    assert.ok(field);
+    const tile = 64;
+    // walk the middle row outward from the centre and check every texel
+    const row = tile / 2;
+    for (let col = tile / 2; col < tile; col++) {
+      const x = sdfTexelCoordinate(col, tile);
+      const y = sdfTexelCoordinate(row, tile);
+      // inside the flat band the nearest edge is the right one, until the
+      // corner's diagonal takes over -- so only assert where |y| < the x-edge
+      if (Math.abs(y) > 0.5) continue;
+      const expected = 0.5 - Math.abs(x);
+      const actual = field.sdf[row * tile + col];
+      assert.ok(
+        Math.abs(actual - expected) < 1e-6,
+        `texel (${col}, ${row}): distance ${actual} where ${expected} was exact`,
+      );
+    }
+  });
+
+  it("points the gradient the way the distance increases, on both sides of the outline", () => {
+    const tile = 64;
+    const field = signedDistanceField([circleRing(0.5)], tile);
+    assert.ok(field);
+    for (let row = 0; row < tile; row++) {
+      for (let col = 0; col < tile; col++) {
+        const at = row * tile + col;
+        const x = sdfTexelCoordinate(col, tile);
+        const y = sdfTexelCoordinate(row, tile);
+        const reach = Math.hypot(x, y);
+        // skip the centre, where the gradient is genuinely undefined -- every
+        // direction is equally far from a circle's rim
+        if (reach < 0.05) continue;
+        const gx = field.grad[at * 2] / 127;
+        const gy = field.grad[at * 2 + 1] / 127;
+        // inside a circle the distance grows toward the centre, outside it
+        // grows toward the rim: either way the gradient points inward
+        const inward = -(gx * x + gy * y) / reach;
+        assert.ok(inward > 0.9, `texel (${col}, ${row}) gradient (${gx}, ${gy}) does not point inward`);
+        assert.ok(Math.abs(Math.hypot(gx, gy) - 1) < 0.02, "the gradient is a unit vector");
+      }
+    }
+  });
+
+  it("signs the inside of a hole negative however its ring was wound", () => {
+    // even-odd, so a hole traced the same way round as its outer ring is still
+    // a hole -- the property insideMask exists for
+    const reversed = circleRing(0.4).slice().reverse();
+    for (const hole of [circleRing(0.4), reversed]) {
+      const field = signedDistanceField([circleRing(1), hole], 64);
+      assert.ok(field);
+      const centre = 32 * 64 + 32;
+      assert.ok(field.sdf[centre] < 0, "the hole's middle is outside the shape");
+    }
+  });
+
+  it("refuses an outline with nothing inside it", () => {
+    assert.equal(signedDistanceField([], 64), undefined, "no rings at all");
+    assert.equal(
+      signedDistanceField(
+        [
+          [
+            [-1, 0],
+            [0, 0],
+            [1, 0],
+          ],
+        ],
+        64,
+      ),
+      undefined,
+      "a collinear ring encloses no area",
+    );
+  });
+
+  it("keeps maxDepth as the deepest interior distance", () => {
+    const field = signedDistanceField([circleRing(0.5)], 128);
+    assert.ok(field);
+    let deepest = 0;
+    for (const d of field.sdf) if (d > deepest) deepest = d;
+    assert.ok(Math.abs(field.maxDepth - deepest) < 1e-6, "maxDepth is the largest distance in the field");
+    // the deepest point of a circle of radius 0.5 is its centre, half a unit in
+    assert.ok(Math.abs(field.maxDepth - 0.5) < 0.02, `a 0.5 circle is 0.5 deep, got ${field.maxDepth}`);
   });
 });

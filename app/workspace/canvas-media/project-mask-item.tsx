@@ -539,7 +539,7 @@ export function ProjectMaskItem({
     uiState.objectReview?.maskKey === mediaKey &&
     !isObjectReviewLocked(uiState.objectReview);
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
-  
+
   const reviewShape = useMemo(() => {
     const review = uiState.objectReview;
     if (source.kind !== "static" || review?.maskKey !== mediaKey) return undefined;
@@ -603,7 +603,8 @@ export function ProjectMaskItem({
         polygonIndices: review.currentIndices,
         draft,
       };
-      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
+
+      if (!draft) dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
       notifyMaskPendingTopologySet(mediaKey, pending);
     },
     [uiState.objectReview, mediaKey, dispatch, notifyMaskPendingTopologySet],

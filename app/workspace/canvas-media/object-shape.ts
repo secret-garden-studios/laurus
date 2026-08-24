@@ -562,46 +562,77 @@ export function signedDistanceField(
   const simplified = rings.map((ring) => simplifyRing(ring, texelSize * SDF_SIMPLIFY_TEXEL_FRACTION));
   const inside = insideMask(simplified, tile);
 
+  let segmentCount = 0;
+  for (const ring of simplified) segmentCount += ring.length;
+  if (segmentCount === 0) return undefined;
+
+  const originX = new Float64Array(segmentCount);
+  const originY = new Float64Array(segmentCount);
+  const edgeX = new Float64Array(segmentCount);
+  const edgeY = new Float64Array(segmentCount);
+  const lengthSquared = new Float64Array(segmentCount);
+  let at = 0;
+  for (const ring of simplified) {
+    for (let i = 0; i < ring.length; i++) {
+      const from = ring[i];
+      const to = ring[(i + 1) % ring.length];
+      const ex = to[0] - from[0];
+      const ey = to[1] - from[1];
+      originX[at] = from[0];
+      originY[at] = from[1];
+      edgeX[at] = ex;
+      edgeY[at] = ey;
+      lengthSquared[at] = ex * ex + ey * ey;
+      at++;
+    }
+  }
+
+  const columnX = new Float64Array(tile);
+  for (let col = 0; col < tile; col++) columnX[col] = sdfTexelCoordinate(col, tile);
+
   const sdf = new Float32Array(tile * tile);
   const grad = new Int8Array(tile * tile * 2);
-  const closest: [number, number] = [0, 0];
   let maxDepth = 0;
 
   for (let row = 0; row < tile; row++) {
     const y = sdfTexelCoordinate(row, tile);
     for (let col = 0; col < tile; col++) {
-      const x = sdfTexelCoordinate(col, tile);
+      const x = columnX[col];
       let best = Infinity;
       let bestX = 0;
       let bestY = 0;
-      for (const ring of simplified) {
-        for (let i = 0; i < ring.length; i++) {
-          const [x0, y0] = ring[i];
-          const [x1, y1] = ring[(i + 1) % ring.length];
-          const distance = segmentDistance(x, y, x0, y0, x1, y1, closest);
-          if (distance < best) {
-            best = distance;
-            bestX = closest[0];
-            bestY = closest[1];
-          }
+      for (let s = 0; s < segmentCount; s++) {
+        const ex = edgeX[s];
+        const ey = edgeY[s];
+        const l2 = lengthSquared[s];
+        let t = l2 > 0 ? ((x - originX[s]) * ex + (y - originY[s]) * ey) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const closestX = originX[s] + ex * t;
+        const closestY = originY[s] + ey * t;
+        const dx = x - closestX;
+        const dy = y - closestY;
+        const distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < best) {
+          best = distanceSquared;
+          bestX = closestX;
+          bestY = closestY;
         }
       }
       if (!Number.isFinite(best)) return undefined;
+      const distance = Math.hypot(x - bestX, y - bestY);
 
-      const at = row * tile + col;
-      const isInside = inside[at] === 1;
-      sdf[at] = isInside ? best : -best;
-      if (isInside && best > maxDepth) maxDepth = best;
+      const texel = row * tile + col;
+      const isInside = inside[texel] === 1;
+      sdf[texel] = isInside ? distance : -distance;
+      if (isInside && distance > maxDepth) maxDepth = distance;
 
-      // away from the outline when inside, toward it when outside -- either
-      // way the direction in which the signed distance increases
       const sign = isInside ? 1 : -1;
       const dx = (x - bestX) * sign;
       const dy = (y - bestY) * sign;
       const length = Math.hypot(dx, dy);
       if (length > 1e-12) {
-        grad[at * 2] = Math.max(-127, Math.min(127, Math.round((dx / length) * 127)));
-        grad[at * 2 + 1] = Math.max(-127, Math.min(127, Math.round((dy / length) * 127)));
+        grad[texel * 2] = Math.max(-127, Math.min(127, Math.round((dx / length) * 127)));
+        grad[texel * 2 + 1] = Math.max(-127, Math.min(127, Math.round((dy / length) * 127)));
       }
     }
   }
