@@ -6,12 +6,15 @@ import {
   editableRings,
   moveAnchor,
   flattenCubicRing,
+  insertAnchor,
   moveControl,
+  nearestOnRings,
   normalizeEditedRings,
   ringPieces,
   stitchRing,
   type CubicRing,
   type Point,
+  type RingPlace,
 } from "./object-path.ts";
 import { polygonArea } from "./object-shape.ts";
 import { Z_INDEX } from "../workspace.config";
@@ -31,6 +34,7 @@ const HOLE_COLOR = "rgba(66, 133, 244, 0.5)";
 const ANCHOR_FILL = "rgb(255, 255, 255)";
 const CONTROL_FILL = "rgb(32, 32, 32)";
 const SELECTED_FILL = "rgb(66, 133, 244)";
+const GHOST_FILL = "rgba(66, 133, 244, 0.65)";
 const PICK_FILL = "rgba(66, 133, 244, 0.12)";
 const PICK_HOVER_FILL = "rgba(66, 133, 244, 0.34)";
 
@@ -55,6 +59,7 @@ export interface ObjectShapeEditorProps {
   onPreview: (edit: ShapeEdit) => void;
   onCommit: (edit: ShapeEdit) => void;
   stitch: boolean;
+  addAnchor: boolean;
   showAnchors: boolean;
   reference?: { cx: number; cy: number; radius: number; shape: string };
 }
@@ -75,6 +80,7 @@ export default function ObjectShapeEditor({
   onPreview,
   onCommit,
   stitch,
+  addAnchor,
   showAnchors,
   reference,
 }: ObjectShapeEditorProps) {
@@ -99,11 +105,21 @@ export default function ObjectShapeEditor({
   }, []);
 
   const [selected, setSelected] = useState<{ ring: number; anchor: number } | undefined>(undefined);
+  // Where a click on the outline would put an anchor, tracked as the pointer
+  // slides along it so the reviewer sees the anchor before committing to it.
+  const [ghost, setGhost] = useState<RingPlace | undefined>(undefined);
+
+  // Both modes are reached by clicking, and both leave something on screen
+  // that only makes sense while they are on -- an anchor picked but not yet
+  // stitched to, an anchor hovered but not yet placed. Switching out of either
+  // has to take that with it, or the next click lands on a leftover.
   const pickable = stitch && showAnchors;
-  const [pickableWas, setPickableWas] = useState(pickable);
-  if (pickableWas !== pickable) {
-    setPickableWas(pickable);
+  const inserting = addAnchor && showAnchors;
+  const [modeWas, setModeWas] = useState({ pickable, inserting });
+  if (modeWas.pickable !== pickable || modeWas.inserting !== inserting) {
+    setModeWas({ pickable, inserting });
     setSelected(undefined);
+    setGhost(undefined);
   }
 
   const [hoveredPiece, setHoveredPiece] = useState<number | undefined>(undefined);
@@ -212,6 +228,36 @@ export default function ObjectShapeEditor({
     if (edit) onCommit(edit);
   };
 
+  /**
+   * Where on the outline this pointer is, as a place a new anchor could go.
+   *
+   * The hit target is a fat transparent stroke laid over the outline, so the
+   * pointer is only ever near the curve, never on it. Projecting back onto the
+   * curve is what makes the anchor land where the reviewer was pointing rather
+   * than where they happened to click within the stroke's width.
+   */
+  const placeOnOutline = (event: React.PointerEvent): RingPlace | undefined => {
+    const at = fromClient(event.clientX, event.clientY);
+    return at ? nearestOnRings(ringsRef.current, at) : undefined;
+  };
+
+  const putAnchor = (event: React.PointerEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    const place = placeOnOutline(event);
+    if (!place) return;
+    const next = insertAnchor(ringsRef.current, place.ring, place.segment, place.t);
+    if (!next) return;
+    setGhost(undefined);
+    setSelected(undefined);
+    applyRings(next);
+    // The split is exact, so the outline is unchanged and only the anchor
+    // count differs -- but that count is the edit, and it lives nowhere but
+    // the path, so it has to be committed like any other.
+    const edit = normalizeEditedRings(next, BUFFER_SPACE);
+    if (edit) onCommit(edit);
+  };
+
   const onAnchorPointerDown = (event: React.PointerEvent, ring: number, anchor: number) => {
     if (!stitch) {
       onPointerDown(event, { ring, anchor, kind: "anchor" });
@@ -308,6 +354,40 @@ export default function ObjectShapeEditor({
           strokeWidth={px(OUTLINE_WIDTH_PX)}
         />
       ))}
+
+      {inserting && (
+        <path
+          d={cubicRingsToPathData(rings)}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={px(GRAB_RADIUS_PX * 2)}
+          style={{ cursor: "copy" }}
+          // stroke rather than all: the fill of this same path is the inside
+          // of the object, and swallowing clicks there would take the piece
+          // picker and every anchor's own grab circle out with it
+          pointerEvents="stroke"
+          onPointerMove={(e) => {
+            if (grabRef.current) return;
+            setGhost(placeOnOutline(e));
+          }}
+          onPointerLeave={() => setGhost(undefined)}
+          onPointerDown={putAnchor}
+        >
+          <title>{"click anywhere on the outline to put a new anchor there"}</title>
+        </path>
+      )}
+
+      {inserting && ghost && (
+        <circle
+          cx={ghost.point[0]}
+          cy={ghost.point[1]}
+          r={px(ANCHOR_RADIUS_PX)}
+          fill={GHOST_FILL}
+          stroke={ANCHOR_FILL}
+          strokeWidth={px(LEASH_WIDTH_PX)}
+          pointerEvents="none"
+        />
+      )}
 
       {showAnchors &&
         rings.map((ring, ringIndex) =>

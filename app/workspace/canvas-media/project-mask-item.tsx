@@ -2131,6 +2131,7 @@ export function ProjectMaskItem({
               onPreview={previewShapeEdit}
               onCommit={commitShapeEdit}
               stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
+              addAnchor={uiState.tool.type === "pen" && uiState.tool.addAnchor}
               showAnchors={uiState.tool.type !== "pen" || uiState.tool.showAnchors}
             />
           )}

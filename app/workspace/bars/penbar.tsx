@@ -58,6 +58,7 @@ export default function Penbar() {
   });
 
   const isStitchOn = uiState.tool.type === "pen" && uiState.tool.stitch;
+  const isAddAnchorOn = uiState.tool.type === "pen" && uiState.tool.addAnchor;
   const showAnchors = uiState.tool.type !== "pen" || uiState.tool.showAnchors;
 
   // A lock rather than a debounce: the recut holds the main thread for a
@@ -127,10 +128,17 @@ export default function Penbar() {
             const next = !uiState.tool.showAnchors;
             uiDispatch({
               type: UIActionType.SetTool,
-              // stitching is done by clicking anchors, so it cannot outlive
-              // them -- and a stitch toggle left on over a curve with nothing
-              // to click would be a mode the pen was not really in
-              value: { ...uiState.tool, showAnchors: next, stitch: next && uiState.tool.stitch },
+              // both of the other two are only worth anything with anchors on
+              // screen -- stitching is done by clicking them, and an anchor
+              // added where none can be seen is one nobody can then take hold
+              // of. A toggle left on over a bare curve would be a mode the pen
+              // was not really in
+              value: {
+                ...uiState.tool,
+                showAnchors: next,
+                stitch: next && uiState.tool.stitch,
+                addAnchor: next && uiState.tool.addAnchor,
+              },
             });
           }}
           trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -160,9 +168,48 @@ export default function Penbar() {
           disabled={!showAnchors}
           onClick={() => {
             if (uiState.tool.type !== "pen") return;
+            const next = !uiState.tool.stitch;
             uiDispatch({
               type: UIActionType.SetTool,
-              value: { ...uiState.tool, stitch: !uiState.tool.stitch },
+              // one click, two meanings, is no way to run a pen: stitching
+              // reads a click on an anchor and adding reads one on the curve
+              // between anchors, and those targets sit close enough together
+              // that having both live at once would make every click a guess
+              value: { ...uiState.tool, stitch: next, addAnchor: next ? false : uiState.tool.addAnchor },
+            });
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div
+        title={
+          showAnchors
+            ? "click anywhere on the outline and a new anchor is put down there. the curve does not move -- " +
+              "the segment is split into the two halves it already traced -- so this only ever hands you " +
+              "somewhere else to take hold of a run that had nothing to grab"
+            : "an anchor added where none can be seen is one nobody can take hold of -- turn 'show anchors' back on"
+        }
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          opacity: showAnchors ? 1 : 0.4,
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isAddAnchorOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add anchor"}</span>
+        <Toggle
+          value={isAddAnchorOn}
+          disabled={!showAnchors}
+          onClick={() => {
+            if (uiState.tool.type !== "pen") return;
+            const next = !uiState.tool.addAnchor;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              // see the stitch toggle: the two read clicks on the same outline
+              value: { ...uiState.tool, addAnchor: next, stitch: next ? false : uiState.tool.stitch },
             });
           }}
           trackStyles={{ ...dynamicSizes.toggle.track }}

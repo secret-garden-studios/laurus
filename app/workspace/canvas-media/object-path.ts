@@ -266,24 +266,33 @@ export function editableRings(path: string, maxAnchors = EDITABLE_MAX_ANCHORS): 
     .map((anchors) => fitCubicRing(anchors));
 }
 
+/**
+ * Where the segment leaving `from` and arriving at `to` is, `t` of the way
+ * along it.
+ *
+ * The one place the cubic is evaluated. Flattening, hit-testing the outline
+ * and splitting a segment all have to agree about where the curve is, or the
+ * anchor a click puts down lands somewhere off the line it was clicked on.
+ */
+export function cubicPointAt(from: CubicAnchor, to: CubicAnchor, t: number): Point {
+  const mt = 1 - t;
+  const a = mt * mt * mt;
+  const b = 3 * mt * mt * t;
+  const c = 3 * mt * t * t;
+  const d = t * t * t;
+  return [
+    a * from.point[0] + b * from.outControl[0] + c * to.inControl[0] + d * to.point[0],
+    a * from.point[1] + b * from.outControl[1] + c * to.inControl[1] + d * to.point[1],
+  ];
+}
+
 /** A cubic ring as points, subdividing each segment the way the renderer does. */
 export function flattenCubicRing(ring: CubicRing, segments = CURVE_SEGMENTS): Point[] {
   const points: Point[] = [];
   for (let i = 0; i < ring.length; i++) {
     const from = ring[i];
     const to = ring[(i + 1) % ring.length];
-    for (let step = 0; step < segments; step++) {
-      const t = step / segments;
-      const mt = 1 - t;
-      const a = mt * mt * mt;
-      const b = 3 * mt * mt * t;
-      const c = 3 * mt * t * t;
-      const d = t * t * t;
-      points.push([
-        a * from.point[0] + b * from.outControl[0] + c * to.inControl[0] + d * to.point[0],
-        a * from.point[1] + b * from.outControl[1] + c * to.inControl[1] + d * to.point[1],
-      ]);
-    }
+    for (let step = 0; step < segments; step++) points.push(cubicPointAt(from, to, step / segments));
   }
   return points;
 }
@@ -370,6 +379,147 @@ export function moveControl(
     const opposite: Point = [2 * anchor.point[0] - to[0], 2 * anchor.point[1] - to[1]];
     return side === "in" ? { ...moved, outControl: opposite } : { ...moved, inControl: opposite };
   });
+}
+
+/**
+ * A place on a shape's outline: which ring it is on, which segment of that
+ * ring, and how far along that segment.
+ *
+ * `segment` is the span leaving anchor `segment` and arriving at the next one
+ * round, so a ring of n anchors has n of them -- the last closing back onto
+ * the first.
+ */
+export interface RingPlace {
+  ring: number;
+  segment: number;
+  t: number;
+  point: Point;
+  distance: number;
+}
+
+/** How far the ternary search below narrows the bracket before giving up. */
+const NEAREST_REFINE_PASSES = 24;
+const NEAREST_REFINE_EPSILON = 1e-9;
+
+/**
+ * The point on these rings' outlines closest to `at`.
+ *
+ * A cubic has no closed form for this, so it is found the way the outline is
+ * drawn: sample each segment at the same subdivision the renderer uses, take
+ * the nearest sample, then narrow in on the span either side of it. The coarse
+ * pass is what keeps the search honest -- distance along a cubic is not
+ * unimodal, and a search started anywhere else can settle into the wrong dip
+ * on a segment that doubles back. The refinement only ever has one dip to find
+ * because it never leaves a single drawn step.
+ *
+ * Distances are in whatever space the rings are given in; the caller decides
+ * whether the nearest point is near enough to mean anything.
+ */
+export function nearestOnRings(rings: CubicRing[], at: Point, segments = CURVE_SEGMENTS): RingPlace | undefined {
+  let best: RingPlace | undefined;
+
+  rings.forEach((ring, ringIndex) => {
+    if (ring.length < 2) return;
+    for (let i = 0; i < ring.length; i++) {
+      const from = ring[i];
+      const to = ring[(i + 1) % ring.length];
+      const away = (t: number): number => {
+        const p = cubicPointAt(from, to, t);
+        return Math.hypot(p[0] - at[0], p[1] - at[1]);
+      };
+
+      let coarseT = 0;
+      let coarse = Infinity;
+      for (let step = 0; step <= segments; step++) {
+        const t = step / segments;
+        const d = away(t);
+        if (d < coarse) {
+          coarse = d;
+          coarseT = t;
+        }
+      }
+
+      let lo = Math.max(0, coarseT - 1 / segments);
+      let hi = Math.min(1, coarseT + 1 / segments);
+      for (let pass = 0; pass < NEAREST_REFINE_PASSES && hi - lo > NEAREST_REFINE_EPSILON; pass++) {
+        const third = (hi - lo) / 3;
+        if (away(lo + third) <= away(hi - third)) hi -= third;
+        else lo += third;
+      }
+
+      // the refinement cannot do worse than the sample it started from, but
+      // a segment collapsed to a point makes every t equally near, and taking
+      // the midpoint of a bracket over one of those is no better than taking
+      // the sample -- so keep whichever actually is nearer
+      const refinedT = (lo + hi) / 2;
+      const refined = away(refinedT);
+      const t = refined <= coarse ? refinedT : coarseT;
+      const distance = Math.min(refined, coarse);
+      if (!best || distance < best.distance) {
+        best = { ring: ringIndex, segment: i, t, point: cubicPointAt(from, to, t), distance };
+      }
+    }
+  });
+
+  return best;
+}
+
+/**
+ * How close to an end of a segment a split is allowed to land.
+ *
+ * A split at 0 or 1 produces an anchor sitting on top of the one already
+ * there, with a segment of no length between them -- an anchor that cannot be
+ * seen, cannot be picked apart from its twin, and leaves a degenerate span in
+ * the path. Clamping rather than refusing is the kinder reading of a click
+ * near an existing anchor: the reviewer still gets an anchor where they asked
+ * for one, just not one welded to its neighbour.
+ */
+const MIN_SPLIT_T = 1e-3;
+
+/**
+ * Put a new anchor on a segment, `t` of the way along it, without moving the
+ * outline at all.
+ *
+ * de Casteljau: the same repeated-lerp construction that evaluates a cubic at
+ * `t` also hands back, along the way, the control points of the two cubics
+ * that trace exactly the two halves of it. So the curve through the new anchor
+ * is the curve that was already there, to the last bit -- which is the whole
+ * point. Adding an anchor is asking for somewhere to take hold, not for a
+ * different shape, and an outline that shifted the moment you gave yourself a
+ * handle on it would be worse than no handle.
+ *
+ * The anchor lands at `segment + 1`, so the ring stays in the order it draws.
+ * Returns undefined when there is no segment to split.
+ */
+export function insertAnchor(
+  rings: CubicRing[],
+  ringIndex: number,
+  segment: number,
+  t: number,
+): CubicRing[] | undefined {
+  const ring = rings[ringIndex];
+  if (!ring || ring.length < 2) return undefined;
+  if (!Number.isInteger(segment) || segment < 0 || segment >= ring.length) return undefined;
+  if (!Number.isFinite(t)) return undefined;
+
+  const at = Math.min(1 - MIN_SPLIT_T, Math.max(MIN_SPLIT_T, t));
+  const from = ring[segment];
+  const after = (segment + 1) % ring.length;
+  const to = ring[after];
+
+  const a = lerp(from.point, from.outControl, at);
+  const b = lerp(from.outControl, to.inControl, at);
+  const c = lerp(to.inControl, to.point, at);
+  const leaving = lerp(a, b, at);
+  const arriving = lerp(b, c, at);
+  const point = lerp(leaving, arriving, at);
+
+  const next = ring.slice();
+  next[segment] = { ...from, outControl: a };
+  next[after] = { ...to, inControl: c };
+  next.splice(segment + 1, 0, { point, inControl: leaving, outControl: arriving });
+
+  return rings.map((other, index) => (index === ringIndex ? next : other));
 }
 
 /**

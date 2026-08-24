@@ -3,12 +3,15 @@ import { describe, it } from "node:test";
 import {
   EDITABLE_MAX_ANCHORS,
   anchorsForRing,
+  cubicPointAt,
   cubicRingsToPathData,
   editableRings,
   fitCubicRing,
   flattenCubicRing,
+  insertAnchor,
   moveAnchor,
   moveControl,
+  nearestOnRings,
   normalizeEditedRings,
   parseCubicRings,
   ringPieces,
@@ -411,6 +414,176 @@ describe("what the pen holds on to between commits", () => {
       Math.hypot(drifted[0] - startedAt[0], drifted[1] - startedAt[1]) > 5,
       `stale geometry happened not to drift -- test is not pinning the bug`,
     );
+  });
+});
+
+describe("nearestOnRings -- reading a click back onto the curve", () => {
+  it("lands on the curve, not on the anchors it was fitted through", () => {
+    // a click just outside the bow between two anchors: the nearest anchor is
+    // a long way round, and the nearest point on the curve is right there
+    const ring = fitCubicRing(DIAMOND);
+    const bow = flattenCubicRing(ring)[3];
+    const place = nearestOnRings([ring], [bow[0] * 1.2, bow[1] * 1.2]);
+    assert.ok(place);
+    assert.ok(
+      Math.hypot(place.point[0] - bow[0], place.point[1] - bow[1]) < 0.05,
+      "the nearest point was not the bit of curve the click was over",
+    );
+  });
+
+  it("reports the distance it actually found", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const at: Point = [3, 3];
+    const place = nearestOnRings([ring], at);
+    assert.ok(place);
+    const measured = Math.hypot(place.point[0] - at[0], place.point[1] - at[1]);
+    assert.ok(Math.abs(measured - place.distance) < 1e-9);
+  });
+
+  it("beats the flattened outline it is refined out of", () => {
+    // the refinement has to buy something over just taking the nearest drawn
+    // sample, or the anchor lands visibly off the curve on a coarse segment
+    const ring = fitCubicRing(circlePoints(1, 7));
+    const at: Point = [0.37, 0.9];
+    const place = nearestOnRings([ring], at);
+    assert.ok(place);
+    const coarse = Math.min(...flattenCubicRing(ring).map((p) => Math.hypot(p[0] - at[0], p[1] - at[1])));
+    assert.ok(place.distance <= coarse + 1e-12, "the refinement found a point further off than a plain sample");
+  });
+
+  it("picks the nearer of several rings", () => {
+    const near = fitCubicRing(circlePoints(1, 12, [0, 0]));
+    const far = fitCubicRing(circlePoints(1, 12, [20, 0]));
+    const place = nearestOnRings([far, near], [0, 0.5]);
+    assert.ok(place);
+    assert.equal(place.ring, 1);
+  });
+
+  it("has nothing to say about no rings", () => {
+    assert.equal(nearestOnRings([], [0, 0]), undefined);
+  });
+});
+
+describe("insertAnchor -- somewhere new to take hold", () => {
+  it("adds exactly one anchor, in the segment it was asked for", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const next = insertAnchor([ring], 0, 1, 0.5);
+    assert.ok(next);
+    assert.equal(next[0].length, ring.length + 1);
+    // the new one sits between the anchors that bounded the segment
+    assert.deepEqual(next[0][1].point, ring[1].point);
+    assert.deepEqual(next[0][3].point, ring[2].point);
+  });
+
+  it("does not move the outline at all", () => {
+    // The whole point of splitting rather than re-fitting: the reviewer asked
+    // for a handle, not for a different shape. Checked against the original
+    // segment rather than against a flattening of the whole ring, because the
+    // split gives that ring an extra segment and so an extra helping of
+    // samples -- which would put the two flattenings a step out of phase and
+    // measure the subdivision instead of the curve.
+    const ring = fitCubicRing(circlePoints(1, 9));
+    const split = 0.37;
+    for (const segment of [0, 3, 8]) {
+      const from = ring[segment];
+      const to = ring[(segment + 1) % ring.length];
+      const next = insertAnchor([ring], 0, segment, split);
+      assert.ok(next);
+      const added = next[0][segment + 1];
+      const beyond = next[0][(segment + 2) % next[0].length];
+
+      for (let step = 0; step <= 32; step++) {
+        const u = step / 32;
+        // the two halves, walked at u, against the one curve at the parameter
+        // that same point had before the split
+        const halves: [Point, number][] = [
+          [cubicPointAt(next[0][segment], added, u), u * split],
+          [cubicPointAt(added, beyond, u), split + u * (1 - split)],
+        ];
+        for (const [was, t] of halves) {
+          const should = cubicPointAt(from, to, t);
+          const off = Math.hypot(was[0] - should[0], was[1] - should[1]);
+          assert.ok(off < 1e-12, `splitting segment ${segment} moved the curve by ${off}`);
+        }
+      }
+    }
+  });
+
+  it("puts the anchor where the curve was at t", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const t = 0.62;
+    const on = cubicPointAt(ring[2], ring[3], t);
+    const next = insertAnchor([ring], 0, 2, t);
+    assert.ok(next);
+    assert.ok(Math.hypot(next[0][3].point[0] - on[0], next[0][3].point[1] - on[1]) < 1e-12);
+  });
+
+  it("splits the closing segment onto the end of the ring", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const last = ring.length - 1;
+    const next = insertAnchor([ring], 0, last, 0.5);
+    assert.ok(next);
+    assert.equal(next[0].length, ring.length + 1);
+    assert.deepEqual(next[0][last].point, ring[last].point);
+    assert.deepEqual(next[0][0].point, ring[0].point);
+  });
+
+  it("keeps a click at the very end of a segment off the anchor already there", () => {
+    const ring = fitCubicRing(DIAMOND);
+    for (const t of [0, 1, -5, 7]) {
+      const next = insertAnchor([ring], 0, 0, t);
+      assert.ok(next);
+      const added = next[0][1].point;
+      for (const twin of [ring[0].point, ring[1].point]) {
+        assert.ok(
+          Math.hypot(added[0] - twin[0], added[1] - twin[1]) > 0,
+          `a split at ${t} landed on top of an anchor already there`,
+        );
+      }
+    }
+  });
+
+  it("leaves every other ring alone", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const hole = fitCubicRing(circlePoints(0.2, 6));
+    const next = insertAnchor([ring, hole], 0, 0, 0.5);
+    assert.ok(next);
+    assert.equal(next[1], hole);
+  });
+
+  it("refuses a segment that is not there", () => {
+    const ring = fitCubicRing(DIAMOND);
+    assert.equal(insertAnchor([ring], 0, ring.length, 0.5), undefined);
+    assert.equal(insertAnchor([ring], 0, -1, 0.5), undefined);
+    assert.equal(insertAnchor([ring], 1, 0, 0.5), undefined);
+    assert.equal(insertAnchor([ring], 0, 0, NaN), undefined);
+  });
+
+  it("survives the round trip through a stored path", () => {
+    const ring = fitCubicRing(DIAMOND);
+    const next = insertAnchor([ring], 0, 0, 0.5);
+    assert.ok(next);
+    const reopened = editableRings(cubicRingsToPathData(next));
+    assert.equal(reopened.length, 1);
+    assert.equal(reopened[0].length, ring.length + 1, "the added anchor did not survive being written out");
+  });
+
+  it("lands where nearestOnRings said it would", () => {
+    // the two halves of one gesture: hit-test a click, then split there
+    const ring = fitCubicRing(circlePoints(1, 8));
+    const at: Point = [0.71, 0.75];
+    const place = nearestOnRings([ring], at);
+    assert.ok(place);
+    const next = insertAnchor([ring], place.ring, place.segment, place.t);
+    assert.ok(next);
+    const added = next[0][place.segment + 1].point;
+    assert.ok(Math.hypot(added[0] - place.point[0], added[1] - place.point[1]) < 1e-9);
+  });
+
+  it("still rasterizes once an anchor has been added", () => {
+    const next = insertAnchor([fitCubicRing(DIAMOND)], 0, 0, 0.5);
+    assert.ok(next);
+    assert.ok(sampleObjectShapePath(cubicRingsToPathData(next)));
   });
 });
 

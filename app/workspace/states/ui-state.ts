@@ -49,7 +49,7 @@ export type LaurusTool =
   | { type: "mix" }
   | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
   | { type: "light_source" }
-  | { type: "pen"; stitch: boolean; showAnchors: boolean };
+  | { type: "pen"; stitch: boolean; addAnchor: boolean; showAnchors: boolean };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
@@ -74,6 +74,7 @@ export const defaultMaskTool: LaurusTool = {
 export const defaultPenTool: LaurusTool = {
   type: "pen",
   stitch: false,
+  addAnchor: false,
   showAnchors: true,
 };
 
