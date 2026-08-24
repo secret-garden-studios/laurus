@@ -1748,12 +1748,10 @@ export async function deleteRotate(
 /* /light_sources */
 
 export interface LightSourceSolution_V1_0 {
-  light_size: number;
   light_intensity: number;
   light_falloff: number;
   light_darkness: number;
   object_elevation: number;
-  object_radius: number;
   object_falloff: number;
   object_black_point_r: number;
   object_black_point_g: number;
@@ -1766,12 +1764,10 @@ export interface LightSourceEquation_V1_0 {
    * ms
    */
   time: number;
-  light_size: number;
   light_intensity: number;
   light_falloff: number;
   light_darkness: number;
   object_elevation: number;
-  object_radius: number;
   object_falloff: number;
   object_black_point_r: number;
   object_black_point_g: number;
@@ -2008,12 +2004,10 @@ interface Frame_V1_0 {
   ry: number;
   rz: number;
   rangle: number;
-  light_size: number;
   light_intensity: number;
   light_falloff: number;
   light_darkness: number;
   object_elevation: number;
-  object_radius: number;
   object_falloff: number;
   object_black_point_r: number;
   object_black_point_g: number;
@@ -2024,7 +2018,6 @@ interface Frame_V1_0 {
 
 const NEUTRAL_OBJECT_FRAME = {
   object_elevation: 0,
-  object_radius: 0,
   object_falloff: OBJECT_FALLOFF_DEFAULT,
   ...toObjectBlackPointEquationFields(OBJECT_BLACK_POINT_DEFAULT),
 };
@@ -2046,7 +2039,6 @@ export async function getScaleFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    light_size: 0,
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
@@ -2071,7 +2063,6 @@ export async function getMoveFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    light_size: 0,
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
@@ -2097,7 +2088,6 @@ export async function getRotateFrames(
     y: 0,
     sx: 1,
     sy: 1,
-    light_size: 0,
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,

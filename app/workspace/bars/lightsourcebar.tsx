@@ -10,14 +10,7 @@ import {
   MAX_MASK_OBJECT_ELEVATION,
   MAX_MASK_OBJECT_FALLOFF,
   MIN_MASK_OBJECT_FALLOFF,
-  MIN_MASK_OBJECT_RADIUS_PX,
 } from "../mask-gl";
-import {
-  litRegionCircle,
-  indicesInCircleFromCentroids,
-  indicesInObjectFromCentroids,
-} from "../canvas-media/light-geometry";
-import { maskGeometry } from "../canvas-media/mask-geometry";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
   LaurusMaskResult,
@@ -26,7 +19,7 @@ import {
   toObjectBlackPointFields,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
-import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX, LIGHT_SIZE_MAX } from "../workspace.config";
+import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
 
 const LIGHT_PREVIEW_SIZE_MIN = 10;
 const LIGHT_PREVIEW_SIZE_MAX = 300;
@@ -47,8 +40,6 @@ export default function LightSourcebar() {
     notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
     notifyMaskLightUpdated,
-    notifyMaskPendingLightSet,
-    notifyMaskPendingLightCleared,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
@@ -205,8 +196,6 @@ export default function LightSourcebar() {
       : undefined;
   const elevationValue = pendingObjectEdit?.elevation ?? selectedObject?.elevation ?? uiState.stagedObject.elevation;
   const objectFalloffValue = pendingObjectEdit?.falloff ?? selectedObject?.falloff ?? uiState.stagedObject.falloff;
-  const radiusValue = pendingObjectEdit?.radius ?? selectedObject?.radius;
-  const isRadiusDisabled = !selectedObject;
   const blackPointValue =
     pendingObjectEdit?.blackPoint ??
     (selectedObject ? toObjectBlackPoint(selectedObject) : uiState.stagedObject.blackPoint);
@@ -331,19 +320,16 @@ export default function LightSourcebar() {
     intensity: number;
     falloff: number;
     darkness: number;
-    resized: boolean;
   }
   const pendingLightSaveRef = useRef<PendingLightSave | null>(null);
   const isPersistingLightRef = useRef(false);
   const persistLightQueue = useCallback(async () => {
     if (isPersistingLightRef.current) return;
     isPersistingLightRef.current = true;
-    let settledResizeMaskKey: string | undefined;
     try {
       while (pendingLightSaveRef.current) {
         const toSave = pendingLightSaveRef.current;
         pendingLightSaveRef.current = null;
-        if (toSave.resized) settledResizeMaskKey = toSave.maskKey;
         const updated = await sendMaskLightUpdate(toSave.maskMediaId, {
           light_id: toSave.lightId,
           name: toSave.name,
@@ -364,15 +350,11 @@ export default function LightSourcebar() {
       }
     } finally {
       isPersistingLightRef.current = false;
-      if (settledResizeMaskKey !== undefined) {
-        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
-        notifyMaskPendingLightCleared(settledResizeMaskKey);
-      }
     }
-  }, [sendMaskLightUpdate, dispatch, notifyMaskLightUpdated, notifyMaskPendingLightCleared]);
+  }, [sendMaskLightUpdate, dispatch, notifyMaskLightUpdated]);
 
   const saveLightField = useCallback(
-    (field: "size" | "intensity" | "falloff" | "darkness", value: number) => {
+    (field: "intensity" | "falloff" | "darkness", value: number) => {
       if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
       const patched = { ...selectedLight, [field]: value };
       const newLights = selectedLightMaskData.lights.map((c) => (c.id === selectedLight.id ? patched : c));
@@ -393,104 +375,12 @@ export default function LightSourcebar() {
         intensity: patched.intensity,
         falloff: patched.falloff,
         darkness: patched.darkness,
-        resized: false,
       };
       void persistLightQueue();
     },
     [selectedLightMaskKey, selectedLight, selectedLightMaskData, dispatch, notifyMaskLightUpdated, persistLightQueue],
   );
 
-  const lightResizeAnchorRef = useRef<{ lightId: number; cx: number; cy: number } | null>(null);
-  const lightResizeAnchor = useCallback(() => {
-    if (!selectedLight || !selectedLightMaskData) return undefined;
-    const held = lightResizeAnchorRef.current;
-    if (held && held.lightId === selectedLight.id) return held;
-    const circle = litRegionCircle(
-      selectedLightMaskData.polygons,
-      maskGeometry(selectedLightMaskData).centroids,
-      selectedLight.id,
-    );
-    if (!circle) return undefined;
-    const anchor = { lightId: selectedLight.id, cx: circle.cx, cy: circle.cy };
-    lightResizeAnchorRef.current = anchor;
-    return anchor;
-  }, [selectedLight, selectedLightMaskData]);
-
-  const lightIndicesForSize = useCallback(
-    (size: number): number[] | undefined => {
-      if (!selectedLightMaskData) return undefined;
-      const anchor = lightResizeAnchor();
-      if (!anchor) return undefined;
-      const indices = indicesInCircleFromCentroids(maskGeometry(selectedLightMaskData).centroids, {
-        cx: anchor.cx,
-        cy: anchor.cy,
-        radius: size / 2,
-      });
-      return indices.size === 0 ? undefined : [...indices];
-    },
-    [selectedLightMaskData, lightResizeAnchor],
-  );
-
-  const previewLightSizeChange = useCallback(
-    (size: number) => {
-      if (selectedLightMaskKey === undefined || !selectedLight) return;
-      const polygonIndices = lightIndicesForSize(size);
-      if (!polygonIndices) return;
-      notifyMaskPendingLightSet(selectedLightMaskKey, new Set(polygonIndices), selectedLight.id);
-    },
-    [selectedLightMaskKey, selectedLight, lightIndicesForSize, notifyMaskPendingLightSet],
-  );
-
-  const saveLightSizeField = useCallback(
-    (size: number) => {
-      if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
-      const polygonIndices = lightIndicesForSize(size);
-      if (!polygonIndices) {
-        lightResizeAnchorRef.current = null;
-        notifyMaskPendingLightCleared(selectedLightMaskKey);
-        return;
-      }
-
-      const patched = { ...selectedLight, size };
-      const newLights = selectedLightMaskData.lights.map((c) => (c.id === selectedLight.id ? patched : c));
-      const newMaskData: LaurusMaskResult = { ...selectedLightMaskData, lights: newLights };
-      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedLightMaskKey, value: newMaskData });
-      notifyMaskLightUpdated(selectedLightMaskKey, newMaskData);
-      dispatch({
-        type: CoreActionType.SetPendingLight,
-        value: { maskKey: selectedLightMaskKey, lightId: selectedLight.id, polygonIndices },
-      });
-      notifyMaskPendingLightSet(selectedLightMaskKey, new Set(polygonIndices), selectedLight.id);
-
-      pendingLightSaveRef.current = {
-        maskKey: selectedLightMaskKey,
-        maskMediaId: selectedLightMaskData.mask_media_id,
-        lightId: selectedLight.id,
-        name: selectedLight.name,
-        polygonIndices,
-        size: patched.size,
-        intensity: patched.intensity,
-        falloff: patched.falloff,
-        darkness: patched.darkness,
-        resized: true,
-      };
-      lightResizeAnchorRef.current = null;
-      void persistLightQueue();
-    },
-    [
-      selectedLightMaskKey,
-      selectedLight,
-      selectedLightMaskData,
-      lightIndicesForSize,
-      dispatch,
-      notifyMaskLightUpdated,
-      notifyMaskPendingLightSet,
-      notifyMaskPendingLightCleared,
-      persistLightQueue,
-    ],
-  );
-
-  const lightSizeValue = selectedLight?.size ?? 0;
   const lightIntensityValue = selectedLight?.intensity ?? 0;
   const handleLightIntensityChange = useCallback(
     (value: number) => saveLightField("intensity", value),
@@ -503,7 +393,6 @@ export default function LightSourcebar() {
 
   type ObjectPatch = {
     elevation?: number;
-    radius?: number;
     falloff?: number;
     blackPoint?: LaurusObjectBlackPoint;
   };
@@ -586,7 +475,7 @@ export default function LightSourcebar() {
         objectId: selectedObject.id,
         cx: selectedObject.cx,
         cy: selectedObject.cy,
-        radius: patch.radius ?? selectedObject.radius,
+        radius: selectedObject.radius,
         elevation: patch.elevation ?? selectedObject.elevation,
         falloff: patch.falloff ?? selectedObject.falloff,
         shape: selectedObject.shape,
@@ -612,25 +501,13 @@ export default function LightSourcebar() {
       const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
       const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
-      const regionUnchanged =
-        existingObject !== undefined &&
-        existingObject.cx === edit.cx &&
-        existingObject.cy === edit.cy &&
-        existingObject.radius === edit.radius &&
-        existingObject.shape === edit.shape;
-      const polygonIndices = regionUnchanged
-        ? maskData.polygons.reduce<number[]>((indices, p, i) => {
-            if (p.object_id === edit.objectId) indices.push(i);
-            return indices;
-          }, [])
-        : [
-            ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
-              cx: edit.cx,
-              cy: edit.cy,
-              radius: edit.radius,
-              shape: edit.shape,
-            }),
-          ];
+      // Every patch this bar makes -- elevation, falloff, black point -- leaves cx/cy/
+      // radius/shape alone, so the object still owns exactly the triangles it owns now.
+      // Reshaping lives in the shape editor, which recuts the region itself.
+      const polygonIndices = maskData.polygons.reduce<number[]>((indices, p, i) => {
+        if (p.object_id === edit.objectId) indices.push(i);
+        return indices;
+      }, []);
 
       pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
@@ -691,22 +568,6 @@ export default function LightSourcebar() {
   const elevationCursor = { x: elevationToTrack(elevationValue, dynamicSizes.paramSize.containerWidth), y: 0 };
   const elevationTitle = elevationValue.toFixed(0);
   const elevationRef = useRef<HTMLDivElement | null>(null);
-
-  const radiusTrackRef = useRef<HTMLDivElement | null>(null);
-  const radiusMax = selectedObjectMaskData
-    ? Math.max(MIN_MASK_OBJECT_RADIUS_PX + 1, Math.min(selectedObjectMaskData.width, selectedObjectMaskData.height))
-    : MIN_MASK_OBJECT_RADIUS_PX + 1;
-  const { getTrackValue: getRadiusValue, getTrackCursor: getRadiusCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    radiusMax - MIN_MASK_OBJECT_RADIUS_PX,
-  );
-
-  const radiusCursor = {
-    x: getRadiusCursor((radiusValue ?? 0) - MIN_MASK_OBJECT_RADIUS_PX, dynamicSizes.paramSize.containerWidth),
-    y: 0,
-  };
-  const radiusTitle = (radiusValue ?? 0).toFixed(0) + "px";
-  const radiusRef = useRef<HTMLDivElement | null>(null);
 
   const objectFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const objectFalloffSpan = MAX_MASK_OBJECT_FALLOFF - MIN_MASK_OBJECT_FALLOFF;
@@ -804,18 +665,6 @@ export default function LightSourcebar() {
   };
   const previewDarknessTitle = previewDarknessValue.toFixed(2);
   const previewDarknessRef = useRef<HTMLDivElement | null>(null);
-
-  const lightSizeMax = selectedLightMaskData
-    ? Math.min(selectedLightMaskData.width, selectedLightMaskData.height)
-    : LIGHT_SIZE_MAX;
-  const lightSizeTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getLightSizeValue, getTrackCursor: getLightSizeCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    lightSizeMax,
-  );
-  const lightSizeCursor = { x: getLightSizeCursor(lightSizeValue, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const lightSizeTitle = lightSizeValue.toFixed(1);
-  const lightSizeRef = useRef<HTMLDivElement | null>(null);
 
   const lightIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getLightIntensityValue, getTrackCursor: getLightIntensityCursor } = useTrackpadState(
@@ -1119,47 +968,6 @@ export default function LightSourcebar() {
                 <span
                   title={
                     isLightParamDisabled
-                      ? "select a light on the mesh to resize it"
-                      : "how wide this light is -- resizes the region of triangles it owns, and with it the epicenter core a wired light_source effect ramps from"
-                  }
-                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
-                >
-                  {"size"}
-                </span>
-                <ParameterSliderX
-                  resolution={{ ...uiState.resolution }}
-                  hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-size|${selectedLight?.id ?? "none"}`}
-                  size={dynamicSizes.paramSize}
-                  containerRef={lightSizeTrackRef}
-                  cursor={lightSizeCursor}
-                  onCursorMove={(newCursor) => {
-                    if (!lightSizeTrackRef.current) return;
-                    const newValue = getLightSizeValue(newCursor.x, lightSizeTrackRef.current.clientWidth, 0);
-                    previewLightSizeChange(newValue);
-                    if (lightSizeRef.current) lightSizeRef.current.innerHTML = newValue.toFixed(1);
-                  }}
-                  onNewCursor={(newCursor) => {
-                    if (!lightSizeTrackRef.current) return;
-                    const newValue = getLightSizeValue(newCursor.x, lightSizeTrackRef.current.clientWidth, 0);
-                    saveLightSizeField(newValue);
-                  }}
-                  disabled={isLightParamDisabled}
-                  title={lightSizeTitle}
-                  liveTitleRef={lightSizeRef}
-                />
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  height: "100%",
-                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-                  ...dynamicSizes.toggle.div,
-                }}
-              >
-                <span
-                  title={
-                    isLightParamDisabled
                       ? "select a light on the mesh to set the brightness of its own epicenter's core"
                       : "brightness of this light's own epicenter core -- 100% is pure white"
                   }
@@ -1303,45 +1111,6 @@ export default function LightSourcebar() {
               disabled={isObjectParamDisabled}
               title={elevationTitle}
               liveTitleRef={elevationRef}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              title={"how far the selected object's own influence reaches"}
-              style={{ opacity: isRadiusDisabled ? 0.3 : 1, userSelect: "none" }}
-            >
-              {"radius"}
-            </span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|radius|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={radiusTrackRef}
-              cursor={radiusCursor}
-              onCursorMove={(newCursor) => {
-                if (!radiusTrackRef.current) return;
-                const newValue =
-                  MIN_MASK_OBJECT_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
-                previewObjectChange({ radius: newValue });
-                if (radiusRef.current) radiusRef.current.innerHTML = newValue.toFixed(0) + "px";
-              }}
-              onNewCursor={(newCursor) => {
-                if (!radiusTrackRef.current) return;
-                const newValue =
-                  MIN_MASK_OBJECT_RADIUS_PX + getRadiusValue(newCursor.x, radiusTrackRef.current.clientWidth, 0);
-                saveObjectField({ radius: newValue });
-              }}
-              disabled={isRadiusDisabled}
-              title={radiusTitle}
-              liveTitleRef={radiusRef}
             />
           </div>
           <div

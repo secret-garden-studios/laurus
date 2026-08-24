@@ -1146,7 +1146,7 @@ export function ProjectMaskItem({
                   const bufferX = restX + pointX * scaleX;
                   const bufferY = restY + pointY * scaleY;
                   const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
-                  const size = lightPoint?.light_size ?? lightMeta?.size ?? lightSizeRef.current;
+                  const size = lightMeta?.size ?? lightSizeRef.current;
                   const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
                   const falloff = lightPoint?.light_falloff ?? lightMeta?.falloff ?? lightFalloffRef.current;
                   const darkness = lightPoint?.light_darkness ?? lightMeta?.darkness ?? lightDarknessRef.current;
@@ -1190,7 +1190,7 @@ export function ProjectMaskItem({
                   const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
                   const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
                   const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
-                  const radius = lightSourcePoint?.object_radius ?? object.radius;
+                  const radius = object.radius;
                   const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
                   const blackPoint = lightSourcePoint
                     ? toEquationObjectBlackPoint(lightSourcePoint)

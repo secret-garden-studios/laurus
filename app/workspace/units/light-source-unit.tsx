@@ -19,13 +19,11 @@ import {
   LIGHT_DARKNESS_MAX,
   LIGHT_FALLOFF_MAX,
   LIGHT_INTENSITY_MAX,
-  LIGHT_SIZE_MAX,
 } from "../workspace.config";
 import {
   MAX_MASK_OBJECT_ELEVATION,
   MAX_MASK_OBJECT_FALLOFF,
   MIN_MASK_OBJECT_FALLOFF,
-  MIN_MASK_OBJECT_RADIUS_PX,
 } from "../mask-gl";
 import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
@@ -36,12 +34,10 @@ import { CoreActionType } from "../states/core-state";
 export type LightSourceUnitTarget = "light" | "object";
 
 export interface LightSourceUnitControls {
-  light_size: number;
   light_intensity: number;
   light_falloff: number;
   light_darkness: number;
   object_elevation: number;
-  object_radius: number;
   object_falloff: number;
   object_black_point_r: number;
   object_black_point_g: number;
@@ -57,12 +53,10 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   time: 0.000001,
   loop: LaurusLoopType.none,
   solution: [],
-  light_size: 0,
   light_intensity: 0,
   light_falloff: 0,
   light_darkness: 0,
   object_elevation: 0,
-  object_radius: 0,
   object_falloff: MIN_MASK_OBJECT_FALLOFF,
   ...toObjectBlackPointEquationFields(OBJECT_BLACK_POINT_DEFAULT),
   limit_factor: MIN_LIMIT_FACTOR,
@@ -94,12 +88,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const target: LightSourceUnitTarget = uiState.carouselEntries[carouselIndex]?.type === "object" ? "object" : "light";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<LightSourceUnitControls>({
-    light_size: 0,
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
     object_elevation: defaultLightSourceEquation.object_elevation,
-    object_radius: defaultLightSourceEquation.object_radius,
     object_falloff: defaultLightSourceEquation.object_falloff,
     object_black_point_r: defaultLightSourceEquation.object_black_point_r,
     object_black_point_g: defaultLightSourceEquation.object_black_point_g,
@@ -189,22 +181,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     return activeLightMaskData?.lights.find((c) => c.id === activeLightEntry.lightId);
   }, [activeLightEntry, activeLightMaskData]);
 
-  const lightSizeMax = activeLightMaskData
-    ? Math.min(activeLightMaskData.width, activeLightMaskData.height)
-    : LIGHT_SIZE_MAX;
-  const sizeTrackRef = useRef<HTMLDivElement | null>(null);
-  const [sizeCursor, setSizeCursor] = useState({ x: 0, y: 0 });
-  const { getInverseTrackValue: getSizeValue, getInverseTrackCursor: getSizeCursor } = useTrackpadState(
-    dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    lightSizeMax,
-  );
-  const sizeTitle = useMemo(() => {
-    return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_size.toFixed(1)
-      : undefined;
-  }, [carouselEntryKey, lightSource.math]);
-  const sizeRef = useRef<HTMLDivElement | null>(null);
-
   const intensityTrackRef = useRef<HTMLDivElement | null>(null);
   const [intensityCursor, setIntensityCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getIntensityValue, getInverseTrackCursor: getIntensityCursor } = useTrackpadState(
@@ -257,22 +233,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     if (!activeObjectEntry) return undefined;
     return activeObjectMaskData?.objects.find((p) => p.id === activeObjectEntry.objectId);
   }, [activeObjectEntry, activeObjectMaskData]);
-
-  const objectRadiusMax = activeObjectMaskData
-    ? Math.max(MIN_MASK_OBJECT_RADIUS_PX + 1, Math.min(activeObjectMaskData.width, activeObjectMaskData.height))
-    : MIN_MASK_OBJECT_RADIUS_PX + 1;
-  const objectRadiusTrackRef = useRef<HTMLDivElement | null>(null);
-  const [objectRadiusCursor, setObjectRadiusCursor] = useState({ x: 0, y: 0 });
-  const { getInverseTrackValue: getObjectRadiusValue, getInverseTrackCursor: getObjectRadiusCursor } = useTrackpadState(
-    dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    objectRadiusMax - MIN_MASK_OBJECT_RADIUS_PX,
-  );
-  const objectRadiusTitle = useMemo(() => {
-    return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.object_radius.toFixed(0) + "px"
-      : undefined;
-  }, [carouselEntryKey, lightSource.math]);
-  const objectRadiusRef = useRef<HTMLDivElement | null>(null);
 
   const objectFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [objectFalloffCursor, setObjectFalloffCursor] = useState({ x: 0, y: 0 });
@@ -509,9 +469,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
 
   const updateTrackpads = useCallback(
     (newControls: LightSourceUnitControls) => {
-      if (sizeTrackRef.current) {
-        setSizeCursor({ y: getSizeCursor(newControls.light_size, sizeTrackRef.current.clientHeight), x: 0 });
-      }
       if (intensityTrackRef.current) {
         setIntensityCursor({
           y: getIntensityCursor(newControls.light_intensity, intensityTrackRef.current.clientHeight),
@@ -532,15 +489,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       }
       if (timeTrackRef.current) {
         setTimeCursor({ y: getTimeCursor(newControls.time, timeTrackRef.current.clientHeight), x: 0 });
-      }
-      if (objectRadiusTrackRef.current) {
-        setObjectRadiusCursor({
-          y: getObjectRadiusCursor(
-            newControls.object_radius - MIN_MASK_OBJECT_RADIUS_PX,
-            objectRadiusTrackRef.current.clientHeight,
-          ),
-          x: 0,
-        });
       }
       if (objectFalloffTrackRef.current) {
         setObjectFalloffCursor({
@@ -583,12 +531,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       }
     },
     [
-      getSizeCursor,
       getIntensityCursor,
       getFalloffCursor,
       getDarknessCursor,
       getTimeCursor,
-      getObjectRadiusCursor,
       getObjectFalloffCursor,
       getElevationCursor,
       getBlackPointCursor,
@@ -601,12 +547,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       const activeEquation = lightSource.math.get(activeKey);
       const initControls: LightSourceUnitControls = { ...currentControls };
       if (activeEquation) {
-        initControls.light_size = activeEquation.light_size;
         initControls.light_intensity = activeEquation.light_intensity;
         initControls.light_falloff = activeEquation.light_falloff;
         initControls.light_darkness = activeEquation.light_darkness;
         initControls.object_elevation = activeEquation.object_elevation;
-        initControls.object_radius = activeEquation.object_radius;
         initControls.object_falloff = activeEquation.object_falloff;
         initControls.object_black_point_r = activeEquation.object_black_point_r;
         initControls.object_black_point_g = activeEquation.object_black_point_g;
@@ -616,12 +560,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.loop = activeEquation.loop;
         initControls.limit_factor = activeEquation.limit_factor;
       } else if (activeKey) {
-        initControls.light_size = defaultLightSourceEquation.light_size;
         initControls.light_intensity = defaultLightSourceEquation.light_intensity;
         initControls.light_falloff = defaultLightSourceEquation.light_falloff;
         initControls.light_darkness = defaultLightSourceEquation.light_darkness;
         initControls.object_elevation = defaultLightSourceEquation.object_elevation;
-        initControls.object_radius = defaultLightSourceEquation.object_radius;
         initControls.object_falloff = defaultLightSourceEquation.object_falloff;
         initControls.object_black_point_r = defaultLightSourceEquation.object_black_point_r;
         initControls.object_black_point_g = defaultLightSourceEquation.object_black_point_g;
@@ -640,7 +582,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       return {
         ...defaultLightSourceEquation,
         object_elevation: activeObject.elevation,
-        object_radius: activeObject.radius,
         object_falloff: activeObject.falloff,
         ...toObjectBlackPointEquationFields(toObjectBlackPoint(activeObject)),
       };
@@ -648,7 +589,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     if (activeLight) {
       return {
         ...defaultLightSourceEquation,
-        light_size: activeLight.size,
         light_intensity: activeLight.intensity,
         light_falloff: activeLight.falloff,
         light_darkness: activeLight.darkness,
@@ -660,12 +600,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const saveLightSourceField = useCallback(
     (
       field:
-        | "light_size"
         | "light_intensity"
         | "light_falloff"
         | "light_darkness"
         | "object_elevation"
-        | "object_radius"
         | "object_falloff"
         | "object_black_point_r"
         | "object_black_point_g"
@@ -736,34 +674,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                 >
                   {target === "object" ? (
                     <>
-                      <ParameterSliderY
-                        resolution={{ ...uiState.resolution }}
-                        label={"radius"}
-                        hash={`${lightSource.light_source_id}|object|p1`}
-                        size={dynamicSizes.paramSlider}
-                        trackRef={objectRadiusTrackRef}
-                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
-                        cursor={objectRadiusCursor}
-                        onNewCursor={(newCursor) => {
-                          setObjectRadiusCursor({ ...newCursor, x: 0 });
-                          if (!objectRadiusTrackRef.current) return;
-                          const newVal =
-                            MIN_MASK_OBJECT_RADIUS_PX +
-                            getObjectRadiusValue(newCursor.y, objectRadiusTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, object_radius: newVal }));
-                          saveLightSourceField("object_radius", newVal);
-                        }}
-                        onCursorMove={(c) => {
-                          if (!objectRadiusTrackRef.current || !objectRadiusRef.current) return;
-                          const val =
-                            MIN_MASK_OBJECT_RADIUS_PX +
-                            getObjectRadiusValue(c.y, objectRadiusTrackRef.current.clientHeight, 0);
-                          objectRadiusRef.current.innerHTML = val.toFixed(0) + "px";
-                        }}
-                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                        title={objectRadiusTitle}
-                        liveTitleRef={objectRadiusRef}
-                      />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
                         label={"falloff"}
@@ -891,30 +801,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                     </>
                   ) : (
                     <>
-                      <ParameterSliderY
-                        resolution={{ ...uiState.resolution }}
-                        label={"size"}
-                        hash={`${lightSource.light_source_id}|p1`}
-                        size={dynamicSizes.paramSlider}
-                        trackRef={sizeTrackRef}
-                        trackBackground={"linear-gradient(1deg, rgb(68, 68, 68), rgb(72, 72, 72))"}
-                        cursor={sizeCursor}
-                        onNewCursor={(newCursor) => {
-                          setSizeCursor({ ...newCursor, x: 0 });
-                          if (!sizeTrackRef.current) return;
-                          const newVal = getSizeValue(newCursor.y, sizeTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, light_size: newVal }));
-                          saveLightSourceField("light_size", newVal);
-                        }}
-                        onCursorMove={(c) => {
-                          if (!sizeTrackRef.current || !sizeRef.current) return;
-                          const val = getSizeValue(c.y, sizeTrackRef.current.clientHeight, 0);
-                          sizeRef.current.innerHTML = val.toFixed(1);
-                        }}
-                        disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                        title={sizeTitle}
-                        liveTitleRef={sizeRef}
-                      />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
                         label={"intensity"}
