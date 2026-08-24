@@ -23,7 +23,7 @@
  * ## Index stability
  *
  * Polygon indices are positional and are held all over the place: every other
- * object's and capture's membership, every review candidate, every recorded
+ * object's and light's membership, every review candidate, every recorded
  * decision. Inserting or removing entries would silently renumber all of them.
  *
  * So the recut is append-only. A triangle that gets cut keeps its own slot,

@@ -13,12 +13,12 @@ import {
   MIN_MASK_OBJECT_RADIUS_PX,
 } from "../mask-gl";
 import {
-  capturedRegionCircle,
+  litRegionCircle,
   indicesInCircleFromCentroids,
   indicesInObjectFromCentroids,
-} from "../canvas-media/light-source-capture";
+} from "../canvas-media/light-geometry";
 import { maskGeometry } from "../canvas-media/mask-geometry";
-import { applyCaptureDelta, applyObjectDelta } from "../canvas-media/mask-delta";
+import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
   LaurusMaskResult,
   LaurusObjectBlackPoint,
@@ -26,40 +26,35 @@ import {
   toObjectBlackPointFields,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
-import {
-  CAPTURE_DARKNESS_MAX,
-  CAPTURE_FALLOFF_MAX,
-  CAPTURE_INTENSITY_MAX,
-  CAPTURE_SIZE_MAX,
-} from "../workspace.config";
+import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX, LIGHT_SIZE_MAX } from "../workspace.config";
 
-const CAPTURE_PREVIEW_SIZE_MIN = 10;
-const CAPTURE_PREVIEW_SIZE_MAX = 300;
-const CAPTURE_PREVIEW_FALLOFF_MIN = 20;
-const CAPTURE_PREVIEW_FALLOFF_MAX = 1000;
+const LIGHT_PREVIEW_SIZE_MIN = 10;
+const LIGHT_PREVIEW_SIZE_MAX = 300;
+const LIGHT_PREVIEW_FALLOFF_MIN = 20;
+const LIGHT_PREVIEW_FALLOFF_MAX = 1000;
 
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
   const latestCanvasMasksRef = useRef(coreState.canvasMasks);
   latestCanvasMasksRef.current = coreState.canvasMasks;
-  const { sendMaskCaptureUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
+  const { sendMaskLightUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
   const { selectedMaskKeys, mostRecentlyHoveredMaskKey } = useContext(HoverContext);
   const {
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
     notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
-    notifyMaskCaptureUpdated,
-    notifyMaskPendingCaptureSet,
-    notifyMaskPendingCaptureCleared,
+    notifyMaskLightUpdated,
+    notifyMaskPendingLightSet,
+    notifyMaskPendingLightCleared,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
     ...mask
   } = useContext(MaskContext);
-  const [target, setTarget] = useState<"capture" | "object">("capture");
+  const [target, setTarget] = useState<"light" | "object">("light");
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -179,18 +174,18 @@ export default function LightSourcebar() {
 
   const hasMesh = mask.status === "streaming" || mask.status === "done";
   const selectedElement = uiState.selectedElement;
-  const selectedCaptureMaskKey = selectedElement?.type === "capture" ? selectedElement.key : undefined;
+  const selectedLightMaskKey = selectedElement?.type === "light" ? selectedElement.key : undefined;
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const targetMaskKey = selectedCaptureMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
+  const targetMaskKey = selectedLightMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
-  const selectedCaptureMaskData =
-    selectedCaptureMaskKey !== undefined ? coreState.canvasMasks.get(selectedCaptureMaskKey) : undefined;
-  const selectedCapture =
-    selectedElement?.type === "capture"
-      ? selectedCaptureMaskData?.captures.find((c) => c.id === selectedElement.captureId)
+  const selectedLightMaskData =
+    selectedLightMaskKey !== undefined ? coreState.canvasMasks.get(selectedLightMaskKey) : undefined;
+  const selectedLight =
+    selectedElement?.type === "light"
+      ? selectedLightMaskData?.lights.find((c) => c.id === selectedElement.lightId)
       : undefined;
-  const isCaptureParamDisabled = !selectedCapture;
+  const isLightParamDisabled = !selectedLight;
   const selectedObjectMaskKey = selectedElement?.type === "object" ? selectedElement.key : undefined;
   const selectedObjectMaskData =
     selectedObjectMaskKey !== undefined ? coreState.canvasMasks.get(selectedObjectMaskKey) : undefined;
@@ -216,8 +211,8 @@ export default function LightSourcebar() {
     pendingObjectEdit?.blackPoint ??
     (selectedObject ? toObjectBlackPoint(selectedObject) : uiState.stagedObject.blackPoint);
   const selectedSubElement =
-    selectedElement?.type === "capture"
-      ? `capture|${selectedElement.key}|${selectedElement.captureId}`
+    selectedElement?.type === "light"
+      ? `light|${selectedElement.key}|${selectedElement.lightId}`
       : selectedElement?.type === "object"
         ? `object|${selectedElement.key}|${selectedElement.objectId}`
         : undefined;
@@ -227,7 +222,7 @@ export default function LightSourcebar() {
   if (selectedSubElement !== prevSelectedSubElement) {
     setPrevSelectedSubElement(selectedSubElement);
     if (selectedSubElement !== undefined) {
-      setTarget(selectedSubElement.startsWith("object|") ? "object" : "capture");
+      setTarget(selectedSubElement.startsWith("object|") ? "object" : "light");
     }
   }
 
@@ -254,8 +249,7 @@ export default function LightSourcebar() {
 
   const savePreviewField = useCallback(
     (
-      field:
-        "capture_preview_size" | "capture_preview_intensity" | "capture_preview_falloff" | "capture_preview_darkness",
+      field: "light_preview_size" | "light_preview_intensity" | "light_preview_falloff" | "light_preview_darkness",
       value: number,
     ) => {
       if (targetMaskKey === undefined) return;
@@ -268,11 +262,11 @@ export default function LightSourcebar() {
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       notifyMaskAppearanceChanged(targetMaskKey, {
-        capture: {
-          size: newMaskMeta.capture_preview_size,
-          intensity: newMaskMeta.capture_preview_intensity,
-          falloff: newMaskMeta.capture_preview_falloff,
-          darkness: newMaskMeta.capture_preview_darkness,
+        light: {
+          size: newMaskMeta.light_preview_size,
+          intensity: newMaskMeta.light_preview_intensity,
+          falloff: newMaskMeta.light_preview_falloff,
+          darkness: newMaskMeta.light_preview_darkness,
         },
       });
 
@@ -282,55 +276,55 @@ export default function LightSourcebar() {
     [targetMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistPreviewQueue],
   );
 
-  const previewSizeValue = targetMaskMeta ? targetMaskMeta.capture_preview_size : mask.captureSize;
+  const previewSizeValue = targetMaskMeta ? targetMaskMeta.light_preview_size : mask.lightSize;
   const handlePreviewSizeChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("capture_preview_size", value);
+        savePreviewField("light_preview_size", value);
       } else {
-        mask.setCaptureSize(value);
+        mask.setLightSize(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
   );
-  const previewIntensityValue = targetMaskMeta ? targetMaskMeta.capture_preview_intensity : mask.captureIntensity;
+  const previewIntensityValue = targetMaskMeta ? targetMaskMeta.light_preview_intensity : mask.lightIntensity;
   const handlePreviewIntensityChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("capture_preview_intensity", value);
+        savePreviewField("light_preview_intensity", value);
       } else {
-        mask.setCaptureIntensity(value);
+        mask.setLightIntensity(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
   );
-  const previewFalloffValue = targetMaskMeta ? targetMaskMeta.capture_preview_falloff : mask.captureFalloff;
+  const previewFalloffValue = targetMaskMeta ? targetMaskMeta.light_preview_falloff : mask.lightFalloff;
   const handlePreviewFalloffChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("capture_preview_falloff", value);
+        savePreviewField("light_preview_falloff", value);
       } else {
-        mask.setCaptureFalloff(value);
+        mask.setLightFalloff(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
   );
-  const previewDarknessValue = targetMaskMeta ? targetMaskMeta.capture_preview_darkness : mask.captureDarkness;
+  const previewDarknessValue = targetMaskMeta ? targetMaskMeta.light_preview_darkness : mask.lightDarkness;
   const handlePreviewDarknessChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("capture_preview_darkness", value);
+        savePreviewField("light_preview_darkness", value);
       } else {
-        mask.setCaptureDarkness(value);
+        mask.setLightDarkness(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
   );
 
-  interface PendingCaptureSave {
+  interface PendingLightSave {
     maskKey: string;
     maskMediaId: string;
-    captureId: number;
+    lightId: number;
     name: string;
     polygonIndices: number[];
     size: number;
@@ -339,19 +333,19 @@ export default function LightSourcebar() {
     darkness: number;
     resized: boolean;
   }
-  const pendingCaptureSaveRef = useRef<PendingCaptureSave | null>(null);
-  const isPersistingCaptureRef = useRef(false);
-  const persistCaptureQueue = useCallback(async () => {
-    if (isPersistingCaptureRef.current) return;
-    isPersistingCaptureRef.current = true;
+  const pendingLightSaveRef = useRef<PendingLightSave | null>(null);
+  const isPersistingLightRef = useRef(false);
+  const persistLightQueue = useCallback(async () => {
+    if (isPersistingLightRef.current) return;
+    isPersistingLightRef.current = true;
     let settledResizeMaskKey: string | undefined;
     try {
-      while (pendingCaptureSaveRef.current) {
-        const toSave = pendingCaptureSaveRef.current;
-        pendingCaptureSaveRef.current = null;
+      while (pendingLightSaveRef.current) {
+        const toSave = pendingLightSaveRef.current;
+        pendingLightSaveRef.current = null;
         if (toSave.resized) settledResizeMaskKey = toSave.maskKey;
-        const updated = await sendMaskCaptureUpdate(toSave.maskMediaId, {
-          capture_id: toSave.captureId,
+        const updated = await sendMaskLightUpdate(toSave.maskMediaId, {
+          light_id: toSave.lightId,
           name: toSave.name,
           polygon_indices: toSave.polygonIndices,
           size: toSave.size,
@@ -361,39 +355,39 @@ export default function LightSourcebar() {
         });
         const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
         if (updated && maskData) {
-          const patched = applyCaptureDelta(maskData, updated);
+          const patched = applyLightDelta(maskData, updated);
           dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
-          notifyMaskCaptureUpdated(toSave.maskKey, patched);
+          notifyMaskLightUpdated(toSave.maskKey, patched);
         } else {
-          console.error("failed to save capture change", { capture_id: toSave.captureId });
+          console.error("failed to save light change", { light_id: toSave.lightId });
         }
       }
     } finally {
-      isPersistingCaptureRef.current = false;
+      isPersistingLightRef.current = false;
       if (settledResizeMaskKey !== undefined) {
-        dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-        notifyMaskPendingCaptureCleared(settledResizeMaskKey);
+        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+        notifyMaskPendingLightCleared(settledResizeMaskKey);
       }
     }
-  }, [sendMaskCaptureUpdate, dispatch, notifyMaskCaptureUpdated, notifyMaskPendingCaptureCleared]);
+  }, [sendMaskLightUpdate, dispatch, notifyMaskLightUpdated, notifyMaskPendingLightCleared]);
 
-  const saveCaptureField = useCallback(
+  const saveLightField = useCallback(
     (field: "size" | "intensity" | "falloff" | "darkness", value: number) => {
-      if (selectedCaptureMaskKey === undefined || !selectedCapture || !selectedCaptureMaskData) return;
-      const patched = { ...selectedCapture, [field]: value };
-      const newCaptures = selectedCaptureMaskData.captures.map((c) => (c.id === selectedCapture.id ? patched : c));
-      const newMaskData: LaurusMaskResult = { ...selectedCaptureMaskData, captures: newCaptures };
-      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedCaptureMaskKey, value: newMaskData });
-      notifyMaskCaptureUpdated(selectedCaptureMaskKey, newMaskData);
-      const polygonIndices = selectedCaptureMaskData.polygons.reduce<number[]>((acc, p, i) => {
-        if (p.capture_id === selectedCapture.id) acc.push(i);
+      if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
+      const patched = { ...selectedLight, [field]: value };
+      const newLights = selectedLightMaskData.lights.map((c) => (c.id === selectedLight.id ? patched : c));
+      const newMaskData: LaurusMaskResult = { ...selectedLightMaskData, lights: newLights };
+      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedLightMaskKey, value: newMaskData });
+      notifyMaskLightUpdated(selectedLightMaskKey, newMaskData);
+      const polygonIndices = selectedLightMaskData.polygons.reduce<number[]>((acc, p, i) => {
+        if (p.light_id === selectedLight.id) acc.push(i);
         return acc;
       }, []);
-      pendingCaptureSaveRef.current = {
-        maskKey: selectedCaptureMaskKey,
-        maskMediaId: selectedCaptureMaskData.mask_media_id,
-        captureId: selectedCapture.id,
-        name: selectedCapture.name,
+      pendingLightSaveRef.current = {
+        maskKey: selectedLightMaskKey,
+        maskMediaId: selectedLightMaskData.mask_media_id,
+        lightId: selectedLight.id,
+        name: selectedLight.name,
         polygonIndices,
         size: patched.size,
         intensity: patched.intensity,
@@ -401,85 +395,78 @@ export default function LightSourcebar() {
         darkness: patched.darkness,
         resized: false,
       };
-      void persistCaptureQueue();
+      void persistLightQueue();
     },
-    [
-      selectedCaptureMaskKey,
-      selectedCapture,
-      selectedCaptureMaskData,
-      dispatch,
-      notifyMaskCaptureUpdated,
-      persistCaptureQueue,
-    ],
+    [selectedLightMaskKey, selectedLight, selectedLightMaskData, dispatch, notifyMaskLightUpdated, persistLightQueue],
   );
 
-  const captureResizeAnchorRef = useRef<{ captureId: number; cx: number; cy: number } | null>(null);
-  const captureResizeAnchor = useCallback(() => {
-    if (!selectedCapture || !selectedCaptureMaskData) return undefined;
-    const held = captureResizeAnchorRef.current;
-    if (held && held.captureId === selectedCapture.id) return held;
-    const circle = capturedRegionCircle(
-      selectedCaptureMaskData.polygons,
-      maskGeometry(selectedCaptureMaskData).centroids,
-      selectedCapture.id,
+  const lightResizeAnchorRef = useRef<{ lightId: number; cx: number; cy: number } | null>(null);
+  const lightResizeAnchor = useCallback(() => {
+    if (!selectedLight || !selectedLightMaskData) return undefined;
+    const held = lightResizeAnchorRef.current;
+    if (held && held.lightId === selectedLight.id) return held;
+    const circle = litRegionCircle(
+      selectedLightMaskData.polygons,
+      maskGeometry(selectedLightMaskData).centroids,
+      selectedLight.id,
     );
     if (!circle) return undefined;
-    const anchor = { captureId: selectedCapture.id, cx: circle.cx, cy: circle.cy };
-    captureResizeAnchorRef.current = anchor;
+    const anchor = { lightId: selectedLight.id, cx: circle.cx, cy: circle.cy };
+    lightResizeAnchorRef.current = anchor;
     return anchor;
-  }, [selectedCapture, selectedCaptureMaskData]);
+  }, [selectedLight, selectedLightMaskData]);
 
-  const captureIndicesForSize = useCallback(
+  const lightIndicesForSize = useCallback(
     (size: number): number[] | undefined => {
-      if (!selectedCaptureMaskData) return undefined;
-      const anchor = captureResizeAnchor();
+      if (!selectedLightMaskData) return undefined;
+      const anchor = lightResizeAnchor();
       if (!anchor) return undefined;
-      const indices = indicesInCircleFromCentroids(maskGeometry(selectedCaptureMaskData).centroids, {
+      const indices = indicesInCircleFromCentroids(maskGeometry(selectedLightMaskData).centroids, {
         cx: anchor.cx,
         cy: anchor.cy,
         radius: size / 2,
       });
       return indices.size === 0 ? undefined : [...indices];
     },
-    [selectedCaptureMaskData, captureResizeAnchor],
+    [selectedLightMaskData, lightResizeAnchor],
   );
 
-  const previewCaptureSizeChange = useCallback(
+  const previewLightSizeChange = useCallback(
     (size: number) => {
-      if (selectedCaptureMaskKey === undefined || !selectedCapture) return;
-      const polygonIndices = captureIndicesForSize(size);
+      if (selectedLightMaskKey === undefined || !selectedLight) return;
+      const polygonIndices = lightIndicesForSize(size);
       if (!polygonIndices) return;
-      notifyMaskPendingCaptureSet(selectedCaptureMaskKey, new Set(polygonIndices), selectedCapture.id);
+      notifyMaskPendingLightSet(selectedLightMaskKey, new Set(polygonIndices), selectedLight.id);
     },
-    [selectedCaptureMaskKey, selectedCapture, captureIndicesForSize, notifyMaskPendingCaptureSet],
+    [selectedLightMaskKey, selectedLight, lightIndicesForSize, notifyMaskPendingLightSet],
   );
 
-  const saveCaptureSizeField = useCallback(
+  const saveLightSizeField = useCallback(
     (size: number) => {
-      if (selectedCaptureMaskKey === undefined || !selectedCapture || !selectedCaptureMaskData) return;
-      const polygonIndices = captureIndicesForSize(size);
+      if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
+      const polygonIndices = lightIndicesForSize(size);
       if (!polygonIndices) {
-        captureResizeAnchorRef.current = null;
-        notifyMaskPendingCaptureCleared(selectedCaptureMaskKey);
+        lightResizeAnchorRef.current = null;
+        notifyMaskPendingLightCleared(selectedLightMaskKey);
         return;
       }
 
-      const patched = { ...selectedCapture, size };
-      const newCaptures = selectedCaptureMaskData.captures.map((c) => (c.id === selectedCapture.id ? patched : c));
-      const newMaskData: LaurusMaskResult = { ...selectedCaptureMaskData, captures: newCaptures };
-      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedCaptureMaskKey, value: newMaskData });
-      notifyMaskCaptureUpdated(selectedCaptureMaskKey, newMaskData);
+      const patched = { ...selectedLight, size };
+      const newLights = selectedLightMaskData.lights.map((c) => (c.id === selectedLight.id ? patched : c));
+      const newMaskData: LaurusMaskResult = { ...selectedLightMaskData, lights: newLights };
+      dispatch({ type: CoreActionType.SetCanvasMask, key: selectedLightMaskKey, value: newMaskData });
+      notifyMaskLightUpdated(selectedLightMaskKey, newMaskData);
       dispatch({
-        type: CoreActionType.SetPendingLightSourceCapture,
-        value: { maskKey: selectedCaptureMaskKey, captureId: selectedCapture.id, polygonIndices },
+        type: CoreActionType.SetPendingLight,
+        value: { maskKey: selectedLightMaskKey, lightId: selectedLight.id, polygonIndices },
       });
-      notifyMaskPendingCaptureSet(selectedCaptureMaskKey, new Set(polygonIndices), selectedCapture.id);
+      notifyMaskPendingLightSet(selectedLightMaskKey, new Set(polygonIndices), selectedLight.id);
 
-      pendingCaptureSaveRef.current = {
-        maskKey: selectedCaptureMaskKey,
-        maskMediaId: selectedCaptureMaskData.mask_media_id,
-        captureId: selectedCapture.id,
-        name: selectedCapture.name,
+      pendingLightSaveRef.current = {
+        maskKey: selectedLightMaskKey,
+        maskMediaId: selectedLightMaskData.mask_media_id,
+        lightId: selectedLight.id,
+        name: selectedLight.name,
         polygonIndices,
         size: patched.size,
         intensity: patched.intensity,
@@ -487,38 +474,32 @@ export default function LightSourcebar() {
         darkness: patched.darkness,
         resized: true,
       };
-      captureResizeAnchorRef.current = null;
-      void persistCaptureQueue();
+      lightResizeAnchorRef.current = null;
+      void persistLightQueue();
     },
     [
-      selectedCaptureMaskKey,
-      selectedCapture,
-      selectedCaptureMaskData,
-      captureIndicesForSize,
+      selectedLightMaskKey,
+      selectedLight,
+      selectedLightMaskData,
+      lightIndicesForSize,
       dispatch,
-      notifyMaskCaptureUpdated,
-      notifyMaskPendingCaptureSet,
-      notifyMaskPendingCaptureCleared,
-      persistCaptureQueue,
+      notifyMaskLightUpdated,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      persistLightQueue,
     ],
   );
 
-  const captureSizeValue = selectedCapture?.size ?? 0;
-  const captureIntensityValue = selectedCapture?.intensity ?? 0;
-  const handleCaptureIntensityChange = useCallback(
-    (value: number) => saveCaptureField("intensity", value),
-    [saveCaptureField],
+  const lightSizeValue = selectedLight?.size ?? 0;
+  const lightIntensityValue = selectedLight?.intensity ?? 0;
+  const handleLightIntensityChange = useCallback(
+    (value: number) => saveLightField("intensity", value),
+    [saveLightField],
   );
-  const captureFalloffValue = selectedCapture?.falloff ?? 0;
-  const handleCaptureFalloffChange = useCallback(
-    (value: number) => saveCaptureField("falloff", value),
-    [saveCaptureField],
-  );
-  const captureDarknessValue = selectedCapture?.darkness ?? 0;
-  const handleCaptureDarknessChange = useCallback(
-    (value: number) => saveCaptureField("darkness", value),
-    [saveCaptureField],
-  );
+  const lightFalloffValue = selectedLight?.falloff ?? 0;
+  const handleLightFalloffChange = useCallback((value: number) => saveLightField("falloff", value), [saveLightField]);
+  const lightDarknessValue = selectedLight?.darkness ?? 0;
+  const handleLightDarknessChange = useCallback((value: number) => saveLightField("darkness", value), [saveLightField]);
 
   type ObjectPatch = {
     elevation?: number;
@@ -779,10 +760,10 @@ export default function LightSourcebar() {
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewSizeValue, getTrackCursor: getPreviewSizeCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    CAPTURE_PREVIEW_SIZE_MAX - CAPTURE_PREVIEW_SIZE_MIN,
+    LIGHT_PREVIEW_SIZE_MAX - LIGHT_PREVIEW_SIZE_MIN,
   );
   const previewSizeCursor = {
-    x: getPreviewSizeCursor(previewSizeValue - CAPTURE_PREVIEW_SIZE_MIN, dynamicSizes.paramSize.containerWidth),
+    x: getPreviewSizeCursor(previewSizeValue - LIGHT_PREVIEW_SIZE_MIN, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
   const previewSizeTitle = previewSizeValue.toFixed(1);
@@ -803,13 +784,10 @@ export default function LightSourcebar() {
   const previewFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewFalloffValue, getTrackCursor: getPreviewFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    CAPTURE_PREVIEW_FALLOFF_MAX - CAPTURE_PREVIEW_FALLOFF_MIN,
+    LIGHT_PREVIEW_FALLOFF_MAX - LIGHT_PREVIEW_FALLOFF_MIN,
   );
   const previewFalloffCursor = {
-    x: getPreviewFalloffCursor(
-      previewFalloffValue - CAPTURE_PREVIEW_FALLOFF_MIN,
-      dynamicSizes.paramSize.containerWidth,
-    ),
+    x: getPreviewFalloffCursor(previewFalloffValue - LIGHT_PREVIEW_FALLOFF_MIN, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
   const previewFalloffTitle = previewFalloffValue.toFixed(1);
@@ -827,56 +805,56 @@ export default function LightSourcebar() {
   const previewDarknessTitle = previewDarknessValue.toFixed(2);
   const previewDarknessRef = useRef<HTMLDivElement | null>(null);
 
-  const captureSizeMax = selectedCaptureMaskData
-    ? Math.min(selectedCaptureMaskData.width, selectedCaptureMaskData.height)
-    : CAPTURE_SIZE_MAX;
-  const captureSizeTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getCaptureSizeValue, getTrackCursor: getCaptureSizeCursor } = useTrackpadState(
+  const lightSizeMax = selectedLightMaskData
+    ? Math.min(selectedLightMaskData.width, selectedLightMaskData.height)
+    : LIGHT_SIZE_MAX;
+  const lightSizeTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightSizeValue, getTrackCursor: getLightSizeCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    captureSizeMax,
+    lightSizeMax,
   );
-  const captureSizeCursor = { x: getCaptureSizeCursor(captureSizeValue, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const captureSizeTitle = captureSizeValue.toFixed(1);
-  const captureSizeRef = useRef<HTMLDivElement | null>(null);
+  const lightSizeCursor = { x: getLightSizeCursor(lightSizeValue, dynamicSizes.paramSize.containerWidth), y: 0 };
+  const lightSizeTitle = lightSizeValue.toFixed(1);
+  const lightSizeRef = useRef<HTMLDivElement | null>(null);
 
-  const captureIntensityTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getCaptureIntensityValue, getTrackCursor: getCaptureIntensityCursor } = useTrackpadState(
+  const lightIntensityTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightIntensityValue, getTrackCursor: getLightIntensityCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    CAPTURE_INTENSITY_MAX,
+    LIGHT_INTENSITY_MAX,
   );
-  const captureIntensityCursor = {
-    x: getCaptureIntensityCursor(captureIntensityValue, dynamicSizes.paramSize.containerWidth),
+  const lightIntensityCursor = {
+    x: getLightIntensityCursor(lightIntensityValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const captureIntensityTitle = captureIntensityValue.toFixed(2);
-  const captureIntensityRef = useRef<HTMLDivElement | null>(null);
+  const lightIntensityTitle = lightIntensityValue.toFixed(2);
+  const lightIntensityRef = useRef<HTMLDivElement | null>(null);
 
-  const captureFalloffMax = selectedCaptureMaskData
-    ? Math.min(selectedCaptureMaskData.width, selectedCaptureMaskData.height)
-    : CAPTURE_FALLOFF_MAX;
-  const captureFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getCaptureFalloffValue, getTrackCursor: getCaptureFalloffCursor } = useTrackpadState(
+  const lightFalloffMax = selectedLightMaskData
+    ? Math.min(selectedLightMaskData.width, selectedLightMaskData.height)
+    : LIGHT_FALLOFF_MAX;
+  const lightFalloffTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightFalloffValue, getTrackCursor: getLightFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    captureFalloffMax,
+    lightFalloffMax,
   );
-  const captureFalloffCursor = {
-    x: getCaptureFalloffCursor(captureFalloffValue, dynamicSizes.paramSize.containerWidth),
+  const lightFalloffCursor = {
+    x: getLightFalloffCursor(lightFalloffValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const captureFalloffTitle = captureFalloffValue.toFixed(1);
-  const captureFalloffRef = useRef<HTMLDivElement | null>(null);
+  const lightFalloffTitle = lightFalloffValue.toFixed(1);
+  const lightFalloffRef = useRef<HTMLDivElement | null>(null);
 
-  const captureDarknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getCaptureDarknessValue, getTrackCursor: getCaptureDarknessCursor } = useTrackpadState(
+  const lightDarknessTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightDarknessValue, getTrackCursor: getLightDarknessCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    CAPTURE_DARKNESS_MAX,
+    LIGHT_DARKNESS_MAX,
   );
-  const captureDarknessCursor = {
-    x: getCaptureDarknessCursor(captureDarknessValue, dynamicSizes.paramSize.containerWidth),
+  const lightDarknessCursor = {
+    x: getLightDarknessCursor(lightDarknessValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const captureDarknessTitle = captureDarknessValue.toFixed(2);
-  const captureDarknessRef = useRef<HTMLDivElement | null>(null);
+  const lightDarknessTitle = lightDarknessValue.toFixed(2);
+  const lightDarknessRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div
@@ -890,17 +868,17 @@ export default function LightSourcebar() {
     >
       <div
         title={
-          target === "capture"
-            ? "targeting captures -- double-click for objects"
-            : "targeting objects -- double-click for captures"
+          target === "light"
+            ? "targeting lights -- double-click for objects"
+            : "targeting objects -- double-click for lights"
         }
         onDoubleClick={() => {
-          setTarget(target === "capture" ? "object" : "capture");
+          setTarget(target === "light" ? "object" : "light");
         }}
         style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
       >
         <SvgRepo
-          svg={target === "capture" ? asterisk300() : antigravity300()}
+          svg={target === "light" ? asterisk300() : antigravity300()}
           containerStyle={{
             width: dynamicSizes.svgSize.width,
             height: dynamicSizes.svgSize.height,
@@ -909,7 +887,7 @@ export default function LightSourcebar() {
           scaleToContaier={true}
         />
       </div>
-      {target === "capture" ? (
+      {target === "light" ? (
         <>
           <div
             style={{
@@ -922,8 +900,8 @@ export default function LightSourcebar() {
             <span
               title={
                 uiState.lightSourcePreview
-                  ? "mouse over a mask to preview the light source there -- turn off to edit the selected capture's own starting parameters"
-                  : "editing the selected capture's own starting parameters -- turn on to preview the light source by hovering a mask"
+                  ? "mouse over a mask to preview the light source there -- turn off to edit the selected light's own starting parameters"
+                  : "editing the selected light's own starting parameters -- turn on to preview the light source by hovering a mask"
               }
               style={{
                 textShadow: uiState.lightSourcePreview ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
@@ -938,10 +916,10 @@ export default function LightSourcebar() {
                 const next = !uiState.lightSourcePreview;
                 uiDispatch({ type: UIActionType.SetLightSourcePreview, value: next });
                 notifyMaskLightSourcePreviewToggled(next);
-                if (next && (selectedElement?.type === "capture" || selectedElement?.type === "object")) {
+                if (next && (selectedElement?.type === "light" || selectedElement?.type === "object")) {
                   uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
                   notifyMaskSelectionChanged(selectedElement.key);
-                  notifyMaskSelectedCaptureChanged(selectedElement.key, undefined);
+                  notifyMaskSelectedLightChanged(selectedElement.key, undefined);
                   notifyMaskSelectedObjectChanged(selectedElement.key, undefined);
                 }
               }}
@@ -980,14 +958,14 @@ export default function LightSourcebar() {
                     if (!previewSizeTrackRef.current || !previewSizeRef.current) return;
                     const val =
                       getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
-                      CAPTURE_PREVIEW_SIZE_MIN;
+                      LIGHT_PREVIEW_SIZE_MIN;
                     previewSizeRef.current.innerHTML = val.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
                     if (!previewSizeTrackRef.current) return;
                     const newValue =
                       getPreviewSizeValue(newCursor.x, previewSizeTrackRef.current.clientWidth, 0) +
-                      CAPTURE_PREVIEW_SIZE_MIN;
+                      LIGHT_PREVIEW_SIZE_MIN;
                     handlePreviewSizeChange(newValue);
                   }}
                   disabled={isPreviewControlsDisabled}
@@ -1068,14 +1046,14 @@ export default function LightSourcebar() {
                     if (!previewFalloffTrackRef.current || !previewFalloffRef.current) return;
                     const val =
                       getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
-                      CAPTURE_PREVIEW_FALLOFF_MIN;
+                      LIGHT_PREVIEW_FALLOFF_MIN;
                     previewFalloffRef.current.innerHTML = val.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
                     if (!previewFalloffTrackRef.current) return;
                     const newValue =
                       getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
-                      CAPTURE_PREVIEW_FALLOFF_MIN;
+                      LIGHT_PREVIEW_FALLOFF_MIN;
                     handlePreviewFalloffChange(newValue);
                   }}
                   disabled={isPreviewControlsDisabled}
@@ -1140,34 +1118,34 @@ export default function LightSourcebar() {
               >
                 <span
                   title={
-                    isCaptureParamDisabled
-                      ? "select a capture on the mesh to resize it"
-                      : "how wide this capture is -- resizes the region of triangles it owns, and with it the epicenter core a wired light_source effect ramps from"
+                    isLightParamDisabled
+                      ? "select a light on the mesh to resize it"
+                      : "how wide this light is -- resizes the region of triangles it owns, and with it the epicenter core a wired light_source effect ramps from"
                   }
-                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"size"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
-                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-size|${selectedCapture?.id ?? "none"}`}
+                  hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-size|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={captureSizeTrackRef}
-                  cursor={captureSizeCursor}
+                  containerRef={lightSizeTrackRef}
+                  cursor={lightSizeCursor}
                   onCursorMove={(newCursor) => {
-                    if (!captureSizeTrackRef.current) return;
-                    const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
-                    previewCaptureSizeChange(newValue);
-                    if (captureSizeRef.current) captureSizeRef.current.innerHTML = newValue.toFixed(1);
+                    if (!lightSizeTrackRef.current) return;
+                    const newValue = getLightSizeValue(newCursor.x, lightSizeTrackRef.current.clientWidth, 0);
+                    previewLightSizeChange(newValue);
+                    if (lightSizeRef.current) lightSizeRef.current.innerHTML = newValue.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!captureSizeTrackRef.current) return;
-                    const newValue = getCaptureSizeValue(newCursor.x, captureSizeTrackRef.current.clientWidth, 0);
-                    saveCaptureSizeField(newValue);
+                    if (!lightSizeTrackRef.current) return;
+                    const newValue = getLightSizeValue(newCursor.x, lightSizeTrackRef.current.clientWidth, 0);
+                    saveLightSizeField(newValue);
                   }}
-                  disabled={isCaptureParamDisabled}
-                  title={captureSizeTitle}
-                  liveTitleRef={captureSizeRef}
+                  disabled={isLightParamDisabled}
+                  title={lightSizeTitle}
+                  liveTitleRef={lightSizeRef}
                 />
               </div>
               <div
@@ -1181,37 +1159,33 @@ export default function LightSourcebar() {
               >
                 <span
                   title={
-                    isCaptureParamDisabled
-                      ? "select a capture on the mesh to set the brightness of its own epicenter's core"
-                      : "brightness of this capture's own epicenter core -- 100% is pure white"
+                    isLightParamDisabled
+                      ? "select a light on the mesh to set the brightness of its own epicenter's core"
+                      : "brightness of this light's own epicenter core -- 100% is pure white"
                   }
-                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"intensity"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
-                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-intensity|${selectedCapture?.id ?? "none"}`}
+                  hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-intensity|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={captureIntensityTrackRef}
-                  cursor={captureIntensityCursor}
+                  containerRef={lightIntensityTrackRef}
+                  cursor={lightIntensityCursor}
                   onCursorMove={(newCursor) => {
-                    if (!captureIntensityTrackRef.current || !captureIntensityRef.current) return;
-                    const val = getCaptureIntensityValue(newCursor.x, captureIntensityTrackRef.current.clientWidth, 0);
-                    captureIntensityRef.current.innerHTML = val.toFixed(2);
+                    if (!lightIntensityTrackRef.current || !lightIntensityRef.current) return;
+                    const val = getLightIntensityValue(newCursor.x, lightIntensityTrackRef.current.clientWidth, 0);
+                    lightIntensityRef.current.innerHTML = val.toFixed(2);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!captureIntensityTrackRef.current) return;
-                    const newValue = getCaptureIntensityValue(
-                      newCursor.x,
-                      captureIntensityTrackRef.current.clientWidth,
-                      0,
-                    );
-                    handleCaptureIntensityChange(newValue);
+                    if (!lightIntensityTrackRef.current) return;
+                    const newValue = getLightIntensityValue(newCursor.x, lightIntensityTrackRef.current.clientWidth, 0);
+                    handleLightIntensityChange(newValue);
                   }}
-                  disabled={isCaptureParamDisabled}
-                  title={captureIntensityTitle}
-                  liveTitleRef={captureIntensityRef}
+                  disabled={isLightParamDisabled}
+                  title={lightIntensityTitle}
+                  liveTitleRef={lightIntensityRef}
                 />
               </div>
               <div
@@ -1225,33 +1199,33 @@ export default function LightSourcebar() {
               >
                 <span
                   title={
-                    isCaptureParamDisabled
-                      ? "select a capture on the mesh to set how far its own darkening falloffs out beyond the core"
-                      : "distance this capture's own darkening takes to falloff out beyond the core, in on-screen pixels"
+                    isLightParamDisabled
+                      ? "select a light on the mesh to set how far its own darkening falloffs out beyond the core"
+                      : "distance this light's own darkening takes to falloff out beyond the core, in on-screen pixels"
                   }
-                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"falloff"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
-                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-falloff|${selectedCapture?.id ?? "none"}`}
+                  hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-falloff|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={captureFalloffTrackRef}
-                  cursor={captureFalloffCursor}
+                  containerRef={lightFalloffTrackRef}
+                  cursor={lightFalloffCursor}
                   onCursorMove={(newCursor) => {
-                    if (!captureFalloffTrackRef.current || !captureFalloffRef.current) return;
-                    const val = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
-                    captureFalloffRef.current.innerHTML = val.toFixed(1);
+                    if (!lightFalloffTrackRef.current || !lightFalloffRef.current) return;
+                    const val = getLightFalloffValue(newCursor.x, lightFalloffTrackRef.current.clientWidth, 0);
+                    lightFalloffRef.current.innerHTML = val.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!captureFalloffTrackRef.current) return;
-                    const newValue = getCaptureFalloffValue(newCursor.x, captureFalloffTrackRef.current.clientWidth, 0);
-                    handleCaptureFalloffChange(newValue);
+                    if (!lightFalloffTrackRef.current) return;
+                    const newValue = getLightFalloffValue(newCursor.x, lightFalloffTrackRef.current.clientWidth, 0);
+                    handleLightFalloffChange(newValue);
                   }}
-                  disabled={isCaptureParamDisabled}
-                  title={captureFalloffTitle}
-                  liveTitleRef={captureFalloffRef}
+                  disabled={isLightParamDisabled}
+                  title={lightFalloffTitle}
+                  liveTitleRef={lightFalloffRef}
                 />
               </div>
               <div
@@ -1265,37 +1239,33 @@ export default function LightSourcebar() {
               >
                 <span
                   title={
-                    isCaptureParamDisabled
-                      ? "select a capture on the mesh to set the strength of its own darkening at the far edge of the falloff"
-                      : "strength of this capture's own darkening at the far edge of the falloff -- 100% drives it fully to black"
+                    isLightParamDisabled
+                      ? "select a light on the mesh to set the strength of its own darkening at the far edge of the falloff"
+                      : "strength of this light's own darkening at the far edge of the falloff -- 100% drives it fully to black"
                   }
-                  style={{ opacity: isCaptureParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"darkness"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
-                  hash={`${selectedCaptureMaskKey ?? "lightsourcebar"}|capture-darkness|${selectedCapture?.id ?? "none"}`}
+                  hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-darkness|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={captureDarknessTrackRef}
-                  cursor={captureDarknessCursor}
+                  containerRef={lightDarknessTrackRef}
+                  cursor={lightDarknessCursor}
                   onCursorMove={(newCursor) => {
-                    if (!captureDarknessTrackRef.current || !captureDarknessRef.current) return;
-                    const val = getCaptureDarknessValue(newCursor.x, captureDarknessTrackRef.current.clientWidth, 0);
-                    captureDarknessRef.current.innerHTML = val.toFixed(2);
+                    if (!lightDarknessTrackRef.current || !lightDarknessRef.current) return;
+                    const val = getLightDarknessValue(newCursor.x, lightDarknessTrackRef.current.clientWidth, 0);
+                    lightDarknessRef.current.innerHTML = val.toFixed(2);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!captureDarknessTrackRef.current) return;
-                    const newValue = getCaptureDarknessValue(
-                      newCursor.x,
-                      captureDarknessTrackRef.current.clientWidth,
-                      0,
-                    );
-                    handleCaptureDarknessChange(newValue);
+                    if (!lightDarknessTrackRef.current) return;
+                    const newValue = getLightDarknessValue(newCursor.x, lightDarknessTrackRef.current.clientWidth, 0);
+                    handleLightDarknessChange(newValue);
                   }}
-                  disabled={isCaptureParamDisabled}
-                  title={captureDarknessTitle}
-                  liveTitleRef={captureDarknessRef}
+                  disabled={isLightParamDisabled}
+                  title={lightDarknessTitle}
+                  liveTitleRef={lightDarknessRef}
                 />
               </div>
             </>

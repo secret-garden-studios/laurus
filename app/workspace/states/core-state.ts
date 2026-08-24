@@ -11,29 +11,29 @@ import {
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
-  CAPTURE_DARKNESS_DEFAULT,
-  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  CAPTURE_INTENSITY_DEFAULT,
-  CAPTURE_SIZE_CSS_PX_DEFAULT,
+  LIGHT_DARKNESS_DEFAULT,
+  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_INTENSITY_DEFAULT,
+  LIGHT_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
-export interface CaptureValue {
+export interface LightValue {
   size: number;
   intensity: number;
   falloff: number;
   darkness: number;
 }
 
-export const DEFAULT_CAPTURE_VALUE: CaptureValue = {
-  size: CAPTURE_SIZE_CSS_PX_DEFAULT,
-  intensity: CAPTURE_INTENSITY_DEFAULT,
-  falloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  darkness: CAPTURE_DARKNESS_DEFAULT,
+export const DEFAULT_LIGHT_VALUE: LightValue = {
+  size: LIGHT_SIZE_CSS_PX_DEFAULT,
+  intensity: LIGHT_INTENSITY_DEFAULT,
+  falloff: LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  darkness: LIGHT_DARKNESS_DEFAULT,
 };
 
-export interface PendingLightSourceCapture {
+export interface PendingLight {
   maskKey: string;
-  captureId: number;
+  lightId: number;
   polygonIndices: number[];
 }
 
@@ -71,7 +71,7 @@ export interface CoreState {
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
-  pendingLightSourceCapture: PendingLightSourceCapture | undefined;
+  pendingLight: PendingLight | undefined;
   pendingTopologyEdit: PendingTopologyEdit | undefined;
 }
 
@@ -89,7 +89,7 @@ export const defaultCoreState: CoreState = {
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
-  pendingLightSourceCapture: undefined,
+  pendingLight: undefined,
   pendingTopologyEdit: undefined,
 };
 
@@ -123,7 +123,7 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
-  SetPendingLightSourceCapture,
+  SetPendingLight,
   SetPendingTopologyEdit,
 }
 
@@ -158,7 +158,7 @@ export type CoreAction =
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> }
-  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined }
+  | { type: CoreActionType.SetPendingLight; value: PendingLight | undefined }
   | { type: CoreActionType.SetPendingTopologyEdit; value: PendingTopologyEdit | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
@@ -395,8 +395,8 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         inputsToRender: action.value,
       };
     }
-    case CoreActionType.SetPendingLightSourceCapture: {
-      return { ...state, pendingLightSourceCapture: action.value };
+    case CoreActionType.SetPendingLight: {
+      return { ...state, pendingLight: action.value };
     }
     case CoreActionType.SetPendingTopologyEdit: {
       return { ...state, pendingTopologyEdit: action.value };

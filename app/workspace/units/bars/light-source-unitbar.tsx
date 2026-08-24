@@ -197,8 +197,8 @@ export default function LightSourceUnitbar({
         <div
           title={
             target === "object"
-              ? "targeting objects -- double-click for captures"
-              : "targeting captures -- double-click for objects"
+              ? "targeting objects -- double-click for lights"
+              : "targeting lights -- double-click for objects"
           }
           onDoubleClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
@@ -212,7 +212,7 @@ export default function LightSourceUnitbar({
           }}
         >
           <SvgRepo
-            title={target === "object" ? "object" : "capture"}
+            title={target === "object" ? "object" : "light"}
             svg={target === "object" ? antigravity300() : asterisk300()}
             containerStyle={{
               cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",

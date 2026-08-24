@@ -17,11 +17,11 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import MoveUnitbar from "./bars/move-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey, maskCaptureInputId, maskObjectInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
 
 export type MoveUnitTarget = CarouselEntry["type"];
 
-const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "capture", "object"];
+const MOVE_TARGET_ORDER: MoveUnitTarget[] = ["img", "svg", "mask", "light", "object"];
 
 export interface MoveUnitControls {
   amplitude: number;
@@ -57,7 +57,7 @@ interface MoveUnit {
 }
 export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -125,9 +125,9 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "capture": {
+        case "light": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
-          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+          return maskKey ? maskLightInputId(maskKey, carouselEntry.lightId) : "";
         }
         case "object": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
@@ -244,12 +244,12 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           break;
         }
-        case "capture": {
+        case "light": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "capture",
+            type: "light",
             locallyActivatedEffectKey: move.move_id,
-            captureId: carouselEntry.captureId,
+            lightId: carouselEntry.lightId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -257,10 +257,10 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
           notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
@@ -281,7 +281,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
           });
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -290,7 +290,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
       move.move_id,
       uiDispatch,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
     ],
   );

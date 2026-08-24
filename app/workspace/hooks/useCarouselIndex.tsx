@@ -35,8 +35,8 @@ export const useCarouselIndex = (
   };
   const activeIndex = carouselEntries.findIndex((c) => {
     if (c.key !== activeKey) return false;
-    if (activeElement?.type === "capture") {
-      return c.type === "capture" && c.captureId === activeElement.captureId;
+    if (activeElement?.type === "light") {
+      return c.type === "light" && c.lightId === activeElement.lightId;
     }
     if (activeElement?.type === "object") {
       return c.type === "object" && c.objectId === activeElement.objectId;

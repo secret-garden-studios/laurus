@@ -13,8 +13,8 @@ import {
 import { CoreAction, CoreActionType } from "./states/core-state";
 import { CarouselEntry } from "./states/ui-state";
 
-export function maskCaptureInputId(maskKey: string, captureId: number): string {
-  return `${maskKey}:${captureId}`;
+export function maskLightInputId(maskKey: string, lightId: number): string {
+  return `${maskKey}:${lightId}`;
 }
 
 export function maskObjectInputId(maskKey: string, objectId: number): string {
@@ -31,20 +31,20 @@ export function parseMaskObjectInputId(inputId: string): { maskKey: string; obje
   };
 }
 
-export function parseMaskCaptureInputId(inputId: string): { maskKey: string; captureId: number | undefined } {
+export function parseMaskLightInputId(inputId: string): { maskKey: string; lightId: number | undefined } {
   const separatorIndex = inputId.indexOf(":");
-  if (separatorIndex === -1) return { maskKey: inputId, captureId: undefined };
-  const captureId = Number(inputId.slice(separatorIndex + 1));
+  if (separatorIndex === -1) return { maskKey: inputId, lightId: undefined };
+  const lightId = Number(inputId.slice(separatorIndex + 1));
   return {
     maskKey: inputId.slice(0, separatorIndex),
-    captureId: Number.isFinite(captureId) ? captureId : undefined,
+    lightId: Number.isFinite(lightId) ? lightId : undefined,
   };
 }
 
 export function carouselEntryMathKey(entry: CarouselEntry): string {
   switch (entry.type) {
-    case "capture":
-      return maskCaptureInputId(entry.key, entry.captureId);
+    case "light":
+      return maskLightInputId(entry.key, entry.lightId);
     case "object":
       return maskObjectInputId(entry.key, entry.objectId);
     default:
@@ -147,15 +147,15 @@ export async function deleteEffects(
   await deleteMathEntries(matchesMediaKey(mediaKey), apiOrigin, accessToken, effects, dispatch);
 }
 
-export async function deleteMaskCaptureEffects(
+export async function deleteMaskLightEffects(
   maskKey: string,
-  captureId: number,
+  lightId: number,
   apiOrigin: string | undefined,
   accessToken: string | undefined,
   effects: LaurusEffect[],
   dispatch: Dispatch<CoreAction>,
 ) {
-  const inputId = maskCaptureInputId(maskKey, captureId);
+  const inputId = maskLightInputId(maskKey, lightId);
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }
 

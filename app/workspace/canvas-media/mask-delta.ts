@@ -1,5 +1,5 @@
 import type {
-  CaptureUpdateDelta_V1_0,
+  LightUpdateDelta_V1_0,
   LaurusMaskResult,
   LaurusPolygonPath,
   ObjectUpdateDelta_V1_0,
@@ -45,19 +45,19 @@ export function applyObjectDelta(mask: LaurusMaskResult, delta: ObjectUpdateDelt
   };
 }
 
-export function applyCaptureDelta(mask: LaurusMaskResult, delta: CaptureUpdateDelta_V1_0): LaurusMaskResult {
+export function applyLightDelta(mask: LaurusMaskResult, delta: LightUpdateDelta_V1_0): LaurusMaskResult {
   const polygons = retagPolygons(
     mask.polygons,
     delta.tagged_polygon_indices,
     delta.cleared_polygon_indices,
-    (polygon, capture_id) => ({ ...polygon, capture_id }),
-    delta.capture_id,
+    (polygon, light_id) => ({ ...polygon, light_id }),
+    delta.light_id,
   );
-  const withoutEdited = mask.captures.filter((c) => c.id !== delta.capture_id);
+  const withoutEdited = mask.lights.filter((c) => c.id !== delta.light_id);
   return {
     ...mask,
     polygons,
-    captures: delta.removed || !delta.capture ? withoutEdited : [...withoutEdited, delta.capture],
+    lights: delta.removed || !delta.light ? withoutEdited : [...withoutEdited, delta.light],
     last_active: delta.last_active,
     last_editor: delta.last_editor,
   };

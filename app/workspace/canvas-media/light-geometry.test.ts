@@ -5,11 +5,11 @@ import { centroidOf } from "./mask-geometry.ts";
 import {
   indexedPolygonIndexAtPoint,
   indicesInObjectFromCentroids,
-  captureIdAtPoint,
+  lightIdAtPoint,
   polygonIndexAtPoint,
   swelledPolygonIndexAtPoint,
   translateIndices,
-} from "./light-source-capture.ts";
+} from "./light-geometry.ts";
 import { cachedObjectShape, objectShapeDepthAt } from "./object-shape.ts";
 
 const CELL = 10;
@@ -153,11 +153,11 @@ function swelled(point: [number, number], object: Parameters<typeof objectSwellA
   return [point[0] + dx, point[1] + dy];
 }
 
-describe("captureIdAtPoint -- reading the capture off the mesh as drawn", () => {
-  function halved(): { polygons: { capture_id: number }[]; points: [number, number][][] } {
+describe("lightIdAtPoint -- reading the light off the mesh as drawn", () => {
+  function halved(): { polygons: { light_id: number }[]; points: [number, number][][] } {
     const { points } = grid();
     const polygons = points.map((triangle) => ({
-      capture_id: triangle.every(([x]) => x <= (COLS * CELL) / 2) ? 1 : 0,
+      light_id: triangle.every(([x]) => x <= (COLS * CELL) / 2) ? 1 : 0,
     }));
     return { polygons, points };
   }
@@ -166,28 +166,28 @@ describe("captureIdAtPoint -- reading the capture off the mesh as drawn", () => 
     const { polygons, points } = halved();
     const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, shape: undefined, blackPoint: undefined };
 
-    assert.equal(captureIdAtPoint(polygons as never, points, [flat], [10, 60]), 1);
-    assert.equal(captureIdAtPoint(polygons as never, points, [], [10, 60]), 1);
-    assert.equal(captureIdAtPoint(polygons as never, points, [], [COLS * CELL - 5, 60]), undefined);
+    assert.equal(lightIdAtPoint(polygons as never, points, [flat], [10, 60]), 1);
+    assert.equal(lightIdAtPoint(polygons as never, points, [], [10, 60]), 1);
+    assert.equal(lightIdAtPoint(polygons as never, points, [], [COLS * CELL - 5, 60]), undefined);
   });
 
-  it("stretches the capture's bounds the way the shader stretched its triangles", () => {
+  it("stretches the light's bounds the way the shader stretched its triangles", () => {
     const { polygons, points } = halved();
     const raised = { cx: 30, cy: 60, radius: 50, elevation: 60, falloff: 2, shape: undefined, blackPoint: undefined };
 
     const flatEdge = Math.max(
-      ...points.flatMap((triangle, i) => (polygons[i].capture_id === 1 ? triangle.map(([x]) => x) : [])),
+      ...points.flatMap((triangle, i) => (polygons[i].light_id === 1 ? triangle.map(([x]) => x) : [])),
     );
     const drawnEdge = Math.max(
       ...points.flatMap((triangle, i) =>
-        polygons[i].capture_id === 1 ? triangle.map((corner) => corner[0] + objectSwellAt(corner, [raised])[0]) : [],
+        polygons[i].light_id === 1 ? triangle.map((corner) => corner[0] + objectSwellAt(corner, [raised])[0]) : [],
       ),
     );
-    assert.ok(drawnEdge > flatEdge, "the swell should have pushed the capture's edge outwards");
+    assert.ok(drawnEdge > flatEdge, "the swell should have pushed the light's edge outwards");
 
     const justPastFlatEdge: [number, number] = [(flatEdge + drawnEdge) / 2, 60];
-    assert.equal(captureIdAtPoint(polygons as never, points, [], justPastFlatEdge), undefined);
-    assert.equal(captureIdAtPoint(polygons as never, points, [raised], justPastFlatEdge), 1);
+    assert.equal(lightIdAtPoint(polygons as never, points, [], justPastFlatEdge), undefined);
+    assert.equal(lightIdAtPoint(polygons as never, points, [raised], justPastFlatEdge), 1);
   });
 });
 

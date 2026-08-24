@@ -44,7 +44,7 @@ export type LaurusTool =
   | { type: "scale" }
   | { type: "rotate" }
   | { type: "mix" }
-  | { type: "mask"; capturingMeshSection: boolean; raisingObjects: boolean }
+  | { type: "mask"; lightingMeshSection: boolean; raisingObjects: boolean }
   | { type: "light_source" }
   | { type: "pen"; stitch: boolean; addAnchor: boolean; showAnchors: boolean };
 
@@ -59,7 +59,7 @@ export const defaultMarqueeTool: LaurusTool = {
 
 export const defaultMaskTool: LaurusTool = {
   type: "mask",
-  capturingMeshSection: false,
+  lightingMeshSection: false,
   raisingObjects: false,
 };
 
@@ -83,19 +83,19 @@ export type LaurusActiveElement =
   | { key: string; type: "svg"; locallyActivatedEffectKey?: string }
   | { key: string; type: "img"; locallyActivatedEffectKey?: string }
   | { key: string; type: "mask"; locallyActivatedEffectKey?: string }
-  | { key: string; type: "capture"; captureId: number; locallyActivatedEffectKey?: string }
+  | { key: string; type: "light"; lightId: number; locallyActivatedEffectKey?: string }
   | { key: string; type: "object"; objectId: number; locallyActivatedEffectKey?: string };
 
 export type LaurusSelectedElement =
   | { key: string; type: "mask" }
-  | { key: string; type: "capture"; captureId: number }
+  | { key: string; type: "light"; lightId: number }
   | { key: string; type: "object"; objectId: number };
 
 export type CarouselEntry =
   | { type: "svg"; key: string }
   | { type: "img"; key: string }
   | { type: "mask"; key: string }
-  | { type: "capture"; key: string; captureId: number }
+  | { type: "light"; key: string; lightId: number }
   | { type: "object"; key: string; objectId: number };
 
 export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
@@ -162,7 +162,7 @@ export interface ObjectReviewSession {
    * back exactly as it was. Undefined whenever the pen is shut.
    *
    * Restoring a remembered tool rather than a default, because a review is
-   * reached part-way through a mask-tool gesture -- objects armed, capture off
+   * reached part-way through a mask-tool gesture -- objects armed, light off
    * -- and dropping back to a fresh mask tool would quietly undo that.
    */
   penReturnTool: LaurusTool | undefined;
@@ -371,7 +371,7 @@ export type UIAction =
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
-  | { type: UIActionType.DeleteCarouselEntry; key: string; captureId?: number; objectId?: number }
+  | { type: UIActionType.DeleteCarouselEntry; key: string; lightId?: number; objectId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
@@ -583,7 +583,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.DeleteCarouselEntry: {
       const newEntries = state.carouselEntries.filter((m) => {
         if (m.key !== action.key) return true;
-        if (action.captureId !== undefined) return !(m.type === "capture" && m.captureId === action.captureId);
+        if (action.lightId !== undefined) return !(m.type === "light" && m.lightId === action.lightId);
         if (action.objectId !== undefined) return !(m.type === "object" && m.objectId === action.objectId);
         return false;
       });

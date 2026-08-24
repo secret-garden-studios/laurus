@@ -293,12 +293,12 @@ export interface PolygonPath_V1_0 {
   fill: string;
   stroke: string;
   stroke_width: number;
-  capture_id: number;
+  light_id: number;
   object_id: number;
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
-export interface Capture_V1_0 {
+export interface Light_V1_0 {
   id: number;
   name: string;
   size: number;
@@ -306,7 +306,7 @@ export interface Capture_V1_0 {
   falloff: number;
   darkness: number;
 }
-export type LaurusCapture = Capture_V1_0;
+export type LaurusLight = Light_V1_0;
 
 export interface Object_V1_0 {
   id: number;
@@ -374,7 +374,7 @@ export interface MaskMediaResult_V1_0 {
   categories: string[];
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
-  captures: Capture_V1_0[];
+  lights: Light_V1_0[];
   objects: Object_V1_0[];
   creator: string;
   last_editor: string;
@@ -508,8 +508,8 @@ export async function deleteMask(
   }
 }
 
-export function nextCaptureId(captures: Capture_V1_0[]): number {
-  return 1 + captures.reduce((max, c) => Math.max(max, c.id), 0);
+export function nextLightId(lights: Light_V1_0[]): number {
+  return 1 + lights.reduce((max, c) => Math.max(max, c.id), 0);
 }
 
 export function nextObjectId(objects: Object_V1_0[]): number {
@@ -648,10 +648,10 @@ export function maskImage(
   return socket;
 }
 
-/* /media/masks/{mask_media_id}/captures (websocket) */
+/* /media/masks/{mask_media_id}/lights (websocket) */
 
-export interface MaskCaptureUpdateRequest_V1_0 {
-  capture_id: number;
+export interface MaskLightUpdateRequest_V1_0 {
+  light_id: number;
   name: string;
   polygon_indices: number[];
   size: number;
@@ -672,20 +672,20 @@ export interface ObjectUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
   removed: boolean;
 }
 
-export interface CaptureUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
-  capture_id: number;
-  capture: Capture_V1_0 | null;
+export interface LightUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
+  light_id: number;
+  light: Light_V1_0 | null;
   removed: boolean;
 }
 
-export interface MaskCaptureUpdateComplete_V1_0 {
-  type: "capture_update_complete";
-  delta: CaptureUpdateDelta_V1_0;
+export interface MaskLightUpdateComplete_V1_0 {
+  type: "light_update_complete";
+  delta: LightUpdateDelta_V1_0;
 }
-export type MaskCaptureSocketMessage_V1_0 = MaskCaptureUpdateComplete_V1_0 | MaskError_V1_0;
+export type MaskLightSocketMessage_V1_0 = MaskLightUpdateComplete_V1_0 | MaskError_V1_0;
 
-export function toMaskCaptureSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
-  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/captures?token=${encodeURIComponent(accessToken)}`;
+export function toMaskLightSocketUrl(baseUrl: string, maskMediaId: string, accessToken: string): string {
+  return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/lights?token=${encodeURIComponent(accessToken)}`;
 }
 
 /* /media/masks/{mask_media_id}/objects (websocket) */
@@ -745,7 +745,7 @@ export type LaurusObjectReviewCandidate = ObjectReviewCandidate_V1_0;
  * own copy on the assumption that they land at the end in exactly it.
  *
  * Append-only is the whole contract. Polygon indices are positional and are
- * held by every other object, every capture, every review candidate and every
+ * held by every other object, every light, every review candidate and every
  * recorded decision, so a recut that inserted or removed entries would
  * silently renumber all of them.
  */
@@ -1748,10 +1748,10 @@ export async function deleteRotate(
 /* /light_sources */
 
 export interface LightSourceSolution_V1_0 {
-  capture_size: number;
-  capture_intensity: number;
-  capture_falloff: number;
-  capture_darkness: number;
+  light_size: number;
+  light_intensity: number;
+  light_falloff: number;
+  light_darkness: number;
   object_elevation: number;
   object_radius: number;
   object_falloff: number;
@@ -1766,10 +1766,10 @@ export interface LightSourceEquation_V1_0 {
    * ms
    */
   time: number;
-  capture_size: number;
-  capture_intensity: number;
-  capture_falloff: number;
-  capture_darkness: number;
+  light_size: number;
+  light_intensity: number;
+  light_falloff: number;
+  light_darkness: number;
   object_elevation: number;
   object_radius: number;
   object_falloff: number;
@@ -2008,10 +2008,10 @@ interface Frame_V1_0 {
   ry: number;
   rz: number;
   rangle: number;
-  capture_size: number;
-  capture_intensity: number;
-  capture_falloff: number;
-  capture_darkness: number;
+  light_size: number;
+  light_intensity: number;
+  light_falloff: number;
+  light_darkness: number;
   object_elevation: number;
   object_radius: number;
   object_falloff: number;
@@ -2046,10 +2046,10 @@ export async function getScaleFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    capture_size: 0,
-    capture_intensity: 0,
-    capture_falloff: 0,
-    capture_darkness: 0,
+    light_size: 0,
+    light_intensity: 0,
+    light_falloff: 0,
+    light_darkness: 0,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
@@ -2071,10 +2071,10 @@ export async function getMoveFrames(
     rx: 0,
     ry: 0,
     rz: 0,
-    capture_size: 0,
-    capture_intensity: 0,
-    capture_falloff: 0,
-    capture_darkness: 0,
+    light_size: 0,
+    light_intensity: 0,
+    light_falloff: 0,
+    light_darkness: 0,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
@@ -2097,10 +2097,10 @@ export async function getRotateFrames(
     y: 0,
     sx: 1,
     sy: 1,
-    capture_size: 0,
-    capture_intensity: 0,
-    capture_falloff: 0,
-    capture_darkness: 0,
+    light_size: 0,
+    light_intensity: 0,
+    light_falloff: 0,
+    light_darkness: 0,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));

@@ -13,7 +13,7 @@ import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
-import { indicesInCircleFromCentroids } from "./canvas-media/light-source-capture";
+import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
@@ -136,7 +136,7 @@ export default function Canvas() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
-  const { captureMeshSection, createObject, ...mask } = useContext(MaskContext);
+  const { lightMeshSection, createObject, ...mask } = useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
@@ -217,7 +217,7 @@ export default function Canvas() {
         }
         case "mask": {
           if (
-            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.lightingMeshSection &&
             !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
@@ -251,7 +251,7 @@ export default function Canvas() {
         }
         case "mask": {
           if (
-            !uiState.tool.capturingMeshSection &&
+            !uiState.tool.lightingMeshSection &&
             !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
@@ -510,7 +510,7 @@ export default function Canvas() {
     };
   }
 
-  const handleLightSourceCapture = useCallback(
+  const handleLightDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
@@ -523,12 +523,12 @@ export default function Canvas() {
 
       const polygonIndices = indicesInCircleFromCentroids(maskGeometry(maskData).centroids, meshCircle);
       if (polygonIndices.size === 0) return;
-      captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
+      lightMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
-    [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
+    [selectedMaskKeys, coreState.canvasMasks, lightMeshSection],
   );
 
-  const handleTopologyCapture = useCallback(
+  const handleTopologyDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
@@ -746,13 +746,13 @@ export default function Canvas() {
           if (newRadius < minRadius) break;
           const dropArea: ProjectCircle = { cx: anchor.x, cy: anchor.y, radius: newRadius };
 
-          if (uiState.tool.capturingMeshSection) {
-            handleLightSourceCapture(dropArea);
+          if (uiState.tool.lightingMeshSection) {
+            handleLightDrop(dropArea);
             break;
           }
 
           if (uiState.tool.raisingObjects && selectedMaskKeys.size === 1) {
-            handleTopologyCapture(dropArea);
+            handleTopologyDrop(dropArea);
             break;
           }
 
@@ -778,8 +778,8 @@ export default function Canvas() {
       minRadius,
       coreState.project.imgs,
       coreState.project.svgs,
-      handleLightSourceCapture,
-      handleTopologyCapture,
+      handleLightDrop,
+      handleTopologyDrop,
       selectedMaskKeys,
       selectedImgKeys,
       selectedSvgKeys,

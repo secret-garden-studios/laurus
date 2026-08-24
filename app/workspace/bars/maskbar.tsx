@@ -268,8 +268,8 @@ export default function Maskbar() {
   const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
   const hasSelectedMask = selectedMaskKey !== undefined;
   const isTextureDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
-  const isCaptureDisabled = !hasSelectedMask;
-  const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
+  const isLightDisabled = !hasSelectedMask;
+  const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
   const canSeedEdgeObjects = Boolean(imgMeta) || isArmedForMaskDrop;
   const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectsDisabled = !hasSelectedMask && !canSeedEdgeObjects;
@@ -354,11 +354,11 @@ export default function Maskbar() {
   useEffect(() => {
     if (uiState.tool.type !== "mask") return;
     const nextRaising = uiState.tool.raisingObjects && (hasSelectedMask || canSeedEdgeObjects);
-    const nextCapture = hasSelectedMask && uiState.tool.capturingMeshSection;
-    if (nextRaising === uiState.tool.raisingObjects && nextCapture === uiState.tool.capturingMeshSection) return;
+    const nextLight = hasSelectedMask && uiState.tool.lightingMeshSection;
+    if (nextRaising === uiState.tool.raisingObjects && nextLight === uiState.tool.lightingMeshSection) return;
     uiDispatch({
       type: UIActionType.SetTool,
-      value: { type: "mask", capturingMeshSection: nextCapture, raisingObjects: nextRaising },
+      value: { type: "mask", lightingMeshSection: nextLight, raisingObjects: nextRaising },
     });
     notifyMaskToolChanged("mask");
   }, [hasSelectedMask, canSeedEdgeObjects, uiState.tool, uiDispatch, notifyMaskToolChanged]);
@@ -643,9 +643,9 @@ export default function Maskbar() {
         </div>
         <div
           title={
-            isCaptureDisabled
-              ? "select a mesh to capture a subsection of it"
-              : "drag a circle over this mesh to capture a subsection of its triangles"
+            isLightDisabled
+              ? "select a mesh to light a subsection of it"
+              : "drag a circle over this mesh to light a subsection of its triangles"
           }
           style={{
             display: "flex",
@@ -657,22 +657,22 @@ export default function Maskbar() {
         >
           <span
             style={{
-              textShadow: isCaptureOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
             }}
           >
-            {"capture"}
+            {"light"}
           </span>
           <Toggle
-            value={isCaptureOn}
+            value={isLightOn}
             onClick={() => {
               if (uiState.tool.type !== "mask") return;
-              const newCaptureValue = !uiState.tool.capturingMeshSection;
+              const newLightValue = !uiState.tool.lightingMeshSection;
               uiDispatch({
                 type: UIActionType.SetTool,
                 value: {
                   ...uiState.tool,
-                  capturingMeshSection: newCaptureValue,
-                  raisingObjects: newCaptureValue ? false : uiState.tool.raisingObjects,
+                  lightingMeshSection: newLightValue,
+                  raisingObjects: newLightValue ? false : uiState.tool.raisingObjects,
                 },
               });
               notifyMaskToolChanged("mask");
@@ -680,7 +680,7 @@ export default function Maskbar() {
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
-            disabled={isCaptureDisabled}
+            disabled={isLightDisabled}
           />
         </div>
         <div
@@ -718,7 +718,7 @@ export default function Maskbar() {
                 value: {
                   ...uiState.tool,
                   raisingObjects: newRaisingObjects,
-                  capturingMeshSection: newRaisingObjects ? false : uiState.tool.capturingMeshSection,
+                  lightingMeshSection: newRaisingObjects ? false : uiState.tool.lightingMeshSection,
                 },
               });
               notifyMaskToolChanged("mask");

@@ -36,7 +36,7 @@ export const defaultRotateEquation: LaurusRotateEquation = {
 
 const MAX_VISIBLE_PARAM_SLIDERS = 4;
 
-const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "object";
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "light" && entry.type !== "object";
 
 export type RotateUnitTarget = "img" | "svg" | "mask";
 
@@ -48,7 +48,7 @@ interface RotateUnit {
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -123,7 +123,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "capture":
+        case "light":
         case "object": {
           return "";
         }
@@ -231,12 +231,12 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           break;
         }
-        case "capture": {
+        case "light": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "capture",
+            type: "light",
             locallyActivatedEffectKey: rotate.rotate_id,
-            captureId: carouselEntry.captureId,
+            lightId: carouselEntry.lightId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -244,10 +244,10 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
           notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
@@ -257,7 +257,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
       rotate.rotate_id,
       uiDispatch,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
     ],
   );

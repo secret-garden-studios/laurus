@@ -6,11 +6,11 @@ import {
   type ObjectShape,
 } from "./canvas-media/object-shape.ts";
 
-export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
-export const CAPTURE_INTENSITY_DEFAULT = 0.05;
-export const CAPTURE_FALLOFF_CSS_PX_DEFAULT = 350;
-export const CAPTURE_DARKNESS_DEFAULT = 0.2;
-export const CAPTURE_FALLOFF_TO_SIZE_RATIO = CAPTURE_FALLOFF_CSS_PX_DEFAULT / CAPTURE_SIZE_CSS_PX_DEFAULT;
+export const LIGHT_SIZE_CSS_PX_DEFAULT = 150;
+export const LIGHT_INTENSITY_DEFAULT = 0.05;
+export const LIGHT_FALLOFF_CSS_PX_DEFAULT = 350;
+export const LIGHT_DARKNESS_DEFAULT = 0.2;
+export const LIGHT_FALLOFF_TO_SIZE_RATIO = LIGHT_FALLOFF_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
 export const TEXTURE_MIX_DEFAULT = 0.5;
 export const MAX_MASK_LIGHT_SOURCES = 8;
 export const MAX_MASK_OBJECTS = 16;
@@ -336,10 +336,10 @@ void main() {
   vec4 mask = texture2D(u_mask, v_uv);
   vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
 
-  float captureEdge = highlightEdge * v_highlight.a;
-  vec3 withCaptureStroke = mix(withGlow, v_highlight.rgb, captureEdge);
+  float lightEdge = highlightEdge * v_highlight.a;
+  vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
 
-  gl_FragColor = vec4(withCaptureStroke, mix(1.0, mask.a, u_maskActive));
+  gl_FragColor = vec4(withLightStroke, mix(1.0, mask.a, u_maskActive));
 }
 `,
 };

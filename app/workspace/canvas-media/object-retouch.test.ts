@@ -29,7 +29,7 @@ function pointsOf(d: string): Point[] {
 }
 
 function polygon(d: string): LaurusPolygonPath {
-  return { d, fill: "#808080", stroke: "none", stroke_width: 0, capture_id: 0, object_id: 0 };
+  return { d, fill: "#808080", stroke: "none", stroke_width: 0, light_id: 0, object_id: 0 };
 }
 
 describe("clipSegmentToConvex", () => {
@@ -364,7 +364,7 @@ describe("retouchDelta", () => {
     fill: "#808080",
     stroke: "none",
     stroke_width: 0,
-    capture_id: 0,
+    light_id: 0,
     object_id: 0,
   });
 

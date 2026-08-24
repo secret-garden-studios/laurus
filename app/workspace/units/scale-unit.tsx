@@ -12,14 +12,14 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import ScaleUnitbar from "./bars/scale-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey, maskCaptureInputId, maskObjectInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
 
 export type ScaleUnitTarget = CarouselEntry["type"];
 
-const SCALE_TARGET_ORDER: ScaleUnitTarget[] = ["img", "svg", "mask", "capture", "object"];
+const SCALE_TARGET_ORDER: ScaleUnitTarget[] = ["img", "svg", "mask", "light", "object"];
 
 export function targetHasScaleHeight(target: ScaleUnitTarget): boolean {
-  return target !== "capture" && target !== "object";
+  return target !== "light" && target !== "object";
 }
 
 export interface ScaleUnitControls {
@@ -48,7 +48,7 @@ interface ScaleUnit {
 }
 export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -164,9 +164,9 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "capture": {
+        case "light": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
-          return maskKey ? maskCaptureInputId(maskKey, carouselEntry.captureId) : "";
+          return maskKey ? maskLightInputId(maskKey, carouselEntry.lightId) : "";
         }
         case "object": {
           const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
@@ -260,12 +260,12 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           });
           break;
         }
-        case "capture": {
+        case "light": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "capture",
+            type: "light",
             locallyActivatedEffectKey: scale.scale_id,
-            captureId: carouselEntry.captureId,
+            lightId: carouselEntry.lightId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -273,10 +273,10 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
           notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
@@ -297,7 +297,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
           });
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -306,7 +306,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       scale.scale_id,
       uiDispatch,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
     ],
   );
@@ -367,7 +367,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         return [img.scale_x, img.scale_y];
       }
       case "mask":
-      case "capture":
+      case "light":
       case "object": {
         const mask = snapshot.masks.get(activeElement.key);
         if (!mask) return [1, 1];
@@ -568,7 +568,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                       fontSize: dynamicSizes.scaleParamDisplay.unitLabelFontSize,
                     }}
                   >
-                    {`${target === "object" || target === "capture" ? "s" : "w"}`}
+                    {`${target === "object" || target === "light" ? "s" : "w"}`}
                   </div>
                   <input
                     className={dellaRespira.className}

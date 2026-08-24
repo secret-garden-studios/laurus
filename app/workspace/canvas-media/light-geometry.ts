@@ -104,7 +104,7 @@ export function indicesInObjectFromCentroids(centroids: [number, number][], obje
   return indices;
 }
 
-export function captureCenterFromCentroids(
+export function lightCenterFromCentroids(
   centroids: [number, number][],
   indices: Set<number>,
 ): [number, number] | undefined {
@@ -137,14 +137,14 @@ export function centerOfIndices(
   return { x: sumX / count, y: sumY / count };
 }
 
-export function capturedRegionCircle(
+export function litRegionCircle(
   polygons: LaurusPolygonPath[],
   centroids: [number, number][],
-  captureId: number,
+  lightId: number,
 ): { cx: number; cy: number; radius: number } | undefined {
   const members: [number, number][] = [];
   polygons.forEach((p, i) => {
-    if (p.capture_id !== captureId) return;
+    if (p.light_id !== lightId) return;
     const centroid = centroids[i];
     if (centroid && !Number.isNaN(centroid[0]) && !Number.isNaN(centroid[1])) members.push(centroid);
   });
@@ -154,7 +154,7 @@ export function capturedRegionCircle(
   return { cx, cy, radius };
 }
 
-export function captureIdAtPoint(
+export function lightIdAtPoint(
   polygons: LaurusPolygonPath[],
   points: [number, number][][],
   objects: ObjectGeometryInput[],
@@ -162,17 +162,17 @@ export function captureIdAtPoint(
 ): number | undefined {
   const [px, py] = point;
   const swell = meshSwell(objects);
-  const orderedCaptureIds: number[] = [];
-  const boundsByCapture = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
+  const orderedLightIds: number[] = [];
+  const boundsByLight = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
   polygons.forEach((p, i) => {
-    if (p.capture_id === 0) return;
+    if (p.light_id === 0) return;
     const triangle = points[i];
     if (!triangle || triangle.length === 0) return;
-    let bounds = boundsByCapture.get(p.capture_id);
+    let bounds = boundsByLight.get(p.light_id);
     if (!bounds) {
-      orderedCaptureIds.push(p.capture_id);
+      orderedLightIds.push(p.light_id);
       bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-      boundsByCapture.set(p.capture_id, bounds);
+      boundsByLight.set(p.light_id, bounds);
     }
     for (const corner of triangle) {
       const [x, y] = swelled(swell, corner);
@@ -182,11 +182,11 @@ export function captureIdAtPoint(
       if (y > bounds.maxY) bounds.maxY = y;
     }
   });
-  for (const captureId of orderedCaptureIds) {
-    const bounds = boundsByCapture.get(captureId);
+  for (const lightId of orderedLightIds) {
+    const bounds = boundsByLight.get(lightId);
     if (!bounds) continue;
     if (px >= bounds.minX && px <= bounds.maxX && py >= bounds.minY && py <= bounds.maxY) {
-      return captureId;
+      return lightId;
     }
   }
   return undefined;

@@ -16,10 +16,10 @@ import {
 import {
   getDynamicUnitSizes,
   MIN_LIMIT_FACTOR,
-  CAPTURE_DARKNESS_MAX,
-  CAPTURE_FALLOFF_MAX,
-  CAPTURE_INTENSITY_MAX,
-  CAPTURE_SIZE_MAX,
+  LIGHT_DARKNESS_MAX,
+  LIGHT_FALLOFF_MAX,
+  LIGHT_INTENSITY_MAX,
+  LIGHT_SIZE_MAX,
 } from "../workspace.config";
 import {
   MAX_MASK_OBJECT_ELEVATION,
@@ -28,18 +28,18 @@ import {
   MIN_MASK_OBJECT_RADIUS_PX,
 } from "../mask-gl";
 import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
-import { carouselEntryMathKey, maskCaptureInputId, maskObjectInputId } from "../effects-utils";
+import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
 import LightSourceUnitbar from "./bars/light-source-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 
-export type LightSourceUnitTarget = "capture" | "object";
+export type LightSourceUnitTarget = "light" | "object";
 
 export interface LightSourceUnitControls {
-  capture_size: number;
-  capture_intensity: number;
-  capture_falloff: number;
-  capture_darkness: number;
+  light_size: number;
+  light_intensity: number;
+  light_falloff: number;
+  light_darkness: number;
   object_elevation: number;
   object_radius: number;
   object_falloff: number;
@@ -57,10 +57,10 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   time: 0.000001,
   loop: LaurusLoopType.none,
   solution: [],
-  capture_size: 0,
-  capture_intensity: 0,
-  capture_falloff: 0,
-  capture_darkness: 0,
+  light_size: 0,
+  light_intensity: 0,
+  light_falloff: 0,
+  light_darkness: 0,
   object_elevation: 0,
   object_radius: 0,
   object_falloff: MIN_MASK_OBJECT_FALLOFF,
@@ -70,8 +70,8 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
 
 const MAX_VISIBLE_PARAM_SLIDERS = 4;
 
-const isLightSourceCarouselEntry = (entry: CarouselEntry) => entry.type === "capture" || entry.type === "object";
-const isCaptureCarouselEntry = (entry: CarouselEntry) => entry.type === "capture";
+const isLightSourceCarouselEntry = (entry: CarouselEntry) => entry.type === "light" || entry.type === "object";
+const isLightCarouselEntry = (entry: CarouselEntry) => entry.type === "light";
 const isObjectCarouselEntry = (entry: CarouselEntry) => entry.type === "object";
 
 interface LightSourceUnit {
@@ -80,7 +80,7 @@ interface LightSourceUnit {
 }
 export default function LightSourceUnit({ lightSource, carouselIndexInit }: LightSourceUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedObjectChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -91,14 +91,13 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     lightSource.light_source_id,
     isLightSourceCarouselEntry,
   );
-  const target: LightSourceUnitTarget =
-    uiState.carouselEntries[carouselIndex]?.type === "object" ? "object" : "capture";
+  const target: LightSourceUnitTarget = uiState.carouselEntries[carouselIndex]?.type === "object" ? "object" : "light";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<LightSourceUnitControls>({
-    capture_size: 0,
-    capture_intensity: 0,
-    capture_falloff: 0,
-    capture_darkness: 0,
+    light_size: 0,
+    light_intensity: 0,
+    light_falloff: 0,
+    light_darkness: 0,
     object_elevation: defaultLightSourceEquation.object_elevation,
     object_radius: defaultLightSourceEquation.object_radius,
     object_falloff: defaultLightSourceEquation.object_falloff,
@@ -170,8 +169,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
     if (!maskKey) return "";
     switch (carouselEntry.type) {
-      case "capture":
-        return maskCaptureInputId(maskKey, carouselEntry.captureId);
+      case "light":
+        return maskLightInputId(maskKey, carouselEntry.lightId);
       case "object":
         return maskObjectInputId(maskKey, carouselEntry.objectId);
       default:
@@ -179,29 +178,29 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     }
   }, [uiState.carouselEntries, coreState.project.masks, carouselIndex]);
 
-  const activeCaptureEntry = useMemo(() => {
+  const activeLightEntry = useMemo(() => {
     if (carouselIndex >= uiState.carouselEntries.length) return undefined;
     const entry = uiState.carouselEntries[carouselIndex];
-    return entry.type === "capture" ? entry : undefined;
+    return entry.type === "light" ? entry : undefined;
   }, [carouselIndex, uiState.carouselEntries]);
-  const activeCaptureMaskData = activeCaptureEntry ? coreState.canvasMasks.get(activeCaptureEntry.key) : undefined;
-  const activeCapture = useMemo(() => {
-    if (!activeCaptureEntry) return undefined;
-    return activeCaptureMaskData?.captures.find((c) => c.id === activeCaptureEntry.captureId);
-  }, [activeCaptureEntry, activeCaptureMaskData]);
+  const activeLightMaskData = activeLightEntry ? coreState.canvasMasks.get(activeLightEntry.key) : undefined;
+  const activeLight = useMemo(() => {
+    if (!activeLightEntry) return undefined;
+    return activeLightMaskData?.lights.find((c) => c.id === activeLightEntry.lightId);
+  }, [activeLightEntry, activeLightMaskData]);
 
-  const captureSizeMax = activeCaptureMaskData
-    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
-    : CAPTURE_SIZE_MAX;
+  const lightSizeMax = activeLightMaskData
+    ? Math.min(activeLightMaskData.width, activeLightMaskData.height)
+    : LIGHT_SIZE_MAX;
   const sizeTrackRef = useRef<HTMLDivElement | null>(null);
   const [sizeCursor, setSizeCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getSizeValue, getInverseTrackCursor: getSizeCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    captureSizeMax,
+    lightSizeMax,
   );
   const sizeTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.capture_size.toFixed(1)
+      ? lightSource.math.get(carouselEntryKey)!.light_size.toFixed(1)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const sizeRef = useRef<HTMLDivElement | null>(null);
@@ -210,27 +209,27 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const [intensityCursor, setIntensityCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getIntensityValue, getInverseTrackCursor: getIntensityCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    CAPTURE_INTENSITY_MAX,
+    LIGHT_INTENSITY_MAX,
   );
   const intensityTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.capture_intensity.toFixed(2)
+      ? lightSource.math.get(carouselEntryKey)!.light_intensity.toFixed(2)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const intensityRef = useRef<HTMLDivElement | null>(null);
 
-  const captureFalloffMax = activeCaptureMaskData
-    ? Math.min(activeCaptureMaskData.width, activeCaptureMaskData.height)
-    : CAPTURE_FALLOFF_MAX;
+  const lightFalloffMax = activeLightMaskData
+    ? Math.min(activeLightMaskData.width, activeLightMaskData.height)
+    : LIGHT_FALLOFF_MAX;
   const falloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [falloffCursor, setFalloffCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getFalloffValue, getInverseTrackCursor: getFalloffCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    captureFalloffMax,
+    lightFalloffMax,
   );
   const falloffTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.capture_falloff.toFixed(1)
+      ? lightSource.math.get(carouselEntryKey)!.light_falloff.toFixed(1)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const falloffRef = useRef<HTMLDivElement | null>(null);
@@ -239,11 +238,11 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const [darknessCursor, setDarknessCursor] = useState({ x: 0, y: 0 });
   const { getInverseTrackValue: getDarknessValue, getInverseTrackCursor: getDarknessCursor } = useTrackpadState(
     dynamicSizes.paramSlider.capHeight - dynamicSizes.paramSlider.capBorderOffset,
-    CAPTURE_DARKNESS_MAX,
+    LIGHT_DARKNESS_MAX,
   );
   const darknessTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.capture_darkness.toFixed(2)
+      ? lightSource.math.get(carouselEntryKey)!.light_darkness.toFixed(2)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
   const darknessRef = useRef<HTMLDivElement | null>(null);
@@ -393,12 +392,12 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           });
           break;
         }
-        case "capture": {
+        case "light": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "capture",
+            type: "light",
             locallyActivatedEffectKey: lightSource.light_source_id,
-            captureId: carouselEntry.captureId,
+            lightId: carouselEntry.lightId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -406,10 +405,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
           notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
@@ -430,14 +429,14 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           });
           notifyMaskSelectionChanged(newActiveElement.key);
           notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
           break;
         }
       }
     },
     [
       lightSource.light_source_id,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
       uiDispatch,
       notifyMaskSelectionChanged,
@@ -451,7 +450,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   }, [carouselIndex, uiState.carouselEntries, uiState.activeElement, activateEntry]);
 
   const toggleTarget = useCallback(() => {
-    const isNextNavigable = target === "object" ? isCaptureCarouselEntry : isObjectCarouselEntry;
+    const isNextNavigable = target === "object" ? isLightCarouselEntry : isObjectCarouselEntry;
     const withMathIndex = uiState.carouselEntries.findIndex(
       (entry) => isNextNavigable(entry) && lightSource.math.has(carouselEntryMathKey(entry)),
     );
@@ -511,23 +510,23 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const updateTrackpads = useCallback(
     (newControls: LightSourceUnitControls) => {
       if (sizeTrackRef.current) {
-        setSizeCursor({ y: getSizeCursor(newControls.capture_size, sizeTrackRef.current.clientHeight), x: 0 });
+        setSizeCursor({ y: getSizeCursor(newControls.light_size, sizeTrackRef.current.clientHeight), x: 0 });
       }
       if (intensityTrackRef.current) {
         setIntensityCursor({
-          y: getIntensityCursor(newControls.capture_intensity, intensityTrackRef.current.clientHeight),
+          y: getIntensityCursor(newControls.light_intensity, intensityTrackRef.current.clientHeight),
           x: 0,
         });
       }
       if (falloffTrackRef.current) {
         setFalloffCursor({
-          y: getFalloffCursor(newControls.capture_falloff, falloffTrackRef.current.clientHeight),
+          y: getFalloffCursor(newControls.light_falloff, falloffTrackRef.current.clientHeight),
           x: 0,
         });
       }
       if (darknessTrackRef.current) {
         setDarknessCursor({
-          y: getDarknessCursor(newControls.capture_darkness, darknessTrackRef.current.clientHeight),
+          y: getDarknessCursor(newControls.light_darkness, darknessTrackRef.current.clientHeight),
           x: 0,
         });
       }
@@ -602,10 +601,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       const activeEquation = lightSource.math.get(activeKey);
       const initControls: LightSourceUnitControls = { ...currentControls };
       if (activeEquation) {
-        initControls.capture_size = activeEquation.capture_size;
-        initControls.capture_intensity = activeEquation.capture_intensity;
-        initControls.capture_falloff = activeEquation.capture_falloff;
-        initControls.capture_darkness = activeEquation.capture_darkness;
+        initControls.light_size = activeEquation.light_size;
+        initControls.light_intensity = activeEquation.light_intensity;
+        initControls.light_falloff = activeEquation.light_falloff;
+        initControls.light_darkness = activeEquation.light_darkness;
         initControls.object_elevation = activeEquation.object_elevation;
         initControls.object_radius = activeEquation.object_radius;
         initControls.object_falloff = activeEquation.object_falloff;
@@ -617,10 +616,10 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.loop = activeEquation.loop;
         initControls.limit_factor = activeEquation.limit_factor;
       } else if (activeKey) {
-        initControls.capture_size = defaultLightSourceEquation.capture_size;
-        initControls.capture_intensity = defaultLightSourceEquation.capture_intensity;
-        initControls.capture_falloff = defaultLightSourceEquation.capture_falloff;
-        initControls.capture_darkness = defaultLightSourceEquation.capture_darkness;
+        initControls.light_size = defaultLightSourceEquation.light_size;
+        initControls.light_intensity = defaultLightSourceEquation.light_intensity;
+        initControls.light_falloff = defaultLightSourceEquation.light_falloff;
+        initControls.light_darkness = defaultLightSourceEquation.light_darkness;
         initControls.object_elevation = defaultLightSourceEquation.object_elevation;
         initControls.object_radius = defaultLightSourceEquation.object_radius;
         initControls.object_falloff = defaultLightSourceEquation.object_falloff;
@@ -646,25 +645,25 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         ...toObjectBlackPointEquationFields(toObjectBlackPoint(activeObject)),
       };
     }
-    if (activeCapture) {
+    if (activeLight) {
       return {
         ...defaultLightSourceEquation,
-        capture_size: activeCapture.size,
-        capture_intensity: activeCapture.intensity,
-        capture_falloff: activeCapture.falloff,
-        capture_darkness: activeCapture.darkness,
+        light_size: activeLight.size,
+        light_intensity: activeLight.intensity,
+        light_falloff: activeLight.falloff,
+        light_darkness: activeLight.darkness,
       };
     }
     return defaultLightSourceEquation;
-  }, [activeObject, activeCapture]);
+  }, [activeObject, activeLight]);
 
   const saveLightSourceField = useCallback(
     (
       field:
-        | "capture_size"
-        | "capture_intensity"
-        | "capture_falloff"
-        | "capture_darkness"
+        | "light_size"
+        | "light_intensity"
+        | "light_falloff"
+        | "light_darkness"
         | "object_elevation"
         | "object_radius"
         | "object_falloff"
@@ -904,8 +903,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setSizeCursor({ ...newCursor, x: 0 });
                           if (!sizeTrackRef.current) return;
                           const newVal = getSizeValue(newCursor.y, sizeTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, capture_size: newVal }));
-                          saveLightSourceField("capture_size", newVal);
+                          setCurrentControls((v) => ({ ...v, light_size: newVal }));
+                          saveLightSourceField("light_size", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!sizeTrackRef.current || !sizeRef.current) return;
@@ -928,8 +927,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setIntensityCursor({ ...newCursor, x: 0 });
                           if (!intensityTrackRef.current) return;
                           const newVal = getIntensityValue(newCursor.y, intensityTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, capture_intensity: newVal }));
-                          saveLightSourceField("capture_intensity", newVal);
+                          setCurrentControls((v) => ({ ...v, light_intensity: newVal }));
+                          saveLightSourceField("light_intensity", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!intensityTrackRef.current || !intensityRef.current) return;
@@ -952,8 +951,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setFalloffCursor({ ...newCursor, x: 0 });
                           if (!falloffTrackRef.current) return;
                           const newVal = getFalloffValue(newCursor.y, falloffTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, capture_falloff: newVal }));
-                          saveLightSourceField("capture_falloff", newVal);
+                          setCurrentControls((v) => ({ ...v, light_falloff: newVal }));
+                          saveLightSourceField("light_falloff", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!falloffTrackRef.current || !falloffRef.current) return;
@@ -976,8 +975,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                           setDarknessCursor({ ...newCursor, x: 0 });
                           if (!darknessTrackRef.current) return;
                           const newVal = getDarknessValue(newCursor.y, darknessTrackRef.current.clientHeight, 0);
-                          setCurrentControls((v) => ({ ...v, capture_darkness: newVal }));
-                          saveLightSourceField("capture_darkness", newVal);
+                          setCurrentControls((v) => ({ ...v, light_darkness: newVal }));
+                          saveLightSourceField("light_darkness", newVal);
                         }}
                         onCursorMove={(c) => {
                           if (!darknessTrackRef.current || !darknessRef.current) return;

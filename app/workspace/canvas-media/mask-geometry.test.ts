@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { carryGeometryForward, maskGeometry } from "./mask-geometry.ts";
-import { applyObjectDelta, applyCaptureDelta } from "./mask-delta.ts";
+import { applyObjectDelta, applyLightDelta } from "./mask-delta.ts";
 import type { LaurusMaskResult, LaurusPolygonPath } from "../workspace.server.ts";
 
 function polygon(d: string, extra: Partial<LaurusPolygonPath> = {}): LaurusPolygonPath {
-  return { d, fill: "#ffffff", stroke: "none", stroke_width: 0, capture_id: 0, object_id: 0, ...extra };
+  return { d, fill: "#ffffff", stroke: "none", stroke_width: 0, light_id: 0, object_id: 0, ...extra };
 }
 
 function maskWith(polygons: LaurusPolygonPath[]): LaurusMaskResult {
@@ -20,7 +20,7 @@ function maskWith(polygons: LaurusPolygonPath[]): LaurusMaskResult {
     categories: [],
     polygons,
     curves: [],
-    captures: [],
+    lights: [],
     objects: [],
     creator: "stef",
     last_editor: "stef",
@@ -171,9 +171,9 @@ describe("mask deltas -- patching only what an edit touched", () => {
   it("leaves the polygons array alone when a delta retags nothing", () => {
     const mask = maskWith(TRIANGLES);
 
-    const patched = applyCaptureDelta(mask, {
-      capture_id: 2,
-      capture: { id: 2, name: "light 2", size: 10, intensity: 1, falloff: 1, darkness: 0 },
+    const patched = applyLightDelta(mask, {
+      light_id: 2,
+      light: { id: 2, name: "light 2", size: 10, intensity: 1, falloff: 1, darkness: 0 },
       removed: false,
       tagged_polygon_indices: [],
       cleared_polygon_indices: [],
@@ -182,6 +182,6 @@ describe("mask deltas -- patching only what an edit touched", () => {
     });
 
     assert.equal(patched.polygons, mask.polygons);
-    assert.equal(patched.captures.length, 1);
+    assert.equal(patched.lights.length, 1);
   });
 });

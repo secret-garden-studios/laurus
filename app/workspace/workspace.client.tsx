@@ -28,11 +28,11 @@ import {
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
   searchSvgs,
-  nextCaptureId,
+  nextLightId,
   nextObjectId,
-  CaptureUpdateDelta_V1_0,
+  LightUpdateDelta_V1_0,
   ObjectUpdateDelta_V1_0,
-  MaskCaptureUpdateRequest_V1_0,
+  MaskLightUpdateRequest_V1_0,
   MaskObjectUpdateRequest_V1_0,
   LaurusObjectBlackPoint,
   toObjectBlackPoint,
@@ -47,7 +47,7 @@ import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
-import { deleteMaskObjectEffects, parseMaskCaptureInputId, parseMaskObjectInputId } from "./effects-utils";
+import { deleteMaskObjectEffects, parseMaskLightInputId, parseMaskObjectInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import ObjectReviewPanel from "./object-review-panel";
 import TimelineArea from "./timeline-area";
@@ -56,18 +56,18 @@ import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
-import { useMaskCaptureSockets } from "./hooks/useMaskCaptureSockets";
+import { useMaskLightSockets } from "./hooks/useMaskLightSockets";
 import { useMaskObjectSockets } from "./hooks/useMaskObjectSockets";
-import { indicesInObjectFromCentroids } from "./canvas-media/light-source-capture";
+import { indicesInObjectFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
-import { applyCaptureDelta, applyObjectDelta } from "./canvas-media/mask-delta";
+import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
-  CAPTURE_DARKNESS_DEFAULT,
-  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  CAPTURE_FALLOFF_TO_SIZE_RATIO,
-  CAPTURE_INTENSITY_DEFAULT,
-  CAPTURE_SIZE_CSS_PX_DEFAULT,
+  LIGHT_DARKNESS_DEFAULT,
+  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_FALLOFF_TO_SIZE_RATIO,
+  LIGHT_INTENSITY_DEFAULT,
+  LIGHT_SIZE_CSS_PX_DEFAULT,
   MIN_MASK_OBJECT_RADIUS_PX,
   TEXTURE_MIX_DEFAULT,
 } from "./mask-gl";
@@ -238,11 +238,11 @@ export const CoreContext = createContext<CoreContextProps>({
 });
 
 export interface SocketContextProps {
-  sendMaskCaptureUpdate: (
+  sendMaskLightUpdate: (
     maskMediaId: string,
-    request: MaskCaptureUpdateRequest_V1_0,
-  ) => Promise<CaptureUpdateDelta_V1_0 | undefined>;
-  closeMaskCaptureSocket: (maskMediaId: string) => void;
+    request: MaskLightUpdateRequest_V1_0,
+  ) => Promise<LightUpdateDelta_V1_0 | undefined>;
+  closeMaskLightSocket: (maskMediaId: string) => void;
   sendMaskObjectUpdate: (
     maskMediaId: string,
     update: MaskObjectUpdateRequest_V1_0,
@@ -251,14 +251,14 @@ export interface SocketContextProps {
 }
 
 export const SocketContext = createContext<SocketContextProps>({
-  sendMaskCaptureUpdate: async () => undefined,
-  closeMaskCaptureSocket: () => {},
+  sendMaskLightUpdate: async () => undefined,
+  closeMaskLightSocket: () => {},
   sendMaskObjectUpdate: async () => undefined,
   closeMaskObjectSocket: () => {},
 });
 
 export interface MaskNotifyValue {
-  captureMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
+  lightMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
   createObject: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
@@ -267,11 +267,11 @@ export interface MaskNotifyValue {
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
-  notifyMaskSelectedCaptureChanged: (maskKey: string, captureId: number | undefined) => void;
+  notifyMaskSelectedLightChanged: (maskKey: string, lightId: number | undefined) => void;
   notifyMaskSelectedObjectChanged: (maskKey: string, objectId: number | undefined) => void;
-  notifyMaskPendingCaptureSet: (maskKey: string, indices: Set<number>, captureId?: number) => void;
-  notifyMaskPendingCaptureCleared: (maskKey: string | undefined) => void;
-  notifyMaskCaptureUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
+  notifyMaskPendingLightSet: (maskKey: string, indices: Set<number>, lightId?: number) => void;
+  notifyMaskPendingLightCleared: (maskKey: string | undefined) => void;
+  notifyMaskLightUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
@@ -306,18 +306,18 @@ const defaultMaskPreview: UseMaskPreview = {
   textureMix: TEXTURE_MIX_DEFAULT,
   setTextureMix: () => {},
   textureMixRef: { current: TEXTURE_MIX_DEFAULT },
-  captureSize: CAPTURE_SIZE_CSS_PX_DEFAULT,
-  setCaptureSize: () => {},
-  captureSizeRef: { current: CAPTURE_SIZE_CSS_PX_DEFAULT },
-  captureIntensity: CAPTURE_INTENSITY_DEFAULT,
-  setCaptureIntensity: () => {},
-  captureIntensityRef: { current: CAPTURE_INTENSITY_DEFAULT },
-  captureFalloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  setCaptureFalloff: () => {},
-  captureFalloffRef: { current: CAPTURE_FALLOFF_CSS_PX_DEFAULT },
-  captureDarkness: CAPTURE_DARKNESS_DEFAULT,
-  setCaptureDarkness: () => {},
-  captureDarknessRef: { current: CAPTURE_DARKNESS_DEFAULT },
+  lightSize: LIGHT_SIZE_CSS_PX_DEFAULT,
+  setLightSize: () => {},
+  lightSizeRef: { current: LIGHT_SIZE_CSS_PX_DEFAULT },
+  lightIntensity: LIGHT_INTENSITY_DEFAULT,
+  setLightIntensity: () => {},
+  lightIntensityRef: { current: LIGHT_INTENSITY_DEFAULT },
+  lightFalloff: LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  setLightFalloff: () => {},
+  lightFalloffRef: { current: LIGHT_FALLOFF_CSS_PX_DEFAULT },
+  lightDarkness: LIGHT_DARKNESS_DEFAULT,
+  setLightDarkness: () => {},
+  lightDarknessRef: { current: LIGHT_DARKNESS_DEFAULT },
   position: { value: false, x: undefined, y: undefined },
   setPosition: () => {},
   size: { value: false, width: undefined, height: undefined },
@@ -340,16 +340,16 @@ const defaultMaskPreview: UseMaskPreview = {
 };
 
 const defaultMaskNotifyValue: MaskNotifyValue = {
-  captureMeshSection: async () => {},
+  lightMeshSection: async () => {},
   createObject: async () => {},
   deleteObject: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskSelectionChanged: () => {},
-  notifyMaskSelectedCaptureChanged: () => {},
+  notifyMaskSelectedLightChanged: () => {},
   notifyMaskSelectedObjectChanged: () => {},
-  notifyMaskPendingCaptureSet: () => {},
-  notifyMaskPendingCaptureCleared: () => {},
-  notifyMaskCaptureUpdated: () => {},
+  notifyMaskPendingLightSet: () => {},
+  notifyMaskPendingLightCleared: () => {},
+  notifyMaskLightUpdated: () => {},
   notifyMaskAppearanceChanged: () => {},
   notifyMaskLightSourcePreviewToggled: () => {},
   notifyMaskPendingTopologySet: () => {},
@@ -424,13 +424,13 @@ function initCarouselEntries(
       },
       distance,
     });
-    const captures = canvasMasks.get(projectMask[0])?.captures ?? [];
-    captures.forEach((capture) => {
+    const lights = canvasMasks.get(projectMask[0])?.lights ?? [];
+    lights.forEach((light) => {
       temp.push({
         entry: {
-          type: "capture",
+          type: "light",
           key: projectMask[0],
-          captureId: capture.id,
+          lightId: light.id,
         },
         distance,
       });
@@ -828,7 +828,7 @@ export default function Workspace({
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
   const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
-  const { sendCaptureUpdate: sendMaskCaptureUpdate, closeSocket: closeMaskCaptureSocket } = useMaskCaptureSockets(
+  const { sendLightUpdate: sendMaskLightUpdate, closeSocket: closeMaskLightSocket } = useMaskLightSockets(
     coreState.apiOrigin,
     coreState.accessToken,
   );
@@ -1030,11 +1030,11 @@ export default function Workspace({
               globalLimit = Math.max(globalLimit, e.value.end);
             } else if (
               (e.type === "move" || e.type === "light_source" || e.type === "scale" || e.type === "rotate") &&
-              coreState.project.masks.has(parseMaskCaptureInputId(inputKey).maskKey)
+              coreState.project.masks.has(parseMaskLightInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
               if (
-                parseMaskCaptureInputId(inputKey).captureId === undefined &&
+                parseMaskLightInputId(inputKey).lightId === undefined &&
                 parseMaskObjectInputId(inputKey).objectId === undefined
               ) {
                 globalLimit = Math.max(globalLimit, e.value.end);
@@ -1131,7 +1131,7 @@ export default function Workspace({
   const notifyMaskToolChanged = useCallback((toolType: string) => {
     maskHandlesRef.current?.forEach((handles) =>
       handles.forEach((h) => {
-        h.abortCaptureDragForToolChange(toolType);
+        h.abortLightDragForToolChange(toolType);
         h.abortTopologyDragForToolChange();
       }),
     );
@@ -1141,18 +1141,18 @@ export default function Workspace({
       handles.forEach((h) => h.setSelectedHighlighted(maskKey === key)),
     );
   }, []);
-  const notifyMaskSelectedCaptureChanged = useCallback((maskKey: string, captureId: number | undefined) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedCapture(captureId));
+  const notifyMaskSelectedLightChanged = useCallback((maskKey: string, lightId: number | undefined) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedLight(lightId));
   }, []);
   const notifyMaskSelectedObjectChanged = useCallback((maskKey: string, objectId: number | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedObject(objectId));
   }, []);
-  const notifyMaskPendingCaptureSet = useCallback((maskKey: string, indices: Set<number>, captureId?: number) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingCapture(indices, captureId));
+  const notifyMaskPendingLightSet = useCallback((maskKey: string, indices: Set<number>, lightId?: number) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingLight(indices, lightId));
   }, []);
-  const notifyMaskPendingCaptureCleared = useCallback((maskKey: string | undefined) => {
+  const notifyMaskPendingLightCleared = useCallback((maskKey: string | undefined) => {
     if (maskKey === undefined) return;
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingCapture());
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingLight());
   }, []);
   const notifyMaskObjectReviewPreview = useCallback(
     (maskKey: string, indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => {
@@ -1190,8 +1190,8 @@ export default function Workspace({
     area.scrollLeft += sizerRect.left + anchorX * zoom - (areaRect.left + area.clientWidth / 2);
     area.scrollTop += sizerRect.top + anchorY * zoom - (areaRect.top + area.clientHeight / 2);
   }, []);
-  const notifyMaskCaptureUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
-    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncCapturedIndices(updated));
+  const notifyMaskLightUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncLitIndices(updated));
   }, []);
   const notifyMaskAppearanceChanged = useCallback((maskKey: string, override?: MaskAppearanceOverride) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.applyMaskAppearanceDefaults(override));
@@ -1226,49 +1226,49 @@ export default function Workspace({
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncObjects(updated));
   }, []);
 
-  const captureMeshSection = useCallback(
+  const lightMeshSection = useCallback(
     async (maskKey: string, polygonIndices: number[], size: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
       const maskMeta = coreState.project.masks.get(maskKey);
-      const captureId = nextCaptureId(maskData.captures);
-      const name = `light ${captureId}`;
+      const lightId = nextLightId(maskData.lights);
+      const name = `light ${lightId}`;
 
       dispatch({
-        type: CoreActionType.SetPendingLightSourceCapture,
-        value: { maskKey, captureId, polygonIndices },
+        type: CoreActionType.SetPendingLight,
+        value: { maskKey, lightId, polygonIndices },
       });
-      notifyMaskPendingCaptureSet(maskKey, new Set(polygonIndices), captureId);
+      notifyMaskPendingLightSet(maskKey, new Set(polygonIndices), lightId);
 
-      const updated = await sendMaskCaptureUpdate(maskData.mask_media_id, {
-        capture_id: captureId,
+      const updated = await sendMaskLightUpdate(maskData.mask_media_id, {
+        light_id: lightId,
         name,
         polygon_indices: polygonIndices,
         size,
-        intensity: maskMeta?.capture_preview_intensity ?? CAPTURE_INTENSITY_DEFAULT,
-        darkness: maskMeta?.capture_preview_darkness ?? CAPTURE_DARKNESS_DEFAULT,
-        falloff: Math.min(size * CAPTURE_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
+        intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
+        darkness: maskMeta?.light_preview_darkness ?? LIGHT_DARKNESS_DEFAULT,
+        falloff: Math.min(size * LIGHT_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
       });
       if (updated) {
-        const patched = applyCaptureDelta(maskData, updated);
+        const patched = applyLightDelta(maskData, updated);
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
-        notifyMaskCaptureUpdated(maskKey, patched);
-        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "capture", key: maskKey, captureId } });
+        notifyMaskLightUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "light", key: maskKey, lightId } });
         uiDispatch({
           type: UIActionType.SetSelectedElement,
-          value: { key: maskKey, type: "capture", captureId },
+          value: { key: maskKey, type: "light", lightId },
         });
         notifyMaskSelectionChanged(maskKey);
-        notifyMaskSelectedCaptureChanged(maskKey, captureId);
+        notifyMaskSelectedLightChanged(maskKey, lightId);
         notifyMaskSelectedObjectChanged(maskKey, undefined);
       }
-      dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-      notifyMaskPendingCaptureCleared(maskKey);
+      dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+      notifyMaskPendingLightCleared(maskKey);
       uiDispatch({
         type: UIActionType.SetTool,
         value: {
           type: "mask",
-          capturingMeshSection: false,
+          lightingMeshSection: false,
           raisingObjects: uiState.tool.type === "mask" ? uiState.tool.raisingObjects : false,
         },
       });
@@ -1277,16 +1277,16 @@ export default function Workspace({
     [
       coreState.canvasMasks,
       coreState.project.masks,
-      sendMaskCaptureUpdate,
+      sendMaskLightUpdate,
       dispatch,
       uiDispatch,
       uiState.tool,
-      notifyMaskPendingCaptureSet,
+      notifyMaskPendingLightSet,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
-      notifyMaskPendingCaptureCleared,
-      notifyMaskCaptureUpdated,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
       notifyMaskToolChanged,
     ],
   );
@@ -1350,7 +1350,7 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
         notifyMaskSelectionChanged(maskKey);
         notifyMaskSelectedObjectChanged(maskKey, objectId);
-        notifyMaskSelectedCaptureChanged(maskKey, undefined);
+        notifyMaskSelectedLightChanged(maskKey, undefined);
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
       notifyMaskPendingTopologyCleared(maskKey);
@@ -1365,7 +1365,7 @@ export default function Workspace({
       notifyMaskObjectsUpdated,
       notifyMaskSelectionChanged,
       notifyMaskSelectedObjectChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
     ],
   );
 
@@ -1582,18 +1582,18 @@ export default function Workspace({
         (effect) =>
           effect.key === target.effectKey &&
           (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
-          (parseMaskCaptureInputId(target.inputKey).captureId !== undefined || targetObjectId !== undefined),
+          (parseMaskLightInputId(target.inputKey).lightId !== undefined || targetObjectId !== undefined),
       );
       const lightSourceFinished: Promise<void>[] = [];
       if (targetDrivesLightSource) {
-        const { maskKey, captureId } = parseMaskCaptureInputId(target.inputKey);
+        const { maskKey, lightId } = parseMaskLightInputId(target.inputKey);
         maskHandlesRef.current
           ?.get(maskKey)
           ?.forEach((player) =>
             lightSourceFinished.push(
               targetObjectId !== undefined
                 ? player.play(target.effectKey, undefined, targetObjectId)
-                : player.play(target.effectKey, captureId),
+                : player.play(target.effectKey, lightId),
             ),
           );
       }
@@ -1762,26 +1762,26 @@ export default function Workspace({
 
   const socketContextValue = useMemo(
     () => ({
-      sendMaskCaptureUpdate,
-      closeMaskCaptureSocket,
+      sendMaskLightUpdate,
+      closeMaskLightSocket,
       sendMaskObjectUpdate,
       closeMaskObjectSocket,
     }),
-    [sendMaskCaptureUpdate, closeMaskCaptureSocket, sendMaskObjectUpdate, closeMaskObjectSocket],
+    [sendMaskLightUpdate, closeMaskLightSocket, sendMaskObjectUpdate, closeMaskObjectSocket],
   );
 
   const maskNotifyContextValue = useMemo(
     () => ({
-      captureMeshSection,
+      lightMeshSection,
       createObject,
       deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
-      notifyMaskPendingCaptureSet,
-      notifyMaskPendingCaptureCleared,
-      notifyMaskCaptureUpdated,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
@@ -1792,16 +1792,16 @@ export default function Workspace({
       notifyMaskObjectsUpdated,
     }),
     [
-      captureMeshSection,
+      lightMeshSection,
       createObject,
       deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
+      notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
-      notifyMaskPendingCaptureSet,
-      notifyMaskPendingCaptureCleared,
-      notifyMaskCaptureUpdated,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
@@ -2146,7 +2146,7 @@ export default function Workspace({
                                 uiState.objectReview !== undefined
                                   ? "none"
                                   : uiState.tool.type === "mask" &&
-                                      !uiState.tool.capturingMeshSection &&
+                                      !uiState.tool.lightingMeshSection &&
                                       !uiState.tool.raisingObjects &&
                                       uiState.browserElement?.type !== "img"
                                     ? "none"

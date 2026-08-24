@@ -29,25 +29,25 @@ import {
   uploadCurveMask,
   uploadStaticMaskMesh,
 } from "../mask-gl";
-import { CoreActionType, DEFAULT_CAPTURE_VALUE, PendingTopologyEdit } from "../states/core-state";
+import { CoreActionType, DEFAULT_LIGHT_VALUE, PendingTopologyEdit } from "../states/core-state";
 import { LaurusActiveElement, LaurusSelectedElement, UIActionType, isObjectReviewLocked } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
 import {
-  capturedRegionCircle,
-  captureCenterFromCentroids,
-  captureIdAtPoint,
+  litRegionCircle,
+  lightCenterFromCentroids,
+  lightIdAtPoint,
   centerOfIndices,
   indicesInCircleFromCentroids,
   indicesInObjectFromCentroids,
   objectIdAtPoint,
   swelledPolygonIndexAtPoint,
   translateIndices,
-} from "./light-source-capture";
+} from "./light-geometry";
 import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
-import { applyCaptureDelta, applyObjectDelta } from "./mask-delta";
+import { applyLightDelta, applyObjectDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
 import { retouchMesh } from "./object-retouch";
@@ -58,7 +58,7 @@ import {
   getLightSourceFrames,
   getMoveFrames,
   getScaleFrames,
-  LaurusCapture,
+  LaurusLight,
   LaurusEffect,
   LaurusFrame,
   LaurusImgResult,
@@ -70,12 +70,12 @@ import {
   toObjectBlackPoint,
   toObjectBlackPointFields,
 } from "../workspace.server";
-import { maskCaptureInputId, maskObjectInputId } from "../effects-utils";
+import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
 
-const CAPTURE_DRAG_EPSILON_SQ = 1;
+const LIGHT_DRAG_EPSILON_SQ = 1;
 
 function sameIndices(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -83,19 +83,19 @@ function sameIndices(a: Set<number>, b: Set<number>): boolean {
   return true;
 }
 
-function buildCapturesMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
-  const byCapture = new Map<number, Set<number>>();
+function buildLightsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
+  const byLight = new Map<number, Set<number>>();
   polygons.forEach((p, i) => {
-    if (p.capture_id === 0) return;
-    const indices = byCapture.get(p.capture_id) ?? new Set<number>();
+    if (p.light_id === 0) return;
+    const indices = byLight.get(p.light_id) ?? new Set<number>();
     indices.add(i);
-    byCapture.set(p.capture_id, indices);
+    byLight.set(p.light_id, indices);
   });
-  return byCapture;
+  return byLight;
 }
 
-function buildCapturesMetaMap(captures: LaurusCapture[]): Map<number, LaurusCapture> {
-  return new Map(captures.map((capture) => [capture.id, capture]));
+function buildLightsMetaMap(lights: LaurusLight[]): Map<number, LaurusLight> {
+  return new Map(lights.map((light) => [light.id, light]));
 }
 
 function buildObjectsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
@@ -150,21 +150,21 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
 }
 
 export interface MaskImperativeHandle {
-  play: (effectKey?: string, captureId?: number, objectId?: number) => Promise<void>;
+  play: (effectKey?: string, lightId?: number, objectId?: number) => Promise<void>;
   preparePlayback: (
     effectKey?: string,
-    captureId?: number,
+    lightId?: number,
     objectId?: number,
   ) => Promise<(() => Promise<void>) | undefined>;
   stop: () => void;
-  abortCaptureDragForToolChange: (newToolType: string) => void;
+  abortLightDragForToolChange: (newToolType: string) => void;
   abortTopologyDragForToolChange: () => void;
   setSelectedHighlighted: (active: boolean) => void;
-  setSelectedCapture: (captureId: number | undefined) => void;
+  setSelectedLight: (lightId: number | undefined) => void;
   setSelectedObject: (objectId: number | undefined) => void;
-  setPendingCapture: (indices: Set<number>, captureId?: number) => void;
-  clearPendingCapture: () => void;
-  syncCapturedIndices: (updated: LaurusMaskResult) => void;
+  setPendingLight: (indices: Set<number>, lightId?: number) => void;
+  clearPendingLight: () => void;
+  syncLitIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
   /** Recut this mask's mesh against the outline the pen has open -- see retouchMesh. */
@@ -177,7 +177,7 @@ export interface MaskImperativeHandle {
 
 export interface MaskAppearanceOverride {
   textureMix?: number;
-  capture?: { size: number; intensity: number; falloff: number; darkness: number };
+  light?: { size: number; intensity: number; falloff: number; darkness: number };
 }
 
 interface ProjectMaskItem {
@@ -213,14 +213,14 @@ export function ProjectMaskItem({
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskCaptureUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
+  const { sendMaskLightUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
+    notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
-    notifyMaskPendingCaptureSet,
-    notifyMaskPendingCaptureCleared,
-    notifyMaskCaptureUpdated,
+    notifyMaskPendingLightSet,
+    notifyMaskPendingLightCleared,
+    notifyMaskLightUpdated,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
@@ -235,10 +235,10 @@ export function ProjectMaskItem({
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
-  const captureSizeRef = useRef(DEFAULT_CAPTURE_VALUE.size);
-  const captureIntensityRef = useRef(DEFAULT_CAPTURE_VALUE.intensity);
-  const captureFalloffRef = useRef(DEFAULT_CAPTURE_VALUE.falloff);
-  const captureDarknessRef = useRef(DEFAULT_CAPTURE_VALUE.darkness);
+  const lightSizeRef = useRef(DEFAULT_LIGHT_VALUE.size);
+  const lightIntensityRef = useRef(DEFAULT_LIGHT_VALUE.intensity);
+  const lightFalloffRef = useRef(DEFAULT_LIGHT_VALUE.falloff);
+  const lightDarknessRef = useRef(DEFAULT_LIGHT_VALUE.darkness);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   const vertexRangesRef = useRef<[number, number][]>([]);
@@ -259,10 +259,10 @@ export function ProjectMaskItem({
     >
   >(new Map());
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
-  const captureDragRef = useRef<
+  const lightDragRef = useRef<
     | {
         pointerId: number;
-        captureId: number;
+        lightId: number;
         startX: number;
         startY: number;
         originalCircle: { cx: number; cy: number; radius: number };
@@ -274,11 +274,11 @@ export function ProjectMaskItem({
     | undefined
   >(undefined);
 
-  const lastKnownCaptureRef = useRef<
+  const lastKnownLightRef = useRef<
     Map<number, { indices: Set<number>; circle: { cx: number; cy: number; radius: number } }>
   >(new Map());
-  const captureCommitInFlightRef = useRef<Set<number>>(new Set());
-  const [isDraggingCapture, setIsDraggingCapture] = useState(false);
+  const lightCommitInFlightRef = useRef<Set<number>>(new Set());
+  const [isDraggingLight, setIsDraggingLight] = useState(false);
   const objectDragRef = useRef<
     | {
         pointerId: number;
@@ -308,12 +308,12 @@ export function ProjectMaskItem({
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
   const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
   const objectEditIdRef = useRef<number | undefined>(undefined);
-  const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
-  const pendingCaptureIdRef = useRef<number | undefined>(undefined);
+  const pendingLightRef = useRef<Set<number> | undefined>(undefined);
+  const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
-  const capturesRef = useRef<Map<number, Set<number>>>(new Map());
-  const capturesMetaRef = useRef<Map<number, LaurusCapture>>(new Map());
-  const selectedCaptureIdRef = useRef<number | undefined>(undefined);
+  const lightsRef = useRef<Map<number, Set<number>>>(new Map());
+  const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
+  const selectedLightIdRef = useRef<number | undefined>(undefined);
   const objectsMapRef = useRef<Map<number, Set<number>>>(new Map());
   const maskGeometryRef = useRef<MaskGeometry>({ corners: [], points: [], centroids: [] });
   /** The polygon array the uploaded mesh was built from -- see syncObjects. */
@@ -322,10 +322,10 @@ export function ProjectMaskItem({
   const highlightScratchRef = useRef<Float32Array>(new Float32Array(0));
   const highlightUploadedRef = useRef<Float32Array>(new Float32Array(0));
   const selectedObjectIdRef = useRef<number | undefined>(undefined);
-  const captureIndicesAtOffset = useCallback(
-    (drag: NonNullable<typeof captureDragRef.current>, dx: number, dy: number): Set<number> => {
+  const lightIndicesAtOffset = useCallback(
+    (drag: NonNullable<typeof lightDragRef.current>, dx: number, dy: number): Set<number> => {
       if (source.kind !== "static") return new Set();
-      if (dx * dx + dy * dy <= CAPTURE_DRAG_EPSILON_SQ) return drag.originalIndices;
+      if (dx * dx + dy * dy <= LIGHT_DRAG_EPSILON_SQ) return drag.originalIndices;
       return indicesInCircleFromCentroids(maskGeometry(source.maskData).centroids, {
         cx: drag.originalCircle.cx + dx,
         cy: drag.originalCircle.cy + dy,
@@ -335,28 +335,28 @@ export function ProjectMaskItem({
     [source],
   );
 
-  const recomputeCaptureDrag = useCallback(() => {
-    const drag = captureDragRef.current;
+  const recomputeLightDrag = useCallback(() => {
+    const drag = lightDragRef.current;
     if (!drag) return;
     drag.rafId = undefined;
-    const indices = captureIndicesAtOffset(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
+    const indices = lightIndicesAtOffset(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
     dispatch({
-      type: CoreActionType.SetPendingLightSourceCapture,
-      value: { maskKey: mediaKey, captureId: drag.captureId, polygonIndices: [...indices] },
+      type: CoreActionType.SetPendingLight,
+      value: { maskKey: mediaKey, lightId: drag.lightId, polygonIndices: [...indices] },
     });
-    notifyMaskPendingCaptureSet(mediaKey, indices, drag.captureId);
-  }, [captureIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingCaptureSet]);
+    notifyMaskPendingLightSet(mediaKey, indices, drag.lightId);
+  }, [lightIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingLightSet]);
 
-  const abortCaptureDrag = useCallback(() => {
-    const drag = captureDragRef.current;
+  const abortLightDrag = useCallback(() => {
+    const drag = lightDragRef.current;
     if (!drag) return;
     if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
     canvasRef.current?.releasePointerCapture(drag.pointerId);
-    captureDragRef.current = undefined;
-    setIsDraggingCapture(false);
-    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-    notifyMaskPendingCaptureCleared(mediaKey);
-  }, [dispatch, mediaKey, notifyMaskPendingCaptureCleared]);
+    lightDragRef.current = undefined;
+    setIsDraggingLight(false);
+    dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+    notifyMaskPendingLightCleared(mediaKey);
+  }, [dispatch, mediaKey, notifyMaskPendingLightCleared]);
 
   const resolveObjectUniforms = useCallback((): ObjectGeometryInput[] => {
     const pending = pendingTopologyRef.current;
@@ -461,23 +461,23 @@ export function ProjectMaskItem({
       ? { width: source.maskData.width, height: source.maskData.height }
       : { width: source.sourceImg.width, height: source.sourceImg.height };
 
-  const resolveTargetCaptureId = useCallback((): number | undefined => {
-    if (selectedCaptureIdRef.current !== undefined) return selectedCaptureIdRef.current;
-    return capturesRef.current.keys().next().value;
+  const resolveTargetLightId = useCallback((): number | undefined => {
+    if (selectedLightIdRef.current !== undefined) return selectedLightIdRef.current;
+    return lightsRef.current.keys().next().value;
   }, []);
 
   const computeLightSourceRestPosition = useCallback(
-    (captureIdOverride?: number) => {
+    (lightIdOverride?: number) => {
       if (source.kind !== "static") return undefined;
-      const targetCaptureId = captureIdOverride ?? resolveTargetCaptureId();
+      const targetLightId = lightIdOverride ?? resolveTargetLightId();
       const indices =
-        pendingCaptureRef.current ??
-        (targetCaptureId !== undefined ? capturesRef.current.get(targetCaptureId) : undefined) ??
-        capturesRef.current.values().next().value;
+        pendingLightRef.current ??
+        (targetLightId !== undefined ? lightsRef.current.get(targetLightId) : undefined) ??
+        lightsRef.current.values().next().value;
       if (!indices) return undefined;
       return centerOfIndices(maskGeometry(source.maskData).points, indices);
     },
-    [source, resolveTargetCaptureId],
+    [source, resolveTargetLightId],
   );
 
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
@@ -485,12 +485,12 @@ export function ProjectMaskItem({
     if (!canvas) return [];
     const centroids = maskGeometryRef.current.centroids;
     const lights: MaskLightSource[] = [];
-    capturesRef.current.forEach((indices, captureId) => {
-      if (playbackLightSourcesRef.current.has(captureId)) return;
-      const meta = capturesMetaRef.current.get(captureId);
+    lightsRef.current.forEach((indices, lightId) => {
+      if (playbackLightSourcesRef.current.has(lightId)) return;
+      const meta = lightsMetaRef.current.get(lightId);
       if (!meta) return;
-      const pending = pendingCaptureIdRef.current === captureId ? pendingCaptureRef.current : undefined;
-      const center = captureCenterFromCentroids(centroids, pending ?? indices);
+      const pending = pendingLightIdRef.current === lightId ? pendingLightRef.current : undefined;
+      const center = lightCenterFromCentroids(centroids, pending ?? indices);
       if (!center) return;
       lights.push({
         x: center[0],
@@ -532,7 +532,7 @@ export function ProjectMaskItem({
   const toolCursor = useToolCursor({
     target: source.kind === "static" ? "mask" : undefined,
     dragDisabled,
-    isDragging: isDragging || isDraggingCapture || isDraggingTopology,
+    isDragging: isDragging || isDraggingLight || isDraggingTopology,
   });
   const isReviewingThisMask =
     source.kind === "static" &&
@@ -737,8 +737,8 @@ export function ProjectMaskItem({
         : [
             {
               ...lightSourceRef.current,
-              intensity: captureIntensityRef.current,
-              darkness: captureDarknessRef.current,
+              intensity: lightIntensityRef.current,
+              darkness: lightDarknessRef.current,
             },
           ]),
       ...resolveRestingLightSources(),
@@ -786,17 +786,17 @@ export function ProjectMaskItem({
       });
     };
 
-    const pendingCapture = pendingCaptureRef.current;
-    const editingCaptureId = pendingCapture ? (pendingCaptureIdRef.current ?? selectedCaptureIdRef.current) : undefined;
+    const pendingLight = pendingLightRef.current;
+    const editingLightId = pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined;
     if (selectedHighlightRef.current) {
-      const activeCaptureId = selectedCaptureIdRef.current;
-      capturesRef.current.forEach((indices, captureId) => {
-        if (captureId === editingCaptureId) return;
-        paint(indices, captureId === activeCaptureId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
+      const activeLightId = selectedLightIdRef.current;
+      lightsRef.current.forEach((indices, lightId) => {
+        if (lightId === editingLightId) return;
+        paint(indices, lightId === activeLightId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
-    if (pendingCapture && pendingCapture.size > 0) {
-      paint(pendingCapture, HIGHLIGHT_MOVING_COLOR);
+    if (pendingLight && pendingLight.size > 0) {
+      paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
 
     const pendingTopology = pendingTopologyRef.current;
@@ -856,13 +856,13 @@ export function ProjectMaskItem({
     render();
   }, [render]);
 
-  const applyDefaultCaptureValue = useCallback(() => {
+  const applyDefaultLightValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
-    captureSizeRef.current = maskMeta?.capture_preview_size ?? DEFAULT_CAPTURE_VALUE.size;
-    captureIntensityRef.current = maskMeta?.capture_preview_intensity ?? DEFAULT_CAPTURE_VALUE.intensity;
-    captureFalloffRef.current = maskMeta?.capture_preview_falloff ?? DEFAULT_CAPTURE_VALUE.falloff;
-    captureDarknessRef.current = maskMeta?.capture_preview_darkness ?? DEFAULT_CAPTURE_VALUE.darkness;
+    lightSizeRef.current = maskMeta?.light_preview_size ?? DEFAULT_LIGHT_VALUE.size;
+    lightIntensityRef.current = maskMeta?.light_preview_intensity ?? DEFAULT_LIGHT_VALUE.intensity;
+    lightFalloffRef.current = maskMeta?.light_preview_falloff ?? DEFAULT_LIGHT_VALUE.falloff;
+    lightDarknessRef.current = maskMeta?.light_preview_darkness ?? DEFAULT_LIGHT_VALUE.darkness;
   }, [source, coreState.project.masks, mediaKey]);
 
   const stopLightSourceAnimation = useCallback(() => {
@@ -876,24 +876,24 @@ export function ProjectMaskItem({
     playbackLightSourcesRef.current = new Map();
     playbackObjectsRef.current = new Map();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-    applyDefaultCaptureValue();
+    applyDefaultLightValue();
     render();
-  }, [render, applyDefaultCaptureValue]);
+  }, [render, applyDefaultLightValue]);
 
   const preparePlayback = useCallback(
-    (effectKey?: string, captureId?: number, objectId?: number): Promise<(() => Promise<void>) | undefined> => {
+    (effectKey?: string, lightId?: number, objectId?: number): Promise<(() => Promise<void>) | undefined> => {
       stopLightSourceAnimation();
       if (source.kind !== "static") return Promise.resolve(undefined);
-      const playAll = effectKey === undefined && captureId === undefined && objectId === undefined;
-      const candidateCaptureIds = playAll
-        ? Array.from(capturesRef.current.keys())
+      const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
+      const candidateLightIds = playAll
+        ? Array.from(lightsRef.current.keys())
         : objectId !== undefined
           ? []
-          : [captureId ?? resolveTargetCaptureId()].filter((id): id is number => id !== undefined);
+          : [lightId ?? resolveTargetLightId()].filter((id): id is number => id !== undefined);
 
-      const targets = candidateCaptureIds
+      const targets = candidateLightIds
         .map((id) => {
-          const inputId = maskCaptureInputId(mediaKey, id);
+          const inputId = maskLightInputId(mediaKey, id);
           const wiredMove = coreState.effects.find(
             (effect): effect is Extract<LaurusEffect, { type: "move" }> =>
               effect.type === "move" &&
@@ -913,10 +913,10 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { captureId: id, inputId, wiredMove, wiredLightSource, wiredScale };
+          return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale };
         })
         .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale)
-        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.captureId) }));
+        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.lightId) }));
 
       const candidateObjectIds = playAll
         ? objectsRef.current.map((object) => object.id)
@@ -952,10 +952,10 @@ export function ProjectMaskItem({
 
       wiredMoveRef.current = targets.length > 0;
 
-      const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
-      const moveFramesByCapture = new Map<number, LaurusFrame[]>();
-      const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
-      const scaleFramesByCapture = new Map<number, LaurusFrame[]>();
+      const mergedFramesByLight = new Map<number, LaurusFrame[]>();
+      const moveFramesByLight = new Map<number, LaurusFrame[]>();
+      const lightSourceFramesByLight = new Map<number, LaurusFrame[]>();
+      const scaleFramesByLight = new Map<number, LaurusFrame[]>();
       const mergedFramesByObject = new Map<number, LaurusFrame[]>();
       const moveFramesByObject = new Map<number, LaurusFrame[]>();
       const lightSourceFramesByObject = new Map<number, LaurusFrame[]>();
@@ -993,7 +993,7 @@ export function ProjectMaskItem({
               getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
             ).then((result) => {
               if (activePlaybackRef.current !== session) return;
-              mergedFramesByCapture.set(t.captureId, result ?? []);
+              mergedFramesByLight.set(t.lightId, result ?? []);
             }),
           ),
           ...objectTargets.map((t) =>
@@ -1008,7 +1008,7 @@ export function ProjectMaskItem({
           if (activePlaybackRef.current !== session) return;
           totalFrames = Math.max(
             1,
-            ...Array.from(mergedFramesByCapture.values()).map((f) => f.length),
+            ...Array.from(mergedFramesByLight.values()).map((f) => f.length),
             ...Array.from(mergedFramesByObject.values()).map((f) => f.length),
           );
           durationSeconds = totalFrames / fps;
@@ -1067,7 +1067,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `move:${target.inputId}`, () =>
               getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result) moveFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) moveFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -1077,8 +1077,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `light_source:${target.inputId}`, () =>
               getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result)
-                lightSourceFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) lightSourceFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -1088,7 +1087,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `scale:${target.inputId}`, () =>
               getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result) scaleFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) scaleFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -1116,17 +1115,17 @@ export function ProjectMaskItem({
                 const scaleY = canvas.height / rect.height;
 
                 targets.forEach((t) => {
-                  const mergedFrames = mergedFramesByCapture.get(t.captureId);
-                  const moveFrames = moveFramesByCapture.get(t.captureId);
-                  const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
-                  const scaleFrames = scaleFramesByCapture.get(t.captureId);
+                  const mergedFrames = mergedFramesByLight.get(t.lightId);
+                  const moveFrames = moveFramesByLight.get(t.lightId);
+                  const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
+                  const scaleFrames = scaleFramesByLight.get(t.lightId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                     : moveFrames && moveFrames.length > 0
                       ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
                       : undefined;
-                  const capturePoint = playAll
+                  const lightPoint = playAll
                     ? t.wiredLightSource
                       ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                       : undefined
@@ -1144,16 +1143,14 @@ export function ProjectMaskItem({
                   const pointY = movePoint?.y ?? 0;
                   const bufferX = restX + pointX * scaleX;
                   const bufferY = restY + pointY * scaleY;
-                  const captureMeta = source.maskData.captures.find((c) => c.id === t.captureId);
-                  const size = capturePoint?.capture_size ?? captureMeta?.size ?? captureSizeRef.current;
-                  const intensity =
-                    capturePoint?.capture_intensity ?? captureMeta?.intensity ?? captureIntensityRef.current;
-                  const falloff = capturePoint?.capture_falloff ?? captureMeta?.falloff ?? captureFalloffRef.current;
-                  const darkness =
-                    capturePoint?.capture_darkness ?? captureMeta?.darkness ?? captureDarknessRef.current;
+                  const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
+                  const size = lightPoint?.light_size ?? lightMeta?.size ?? lightSizeRef.current;
+                  const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
+                  const falloff = lightPoint?.light_falloff ?? lightMeta?.falloff ?? lightFalloffRef.current;
+                  const darkness = lightPoint?.light_darkness ?? lightMeta?.darkness ?? lightDarknessRef.current;
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
-                  playbackLightSourcesRef.current.set(t.captureId, {
+                  playbackLightSourcesRef.current.set(t.lightId, {
                     x: bufferX,
                     y: canvas.height - bufferY,
                     radius: (size / 2) * scaleMultiplier,
@@ -1223,7 +1220,7 @@ export function ProjectMaskItem({
     [
       source,
       mediaKey,
-      resolveTargetCaptureId,
+      resolveTargetLightId,
       computeLightSourceRestPosition,
       coreState.effects,
       coreState.apiOrigin,
@@ -1237,8 +1234,8 @@ export function ProjectMaskItem({
   );
 
   const playLightSourceAnimation = useCallback(
-    (effectKey?: string, captureId?: number, objectId?: number): Promise<void> =>
-      preparePlayback(effectKey, captureId, objectId).then((start) => start?.()),
+    (effectKey?: string, lightId?: number, objectId?: number): Promise<void> =>
+      preparePlayback(effectKey, lightId, objectId).then((start) => start?.()),
     [preparePlayback],
   );
 
@@ -1246,7 +1243,7 @@ export function ProjectMaskItem({
     source,
     coreState,
     uiState,
-    applyDefaultCaptureValue,
+    applyDefaultLightValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
@@ -1256,7 +1253,7 @@ export function ProjectMaskItem({
     source,
     coreState,
     uiState,
-    applyDefaultCaptureValue,
+    applyDefaultLightValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
@@ -1349,21 +1346,20 @@ export function ProjectMaskItem({
         }
 
         lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-        const pendingCapture =
-          coreState.pendingLightSourceCapture?.maskKey === mediaKey ? coreState.pendingLightSourceCapture : undefined;
-        pendingCaptureRef.current = pendingCapture ? new Set(pendingCapture.polygonIndices) : undefined;
-        pendingCaptureIdRef.current = pendingCapture?.captureId;
+        const pendingLight = coreState.pendingLight?.maskKey === mediaKey ? coreState.pendingLight : undefined;
+        pendingLightRef.current = pendingLight ? new Set(pendingLight.polygonIndices) : undefined;
+        pendingLightIdRef.current = pendingLight?.lightId;
         selectedHighlightRef.current = uiState.selectedElement?.key === mediaKey;
-        selectedCaptureIdRef.current =
-          selectedHighlightRef.current && uiState.selectedElement?.type === "capture"
-            ? uiState.selectedElement.captureId
+        selectedLightIdRef.current =
+          selectedHighlightRef.current && uiState.selectedElement?.type === "light"
+            ? uiState.selectedElement.lightId
             : undefined;
         selectedObjectIdRef.current =
           selectedHighlightRef.current && uiState.selectedElement?.type === "object"
             ? uiState.selectedElement.objectId
             : undefined;
-        capturesRef.current = buildCapturesMap(maskData.polygons);
-        capturesMetaRef.current = buildCapturesMetaMap(maskData.captures);
+        lightsRef.current = buildLightsMap(maskData.polygons);
+        lightsMetaRef.current = buildLightsMetaMap(maskData.lights);
         objectsRef.current = maskData.objects;
         objectsMapRef.current = buildObjectsMap(maskData.polygons);
         maskGeometryRef.current = maskGeometry(maskData);
@@ -1386,13 +1382,13 @@ export function ProjectMaskItem({
           if (latest.source.kind !== "static") return;
           textureMixRef.current =
             override?.textureMix ?? latest.coreState.project.masks.get(mediaKey)?.texture ?? TEXTURE_MIX_DEFAULT;
-          if (override?.capture) {
-            captureSizeRef.current = override.capture.size;
-            captureIntensityRef.current = override.capture.intensity;
-            captureFalloffRef.current = override.capture.falloff;
-            captureDarknessRef.current = override.capture.darkness;
+          if (override?.light) {
+            lightSizeRef.current = override.light.size;
+            lightIntensityRef.current = override.light.intensity;
+            lightFalloffRef.current = override.light.falloff;
+            lightDarknessRef.current = override.light.darkness;
           } else {
-            latest.applyDefaultCaptureValue();
+            latest.applyDefaultLightValue();
           }
           render();
         };
@@ -1401,14 +1397,14 @@ export function ProjectMaskItem({
         recolorHighlight();
 
         const handle: MaskImperativeHandle = {
-          play: (effectKey, captureId, objectId) =>
-            latestRef.current.playLightSourceAnimation(effectKey, captureId, objectId),
-          preparePlayback: (effectKey, captureId, objectId) =>
-            latestRef.current.preparePlayback(effectKey, captureId, objectId),
+          play: (effectKey, lightId, objectId) =>
+            latestRef.current.playLightSourceAnimation(effectKey, lightId, objectId),
+          preparePlayback: (effectKey, lightId, objectId) =>
+            latestRef.current.preparePlayback(effectKey, lightId, objectId),
           stop: () => latestRef.current.stopLightSourceAnimation(),
-          abortCaptureDragForToolChange: (newToolType) => {
+          abortLightDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;
-            if (captureDragRef.current) abortCaptureDrag();
+            if (lightDragRef.current) abortLightDrag();
           },
           abortTopologyDragForToolChange: () => {
             if (!objectDragRef.current) return;
@@ -1419,35 +1415,35 @@ export function ProjectMaskItem({
           setSelectedHighlighted: (active) => {
             selectedHighlightRef.current = active;
             if (!active) {
-              selectedCaptureIdRef.current = undefined;
+              selectedLightIdRef.current = undefined;
               selectedObjectIdRef.current = undefined;
             }
             recolorHighlight();
           },
-          setSelectedCapture: (captureId) => {
-            selectedCaptureIdRef.current = captureId;
+          setSelectedLight: (lightId) => {
+            selectedLightIdRef.current = lightId;
             recolorHighlight();
           },
           setSelectedObject: (objectId) => {
             selectedObjectIdRef.current = objectId;
             recolorHighlight();
           },
-          setPendingCapture: (indices, captureId) => {
-            pendingCaptureIdRef.current = captureId;
-            pendingCaptureRef.current = indices;
+          setPendingLight: (indices, lightId) => {
+            pendingLightIdRef.current = lightId;
+            pendingLightRef.current = indices;
             recolorHighlight();
           },
-          clearPendingCapture: () => {
-            pendingCaptureIdRef.current = undefined;
-            pendingCaptureRef.current = undefined;
+          clearPendingLight: () => {
+            pendingLightIdRef.current = undefined;
+            pendingLightRef.current = undefined;
             recolorHighlight();
           },
-          syncCapturedIndices: (updated) => {
+          syncLitIndices: (updated) => {
             const latestSource = latestRef.current.source;
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
-            capturesRef.current = buildCapturesMap(updated.polygons);
-            capturesMetaRef.current = buildCapturesMetaMap(updated.captures);
+            lightsRef.current = buildLightsMap(updated.polygons);
+            lightsMetaRef.current = buildLightsMetaMap(updated.lights);
             maskGeometryRef.current = maskGeometry(updated);
             recolorHighlight();
           },
@@ -1602,10 +1598,10 @@ export function ProjectMaskItem({
         }
         glowColorRef.current = liveGlowColorRef.current;
         textureMixRef.current = mask.textureMixRef.current;
-        captureSizeRef.current = mask.captureSizeRef.current;
-        captureIntensityRef.current = mask.captureIntensityRef.current;
-        captureFalloffRef.current = mask.captureFalloffRef.current;
-        captureDarknessRef.current = mask.captureDarknessRef.current;
+        lightSizeRef.current = mask.lightSizeRef.current;
+        lightIntensityRef.current = mask.lightIntensityRef.current;
+        lightFalloffRef.current = mask.lightFalloffRef.current;
+        lightDarknessRef.current = mask.lightDarknessRef.current;
 
         render();
         rafRef.current = requestAnimationFrame(loop);
@@ -1633,7 +1629,7 @@ export function ProjectMaskItem({
       meshIdentityKey,
       render,
       recolorHighlight,
-      abortCaptureDrag,
+      abortLightDrag,
       abortTopologyDrag,
       maskHandlesRef,
       maskElementsRef,
@@ -1693,47 +1689,44 @@ export function ProjectMaskItem({
                 }
                 return;
               }
-              const hitSubElement = (): Extract<LaurusSelectedElement, { type: "capture" | "object" }> | undefined => {
+              const hitSubElement = (): Extract<LaurusSelectedElement, { type: "light" | "object" }> | undefined => {
                 if (source.kind !== "static") return undefined;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 if (!point) return undefined;
                 const objectId = objectIdAtPoint(objectsRef.current, point);
                 if (objectId !== undefined) return { key: mediaKey, type: "object", objectId };
-                const captureId = captureIdAtPoint(
+                const lightId = lightIdAtPoint(
                   source.maskData.polygons,
                   maskGeometryRef.current.points,
                   resolveObjectUniforms(),
                   point,
                 );
-                if (captureId !== undefined) return { key: mediaKey, type: "capture", captureId };
+                if (lightId !== undefined) return { key: mediaKey, type: "light", lightId };
                 return undefined;
               };
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
-                if ((selected.type === "capture" || selected.type === "object") && uiState.lightSourcePreview) {
+                if ((selected.type === "light" || selected.type === "object") && uiState.lightSourcePreview) {
                   uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                   notifyMaskLightSourcePreviewToggled(false);
                 }
                 notifyMaskSelectionChanged(mediaKey);
-                notifyMaskSelectedCaptureChanged(
-                  mediaKey,
-                  selected.type === "capture" ? selected.captureId : undefined,
-                );
+                notifyMaskSelectedLightChanged(mediaKey, selected.type === "light" ? selected.lightId : undefined);
                 notifyMaskSelectedObjectChanged(mediaKey, selected.type === "object" ? selected.objectId : undefined);
               };
-              const previouslySelectedCaptureId =
-                uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
-                  ? uiState.selectedElement.captureId
+              const previouslySelectedLightId =
+                uiState.selectedElement?.type === "light" && uiState.selectedElement.key === mediaKey
+                  ? uiState.selectedElement.lightId
                   : undefined;
               const previouslySelectedObjectId =
                 uiState.selectedElement?.type === "object" && uiState.selectedElement.key === mediaKey
                   ? uiState.selectedElement.objectId
                   : undefined;
               const isIdleMaskTool =
-                uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection && !uiState.tool.raisingObjects;
+                uiState.tool.type === "mask" && !uiState.tool.lightingMeshSection && !uiState.tool.raisingObjects;
               if (isIdleMaskTool && !isAltKeyPressed && !e.metaKey) {
                 setSelectedMaskKeys(new Set([mediaKey]));
-                if (source.maskData.captures.length > 0) {
+                if (source.maskData.lights.length > 0) {
                   select({ key: mediaKey, type: "mask" });
                 }
                 return;
@@ -1746,8 +1739,8 @@ export function ProjectMaskItem({
                   const hit = hitSubElement();
                   if (hit) {
                     const alreadySelected =
-                      hit.type === "capture"
-                        ? previouslySelectedCaptureId === hit.captureId
+                      hit.type === "light"
+                        ? previouslySelectedLightId === hit.lightId
                         : previouslySelectedObjectId === hit.objectId;
                     select(alreadySelected ? { key: mediaKey, type: "mask" } : hit);
                     return;
@@ -1759,7 +1752,7 @@ export function ProjectMaskItem({
                     next.delete(mediaKey);
                   } else {
                     next.add(mediaKey);
-                    if (source.maskData.captures.length > 0) {
+                    if (source.maskData.lights.length > 0) {
                       select({ key: mediaKey, type: "mask" });
                     }
                   }
@@ -1779,19 +1772,19 @@ export function ProjectMaskItem({
                 });
               }
               const hit = e.metaKey ? hitSubElement() : undefined;
-              const hitCaptureId = hit?.type === "capture" ? hit.captureId : undefined;
+              const hitLightId = hit?.type === "light" ? hit.lightId : undefined;
               const hitObjectId = hit?.type === "object" ? hit.objectId : undefined;
               if (hit) {
                 select(hit);
               } else if (
                 showContextMenu &&
-                (previouslySelectedCaptureId !== undefined || previouslySelectedObjectId !== undefined)
+                (previouslySelectedLightId !== undefined || previouslySelectedObjectId !== undefined)
               ) {
                 select({ key: mediaKey, type: "mask" });
               }
               if (
                 showContextMenu &&
-                (previouslySelectedCaptureId !== hitCaptureId || previouslySelectedObjectId !== hitObjectId)
+                (previouslySelectedLightId !== hitLightId || previouslySelectedObjectId !== hitObjectId)
               ) {
                 return;
               }
@@ -1891,32 +1884,32 @@ export function ProjectMaskItem({
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
               const [bufferX, bufferY] = point;
-              const captureId = captureIdAtPoint(
+              const lightId = lightIdAtPoint(
                 source.maskData.polygons,
                 maskGeometryRef.current.points,
                 resolveObjectUniforms(),
                 [bufferX, bufferY],
               );
-              if (captureId === undefined) return;
-              if (captureCommitInFlightRef.current.has(captureId)) return;
+              if (lightId === undefined) return;
+              if (lightCommitInFlightRef.current.has(lightId)) return;
               const originalIndices = new Set<number>();
               source.maskData.polygons.forEach((p, i) => {
-                if (p.capture_id === captureId) originalIndices.add(i);
+                if (p.light_id === lightId) originalIndices.add(i);
               });
-              const persistedSize = source.maskData.captures.find((c) => c.id === captureId)?.size ?? 0;
-              const known = lastKnownCaptureRef.current.get(captureId);
+              const persistedSize = source.maskData.lights.find((c) => c.id === lightId)?.size ?? 0;
+              const known = lastKnownLightRef.current.get(lightId);
               const reconstructed =
                 known && sameIndices(known.indices, originalIndices)
                   ? known.circle
-                  : capturedRegionCircle(source.maskData.polygons, maskGeometryRef.current.centroids, captureId);
+                  : litRegionCircle(source.maskData.polygons, maskGeometryRef.current.centroids, lightId);
               if (!reconstructed) return;
               const circle = persistedSize > 0 ? { ...reconstructed, radius: persistedSize / 2 } : reconstructed;
               e.stopPropagation();
               e.preventDefault();
               canvas.setPointerCapture(e.pointerId);
-              captureDragRef.current = {
+              lightDragRef.current = {
                 pointerId: e.pointerId,
-                captureId,
+                lightId,
                 startX: bufferX,
                 startY: bufferY,
                 originalCircle: circle,
@@ -1925,20 +1918,20 @@ export function ProjectMaskItem({
                 latestX: bufferX,
                 latestY: bufferY,
               };
-              setIsDraggingCapture(true);
+              setIsDraggingLight(true);
               dispatch({
-                type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, captureId, polygonIndices: [...originalIndices] },
+                type: CoreActionType.SetPendingLight,
+                value: { maskKey: mediaKey, lightId, polygonIndices: [...originalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, originalIndices, captureId);
+              notifyMaskPendingLightSet(mediaKey, originalIndices, lightId);
             }}
             onPointerMove={(e) => {
-              const captureDrag = captureDragRef.current;
-              if (captureDrag && e.pointerId === captureDrag.pointerId) {
+              const lightDrag = lightDragRef.current;
+              if (lightDrag && e.pointerId === lightDrag.pointerId) {
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 if (!point) return;
-                [captureDrag.latestX, captureDrag.latestY] = point;
-                if (captureDrag.rafId === undefined) captureDrag.rafId = requestAnimationFrame(recomputeCaptureDrag);
+                [lightDrag.latestX, lightDrag.latestY] = point;
+                if (lightDrag.rafId === undefined) lightDrag.rafId = requestAnimationFrame(recomputeLightDrag);
                 return;
               }
               const objectDrag = objectDragRef.current;
@@ -2002,7 +1995,7 @@ export function ProjectMaskItem({
                 });
                 return;
               }
-              const drag = captureDragRef.current;
+              const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId || source.kind !== "static") return;
               suppressNextClickRef.current = true;
               if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
@@ -2010,47 +2003,47 @@ export function ProjectMaskItem({
               const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
               const dx = (point?.[0] ?? drag.latestX) - drag.startX;
               const dy = (point?.[1] ?? drag.latestY) - drag.startY;
-              const finalIndices = captureIndicesAtOffset(drag, dx, dy);
-              const captureId = drag.captureId;
-              const existingCapture = source.maskData.captures.find((c) => c.id === captureId);
-              const captureName = existingCapture?.name ?? `light ${captureId}`;
-              captureDragRef.current = undefined;
-              setIsDraggingCapture(false);
+              const finalIndices = lightIndicesAtOffset(drag, dx, dy);
+              const lightId = drag.lightId;
+              const existingLight = source.maskData.lights.find((c) => c.id === lightId);
+              const lightName = existingLight?.name ?? `light ${lightId}`;
+              lightDragRef.current = undefined;
+              setIsDraggingLight(false);
               if (finalIndices.size === 0) {
-                lastKnownCaptureRef.current.set(captureId, {
+                lastKnownLightRef.current.set(lightId, {
                   indices: drag.originalIndices,
                   circle: drag.originalCircle,
                 });
-                dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-                notifyMaskPendingCaptureCleared(mediaKey);
+                dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+                notifyMaskPendingLightCleared(mediaKey);
                 return;
               }
               dispatch({
-                type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
+                type: CoreActionType.SetPendingLight,
+                value: { maskKey: mediaKey, lightId, polygonIndices: [...finalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, finalIndices, captureId);
-              captureCommitInFlightRef.current.add(captureId);
-              sendMaskCaptureUpdate(source.maskData.mask_media_id, {
-                capture_id: captureId,
-                name: captureName,
+              notifyMaskPendingLightSet(mediaKey, finalIndices, lightId);
+              lightCommitInFlightRef.current.add(lightId);
+              sendMaskLightUpdate(source.maskData.mask_media_id, {
+                light_id: lightId,
+                name: lightName,
                 polygon_indices: [...finalIndices],
-                size: existingCapture?.size ?? 0,
-                intensity: existingCapture?.intensity ?? 0,
-                falloff: existingCapture?.falloff ?? 0,
-                darkness: existingCapture?.darkness ?? 0,
+                size: existingLight?.size ?? 0,
+                intensity: existingLight?.intensity ?? 0,
+                falloff: existingLight?.falloff ?? 0,
+                darkness: existingLight?.darkness ?? 0,
               }).then((updated) => {
-                captureCommitInFlightRef.current.delete(captureId);
+                lightCommitInFlightRef.current.delete(lightId);
                 const latestMask = latestRef.current.source;
                 if (updated && latestMask.kind === "static") {
-                  const patched = applyCaptureDelta(latestMask.maskData, updated);
+                  const patched = applyLightDelta(latestMask.maskData, updated);
                   dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
-                  notifyMaskCaptureUpdated(mediaKey, patched);
+                  notifyMaskLightUpdated(mediaKey, patched);
                   if (uiState.lightSourcePreview) {
                     uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                     notifyMaskLightSourcePreviewToggled(false);
                   }
-                  lastKnownCaptureRef.current.set(captureId, {
+                  lastKnownLightRef.current.set(lightId, {
                     indices: finalIndices,
                     circle: {
                       cx: drag.originalCircle.cx + dx,
@@ -2059,13 +2052,13 @@ export function ProjectMaskItem({
                     },
                   });
                 } else {
-                  lastKnownCaptureRef.current.set(captureId, {
+                  lastKnownLightRef.current.set(lightId, {
                     indices: drag.originalIndices,
                     circle: drag.originalCircle,
                   });
                 }
-                dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-                notifyMaskPendingCaptureCleared(mediaKey);
+                dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+                notifyMaskPendingLightCleared(mediaKey);
               });
             }}
             onPointerCancel={(e) => {
@@ -2074,16 +2067,16 @@ export function ProjectMaskItem({
                 abortTopologyDrag();
                 return;
               }
-              const drag = captureDragRef.current;
+              const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId) return;
-              abortCaptureDrag();
+              abortLightDrag();
             }}
             onMouseEnter={() => {
               setIsHovered(true);
             }}
             onMouseMove={(e) => {
               setIsHovered(true);
-              if (captureDragRef.current || objectDragRef.current) return;
+              if (lightDragRef.current || objectDragRef.current) return;
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
               setMostRecentlyHoveredMaskKey(mediaKey);
               const canvas = e.currentTarget;
@@ -2096,8 +2089,8 @@ export function ProjectMaskItem({
               lightSourceRef.current = {
                 x: bufferX,
                 y: canvas.height - bufferY,
-                radius: (captureSizeRef.current / 2) * scaleX,
-                falloff: captureFalloffRef.current * scaleX,
+                radius: (lightSizeRef.current / 2) * scaleX,
+                falloff: lightFalloffRef.current * scaleX,
               };
               render();
             }}
@@ -2139,8 +2132,8 @@ export function ProjectMaskItem({
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
             media={
-              uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
-                ? { key: mediaKey, type: "capture", captureId: uiState.selectedElement.captureId, meta: maskMeta }
+              uiState.selectedElement?.type === "light" && uiState.selectedElement.key === mediaKey
+                ? { key: mediaKey, type: "light", lightId: uiState.selectedElement.lightId, meta: maskMeta }
                 : uiState.selectedElement?.type === "object" && uiState.selectedElement.key === mediaKey
                   ? { key: mediaKey, type: "object", objectId: uiState.selectedElement.objectId, meta: maskMeta }
                   : { key: mediaKey, type: "mask", meta: maskMeta }
