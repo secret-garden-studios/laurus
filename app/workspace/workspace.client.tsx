@@ -275,6 +275,20 @@ export interface MaskNotifyValue {
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
+  /**
+   * Recut this mask's mesh along the outline the pen has open on it.
+   *
+   * A request rather than a value, because the geometry it needs -- the welded
+   * mesh points, indexed alongside the polygons -- only exists inside the mask
+   * item that drew them. The penbar knows a retouch was asked for and nothing
+   * else about it.
+   *
+   * Resolves once the recut has been applied, so the control that asked for it
+   * can stay disabled until then. The work is synchronous and takes a couple
+   * of hundred milliseconds over a full mesh -- long enough that without a way
+   * to say "not yet" the button looks broken and gets clicked again.
+   */
+  notifyMaskRetouchRequested: (maskKey: string) => Promise<void>;
   notifyMaskObjectReviewPreview: (
     maskKey: string,
     indices: Set<number> | undefined,
@@ -352,6 +366,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskLightSourcePreviewToggled: () => {},
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskRetouchRequested: async () => {},
   notifyMaskObjectReviewPreview: () => {},
   notifyCanvasZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
@@ -1199,6 +1214,22 @@ export default function Workspace({
   const notifyMaskPendingTopologySet = useCallback((maskKey: string, edit: PendingTopologyEdit) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingTopology(edit));
   }, []);
+  // Only the first handle for the key does the work: a retouch is a change to
+  // the mask itself, not to one view of it, so every other view picks it up
+  // through the mask update the recut dispatches.
+  const notifyMaskRetouchRequested = useCallback(async (maskKey: string) => {
+    const handle = maskHandlesRef.current?.get(maskKey)?.values().next().value;
+    if (!handle) return;
+    // Two frames before the work, not zero, and not one. The recut blocks the
+    // main thread for long enough to be felt, so whatever the caller changed
+    // to say it had started -- a disabled button, a label -- has to reach the
+    // screen first or it never appears at all: React would commit it and the
+    // recut would hold the frame until the recut's own result overwrote it.
+    // One rAF is not enough, because a rAF callback runs *before* the paint it
+    // is scheduled against; the second is the first moment the pixels are up.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    handle.retouchObjectMesh();
+  }, []);
   const notifyMaskPendingTopologyCleared = useCallback((maskKey: string | undefined) => {
     if (maskKey === undefined) return;
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingTopology());
@@ -1766,6 +1797,7 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,
@@ -1785,6 +1817,7 @@ export default function Workspace({
       notifyMaskLightSourcePreviewToggled,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
       notifyMaskObjectsUpdated,

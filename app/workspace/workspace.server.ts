@@ -707,6 +707,7 @@ export interface MaskObjectUpdateRequest_V1_0 {
   reviewed: boolean;
   remove: boolean;
   polygon_indices: number[];
+  retouch?: RetouchedMesh_V1_0;
 }
 
 export function toObjectBlackPointFields(blackPoint: ObjectBlackPoint_V1_0) {
@@ -734,6 +735,25 @@ export interface ObjectReviewCandidate_V1_0 {
   polygon_indices: number[];
 }
 export type LaurusObjectReviewCandidate = ObjectReviewCandidate_V1_0;
+
+/**
+ * A mesh recut along an object's outline, as the change it makes rather than
+ * as the mesh it produced -- see retouchDelta.
+ *
+ * `replaced` names slots that already existed and whose geometry moved;
+ * `added` are appended, in this order, and the sender has already numbered its
+ * own copy on the assumption that they land at the end in exactly it.
+ *
+ * Append-only is the whole contract. Polygon indices are positional and are
+ * held by every other object, every capture, every review candidate and every
+ * recorded decision, so a recut that inserted or removed entries would
+ * silently renumber all of them.
+ */
+export interface RetouchedMesh_V1_0 {
+  replaced: { index: number; d: string }[];
+  added: PolygonPath_V1_0[];
+}
+export type LaurusRetouchedMesh = RetouchedMesh_V1_0;
 
 export interface ObjectReviewDecision_V1_0 {
   object_id: number;
@@ -765,6 +785,7 @@ export async function postObjectReviewDecision(
   addedPolygonIndices?: number[],
   removedPolygonIndices?: number[],
   shape?: { path: string; cx: number; cy: number; radius: number },
+  retouch?: RetouchedMesh_V1_0,
 ): Promise<ObjectReviewDecisionResponse_V1_0 | undefined> {
   try {
     const url = `${baseUrl}/media/masks/${maskMediaId}/object-review/decisions`;
@@ -779,6 +800,10 @@ export async function postObjectReviewDecision(
       // cx/cy/radius ride along because a reshaped outline moves them -- the
       // path is renormalized to unit extent, so the growth lives in the radius
       ...(shape === undefined ? {} : { shape: shape.path, cx: shape.cx, cy: shape.cy, radius: shape.radius }),
+      // omitted rather than empty when the reviewer did not retouch, so the
+      // server can tell "no recut" from "a recut that changed nothing" without
+      // having to inspect the lists
+      ...(retouch === undefined ? {} : { retouch }),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");

@@ -49,6 +49,8 @@ import {
 import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
 import { applyCaptureDelta, applyObjectDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
+import { shapeOutline } from "./object-clip";
+import { retouchMesh } from "./object-retouch";
 import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
 import {
   getFrames,
@@ -165,6 +167,8 @@ export interface MaskImperativeHandle {
   syncCapturedIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
+  /** Recut this mask's mesh against the outline the pen has open -- see retouchMesh. */
+  retouchObjectMesh: () => void;
   setObjectReviewPreview: (indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => void;
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
@@ -312,6 +316,8 @@ export function ProjectMaskItem({
   const selectedCaptureIdRef = useRef<number | undefined>(undefined);
   const objectsMapRef = useRef<Map<number, Set<number>>>(new Map());
   const maskGeometryRef = useRef<MaskGeometry>({ corners: [], points: [], centroids: [] });
+  /** The polygon array the uploaded mesh was built from -- see syncObjects. */
+  const polygonsRef = useRef<LaurusPolygonPath[]>([]);
   const objectsMeshSignatureRef = useRef<string>("");
   const highlightScratchRef = useRef<Float32Array>(new Float32Array(0));
   const highlightUploadedRef = useRef<Float32Array>(new Float32Array(0));
@@ -635,6 +641,72 @@ export function ProjectMaskItem({
     },
     [previewShapeEdit, uiDispatch, snapIndicesToShape],
   );
+
+  /**
+   * Recut the mask's mesh along the outline the pen has open, so the triangles
+   * near the curve follow it instead of straddling it.
+   *
+   * The recut mesh goes straight into the mask the canvas is drawing, because
+   * the whole point of it is to be looked at -- a recut nobody could see until
+   * they saved it would be worthless. It is still uncommitted: the mesh it
+   * replaced rides along on the review session as `restore`, and every way out
+   * of the pen puts it back. Only accepting the object sends it anywhere.
+   *
+   * Membership comes back from the recut rather than being re-derived here.
+   * Every fragment now lies wholly on one side of the curve, and which side is
+   * what the cut decided; asking the centroid test again would only be a
+   * chance to disagree with it.
+   */
+  const retouchObjectMesh = useCallback(() => {
+    const review = uiState.objectReview;
+    if (source.kind !== "static" || review?.maskKey !== mediaKey || isObjectReviewLocked(review)) return;
+    const candidate = review.candidates[review.currentIndex]?.object;
+    if (!candidate) return;
+
+    // outline and geometry from the same place, or the rings come out measured
+    // against a radius that is not the one they were drawn at -- the same
+    // pairing shapeEditorObject makes, and for the same reason
+    const from = review.editedShape ?? candidate;
+    const outline = shapeOutline(review.editedShape?.path ?? candidate.shape, from);
+    const maskData = coreState.canvasMasks.get(mediaKey);
+    if (!outline || !maskData) return;
+
+    const geometry = maskGeometry(maskData);
+    const result = retouchMesh(maskData.polygons, geometry.points, outline);
+    // nothing crossed the curve that was worth cutting -- the mesh already
+    // follows it, which is the ordinary answer for a second retouch in a row
+    if (result.added === 0) return;
+
+    const patched = { ...maskData, polygons: result.polygons };
+    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
+    uiDispatch({
+      type: UIActionType.SetObjectReviewRetouch,
+      retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
+    });
+    uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices: result.indices });
+    notifyMaskObjectsUpdated(mediaKey, patched);
+    notifyMaskObjectReviewPreview(mediaKey, result.indices, undefined, objectReviewDiffBaseRef.current);
+
+    // the relief preview names the triangles it is raised over, and the recut
+    // has just renumbered them
+    const pending = coreState.pendingTopologyEdit;
+    if (pending?.maskKey === mediaKey) {
+      const next = { ...pending, polygonIndices: result.indices };
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: next });
+      notifyMaskPendingTopologySet(mediaKey, next);
+    }
+  }, [
+    uiState.objectReview,
+    source.kind,
+    mediaKey,
+    coreState.canvasMasks,
+    coreState.pendingTopologyEdit,
+    dispatch,
+    uiDispatch,
+    notifyMaskObjectsUpdated,
+    notifyMaskObjectReviewPreview,
+    notifyMaskPendingTopologySet,
+  ]);
 
   const render = useCallback(() => {
     const state = glStateRef.current;
@@ -1159,6 +1231,7 @@ export function ProjectMaskItem({
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
+    retouchObjectMesh,
   });
   latestRef.current = {
     source,
@@ -1168,6 +1241,7 @@ export function ProjectMaskItem({
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
+    retouchObjectMesh,
   };
 
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
@@ -1274,6 +1348,7 @@ export function ProjectMaskItem({
         objectsRef.current = maskData.objects;
         objectsMapRef.current = buildObjectsMap(maskData.polygons);
         maskGeometryRef.current = maskGeometry(maskData);
+        polygonsRef.current = maskData.polygons;
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
         const reviewHere = uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview : undefined;
@@ -1357,6 +1432,7 @@ export function ProjectMaskItem({
             maskGeometryRef.current = maskGeometry(updated);
             recolorHighlight();
           },
+          retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
             recolorHighlight();
@@ -1381,7 +1457,15 @@ export function ProjectMaskItem({
             maskGeometryRef.current = geometry;
             const signature = objectsMeshSignature(updated.objects);
             const glState = glStateRef.current;
-            if (glState && colorCtx && signature !== objectsMeshSignatureRef.current) {
+            // A retouch changes the polygons without touching a single object,
+            // so the objects' signature alone would miss it and leave the
+            // canvas drawing the mesh from before the recut. Identity is the
+            // right test: the recut leaves every triangle it did not cut as
+            // the very same entry, and hands back a new array only when
+            // something actually moved.
+            const remeshed = updated.polygons !== polygonsRef.current;
+            polygonsRef.current = updated.polygons;
+            if (glState && colorCtx && (remeshed || signature !== objectsMeshSignatureRef.current)) {
               objectsMeshSignatureRef.current = signature;
               const mesh = buildStaticMaskMesh(
                 { ...updated, objects: updated.objects.map(toObjectGeometry) },
@@ -2027,6 +2111,7 @@ export function ProjectMaskItem({
               onPreview={previewShapeEdit}
               onCommit={commitShapeEdit}
               stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
+              showAnchors={uiState.tool.type !== "pen" || uiState.tool.showAnchors}
             />
           )}
         </div>

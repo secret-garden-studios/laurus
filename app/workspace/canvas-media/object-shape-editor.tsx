@@ -95,6 +95,23 @@ export interface ObjectShapeEditorProps {
    * never a handle sitting there looking draggable that is not.
    */
   stitch: boolean;
+  /**
+   * Whether the anchors and their control handles are on the outline at all.
+   *
+   * The pen shares the canvas with the review's other half -- clicking
+   * triangles to add and remove them -- and near a curve those triangles are
+   * the small ones, cut down by the outline itself. A handle is a nine-pixel
+   * grab target sitting exactly there, so the two compete for the same clicks
+   * and the handle always wins. Turning the anchors off hands those clicks
+   * back.
+   *
+   * The outline stays drawn, because it is still what the reviewer is judging
+   * the triangles against; it just stops being something they can catch hold
+   * of. Nothing goes inert-but-visible -- a handle that cannot be dragged is
+   * worse than no handle -- so they come off entirely, the same way the
+   * control points do while stitching.
+   */
+  showAnchors: boolean;
 }
 
 export interface ShapeEdit {
@@ -136,6 +153,7 @@ export default function ObjectShapeEditor({
   onPreview,
   onCommit,
   stitch,
+  showAnchors,
 }: ObjectShapeEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const grabRef = useRef<Grab | undefined>(undefined);
@@ -171,15 +189,16 @@ export default function ObjectShapeEditor({
   // -- unlike a drag this advances one press at a time, so there is no risk of
   // two of them landing inside a frame of each other.
   //
-  // A half-made stitch does not survive the toggle: leaving stitch mode and
-  // coming back would otherwise find an anchor still picked from before, and
-  // the next click anywhere on the outline would cut across to it. Adjusted
-  // during render rather than in an effect, so the stale selection is never
-  // painted even once.
+  // A half-made stitch does not survive either toggle: leaving stitch mode and
+  // coming back, or hiding the anchors and bringing them back, would otherwise
+  // find an anchor still picked from before, and the next click anywhere on
+  // the outline would cut across to it. Adjusted during render rather than in
+  // an effect, so the stale selection is never painted even once.
   const [selected, setSelected] = useState<{ ring: number; anchor: number } | undefined>(undefined);
-  const [stitchingWas, setStitchingWas] = useState(stitch);
-  if (stitchingWas !== stitch) {
-    setStitchingWas(stitch);
+  const pickable = stitch && showAnchors;
+  const [pickableWas, setPickableWas] = useState(pickable);
+  if (pickableWas !== pickable) {
+    setPickableWas(pickable);
     setSelected(undefined);
   }
 
@@ -400,87 +419,88 @@ export default function ObjectShapeEditor({
         />
       ))}
 
-      {rings.map((ring, ringIndex) =>
-        ring.map((anchor, anchorIndex) => {
-          const { point, inControl, outControl } = anchor;
-          const key = `${ringIndex}-${anchorIndex}`;
-          const isSelected = selected?.ring === ringIndex && selected.anchor === anchorIndex;
-          return (
-            <g key={key} style={{ pointerEvents: "auto" }}>
-              {!stitch && (
-                <>
-                  <line
-                    x1={point[0]}
-                    y1={point[1]}
-                    x2={inControl[0]}
-                    y2={inControl[1]}
-                    stroke={stroke}
-                    strokeWidth={px(LEASH_WIDTH_PX)}
-                  />
-                  <line
-                    x1={point[0]}
-                    y1={point[1]}
-                    x2={outControl[0]}
-                    y2={outControl[1]}
-                    stroke={stroke}
-                    strokeWidth={px(LEASH_WIDTH_PX)}
-                  />
-                  {(["in", "out"] as const).map((side) => {
-                    const at = side === "in" ? inControl : outControl;
-                    return (
-                      <circle
-                        key={side}
-                        cx={at[0]}
-                        cy={at[1]}
-                        r={px(CONTROL_RADIUS_PX)}
-                        fill={CONTROL_FILL}
-                        stroke={stroke}
-                        strokeWidth={px(LEASH_WIDTH_PX)}
-                        style={{ cursor: "grab" }}
-                        // a wider invisible target than the dot, so a 3px handle
-                        // is still catchable with a mouse
-                        strokeOpacity={1}
-                        pointerEvents="all"
-                        onPointerDown={(e) => onPointerDown(e, { ring: ringIndex, anchor: anchorIndex, kind: side })}
-                      >
-                        <title>{`drag to curve -- alt-drag to break the corner`}</title>
-                      </circle>
-                    );
-                  })}
-                </>
-              )}
-              <circle
-                cx={point[0]}
-                cy={point[1]}
-                r={px(GRAB_RADIUS_PX)}
-                fill="transparent"
-                style={{ cursor: stitch ? "crosshair" : "move" }}
-                pointerEvents="all"
-                onPointerDown={(e) => onAnchorPointerDown(e, ringIndex, anchorIndex)}
-              >
-                {stitch && (
-                  <title>
-                    {isSelected
-                      ? "click again to let go"
-                      : selected?.ring === ringIndex
-                        ? "click to stitch across to the anchor already picked"
-                        : "click two anchors to stitch across them"}
-                  </title>
+      {showAnchors &&
+        rings.map((ring, ringIndex) =>
+          ring.map((anchor, anchorIndex) => {
+            const { point, inControl, outControl } = anchor;
+            const key = `${ringIndex}-${anchorIndex}`;
+            const isSelected = selected?.ring === ringIndex && selected.anchor === anchorIndex;
+            return (
+              <g key={key} style={{ pointerEvents: "auto" }}>
+                {!stitch && (
+                  <>
+                    <line
+                      x1={point[0]}
+                      y1={point[1]}
+                      x2={inControl[0]}
+                      y2={inControl[1]}
+                      stroke={stroke}
+                      strokeWidth={px(LEASH_WIDTH_PX)}
+                    />
+                    <line
+                      x1={point[0]}
+                      y1={point[1]}
+                      x2={outControl[0]}
+                      y2={outControl[1]}
+                      stroke={stroke}
+                      strokeWidth={px(LEASH_WIDTH_PX)}
+                    />
+                    {(["in", "out"] as const).map((side) => {
+                      const at = side === "in" ? inControl : outControl;
+                      return (
+                        <circle
+                          key={side}
+                          cx={at[0]}
+                          cy={at[1]}
+                          r={px(CONTROL_RADIUS_PX)}
+                          fill={CONTROL_FILL}
+                          stroke={stroke}
+                          strokeWidth={px(LEASH_WIDTH_PX)}
+                          style={{ cursor: "grab" }}
+                          // a wider invisible target than the dot, so a 3px handle
+                          // is still catchable with a mouse
+                          strokeOpacity={1}
+                          pointerEvents="all"
+                          onPointerDown={(e) => onPointerDown(e, { ring: ringIndex, anchor: anchorIndex, kind: side })}
+                        >
+                          <title>{`drag to curve -- alt-drag to break the corner`}</title>
+                        </circle>
+                      );
+                    })}
+                  </>
                 )}
-              </circle>
-              <circle
-                cx={point[0]}
-                cy={point[1]}
-                r={px(isSelected ? SELECTED_RADIUS_PX : ANCHOR_RADIUS_PX)}
-                fill={isSelected ? SELECTED_FILL : ANCHOR_FILL}
-                stroke={isSelected ? ANCHOR_FILL : stroke}
-                strokeWidth={px(LEASH_WIDTH_PX)}
-                pointerEvents="none"
-              />
-            </g>
-          );
-        }),
-      )}
+                <circle
+                  cx={point[0]}
+                  cy={point[1]}
+                  r={px(GRAB_RADIUS_PX)}
+                  fill="transparent"
+                  style={{ cursor: stitch ? "crosshair" : "move" }}
+                  pointerEvents="all"
+                  onPointerDown={(e) => onAnchorPointerDown(e, ringIndex, anchorIndex)}
+                >
+                  {stitch && (
+                    <title>
+                      {isSelected
+                        ? "click again to let go"
+                        : selected?.ring === ringIndex
+                          ? "click to stitch across to the anchor already picked"
+                          : "click two anchors to stitch across them"}
+                    </title>
+                  )}
+                </circle>
+                <circle
+                  cx={point[0]}
+                  cy={point[1]}
+                  r={px(isSelected ? SELECTED_RADIUS_PX : ANCHOR_RADIUS_PX)}
+                  fill={isSelected ? SELECTED_FILL : ANCHOR_FILL}
+                  stroke={isSelected ? ANCHOR_FILL : stroke}
+                  strokeWidth={px(LEASH_WIDTH_PX)}
+                  pointerEvents="none"
+                />
+              </g>
+            );
+          }),
+        )}
     </svg>
   );
 }

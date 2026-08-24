@@ -6,6 +6,7 @@ import {
   LaurusSvgResult,
   LaurusObject,
   LaurusObjectReviewCandidate,
+  LaurusPolygonPath,
 } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
@@ -48,7 +49,7 @@ export type LaurusTool =
   | { type: "mix" }
   | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
   | { type: "light_source" }
-  | { type: "pen"; stitch: boolean };
+  | { type: "pen"; stitch: boolean; showAnchors: boolean };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
@@ -73,6 +74,7 @@ export const defaultMaskTool: LaurusTool = {
 export const defaultPenTool: LaurusTool = {
   type: "pen",
   stitch: false,
+  showAnchors: true,
 };
 
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
@@ -110,6 +112,29 @@ export interface ObjectShapeEdit {
   radius: number;
 }
 
+/**
+ * A mesh recut against the current candidate's outline, and the mesh it was
+ * recut from.
+ *
+ * Held on the review session rather than written straight into the mask
+ * because a retouch is uncommitted, exactly like a reshape: the reviewer may
+ * still reject the candidate, step away from it, or shut the pen. What the
+ * canvas draws is the recut mesh -- there would be no point recutting
+ * otherwise -- so `restore` is what puts the mask back when any of those
+ * happen, and it is the array that was there before, not a copy of it.
+ *
+ * `added` is how many entries the recut appended. The recut is append-only so
+ * that no index anyone is holding moves (see object-retouch), which means the
+ * appended entries are exactly the tail: everything from `polygons.length -
+ * added` on. That is what the accept sends, and it is why nothing here needs
+ * to record *which* entries are new.
+ */
+export interface ObjectRetouch {
+  polygons: LaurusPolygonPath[];
+  restore: LaurusPolygonPath[];
+  added: number;
+}
+
 export interface ObjectReviewSession {
   mode: ObjectReviewMode;
   maskMediaId: string;
@@ -143,6 +168,15 @@ export interface ObjectReviewSession {
    * -- and dropping back to a fresh mask tool would quietly undo that.
    */
   penReturnTool: LaurusTool | undefined;
+  /**
+   * The recut mesh the reviewer has asked for on this candidate, or undefined
+   * while the mesh is still the one the mask was triangulated with.
+   *
+   * Dropped on every move to another candidate for the same reason editedShape
+   * is: it is a diff against a candidate, and carrying it to the next one
+   * would recut a mesh against an outline that is no longer on screen.
+   */
+  retouch: ObjectRetouch | undefined;
 }
 
 /**
@@ -307,6 +341,7 @@ export enum UIActionType {
   SetObjectReviewShape,
   SetObjectReviewShapeEditing,
   SetObjectReviewIndices,
+  SetObjectReviewRetouch,
   RecordObjectReviewDecision,
   EndObjectReview,
   ResumeObjectReview,
@@ -382,6 +417,7 @@ export type UIAction =
   | { type: UIActionType.RequestObjectReviewRedo }
   | { type: UIActionType.SetObjectReviewShape; shape: ObjectShapeEdit | undefined }
   | { type: UIActionType.SetObjectReviewIndices; indices: Set<number> }
+  | { type: UIActionType.SetObjectReviewRetouch; retouch: ObjectRetouch | undefined }
   | { type: UIActionType.SetObjectReviewShapeEditing; editing: boolean }
   | {
       type: UIActionType.RecordObjectReviewDecision;
@@ -448,6 +484,7 @@ export function resumeObjectReview(
     editedShape: undefined,
     editingShape: false,
     penReturnTool: undefined,
+    retouch: undefined,
   };
 }
 
@@ -655,6 +692,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           editedShape: undefined,
           editingShape: false,
           penReturnTool: undefined,
+          retouch: undefined,
         },
       };
     }
@@ -674,6 +712,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           editedShape: undefined,
           editingShape: false,
           penReturnTool: undefined,
+          retouch: undefined,
         },
       };
     }
@@ -703,6 +742,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndices: action.currentIndices ?? new Set(review.candidates[index].polygon_indices),
           redoRequested: false,
           editedShape: undefined,
+          retouch: undefined,
         },
         false,
       );
@@ -716,6 +756,36 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const review = state.objectReview;
       if (!review || isObjectReviewLocked(review)) return state;
       return { ...state, objectReview: { ...review, editedShape: action.shape } };
+    }
+    case UIActionType.SetObjectReviewRetouch: {
+      const review = state.objectReview;
+      if (!review || isObjectReviewLocked(review)) return state;
+      if (!action.retouch) return { ...state, objectReview: { ...review, retouch: undefined } };
+
+      // A second retouch recuts the mesh the first one produced, so the two
+      // have to compose into one -- what is held here is always the whole
+      // distance from the mask as it was found to the mask as it now is,
+      // because that is what reverting undoes and what accepting sends.
+      //
+      // `restore` is therefore the *first* one's, or a revert would put the
+      // mask back to a mesh that had already been cut once. And `added` is
+      // the running total, not the last recut's own: retouchDelta reads the
+      // appended entries off the tail as `polygons.length - added`, so
+      // carrying only the second count would put that boundary a whole recut
+      // too late and report entries the server has never seen as edits to
+      // entries it has.
+      const previous = review.retouch;
+      return {
+        ...state,
+        objectReview: {
+          ...review,
+          retouch: {
+            polygons: action.retouch.polygons,
+            restore: previous?.restore ?? action.retouch.restore,
+            added: (previous?.added ?? 0) + action.retouch.added,
+          },
+        },
+      };
     }
     case UIActionType.SetObjectReviewShapeEditing: {
       const review = state.objectReview;
@@ -747,6 +817,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: next.currentIndex,
           currentIndices: action.nextCurrentIndices ?? new Set(review.candidates[next.currentIndex].polygon_indices),
           redoRequested: false,
+          retouch: undefined,
         },
         false,
       );

@@ -2,8 +2,14 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType, advanceObjectReview, isObjectReviewLocked, type ObjectShapeEdit } from "../states/ui-state";
-import { postObjectReviewDecision, toObjectBlackPoint, toObjectBlackPointFields } from "../workspace.server";
+import {
+  postObjectReviewDecision,
+  toObjectBlackPoint,
+  toObjectBlackPointFields,
+  type LaurusMaskResult,
+} from "../workspace.server";
 import { applyObjectDelta } from "../canvas-media/mask-delta";
+import { retouchDelta } from "../canvas-media/object-retouch";
 
 function polygonIndicesForObject(polygons: { object_id: number }[] | undefined, objectId: number): Set<number> {
   const indices = new Set<number>();
@@ -55,6 +61,32 @@ export function useObjectReview() {
   }, [dispatch, notifyMaskPendingTopologyCleared, review?.maskKey]);
 
   /**
+   * Put the mask's mesh back the way it was before a retouch recut it.
+   *
+   * A retouch is drawn as soon as it is made -- there would be no point
+   * otherwise -- so the mask the canvas holds really has been recut, and
+   * everything that walks away from the candidate has to undo it: shutting the
+   * pen, stepping to another candidate, rejecting, ending the review. Only
+   * accepting keeps it, and only because the accept has just sent it.
+   *
+   * The restore is the array that was there before, not a copy, so putting it
+   * back also puts back every mesh cache keyed on it.
+   *
+   * Returns the mask as it now stands, because the callers that carry on to
+   * read membership out of it must not read the copy they just replaced.
+   */
+  const restoreRetouchedMesh = useCallback((): LaurusMaskResult | undefined => {
+    if (!review) return undefined;
+    const maskData = coreState.canvasMasks.get(review.maskKey);
+    if (!review.retouch || !maskData) return maskData;
+    const restored = { ...maskData, polygons: review.retouch.restore };
+    dispatch({ type: CoreActionType.SetCanvasMask, key: review.maskKey, value: restored });
+    uiDispatch({ type: UIActionType.SetObjectReviewRetouch, retouch: undefined });
+    notifyMaskObjectsUpdated(review.maskKey, restored);
+    return restored;
+  }, [review, coreState.canvasMasks, dispatch, uiDispatch, notifyMaskObjectsUpdated]);
+
+  /**
    * Put the current candidate back the way it was before the pen touched it:
    * the outline it was detected with, the triangles that went with it, and no
    * pending relief.
@@ -77,7 +109,7 @@ export function useObjectReview() {
     const restored = reviewPreviewFor(
       candidate,
       review.decisions.has(candidate.object.id),
-      coreState.canvasMasks.get(review.maskKey)?.polygons,
+      restoreRetouchedMesh()?.polygons,
     );
     uiDispatch({ type: UIActionType.SetObjectReviewShape, shape: undefined });
     uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices: restored.current });
@@ -86,7 +118,7 @@ export function useObjectReview() {
     notifyMaskObjectReviewPreview(review.maskKey, restored.current, undefined, restored.diffBase);
   }, [
     review,
-    coreState.canvasMasks,
+    restoreRetouchedMesh,
     uiDispatch,
     dispatch,
     notifyMaskPendingTopologyCleared,
@@ -121,9 +153,17 @@ export function useObjectReview() {
       decidingRef.current = true;
       setIsDeciding(true);
 
+      // A rejected candidate keeps nothing, its recut included -- so the mesh
+      // goes back first, and the indices this decision records are trimmed to
+      // the mesh that is actually left. Recording indices off the recut would
+      // name triangles that stopped existing a line later.
+      const restored = decision === "rejected" ? restoreRetouchedMesh() : undefined;
+      const limit = restored ? restored.polygons.length : Infinity;
+      const current = new Set([...review.currentIndices].filter((i) => i < limit));
+
       const original = new Set(candidate.polygon_indices);
-      const added = [...review.currentIndices].filter((i) => !original.has(i));
-      const removed = candidate.polygon_indices.filter((i) => !review.currentIndices.has(i));
+      const added = [...current].filter((i) => !original.has(i));
+      const removed = candidate.polygon_indices.filter((i) => !current.has(i));
 
       let response;
       try {
@@ -137,6 +177,7 @@ export function useObjectReview() {
           added,
           removed,
           decision === "accepted" ? review.editedShape : undefined,
+          decision === "accepted" && review.retouch ? retouchDelta(review.retouch) : undefined,
         );
       } finally {
         decidingRef.current = false;
@@ -182,6 +223,7 @@ export function useObjectReview() {
       notifyMaskObjectsUpdated,
       notifyMaskObjectReviewPreview,
       clearShapePreview,
+      restoreRetouchedMesh,
     ],
   );
 
@@ -206,16 +248,19 @@ export function useObjectReview() {
       const clamped = Math.min(review.candidates.length - 1, Math.max(0, index));
       if (clamped === review.currentIndex) return;
       const candidate = review.candidates[clamped];
+      // before the preview is read, not after: the recut mesh is what the mask
+      // is holding right now, and membership taken off it would name triangles
+      // that are about to stop existing
       const preview = reviewPreviewFor(
         candidate,
         review.decisions.has(candidate.object.id),
-        coreState.canvasMasks.get(review.maskKey)?.polygons,
+        restoreRetouchedMesh()?.polygons,
       );
       clearShapePreview();
       uiDispatch({ type: UIActionType.SetObjectReviewIndex, index: clamped, currentIndices: preview.current });
       notifyMaskObjectReviewPreview(review.maskKey, preview.current, undefined, preview.diffBase);
     },
-    [review, uiDispatch, notifyMaskObjectReviewPreview, coreState.canvasMasks, clearShapePreview],
+    [review, uiDispatch, notifyMaskObjectReviewPreview, restoreRetouchedMesh, clearShapePreview],
   );
 
   const requestRedo = useCallback(() => {
@@ -232,14 +277,31 @@ export function useObjectReview() {
     if (review) goToIndex(review.currentIndex + 1);
   }, [review, goToIndex]);
 
-  const endReview = useCallback(() => {
-    // an uncommitted reshape dies with the session rather than lingering as
-    // relief over an object that was never accepted
-    if (review?.editedShape) revertShape();
+  /**
+   * Shut the session down, leaving the mask exactly as it stands.
+   *
+   * The half of ending a review that is only bookkeeping -- the panel goes
+   * away, the highlight comes off, the relief preview is torn down. What
+   * becomes of any uncommitted work is the caller's business, because the two
+   * callers want opposite things: someone clicking `done` is walking away from
+   * it, while a save has just written it and must not have it rolled back
+   * underneath.
+   */
+  const closeReview = useCallback(() => {
     if (review) notifyMaskObjectReviewPreview(review.maskKey, undefined);
     clearShapePreview();
     uiDispatch({ type: UIActionType.EndObjectReview });
-  }, [review, uiDispatch, notifyMaskObjectReviewPreview, clearShapePreview, revertShape]);
+  }, [review, uiDispatch, notifyMaskObjectReviewPreview, clearShapePreview]);
+
+  const endReview = useCallback(() => {
+    // an uncommitted reshape dies with the session rather than lingering as
+    // relief over an object that was never accepted, and so does an
+    // uncommitted recut -- which can be there without a reshape, so it is
+    // asked for separately rather than riding on editedShape
+    if (review?.editedShape) revertShape();
+    else restoreRetouchedMesh();
+    closeReview();
+  }, [review, revertShape, restoreRetouchedMesh, closeReview]);
 
   const saveEditedObject = useCallback(
     async (description: string) => {
@@ -266,6 +328,7 @@ export function useObjectReview() {
           reviewed: true,
           remove: false,
           polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
+          ...(review.retouch ? { retouch: retouchDelta(review.retouch) } : {}),
         });
       } finally {
         decidingRef.current = false;
@@ -276,9 +339,12 @@ export function useObjectReview() {
       const patched = applyObjectDelta(maskData, updated);
       dispatch({ type: CoreActionType.SetCanvasMask, key: review.maskKey, value: patched });
       notifyMaskObjectsUpdated(review.maskKey, patched);
-      endReview();
+      // closeReview, not endReview: the recut has just been saved with the
+      // object, and rolling it back now would leave the mask drawing a mesh
+      // the server no longer has
+      closeReview();
     },
-    [review, coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, endReview],
+    [review, coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, closeReview],
   );
 
   return {
