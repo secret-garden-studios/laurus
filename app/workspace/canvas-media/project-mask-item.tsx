@@ -539,31 +539,48 @@ export function ProjectMaskItem({
     uiState.objectReview?.maskKey === mediaKey &&
     !isObjectReviewLocked(uiState.objectReview);
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
-
-  // The object the pen is open on, if any. Its shape may already carry an
-  // in-progress edit, so the editor opens on that rather than on what is
-  // stored -- otherwise stepping away and back would silently discard it.
-  const shapeEditorObject = useMemo(() => {
+  
+  const reviewShape = useMemo(() => {
     const review = uiState.objectReview;
-    if (source.kind !== "static" || review?.maskKey !== mediaKey || !review.editingShape) return undefined;
+    if (source.kind !== "static" || review?.maskKey !== mediaKey) return undefined;
     const candidate = review.candidates[review.currentIndex]?.object;
     if (!candidate) return undefined;
-    // Geometry and outline must come from the same place. An edited path is
-    // normalized against the geometry the edit produced -- pulling an anchor
-    // outward grows the radius rather than the path -- so pairing that path
-    // with the candidate's original cx/cy/radius renders it back at roughly
-    // the size and position it started from. Which looks exactly like the pen
-    // snapping back the instant it is released.
-    const from = review.editedShape ?? candidate;
-    return {
+    // Not `decisions`, which only knows about this session: a review can be
+    // resumed on a mask that was half decided days ago, and what settles
+    // whether an outline was accepted is whether the object is on the mask.
+    const stored = coreState.canvasMasks.get(mediaKey)?.objects.find((o) => o.id === candidate.id);
+    const base = stored ?? candidate;
+    // Geometry and outline must come from the same place. A path is normalized
+    // against the geometry it was measured with -- pulling an anchor outward
+    // grows the radius rather than the path -- so pairing one with another's
+    // cx/cy/radius renders it back at roughly the size and position that other
+    // one had. Which looks exactly like the pen snapping back the instant it
+    // is released.
+    const from = review.editedShape ?? base;
+    const current = {
       id: candidate.id,
       cx: from.cx,
       cy: from.cy,
       radius: from.radius,
-      shape: review.editedShape?.path ?? candidate.shape,
-      edited: review.editedShape !== undefined,
+      shape: review.editedShape?.path ?? base.shape,
+      // what the editor is remounted on -- see the key below
+      origin: review.editedShape ? "edited" : stored ? "stored" : "detected",
     };
-  }, [uiState.objectReview, source.kind, mediaKey]);
+    const changed =
+      current.shape !== candidate.shape ||
+      current.cx !== candidate.cx ||
+      current.cy !== candidate.cy ||
+      current.radius !== candidate.radius;
+    return {
+      current,
+      original: changed
+        ? { cx: candidate.cx, cy: candidate.cy, radius: candidate.radius, shape: candidate.shape }
+        : undefined,
+    };
+  }, [uiState.objectReview, source.kind, mediaKey, coreState.canvasMasks]);
+
+  // The object the pen is open on, if any.
+  const shapeEditorObject = uiState.objectReview?.editingShape ? reviewShape : undefined;
 
   // A reshape previews through the same pending-topology channel an object
   // drag already uses, so the relief follows the pen without a round trip and
@@ -663,11 +680,11 @@ export function ProjectMaskItem({
     const candidate = review.candidates[review.currentIndex]?.object;
     if (!candidate) return;
 
-    // outline and geometry from the same place, or the rings come out measured
-    // against a radius that is not the one they were drawn at -- the same
-    // pairing shapeEditorObject makes, and for the same reason
-    const from = review.editedShape ?? candidate;
-    const outline = shapeOutline(review.editedShape?.path ?? candidate.shape, from);
+    // the outline the pen is showing, not the one detection drew: a recut has
+    // to follow the curve the reviewer is looking at, and after an accepted
+    // reshape those are two different curves -- see reviewShape
+    const from = reviewShape?.current ?? candidate;
+    const outline = shapeOutline(from.shape, from);
     const maskData = coreState.canvasMasks.get(mediaKey);
     if (!outline || !maskData) return;
 
@@ -697,6 +714,7 @@ export function ProjectMaskItem({
     }
   }, [
     uiState.objectReview,
+    reviewShape,
     source.kind,
     mediaKey,
     coreState.canvasMasks,
@@ -2102,8 +2120,9 @@ export function ProjectMaskItem({
           />
           {shapeEditorObject && (
             <ObjectShapeEditor
-              key={`${mediaKey}:${shapeEditorObject.id}:${shapeEditorObject.edited ? "edited" : "detected"}`}
-              object={shapeEditorObject}
+              key={`${mediaKey}:${shapeEditorObject.current.id}:${shapeEditorObject.current.origin}`}
+              object={shapeEditorObject.current}
+              reference={shapeEditorObject.original}
               bufferWidth={canvasSize.width}
               bufferHeight={canvasSize.height}
               cssWidth={containerSize.width}

@@ -229,7 +229,7 @@ export default function ObjectReviewPanel() {
           <button
             type="button"
             onClick={revertShape}
-            title="put the outline back the way detection drew it"
+            title="put the outline back the way it was before this edit"
             style={{
               padding: "5px 10px",
               borderRadius: 4,
