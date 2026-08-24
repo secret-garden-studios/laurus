@@ -48,6 +48,13 @@ export interface PendingTopologyEdit {
   shape: string;
   blackPoint: LaurusObjectBlackPoint;
   polygonIndices?: Set<number>;
+  /**
+   * Set while a gesture is still in flight, so the renderer can rasterize the
+   * shape at draft resolution. A drag mints a new path every frame and every
+   * frame is a cache miss, which at full resolution is ~58ms of rebuild before
+   * anything is drawn (see cachedObjectShape).
+   */
+  draft?: boolean;
 }
 
 export interface CoreState {

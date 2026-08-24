@@ -69,6 +69,16 @@ export function getToolCursorRule(toolType: LaurusTool["type"]): ToolCursorRule 
         ownsCursor: false,
         forcesContextMenuCursor: false,
       };
+    case "pen":
+      // the pen is only ever open over a mask, and the review it belongs to
+      // already forces a crosshair there -- so this only has to say that the
+      // pen claims no other media and steals no cursor of its own
+      return {
+        targetKinds: NO_MEDIA,
+        hoverOnlyTargetKinds: MASK_ONLY,
+        ownsCursor: false,
+        forcesContextMenuCursor: false,
+      };
     default:
       return assertNever(toolType);
   }

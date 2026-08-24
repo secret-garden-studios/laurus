@@ -47,7 +47,8 @@ export type LaurusTool =
   | { type: "rotate" }
   | { type: "mix" }
   | { type: "mask"; capturingMeshSection: boolean; editingTopology: TopologyMode }
-  | { type: "light_source" };
+  | { type: "light_source" }
+  | { type: "pen"; stitch: boolean };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
@@ -62,6 +63,16 @@ export const defaultMaskTool: LaurusTool = {
   type: "mask",
   capturingMeshSection: false,
   editingTopology: false,
+};
+
+/**
+ * The pen is not picked from the toolbar like the others -- it is what the
+ * toolbar shows while an object's outline is open for editing, and it is
+ * entered and left through the review panel. See withShapeEditing.
+ */
+export const defaultPenTool: LaurusTool = {
+  type: "pen",
+  stitch: false,
 };
 
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
@@ -91,6 +102,14 @@ export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "
 
 export type ObjectReviewMode = "review" | "edit";
 
+/** A reshaped outline together with the geometry that keeps it where it was drawn. */
+export interface ObjectShapeEdit {
+  path: string;
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
 export interface ObjectReviewSession {
   mode: ObjectReviewMode;
   maskMediaId: string;
@@ -100,6 +119,74 @@ export interface ObjectReviewSession {
   currentIndex: number;
   currentIndices: Set<number>;
   redoRequested: boolean;
+  /**
+   * The outline the reviewer has redrawn for the current candidate, or
+   * undefined while it is still the one detection produced. Held here rather
+   * than written straight through because it is a diff against a candidate
+   * that is never mutated -- the same way currentIndices is -- and because a
+   * candidate may still be rejected after being reshaped.
+   *
+   * The geometry travels with the path and is not optional. A stored outline
+   * is normalized to unit extent and scaled by `radius`, so pulling an anchor
+   * outward is recorded as a wider radius rather than a larger path; saving
+   * the path without it would render the edit scaled back to where it started.
+   */
+  editedShape: ObjectShapeEdit | undefined;
+  /** Whether the pen overlay is open on the current candidate. */
+  editingShape: boolean;
+  /**
+   * The tool the pen was opened over, held so closing it can put the toolbar
+   * back exactly as it was. Undefined whenever the pen is shut.
+   *
+   * Restoring a remembered tool rather than a default, because a review is
+   * reached part-way through a mask-tool gesture -- objects armed, capture off
+   * -- and dropping back to a fresh mask tool would quietly undo that.
+   */
+  penReturnTool: LaurusTool | undefined;
+}
+
+/**
+ * Open or close the pen, keeping the toolbar in step with it.
+ *
+ * The pen is a tool as much as it is a panel button: while it is open the
+ * subtitle bar shows the pen's own controls, and those controls live on
+ * `tool` the way every other bar's do. The two therefore have to move
+ * together, and there are five places the pen closes -- the panel button,
+ * stepping to another candidate, recording a decision, ending the review,
+ * starting a new one -- so they all come through here rather than each
+ * remembering to set the tool as well.
+ */
+function withShapeEditing(state: UIState, review: ObjectReviewSession, editing: boolean): UIState {
+  if (editing === review.editingShape) return { ...state, objectReview: review };
+  if (editing) {
+    return {
+      ...state,
+      tool: defaultPenTool,
+      objectReview: {
+        ...review,
+        editingShape: true,
+        penReturnTool: state.tool.type === "pen" ? review.penReturnTool : state.tool,
+      },
+    };
+  }
+  return {
+    ...state,
+    tool: closedPenTool(state, review),
+    objectReview: { ...review, editingShape: false, penReturnTool: undefined },
+  };
+}
+
+/**
+ * The tool to leave behind once the pen is gone -- for the cases that discard
+ * the review session outright and so have no session left to shut the pen on.
+ *
+ * The mask tool is the fallback rather than the current one because the
+ * current one is the pen, and leaving that selected would show a bar for an
+ * overlay that is no longer mounted.
+ */
+function closedPenTool(state: UIState, review: ObjectReviewSession | undefined): LaurusTool {
+  if (state.tool.type !== "pen") return state.tool;
+  return review?.penReturnTool ?? defaultMaskTool;
 }
 
 export function isObjectReviewLocked(review: ObjectReviewSession): boolean {
@@ -217,6 +304,9 @@ export enum UIActionType {
   ToggleObjectReviewPolygon,
   SetObjectReviewIndex,
   RequestObjectReviewRedo,
+  SetObjectReviewShape,
+  SetObjectReviewShapeEditing,
+  SetObjectReviewIndices,
   RecordObjectReviewDecision,
   EndObjectReview,
   ResumeObjectReview,
@@ -290,6 +380,9 @@ export type UIAction =
   | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
   | { type: UIActionType.SetObjectReviewIndex; index: number; currentIndices?: Set<number> }
   | { type: UIActionType.RequestObjectReviewRedo }
+  | { type: UIActionType.SetObjectReviewShape; shape: ObjectShapeEdit | undefined }
+  | { type: UIActionType.SetObjectReviewIndices; indices: Set<number> }
+  | { type: UIActionType.SetObjectReviewShapeEditing; editing: boolean }
   | {
       type: UIActionType.RecordObjectReviewDecision;
       decision: "accepted" | "rejected";
@@ -352,6 +445,9 @@ export function resumeObjectReview(
     currentIndex,
     currentIndices: new Set(candidates[currentIndex].polygon_indices),
     redoRequested: false,
+    editedShape: undefined,
+    editingShape: false,
+    penReturnTool: undefined,
   };
 }
 
@@ -427,6 +523,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, browserSvgs: newBrowserSvgs };
     }
     case UIActionType.SetTool: {
+      // Picking another tool while the pen is open leaves the pen, but not
+      // from here: shutting it also has to put back the relief and the
+      // triangles the reshape was previewing, which are not this reducer's to
+      // touch. useObjectReview watches for the tool moving out from under the
+      // pen and closes it the same way the panel's own button does.
       return { ...state, tool: { ...action.value } };
     }
     case UIActionType.SetBrowserElement: {
@@ -541,6 +642,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (action.candidates.length === 0) return state;
       return {
         ...state,
+        tool: closedPenTool(state, state.objectReview),
         objectReview: {
           mode: "review",
           maskMediaId: action.maskMediaId,
@@ -550,12 +652,16 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: 0,
           currentIndices: new Set(action.candidates[0].polygon_indices),
           redoRequested: false,
+          editedShape: undefined,
+          editingShape: false,
+          penReturnTool: undefined,
         },
       };
     }
     case UIActionType.StartObjectEdit: {
       return {
         ...state,
+        tool: closedPenTool(state, state.objectReview),
         objectReview: {
           mode: "edit",
           maskMediaId: action.maskMediaId,
@@ -565,6 +671,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           currentIndex: 0,
           currentIndices: new Set(action.polygonIndices),
           redoRequested: false,
+          editedShape: undefined,
+          editingShape: false,
+          penReturnTool: undefined,
         },
       };
     }
@@ -584,15 +693,34 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (!review) return state;
       const index = Math.min(review.candidates.length - 1, Math.max(0, action.index));
       if (index === review.currentIndex) return state;
-      return {
-        ...state,
-        objectReview: {
+      // editingShape is left as it is and closed by withShapeEditing, which is
+      // the only thing that knows to hand the toolbar back its tool
+      return withShapeEditing(
+        state,
+        {
           ...review,
           currentIndex: index,
           currentIndices: action.currentIndices ?? new Set(review.candidates[index].polygon_indices),
           redoRequested: false,
+          editedShape: undefined,
         },
-      };
+        false,
+      );
+    }
+    case UIActionType.SetObjectReviewIndices: {
+      const review = state.objectReview;
+      if (!review || isObjectReviewLocked(review)) return state;
+      return { ...state, objectReview: { ...review, currentIndices: action.indices } };
+    }
+    case UIActionType.SetObjectReviewShape: {
+      const review = state.objectReview;
+      if (!review || isObjectReviewLocked(review)) return state;
+      return { ...state, objectReview: { ...review, editedShape: action.shape } };
+    }
+    case UIActionType.SetObjectReviewShapeEditing: {
+      const review = state.objectReview;
+      if (!review) return state;
+      return withShapeEditing(state, review, action.editing);
     }
     case UIActionType.RequestObjectReviewRedo: {
       const review = state.objectReview;
@@ -602,7 +730,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.RecordObjectReviewDecision: {
       const review = state.objectReview;
       if (!review) return state;
-      if (review.mode === "edit") return { ...state, objectReview: undefined };
+      if (review.mode === "edit") return { ...state, tool: closedPenTool(state, review), objectReview: undefined };
       const candidate = review.candidates[review.currentIndex];
       if (!candidate) return state;
 
@@ -610,24 +738,25 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       decisions.set(candidate.object.id, action.decision);
 
       const next = advanceObjectReview(review, decisions);
-      if (next.done) return { ...state, objectReview: undefined };
-      return {
-        ...state,
-        objectReview: {
+      if (next.done) return { ...state, tool: closedPenTool(state, review), objectReview: undefined };
+      return withShapeEditing(
+        state,
+        {
           ...review,
           decisions,
           currentIndex: next.currentIndex,
           currentIndices: action.nextCurrentIndices ?? new Set(review.candidates[next.currentIndex].polygon_indices),
           redoRequested: false,
         },
-      };
+        false,
+      );
     }
     case UIActionType.EndObjectReview: {
-      return { ...state, objectReview: undefined };
+      return { ...state, tool: closedPenTool(state, state.objectReview), objectReview: undefined };
     }
     case UIActionType.ResumeObjectReview: {
       const resumed = resumeObjectReview(action.maskMediaId, action.maskKey, action.candidates, action.decisions);
-      return resumed ? { ...state, objectReview: resumed } : state;
+      return resumed ? { ...state, tool: closedPenTool(state, state.objectReview), objectReview: resumed } : state;
     }
   }
 }

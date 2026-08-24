@@ -1,5 +1,10 @@
 import type { MaskCurve_V1_0, ObjectBlackPoint_V1_0 } from "./workspace.server";
-import type { ObjectShape } from "./canvas-media/object-shape";
+import {
+  OBJECT_SDF_MARGIN,
+  OBJECT_SDF_TILE,
+  objectShapeProfileU,
+  type ObjectShape,
+} from "./canvas-media/object-shape.ts";
 
 export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
 export const CAPTURE_INTENSITY_DEFAULT = 0.05;
@@ -16,8 +21,15 @@ export const MAX_MASK_OBJECT_FALLOFF = 6.0;
 export const MIN_MASK_OBJECT_RADIUS_PX = 8;
 export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
-export const OBJECT_SHAPE_SLOPE_RANGE = 8.0;
-export const OBJECT_SHAPE_MIN_RHO = 0.05;
+// How the sixteen per-object distance tiles are laid out in one texture: a
+// 4x4 grid of OBJECT_SDF_TILE-square tiles, so exactly MAX_MASK_OBJECTS of
+// them and no wasted rows.
+export const OBJECT_SDF_GRID = 4;
+export const OBJECT_SDF_ATLAS = OBJECT_SDF_GRID * OBJECT_SDF_TILE;
+// The signed distance range the 16-bit pair in each texel's red/green spans.
+// A tile's furthest corner from the centre is MARGIN * sqrt(2) away, so
+// nothing inside a tile can exceed this and no real distance is ever clipped.
+export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
 export const OBJECT_GRADIENT_LIMIT = 32.0;
 export const OBJECT_BLACK_POINT_RELIEF_K = 1e-3;
 export const OBJECT_BLACK_POINT_HALO_MAX = 0.2;
@@ -47,8 +59,11 @@ const OBJECT_FIELD_GLSL = `
 #define MAX_MASK_OBJECTS ${MAX_MASK_OBJECTS}
 #define MASK_OBJECT_SWELL ${glFloat(MASK_OBJECT_SWELL)}
 #define MASK_OBJECT_SWELL_LIMIT ${glFloat(MASK_OBJECT_SWELL_LIMIT)}
-#define OBJECT_SHAPE_SLOPE_RANGE ${glFloat(OBJECT_SHAPE_SLOPE_RANGE)}
-#define OBJECT_SHAPE_MIN_RHO ${glFloat(OBJECT_SHAPE_MIN_RHO)}
+#define OBJECT_SDF_TILE ${glFloat(OBJECT_SDF_TILE)}
+#define OBJECT_SDF_GRID ${glFloat(OBJECT_SDF_GRID)}
+#define OBJECT_SDF_ATLAS ${glFloat(OBJECT_SDF_ATLAS)}
+#define OBJECT_SDF_MARGIN ${glFloat(OBJECT_SDF_MARGIN)}
+#define OBJECT_SDF_RANGE ${glFloat(OBJECT_SDF_RANGE)}
 #define OBJECT_GRADIENT_LIMIT ${glFloat(OBJECT_GRADIENT_LIMIT)}
 #define OBJECT_FIELD_PI 3.141592653589793
 
@@ -58,24 +73,71 @@ uniform mediump int u_objectCount;
 
 uniform mediump sampler2D u_objectShapes;
 uniform mediump float u_objectShapeRows[MAX_MASK_OBJECTS];
-uniform mediump float u_objectShapeSamples;
+uniform mediump float u_objectShapeMaxDepth[MAX_MASK_OBJECTS];
 
 float decodeObjectShape16(vec2 bytes) {
   return bytes.x + bytes.y * (1.0 / 255.0);
 }
 
-vec2 objectShapeAt(float row, float theta) {
-  if (row < 0.0) return vec2(1.0, 0.0);
-  float t = (theta + OBJECT_FIELD_PI) / (2.0 * OBJECT_FIELD_PI) * u_objectShapeSamples;
-  float index = floor(t);
-  float v = (row + 0.5) / float(MAX_MASK_OBJECTS);
-  vec4 lower = texture2D(u_objectShapes, vec2((index + 0.5) / u_objectShapeSamples, v));
-  vec4 upper = texture2D(u_objectShapes, vec2((index + 1.5) / u_objectShapeSamples, v));
-  vec2 pair = mix(
-    vec2(decodeObjectShape16(lower.rg), decodeObjectShape16(lower.ba)),
-    vec2(decodeObjectShape16(upper.rg), decodeObjectShape16(upper.ba)),
-    t - index);
-  return vec2(max(pair.x, OBJECT_SHAPE_MIN_RHO), (pair.y * 2.0 - 1.0) * OBJECT_SHAPE_SLOPE_RANGE);
+// One texel of one object's tile, as vec3(signed distance, gradient.xy).
+//
+// The tile index is unpacked into a grid cell here rather than passed in as a
+// cell, so the CPU only ever has to know which slot an object took.
+vec3 objectShapeTexel(float row, vec2 texel) {
+  float col = mod(row, OBJECT_SDF_GRID);
+  float band = floor(row / OBJECT_SDF_GRID);
+  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
+  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / OBJECT_SDF_ATLAS;
+  // not "packed": that is a reserved word in GLSL ES and will not compile
+  vec4 stored = texture2D(u_objectShapes, uv);
+  return vec3(
+    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
+    stored.ba * 2.0 - 1.0);
+}
+
+// The signed distance and its gradient at a point in the shape's own
+// normalized space, as vec3(distance, gradient.xy).
+//
+// Filtered by hand out of four NEAREST fetches, for the same reason
+// objectShapeAt used to mix two: this runs in the vertex stage, and WebGL1
+// makes no promise that a vertex texture fetch filters at all. Clamping
+// happens per-texel inside the tile, so a sample at a tile's edge cannot
+// bleed into the neighbouring object's.
+vec3 objectDepthAt(float row, vec2 n) {
+  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
+  vec2 base = floor(local);
+  vec2 f = local - base;
+  vec3 top = mix(objectShapeTexel(row, base), objectShapeTexel(row, base + vec2(1.0, 0.0)), f.x);
+  vec3 bottom = mix(
+    objectShapeTexel(row, base + vec2(0.0, 1.0)),
+    objectShapeTexel(row, base + vec2(1.0, 1.0)),
+    f.x);
+  vec3 sampled = mix(top, bottom, f.y);
+  // Along the medial axis the gradient flips, so filtering across it averages
+  // two opposing directions toward nothing. Renormalizing restores a usable
+  // direction; the guard is for the exact centre of a symmetric shape, where
+  // there genuinely is no downhill and a normalize would be a divide by zero.
+  float reach = length(sampled.yz);
+  return vec3(sampled.x, reach > 1e-4 ? sampled.yz / reach : vec2(0.0));
+}
+
+// How far along its falloff a point sits, plus the gradient of that, in mesh
+// units: vec3(u, gradU.xy). u is 0 at the shape's deepest interior point and
+// 1 at its outline.
+//
+// The two branches agree exactly where they overlap. For a circle of radius R
+// the field is d = R - dist with its deepest point at R, so
+// u = 1 - (R - dist)/R = dist/R -- which is the shapeless branch verbatim.
+// An object with no shape and one shaped like a circle are the same object.
+vec3 objectU(float row, float maxDepth, vec2 toPoint, float radius) {
+  if (row < 0.0) {
+    float dist = length(toPoint);
+    return vec3(dist / radius, dist > 1e-4 ? toPoint / (dist * radius) : vec2(0.0));
+  }
+  vec3 depth = objectDepthAt(row, toPoint / radius);
+  // d is measured in normalized units, so its gradient converts to mesh units
+  // by dividing through by the same radius that normalized the position
+  return vec3(1.0 - depth.x / maxDepth, -depth.yz / (maxDepth * radius));
 }
 
 vec2 objectProfile(float u, float falloff) {
@@ -92,22 +154,14 @@ vec3 objectField(vec2 p) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
     float elevation = u_objects[i].w;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    vec2 shape = objectShapeAt(u_objectShapeRows[i], theta);
-    float radius = u_objects[i].z * shape.x;
-    float u = dist / radius;
+    vec3 profileU = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z);
+    float u = profileU.x;
     if (u >= 1.0) continue;
     vec2 profile = objectProfile(u, u_objectFalloffs[i]);
     field.z += elevation * profile.x;
-    if (dist > 1e-4) {
-      vec2 radial = toPoint / dist;
-      vec2 tangential = vec2(-radial.y, radial.x);
-      vec2 gradU = radial / radius - tangential * (shape.y / (u_objects[i].z * shape.x * shape.x));
-      gradU = clamp(gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
-      field.xy = clamp(
-        field.xy + (elevation * profile.y) * gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
-    }
+    vec2 gradU = clamp(profileU.yz, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
+    field.xy = clamp(
+      field.xy + (elevation * profile.y) * gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
   }
   return field;
 }
@@ -117,10 +171,8 @@ vec2 objectSwell(vec2 p) {
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_objects[i].z * objectShapeAt(u_objectShapeRows[i], theta).x;
-    float u = dist / radius;
+    float radius = u_objects[i].z;
+    float u = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, radius).x;
     if (u >= 1.0) continue;
     float height = u_objects[i].w * objectProfile(u, u_objectFalloffs[i]).x;
     float coefficient = clamp(
@@ -218,10 +270,7 @@ vec4 objectBlackPoint(vec2 p) {
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_objects[i].z * objectShapeAt(u_objectShapeRows[i], theta).x;
-    float u = dist / radius;
+    float u = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z).x;
     float falloff = max(u_objectFalloffs[i], OBJECT_FALLOFF_MIN);
     float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
     float haloT = clamp((falloff - OBJECT_FALLOFF_MIN) / (OBJECT_FALLOFF_MAX - OBJECT_FALLOFF_MIN), 0.0, 1.0);
@@ -352,7 +401,7 @@ export interface GLState {
   objectCountLoc: WebGLUniformLocation;
   objectShapesLoc: WebGLUniformLocation;
   objectShapeRowsLoc: WebGLUniformLocation;
-  objectShapeSamplesLoc: WebGLUniformLocation;
+  objectShapeMaxDepthLoc: WebGLUniformLocation;
   objectBlackPointsLoc: WebGLUniformLocation;
   objectShapeTexture: WebGLTexture;
   objectShapeSignature: string;
@@ -365,25 +414,42 @@ export interface GLState {
   glowColorLoc: WebGLUniformLocation;
 }
 
-export function encodeObjectShapeTexture(
-  shapes: (ObjectShape | undefined)[],
-  samples: number,
-  rows: number,
-): Uint8Array {
-  const data = new Uint8Array(samples * rows * 4);
-  shapes.forEach((shape, row) => {
-    if (!shape || row >= rows) return;
-    for (let i = 0; i < samples; i++) {
-      const offset = (row * samples + i) * 4;
-      const rho = Math.min(Math.max(shape.rho[i] ?? 1, 0), 1);
-      const slope = shape.rhoPrime[i] ?? 0;
-      const biased = Math.min(Math.max(slope / OBJECT_SHAPE_SLOPE_RANGE, -1), 1) * 0.5 + 0.5;
-      const rhoScaled = rho * 255;
-      const slopeScaled = biased * 255;
-      data[offset] = Math.floor(rhoScaled);
-      data[offset + 1] = Math.round((rhoScaled - Math.floor(rhoScaled)) * 255);
-      data[offset + 2] = Math.floor(slopeScaled);
-      data[offset + 3] = Math.round((slopeScaled - Math.floor(slopeScaled)) * 255);
+/**
+ * Pack up to MAX_MASK_OBJECTS distance tiles into one atlas, laid out as a
+ * OBJECT_SDF_GRID x OBJECT_SDF_GRID grid of tiles in reading order, so an
+ * object's slot index is its tile index.
+ *
+ * Per texel: the signed distance as a 16-bit big-endian-ish byte pair in
+ * red/green -- the same trick the angular table used, and read back by the
+ * same decodeObjectShape16 -- and the gradient's two components biased into
+ * blue/alpha a byte each. Eight bits of a unit vector component is about a
+ * third of a degree of direction, which the lighting cannot show.
+ *
+ * A shape whose own tile is smaller than OBJECT_SDF_TILE (the editor's draft
+ * resolution) is point-sampled up rather than rejected, so a drag preview
+ * uploads without a full-resolution rebuild first.
+ */
+export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[]): Uint8Array {
+  const data = new Uint8Array(OBJECT_SDF_ATLAS * OBJECT_SDF_ATLAS * 4);
+  shapes.forEach((shape, slot) => {
+    if (!shape || slot >= OBJECT_SDF_GRID * OBJECT_SDF_GRID) return;
+    const tileCol = slot % OBJECT_SDF_GRID;
+    const tileRow = Math.floor(slot / OBJECT_SDF_GRID);
+    for (let row = 0; row < OBJECT_SDF_TILE; row++) {
+      for (let col = 0; col < OBJECT_SDF_TILE; col++) {
+        const sourceRow = Math.min(shape.tile - 1, Math.floor((row * shape.tile) / OBJECT_SDF_TILE));
+        const sourceCol = Math.min(shape.tile - 1, Math.floor((col * shape.tile) / OBJECT_SDF_TILE));
+        const source = sourceRow * shape.tile + sourceCol;
+
+        const biased = Math.min(Math.max(shape.sdf[source] / (2 * OBJECT_SDF_RANGE) + 0.5, 0), 1) * 255;
+        const x = tileCol * OBJECT_SDF_TILE + col;
+        const y = tileRow * OBJECT_SDF_TILE + row;
+        const offset = (y * OBJECT_SDF_ATLAS + x) * 4;
+        data[offset] = Math.floor(biased);
+        data[offset + 1] = Math.round((biased - Math.floor(biased)) * 255);
+        data[offset + 2] = Math.round(((shape.grad[source * 2] / 127) * 0.5 + 0.5) * 255);
+        data[offset + 3] = Math.round(((shape.grad[source * 2 + 1] / 127) * 0.5 + 0.5) * 255);
+      }
     }
   });
   return data;
@@ -416,7 +482,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   gl.bindTexture(gl.TEXTURE_2D, objectShapeTexture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
@@ -431,7 +497,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const objectCountLoc = gl.getUniformLocation(program, "u_objectCount");
   const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
   const objectShapeRowsLoc = gl.getUniformLocation(program, "u_objectShapeRows");
-  const objectShapeSamplesLoc = gl.getUniformLocation(program, "u_objectShapeSamples");
+  const objectShapeMaxDepthLoc = gl.getUniformLocation(program, "u_objectShapeMaxDepth");
   const objectBlackPointsLoc = gl.getUniformLocation(program, "u_objectBlackPoints");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
@@ -458,7 +524,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !objectCountLoc ||
     !objectShapesLoc ||
     !objectShapeRowsLoc ||
-    !objectShapeSamplesLoc ||
+    !objectShapeMaxDepthLoc ||
     !objectBlackPointsLoc ||
     !textureMixLoc ||
     !textureLoc ||
@@ -496,7 +562,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectCountLoc,
     objectShapesLoc,
     objectShapeRowsLoc,
-    objectShapeSamplesLoc,
+    objectShapeMaxDepthLoc,
     objectBlackPointsLoc,
     objectShapeTexture,
     objectShapeSignature: "",
@@ -586,12 +652,14 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   }
 
   const shapeRows = new Float32Array(MAX_MASK_OBJECTS).fill(-1);
+  const shapeMaxDepth = new Float32Array(MAX_MASK_OBJECTS).fill(1);
   const shapes = activeObjects.map((object) => object.shape);
   const usableShapes = state.supportsVertexTextures ? shapes : shapes.map(() => undefined);
-  const samples = usableShapes.find((shape) => shape !== undefined)?.rho.length;
-  if (samples !== undefined) {
+  if (usableShapes.some((shape) => shape !== undefined)) {
     usableShapes.forEach((shape, i) => {
-      if (shape) shapeRows[i] = i;
+      if (!shape) return;
+      shapeRows[i] = i;
+      shapeMaxDepth[i] = shape.maxDepth;
     });
     const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
     gl.activeTexture(gl.TEXTURE2);
@@ -602,19 +670,19 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
         gl.TEXTURE_2D,
         0,
         gl.RGBA,
-        samples,
-        MAX_MASK_OBJECTS,
+        OBJECT_SDF_ATLAS,
+        OBJECT_SDF_ATLAS,
         0,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        encodeObjectShapeTexture(usableShapes, samples, MAX_MASK_OBJECTS),
+        encodeObjectSdfAtlas(usableShapes),
       );
       state.objectShapeSignature = signature;
     }
     gl.uniform1i(state.objectShapesLoc, 2);
-    gl.uniform1f(state.objectShapeSamplesLoc, samples);
   }
   gl.uniform1fv(state.objectShapeRowsLoc, shapeRows);
+  gl.uniform1fv(state.objectShapeMaxDepthLoc, shapeMaxDepth);
 
   gl.uniform1f(state.textureMixLoc, options.textureMix);
 
@@ -846,14 +914,20 @@ export function objectProfileK(u: number, falloff: number): number {
   return Math.pow(Math.max(s, 1e-4), falloff);
 }
 
-export function objectShapeRhoAt(shape: ObjectShape | undefined, theta: number): number {
-  if (!shape) return 1;
-  const samples = shape.rho.length;
-  const t = ((theta + Math.PI) / (2 * Math.PI)) * samples;
-  const index = Math.floor(t);
-  const lower = shape.rho[((index % samples) + samples) % samples];
-  const upper = shape.rho[(((index + 1) % samples) + samples) % samples];
-  return Math.max(lower + (upper - lower) * (t - index), OBJECT_SHAPE_MIN_RHO);
+/**
+ * How far along its falloff a mesh-space point sits within one object -- the
+ * TypeScript twin of the shader's objectU, minus the gradient no CPU caller
+ * needs.
+ *
+ * 0 at the object's deepest interior point, 1 at its outline, above 1 outside
+ * it. Callers asking "is this point in the object" want `u < 1`, which is the
+ * same test the shader's early-out makes.
+ */
+export function objectProfileUAt(object: ObjectGeometryInput, point: [number, number]): number {
+  const toPointX = point[0] - object.cx;
+  const toPointY = point[1] - object.cy;
+  if (!object.shape) return Math.hypot(toPointX, toPointY) / object.radius;
+  return objectShapeProfileU(object.shape, toPointX / object.radius, toPointY / object.radius);
 }
 
 export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {
@@ -862,11 +936,7 @@ export function objectSwellAt(point: [number, number], objects: ObjectGeometryIn
   for (const object of objects) {
     const toPointX = point[0] - object.cx;
     const toPointY = point[1] - object.cy;
-    const dist = Math.hypot(toPointX, toPointY);
-    const radius = object.shape
-      ? object.radius * objectShapeRhoAt(object.shape, dist > 1e-4 ? Math.atan2(toPointY, toPointX) : 0)
-      : object.radius;
-    const u = dist / radius;
+    const u = objectProfileUAt(object, point);
     if (u >= 1) continue;
     const height = object.elevation * objectProfileK(u, Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF));
     const coefficient = Math.min(

@@ -9,11 +9,14 @@ import {
   isActiveObject,
   objectProfileK,
   objectSwellAt,
-  OBJECT_SHAPE_SLOPE_RANGE,
-  encodeObjectShapeTexture,
-  objectShapeRhoAt,
+  OBJECT_SDF_ATLAS,
+  OBJECT_SDF_GRID,
+  OBJECT_SDF_RANGE,
+  encodeObjectSdfAtlas,
+  objectProfileUAt,
 } from "./mask-gl.ts";
 import type { ObjectGeometryInput } from "./mask-gl.ts";
+import { OBJECT_SDF_TILE, buildObjectShapeFromRings } from "./canvas-media/object-shape.ts";
 
 const FALLOFFS = [1, 2, 4, 6];
 
@@ -220,215 +223,315 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
 
   it("keeps the shape lookup's overflow guards in place", () => {
     for (const [stage, src] of stages) {
-      assert.match(src, /max\(pair\.x, OBJECT_SHAPE_MIN_RHO\)/, `${stage}: rho floor`);
-      assert.match(src, /clamp\(gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT\)/, `${stage}: gradient clamp`);
+      assert.match(src, /clamp\(texel, vec2\(0\.0\), vec2\(OBJECT_SDF_TILE - 1\.0\)\)/, `${stage}: tile clamp`);
+      assert.match(src, /reach > 1e-4 \? sampled\.yz \/ reach : vec2\(0\.0\)/, `${stage}: medial-axis guard`);
+      assert.match(
+        src,
+        /clamp\(profileU\.yz, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT\)/,
+        `${stage}: gradient clamp`,
+      );
+      assert.match(
+        src,
+        /field\.xy \+ \(elevation \* profile\.y\) \* gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT\)/,
+        `${stage}: accumulation clamp`,
+      );
     }
   });
 
   it("splices the shape lookup into both stages exactly once", () => {
     for (const [stage, src] of stages) {
-      for (const signature of ["vec2 objectShapeAt(", "float decodeObjectShape16("]) {
+      for (const signature of [
+        "vec3 objectDepthAt(",
+        "vec3 objectShapeTexel(",
+        "vec3 objectU(",
+        "float decodeObjectShape16(",
+      ]) {
         assert.equal(src.split(signature).length - 1, 1, `${stage}: ${signature}`);
       }
     }
   });
+
+  it("uses no GLSL ES reserved word as an identifier", () => {
+    // The whole list from the GLSL ES 1.00 spec, because this is the one class
+    // of shader bug no other test here can reach: everything else in this
+    // suite reads the generated source as text, and text is perfectly happy
+    // with `vec4 packed = ...` right up until a driver refuses to compile it.
+    const RESERVED = [
+      "asm",
+      "class",
+      "union",
+      "enum",
+      "typedef",
+      "template",
+      "this",
+      "packed",
+      "goto",
+      "switch",
+      "default",
+      "inline",
+      "noinline",
+      "volatile",
+      "public",
+      "static",
+      "extern",
+      "external",
+      "interface",
+      "flat",
+      "long",
+      "short",
+      "double",
+      "half",
+      "fixed",
+      "unsigned",
+      "superp",
+      "input",
+      "output",
+      "hvec2",
+      "hvec3",
+      "hvec4",
+      "dvec2",
+      "dvec3",
+      "dvec4",
+      "fvec2",
+      "fvec3",
+      "fvec4",
+      "sampler1D",
+      "sampler3D",
+      "sampler1DShadow",
+      "sampler2DShadow",
+      "sampler2DRect",
+      "sampler3DRect",
+      "sampler2DRectShadow",
+      "sizeof",
+      "cast",
+      "namespace",
+      "using",
+    ];
+    for (const [stage, src] of stages) {
+      // strip comments first -- prose is allowed to say "packed"
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+      for (const word of RESERVED) {
+        assert.doesNotMatch(
+          code,
+          new RegExp(`\\b${word}\\b`),
+          `${stage}: "${word}" is reserved in GLSL ES and will not compile`,
+        );
+      }
+    }
+  });
+
+  it("filters the tile by hand, because a vertex texture fetch may not", () => {
+    for (const [stage, src] of stages) {
+      // four corner fetches and two mixes -- hardware filtering is not
+      // promised in the vertex stage this runs in
+      assert.equal(src.split("objectShapeTexel(row,").length - 1, 4, `${stage}: corner fetches`);
+    }
+  });
 });
 
-describe("objectShapeRhoAt -- the shape lookup's TypeScript twin", () => {
-  const ramp = (samples: number) => ({
-    path: "",
-    rho: Float32Array.from({ length: samples }, (_, i) => i + 1),
-    rhoPrime: new Float32Array(samples),
-  });
+describe("objectProfileUAt -- the shape lookup's TypeScript twin", () => {
+  const circle = () => {
+    const built = buildObjectShapeFromRings([
+      Array.from({ length: 512 }, (_, i) => {
+        const angle = (2 * Math.PI * i) / 512;
+        return [Math.cos(angle), Math.sin(angle)] as [number, number];
+      }),
+    ]);
+    assert.ok(built.ok);
+    return built.shape;
+  };
 
-  it("is exactly 1 for a circle, at every angle", () => {
-    for (let theta = -Math.PI; theta < Math.PI; theta += 0.1) {
-      assert.equal(objectShapeRhoAt(undefined, theta), 1, `at theta=${theta.toFixed(2)}`);
+  it("agrees with the shapeless case for a circular shape, at every angle", () => {
+    // the claim the whole encoding rests on: an object with no shape and one
+    // shaped like a circle are the same object
+    const shape = circle();
+    const shaped = object({ shape });
+    const plain = object();
+    for (let i = 0; i < 24; i++) {
+      const angle = (2 * Math.PI * i) / 24;
+      for (const at of [0, 0.3, 0.6, 0.9]) {
+        const point: [number, number] = [
+          plain.cx + at * plain.radius * Math.cos(angle),
+          plain.cy + at * plain.radius * Math.sin(angle),
+        ];
+        const difference = Math.abs(objectProfileUAt(shaped, point) - objectProfileUAt(plain, point));
+        assert.ok(difference < 0.03, `at ${at} along ${angle.toFixed(2)}: differs by ${difference}`);
+      }
     }
   });
 
-  it("reads sample i at that sample's own angle", () => {
-    const shape = ramp(8);
-    for (let i = 0; i < 8; i++) {
-      const theta = -Math.PI + (2 * Math.PI * i) / 8;
-      assert.ok(Math.abs(objectShapeRhoAt(shape, theta) - (i + 1)) < 1e-6, `sample ${i}`);
+  it("is 0 at the epicenter and 1 at the rim", () => {
+    const shaped = object({ shape: circle() });
+    assert.ok(Math.abs(objectProfileUAt(shaped, [shaped.cx, shaped.cy])) < 0.03);
+    assert.ok(Math.abs(objectProfileUAt(shaped, [shaped.cx + shaped.radius, shaped.cy]) - 1) < 0.05);
+  });
+
+  it("reports above 1 outside the shape, which is what the early-out reads", () => {
+    const shaped = object({ shape: circle() });
+    assert.ok(objectProfileUAt(shaped, [shaped.cx + shaped.radius * 1.2, shaped.cy]) > 1);
+  });
+
+  it("scales with the object's own radius rather than the tile's", () => {
+    const shape = circle();
+    for (const radius of [10, 50, 300]) {
+      const shaped = object({ radius, shape });
+      const halfway = objectProfileUAt(shaped, [shaped.cx + radius * 0.5, shaped.cy]);
+      assert.ok(Math.abs(halfway - 0.5) < 0.03, `radius ${radius}: u = ${halfway}`);
     }
-  });
-
-  it("interpolates linearly between samples", () => {
-    const shape = ramp(8);
-    const theta = -Math.PI + (2 * Math.PI * 2.5) / 8;
-    assert.ok(Math.abs(objectShapeRhoAt(shape, theta) - 3.5) < 1e-6, `got ${objectShapeRhoAt(shape, theta)}`);
-  });
-
-  it("wraps across the +/-pi seam instead of clamping", () => {
-    const shape = ramp(8);
-    const theta = Math.PI - (2 * Math.PI) / 16;
-    assert.ok(Math.abs(objectShapeRhoAt(shape, theta) - 4.5) < 1e-6, `got ${objectShapeRhoAt(shape, theta)}`);
   });
 });
 
 describe("objectSwellAt -- with a custom shape", () => {
-  const lopsided = (samples = 128) => {
-    const rho = Float32Array.from({ length: samples }, (_, i) => {
-      const theta = -Math.PI + (2 * Math.PI * i) / samples;
-      return 0.75 + 0.25 * Math.cos(theta);
-    });
-    const step = (2 * Math.PI) / samples;
-    const rhoPrime = Float32Array.from({ length: samples }, (_, i) => {
-      const next = rho[(i + 1) % samples];
-      const previous = rho[(i - 1 + samples) % samples];
-      return (next - previous) / (2 * step);
-    });
-    return { path: "lopsided", rho, rhoPrime };
+  const squareShape = () => {
+    const built = buildObjectShapeFromRings([
+      [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ],
+    ]);
+    assert.ok(built.ok);
+    return built.shape;
   };
 
   it("is still exactly zero at the epicenter", () => {
-    for (const falloff of FALLOFFS) {
-      assert.deepEqual(
-        objectSwellAt([100, 100], [object({ falloff, shape: lopsided() })]),
-        [0, 0],
-        `falloff ${falloff}`,
-      );
-    }
+    const shaped = object({ shape: squareShape() });
+    assert.deepEqual(objectSwellAt([shaped.cx, shaped.cy], [shaped]), [0, 0]);
   });
 
-  it("is still exactly zero at and beyond the object's maximum reach, in every direction", () => {
-    const shape = lopsided();
-    const p = object({ shape });
-    for (let i = 0; i < 64; i++) {
-      const theta = -Math.PI + (2 * Math.PI * i) / 64;
-      for (const distance of [p.radius, p.radius + 1, p.radius * 2]) {
-        const [dx, dy] = objectSwellAt([p.cx + distance * Math.cos(theta), p.cy + distance * Math.sin(theta)], [p]);
-        assert.deepEqual([dx, dy], [0, 0], `at theta=${theta.toFixed(2)}, distance ${distance.toFixed(2)}`);
-      }
-    }
-  });
-
-  it("falls continuously to zero across the local rim", () => {
-    const shape = lopsided();
-    const p = object({ shape });
-    for (let i = 0; i < 64; i++) {
-      const theta = -Math.PI + (2 * Math.PI * i) / 64;
-      const localRadius = p.radius * objectShapeRhoAt(shape, theta);
-      const [insideX, insideY] = objectSwellAt(
-        [p.cx + localRadius * (1 - 1e-6) * Math.cos(theta), p.cy + localRadius * (1 - 1e-6) * Math.sin(theta)],
-        [p],
-      );
-      assert.ok(Math.hypot(insideX, insideY) < 1e-3, `just inside the rim at theta=${theta.toFixed(2)}`);
-      const outside = localRadius * (1 + 1e-6);
-      assert.deepEqual(
-        objectSwellAt([p.cx + outside * Math.cos(theta), p.cy + outside * Math.sin(theta)], [p]),
-        [0, 0],
-        `just outside the rim at theta=${theta.toFixed(2)}`,
-      );
+  it("is still exactly zero beyond the object's maximum reach, in every direction", () => {
+    const shaped = object({ shape: squareShape() });
+    for (let i = 0; i < 32; i++) {
+      const angle = (2 * Math.PI * i) / 32;
+      const beyond: [number, number] = [
+        shaped.cx + shaped.radius * 1.05 * Math.cos(angle),
+        shaped.cy + shaped.radius * 1.05 * Math.sin(angle),
+      ];
+      assert.deepEqual(objectSwellAt(beyond, [shaped]), [0, 0], `at ${angle.toFixed(2)}`);
     }
   });
 
   it("keeps the 0.385 * MASK_OBJECT_SWELL * |elevation| pixel bound", () => {
-    const shape = lopsided();
-    for (const elevation of [MAX_MASK_OBJECT_ELEVATION, -MAX_MASK_OBJECT_ELEVATION, 80]) {
-      for (const falloff of FALLOFFS) {
-        const p = object({ radius: 50, elevation, falloff, shape });
-        let worst = 0;
-        for (let i = 0; i < 64; i++) {
-          const theta = -Math.PI + (2 * Math.PI * i) / 64;
-          for (let d = 0; d < p.radius; d += 0.05) {
-            const [dx, dy] = objectSwellAt([p.cx + d * Math.cos(theta), p.cy + d * Math.sin(theta)], [p]);
-            worst = Math.max(worst, Math.hypot(dx, dy));
-          }
-        }
-        assert.ok(
-          worst <= 0.385 * MASK_OBJECT_SWELL * Math.abs(elevation) + 1e-9,
-          `bound exceeded at elevation ${elevation}, falloff ${falloff}: ${worst}`,
-        );
+    const shaped = object({ shape: squareShape(), elevation: MAX_MASK_OBJECT_ELEVATION });
+    const bound = 0.385 * MASK_OBJECT_SWELL * Math.abs(shaped.elevation) + 1e-6;
+    for (let i = 0; i < 64; i++) {
+      const angle = (2 * Math.PI * i) / 64;
+      for (let at = 0; at <= 1; at += 0.02) {
+        const point: [number, number] = [
+          shaped.cx + at * shaped.radius * Math.cos(angle),
+          shaped.cy + at * shaped.radius * Math.sin(angle),
+        ];
+        const [dx, dy] = objectSwellAt(point, [shaped]);
+        assert.ok(Math.hypot(dx, dy) <= bound, `at ${at.toFixed(2)}/${angle.toFixed(2)}: ${Math.hypot(dx, dy)}`);
       }
     }
   });
 
-  it("reduces to the unshaped result when the shape is flat", () => {
-    const flat = { path: "flat", rho: new Float32Array(128).fill(1), rhoPrime: new Float32Array(128) };
-    for (let i = 0; i < 32; i++) {
-      const theta = -Math.PI + (2 * Math.PI * i) / 32;
-      for (const d of [1, 10, 25, 49]) {
-        const at: [number, number] = [100 + d * Math.cos(theta), 100 + d * Math.sin(theta)];
-        assert.deepEqual(
-          objectSwellAt(at, [object({ shape: flat })]),
-          objectSwellAt(at, [object()]),
-          `theta ${theta}, d ${d}`,
-        );
-      }
+  it("never folds a point through its own epicenter", () => {
+    const shaped = object({ shape: squareShape(), elevation: -MAX_MASK_OBJECT_ELEVATION });
+    for (let at = 0.01; at <= 1; at += 0.01) {
+      const point: [number, number] = [shaped.cx + at * shaped.radius, shaped.cy];
+      const [dx] = objectSwellAt(point, [shaped]);
+      assert.ok(at * shaped.radius + dx > 0, `at ${at.toFixed(2)} the point crossed its epicenter`);
     }
   });
 });
 
-describe("encodeObjectShapeTexture -- the 16-bit byte-pair packing", () => {
-  const decode16 = (high: number, low: number) => high / 255 + low / 255 / 255;
+describe("encodeObjectSdfAtlas -- the tile packing", () => {
+  const decode16 = (high: number, low: number) => high / 255 + low / (255 * 255);
+  const decodeDistance = (data: Uint8Array, offset: number) =>
+    (decode16(data[offset], data[offset + 1]) - 0.5) * 2 * OBJECT_SDF_RANGE;
 
-  const shapeOf = (rho: number[], rhoPrime: number[]) => ({
-    path: "t",
-    rho: new Float32Array(rho),
-    rhoPrime: new Float32Array(rhoPrime),
+  const shapeOf = (rings: [number, number][][]) => {
+    const built = buildObjectShapeFromRings(rings);
+    assert.ok(built.ok);
+    return built.shape;
+  };
+
+  const square = (half: number): [number, number][] => [
+    [-half, -half],
+    [half, -half],
+    [half, half],
+    [-half, half],
+  ];
+
+  // where slot `s`'s texel (col, row) lands in the atlas
+  const at = (slot: number, col: number, row: number) => {
+    const x = (slot % OBJECT_SDF_GRID) * OBJECT_SDF_TILE + col;
+    const y = Math.floor(slot / OBJECT_SDF_GRID) * OBJECT_SDF_TILE + row;
+    return (y * OBJECT_SDF_ATLAS + x) * 4;
+  };
+
+  it("fills exactly one atlas of the declared size", () => {
+    const data = encodeObjectSdfAtlas([shapeOf([square(1)])]);
+    assert.equal(data.length, OBJECT_SDF_ATLAS * OBJECT_SDF_ATLAS * 4);
   });
 
-  it("round-trips rho to better than one part in 30000", () => {
-    const values = [0.001, 0.1, 0.25, 0.5, 0.7071, 0.9, 0.999, 1];
-    const data = encodeObjectShapeTexture(
-      [
-        shapeOf(
-          values,
-          values.map(() => 0),
-        ),
-      ],
-      values.length,
-      4,
-    );
-    values.forEach((expected, i) => {
-      const decoded = decode16(data[i * 4], data[i * 4 + 1]);
-      assert.ok(Math.abs(decoded - expected) < 3e-5, `rho ${expected} decoded as ${decoded}`);
-    });
-  });
-
-  it("round-trips a signed slope through the bias", () => {
-    const slopes = [0, 1, -1, 3.5, -3.5, OBJECT_SHAPE_SLOPE_RANGE, -OBJECT_SHAPE_SLOPE_RANGE];
-    const data = encodeObjectShapeTexture(
-      [
-        shapeOf(
-          slopes.map(() => 1),
-          slopes,
-        ),
-      ],
-      slopes.length,
-      4,
-    );
-    slopes.forEach((expected, i) => {
-      const decoded = (decode16(data[i * 4 + 2], data[i * 4 + 3]) * 2 - 1) * OBJECT_SHAPE_SLOPE_RANGE;
-      assert.ok(Math.abs(decoded - expected) < 1e-3, `slope ${expected} decoded as ${decoded}`);
-    });
-  });
-
-  it("clamps a slope past the encodable range rather than wrapping it", () => {
-    const slopes = [OBJECT_SHAPE_SLOPE_RANGE * 3, -OBJECT_SHAPE_SLOPE_RANGE * 3];
-    const data = encodeObjectShapeTexture([shapeOf([1, 1], slopes)], 2, 4);
-    const decoded = slopes.map(
-      (_, i) => (decode16(data[i * 4 + 2], data[i * 4 + 3]) * 2 - 1) * OBJECT_SHAPE_SLOPE_RANGE,
-    );
-    assert.ok(Math.abs(decoded[0] - OBJECT_SHAPE_SLOPE_RANGE) < 1e-3, `got ${decoded[0]}`);
-    assert.ok(Math.abs(decoded[1] + OBJECT_SHAPE_SLOPE_RANGE) < 1e-3, `got ${decoded[1]}`);
-  });
-
-  it("writes each shape into its own row and leaves circle rows untouched", () => {
-    const data = encodeObjectShapeTexture([undefined, shapeOf([1, 1], [0, 0]), undefined], 2, 4);
-    assert.deepEqual([...data.slice(0, 8)], new Array(8).fill(0), "row 0 is a circle and stays zeroed");
-    assert.equal(data[8], 255, "row 1 carries the shape");
-    assert.deepEqual([...data.slice(16, 32)], new Array(16).fill(0), "rows 2 and 3 stay zeroed");
-  });
-
-  it("never lets a full-reach direction decode above 1", () => {
-    const data = encodeObjectShapeTexture([shapeOf([1, 1, 1], [0, 0, 0])], 3, 1);
-    for (let i = 0; i < 3; i++) {
-      assert.ok(decode16(data[i * 4], data[i * 4 + 1]) <= 1, `texel ${i}`);
+  it("round-trips a signed distance to better than one part in 20000", () => {
+    const shape = shapeOf([square(1)]);
+    const data = encodeObjectSdfAtlas([shape]);
+    for (let i = 0; i < shape.sdf.length; i += 313) {
+      const col = i % OBJECT_SDF_TILE;
+      const row = Math.floor(i / OBJECT_SDF_TILE);
+      const decoded = decodeDistance(data, at(0, col, row));
+      assert.ok(
+        Math.abs(decoded - shape.sdf[i]) < (2 * OBJECT_SDF_RANGE) / 20000,
+        `texel ${i}: ${decoded} vs ${shape.sdf[i]}`,
+      );
     }
+  });
+
+  it("keeps the sign, so inside decodes positive and outside negative", () => {
+    const shape = shapeOf([square(1)]);
+    const data = encodeObjectSdfAtlas([shape]);
+    const middle = OBJECT_SDF_TILE / 2;
+    assert.ok(decodeDistance(data, at(0, middle, middle)) > 0, "the centre is inside");
+    assert.ok(decodeDistance(data, at(0, 1, 1)) < 0, "the tile's corner is outside");
+  });
+
+  it("round-trips the gradient direction through the bias", () => {
+    const shape = shapeOf([square(1)]);
+    const data = encodeObjectSdfAtlas([shape]);
+    for (let i = 0; i < shape.sdf.length; i += 313) {
+      const col = i % OBJECT_SDF_TILE;
+      const row = Math.floor(i / OBJECT_SDF_TILE);
+      const offset = at(0, col, row);
+      const gx = (data[offset + 2] / 255) * 2 - 1;
+      const gy = (data[offset + 3] / 255) * 2 - 1;
+      assert.ok(Math.abs(gx - shape.grad[i * 2] / 127) < 0.01, `texel ${i} gradient x`);
+      assert.ok(Math.abs(gy - shape.grad[i * 2 + 1] / 127) < 0.01, `texel ${i} gradient y`);
+    }
+  });
+
+  it("writes each shape into its own tile and leaves circle slots untouched", () => {
+    const shape = shapeOf([square(1)]);
+    const data = encodeObjectSdfAtlas([undefined, shape, undefined]);
+    const middle = OBJECT_SDF_TILE / 2;
+    assert.ok(decodeDistance(data, at(1, middle, middle)) > 0, "slot 1 carries the shape");
+    for (const slot of [0, 2]) {
+      const offset = at(slot, middle, middle);
+      assert.equal(data[offset], 0, `slot ${slot} left as zero`);
+      assert.equal(data[offset + 1], 0, `slot ${slot} left as zero`);
+    }
+  });
+
+  it("lays tiles out in reading order across the grid", () => {
+    const shape = shapeOf([square(1)]);
+    const slot = OBJECT_SDF_GRID + 2; // second band, third column
+    const data = encodeObjectSdfAtlas([...Array(slot).fill(undefined), shape]);
+    const middle = OBJECT_SDF_TILE / 2;
+    assert.ok(decodeDistance(data, at(slot, middle, middle)) > 0);
+  });
+
+  it("scales a draft-resolution tile up rather than refusing it", () => {
+    // the editor rasterizes at a smaller tile while a handle is being dragged
+    const built = buildObjectShapeFromRings([square(1)], 64);
+    assert.ok(built.ok);
+    assert.equal(built.shape.tile, 64);
+    const data = encodeObjectSdfAtlas([built.shape]);
+    const middle = OBJECT_SDF_TILE / 2;
+    assert.ok(decodeDistance(data, at(0, middle, middle)) > 0, "a 64-tile shape still fills its 128 slot");
   });
 });
 

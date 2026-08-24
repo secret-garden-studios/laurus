@@ -1,4 +1,4 @@
-import { activeMaskObjects, objectShapeRhoAt, objectSwellAt, OBJECT_SHAPE_MIN_RHO } from "../mask-gl.ts";
+import { activeMaskObjects, objectProfileUAt, objectSwellAt } from "../mask-gl.ts";
 import type { ObjectGeometryInput } from "../mask-gl.ts";
 import type { LaurusObject, LaurusPolygonPath } from "../workspace.server";
 import { cachedObjectShape } from "./object-shape.ts";
@@ -30,10 +30,10 @@ export function polygonIndexAtPoint(points: [number, number][][], point: [number
 }
 
 function maxSwellReach(object: ObjectGeometryInput): number {
-  if (!object.shape) return object.radius;
-  let widest = OBJECT_SHAPE_MIN_RHO;
-  for (const rho of object.shape.rho) if (rho > widest) widest = rho;
-  return object.radius * widest;
+  // maxExtent is 1 for every shape the normalization produced, so this is
+  // almost always just the radius -- read rather than assumed so a shape
+  // normalized some other way still reports its true reach.
+  return object.radius * (object.shape?.maxExtent ?? 1);
 }
 
 interface MeshSwell {
@@ -97,13 +97,9 @@ export function indicesInObjectFromCentroids(centroids: [number, number][], obje
   const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
   if (!shape) return indicesInCircleFromCentroids(centroids, object);
   const indices = new Set<number>();
-  centroids.forEach(([x, y], i) => {
-    const dx = x - object.cx;
-    const dy = y - object.cy;
-    const distance = Math.hypot(dx, dy);
-    if (distance <= object.radius * objectShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)) {
-      indices.add(i);
-    }
+  const geometry = { cx: object.cx, cy: object.cy, radius: object.radius, elevation: 0, falloff: 0, shape };
+  centroids.forEach((centroid, i) => {
+    if (objectProfileUAt(geometry, centroid) < 1) indices.add(i);
   });
   return indices;
 }
@@ -196,19 +192,24 @@ export function captureIdAtPoint(
   return undefined;
 }
 
+/**
+ * Which object a point lands in, preferring the smallest when several overlap
+ * -- so an object nested inside a larger one stays clickable rather than being
+ * shadowed by whatever encloses it.
+ *
+ * "Smallest" is the object's whole extent rather than its outline distance in
+ * the point's own direction, which is what this measured while a shape was one
+ * radius per direction. A shape is no longer obliged to have such a distance,
+ * and total extent ranks the same way for the nesting case this exists for.
+ */
 export function objectIdAtPoint(objects: LaurusObject[], point: [number, number]): number | undefined {
-  const [px, py] = point;
   let bestId: number | undefined;
   let bestReach = Infinity;
   for (const object of objects) {
-    const dx = px - object.cx;
-    const dy = py - object.cy;
-    const distance = Math.hypot(dx, dy);
     const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
-    const reach = shape
-      ? object.radius * objectShapeRhoAt(shape, distance > 1e-4 ? Math.atan2(dy, dx) : 0)
-      : object.radius;
-    if (distance > reach) continue;
+    const geometry = { cx: object.cx, cy: object.cy, radius: object.radius, elevation: 0, falloff: 0, shape };
+    if (objectProfileUAt(geometry, point) >= 1) continue;
+    const reach = object.radius * (shape?.maxExtent ?? 1);
     if (reach >= bestReach) continue;
     bestId = object.id;
     bestReach = reach;

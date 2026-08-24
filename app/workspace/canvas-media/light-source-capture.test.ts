@@ -10,6 +10,7 @@ import {
   swelledPolygonIndexAtPoint,
   translateIndices,
 } from "./light-source-capture.ts";
+import { cachedObjectShape, objectShapeDepthAt } from "./object-shape.ts";
 
 const CELL = 10;
 const COLS = 12;
@@ -187,5 +188,60 @@ describe("captureIdAtPoint -- reading the capture off the mesh as drawn", () => 
     const justPastFlatEdge: [number, number] = [(flatEdge + drawnEdge) / 2, 60];
     assert.equal(captureIdAtPoint(polygons as never, points, [], justPastFlatEdge), undefined);
     assert.equal(captureIdAtPoint(polygons as never, points, [raised], justPastFlatEdge), 1);
+  });
+});
+
+describe("indicesInObjectFromCentroids -- the outline decides membership", () => {
+  const centroids: [number, number][] = [];
+  for (let y = 0; y <= 200; y += 4) for (let x = 0; x <= 200; x += 4) centroids.push([x, y]);
+
+  // a crescent: a disc with a bite taken out of the +x side, normalized the
+  // way a stored shape is
+  const CRESCENT = "M0,-1L0.6,-0.8L0.25,-0.45L0.1,0L0.25,0.45L0.6,0.8L0,1" + "L-0.71,0.71L-1,0L-0.71,-0.71Z";
+
+  it("takes every triangle the outline encloses and no other", () => {
+    const object = { cx: 100, cy: 100, radius: 60, shape: CRESCENT };
+    const inside = indicesInObjectFromCentroids(centroids, object);
+
+    // the invariant that makes the shape editor's snap meaningful: membership
+    // is a function of the outline, so it must agree with the outline
+    const shape = cachedObjectShape(CRESCENT);
+    assert.ok(shape);
+    centroids.forEach((centroid, i) => {
+      const depth = objectShapeDepthAt(
+        shape,
+        (centroid[0] - object.cx) / object.radius,
+        (centroid[1] - object.cy) / object.radius,
+      );
+      // a texel of slack either side of the boundary, where the rasterized
+      // field and the bilinear read of it can legitimately disagree
+      if (Math.abs(depth) < 0.02) return;
+      assert.equal(inside.has(i), depth > 0, `centroid ${centroid} at depth ${depth.toFixed(4)}`);
+    });
+  });
+
+  it("leaves the bite out, which a circle of the same radius would swallow", () => {
+    const object = { cx: 100, cy: 100, radius: 60, shape: CRESCENT };
+    const shaped = indicesInObjectFromCentroids(centroids, object);
+    const round = indicesInObjectFromCentroids(centroids, { ...object, shape: "" });
+    assert.ok(shaped.size < round.size * 0.85, `crescent ${shaped.size} vs circle ${round.size}`);
+  });
+
+  it("follows the outline when it is reshaped, rather than staying put", () => {
+    // what the shape editor relies on: a different outline is a different set
+    const before = indicesInObjectFromCentroids(centroids, {
+      cx: 100,
+      cy: 100,
+      radius: 60,
+      shape: CRESCENT,
+    });
+    const after = indicesInObjectFromCentroids(centroids, {
+      cx: 100,
+      cy: 100,
+      radius: 60,
+      shape: "M0,-1L1,-1L1,1L0,1L-0.4,0Z",
+    });
+    assert.notDeepEqual([...before].sort(), [...after].sort());
+    assert.ok(after.size > 0 && before.size > 0);
   });
 });

@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  OBJECT_SHAPE_SAMPLES,
+  OBJECT_SDF_MARGIN,
   buildObjectShapeFromMarkup,
   buildObjectShapeFromRings,
   extractPathData,
   flattenPathData,
+  normalizeRings,
+  objectShapeDepthAt,
+  objectShapeProfileU,
   polygonArea,
   polygonCentroid,
-  sampleAngle,
   sampleObjectShapePath,
   cachedObjectShape,
 } from "./object-shape.ts";
@@ -199,104 +201,96 @@ describe("polygonArea / polygonCentroid", () => {
   });
 });
 
-describe("buildObjectShapeFromRings -- sampling rho(theta)", () => {
-  it("samples a circle as rho identically 1", () => {
+describe("buildObjectShapeFromRings -- the distance field", () => {
+  it("reads a circle as depth = radius - distance, which is the shapeless case", () => {
     const result = buildObjectShapeFromRings([circleRing(37, [12, -5])]);
     assert.ok(result.ok);
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      assert.ok(Math.abs(result.shape.rho[i] - 1) < 1e-4, `rho[${i}] = ${result.shape.rho[i]}`);
-      assert.ok(Math.abs(result.shape.rhoPrime[i]) < 1e-2, `rhoPrime[${i}] = ${result.shape.rhoPrime[i]}`);
+    // normalized to unit extent, so the deepest point is 1 away from the rim
+    assert.ok(Math.abs(result.shape.maxDepth - 1) < 0.02, `maxDepth = ${result.shape.maxDepth}`);
+    for (const at of [0, 0.25, 0.5, 0.75]) {
+      for (const angle of [0, 1.1, 2.4, -2.9]) {
+        const u = objectShapeProfileU(result.shape, at * Math.cos(angle), at * Math.sin(angle));
+        assert.ok(Math.abs(u - at) < 0.03, `u at ${at} along ${angle.toFixed(1)} = ${u.toFixed(4)}`);
+      }
     }
   });
 
-  it("samples a square as its closed form", () => {
+  it("puts u at 0 in the middle and 1 on the outline", () => {
     const result = buildObjectShapeFromRings([squareRing(20)]);
     assert.ok(result.ok);
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      const theta = sampleAngle(i, OBJECT_SHAPE_SAMPLES);
-      const expected = 1 / (Math.SQRT2 * Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))));
-      assert.ok(
-        Math.abs(result.shape.rho[i] - expected) < 1e-5,
-        `at theta=${theta.toFixed(3)}: got ${result.shape.rho[i]}, expected ${expected}`,
-      );
-    }
+    assert.ok(Math.abs(objectShapeProfileU(result.shape, 0, 0)) < 0.02);
+    // a square normalizes so its corners sit at 1; the edge midpoint is nearer
+    const edge = objectShapeProfileU(result.shape, 1 / Math.SQRT2, 0);
+    assert.ok(Math.abs(edge - 1) < 0.05, `at the edge midpoint u = ${edge}`);
   });
 
-  it("normalizes so the maximum is exactly 1 and nothing exceeds it", () => {
-    for (const ring of [squareRing(3), starRing(10, 4), circleRing(7)]) {
-      const result = buildObjectShapeFromRings([ring]);
-      assert.ok(result.ok);
-      const max = Math.max(...result.shape.rho);
-      assert.ok(max <= 1 + 1e-6, `rho exceeded 1 (${max})`);
-      assert.ok(max > 0.99, `rho never approached its own maximum (${max})`);
-      assert.ok(Math.min(...result.shape.rho) > 0, "rho must stay strictly positive -- the field divides by it");
-    }
-  });
-
-  it("keeps a star's lobes", () => {
-    const result = buildObjectShapeFromRings([starRing(10, 4)]);
+  it("reports depth as positive inside and negative outside", () => {
+    const result = buildObjectShapeFromRings([circleRing(10)]);
     assert.ok(result.ok);
-    let maxima = 0;
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      const previous = result.shape.rho[(i - 1 + OBJECT_SHAPE_SAMPLES) % OBJECT_SHAPE_SAMPLES];
-      const next = result.shape.rho[(i + 1) % OBJECT_SHAPE_SAMPLES];
-      if (result.shape.rho[i] > previous && result.shape.rho[i] >= next) maxima++;
-    }
-    assert.equal(maxima, 5, "a five-pointed star should sample to five lobes");
-    assert.ok(Math.min(...result.shape.rho) < 0.5, "the notches between lobes should reach well below the tips");
+    assert.ok(objectShapeDepthAt(result.shape, 0, 0) > 0, "the centre is inside");
+    assert.ok(objectShapeDepthAt(result.shape, 0.99, 0) > 0, "just within the rim is inside");
+    assert.ok(objectShapeDepthAt(result.shape, 1.05, 0) < 0, "just past the rim is outside");
   });
 
-  it("differentiates rho by central difference across the wrap", () => {
-    const result = buildObjectShapeFromRings([starRing(10, 4)]);
+  it("keeps a star's lobes rather than filling them in", () => {
+    // six points rather than five so the bounding box centres on the origin
+    // and the normalized geometry is the star's own -- an odd-pointed star
+    // normalizes about a centre offset toward its flat side
+    const result = buildObjectShapeFromRings([starRing(10, 4, 6)]);
     assert.ok(result.ok);
-    const step = (2 * Math.PI) / OBJECT_SHAPE_SAMPLES;
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      const next = result.shape.rho[(i + 1) % OBJECT_SHAPE_SAMPLES];
-      const previous = result.shape.rho[(i - 1 + OBJECT_SHAPE_SAMPLES) % OBJECT_SHAPE_SAMPLES];
-      assert.ok(Math.abs(result.shape.rhoPrime[i] - (next - previous) / (2 * step)) < 1e-4, `at index ${i}`);
-    }
-  });
-
-  it("picks the largest region as the silhouette regardless of document order", () => {
-    const result = buildObjectShapeFromRings([squareRing(1), circleRing(50)]);
-    assert.ok(result.ok);
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      assert.ok(Math.abs(result.shape.rho[i] - 1) < 1e-4, "should have sampled the circle, not the tiny square");
-    }
+    // a point out along a lobe is inside; the same distance round into a notch is not
+    const lobe = objectShapeDepthAt(result.shape, 0.85, 0);
+    const notch = objectShapeDepthAt(result.shape, 0.85 * Math.cos(Math.PI / 6), 0.85 * Math.sin(Math.PI / 6));
+    assert.ok(lobe > 0, `along a lobe depth = ${lobe}`);
+    assert.ok(notch < 0, `into a notch depth = ${notch}`);
   });
 });
 
-describe("buildObjectShapeFromRings -- the gates", () => {
-  it("refuses a silhouette that is not star-shaped", () => {
+describe("buildObjectShapeFromRings -- shapes the angular table used to refuse", () => {
+  it("accepts a horseshoe, which is not star-shaped", () => {
     const result = buildObjectShapeFromRings([horseshoeRing(10, 6)]);
-    assert.ok(!result.ok);
-    assert.match(result.reason, /star-shaped|enclose/);
-  });
-
-  it("refuses a shape with a hole", () => {
-    const result = buildObjectShapeFromRings([circleRing(20), circleRing(9)]);
-    assert.ok(!result.ok);
-    assert.match(result.reason, /a hole/);
-  });
-
-  it("refuses several detached pieces", () => {
-    const result = buildObjectShapeFromRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
-    assert.ok(!result.ok);
-    assert.match(result.reason, /separate pieces/);
-  });
-
-  it("ignores a stray speck rather than refusing over it", () => {
-    const result = buildObjectShapeFromRings([circleRing(100), squareRing(0.3)]);
     assert.ok(result.ok, result.ok ? "" : result.reason);
+    // the gap really is a gap: the field is negative straight out through it
+    assert.ok(objectShapeDepthAt(result.shape, 0.8, 0) < 0, "the mouth of the horseshoe is outside");
+    assert.ok(objectShapeDepthAt(result.shape, -0.8, 0) > 0, "the closed end is inside");
   });
 
-  it("refuses an svg with no path at all", () => {
+  it("accepts an annulus and keeps the hole empty", () => {
+    const result = buildObjectShapeFromRings([circleRing(20), circleRing(9)]);
+    assert.ok(result.ok, result.ok ? "" : result.reason);
+    assert.ok(objectShapeDepthAt(result.shape, 0, 0) < 0, "the hole is outside");
+    assert.ok(objectShapeDepthAt(result.shape, 0.7, 0) > 0, "the ring itself is inside");
+  });
+
+  it("accepts a hole traced the same way round as its outer ring", () => {
+    // even-odd rather than nonzero winding: the server's contours and an
+    // illustrator's export make no promise about orientation
+    const outer = circleRing(20);
+    const innerSameWinding = circleRing(9);
+    const innerReversed = [...circleRing(9)].reverse();
+    const same = buildObjectShapeFromRings([outer, innerSameWinding]);
+    const reversed = buildObjectShapeFromRings([outer, innerReversed]);
+    assert.ok(same.ok && reversed.ok);
+    assert.ok(objectShapeDepthAt(same.shape, 0, 0) < 0);
+    assert.ok(objectShapeDepthAt(reversed.shape, 0, 0) < 0);
+  });
+
+  it("accepts several detached pieces", () => {
+    const result = buildObjectShapeFromRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
+    assert.ok(result.ok, result.ok ? "" : result.reason);
+    // normalized extent 1 spans both, so each piece sits either side of centre
+    assert.ok(objectShapeDepthAt(result.shape, -0.75, 0) > 0, "the left piece is inside");
+    assert.ok(objectShapeDepthAt(result.shape, 0.75, 0) > 0, "the right piece is inside");
+    assert.ok(objectShapeDepthAt(result.shape, 0, 0) < 0, "the space between them is not");
+  });
+
+  it("still refuses an svg with no path at all", () => {
     const result = buildObjectShapeFromMarkup(`<circle cx="5" cy="5" r="4"/>`);
     assert.ok(!result.ok);
     assert.match(result.reason, /no <path>/);
   });
 
-  it("refuses an outline with no enclosed area", () => {
+  it("still refuses an outline with no enclosed area", () => {
     const result = buildObjectShapeFromRings([
       [
         [0, 0],
@@ -309,100 +303,149 @@ describe("buildObjectShapeFromRings -- the gates", () => {
   });
 });
 
+describe("normalizeRings -- the convention the server mirrors", () => {
+  it("centres on the bounding box and scales the furthest point to exactly 1", () => {
+    const normalized = normalizeRings([circleRing(37, [12, -5])]);
+    assert.ok(Math.abs(normalized.center[0] - 12) < 1e-6);
+    assert.ok(Math.abs(normalized.center[1] + 5) < 1e-6);
+    const reach = Math.max(...distances(normalized.rings[0]));
+    assert.ok(Math.abs(reach - 1) < 1e-9, `furthest point at ${reach}`);
+  });
+
+  it("uses a centre the shape need not contain", () => {
+    // the whole reason it is the bounding box and not the area centroid
+    const normalized = normalizeRings([circleRing(10, [-30, 0]), circleRing(10, [30, 0])]);
+    assert.ok(Math.abs(normalized.center[0]) < 1e-6, "between the two pieces");
+    assert.ok(Math.max(...normalized.rings.flatMap((r) => distances(r))) <= 1 + 1e-9);
+  });
+
+  it("counts every ring, holes included, when measuring the extent", () => {
+    const normalized = normalizeRings([squareRing(20), squareRing(5)]);
+    assert.ok(Math.max(...normalized.rings.flatMap((r) => distances(r))) <= 1 + 1e-9);
+  });
+});
+
 describe("the persisted shape round-trips", () => {
-  it("re-samples from its own normalized path to the same table", () => {
-    for (const ring of [squareRing(20), starRing(10, 4), circleRing(13, [40, 40])]) {
+  it("re-reads from its own normalized path to the same field", () => {
+    // A path persists at five decimals and is re-simplified on the way back
+    // in. Simplification is greedy, so a coordinate moving in the last decimal
+    // can flip which vertex it keeps and shift the outline by up to its own
+    // tolerance -- a quarter of a texel. That is the real bound here, and it is
+    // well under what relief can show; anything beyond it would mean reloading
+    // a mask moved geometry nobody edited.
+    const texel = (2 * OBJECT_SDF_MARGIN) / 128;
+    const tolerance = texel * 0.4;
+    for (const ring of [circleRing(30), squareRing(12), starRing(20, 8), horseshoeRing(15, 9)]) {
       const authored = buildObjectShapeFromRings([ring]);
       assert.ok(authored.ok);
       const reloaded = sampleObjectShapePath(authored.shape.path);
-      assert.ok(reloaded, "a shape this module just authored must re-sample");
-      for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
+      assert.ok(reloaded, "the persisted path re-reads");
+      assert.ok(
+        Math.abs(reloaded.maxDepth - authored.shape.maxDepth) < tolerance,
+        `maxDepth drifted: ${authored.shape.maxDepth} -> ${reloaded.maxDepth}`,
+      );
+      for (let i = 0; i < authored.shape.sdf.length; i += 97) {
         assert.ok(
-          Math.abs(authored.shape.rho[i] - reloaded.rho[i]) < 1e-4,
-          `rho drifted at ${i}: ${authored.shape.rho[i]} vs ${reloaded.rho[i]}`,
+          Math.abs(reloaded.sdf[i] - authored.shape.sdf[i]) < tolerance,
+          `texel ${i} drifted by ${Math.abs(reloaded.sdf[i] - authored.shape.sdf[i])}`,
         );
       }
-      assert.equal(reloaded.path, authored.shape.path, "re-normalizing should be a no-op");
     }
   });
 
   it("centers the persisted path on the origin at unit maximum radius", () => {
     const authored = buildObjectShapeFromRings([starRing(80, 30)]);
     assert.ok(authored.ok);
-    const points = flattenPathData(authored.shape.path)[0];
-    const [cx, cy] = polygonCentroid(points);
-    assert.ok(Math.abs(cx) < 1e-4 && Math.abs(cy) < 1e-4, `centroid should be the origin, got ${cx},${cy}`);
-    assert.ok(Math.abs(Math.max(...distances(points)) - 1) < 1e-4, "maximum radius should be 1");
+    const rings = flattenPathData(authored.shape.path);
+    const reach = Math.max(...rings.flatMap((r) => distances(r)));
+    assert.ok(Math.abs(reach - 1) < 1e-4, `furthest point at ${reach}`);
+  });
+
+  it("keeps every subpath through the round trip, so a hole survives", () => {
+    const authored = buildObjectShapeFromRings([circleRing(20), circleRing(9)]);
+    assert.ok(authored.ok);
+    assert.equal(flattenPathData(authored.shape.path).length, 2, "two subpaths persisted");
+    const reloaded = sampleObjectShapePath(authored.shape.path);
+    assert.ok(reloaded);
+    assert.ok(objectShapeDepthAt(reloaded, 0, 0) < 0, "the hole is still a hole");
   });
 
   it("survives the full markup path", () => {
-    const worstFlatteningDip = 1 - Math.cos(Math.PI / 96);
-    const markup = `<path d="M50,0 A50,50 0 1 1 -50,0 A50,50 0 1 1 50,0 Z"/>`;
+    const markup = `<svg><path d="M-1,-1L1,-1L1,1L-1,1Z"/></svg>`;
     const result = buildObjectShapeFromMarkup(markup);
-    assert.ok(result.ok, result.ok ? "" : result.reason);
-    assert.ok(worstFlatteningDip < 1e-3, "a half-circle arc should flatten to well under 0.1% radius error");
-    const float32Slack = 1e-6;
-    for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-      assert.ok(
-        result.shape.rho[i] >= 1 - worstFlatteningDip - float32Slack && result.shape.rho[i] <= 1 + float32Slack,
-        `a circular svg should sample flat, got ${result.shape.rho[i]} at index ${i}`,
-      );
-    }
+    assert.ok(result.ok);
+    assert.ok(Math.abs(objectShapeProfileU(result.shape, 0, 0)) < 0.02);
   });
 });
 
 describe("an object shape authored by the server", () => {
-  function serverStyleShapePath(rho: number[]): string {
-    const format = (n: number): string => {
-      const trimmed = n.toFixed(5).replace(/0+$/, "").replace(/\.$/, "");
-      return trimmed === "-0" ? "0" : trimmed;
-    };
-    return (
-      rho
-        .map((r, i) => {
-          const angle = sampleAngle(i, rho.length);
-          return `${i === 0 ? "M" : "L"}${format(r * Math.cos(angle))},${format(r * Math.sin(angle))}`;
-        })
-        .join("") + "Z"
-    );
-  }
-
-  const profiles: [string, (theta: number) => number, boolean][] = [
-    ["a round region", () => 1, true],
-    ["a lobed blob", (t) => 0.7 + 0.3 * Math.cos(4 * t), true],
-    ["an elongated region", (t) => 1 / Math.hypot(Math.cos(t), 2.5 * Math.sin(t)), true],
-    ["a region with one long spur", (t) => (Math.abs(t) < 0.3 ? 1 : 0.35), false],
-  ];
-
-  for (const [name, profile, centred] of profiles) {
-    it(`is accepted and re-sampled for ${name}`, () => {
-      const raw = Array.from({ length: OBJECT_SHAPE_SAMPLES }, (_, i) => profile(sampleAngle(i, OBJECT_SHAPE_SAMPLES)));
-      const object = Math.max(...raw);
-      const rho = raw.map((r) => r / object);
-
-      const shape = sampleObjectShapePath(serverStyleShapePath(rho));
-      assert.ok(shape, `${name} must survive the parser -- the object renders as a circle otherwise`);
-      assert.equal(shape.rho.length, OBJECT_SHAPE_SAMPLES);
-
-      assert.ok(Math.abs(Math.max(...shape.rho) - 1) < 5e-3, `max rho was ${Math.max(...shape.rho)}`);
-      assert.ok(Math.min(...shape.rho) > 0, "rho must stay positive");
-
-      if (centred) {
-        for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-          assert.ok(Math.abs(shape.rho[i] - rho[i]) < 0.02, `rho drifted at ${i}: ${rho[i]} vs ${shape.rho[i]}`);
-        }
-        return;
-      }
-      const reloaded = sampleObjectShapePath(shape.path);
-      assert.ok(reloaded);
-      for (let i = 0; i < OBJECT_SHAPE_SAMPLES; i++) {
-        assert.ok(Math.abs(shape.rho[i] - reloaded.rho[i]) < 1e-3, `unstable at ${i}`);
-      }
-    });
-  }
-
   it("reads an empty shape as the plain circle the server means by it", () => {
     assert.equal(cachedObjectShape(""), undefined);
+  });
+
+  it("reads a multi-subpath M/C/Z path the way detection emits it", () => {
+    // an outline and its hole, as curves rather than the polyline the angular
+    // table was limited to
+    const outer = "M0,-1C0.55,-1 1,-0.55 1,0C1,0.55 0.55,1 0,1C-0.55,1 -1,0.55 -1,0C-1,-0.55 -0.55,-1 0,-1Z";
+    const hole =
+      "M0,-0.4C0.22,-0.4 0.4,-0.22 0.4,0C0.4,0.22 0.22,0.4 0,0.4C-0.22,0.4 -0.4,0.22 -0.4,0C-0.4,-0.22 -0.22,-0.4 0,-0.4Z";
+    const shape = sampleObjectShapePath(outer + hole);
+    assert.ok(shape, "a curved, holed outline reads");
+    assert.ok(objectShapeDepthAt(shape, 0, 0) < 0, "the hole is empty");
+    assert.ok(objectShapeDepthAt(shape, 0.7, 0) > 0, "the ring is solid");
+  });
+});
+
+describe("a shape authored by this project's server", () => {
+  // Verbatim output of region_object_geometry on a traced crescent -- the
+  // exact shape the previous encoding could not represent at all, since a ray
+  // from its centroid crosses the outline twice. Kept as a fixture because it
+  // is the only thing that catches the two implementations' normalization
+  // conventions drifting apart, which neither suite can see on its own.
+  const SERVER_CRESCENT =
+    "M0.11351,-0.90902C0.0071,-0.9105 -0.09727,-0.89095 -0.19557,-0.85448" +
+    "C-0.29763,-0.81662 -0.40138,-0.75954 -0.48647,-0.68176C-0.57942,-0.59679 -0.67136,-0.47166 -0.72283,-0.3545" +
+    "C-0.77156,-0.24356 -0.79397,-0.11423 -0.79555,0.00004C-0.79702,0.10645 -0.77748,0.21082 -0.74101,0.30912" +
+    "C-0.70315,0.41118 -0.64607,0.51492 -0.56829,0.60002C-0.48332,0.69297 -0.35819,0.78491 -0.24102,0.83637" +
+    "C-0.13009,0.88511 -0.00467,0.9091 0.11351,0.9091C0.23169,0.9091 0.35711,0.88511 0.46804,0.83637" +
+    "C0.58521,0.78491 0.80516,0.6226 0.79531,0.60002C0.78784,0.5829 0.64589,0.646 0.56804,0.64547" +
+    "C0.48554,0.64491 0.39482,0.62929 0.3135,0.59093C0.22106,0.54732 0.10694,0.44827 0.04988,0.38184" +
+    "C0.01221,0.338 -0.00428,0.30998 -0.02285,0.25457C-0.05184,0.16806 -0.08316,0.0096 -0.0683,-0.09996" +
+    "C-0.05456,-0.20126 0.00055,-0.3083 0.04988,-0.38177C0.08906,-0.44013 0.13286,-0.47966 0.18624,-0.51813" +
+    "C0.24371,-0.55955 0.31947,-0.59702 0.38623,-0.61812C0.44676,-0.63727 0.5042,-0.64694 0.56804,-0.6454" +
+    "C0.63972,-0.64366 0.78784,-0.58283 0.79531,-0.59994C0.80516,-0.62253 0.58521,-0.78483 0.46804,-0.8363" +
+    "C0.35711,-0.88503 0.22778,-0.90744 0.11351,-0.90902Z";
+  const SERVER_RADIUS = 110.003537;
+
+  it("re-normalizes to the identity, so the server's radius is the real reach", () => {
+    const rings = flattenPathData(SERVER_CRESCENT);
+    assert.equal(rings.length, 1);
+    const { center, scale } = normalizeRings(rings);
+    // the server measures on the flattened curve for exactly this reason: it
+    // fits anchors at 1 but the curve bows past them, and if it normalized the
+    // traced ring instead the object would render a fraction larger than the
+    // reach it records
+    assert.ok(Math.hypot(...center) < 1e-4, `centre drifted to ${center}`);
+    assert.ok(Math.abs(scale - 1) < 1e-4, `scale drifted to ${scale}`);
+  });
+
+  it("reads as the crescent it is, bite and all", () => {
+    const shape = sampleObjectShapePath(SERVER_CRESCENT);
+    assert.ok(shape, "the client refused a shape its own server emitted");
+    assert.ok(objectShapeDepthAt(shape, -0.55, 0) > 0, "the solid side is inside");
+    assert.ok(objectShapeDepthAt(shape, 0.55, 0) < 0, "the bite is outside");
+    // a crescent is thin: its deepest point is nowhere near its extent
+    assert.ok(shape.maxDepth > 0.2 && shape.maxDepth < 0.5, `maxDepth ${shape.maxDepth}`);
+  });
+
+  it("agrees with the server about where the outline reaches in mesh units", () => {
+    const shape = sampleObjectShapePath(SERVER_CRESCENT);
+    assert.ok(shape);
+    // maxExtent is 1, so the furthest the outline reaches from (cx, cy) is
+    // exactly the stored radius -- what every hit test and swell bound assumes
+    assert.equal(shape.maxExtent, 1);
+    const reach = Math.max(...flattenPathData(shape.path).flatMap((r) => distances(r)));
+    assert.ok(Math.abs(reach * SERVER_RADIUS - SERVER_RADIUS) < 0.05, `reach ${reach}`);
   });
 });
 
@@ -415,22 +458,74 @@ describe("cachedObjectShape -- the render path's entry point", () => {
     const authored = buildObjectShapeFromRings([starRing(10, 4)]);
     assert.ok(authored.ok);
     const first = cachedObjectShape(authored.shape.path);
-    assert.ok(first, "a shape this module just authored must re-sample");
-    assert.equal(cachedObjectShape(authored.shape.path), first);
+    const second = cachedObjectShape(authored.shape.path);
+    assert.ok(first);
+    assert.equal(first, second);
   });
 
-  it("caches a shape that fails to re-sample, rather than retrying forever", () => {
-    const unusable = "M0,0L1,0L2,0Z";
-    assert.equal(cachedObjectShape(unusable), undefined);
-    assert.equal(cachedObjectShape(unusable), undefined);
+  it("caches a shape that fails to re-read, rather than retrying forever", () => {
+    assert.equal(cachedObjectShape("M0,0Z"), undefined);
+    assert.equal(cachedObjectShape("M0,0Z"), undefined);
   });
 
-  it("shares one table between objects wearing the same silhouette", () => {
+  it("shares one field between objects wearing the same silhouette", () => {
     const first = buildObjectShapeFromRings([squareRing(20)]);
     const second = buildObjectShapeFromRings([squareRing(5)]);
-    assert.ok(first.ok);
-    assert.ok(second.ok);
-    assert.equal(second.shape.path, first.shape.path, "normalization should erase the size difference");
-    assert.equal(cachedObjectShape(second.shape.path), cachedObjectShape(first.shape.path));
+    assert.ok(first.ok && second.ok);
+    // same silhouette at different sizes normalizes to the same path
+    assert.equal(first.shape.path, second.shape.path);
+    assert.equal(cachedObjectShape(first.shape.path), cachedObjectShape(second.shape.path));
+  });
+
+  it("keeps a draft and a full-resolution build apart", () => {
+    // the shape editor rasterizes at draft resolution while a handle is being
+    // dragged; the draft it leaves behind must not be served afterwards as the
+    // real thing
+    const built = buildObjectShapeFromRings([starRing(10, 4, 6)]);
+    assert.ok(built.ok);
+    const draft = cachedObjectShape(built.shape.path, 64);
+    const full = cachedObjectShape(built.shape.path);
+    assert.ok(draft && full);
+    assert.equal(draft.tile, 64);
+    assert.equal(full.tile, 128);
+    assert.notEqual(draft, full);
+    // and each is still cached in its own right
+    assert.equal(cachedObjectShape(built.shape.path, 64), draft);
+    assert.equal(cachedObjectShape(built.shape.path), full);
+  });
+
+  it("agrees between resolutions about what is inside", () => {
+    // a draft is coarser, not different -- otherwise the relief would jump
+    // when the pointer is released
+    const built = buildObjectShapeFromRings([circleRing(20)]);
+    assert.ok(built.ok);
+    const draft = cachedObjectShape(built.shape.path, 64);
+    const full = cachedObjectShape(built.shape.path);
+    assert.ok(draft && full);
+    assert.ok(Math.abs(draft.maxDepth - full.maxDepth) < 0.05, `${draft.maxDepth} vs ${full.maxDepth}`);
+    for (const at of [
+      [0, 0],
+      [0.5, 0],
+      [0, -0.6],
+      [1.4, 0],
+    ] as [number, number][]) {
+      assert.equal(
+        objectShapeDepthAt(draft, ...at) > 0,
+        objectShapeDepthAt(full, ...at) > 0,
+        `resolutions disagree about ${at}`,
+      );
+    }
+  });
+
+  it("evicts rather than growing without bound", () => {
+    // each entry now carries a tile-sized field, and the shape editor mints a
+    // new path per pointermove
+    const held = buildObjectShapeFromRings([squareRing(3)]);
+    assert.ok(held.ok);
+    const first = cachedObjectShape(held.shape.path);
+    for (let i = 0; i < 40; i++) {
+      cachedObjectShape(`M${-1 - i / 100},-1L1,-1L1,1L-1,1Z`);
+    }
+    assert.notEqual(cachedObjectShape(held.shape.path), first, "the untouched entry was evicted");
   });
 });

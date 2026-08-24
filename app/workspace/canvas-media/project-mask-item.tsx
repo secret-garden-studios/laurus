@@ -48,7 +48,8 @@ import {
 } from "./light-source-capture";
 import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
 import { applyCaptureDelta, applyObjectDelta } from "./mask-delta";
-import { cachedObjectShape } from "./object-shape";
+import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
+import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
 import {
   getFrames,
   getImg,
@@ -108,6 +109,14 @@ function buildObjectsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>
 
 function objectsMeshSignature(objects: LaurusObject[]): string {
   return objects.map((o) => `${o.id}:${o.cx},${o.cy},${o.radius},${o.elevation},${o.falloff},${o.shape}`).join("|");
+}
+
+/**
+ * What resolution to rasterize a pending edit's shape at: draft while the
+ * gesture is still running, full once it has settled.
+ */
+function pendingTileSize(pending: PendingTopologyEdit): number {
+  return pending.draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE;
 }
 
 function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
@@ -211,6 +220,7 @@ export function ProjectMaskItem({
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
+    notifyMaskObjectReviewPreview,
     notifyMaskLightSourcePreviewToggled,
   } = useContext(MaskContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
@@ -344,6 +354,11 @@ export function ProjectMaskItem({
 
   const resolveObjectUniforms = useCallback((): ObjectGeometryInput[] => {
     const pending = pendingTopologyRef.current;
+    // A pending edit may have reshaped the object, not just moved it, so its
+    // own shape is the one to render -- reading the stored shape here would
+    // show a reshape as a move. Built at draft resolution while the gesture is
+    // still in flight; see cachedObjectShape.
+    const pendingShape = pending ? cachedObjectShape(pending.shape, pendingTileSize(pending)) : undefined;
     const objects = objectsRef.current.map((object): ObjectGeometryInput => {
       const shape = cachedObjectShape(object.shape);
       const playing = playbackObjectsRef.current.get(object.id);
@@ -365,7 +380,7 @@ export function ProjectMaskItem({
             radius: pending.radius,
             elevation: pending.elevation,
             falloff: pending.falloff,
-            shape,
+            shape: pendingShape,
             blackPoint: pending.blackPoint,
           }
         : toObjectGeometry(object);
@@ -377,7 +392,7 @@ export function ProjectMaskItem({
         radius: pending.radius,
         elevation: pending.elevation,
         falloff: pending.falloff,
-        shape: cachedObjectShape(pending.shape),
+        shape: pendingShape,
         blackPoint: pending.blackPoint,
       });
     }
@@ -518,6 +533,108 @@ export function ProjectMaskItem({
     uiState.objectReview?.maskKey === mediaKey &&
     !isObjectReviewLocked(uiState.objectReview);
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
+
+  // The object the pen is open on, if any. Its shape may already carry an
+  // in-progress edit, so the editor opens on that rather than on what is
+  // stored -- otherwise stepping away and back would silently discard it.
+  const shapeEditorObject = useMemo(() => {
+    const review = uiState.objectReview;
+    if (source.kind !== "static" || review?.maskKey !== mediaKey || !review.editingShape) return undefined;
+    const candidate = review.candidates[review.currentIndex]?.object;
+    if (!candidate) return undefined;
+    // Geometry and outline must come from the same place. An edited path is
+    // normalized against the geometry the edit produced -- pulling an anchor
+    // outward grows the radius rather than the path -- so pairing that path
+    // with the candidate's original cx/cy/radius renders it back at roughly
+    // the size and position it started from. Which looks exactly like the pen
+    // snapping back the instant it is released.
+    const from = review.editedShape ?? candidate;
+    return {
+      id: candidate.id,
+      cx: from.cx,
+      cy: from.cy,
+      radius: from.radius,
+      shape: review.editedShape?.path ?? candidate.shape,
+      edited: review.editedShape !== undefined,
+    };
+  }, [uiState.objectReview, source.kind, mediaKey]);
+
+  // A reshape previews through the same pending-topology channel an object
+  // drag already uses, so the relief follows the pen without a round trip and
+  // without touching the state the editor reads its own rings from.
+  const previewShapeEdit = useCallback(
+    (edit: ShapeEdit, draft = true) => {
+      const review = uiState.objectReview;
+      const candidate = review?.candidates[review.currentIndex]?.object;
+      if (!review || !candidate) return;
+      const pending: PendingTopologyEdit = {
+        maskKey: mediaKey,
+        objectId: candidate.id,
+        cx: edit.cx,
+        cy: edit.cy,
+        radius: edit.radius,
+        elevation: candidate.elevation,
+        falloff: candidate.falloff,
+        shape: edit.path,
+        blackPoint: toObjectBlackPoint(candidate),
+        polygonIndices: review.currentIndices,
+        draft,
+      };
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
+      notifyMaskPendingTopologySet(mediaKey, pending);
+    },
+    [uiState.objectReview, mediaKey, dispatch, notifyMaskPendingTopologySet],
+  );
+
+  /**
+   * Re-tag the object's triangles to the ones the outline actually encloses.
+   *
+   * **Only ever called for an edit the reviewer actually made.** Opening the
+   * pen must leave the object exactly as it was -- it is a view onto the
+   * outline, and a view that rewrites what it is shown is not one. This was
+   * briefly wired to run on open as well, on the theory that the triangles
+   * ought to look flush the moment the curve appears; what it actually did was
+   * silently re-cut every rim triangle of an object nobody had touched yet.
+   * Keep the single call site below.
+   *
+   * The two were only ever cousins: membership came from the server's
+   * per-triangle vote on which region it mostly covers, while the outline is a
+   * smoothed curve through a couple of dozen anchors of that same region's
+   * boundary. Both describe the region, neither is derived from the other, and
+   * the smoothing is exactly where they part company -- so the triangles sat
+   * near the curve rather than flush against it, and reshaping moved the curve
+   * without moving them at all.
+   *
+   * Taking membership from the outline makes the curve the thing that decides,
+   * which is what a reviewer dragging it expects. A triangle is in when its
+   * centroid is, which is the same test the mesh already uses for objects
+   * everywhere else.
+   */
+  const snapIndicesToShape = useCallback(
+    (region: { cx: number; cy: number; radius: number; shape: string }) => {
+      const review = uiState.objectReview;
+      if (!review || review.maskKey !== mediaKey || isObjectReviewLocked(review)) return;
+      const indices = indicesInObjectFromCentroids(maskGeometryRef.current.centroids, region);
+      uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices });
+      // routes straight back to this component's own setObjectReviewPreview,
+      // which sets the ref and repaints
+      notifyMaskObjectReviewPreview(mediaKey, indices, undefined, objectReviewDiffBaseRef.current);
+    },
+    [uiState.objectReview, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
+  );
+
+  // Recorded only on release: this is the value the accept decision carries,
+  // and writing it mid-drag would feed the edit straight back into the editor.
+  const commitShapeEdit = useCallback(
+    (edit: ShapeEdit) => {
+      // no longer a draft: the gesture is over, so this one gets built at full
+      // resolution and is what the relief settles on
+      previewShapeEdit(edit, false);
+      uiDispatch({ type: UIActionType.SetObjectReviewShape, shape: edit });
+      snapIndicesToShape({ cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path });
+    },
+    [previewShapeEdit, uiDispatch, snapIndicesToShape],
+  );
 
   const render = useCallback(() => {
     const state = glStateRef.current;
@@ -1899,6 +2016,19 @@ export function ProjectMaskItem({
                     : "none",
             }}
           />
+          {shapeEditorObject && (
+            <ObjectShapeEditor
+              key={`${mediaKey}:${shapeEditorObject.id}:${shapeEditorObject.edited ? "edited" : "detected"}`}
+              object={shapeEditorObject}
+              bufferWidth={canvasSize.width}
+              bufferHeight={canvasSize.height}
+              cssWidth={containerSize.width}
+              cssHeight={containerSize.height}
+              onPreview={previewShapeEdit}
+              onCommit={commitShapeEdit}
+              stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
+            />
+          )}
         </div>
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu

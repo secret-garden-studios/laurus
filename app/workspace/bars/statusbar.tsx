@@ -18,6 +18,7 @@ import {
   polyline200,
   asterisk200,
   asterisk300,
+  inkPen300,
 } from "../../svg-repo";
 import { RiToolsLine } from "react-icons/ri";
 import { Tooltip } from "react-tooltip";
@@ -261,6 +262,8 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                   return polyline200();
                 case "light_source":
                   return asterisk200();
+                case "pen":
+                  return inkPen300();
               }
             })()}
             containerStyle={{

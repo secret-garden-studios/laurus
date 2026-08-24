@@ -1,12 +1,58 @@
-export const OBJECT_SHAPE_SAMPLES = 128;
-export const OBJECT_SHAPE_VALIDATION_SAMPLES = OBJECT_SHAPE_SAMPLES * 4;
-const CURVE_SEGMENTS = 48;
-const STRAY_SUBPATH_AREA_FRACTION = 0.01;
+export const CURVE_SEGMENTS = 48;
+
+// The side length of one object's signed-distance tile. Sixteen of these tile
+// a 4x4 atlas (see encodeObjectSdfAtlas in mask-gl.ts), so this is also a
+// quarter of that texture's dimension.
+export const OBJECT_SDF_TILE = 128;
+// What a tile covers, in the shape's own normalized units, measured from the
+// centre outward. The outline's furthest point sits at exactly 1 by
+// construction (see normalizeRings), so anything above 1 is margin: the band
+// where the field is still negative-but-finite rather than clamped. Without
+// it the gradient at the rim would be read off the tile edge, where there is
+// nothing outside to point away from.
+export const OBJECT_SDF_MARGIN = 1.1;
+// A smaller tile for the shape editor's live drag preview -- the same field at
+// a quarter of the texels, which the relief cannot show the difference in
+// while it is moving.
+export const OBJECT_SDF_DRAFT_TILE = 64;
+// How far the rasterized outline may drift from the authored one, as a
+// fraction of a texel. Simplifying to a quarter of a texel cannot move a
+// sampled distance by more than that, and it is what keeps the per-texel
+// nearest-segment search over hundreds of segments rather than thousands: a
+// detected outline arrives as ~20 cubics flattened at CURVE_SEGMENTS each.
+const SDF_SIMPLIFY_TEXEL_FRACTION = 0.25;
 
 export interface ObjectShape {
+  /** The authored outline, normalized and closed -- exactly what is stored. */
   path: string;
-  rho: Float32Array;
-  rhoPrime: Float32Array;
+  /** Side length of the sdf/grad grids below. */
+  tile: number;
+  /**
+   * Signed distance to the outline at each texel, in normalized units,
+   * positive inside. Row-major, `tile * tile` entries.
+   */
+  sdf: Float32Array;
+  /**
+   * The unit gradient of `sdf`, two components per texel, quantized to the
+   * same 8 bits per component the atlas ships to the GPU so that the CPU and
+   * the shader read the identical value. Exact rather than differenced: the
+   * distance pass already knows each texel's nearest point on the outline, and
+   * the direction away from it *is* the gradient.
+   */
+  grad: Int8Array;
+  /**
+   * The largest value in `sdf` -- how deep the shape's deepest interior point
+   * is. This is what normalizes depth into the profile's `u`, and for a circle
+   * it is exactly the radius, which is what makes an empty shape and a
+   * circular one the same case rather than two.
+   */
+  maxDepth: number;
+  /**
+   * The furthest the outline reaches from the centre, in normalized units. 1
+   * by construction, carried explicitly because the swell reach reads it and
+   * should not have to assume the normalization held.
+   */
+  maxExtent: number;
 }
 
 export type ObjectShapeResult = { ok: true; shape: ObjectShape } | { ok: false; reason: string };
@@ -351,133 +397,369 @@ export function polygonCentroid(points: [number, number][]): [number, number] {
   return [cx / (3 * doubleArea), cy / (3 * doubleArea)];
 }
 
-function pointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
-  const [px, py] = point;
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i];
-    const [xj, yj] = polygon[j];
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+/**
+ * The normalized coordinate a texel index sits at, along one axis.
+ *
+ * Texel centres rather than corners, so the field is sampled where the shader
+ * will read it. This is the single definition of how a tile maps onto the
+ * shape, and the shader's own tile lookup is its mirror -- get them out of
+ * step and every shape renders offset by half a texel.
+ */
+export function sdfTexelCoordinate(index: number, tile: number): number {
+  return ((index + 0.5) / tile) * 2 * OBJECT_SDF_MARGIN - OBJECT_SDF_MARGIN;
+}
+
+/**
+ * Distance from a point to a line segment, writing the closest point on the
+ * segment into `out`.
+ *
+ * The closest point is the reason this returns it rather than just the
+ * distance: the direction away from it is exactly the gradient of the distance
+ * field, so measuring the distance and knowing which way it increases are one
+ * computation, not two.
+ */
+function segmentDistance(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  out: [number, number],
+): number {
+  const ex = bx - ax;
+  const ey = by - ay;
+  const lengthSquared = ex * ex + ey * ey;
+  let t = lengthSquared > 0 ? ((px - ax) * ex + (py - ay) * ey) / lengthSquared : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  out[0] = ax + ex * t;
+  out[1] = ay + ey * t;
+  return Math.hypot(px - out[0], py - out[1]);
+}
+
+/**
+ * Douglas-Peucker simplification of a closed ring.
+ *
+ * Purely a speed measure for the rasterization below, run after the shape has
+ * already been normalized so it cannot move the centre or the extent that
+ * `cx`/`cy`/`radius` were derived from. A detected outline arrives as ~20
+ * cubics flattened at CURVE_SEGMENTS apiece -- a thousand points describing a
+ * curve that a 128-texel grid cannot resolve past a couple of hundred, and the
+ * per-texel search below is linear in that count.
+ *
+ * The ring is walked as an open chain from its first point back around to it,
+ * so the only place simplification can misjudge is that seam, and it can
+ * misjudge it by at most `tolerance`.
+ */
+export function simplifyRing(ring: [number, number][], tolerance: number): [number, number][] {
+  if (ring.length <= 3) return ring;
+  const chain = [...ring, ring[0]];
+  const keep = new Uint8Array(chain.length);
+  keep[0] = 1;
+  keep[chain.length - 1] = 1;
+
+  const stack: [number, number][] = [[0, chain.length - 1]];
+  const closest: [number, number] = [0, 0];
+  while (stack.length > 0) {
+    const [first, last] = stack.pop()!;
+    if (last <= first + 1) continue;
+    let worst = -1;
+    let worstAt = -1;
+    for (let i = first + 1; i < last; i++) {
+      const deviation = segmentDistance(
+        chain[i][0],
+        chain[i][1],
+        chain[first][0],
+        chain[first][1],
+        chain[last][0],
+        chain[last][1],
+        closest,
+      );
+      if (deviation > worst) {
+        worst = deviation;
+        worstAt = i;
+      }
+    }
+    if (worst > tolerance && worstAt > first) {
+      keep[worstAt] = 1;
+      stack.push([first, worstAt], [worstAt, last]);
+    }
+  }
+
+  const simplified: [number, number][] = [];
+  for (let i = 0; i < chain.length - 1; i++) if (keep[i]) simplified.push(chain[i]);
+  return simplified.length >= 3 ? simplified : ring;
+}
+
+/**
+ * Which texels fall inside the outline, as a 0/1 grid, by the even-odd rule.
+ *
+ * Even-odd rather than nonzero winding because it is what makes a hole a hole
+ * regardless of which direction its ring was traced in. A region's holes come
+ * from cv2.findContours on the server and an arbitrary illustrator's export on
+ * the svg path, and neither guarantees a consistent orientation -- under
+ * nonzero winding a hole traced the same way round as its outer ring silently
+ * fills in.
+ *
+ * Scanline rather than a per-texel containment test: one pass over the
+ * segments per row, instead of one per texel.
+ */
+function insideMask(rings: [number, number][][], tile: number): Uint8Array {
+  const inside = new Uint8Array(tile * tile);
+  const crossings: number[] = [];
+  for (let row = 0; row < tile; row++) {
+    const y = sdfTexelCoordinate(row, tile);
+    crossings.length = 0;
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const [x0, y0] = ring[i];
+        const [x1, y1] = ring[(i + 1) % ring.length];
+        if (y0 <= y === y1 <= y) continue;
+        crossings.push(x0 + ((y - y0) / (y1 - y0)) * (x1 - x0));
+      }
+    }
+    if (crossings.length < 2) continue;
+    crossings.sort((a, b) => a - b);
+    for (let pair = 0; pair + 1 < crossings.length; pair += 2) {
+      const from = crossings[pair];
+      const to = crossings[pair + 1];
+      for (let col = 0; col < tile; col++) {
+        const x = sdfTexelCoordinate(col, tile);
+        if (x >= from && x <= to) inside[row * tile + col] = 1;
+      }
+    }
   }
   return inside;
 }
 
-const EDGE_EPSILON = 1e-9;
-
-function rayCrossings(polygon: [number, number][], origin: [number, number], dx: number, dy: number): number[] {
-  const hits: number[] = [];
-  for (let i = 0; i < polygon.length; i++) {
-    const [px, py] = polygon[i];
-    const [qx, qy] = polygon[(i + 1) % polygon.length];
-    const ex = qx - px;
-    const ey = qy - py;
-    const denominator = dx * ey - dy * ex;
-    if (Math.abs(denominator) < 1e-12) continue;
-    const wx = px - origin[0];
-    const wy = py - origin[1];
-    const t = (wx * ey - wy * ex) / denominator;
-    const s = (wx * dy - wy * dx) / denominator;
-    if (t > 1e-9 && s >= -EDGE_EPSILON && s < 1 - EDGE_EPSILON) hits.push(t);
-  }
-  return hits;
+export interface SignedDistanceField {
+  sdf: Float32Array;
+  grad: Int8Array;
+  maxDepth: number;
 }
 
-export function sampleAngle(index: number, samples: number): number {
-  return -Math.PI + (2 * Math.PI * index) / samples;
-}
-
-function sampleAngularRadii(
-  polygon: [number, number][],
-  samples: number,
-): { ok: true; radii: number[]; center: [number, number] } | { ok: false; reason: string } {
-  const center = polygonCentroid(polygon);
-  const radii: number[] = [];
-  for (let i = 0; i < samples; i++) {
-    const angle = sampleAngle(i, samples);
-    const hits = rayCrossings(polygon, center, Math.cos(angle), Math.sin(angle));
-    if (hits.length === 0) {
-      return {
-        ok: false,
-        reason: "the shape does not enclose its own center -- it may be open, or curl away from the middle",
-      };
-    }
-    if (hits.length > 1) {
-      return {
-        ok: false,
-        reason:
-          "the shape is not star-shaped: a straight line from its center crosses the outline more " +
-          "than once, so it has no single outline distance per direction (a crescent or spiral does this)",
-      };
-    }
-    radii.push(hits[0]);
-  }
-  return { ok: true, radii, center };
-}
-
-function toPathData(points: [number, number][]): string {
-  const format = (n: number): string => {
-    const fixed = n.toFixed(5);
-    const trimmed = fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
-    return trimmed === "-0" ? "0" : trimmed;
-  };
-  const body = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${format(x)},${format(y)}`).join("");
-  return `${body}Z`;
-}
-
-function differentiateWrapped(values: Float32Array): Float32Array {
-  const n = values.length;
-  const step = (2 * Math.PI) / n;
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    out[i] = (values[(i + 1) % n] - values[(i - 1 + n) % n]) / (2 * step);
-  }
-  return out;
-}
-
-export function buildObjectShapeFromRings(
+/**
+ * Rasterize already-normalized rings into a signed distance field: distance to
+ * the nearest point of the outline, positive inside, with the unit gradient
+ * alongside it.
+ *
+ * Exact distance to the outline rather than a grid distance transform. A
+ * transform is cheaper but quantizes the boundary to texel centres, and the
+ * gradient is the part that cannot survive that: it feeds the lighting normal
+ * directly, so a staircased distance shades as a faceted one. Measuring
+ * against the segments themselves costs a nearest-segment search per texel and
+ * gives both an exact distance and an exact gradient, which is why the rings
+ * are simplified first.
+ *
+ * Returns undefined when nothing landed inside -- a shape thinner than a texel
+ * everywhere has no interior to raise relief over.
+ */
+export function signedDistanceField(
   rings: [number, number][][],
-  samples = OBJECT_SHAPE_SAMPLES,
-): ObjectShapeResult {
+  tile: number = OBJECT_SDF_TILE,
+): SignedDistanceField | undefined {
+  const texelSize = (2 * OBJECT_SDF_MARGIN) / tile;
+  const simplified = rings.map((ring) => simplifyRing(ring, texelSize * SDF_SIMPLIFY_TEXEL_FRACTION));
+  const inside = insideMask(simplified, tile);
+
+  const sdf = new Float32Array(tile * tile);
+  const grad = new Int8Array(tile * tile * 2);
+  const closest: [number, number] = [0, 0];
+  let maxDepth = 0;
+
+  for (let row = 0; row < tile; row++) {
+    const y = sdfTexelCoordinate(row, tile);
+    for (let col = 0; col < tile; col++) {
+      const x = sdfTexelCoordinate(col, tile);
+      let best = Infinity;
+      let bestX = 0;
+      let bestY = 0;
+      for (const ring of simplified) {
+        for (let i = 0; i < ring.length; i++) {
+          const [x0, y0] = ring[i];
+          const [x1, y1] = ring[(i + 1) % ring.length];
+          const distance = segmentDistance(x, y, x0, y0, x1, y1, closest);
+          if (distance < best) {
+            best = distance;
+            bestX = closest[0];
+            bestY = closest[1];
+          }
+        }
+      }
+      if (!Number.isFinite(best)) return undefined;
+
+      const at = row * tile + col;
+      const isInside = inside[at] === 1;
+      sdf[at] = isInside ? best : -best;
+      if (isInside && best > maxDepth) maxDepth = best;
+
+      // away from the outline when inside, toward it when outside -- either
+      // way the direction in which the signed distance increases
+      const sign = isInside ? 1 : -1;
+      const dx = (x - bestX) * sign;
+      const dy = (y - bestY) * sign;
+      const length = Math.hypot(dx, dy);
+      if (length > 1e-12) {
+        grad[at * 2] = Math.max(-127, Math.min(127, Math.round((dx / length) * 127)));
+        grad[at * 2 + 1] = Math.max(-127, Math.min(127, Math.round((dy / length) * 127)));
+      }
+    }
+  }
+
+  if (!(maxDepth > 0)) return undefined;
+  return { sdf, grad, maxDepth };
+}
+
+/**
+ * Bilinear sample of a shape's signed distance at a point in the shape's own
+ * normalized space -- the CPU twin of the shader's objectDepthAt.
+ *
+ * Reads outside the tile return a large negative distance rather than clamping
+ * to the edge value, because clamping would report the rim's distance
+ * arbitrarily far away and make everything beyond the tile look like it was
+ * just outside the shape.
+ */
+export function objectShapeDepthAt(shape: ObjectShape, nx: number, ny: number): number {
+  const { tile, sdf } = shape;
+  const u = ((nx + OBJECT_SDF_MARGIN) / (2 * OBJECT_SDF_MARGIN)) * tile - 0.5;
+  const v = ((ny + OBJECT_SDF_MARGIN) / (2 * OBJECT_SDF_MARGIN)) * tile - 0.5;
+  if (u < -1 || v < -1 || u > tile || v > tile) return -OBJECT_SDF_MARGIN;
+
+  const col = Math.floor(u);
+  const row = Math.floor(v);
+  const fx = u - col;
+  const fy = v - row;
+  const clamp = (i: number): number => (i < 0 ? 0 : i > tile - 1 ? tile - 1 : i);
+  const c0 = clamp(col);
+  const c1 = clamp(col + 1);
+  const r0 = clamp(row);
+  const r1 = clamp(row + 1);
+
+  const top = sdf[r0 * tile + c0] + (sdf[r0 * tile + c1] - sdf[r0 * tile + c0]) * fx;
+  const bottom = sdf[r1 * tile + c0] + (sdf[r1 * tile + c1] - sdf[r1 * tile + c0]) * fx;
+  return top + (bottom - top) * fy;
+}
+
+/**
+ * How far along its falloff a point sits, 0 at the shape's deepest interior
+ * point and 1 at its outline -- the CPU twin of the shader's `u`.
+ *
+ * For a circle this is exactly `distance / radius`, which is what makes an
+ * object with no custom shape and one shaped like a circle the same case.
+ */
+export function objectShapeProfileU(shape: ObjectShape, nx: number, ny: number): number {
+  return 1 - objectShapeDepthAt(shape, nx, ny) / shape.maxDepth;
+}
+
+export function formatPathNumber(n: number): string {
+  const fixed = n.toFixed(5);
+  const trimmed = fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
+  return trimmed === "-0" ? "0" : trimmed;
+}
+
+export function toPathData(rings: [number, number][][]): string {
+  return rings
+    .map(
+      (points) =>
+        points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${formatPathNumber(x)},${formatPathNumber(y)}`).join("") + "Z",
+    )
+    .join("");
+}
+
+/**
+ * Where a shape's own coordinates sit relative to its outline: the centre a
+ * tile is built around and the scale that puts the outline's furthest point at
+ * exactly 1.
+ *
+ * The bounding box's centre rather than the area centroid, because a centroid
+ * is only a sensible origin for a shape that contains it. A crescent's
+ * centroid falls in the gap, a ring's in the hole, and a pair of disjoint
+ * pieces puts it in the space between them -- all shapes this now has to
+ * normalize. The bounding box's centre is defined for every one of them, and
+ * for the round blobs that used to be the only allowed case it lands in
+ * practically the same place.
+ *
+ * **The server mirrors this exactly** (see normalize_rings in object_math.py).
+ * It is what makes an object's `cx`/`cy`/`radius` agree with the tile its
+ * shape is rasterized into; drift between the two implementations shows up as
+ * relief offset from the outline it was drawn for.
+ */
+export function normalizeRings(rings: [number, number][][]): {
+  rings: [number, number][][];
+  center: [number, number];
+  scale: number;
+} {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const ring of rings) {
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const center: [number, number] = [(minX + maxX) / 2, (minY + maxY) / 2];
+
+  let scale = 0;
+  for (const ring of rings) {
+    for (const [x, y] of ring) {
+      const reach = Math.hypot(x - center[0], y - center[1]);
+      if (reach > scale) scale = reach;
+    }
+  }
+  if (!(scale > 0)) return { rings, center, scale: 0 };
+
+  return {
+    rings: rings.map((ring) =>
+      ring.map(([x, y]): [number, number] => [(x - center[0]) / scale, (y - center[1]) / scale]),
+    ),
+    center,
+    scale,
+  };
+}
+
+/**
+ * Build an object shape from one or more closed rings.
+ *
+ * Every ring is kept. What used to be three rejections -- a hole, several
+ * separate pieces, an outline that is not star-shaped -- are all just shapes
+ * now: the field is sampled by position, so a crescent, an annulus and a pair
+ * of disjoint blobs each rasterize as readily as a circle. The only remaining
+ * failure is an outline that encloses nothing measurable at all.
+ */
+export function buildObjectShapeFromRings(rings: [number, number][][], tile = OBJECT_SDF_TILE): ObjectShapeResult {
   const usable = rings.filter((ring) => ring.length >= 3 && Math.abs(polygonArea(ring)) > 0);
   if (usable.length === 0) {
     return { ok: false, reason: "no closed region found in the svg -- an object shape needs a filled outline" };
   }
 
-  const byArea = [...usable].sort((a, b) => Math.abs(polygonArea(b)) - Math.abs(polygonArea(a)));
-  const silhouette = byArea[0];
-  const silhouetteArea = Math.abs(polygonArea(silhouette));
-  const competing = byArea
-    .slice(1)
-    .filter((r) => Math.abs(polygonArea(r)) >= silhouetteArea * STRAY_SUBPATH_AREA_FRACTION);
-  if (competing.length > 0) {
-    const allInside = competing.every((ring) => ring.every((point) => pointInPolygon(point, silhouette)));
-    return {
-      ok: false,
-      reason: allInside
-        ? `the svg's outline has ${competing.length === 1 ? "a hole" : `${competing.length} holes`} cut out of ` +
-          "it -- an object shape must be one solid outline, so try a filled version of the same shape"
-        : `the svg is ${competing.length + 1} separate pieces -- an object shape must be a single solid outline`,
-    };
-  }
-
-  const validation = sampleAngularRadii(silhouette, OBJECT_SHAPE_VALIDATION_SAMPLES);
-  if (!validation.ok) return validation;
-
-  const sampled = sampleAngularRadii(silhouette, samples);
-  if (!sampled.ok) return sampled;
-
-  const maxRadius = Math.max(...validation.radii);
-  if (!(maxRadius > 0)) {
+  const normalized = normalizeRings(usable);
+  if (!(normalized.scale > 0)) {
     return { ok: false, reason: "the shape has no measurable extent" };
   }
 
-  const rho = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) rho[i] = sampled.radii[i] / maxRadius;
+  const field = signedDistanceField(normalized.rings, tile);
+  if (!field) {
+    return {
+      ok: false,
+      reason: "the shape encloses no area to raise relief over -- it may be a hairline, or all outline and no inside",
+    };
+  }
 
-  const [cx, cy] = sampled.center;
-  const normalized: [number, number][] = silhouette.map(([x, y]) => [(x - cx) / maxRadius, (y - cy) / maxRadius]);
-
-  return { ok: true, shape: { path: toPathData(normalized), rho, rhoPrime: differentiateWrapped(rho) } };
+  return {
+    ok: true,
+    shape: {
+      path: toPathData(normalized.rings),
+      tile,
+      sdf: field.sdf,
+      grad: field.grad,
+      maxDepth: field.maxDepth,
+      maxExtent: 1,
+    },
+  };
 }
 
 export function decodeSvgMarkup(markup: string): string {
@@ -494,28 +776,60 @@ export function decodeSvgMarkup(markup: string): string {
   }
 }
 
-export function buildObjectShapeFromMarkup(markup: string, samples = OBJECT_SHAPE_SAMPLES): ObjectShapeResult {
+export function buildObjectShapeFromMarkup(markup: string, tile = OBJECT_SDF_TILE): ObjectShapeResult {
   const paths = extractPathData(markup);
   if (paths.length === 0) {
     return { ok: false, reason: "the svg has no <path> element to take a shape from" };
   }
   return buildObjectShapeFromRings(
     paths.flatMap((d) => flattenPathData(d)),
-    samples,
+    tile,
   );
 }
 
-export function sampleObjectShapePath(path: string, samples = OBJECT_SHAPE_SAMPLES): ObjectShape | undefined {
-  const result = buildObjectShapeFromRings(flattenPathData(path), samples);
+export function sampleObjectShapePath(path: string, tile = OBJECT_SDF_TILE): ObjectShape | undefined {
+  const result = buildObjectShapeFromRings(flattenPathData(path), tile);
   return result.ok ? result.shape : undefined;
 }
 
+/**
+ * How many built shapes to keep. Each holds a tile-sized field rather than the
+ * two small arrays the angular table used, and the shape editor mints a fresh
+ * path string on every frame of a drag -- so this being a plain unbounded Map,
+ * as it was, would grow by ~96KB per pointermove for as long as the session
+ * lasts.
+ */
+const SHAPE_CACHE_LIMIT = 24;
+
 const shapeCache = new Map<string, ObjectShape | undefined>();
 
-export function cachedObjectShape(path: string): ObjectShape | undefined {
+/**
+ * The rendered shape for a stored path, built once and kept.
+ *
+ * `tile` exists for the shape editor. Rasterizing is quadratic in the tile
+ * side -- measured at 58ms for a traced outline at OBJECT_SDF_TILE against
+ * 10ms at OBJECT_SDF_DRAFT_TILE -- and a drag mints a new path every frame, so
+ * every frame is a cache miss and a full rebuild. At full resolution that is
+ * about eight frames a second; at draft resolution the relief keeps up with
+ * the pen. The tile is part of the key, so the draft a drag leaves behind
+ * cannot be mistaken for the real one once it is committed.
+ */
+export function cachedObjectShape(path: string, tile: number = OBJECT_SDF_TILE): ObjectShape | undefined {
   if (!path) return undefined;
-  if (shapeCache.has(path)) return shapeCache.get(path);
-  const shape = sampleObjectShapePath(path);
-  shapeCache.set(path, shape);
+  const key = tile === OBJECT_SDF_TILE ? path : `${tile} ${path}`;
+  if (shapeCache.has(key)) {
+    // re-insert so the most recently used entry is always last, which is what
+    // makes the eviction below least-recently-used rather than arbitrary
+    const cached = shapeCache.get(key);
+    shapeCache.delete(key);
+    shapeCache.set(key, cached);
+    return cached;
+  }
+  const shape = sampleObjectShapePath(path, tile);
+  shapeCache.set(key, shape);
+  if (shapeCache.size > SHAPE_CACHE_LIMIT) {
+    const oldest = shapeCache.keys().next();
+    if (!oldest.done) shapeCache.delete(oldest.value);
+  }
   return shape;
 }

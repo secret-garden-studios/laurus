@@ -22,6 +22,7 @@ import {
 } from "@/app/svg-repo";
 import { UIActionType } from "../states/ui-state";
 import Maskbar from "./maskbar";
+import Penbar from "./penbar";
 import Zoombar from "./zoombar";
 import LightSourcebar from "./lightsourcebar";
 
@@ -424,6 +425,8 @@ export function Subtitlebar() {
               return <Mixbar />;
             case "mask":
               return <Maskbar />;
+            case "pen":
+              return <Penbar />;
           }
         })()}
       </div>

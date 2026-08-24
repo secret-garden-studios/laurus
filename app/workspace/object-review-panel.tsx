@@ -1,9 +1,11 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useObjectReview } from "./hooks/useObjectReview";
 import { Z_INDEX } from "./workspace.config";
 import { SvgRepo, checkCircle, chevronLeft, chevronRight } from "../svg-repo";
 import { MAX_MASK_OBJECTS } from "./mask-gl";
 import { acceptedObjectCount } from "./states/ui-state";
+import { buildObjectShapeFromRings, cachedObjectShape, flattenPathData } from "./canvas-media/object-shape";
+import { ringPieces } from "./canvas-media/object-path";
 
 const DECISION_COLOR = {
   none: "rgb(67, 67, 67)",
@@ -23,10 +25,47 @@ export default function ObjectReviewPanel() {
     requestRedo,
     decideCurrentObject,
     saveEditedObject,
+    setEditingShape,
+    revertShape,
     goToPreviousCandidate,
     goToNextCandidate,
     endReview,
   } = useObjectReview();
+
+  // The two ways a reshaped outline can fail to be a saveable object.
+  //
+  // It may have been left in several pieces, which stitching does deliberately
+  // -- so this is not really an error, it is the second half of the gesture
+  // still outstanding. Nothing here can settle it, because which piece was
+  // meant is exactly what only the reviewer knows; the pen takes the pick.
+  //
+  // Or it may have been folded through itself until it stops being renderable,
+  // and would otherwise be saved to render as a plain circle with nothing
+  // anywhere saying why. cachedObjectShape is the same lookup the renderer
+  // makes, so that check costs nothing the editor has not already paid; the
+  // reason is only built in the failing case.
+  //
+  // Only ever an edited outline. A detected shape that happens to arrive in
+  // two pieces is detection's business and was accepted that way long before
+  // the pen existed -- the reviewer is only ever held to what they drew.
+  const edited = review?.editedShape?.path;
+  const { shapeRefusal, multiplePieces } = useMemo((): {
+    shapeRefusal: string | undefined;
+    multiplePieces: boolean;
+  } => {
+    if (!edited) return { shapeRefusal: undefined, multiplePieces: false };
+    const rings = flattenPathData(edited);
+    const pieces = ringPieces(rings).pieces.length;
+    if (pieces > 1) {
+      return {
+        shapeRefusal: `the outline is in ${pieces} pieces -- click the one to keep, and the rest are discarded`,
+        multiplePieces: true,
+      };
+    }
+    if (cachedObjectShape(edited)) return { shapeRefusal: undefined, multiplePieces: false };
+    const built = buildObjectShapeFromRings(rings);
+    return { shapeRefusal: built.ok ? undefined : built.reason, multiplePieces: false };
+  }, [edited]);
 
   if (!review) return null;
 
@@ -44,6 +83,7 @@ export default function ObjectReviewPanel() {
       descriptionRef.current?.focus();
       return;
     }
+    if (shapeRefusal) return;
     if (isEdit) void saveEditedObject(description);
     else void decideCurrentObject("accepted", description);
   };
@@ -127,7 +167,11 @@ export default function ObjectReviewPanel() {
         <span>
           {isLocked
             ? "already decided -- highlighted triangles differ from the original"
-            : "click a triangle to add or remove it from this object"}
+            : // while the outline is in pieces the pen has the canvas, and a
+              // click lands on a piece rather than on a triangle
+              multiplePieces
+              ? "click the piece to keep -- the triangles follow the outline"
+              : "click a triangle to add or remove it from this object"}
         </span>
         {!isEdit && (
           <div onDoubleClick={requestRedo} style={{ display: "flex", flexShrink: 0 }}>
@@ -151,6 +195,58 @@ export default function ObjectReviewPanel() {
           </div>
         )}
       </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <button
+          type="button"
+          disabled={isLocked}
+          onClick={() => {
+            // closing the pen abandons an uncommitted reshape: an edit is kept
+            // by accepting the object, not by looking away from it
+            if (review.editingShape) revertShape();
+            setEditingShape(!review.editingShape);
+          }}
+          title={
+            isLocked
+              ? "double-click the check mark to make a new decision"
+              : review.editingShape
+                ? "hide the outline's handles"
+                : "show the outline's handles -- drag an anchor to move it, a handle to curve it, alt-drag to corner it"
+          }
+          style={{
+            flex: 1,
+            padding: "5px 0",
+            borderRadius: 4,
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            background: review.editingShape ? "rgb(67, 67, 67)" : "rgb(24, 24, 24)",
+            color: isLocked ? "rgb(120, 120, 120)" : "inherit",
+            cursor: isLocked ? "not-allowed" : "pointer",
+            fontSize: 12,
+          }}
+        >
+          {review.editingShape ? "editing shape" : "edit shape"}
+        </button>
+        {review.editedShape !== undefined && (
+          <button
+            type="button"
+            onClick={revertShape}
+            title="put the outline back the way detection drew it"
+            style={{
+              padding: "5px 10px",
+              borderRadius: 4,
+              border: "1px solid rgba(255, 255, 255, 0.15)",
+              background: "rgb(24, 24, 24)",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            revert
+          </button>
+        )}
+      </div>
+      {shapeRefusal && (
+        <span style={{ color: "rgb(211, 71, 71)", fontSize: 12, lineHeight: 1.35 }}>{shapeRefusal}</span>
+      )}
       <input
         key={`${review.mode}|${candidate.object.id}`}
         ref={descriptionRef}
@@ -200,17 +296,23 @@ export default function ObjectReviewPanel() {
         </button>
         <button
           type="button"
-          disabled={isDeciding || isLocked}
+          disabled={isDeciding || isLocked || shapeRefusal !== undefined}
           onClick={commit}
-          title={!isEdit && isLocked ? "double-click the check mark to make a new decision" : undefined}
+          title={
+            shapeRefusal
+              ? shapeRefusal
+              : !isEdit && isLocked
+                ? "double-click the check mark to make a new decision"
+                : undefined
+          }
           style={{
             flex: 1,
             padding: "8px 0",
             borderRadius: 4,
             border: "none",
-            background: isDeciding || isLocked ? "rgba(67, 67, 67, 0.4)" : "rgb(67, 67, 67)",
-            color: isDeciding || isLocked ? "rgb(120, 120, 120)" : "rgb(255, 255, 255)",
-            cursor: isDeciding ? "progress" : isLocked ? "not-allowed" : "pointer",
+            background: isDeciding || isLocked || shapeRefusal ? "rgba(67, 67, 67, 0.4)" : "rgb(67, 67, 67)",
+            color: isDeciding || isLocked || shapeRefusal ? "rgb(120, 120, 120)" : "rgb(255, 255, 255)",
+            cursor: isDeciding ? "progress" : isLocked || shapeRefusal ? "not-allowed" : "pointer",
           }}
         >
           {isEdit ? "save" : "accept"}

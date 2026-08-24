@@ -764,6 +764,7 @@ export async function postObjectReviewDecision(
   description?: string,
   addedPolygonIndices?: number[],
   removedPolygonIndices?: number[],
+  shape?: { path: string; cx: number; cy: number; radius: number },
 ): Promise<ObjectReviewDecisionResponse_V1_0 | undefined> {
   try {
     const url = `${baseUrl}/media/masks/${maskMediaId}/object-review/decisions`;
@@ -773,6 +774,11 @@ export async function postObjectReviewDecision(
       description,
       added_polygon_indices: addedPolygonIndices ?? [],
       removed_polygon_indices: removedPolygonIndices ?? [],
+      // omitted rather than null when untouched: the server reads absent as
+      // "keep the candidate's own outline", and the candidate is never mutated.
+      // cx/cy/radius ride along because a reshaped outline moves them -- the
+      // path is renormalized to unit extent, so the growth lives in the radius
+      ...(shape === undefined ? {} : { shape: shape.path, cx: shape.cx, cy: shape.cy, radius: shape.radius }),
     });
     let response: Response | undefined = undefined;
     const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
