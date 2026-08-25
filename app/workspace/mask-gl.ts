@@ -949,7 +949,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
   gl.uniform1fv(state.lightShapeMaxDepthLoc, lightShapeMaxDepth);
 
-  const activeObjects = activeMaskObjects(options.objects);
+  const activeObjects = drawnMaskObjects(options.objects);
   gl.uniform1i(state.objectCountLoc, activeObjects.length);
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
@@ -1325,15 +1325,49 @@ export function objectToShape(rotation: ObjectRotation | undefined, x: number, y
   return [a * x + b * y, c * x + d * y];
 }
 
+/**
+ * Whether this object deforms the mesh -- the question the subdivision and the
+ * swelled hit-tests ask, and only that one.
+ *
+ * Elevation is what makes it true: objectSwell scales its displacement by
+ * `elevation * profile` and objectField accumulates `elevation * profile`, so a
+ * flat object moves no vertex and tilts no normal however large its radius.
+ * There is nothing to subdivide for and nothing to swell a hit-test against.
+ */
 export function isActiveObject(object: ObjectGeometryInput): boolean {
   return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
 }
 
+/**
+ * Whether this object puts anything on screen -- the question the uniform
+ * upload asks, which is a strictly weaker one.
+ *
+ * Relief is not the only thing an object draws. objectBlackPoint tints from its
+ * outline and its falloff with no reference to elevation at all, and objectLift
+ * carries the picture inside it from centre, radius and rotation alone. Both
+ * read `u_objects`, so both need the object in a slot -- and gating that upload
+ * on elevation, the way the deformation test does, is what made a flat object
+ * inert: never uploaded, so its colour had nowhere to land and an effect
+ * animating its pose had no slot to write the new pose into, which is why a
+ * move, rotate or scale preview looked like it did nothing at all.
+ */
+export function isDrawnObject(object: ObjectGeometryInput): boolean {
+  if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  return object.elevation !== 0 || (object.blackPoint?.a ?? 0) > 0 || object.lift !== undefined;
+}
+
+// Deepest relief first, since that is the one whose loss would show most if
+// there are more objects than the shader has slots for.
+function cappedByElevation<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return objects.sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation)).slice(0, MAX_MASK_OBJECTS);
+}
+
 export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
-  return objects
-    .filter(isActiveObject)
-    .sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation))
-    .slice(0, MAX_MASK_OBJECTS);
+  return cappedByElevation(objects.filter(isActiveObject));
+}
+
+export function drawnMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return cappedByElevation(objects.filter(isDrawnObject));
 }
 
 export function objectProfileK(u: number, falloff: number): number {

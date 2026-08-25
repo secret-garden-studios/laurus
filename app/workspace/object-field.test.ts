@@ -10,12 +10,15 @@ import {
   MAX_MASK_OBJECT_ELEVATION,
   MIN_MASK_OBJECT_FALLOFF,
   isActiveObject,
+  isDrawnObject,
+  MAX_MASK_OBJECTS,
   objectProfileK,
   objectSwellAt,
   OBJECT_SDF_ATLAS,
   OBJECT_SDF_GRID,
   OBJECT_SDF_RANGE,
   activeMaskObjects,
+  drawnMaskObjects,
   encodeObjectSdfAtlas,
   objectProfileUAt,
 } from "./mask-gl.ts";
@@ -27,6 +30,9 @@ const FALLOFFS = [1, 2, 4, 6];
 function object(over: Partial<ObjectGeometryInput> = {}): ObjectGeometryInput {
   return { cx: 100, cy: 100, radius: 50, elevation: 80, falloff: 2, ...over };
 }
+
+const opaqueRed = { r: 1, g: 0, b: 0, a: 1 };
+const restPose = { cx: 100, cy: 100, radius: 50 };
 
 function maxSwellAlongRadius(p: ObjectGeometryInput, step = 0.001): number {
   let worst = 0;
@@ -539,8 +545,8 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
   });
 });
 
-describe("isActiveObject -- the shared 'worth uploading / worth subdividing for' predicate", () => {
-  it("rejects objects that cannot contribute to the field", () => {
+describe("isActiveObject -- the 'worth subdividing for / worth swelling against' predicate", () => {
+  it("rejects objects that cannot deform the mesh", () => {
     assert.equal(isActiveObject(object({ elevation: 0 })), false, "zero elevation");
     assert.equal(isActiveObject(object({ radius: 0 })), false, "zero radius");
     assert.equal(isActiveObject(object({ radius: -5 })), false, "negative radius");
@@ -554,6 +560,72 @@ describe("isActiveObject -- the shared 'worth uploading / worth subdividing for'
     for (let d = 0; d < flat.radius; d += 1) {
       assert.deepEqual(objectSwellAt([flat.cx + d, flat.cy], [flat]), [0, 0], `at d=${d}`);
     }
+  });
+
+  it("stays blind to the things that draw without deforming", () => {
+    assert.equal(isActiveObject(object({ elevation: 0, blackPoint: opaqueRed })), false, "a flat tint");
+    assert.equal(isActiveObject(object({ elevation: 0, lift: restPose })), false, "a flat lift");
+  });
+});
+
+describe("isDrawnObject -- the 'worth uploading' predicate", () => {
+  it("uploads a flat object that still has something to draw", () => {
+    assert.equal(isDrawnObject(object({ elevation: 0 })), false, "flat, uncoloured and unlifted");
+    assert.equal(isDrawnObject(object({ elevation: 0, blackPoint: opaqueRed })), true, "a flat tint");
+    assert.equal(isDrawnObject(object({ elevation: 0, lift: restPose })), true, "a flat lift");
+  });
+
+  it("reads the black point's alpha rather than its colour", () => {
+    const invisible = { r: 1, g: 0, b: 0, a: 0 };
+    assert.equal(isDrawnObject(object({ elevation: 0, blackPoint: invisible })), false, "fully transparent");
+    assert.equal(
+      isDrawnObject(object({ elevation: 0, blackPoint: { ...invisible, a: 0.01 } })),
+      true,
+      "barely there is still there",
+    );
+  });
+
+  it("still rejects what no amount of colour can rescue", () => {
+    assert.equal(isDrawnObject(object({ radius: 0, blackPoint: opaqueRed })), false, "zero radius");
+    assert.equal(isDrawnObject(object({ radius: -5, blackPoint: opaqueRed })), false, "negative radius");
+    assert.equal(
+      isDrawnObject(object({ blackPoint: opaqueRed, rotation: { inverse: [1, 0, 0, 1], visible: false } })),
+      false,
+      "turned edge-on",
+    );
+  });
+
+  it("is a strict superset of isActiveObject, so nothing that deforms goes unuploaded", () => {
+    const candidates = [
+      object(),
+      object({ elevation: -80 }),
+      object({ elevation: 0 }),
+      object({ elevation: 0, blackPoint: opaqueRed }),
+      object({ elevation: 0, lift: restPose }),
+      object({ radius: 0 }),
+      object({ rotation: { inverse: [1, 0, 0, 1], visible: false } }),
+    ];
+    for (const candidate of candidates) {
+      if (isActiveObject(candidate)) assert.ok(isDrawnObject(candidate), JSON.stringify(candidate));
+    }
+  });
+});
+
+describe("drawnMaskObjects -- the uploaded set", () => {
+  it("carries a flat tinted object into the uniforms alongside the raised ones", () => {
+    const flat = object({ cx: 10, elevation: 0, blackPoint: opaqueRed });
+    const raised = object({ cx: 20 });
+    const inert = object({ cx: 30, elevation: 0 });
+
+    assert.deepEqual(activeMaskObjects([flat, raised, inert]), [raised], "only the raised one deforms");
+    assert.deepEqual(drawnMaskObjects([flat, raised, inert]), [raised, flat], "the flat tint is uploaded too");
+  });
+
+  it("never exceeds the shader's slot count", () => {
+    const many = Array.from({ length: MAX_MASK_OBJECTS * 2 }, (_, i) =>
+      object({ cx: i, elevation: 0, blackPoint: opaqueRed }),
+    );
+    assert.equal(drawnMaskObjects(many).length, MAX_MASK_OBJECTS);
   });
 });
 
