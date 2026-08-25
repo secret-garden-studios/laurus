@@ -173,7 +173,19 @@ describe("mask deltas -- patching only what an edit touched", () => {
 
     const patched = applyLightDelta(mask, {
       light_id: 2,
-      light: { id: 2, name: "light 2", size: 10, intensity: 1, falloff: 1, darkness: 0 },
+      light: {
+        id: 2,
+        name: "light 2",
+        size: 10,
+        intensity: 1,
+        falloff: 1,
+        darkness: 0,
+        cx: 0,
+        cy: 0,
+        radius: 0,
+        shape: "",
+        description: "",
+      },
       removed: false,
       tagged_polygon_indices: [],
       cleared_polygon_indices: [],

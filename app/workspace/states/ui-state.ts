@@ -4,6 +4,7 @@ import {
   LaurusImgResult,
   LaurusEffect,
   LaurusSvgResult,
+  LaurusLight,
   LaurusObject,
   LaurusObjectReviewCandidate,
   LaurusPolygonPath,
@@ -133,21 +134,51 @@ export interface ObjectRetouch {
   added: number;
 }
 
-export interface ObjectReviewSession {
-  mode: ObjectReviewMode;
+/**
+ * The fields every shapeable thing on a mask has in common.
+ *
+ * An object and a light are different in almost every way that matters --
+ * one raises relief, the other casts light -- but the pen does not care about
+ * any of that. It needs somewhere to draw, something to name, and somewhere to
+ * put the result, and both have exactly those. Naming that overlap once is
+ * what lets a single pen, a single overlay and a single session serve both
+ * instead of two of each drifting apart.
+ *
+ * `cx`/`cy`/`radius` are not decoration on `shape`: a stored path is
+ * normalized to unit extent and scaled by the radius, so the four are one
+ * value in four fields and pairing a path with another region's geometry
+ * renders it at the wrong size and place.
+ */
+export interface EditableRegion {
+  id: number;
+  name: string;
+  description: string;
+  cx: number;
+  cy: number;
+  radius: number;
+  shape: string;
+}
+
+/**
+ * The state the pen keeps, whatever it happens to be open on.
+ *
+ * Split out from the two session kinds below rather than repeated in each,
+ * because every one of these is read and written by machinery that genuinely
+ * does not know which kind it has: the overlay, the retouch, the toolbar
+ * hand-off, the revert. A field that appeared on only one of them would be a
+ * field that silently does nothing half the time.
+ */
+interface MaskEditSessionBase {
   maskMediaId: string;
   maskKey: string;
-  candidates: LaurusObjectReviewCandidate[];
-  decisions: Map<number, "accepted" | "rejected">;
-  currentIndex: number;
+  /** Which of the mask's triangles the thing being edited currently claims. */
   currentIndices: Set<number>;
-  redoRequested: boolean;
   /**
-   * The outline the reviewer has redrawn for the current candidate, or
-   * undefined while it is still the one detection produced. Held here rather
-   * than written straight through because it is a diff against a candidate
-   * that is never mutated -- the same way currentIndices is -- and because a
-   * candidate may still be rejected after being reshaped.
+   * The outline the editor has redrawn, or undefined while it is still the one
+   * that was there when the session opened. Held here rather than written
+   * straight through because it is a diff against something that is never
+   * mutated -- the same way currentIndices is -- and because the edit may still
+   * be abandoned.
    *
    * The geometry travels with the path and is not optional. A stored outline
    * is normalized to unit extent and scaled by `radius`, so pulling an anchor
@@ -155,26 +186,80 @@ export interface ObjectReviewSession {
    * the path without it would render the edit scaled back to where it started.
    */
   editedShape: ObjectShapeEdit | undefined;
-  /** Whether the pen overlay is open on the current candidate. */
+  /** Whether the pen overlay is open. */
   editingShape: boolean;
   /**
    * The tool the pen was opened over, held so closing it can put the toolbar
    * back exactly as it was. Undefined whenever the pen is shut.
    *
-   * Restoring a remembered tool rather than a default, because a review is
+   * Restoring a remembered tool rather than a default, because a session is
    * reached part-way through a mask-tool gesture -- objects armed, light off
    * -- and dropping back to a fresh mask tool would quietly undo that.
    */
   penReturnTool: LaurusTool | undefined;
   /**
-   * The recut mesh the reviewer has asked for on this candidate, or undefined
-   * while the mesh is still the one the mask was triangulated with.
+   * The recut mesh the editor has asked for, or undefined while the mesh is
+   * still the one the mask was triangulated with.
    *
    * Dropped on every move to another candidate for the same reason editedShape
-   * is: it is a diff against a candidate, and carrying it to the next one
-   * would recut a mesh against an outline that is no longer on screen.
+   * is: it is a diff against one region, and carrying it to the next would
+   * recut a mesh against an outline that is no longer on screen.
    */
   retouch: ObjectRetouch | undefined;
+}
+
+export interface ObjectReviewSession extends MaskEditSessionBase {
+  subject: "object";
+  mode: ObjectReviewMode;
+  candidates: LaurusObjectReviewCandidate[];
+  decisions: Map<number, "accepted" | "rejected">;
+  currentIndex: number;
+  redoRequested: boolean;
+}
+
+/**
+ * The pen open on one light.
+ *
+ * There is no `mode` and no `decisions` because there is nothing to review: a
+ * light is not proposed by detection the way an object is, so the only thing
+ * anyone ever does to one is edit it. That is also why the light rides on the
+ * session directly rather than as a one-element candidate list -- a list of
+ * one, with an index that can only be zero, would be pretending a light can be
+ * stepped through.
+ *
+ * The light held here is the one the session opened on, and it stays that way.
+ * Like a review candidate it is a fixed thing that `editedShape` is a diff
+ * against, not a running copy of what the mask holds.
+ */
+export interface LightEditSession extends MaskEditSessionBase {
+  subject: "light";
+  light: LaurusLight;
+}
+
+/**
+ * Whatever the pen is currently open on -- at most one thing, ever.
+ *
+ * One session rather than one per kind, because the things that would have to
+ * be duplicated are the things that must not disagree: which tool the toolbar
+ * shows, which overlay is mounted, and which mesh the mask is drawing. Two
+ * sessions could both be open, and then two of those three would be wrong.
+ */
+export type MaskEditSession = ObjectReviewSession | LightEditSession;
+
+/**
+ * The region the pen is open on, whichever kind of session it belongs to.
+ *
+ * Undefined only for a review whose candidate index has gone stale, which the
+ * callers already have to handle.
+ *
+ * Note this is the region the session *opened* on -- the candidate as detected,
+ * or the light as stored. Where an edit has since been accepted onto the mask,
+ * what is on screen is the mask's copy, not this one; resolving that is the
+ * canvas's business because only it holds the mask (see reviewShape).
+ */
+export function editedRegion(session: MaskEditSession): EditableRegion | undefined {
+  if (session.subject === "light") return session.light;
+  return session.candidates[session.currentIndex]?.object;
 }
 
 /**
@@ -183,48 +268,62 @@ export interface ObjectReviewSession {
  * The pen is a tool as much as it is a panel button: while it is open the
  * subtitle bar shows the pen's own controls, and those controls live on
  * `tool` the way every other bar's do. The two therefore have to move
- * together, and there are five places the pen closes -- the panel button,
+ * together, and there are six places the pen closes -- the panel button,
  * stepping to another candidate, recording a decision, ending the review,
- * starting a new one -- so they all come through here rather than each
- * remembering to set the tool as well.
+ * saving a light, starting a new session -- so they all come through here
+ * rather than each remembering to set the tool as well.
+ *
+ * Generic over the session kind so that closing the pen hands back a session
+ * of the kind it was given, rather than widening a light edit to the union on
+ * the way through and making every caller narrow it again.
  */
-function withShapeEditing(state: UIState, review: ObjectReviewSession, editing: boolean): UIState {
-  if (editing === review.editingShape) return { ...state, objectReview: review };
+function withShapeEditing<T extends MaskEditSession>(state: UIState, session: T, editing: boolean): UIState {
+  if (editing === session.editingShape) return { ...state, maskEdit: session };
   if (editing) {
     return {
       ...state,
       tool: defaultPenTool,
-      objectReview: {
-        ...review,
+      maskEdit: {
+        ...session,
         editingShape: true,
-        penReturnTool: state.tool.type === "pen" ? review.penReturnTool : state.tool,
+        penReturnTool: state.tool.type === "pen" ? session.penReturnTool : state.tool,
       },
     };
   }
   return {
     ...state,
-    tool: closedPenTool(state, review),
-    objectReview: { ...review, editingShape: false, penReturnTool: undefined },
+    tool: closedPenTool(state, session),
+    maskEdit: { ...session, editingShape: false, penReturnTool: undefined },
   };
 }
 
 /**
  * The tool to leave behind once the pen is gone -- for the cases that discard
- * the review session outright and so have no session left to shut the pen on.
+ * the session outright and so have no session left to shut the pen on.
  *
  * The mask tool is the fallback rather than the current one because the
  * current one is the pen, and leaving that selected would show a bar for an
  * overlay that is no longer mounted.
  */
-function closedPenTool(state: UIState, review: ObjectReviewSession | undefined): LaurusTool {
+function closedPenTool(state: UIState, session: MaskEditSession | undefined): LaurusTool {
   if (state.tool.type !== "pen") return state.tool;
-  return review?.penReturnTool ?? defaultMaskTool;
+  return session?.penReturnTool ?? defaultMaskTool;
 }
 
-export function isObjectReviewLocked(review: ObjectReviewSession): boolean {
-  if (review.mode !== "review" || review.redoRequested) return false;
-  const candidate = review.candidates[review.currentIndex];
-  return candidate !== undefined && review.decisions.has(candidate.object.id);
+/**
+ * Whether the session refuses edits because its subject has already been
+ * decided.
+ *
+ * Only ever true of a review. A light edit has no decision to be locked by,
+ * and neither does an object opened straight from the context menu -- both are
+ * someone deliberately choosing to change one thing, which is the same gesture
+ * that unlocks a decided candidate.
+ */
+export function isMaskEditLocked(session: MaskEditSession): boolean {
+  if (session.subject !== "object") return false;
+  if (session.mode !== "review" || session.redoRequested) return false;
+  const candidate = session.candidates[session.currentIndex];
+  return candidate !== undefined && session.decisions.has(candidate.object.id);
 }
 
 export interface UIState {
@@ -254,7 +353,8 @@ export interface UIState {
   lightSourcePreview: boolean;
   canvasZoom: number;
   stagedObject: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint };
-  objectReview: ObjectReviewSession | undefined;
+  /** Whatever the pen is open on, or undefined when it is open on nothing. */
+  maskEdit: MaskEditSession | undefined;
 }
 
 export const defaultUIState: UIState = {
@@ -292,7 +392,7 @@ export const defaultUIState: UIState = {
     falloff: OBJECT_FALLOFF_DEFAULT,
     blackPoint: OBJECT_BLACK_POINT_DEFAULT,
   },
-  objectReview: undefined,
+  maskEdit: undefined,
 };
 
 export enum UIActionType {
@@ -332,16 +432,19 @@ export enum UIActionType {
   SetStagedObject,
   StartObjectReview,
   StartObjectEdit,
-  ToggleObjectReviewPolygon,
+  StartLightEdit,
   SetObjectReviewIndex,
   RequestObjectReviewRedo,
-  SetObjectReviewShape,
-  SetObjectReviewShapeEditing,
-  SetObjectReviewIndices,
-  SetObjectReviewRetouch,
   RecordObjectReviewDecision,
-  EndObjectReview,
   ResumeObjectReview,
+  // Shared by both kinds of session -- these are the pen's own actions, and
+  // the pen does not know or care whether it is open on an object or a light.
+  ToggleMaskEditPolygon,
+  SetMaskEditShape,
+  SetMaskEditShapeEditing,
+  SetMaskEditIndices,
+  SetMaskEditRetouch,
+  EndMaskEdit,
 }
 
 export type UIAction =
@@ -409,19 +512,26 @@ export type UIAction =
       object: LaurusObject;
       polygonIndices: number[];
     }
-  | { type: UIActionType.ToggleObjectReviewPolygon; index: number }
+  | {
+      type: UIActionType.StartLightEdit;
+      maskMediaId: string;
+      maskKey: string;
+      light: LaurusLight;
+      polygonIndices: number[];
+    }
+  | { type: UIActionType.ToggleMaskEditPolygon; index: number }
   | { type: UIActionType.SetObjectReviewIndex; index: number; currentIndices?: Set<number> }
   | { type: UIActionType.RequestObjectReviewRedo }
-  | { type: UIActionType.SetObjectReviewShape; shape: ObjectShapeEdit | undefined }
-  | { type: UIActionType.SetObjectReviewIndices; indices: Set<number> }
-  | { type: UIActionType.SetObjectReviewRetouch; retouch: ObjectRetouch | undefined }
-  | { type: UIActionType.SetObjectReviewShapeEditing; editing: boolean }
+  | { type: UIActionType.SetMaskEditShape; shape: ObjectShapeEdit | undefined }
+  | { type: UIActionType.SetMaskEditIndices; indices: Set<number> }
+  | { type: UIActionType.SetMaskEditRetouch; retouch: ObjectRetouch | undefined }
+  | { type: UIActionType.SetMaskEditShapeEditing; editing: boolean }
   | {
       type: UIActionType.RecordObjectReviewDecision;
       decision: "accepted" | "rejected";
       nextCurrentIndices?: Set<number>;
     }
-  | { type: UIActionType.EndObjectReview }
+  | { type: UIActionType.EndMaskEdit }
   | {
       type: UIActionType.ResumeObjectReview;
       maskMediaId: string;
@@ -462,6 +572,7 @@ export function resumeObjectReview(
   const undecidedIndex = candidates.findIndex((c) => !decisions.has(c.object.id));
   const currentIndex = undecidedIndex >= 0 && !isObjectReviewFull(decisions) ? undecidedIndex : 0;
   return {
+    subject: "object",
     mode: "review",
     maskMediaId,
     maskKey,
@@ -664,8 +775,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (action.candidates.length === 0) return state;
       return {
         ...state,
-        tool: closedPenTool(state, state.objectReview),
-        objectReview: {
+        tool: closedPenTool(state, state.maskEdit),
+        maskEdit: {
+          subject: "object",
           mode: "review",
           maskMediaId: action.maskMediaId,
           maskKey: action.maskKey,
@@ -684,8 +796,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.StartObjectEdit: {
       return {
         ...state,
-        tool: closedPenTool(state, state.objectReview),
-        objectReview: {
+        tool: closedPenTool(state, state.maskEdit),
+        maskEdit: {
+          subject: "object",
           mode: "edit",
           maskMediaId: action.maskMediaId,
           maskKey: action.maskKey,
@@ -701,20 +814,39 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         },
       };
     }
-    case UIActionType.ToggleObjectReviewPolygon: {
-      const review = state.objectReview;
-      if (!review || isObjectReviewLocked(review)) return state;
-      const currentIndices = new Set(review.currentIndices);
+    case UIActionType.StartLightEdit: {
+      return {
+        ...state,
+        tool: closedPenTool(state, state.maskEdit),
+        maskEdit: {
+          subject: "light",
+          maskMediaId: action.maskMediaId,
+          maskKey: action.maskKey,
+          light: action.light,
+          currentIndices: new Set(action.polygonIndices),
+          editedShape: undefined,
+          editingShape: false,
+          penReturnTool: undefined,
+          retouch: undefined,
+        },
+      };
+    }
+    case UIActionType.ToggleMaskEditPolygon: {
+      const session = state.maskEdit;
+      if (!session || isMaskEditLocked(session)) return state;
+      const currentIndices = new Set(session.currentIndices);
       if (currentIndices.has(action.index)) {
         currentIndices.delete(action.index);
       } else {
         currentIndices.add(action.index);
       }
-      return { ...state, objectReview: { ...review, currentIndices } };
+      return { ...state, maskEdit: { ...session, currentIndices } };
     }
     case UIActionType.SetObjectReviewIndex: {
-      const review = state.objectReview;
-      if (!review) return state;
+      const review = state.maskEdit;
+      // Stepping between candidates is a review's own gesture: a light edit has
+      // exactly one subject, so there is nowhere for an index to point.
+      if (review?.subject !== "object") return state;
       const index = Math.min(review.candidates.length - 1, Math.max(0, action.index));
       if (index === review.currentIndex) return state;
       // editingShape is left as it is and closed by withShapeEditing, which is
@@ -732,20 +864,20 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         false,
       );
     }
-    case UIActionType.SetObjectReviewIndices: {
-      const review = state.objectReview;
-      if (!review || isObjectReviewLocked(review)) return state;
-      return { ...state, objectReview: { ...review, currentIndices: action.indices } };
+    case UIActionType.SetMaskEditIndices: {
+      const session = state.maskEdit;
+      if (!session || isMaskEditLocked(session)) return state;
+      return { ...state, maskEdit: { ...session, currentIndices: action.indices } };
     }
-    case UIActionType.SetObjectReviewShape: {
-      const review = state.objectReview;
-      if (!review || isObjectReviewLocked(review)) return state;
-      return { ...state, objectReview: { ...review, editedShape: action.shape } };
+    case UIActionType.SetMaskEditShape: {
+      const session = state.maskEdit;
+      if (!session || isMaskEditLocked(session)) return state;
+      return { ...state, maskEdit: { ...session, editedShape: action.shape } };
     }
-    case UIActionType.SetObjectReviewRetouch: {
-      const review = state.objectReview;
-      if (!review || isObjectReviewLocked(review)) return state;
-      if (!action.retouch) return { ...state, objectReview: { ...review, retouch: undefined } };
+    case UIActionType.SetMaskEditRetouch: {
+      const session = state.maskEdit;
+      if (!session || isMaskEditLocked(session)) return state;
+      if (!action.retouch) return { ...state, maskEdit: { ...session, retouch: undefined } };
 
       // A second retouch recuts the mesh the first one produced, so the two
       // have to compose into one -- what is held here is always the whole
@@ -759,11 +891,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       // carrying only the second count would put that boundary a whole recut
       // too late and report entries the server has never seen as edits to
       // entries it has.
-      const previous = review.retouch;
+      const previous = session.retouch;
       return {
         ...state,
-        objectReview: {
-          ...review,
+        maskEdit: {
+          ...session,
           retouch: {
             polygons: action.retouch.polygons,
             restore: previous?.restore ?? action.retouch.restore,
@@ -772,20 +904,20 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         },
       };
     }
-    case UIActionType.SetObjectReviewShapeEditing: {
-      const review = state.objectReview;
-      if (!review) return state;
-      return withShapeEditing(state, review, action.editing);
+    case UIActionType.SetMaskEditShapeEditing: {
+      const session = state.maskEdit;
+      if (!session) return state;
+      return withShapeEditing(state, session, action.editing);
     }
     case UIActionType.RequestObjectReviewRedo: {
-      const review = state.objectReview;
-      if (!review || !isObjectReviewLocked(review)) return state;
-      return { ...state, objectReview: { ...review, redoRequested: true } };
+      const review = state.maskEdit;
+      if (review?.subject !== "object" || !isMaskEditLocked(review)) return state;
+      return { ...state, maskEdit: { ...review, redoRequested: true } };
     }
     case UIActionType.RecordObjectReviewDecision: {
-      const review = state.objectReview;
-      if (!review) return state;
-      if (review.mode === "edit") return { ...state, tool: closedPenTool(state, review), objectReview: undefined };
+      const review = state.maskEdit;
+      if (review?.subject !== "object") return state;
+      if (review.mode === "edit") return { ...state, tool: closedPenTool(state, review), maskEdit: undefined };
       const candidate = review.candidates[review.currentIndex];
       if (!candidate) return state;
 
@@ -793,7 +925,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       decisions.set(candidate.object.id, action.decision);
 
       const next = advanceObjectReview(review, decisions);
-      if (next.done) return { ...state, tool: closedPenTool(state, review), objectReview: undefined };
+      if (next.done) return { ...state, tool: closedPenTool(state, review), maskEdit: undefined };
       return withShapeEditing(
         state,
         {
@@ -807,12 +939,12 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         false,
       );
     }
-    case UIActionType.EndObjectReview: {
-      return { ...state, tool: closedPenTool(state, state.objectReview), objectReview: undefined };
+    case UIActionType.EndMaskEdit: {
+      return { ...state, tool: closedPenTool(state, state.maskEdit), maskEdit: undefined };
     }
     case UIActionType.ResumeObjectReview: {
       const resumed = resumeObjectReview(action.maskMediaId, action.maskKey, action.candidates, action.decisions);
-      return resumed ? { ...state, tool: closedPenTool(state, state.objectReview), objectReview: resumed } : state;
+      return resumed ? { ...state, tool: closedPenTool(state, state.maskEdit), maskEdit: resumed } : state;
     }
   }
 }

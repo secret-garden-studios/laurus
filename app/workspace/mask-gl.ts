@@ -23,6 +23,11 @@ export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
 export const OBJECT_SDF_GRID = 4;
 export const OBJECT_SDF_ATLAS = OBJECT_SDF_GRID * OBJECT_SDF_TILE;
+// 3x3 holds the eight lights a mask can have, in the same tiles at the same
+// resolution as an object's -- the shapes come off the same builder, so only
+// how many of them there are differs.
+export const LIGHT_SDF_GRID = 3;
+export const LIGHT_SDF_ATLAS = LIGHT_SDF_GRID * OBJECT_SDF_TILE;
 export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
 export const OBJECT_GRADIENT_LIMIT = 32.0;
 export const OBJECT_BLACK_POINT_RELIEF_K = 1e-3;
@@ -177,6 +182,116 @@ vec2 objectSwell(vec2 p) {
 }
 `;
 
+/**
+ * Sampling a light's silhouette, in the fragment stage only.
+ *
+ * A near-copy of the object block's tile reader rather than a shared one,
+ * because the two differ in the constant that decides where a slot lives --
+ * the atlas is 3x3 here and 4x4 there -- and GLSL ES 1.0 gives no way to
+ * parameterize that without passing the grid down through every call. Two
+ * short readers over one encoder is the cheaper of the two duplications.
+ *
+ * Fragment-only is the other difference, and it is why there is no
+ * supportsVertexTextures gate on any of this: an object's shape is read in the
+ * vertex stage to displace geometry, where WebGL1 does not promise a texture
+ * unit exists at all. A light only ever shades.
+ */
+const LIGHT_FIELD_GLSL = `
+#define MAX_LIGHT_SOURCES ${MAX_MASK_LIGHT_SOURCES}
+#define LIGHT_SDF_GRID ${glFloat(LIGHT_SDF_GRID)}
+#define LIGHT_SDF_ATLAS ${glFloat(LIGHT_SDF_ATLAS)}
+
+uniform mediump sampler2D u_lightShapes;
+uniform mediump float u_lightShapeRows[MAX_LIGHT_SOURCES];
+uniform mediump float u_lightShapeMaxDepth[MAX_LIGHT_SOURCES];
+
+vec3 lightShapeTexel(float row, vec2 texel) {
+  float col = mod(row, LIGHT_SDF_GRID);
+  float band = floor(row / LIGHT_SDF_GRID);
+  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
+  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / LIGHT_SDF_ATLAS;
+  vec4 stored = texture2D(u_lightShapes, uv);
+  return vec3(
+    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
+    stored.ba * 2.0 - 1.0);
+}
+
+// The signed distance at a point in the shape's own normalized space, positive
+// inside. Only the distance: nothing here lights from the gradient, so the two
+// components the object block renormalizes are left where they are.
+float lightDepthAt(float row, vec2 n) {
+  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
+  vec2 base = floor(local);
+  vec2 f = local - base;
+  float top = mix(lightShapeTexel(row, base).x, lightShapeTexel(row, base + vec2(1.0, 0.0)).x, f.x);
+  float bottom = mix(
+    lightShapeTexel(row, base + vec2(0.0, 1.0)).x,
+    lightShapeTexel(row, base + vec2(1.0, 1.0)).x,
+    f.x);
+  return mix(top, bottom, f.y);
+}
+
+/**
+ * How far along its falloff a point sits relative to one light, as
+ * vec2(u, beyond).
+ *
+ * The first is 0 at the silhouette's deepest interior point and 1 on the
+ * outline -- the same quantity objectU produces, and what the highlight ramps
+ * over. The second is how far past the outline the point is in mesh units, 0
+ * anywhere inside, and is what the shadow ramps over.
+ *
+ * Two numbers rather than one because the shadow reaches much further than the
+ * shape does. A light's falloff routinely runs several radii out, while the
+ * distance tile only covers OBJECT_SDF_MARGIN of one -- so past that edge the
+ * field has nothing left to say and a shadow ramped straight off it would
+ * flatten out early, at a hard ring the shape of the tile.
+ *
+ * What happens past the edge is therefore an extrapolation, and *which* one
+ * matters more than it looks. The sample is taken where the ray leaves the
+ * tile and then carried outward: stepping directly away from a shape increases
+ * the distance to it at a rate of one, so the overshoot is simply subtracted.
+ * That is exact along the ray the nearest point actually lies on, conservative
+ * elsewhere, and continuous at the boundary -- the overshoot is zero there, so
+ * there is no seam to see.
+ *
+ * It also keeps the shape's *direction*, which is the whole point. This used
+ * to fade over to the distance from the bounding circle instead, on the
+ * reasoning that far away any shape is roughly its own circle. That is true of
+ * a blob and badly false of anything with a bite out of it: for a crescent it
+ * lit the notch as though the shape filled it, put a bright ring around the
+ * bounding circle where the fade pulled the shadow back off, and left a dark
+ * band inside it where the real distance still showed through. A crescent
+ * lights like a crescent all the way out, or the shape may as well not be
+ * there.
+ *
+ * The shapeless branch is not an approximation of the shaped one, it is the
+ * same thing written out: a normalized circle has depth 1 - |n| with a maximum
+ * of 1, so u = |n| = dist/radius and beyond = dist - radius, which is what the
+ * lighting did before a light could be shaped at all. The extrapolation
+ * preserves that identity exactly rather than approximately -- carrying
+ * 1 - OBJECT_SDF_MARGIN outward by the overshoot lands back on 1 - |n| -- so a
+ * circular light and a shapeless one agree everywhere, not merely inside the
+ * tile. Both branches also agree with the two ramps the old code wrote
+ * directly in distance -- see drawMaskMesh -- so an unshaped light lights
+ * exactly as it always has.
+ */
+vec2 lightProfile(float row, float maxDepth, vec2 toPoint, float radius) {
+  float dist = length(toPoint);
+  if (row < 0.0) return vec2(dist / radius, max(dist - radius, 0.0));
+
+  vec2 n = toPoint / radius;
+  float reach = length(n);
+  float overshoot = max(reach - OBJECT_SDF_MARGIN, 0.0);
+  // Scaled rather than branched, and guarded rather than divided blind: the
+  // ratio is 1 anywhere inside the tile, and the reach is 0 at the exact
+  // centre of the shape, which is a point every light has.
+  vec2 sampled = n * min(1.0, OBJECT_SDF_MARGIN / max(reach, 1e-6));
+  float depth = lightDepthAt(row, sampled) - overshoot;
+
+  return vec2(1.0 - depth / maxDepth, max(-depth * radius, 0.0));
+}
+`;
+
 export const LIGHT_SOURCE_SHADER: Shader = {
   vertex: `
 attribute vec2 a_position;
@@ -213,6 +328,7 @@ void main() {
 #extension GL_OES_standard_derivatives : enable
 precision mediump float;
 ${OBJECT_FIELD_GLSL}
+${LIGHT_FIELD_GLSL}
 varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
@@ -227,8 +343,6 @@ uniform vec2 u_resolution;
 
 const vec3 STROKE_COLOR = vec3(${MASK_STROKE_COLOR.slice(0, 3).map(glFloat).join(", ")});
 const float STROKE_ALPHA = ${glFloat(MASK_STROKE_COLOR[3])};
-
-#define MAX_LIGHT_SOURCES 8
 
 #define STROKE_WIDTH_PX ${glFloat(MASK_STROKE_WIDTH_PX)}
 #define HIGHLIGHT_STROKE_WIDTH_PX ${glFloat(MASK_HIGHLIGHT_STROKE_WIDTH_PX)}
@@ -304,9 +418,17 @@ void main() {
   float leastShadow = 0.0;
   for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
     if (i >= u_lightSourceCount) break;
-    float dist = distance(v_lightSourcePos, u_lightSourceCenters[i]);
-    float highlight = 1.0 - smoothstep(u_lightSourceRadii[i] * 0.35, u_lightSourceRadii[i], dist);
-    float shadow = smoothstep(u_lightSourceRadii[i], u_lightSourceRadii[i] + u_lightSourceFalloffs[i], dist);
+    // Into the mesh's own orientation before the silhouette is asked anything.
+    // Centres and centroids are both held flipped for the bump light below,
+    // and flipping is y -> H - y, so the difference between two of them is the
+    // mesh-space offset with its y negated -- and a stored outline is measured
+    // in mesh space. Sampling with the flipped offset would mirror every
+    // asymmetric light about its own centre.
+    vec2 offset = v_lightSourcePos - u_lightSourceCenters[i];
+    vec2 profile = lightProfile(
+      u_lightShapeRows[i], u_lightShapeMaxDepth[i], vec2(offset.x, -offset.y), u_lightSourceRadii[i]);
+    float highlight = 1.0 - smoothstep(0.35, 1.0, profile.x);
+    float shadow = smoothstep(0.0, u_lightSourceFalloffs[i], profile.y);
     float shadowContribution = shadow * u_lightSourceDarknesses[i];
     bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i]);
     leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
@@ -399,6 +521,11 @@ export interface GLState {
   objectBlackPointsLoc: WebGLUniformLocation;
   objectShapeTexture: WebGLTexture;
   objectShapeSignature: string;
+  lightShapesLoc: WebGLUniformLocation;
+  lightShapeRowsLoc: WebGLUniformLocation;
+  lightShapeMaxDepthLoc: WebGLUniformLocation;
+  lightShapeTexture: WebGLTexture;
+  lightShapeSignature: string;
   supportsVertexTextures: boolean;
   textureMixLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
@@ -409,9 +536,14 @@ export interface GLState {
 }
 
 /**
- * Pack up to MAX_MASK_OBJECTS distance tiles into one atlas, laid out as a
- * OBJECT_SDF_GRID x OBJECT_SDF_GRID grid of tiles in reading order, so an
- * object's slot index is its tile index.
+ * Pack distance tiles into one atlas, laid out as a `grid` x `grid` grid of
+ * tiles in reading order, so a slot index is its tile index.
+ *
+ * `grid` is a parameter because objects and lights have different numbers of
+ * slots (16 and 8) and so different atlases, but identical tiles: the shapes
+ * come off the same builder at the same resolution, and only how many of them
+ * fit differs. The two shader-side readers take the grid as a constant each --
+ * see LIGHT_FIELD_GLSL.
  *
  * Per texel: the signed distance as a 16-bit big-endian-ish byte pair in
  * red/green -- the same trick the angular table used, and read back by the
@@ -423,12 +555,13 @@ export interface GLState {
  * resolution) is point-sampled up rather than rejected, so a drag preview
  * uploads without a full-resolution rebuild first.
  */
-export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[]): Uint8Array {
-  const data = new Uint8Array(OBJECT_SDF_ATLAS * OBJECT_SDF_ATLAS * 4);
+export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[], grid = OBJECT_SDF_GRID): Uint8Array {
+  const atlas = grid * OBJECT_SDF_TILE;
+  const data = new Uint8Array(atlas * atlas * 4);
   shapes.forEach((shape, slot) => {
-    if (!shape || slot >= OBJECT_SDF_GRID * OBJECT_SDF_GRID) return;
-    const tileCol = slot % OBJECT_SDF_GRID;
-    const tileRow = Math.floor(slot / OBJECT_SDF_GRID);
+    if (!shape || slot >= grid * grid) return;
+    const tileCol = slot % grid;
+    const tileRow = Math.floor(slot / grid);
     for (let row = 0; row < OBJECT_SDF_TILE; row++) {
       for (let col = 0; col < OBJECT_SDF_TILE; col++) {
         const sourceRow = Math.min(shape.tile - 1, Math.floor((row * shape.tile) / OBJECT_SDF_TILE));
@@ -438,7 +571,7 @@ export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[]): Uint8
         const biased = Math.min(Math.max(shape.sdf[source] / (2 * OBJECT_SDF_RANGE) + 0.5, 0), 1) * 255;
         const x = tileCol * OBJECT_SDF_TILE + col;
         const y = tileRow * OBJECT_SDF_TILE + row;
-        const offset = (y * OBJECT_SDF_ATLAS + x) * 4;
+        const offset = (y * atlas + x) * 4;
         data[offset] = Math.floor(biased);
         data[offset + 1] = Math.round((biased - Math.floor(biased)) * 255);
         data[offset + 2] = Math.round(((shape.grad[source * 2] / 127) * 0.5 + 0.5) * 255);
@@ -472,12 +605,18 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
   const objectShapeTexture = gl.createTexture();
-  if (!objectShapeTexture) return undefined;
-  gl.bindTexture(gl.TEXTURE_2D, objectShapeTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const lightShapeTexture = gl.createTexture();
+  if (!objectShapeTexture || !lightShapeTexture) return undefined;
+  // NEAREST on both: the readers filter by hand out of four fetches, because
+  // WebGL1 makes no promise a vertex texture fetch filters at all and the two
+  // stages must not disagree about where a tile's edge is.
+  for (const texture of [objectShapeTexture, lightShapeTexture]) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
 
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
   const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
@@ -492,6 +631,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
   const objectShapeRowsLoc = gl.getUniformLocation(program, "u_objectShapeRows");
   const objectShapeMaxDepthLoc = gl.getUniformLocation(program, "u_objectShapeMaxDepth");
+  const lightShapesLoc = gl.getUniformLocation(program, "u_lightShapes");
+  const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
+  const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
   const objectBlackPointsLoc = gl.getUniformLocation(program, "u_objectBlackPoints");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
@@ -519,6 +661,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !objectShapesLoc ||
     !objectShapeRowsLoc ||
     !objectShapeMaxDepthLoc ||
+    !lightShapesLoc ||
+    !lightShapeRowsLoc ||
+    !lightShapeMaxDepthLoc ||
     !objectBlackPointsLoc ||
     !textureMixLoc ||
     !textureLoc ||
@@ -560,6 +705,11 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectBlackPointsLoc,
     objectShapeTexture,
     objectShapeSignature: "",
+    lightShapesLoc,
+    lightShapeRowsLoc,
+    lightShapeMaxDepthLoc,
+    lightShapeTexture,
+    lightShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
     textureMixLoc,
     textureLoc,
@@ -571,12 +721,25 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
 }
 
 export interface MaskLightSource {
+  /**
+   * The light's centre, in the flipped screen space the centroids are compared
+   * in. Kept flipped rather than in mesh space because it is also the light's
+   * position for the relief's own bump lighting, which works in that space --
+   * the silhouette flips back to mesh orientation at the point of sampling.
+   */
   x: number;
   y: number;
   radius: number;
   falloff: number;
   intensity: number;
   darkness: number;
+  /**
+   * The outline the light falls within, sampled as a distance tile, or
+   * undefined for one that has never been shaped. Undefined lights exactly as
+   * a disc of `radius` -- see lightProfile, where the two branches are the
+   * same formula.
+   */
+  shape?: ObjectShape;
 }
 
 export interface DrawMaskMeshOptions {
@@ -622,6 +785,44 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceIntensitiesLoc, intensities);
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
   }
+
+  // -1 is "no silhouette", which lightProfile reads as the disc every light was
+  // before one could be drawn. Filled for the whole array rather than for the
+  // lights in play, so a slot a light has just vacated cannot go on being
+  // sampled against the tile that light left behind.
+  const lightShapeRows = new Float32Array(MAX_MASK_LIGHT_SOURCES).fill(-1);
+  const lightShapeMaxDepth = new Float32Array(MAX_MASK_LIGHT_SOURCES).fill(1);
+  const lightShapes = activeLights.map((light) => light.shape);
+  if (lightShapes.some((shape) => shape !== undefined)) {
+    lightShapes.forEach((shape, i) => {
+      if (!shape) return;
+      lightShapeRows[i] = i;
+      lightShapeMaxDepth[i] = shape.maxDepth;
+    });
+    // Rebuilt only when the set of outlines actually changes: encoding eight
+    // tiles is real work, and the common frame changes nothing about them.
+    const signature = lightShapes.map((shape) => shape?.path ?? "").join("|");
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, state.lightShapeTexture);
+    if (signature !== state.lightShapeSignature) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        LIGHT_SDF_ATLAS,
+        LIGHT_SDF_ATLAS,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        encodeObjectSdfAtlas(lightShapes, LIGHT_SDF_GRID),
+      );
+      state.lightShapeSignature = signature;
+    }
+    gl.uniform1i(state.lightShapesLoc, 3);
+  }
+  gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
+  gl.uniform1fv(state.lightShapeMaxDepthLoc, lightShapeMaxDepth);
 
   const activeObjects = activeMaskObjects(options.objects);
   gl.uniform1i(state.objectCountLoc, activeObjects.length);

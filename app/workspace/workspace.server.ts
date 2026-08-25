@@ -298,6 +298,29 @@ export interface PolygonPath_V1_0 {
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
+/**
+ * One named subsection of a mask's mesh, together with the light it casts.
+ *
+ * `cx`/`cy`/`radius`/`shape` are this light's own silhouette and mean exactly
+ * what the same four fields mean on Object_V1_0: an epicenter in mesh space,
+ * the distance the falloff reaches, and an optional normalized outline
+ * generalizing that single distance into an arbitrary one. An empty `shape` is
+ * the disc of that radius exactly rather than a separate case, which is what
+ * makes it safe for a light to have no outline at all.
+ *
+ * A light drawn today is born with all four set -- the disc it would have lit
+ * with anyway, written down rather than left implied (see lightMeshSection).
+ * They are still defaulted, and zero is still the *unset* state rather than a
+ * usable one, because every light written before lights could be shaped is
+ * stored that way: one with `radius <= 0` lights from the centroid of its own
+ * tagged triangles at `size / 2`, exactly as it always did, and the pen seeds
+ * all four from that same derivation the first time it opens on it.
+ *
+ * Geometry and outline travel together and must keep travelling together: a
+ * stored path is normalized to unit extent and scaled by `radius`, so pairing
+ * one light's path with another's radius renders it at the wrong size. Same
+ * pairing rule the object review documents at length.
+ */
 export interface Light_V1_0 {
   id: number;
   name: string;
@@ -305,6 +328,11 @@ export interface Light_V1_0 {
   intensity: number;
   falloff: number;
   darkness: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  shape: string;
+  description: string;
 }
 export type LaurusLight = Light_V1_0;
 
@@ -650,6 +678,14 @@ export function maskImage(
 
 /* /media/masks/{mask_media_id}/lights (websocket) */
 
+/**
+ * One full-replace edit of a single light.
+ *
+ * Every field of the light is rewritten from this payload, exactly like
+ * MaskObjectUpdateRequest_V1_0 -- a caller that leaves one out erases it. That
+ * is why the silhouette fields are required rather than optional: an edit that
+ * is not about the shape still has to say what the shape is.
+ */
 export interface MaskLightUpdateRequest_V1_0 {
   light_id: number;
   name: string;
@@ -658,6 +694,12 @@ export interface MaskLightUpdateRequest_V1_0 {
   intensity: number;
   falloff: number;
   darkness: number;
+  cx: number;
+  cy: number;
+  radius: number;
+  shape: string;
+  description: string;
+  retouch?: RetouchedMesh_V1_0;
 }
 export interface MaskEditDelta_V1_0 {
   tagged_polygon_indices: number[];
@@ -676,6 +718,76 @@ export interface LightUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
   light_id: number;
   light: Light_V1_0 | null;
   removed: boolean;
+}
+
+/**
+ * A light with nothing set on it yet.
+ *
+ * The blank a caller fills in, and the stand-in for a light that was expected
+ * to be found and was not. Zero across the board is the resting "off" state
+ * everywhere -- no light, no falloff, and no silhouette.
+ *
+ * Not by itself a light worth saving. The one place that creates lights fills
+ * in the appearance and the silhouette on top of this (see lightMeshSection),
+ * and the one place that deletes one sends it through untouched -- which is
+ * exactly what a light with no triangles and nothing set on it means.
+ */
+export function newLight(id: number, name: string): Light_V1_0 {
+  return {
+    id,
+    name,
+    size: 0,
+    intensity: 0,
+    falloff: 0,
+    darkness: 0,
+    cx: 0,
+    cy: 0,
+    radius: 0,
+    shape: "",
+    description: "",
+  };
+}
+
+/**
+ * Build one light edit from the light as it stands, changing only what is
+ * named.
+ *
+ * The single place that knows every field of a light update, so a caller
+ * meaning to change one cannot silently drop another. A light edit is a
+ * full-replace -- the server rewrites every field of the light from this
+ * payload -- which makes an omitted field indistinguishable from a deliberate
+ * reset, and makes a field added *after* a call site was written invisible at
+ * it: nothing errors, nothing type-checks differently, and the loss shows up
+ * in a feature nobody was touching.
+ *
+ * That is not hypothetical. It is exactly what happened to `object_id` when
+ * the server's light update rebuilt each polygon by hand and was written
+ * before object tagging existed; `repolygon` is the fix one layer down, and
+ * this is the same fix at the same seam. Route every light write through here
+ * and a new field is a one-line change in this file.
+ *
+ * `polygon_indices` is required rather than defaulted because it is the one
+ * field a light has no resting value for -- membership lives on the mask's
+ * polygons, not on the light -- so there is nothing here to carry forward.
+ */
+export function toLightUpdate(
+  light: Light_V1_0,
+  changes: Partial<Omit<MaskLightUpdateRequest_V1_0, "light_id">> & { polygon_indices: number[] },
+): MaskLightUpdateRequest_V1_0 {
+  return {
+    light_id: light.id,
+    name: light.name,
+    size: light.size,
+    intensity: light.intensity,
+    falloff: light.falloff,
+    darkness: light.darkness,
+    cx: light.cx,
+    cy: light.cy,
+    radius: light.radius,
+    shape: light.shape,
+    description: light.description,
+    ...changes,
+  };
 }
 
 export interface MaskLightUpdateComplete_V1_0 {

@@ -3,7 +3,7 @@ import { useObjectReview } from "./hooks/useObjectReview";
 import { Z_INDEX } from "./workspace.config";
 import { SvgRepo, checkCircle, chevronLeft, chevronRight } from "../svg-repo";
 import { MAX_MASK_OBJECTS } from "./mask-gl";
-import { acceptedObjectCount } from "./states/ui-state";
+import { acceptedObjectCount, editedRegion } from "./states/ui-state";
 import { buildObjectShapeFromRings, cachedObjectShape, flattenPathData } from "./canvas-media/object-shape";
 import { ringPieces } from "./canvas-media/object-path";
 
@@ -17,6 +17,7 @@ export default function ObjectReviewPanel() {
   const descriptionRef = useRef<HTMLInputElement>(null);
 
   const {
+    session,
     review,
     isDeciding,
     currentDecision,
@@ -25,6 +26,7 @@ export default function ObjectReviewPanel() {
     requestRedo,
     decideCurrentObject,
     saveEditedObject,
+    saveEditedLight,
     setEditingShape,
     revertShape,
     goToPreviousCandidate,
@@ -48,7 +50,7 @@ export default function ObjectReviewPanel() {
   // Only ever an edited outline. A detected shape that happens to arrive in
   // two pieces is detection's business and was accepted that way long before
   // the pen existed -- the reviewer is only ever held to what they drew.
-  const edited = review?.editedShape?.path;
+  const edited = session?.editedShape?.path;
   const { shapeRefusal, multiplePieces } = useMemo((): {
     shapeRefusal: string | undefined;
     multiplePieces: boolean;
@@ -67,13 +69,18 @@ export default function ObjectReviewPanel() {
     return { shapeRefusal: built.ok ? undefined : built.reason, multiplePieces: false };
   }, [edited]);
 
-  if (!review) return null;
+  if (!session) return null;
 
-  const candidate = review.candidates[review.currentIndex];
-  const isEdit = review.mode === "edit";
-  const position = review.currentIndex + 1;
-  const total = review.candidates.length;
-  const accepted = acceptedObjectCount(review.decisions);
+  const region = editedRegion(session);
+  if (!region) return null;
+
+  // Stepping, decisions and the accepted count are the review's furniture, and
+  // a light edit has none of it -- the panel is the same panel, showing only
+  // the half that means anything for what it is open on.
+  const isEdit = session.subject === "light" || session.mode === "edit";
+  const position = review ? review.currentIndex + 1 : 1;
+  const total = review?.candidates.length ?? 1;
+  const accepted = review ? acceptedObjectCount(review.decisions) : 0;
   const hasDecision = !isEdit && currentDecision !== undefined;
   const redoRequested = hasDecision && !isLocked;
 
@@ -84,7 +91,8 @@ export default function ObjectReviewPanel() {
       return;
     }
     if (shapeRefusal) return;
-    if (isEdit) void saveEditedObject(description);
+    if (session.subject === "light") void saveEditedLight(description);
+    else if (isEdit) void saveEditedObject(description);
     else void decideCurrentObject("accepted", description);
   };
 
@@ -112,7 +120,9 @@ export default function ObjectReviewPanel() {
     >
       <div style={{ display: "flex", justifyContent: "space-between", color: "rgb(160, 160, 160)" }}>
         {isEdit ? (
-          <span>editing {candidate.object.name}</span>
+          <span>
+            editing {session.subject === "light" ? "light" : "object"} {region.name}
+          </span>
         ) : (
           <>
             <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -170,8 +180,10 @@ export default function ObjectReviewPanel() {
             : // while the outline is in pieces the pen has the canvas, and a
               // click lands on a piece rather than on a triangle
               multiplePieces
-              ? "click the piece to keep -- the triangles follow the outline"
-              : "click a triangle to add or remove it from this object"}
+              ? session.subject === "light"
+                ? "click the piece to keep"
+                : "click the piece to keep -- the triangles follow the outline"
+              : `click a triangle to add or remove it from this ${session.subject}`}
         </span>
         {!isEdit && (
           <div onDoubleClick={requestRedo} style={{ display: "flex", flexShrink: 0 }}>
@@ -202,13 +214,13 @@ export default function ObjectReviewPanel() {
           onClick={() => {
             // closing the pen abandons an uncommitted reshape: an edit is kept
             // by accepting the object, not by looking away from it
-            if (review.editingShape) revertShape();
-            setEditingShape(!review.editingShape);
+            if (session.editingShape) revertShape();
+            setEditingShape(!session.editingShape);
           }}
           title={
             isLocked
               ? "double-click the check mark to make a new decision"
-              : review.editingShape
+              : session.editingShape
                 ? "hide the outline's handles"
                 : "show the outline's handles -- drag an anchor to move it, a handle to curve it, alt-drag to corner it"
           }
@@ -217,15 +229,15 @@ export default function ObjectReviewPanel() {
             padding: "5px 0",
             borderRadius: 4,
             border: "1px solid rgba(255, 255, 255, 0.15)",
-            background: review.editingShape ? "rgb(67, 67, 67)" : "rgb(24, 24, 24)",
+            background: session.editingShape ? "rgb(67, 67, 67)" : "rgb(24, 24, 24)",
             color: isLocked ? "rgb(120, 120, 120)" : "inherit",
             cursor: isLocked ? "not-allowed" : "pointer",
             fontSize: 12,
           }}
         >
-          {review.editingShape ? "editing shape" : "edit shape"}
+          {session.editingShape ? "editing shape" : "edit shape"}
         </button>
-        {review.editedShape !== undefined && (
+        {session.editedShape !== undefined && (
           <button
             type="button"
             onClick={revertShape}
@@ -248,13 +260,11 @@ export default function ObjectReviewPanel() {
         <span style={{ color: "rgb(211, 71, 71)", fontSize: 12, lineHeight: 1.35 }}>{shapeRefusal}</span>
       )}
       <input
-        key={`${review.mode}|${candidate.object.id}`}
+        key={`${session.subject}|${isEdit ? "edit" : "review"}|${region.id}`}
         ref={descriptionRef}
         type="text"
-        placeholder="describe this object..."
-        defaultValue={
-          isEdit ? candidate.object.description : currentDecision === "accepted" ? (currentDescription ?? "") : ""
-        }
+        placeholder={`describe this ${session.subject}...`}
+        defaultValue={isEdit ? region.description : currentDecision === "accepted" ? (currentDescription ?? "") : ""}
         autoComplete="off"
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
@@ -277,7 +287,7 @@ export default function ObjectReviewPanel() {
           onClick={isEdit ? endReview : () => void decideCurrentObject("rejected")}
           title={
             isEdit
-              ? "close without saving -- the object is left as it was"
+              ? `close without saving -- the ${session.subject} is left as it was`
               : isLocked
                 ? "double-click the check mark to make a new decision"
                 : undefined

@@ -23,6 +23,8 @@ import {
   LaurusObjectReview,
   LaurusSvgResult,
   deleteMask,
+  newLight,
+  toLightUpdate,
 } from "./workspace.server";
 import { applyLightDelta } from "./canvas-media/mask-delta";
 import styles from "../app.module.css";
@@ -862,7 +864,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const editableObject = useMemo(() => {
     if (media.type !== "object") return undefined;
-    if (uiState.objectReview !== undefined) return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
     const maskData = coreState.canvasMasks.get(media.key);
     const object = maskData?.objects.find((o) => o.id === media.objectId);
     if (!maskData || !object) return undefined;
@@ -871,7 +873,29 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       if (p.object_id === object.id) polygonIndices.push(i);
     });
     return { maskMediaId: maskData.mask_media_id, object, polygonIndices };
-  }, [coreState.canvasMasks, media, uiState.objectReview]);
+  }, [coreState.canvasMasks, media, uiState.maskEdit]);
+
+  /**
+   * The same thing one line down for a light, and refused under the same
+   * condition: the pen is one overlay on one canvas, so whatever it is already
+   * open on has to be finished before anything else can claim it.
+   *
+   * Membership is read off the mask's polygons rather than the light, because
+   * that is where it lives -- a light knows its own appearance and outline, but
+   * which triangles carry it is a property of the triangles.
+   */
+  const editableLight = useMemo(() => {
+    if (media.type !== "light") return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
+    const maskData = coreState.canvasMasks.get(media.key);
+    const light = maskData?.lights.find((l) => l.id === media.lightId);
+    if (!maskData || !light) return undefined;
+    const polygonIndices: number[] = [];
+    maskData.polygons.forEach((p, i) => {
+      if (p.light_id === light.id) polygonIndices.push(i);
+    });
+    return { maskMediaId: maskData.mask_media_id, light, polygonIndices };
+  }, [coreState.canvasMasks, media, uiState.maskEdit]);
 
   const reviewMaskMediaId = useMemo(() => {
     if (media.type !== "mask") return undefined;
@@ -894,18 +918,18 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const reviewableMask = useMemo(() => {
     if (media.type !== "mask") return undefined;
-    if (uiState.objectReview !== undefined) return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
     if (!reviewMaskMediaId || !pendingReview) return undefined;
     return { maskMediaId: reviewMaskMediaId, pending: pendingReview };
-  }, [media, uiState.objectReview, reviewMaskMediaId, pendingReview]);
+  }, [media, uiState.maskEdit, reviewMaskMediaId, pendingReview]);
 
   const reviewTitle = useMemo(() => {
     if (media.type !== "mask") return undefined;
-    if (uiState.objectReview !== undefined) return "finish the review in progress first";
+    if (uiState.maskEdit !== undefined) return "finish the edit in progress first";
     if (!pendingReview) return "no pending review for this mask";
     const allDecided = pendingReview.state.candidates.every((c) => pendingReview.decisions.has(c.object.id));
     return allDecided ? "reopen the completed object review for this mask" : "resume the object review for this mask";
-  }, [media.type, uiState.objectReview, pendingReview]);
+  }, [media.type, uiState.maskEdit, pendingReview]);
 
   const cellStyle: CSSProperties = {
     display: "flex",
@@ -1197,9 +1221,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         ...cellStyle,
                       }}
                       title={
-                        editableObject
-                          ? "reopen the review panel for this object"
-                          : "finish the review in progress first"
+                        editableObject ? "reopen the review panel for this object" : "finish the edit in progress first"
                       }
                       onClick={() => {
                         if (!editableObject) return;
@@ -1210,11 +1232,38 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           object: editableObject.object,
                           polygonIndices: editableObject.polygonIndices,
                         });
-                        notifyMaskObjectReviewPreview(
-                          media.key,
-                          new Set(editableObject.polygonIndices),
-                          editableObject.object.id,
-                        );
+                        notifyMaskObjectReviewPreview(media.key, new Set(editableObject.polygonIndices));
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+                      }}
+                    >
+                      {"edit"}
+                    </div>
+                  )}
+                  {media.type === "light" && (
+                    <div
+                      className={editableLight ? styles["animated-nav-dark"] : ""}
+                      style={{
+                        color: editableLight ? "inherit" : "rgba(127,127,127, 1)",
+                        ...cellStyle,
+                      }}
+                      title={
+                        editableLight
+                          ? "open the edit panel for this light -- its outline and what it is"
+                          : "finish the edit in progress first"
+                      }
+                      onClick={() => {
+                        if (!editableLight) return;
+                        uiDispatch({
+                          type: UIActionType.StartLightEdit,
+                          maskMediaId: editableLight.maskMediaId,
+                          maskKey: media.key,
+                          light: editableLight.light,
+                          polygonIndices: editableLight.polygonIndices,
+                        });
+                        // the same highlight channel the object review uses:
+                        // it means "the triangles this session claims", which
+                        // is a question a light answers too
+                        notifyMaskObjectReviewPreview(media.key, new Set(editableLight.polygonIndices));
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                       }}
                     >
@@ -1283,17 +1332,12 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           break;
                         }
                         case "light": {
+                          // A light with no triangles is a deleted light, which
+                          // is why this sends a blank one rather than a flag:
+                          // membership is the whole of what makes it exist.
                           const updated: LightUpdateDelta_V1_0 | undefined = await sendMaskLightUpdate(
                             media.meta.media_id,
-                            {
-                              light_id: media.lightId,
-                              name: "",
-                              polygon_indices: [],
-                              size: 0,
-                              intensity: 0,
-                              falloff: 0,
-                              darkness: 0,
-                            },
+                            toLightUpdate(newLight(media.lightId, ""), { polygon_indices: [] }),
                           );
                           const lightMaskData = coreState.canvasMasks.get(media.key);
                           if (!updated || !lightMaskData) break;

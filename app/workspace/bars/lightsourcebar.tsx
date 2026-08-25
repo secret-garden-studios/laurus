@@ -13,8 +13,10 @@ import {
 } from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
+  LaurusLight,
   LaurusMaskResult,
   LaurusObjectBlackPoint,
+  toLightUpdate,
   toObjectBlackPoint,
   toObjectBlackPointFields,
 } from "../workspace.server";
@@ -310,16 +312,14 @@ export default function LightSourcebar() {
     [targetMaskMeta, savePreviewField, mask],
   );
 
+  // The light itself rather than a copy of five of its fields: a light edit is
+  // a full-replace, so the queue has to hand toLightUpdate everything the light
+  // has -- including the silhouette this bar never touches.
   interface PendingLightSave {
     maskKey: string;
     maskMediaId: string;
-    lightId: number;
-    name: string;
+    light: LaurusLight;
     polygonIndices: number[];
-    size: number;
-    intensity: number;
-    falloff: number;
-    darkness: number;
   }
   const pendingLightSaveRef = useRef<PendingLightSave | null>(null);
   const isPersistingLightRef = useRef(false);
@@ -330,22 +330,17 @@ export default function LightSourcebar() {
       while (pendingLightSaveRef.current) {
         const toSave = pendingLightSaveRef.current;
         pendingLightSaveRef.current = null;
-        const updated = await sendMaskLightUpdate(toSave.maskMediaId, {
-          light_id: toSave.lightId,
-          name: toSave.name,
-          polygon_indices: toSave.polygonIndices,
-          size: toSave.size,
-          intensity: toSave.intensity,
-          falloff: toSave.falloff,
-          darkness: toSave.darkness,
-        });
+        const updated = await sendMaskLightUpdate(
+          toSave.maskMediaId,
+          toLightUpdate(toSave.light, { polygon_indices: toSave.polygonIndices }),
+        );
         const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
         if (updated && maskData) {
           const patched = applyLightDelta(maskData, updated);
           dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
           notifyMaskLightUpdated(toSave.maskKey, patched);
         } else {
-          console.error("failed to save light change", { light_id: toSave.lightId });
+          console.error("failed to save light change", { light_id: toSave.light.id });
         }
       }
     } finally {
@@ -368,13 +363,8 @@ export default function LightSourcebar() {
       pendingLightSaveRef.current = {
         maskKey: selectedLightMaskKey,
         maskMediaId: selectedLightMaskData.mask_media_id,
-        lightId: selectedLight.id,
-        name: selectedLight.name,
+        light: patched,
         polygonIndices,
-        size: patched.size,
-        intensity: patched.intensity,
-        falloff: patched.falloff,
-        darkness: patched.darkness,
       };
       void persistLightQueue();
     },

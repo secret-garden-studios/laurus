@@ -35,6 +35,8 @@ import {
   MaskLightUpdateRequest_V1_0,
   MaskObjectUpdateRequest_V1_0,
   LaurusObjectBlackPoint,
+  newLight,
+  toLightUpdate,
   toObjectBlackPoint,
   toObjectBlackPointFields,
 } from "./workspace.server";
@@ -58,7 +60,7 @@ import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
 import { useMaskLightSockets } from "./hooks/useMaskLightSockets";
 import { useMaskObjectSockets } from "./hooks/useMaskObjectSockets";
-import { indicesInObjectFromCentroids } from "./canvas-media/light-geometry";
+import { indicesInObjectFromCentroids, lightCenterFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
@@ -277,12 +279,7 @@ export interface MaskNotifyValue {
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
   notifyMaskRetouchRequested: (maskKey: string) => Promise<void>;
-  notifyMaskObjectReviewPreview: (
-    maskKey: string,
-    indices: Set<number> | undefined,
-    editObjectId?: number,
-    diffBase?: Set<number>,
-  ) => void;
+  notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined, diffBase?: Set<number>) => void;
   notifyCanvasZoomChanged: (zoom: number) => void;
   notifyMaskObjectsUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
 }
@@ -1155,8 +1152,8 @@ export default function Workspace({
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingLight());
   }, []);
   const notifyMaskObjectReviewPreview = useCallback(
-    (maskKey: string, indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => {
-      maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices, editObjectId, diffBase));
+    (maskKey: string, indices: Set<number> | undefined, diffBase?: Set<number>) => {
+      maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setObjectReviewPreview(indices, diffBase));
     },
     [],
   );
@@ -1240,15 +1237,28 @@ export default function Workspace({
       });
       notifyMaskPendingLightSet(maskKey, new Set(polygonIndices), lightId);
 
-      const updated = await sendMaskLightUpdate(maskData.mask_media_id, {
-        light_id: lightId,
-        name,
-        polygon_indices: polygonIndices,
-        size,
-        intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
-        darkness: maskMeta?.light_preview_darkness ?? LIGHT_DARKNESS_DEFAULT,
-        falloff: Math.min(size * LIGHT_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
-      });
+      // Born with a silhouette, exactly as a dropped object is: the disc it
+      // would have lit with anyway, written down rather than re-derived. A
+      // light whose shape is only implied is a light the pen has to invent one
+      // for the first time it opens, and inventing it later means the outline
+      // and the triangles start out disagreeing about where the light is.
+      //
+      // The centre is the same one resolveRestingLightSources derives for an
+      // unshaped light, and the radius the same size / 2, so a light created
+      // this way looks identical to one created before it could be shaped --
+      // it just now says so.
+      const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, new Set(polygonIndices));
+      const updated = await sendMaskLightUpdate(
+        maskData.mask_media_id,
+        toLightUpdate(newLight(lightId, name), {
+          polygon_indices: polygonIndices,
+          size,
+          intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
+          darkness: maskMeta?.light_preview_darkness ?? LIGHT_DARKNESS_DEFAULT,
+          falloff: Math.min(size * LIGHT_FALLOFF_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
+          ...(center ? { cx: center[0], cy: center[1], radius: size / 2, shape: unitCirclePath() } : {}),
+        }),
+      );
       if (updated) {
         const patched = applyLightDelta(maskData, updated);
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
@@ -2143,7 +2153,7 @@ export default function Workspace({
                               height: "min-content",
                               zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
                               pointerEvents:
-                                uiState.objectReview !== undefined
+                                uiState.maskEdit !== undefined
                                   ? "none"
                                   : uiState.tool.type === "mask" &&
                                       !uiState.tool.lightingMeshSection &&

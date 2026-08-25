@@ -2,15 +2,15 @@ import { useContext, useRef, useState } from "react";
 import { MaskContext, UIContext } from "../workspace.client";
 import { inkPen300, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { UIActionType, isObjectReviewLocked } from "../states/ui-state";
+import { UIActionType, editedRegion, isMaskEditLocked } from "../states/ui-state";
 
 /**
  * The pen's controls.
  *
- * Shown while an object's outline is open for editing during a mask review --
- * the pen is entered and left through the review panel rather than picked from
- * the toolbar, so this bar appears and disappears with the overlay it belongs
- * to. See withShapeEditing in ui-state.
+ * Shown while an outline is open for editing -- an object's during a mask
+ * review, or a light's. The pen is entered and left through the edit panel
+ * rather than picked from the toolbar, so this bar appears and disappears with
+ * the overlay it belongs to. See withShapeEditing in ui-state.
  */
 export default function Penbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -71,20 +71,28 @@ export default function Penbar() {
   const retouchingRef = useRef(false);
   const [isRetouching, setIsRetouching] = useState(false);
 
-  const review = uiState.objectReview;
+  const session = uiState.maskEdit;
   // A retouch recuts the mesh against the outline, so there has to be an
   // outline: a candidate detection found no shape for has nothing to cut to,
-  // and a decided one is not the reviewer's to change until they unlock it.
-  const outline = review?.editedShape?.path ?? review?.candidates[review.currentIndex]?.object.shape;
-  const canRetouch = review !== undefined && !isObjectReviewLocked(review) && !!outline && !isRetouching;
-  const isRetouched = review?.retouch !== undefined;
+  // and a decided candidate is not the reviewer's to change until they unlock
+  // it.
+  //
+  // A light always has one by the time this bar is on screen, even one that
+  // stores none. This bar only ever appears while the pen is open, and the pen
+  // seeds an unshaped light with the disc it has been lighting with (see
+  // lightRegion) -- so there is a curve on the canvas to cut to whatever the
+  // light itself still holds.
+  const outline = session?.editedShape?.path ?? (session && editedRegion(session)?.shape);
+  const hasOutline = !!outline || session?.subject === "light";
+  const canRetouch = session !== undefined && !isMaskEditLocked(session) && hasOutline && !isRetouching;
+  const isRetouched = session?.retouch !== undefined;
 
   const retouch = async () => {
-    if (!review || retouchingRef.current) return;
+    if (!session || retouchingRef.current) return;
     retouchingRef.current = true;
     setIsRetouching(true);
     try {
-      await notifyMaskRetouchRequested(review.maskKey);
+      await notifyMaskRetouchRequested(session.maskKey);
     } finally {
       retouchingRef.current = false;
       setIsRetouching(false);
@@ -228,7 +236,7 @@ export default function Penbar() {
               ? "there is no outline to recut the mesh against"
               : "recut the mesh along the outline, so the triangles near the curve follow it instead of straddling " +
                 "it. worth doing after a stitch, which moves the curve across triangles that were never cut for it. " +
-                "nothing is saved until this object is accepted"
+                "nothing is saved until this is accepted"
         }
         style={{
           flexShrink: 0,

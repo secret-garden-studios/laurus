@@ -1,20 +1,29 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType, advanceObjectReview, isObjectReviewLocked, type ObjectShapeEdit } from "../states/ui-state";
+import { UIActionType, advanceObjectReview, isMaskEditLocked, type ObjectShapeEdit } from "../states/ui-state";
 import {
   postObjectReviewDecision,
+  toLightUpdate,
   toObjectBlackPoint,
   toObjectBlackPointFields,
   type LaurusMaskResult,
 } from "../workspace.server";
-import { applyObjectDelta } from "../canvas-media/mask-delta";
+import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import { retouchDelta } from "../canvas-media/object-retouch";
 
 function polygonIndicesForObject(polygons: { object_id: number }[] | undefined, objectId: number): Set<number> {
   const indices = new Set<number>();
   polygons?.forEach((p, i) => {
     if (p.object_id === objectId) indices.add(i);
+  });
+  return indices;
+}
+
+function polygonIndicesForLight(polygons: { light_id: number }[] | undefined, lightId: number): Set<number> {
+  const indices = new Set<number>();
+  polygons?.forEach((p, i) => {
+    if (p.light_id === lightId) indices.add(i);
   });
   return indices;
 }
@@ -32,17 +41,26 @@ function reviewPreviewFor(
 export function useObjectReview() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskObjectsUpdated, notifyMaskObjectReviewPreview, notifyMaskPendingTopologyCleared } =
-    useContext(MaskContext);
-  const { sendMaskObjectUpdate } = useContext(SocketContext);
+  const {
+    notifyMaskObjectsUpdated,
+    notifyMaskObjectReviewPreview,
+    notifyMaskPendingTopologyCleared,
+    notifyMaskLightUpdated,
+  } = useContext(MaskContext);
+  const { sendMaskObjectUpdate, sendMaskLightUpdate } = useContext(SocketContext);
 
-  const review = uiState.objectReview;
+  const session = uiState.maskEdit;
+  // The object review specifically, for everything that is genuinely about
+  // reviewing -- stepping candidates, decisions, the lock. A light edit has
+  // none of that and reads as undefined here, which is what the callers below
+  // already do the right thing with.
+  const review = session?.subject === "object" ? session : undefined;
   const decidingRef = useRef(false);
   const [isDeciding, setIsDeciding] = useState(false);
 
   const currentCandidate = review?.candidates[review.currentIndex];
   const currentDecision = currentCandidate ? review?.decisions.get(currentCandidate.object.id) : undefined;
-  const isLocked = review ? isObjectReviewLocked(review) : false;
+  const isLocked = session ? isMaskEditLocked(session) : false;
   const currentDescription =
     currentDecision === "accepted" && currentCandidate
       ? (coreState.canvasMasks.get(review?.maskKey ?? "")?.objects.find((o) => o.id === currentCandidate.object.id)
@@ -57,8 +75,8 @@ export function useObjectReview() {
    */
   const clearShapePreview = useCallback(() => {
     dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-    notifyMaskPendingTopologyCleared(review?.maskKey);
-  }, [dispatch, notifyMaskPendingTopologyCleared, review?.maskKey]);
+    notifyMaskPendingTopologyCleared(session?.maskKey);
+  }, [dispatch, notifyMaskPendingTopologyCleared, session?.maskKey]);
 
   /**
    * Put the mask's mesh back the way it was before a retouch recut it.
@@ -76,48 +94,56 @@ export function useObjectReview() {
    * read membership out of it must not read the copy they just replaced.
    */
   const restoreRetouchedMesh = useCallback((): LaurusMaskResult | undefined => {
-    if (!review) return undefined;
-    const maskData = coreState.canvasMasks.get(review.maskKey);
-    if (!review.retouch || !maskData) return maskData;
-    const restored = { ...maskData, polygons: review.retouch.restore };
-    dispatch({ type: CoreActionType.SetCanvasMask, key: review.maskKey, value: restored });
-    uiDispatch({ type: UIActionType.SetObjectReviewRetouch, retouch: undefined });
-    notifyMaskObjectsUpdated(review.maskKey, restored);
+    if (!session) return undefined;
+    const maskData = coreState.canvasMasks.get(session.maskKey);
+    if (!session.retouch || !maskData) return maskData;
+    const restored = { ...maskData, polygons: session.retouch.restore };
+    dispatch({ type: CoreActionType.SetCanvasMask, key: session.maskKey, value: restored });
+    uiDispatch({ type: UIActionType.SetMaskEditRetouch, retouch: undefined });
+    notifyMaskObjectsUpdated(session.maskKey, restored);
     return restored;
-  }, [review, coreState.canvasMasks, dispatch, uiDispatch, notifyMaskObjectsUpdated]);
+  }, [session, coreState.canvasMasks, dispatch, uiDispatch, notifyMaskObjectsUpdated]);
 
   /**
-   * Put the current candidate back the way it was before the pen touched it:
-   * the outline it was detected with, the triangles that went with it, and no
+   * Put whatever the pen is open on back the way it was before it touched it:
+   * the outline it started from, the triangles that went with it, and no
    * pending relief.
    *
    * All three, because a shape edit is three changes wearing one name -- the
-   * stored outline, the object's own geometry, and which triangles it covers
-   * -- and undoing any subset of them leaves the object in a state nothing
+   * stored outline, the region's own geometry, and which triangles it covers
+   * -- and undoing any subset of them leaves the thing in a state nothing
    * produced. Reverting used to drop only the outline, so the triangles stayed
    * cut to a curve that no longer existed.
    *
-   * "The way it was" means the recorded decision where there is one, and the
-   * candidate as detected where there is not, which is the same rule that
-   * decides what to show when stepping between candidates.
+   * "The way it was" is settled by the mask, not by the session: for an object
+   * that means the recorded decision where there is one and the candidate as
+   * detected where there is not, and for a light it means the triangles that
+   * still carry its id. Both are read *after* the recut is rolled back, so
+   * neither can name a fragment that is about to stop existing.
    */
   const revertShape = useCallback(() => {
-    if (!review) return;
-    const candidate = review.candidates[review.currentIndex];
-    if (!candidate) return;
+    if (!session) return;
 
-    const restored = reviewPreviewFor(
-      candidate,
-      review.decisions.has(candidate.object.id),
-      restoreRetouchedMesh()?.polygons,
-    );
-    uiDispatch({ type: UIActionType.SetObjectReviewShape, shape: undefined });
-    uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices: restored.current });
+    const restored = ((): { current: Set<number>; diffBase: Set<number> | undefined } | undefined => {
+      if (session.subject === "light") {
+        return {
+          current: polygonIndicesForLight(restoreRetouchedMesh()?.polygons, session.light.id),
+          diffBase: undefined,
+        };
+      }
+      const candidate = session.candidates[session.currentIndex];
+      if (!candidate) return undefined;
+      return reviewPreviewFor(candidate, session.decisions.has(candidate.object.id), restoreRetouchedMesh()?.polygons);
+    })();
+    if (!restored) return;
+
+    uiDispatch({ type: UIActionType.SetMaskEditShape, shape: undefined });
+    uiDispatch({ type: UIActionType.SetMaskEditIndices, indices: restored.current });
     dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-    notifyMaskPendingTopologyCleared(review.maskKey);
-    notifyMaskObjectReviewPreview(review.maskKey, restored.current, undefined, restored.diffBase);
+    notifyMaskPendingTopologyCleared(session.maskKey);
+    notifyMaskObjectReviewPreview(session.maskKey, restored.current, restored.diffBase);
   }, [
-    review,
+    session,
     restoreRetouchedMesh,
     uiDispatch,
     dispatch,
@@ -140,10 +166,10 @@ export function useObjectReview() {
    * that can call it.
    */
   useEffect(() => {
-    if (!review?.editingShape || uiState.tool.type === "pen") return;
+    if (!session?.editingShape || uiState.tool.type === "pen") return;
     revertShape();
-    uiDispatch({ type: UIActionType.SetObjectReviewShapeEditing, editing: false });
-  }, [review?.editingShape, uiState.tool.type, revertShape, uiDispatch]);
+    uiDispatch({ type: UIActionType.SetMaskEditShapeEditing, editing: false });
+  }, [session?.editingShape, uiState.tool.type, revertShape, uiDispatch]);
 
   const decideCurrentObject = useCallback(
     async (decision: "accepted" | "rejected", description?: string) => {
@@ -211,7 +237,7 @@ export function useObjectReview() {
           );
 
       uiDispatch({ type: UIActionType.RecordObjectReviewDecision, decision, nextCurrentIndices: preview?.current });
-      notifyMaskObjectReviewPreview(review.maskKey, preview?.current, undefined, preview?.diffBase);
+      notifyMaskObjectReviewPreview(review.maskKey, preview?.current, preview?.diffBase);
     },
     [
       review,
@@ -228,17 +254,17 @@ export function useObjectReview() {
   );
 
   const togglePolygon = useCallback(
-    (index: number) => uiDispatch({ type: UIActionType.ToggleObjectReviewPolygon, index }),
+    (index: number) => uiDispatch({ type: UIActionType.ToggleMaskEditPolygon, index }),
     [uiDispatch],
   );
 
   const setEditedShape = useCallback(
-    (shape: ObjectShapeEdit | undefined) => uiDispatch({ type: UIActionType.SetObjectReviewShape, shape }),
+    (shape: ObjectShapeEdit | undefined) => uiDispatch({ type: UIActionType.SetMaskEditShape, shape }),
     [uiDispatch],
   );
 
   const setEditingShape = useCallback(
-    (editing: boolean) => uiDispatch({ type: UIActionType.SetObjectReviewShapeEditing, editing }),
+    (editing: boolean) => uiDispatch({ type: UIActionType.SetMaskEditShapeEditing, editing }),
     [uiDispatch],
   );
 
@@ -258,15 +284,15 @@ export function useObjectReview() {
       );
       clearShapePreview();
       uiDispatch({ type: UIActionType.SetObjectReviewIndex, index: clamped, currentIndices: preview.current });
-      notifyMaskObjectReviewPreview(review.maskKey, preview.current, undefined, preview.diffBase);
+      notifyMaskObjectReviewPreview(review.maskKey, preview.current, preview.diffBase);
     },
     [review, uiDispatch, notifyMaskObjectReviewPreview, restoreRetouchedMesh, clearShapePreview],
   );
 
   const requestRedo = useCallback(() => {
-    if (!review || !isObjectReviewLocked(review)) return;
+    if (!review || !isMaskEditLocked(review)) return;
     uiDispatch({ type: UIActionType.RequestObjectReviewRedo });
-    notifyMaskObjectReviewPreview(review.maskKey, review.currentIndices, undefined, undefined);
+    notifyMaskObjectReviewPreview(review.maskKey, review.currentIndices, undefined);
   }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
 
   const goToPreviousCandidate = useCallback(() => {
@@ -288,20 +314,20 @@ export function useObjectReview() {
    * underneath.
    */
   const closeReview = useCallback(() => {
-    if (review) notifyMaskObjectReviewPreview(review.maskKey, undefined);
+    if (session) notifyMaskObjectReviewPreview(session.maskKey, undefined);
     clearShapePreview();
-    uiDispatch({ type: UIActionType.EndObjectReview });
-  }, [review, uiDispatch, notifyMaskObjectReviewPreview, clearShapePreview]);
+    uiDispatch({ type: UIActionType.EndMaskEdit });
+  }, [session, uiDispatch, notifyMaskObjectReviewPreview, clearShapePreview]);
 
   const endReview = useCallback(() => {
     // an uncommitted reshape dies with the session rather than lingering as
     // relief over an object that was never accepted, and so does an
     // uncommitted recut -- which can be there without a reshape, so it is
     // asked for separately rather than riding on editedShape
-    if (review?.editedShape) revertShape();
+    if (session?.editedShape) revertShape();
     else restoreRetouchedMesh();
     closeReview();
-  }, [review, revertShape, restoreRetouchedMesh, closeReview]);
+  }, [session, revertShape, restoreRetouchedMesh, closeReview]);
 
   const saveEditedObject = useCallback(
     async (description: string) => {
@@ -347,7 +373,68 @@ export function useObjectReview() {
     [review, coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, closeReview],
   );
 
+  /**
+   * Write the light's edited outline and description back to the mask.
+   *
+   * The mirror of saveEditedObject, and different from it in exactly two
+   * places. There is no `reviewed` flag, because a light is never proposed by
+   * detection and so is never pending anyone's judgement. And the geometry
+   * falls back to the light's own rather than to a candidate's -- which for a
+   * light that has never been shaped is all zeros, so the pen is expected to
+   * have seeded it (see lightRegion) before anything can be saved here.
+   *
+   * The recut goes with the save for the same reason the object's does: it is
+   * already on screen, and leaving it unsent would have the canvas drawing a
+   * mesh the server does not have.
+   */
+  const saveEditedLight = useCallback(
+    async (description: string) => {
+      if (session?.subject !== "light" || decidingRef.current) return;
+      const maskData = coreState.canvasMasks.get(session.maskKey);
+      if (!maskData) return;
+      // The light as the mask holds it now, not the copy the session opened
+      // on. This payload replaces every field of the light, and the light
+      // source bar is right there editing intensity and falloff on the very
+      // light this panel has open -- saving from the snapshot would quietly
+      // roll back whatever was changed while the panel sat there. Only the
+      // outline and the description come from the edit; everything else is
+      // carried through from wherever it now stands.
+      const light = maskData.lights.find((l) => l.id === session.light.id) ?? session.light;
+      decidingRef.current = true;
+      setIsDeciding(true);
+
+      let updated;
+      try {
+        updated = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(light, {
+            cx: session.editedShape?.cx ?? light.cx,
+            cy: session.editedShape?.cy ?? light.cy,
+            radius: session.editedShape?.radius ?? light.radius,
+            shape: session.editedShape?.path ?? light.shape,
+            description,
+            polygon_indices: [...session.currentIndices].sort((a, b) => a - b),
+            ...(session.retouch ? { retouch: retouchDelta(session.retouch) } : {}),
+          }),
+        );
+      } finally {
+        decidingRef.current = false;
+        setIsDeciding(false);
+      }
+      if (!updated) return;
+
+      const patched = applyLightDelta(maskData, updated);
+      dispatch({ type: CoreActionType.SetCanvasMask, key: session.maskKey, value: patched });
+      notifyMaskLightUpdated(session.maskKey, patched);
+      // the recut has just been saved with the light, so this closes rather
+      // than ends -- see saveEditedObject
+      closeReview();
+    },
+    [session, coreState.canvasMasks, sendMaskLightUpdate, dispatch, notifyMaskLightUpdated, closeReview],
+  );
+
   return {
+    session,
     review,
     isDeciding,
     currentDecision,
@@ -356,6 +443,7 @@ export function useObjectReview() {
     requestRedo,
     decideCurrentObject,
     saveEditedObject,
+    saveEditedLight,
     togglePolygon,
     clearShapePreview,
     revertShape,

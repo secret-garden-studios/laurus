@@ -12,7 +12,7 @@ import {
 } from "../workspace.client";
 import { useToolCursor } from "../hooks/useToolCursor";
 import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
-import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildStaticMaskMesh,
   colorToRGB01,
@@ -31,7 +31,15 @@ import {
   uploadStaticMaskMesh,
 } from "../mask-gl";
 import { CoreActionType, DEFAULT_LIGHT_VALUE, PendingTopologyEdit } from "../states/core-state";
-import { LaurusActiveElement, LaurusSelectedElement, UIActionType, isObjectReviewLocked } from "../states/ui-state";
+import {
+  EditableRegion,
+  LaurusActiveElement,
+  LaurusSelectedElement,
+  MaskEditSession,
+  UIActionType,
+  editedRegion,
+  isMaskEditLocked,
+} from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
@@ -41,7 +49,6 @@ import {
   lightCenterFromCentroids,
   lightIdAtPoint,
   centerOfIndices,
-  indicesInCircleFromCentroids,
   indicesInObjectFromCentroids,
   objectIdAtPoint,
   swelledPolygonIndexAtPoint,
@@ -52,6 +59,7 @@ import { applyLightDelta, applyObjectDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
 import { retouchMesh } from "./object-retouch";
+import { unitCirclePath } from "./object-path";
 import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
 import {
   getFrames,
@@ -67,7 +75,9 @@ import {
   LaurusObject,
   LaurusObjectBlackPoint,
   LaurusPolygonPath,
+  newLight,
   toEquationObjectBlackPoint,
+  toLightUpdate,
   toObjectBlackPoint,
   toObjectBlackPointFields,
 } from "../workspace.server";
@@ -77,6 +87,33 @@ export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
 
 const LIGHT_DRAG_EPSILON_SQ = 1;
+
+/**
+ * The silhouette a light drag carries with it.
+ *
+ * A drag is a translation of the region the light covers, so it has to be the
+ * light's *own* region -- an empty `shape` here is a circle, exactly as it is
+ * everywhere else, which is what keeps a light drawn before lights could be
+ * shaped dragging the way it always did.
+ *
+ * This used to be a bare circle, reconstructed from the light's triangles at
+ * the start of every drag. That was right when every light was a circle, and
+ * became wrong the moment one could be drawn: the reconstruction threw the
+ * outline away, so dragging a shaped light picked up whatever triangles a
+ * circle of the same reach happened to cover and the shape appeared to snap
+ * back to a disc.
+ */
+type LightDragRegion = { cx: number; cy: number; radius: number; shape: string };
+
+/** What an open session is editing on this mask, if anything -- see maskEditSubjectRef. */
+function maskEditSubjectFor(
+  session: MaskEditSession | undefined,
+  maskKey: string,
+): { subject: "light" | "object"; id: number } | undefined {
+  if (session?.maskKey !== maskKey) return undefined;
+  const region = editedRegion(session);
+  return region && { subject: session.subject, id: region.id };
+}
 
 function sameIndices(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -170,7 +207,7 @@ export interface MaskImperativeHandle {
   clearPendingTopology: () => void;
   /** Recut this mask's mesh against the outline the pen has open -- see retouchMesh. */
   retouchObjectMesh: () => void;
-  setObjectReviewPreview: (indices: Set<number> | undefined, editObjectId?: number, diffBase?: Set<number>) => void;
+  setObjectReviewPreview: (indices: Set<number> | undefined, diffBase?: Set<number>) => void;
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
@@ -266,7 +303,7 @@ export function ProjectMaskItem({
         lightId: number;
         startX: number;
         startY: number;
-        originalCircle: { cx: number; cy: number; radius: number };
+        originalRegion: LightDragRegion;
         originalIndices: Set<number>;
         rafId: number | undefined;
         latestX: number;
@@ -275,9 +312,7 @@ export function ProjectMaskItem({
     | undefined
   >(undefined);
 
-  const lastKnownLightRef = useRef<
-    Map<number, { indices: Set<number>; circle: { cx: number; cy: number; radius: number } }>
-  >(new Map());
+  const lastKnownLightRef = useRef<Map<number, { indices: Set<number>; region: LightDragRegion }>>(new Map());
   const lightCommitInFlightRef = useRef<Set<number>>(new Set());
   const [isDraggingLight, setIsDraggingLight] = useState(false);
   const objectDragRef = useRef<
@@ -308,12 +343,49 @@ export function ProjectMaskItem({
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
   const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
-  const objectEditIdRef = useRef<number | undefined>(undefined);
+  /**
+   * Which region the open session is editing, if it is on this mask.
+   *
+   * Read only by recolorHighlight, and only to make the loops that paint
+   * *stored* membership stand aside for it. While a session is open the
+   * preview is the authority on which triangles that region covers, and the
+   * mask still holds the membership it had when the session opened -- so
+   * painting both puts the union on screen: the triangles the outline has
+   * moved off stay lit, and the reshape looks like it did nothing.
+   *
+   * Kept in step by an effect rather than pushed through
+   * setObjectReviewPreview, which is where it used to live. That channel fires
+   * many times during one session -- every re-tag, every recut, every revert --
+   * and all but the first of those carried no subject, so the suppression was
+   * switched on when the session opened and switched straight back off by the
+   * first thing the session did.
+   */
+  const maskEditSubjectRef = useRef<{ subject: "light" | "object"; id: number } | undefined>(undefined);
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
   const lightsRef = useRef<Map<number, Set<number>>>(new Map());
   const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
+  /**
+   * Where a light's silhouette is being moved to, held only while some gesture
+   * is moving it -- the pen reshaping it, or the move tool dragging it whole.
+   * Read by resolveRestingLightSources so the light itself follows the gesture
+   * without a round trip, exactly as pendingLightRef already does for the
+   * triangles.
+   *
+   * One ref for both because they are the same question ("where is this light
+   * right now, as against where it is stored?") and the two gestures cannot
+   * overlap: the pen owns the pointer while it is open. Each clears it on the
+   * way out -- the pen through clearPendingTopology, the drag through
+   * clearPendingLight -- so it is never left behind.
+   */
+  const pendingLightShapeRef = useRef<
+    { lightId: number; cx: number; cy: number; radius: number; shape: string; draft: boolean } | undefined
+  >(undefined);
+  // `render` is defined below, and the preview is only ever called from a
+  // pointer handler long after that -- so it is reached through a ref rather
+  // than by hoisting the whole of `render` above the callbacks it depends on.
+  const renderRef = useRef<() => void>(() => {});
   const selectedLightIdRef = useRef<number | undefined>(undefined);
   const objectsMapRef = useRef<Map<number, Set<number>>>(new Map());
   const maskGeometryRef = useRef<MaskGeometry>({ corners: [], points: [], centroids: [] });
@@ -327,10 +399,10 @@ export function ProjectMaskItem({
     (drag: NonNullable<typeof lightDragRef.current>, dx: number, dy: number): Set<number> => {
       if (source.kind !== "static") return new Set();
       if (dx * dx + dy * dy <= LIGHT_DRAG_EPSILON_SQ) return drag.originalIndices;
-      return indicesInCircleFromCentroids(maskGeometry(source.maskData).centroids, {
-        cx: drag.originalCircle.cx + dx,
-        cy: drag.originalCircle.cy + dy,
-        radius: drag.originalCircle.radius,
+      return indicesInObjectFromCentroids(maskGeometry(source.maskData).centroids, {
+        ...drag.originalRegion,
+        cx: drag.originalRegion.cx + dx,
+        cy: drag.originalRegion.cy + dy,
       });
     },
     [source],
@@ -340,7 +412,24 @@ export function ProjectMaskItem({
     const drag = lightDragRef.current;
     if (!drag) return;
     drag.rafId = undefined;
-    const indices = lightIndicesAtOffset(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
+    const dx = drag.latestX - drag.startX;
+    const dy = drag.latestY - drag.startY;
+    const indices = lightIndicesAtOffset(drag, dx, dy);
+    // The light goes with its triangles. A shaped light draws from its stored
+    // centre, which has not moved yet, so without this the glow would sit
+    // still while the triangles slid out from under it and only catch up when
+    // the drag was let go. Not a draft: the outline is not changing, only
+    // where it is, so the tile it was already sampled at is the right one.
+    if (drag.originalRegion.shape) {
+      pendingLightShapeRef.current = {
+        lightId: drag.lightId,
+        cx: drag.originalRegion.cx + dx,
+        cy: drag.originalRegion.cy + dy,
+        radius: drag.originalRegion.radius,
+        shape: drag.originalRegion.shape,
+        draft: false,
+      };
+    }
     dispatch({
       type: CoreActionType.SetPendingLight,
       value: { maskKey: mediaKey, lightId: drag.lightId, polygonIndices: [...indices] },
@@ -467,10 +556,34 @@ export function ProjectMaskItem({
     return lightsRef.current.keys().next().value;
   }, []);
 
+  /**
+   * The silhouette a light is drawing with right now -- the one a gesture is
+   * moving it to, or the one it has stored -- or undefined for a light drawn
+   * before they could be shaped, which is still drawn from its triangles.
+   *
+   * The single answer to "where is this light", so that everything which needs
+   * to know cannot disagree about it. They did disagree: the animation derived
+   * a rest position from the light's triangles while the canvas drew the light
+   * at its own centre, and for anything but a blob those are different points
+   * -- a crescent's triangles sit in its arc, its centre in the notch. The
+   * first frame of a move therefore teleported the light from one to the other
+   * before it had moved at all.
+   */
+  const resolveLightSilhouette = useCallback((lightId: number): (LightDragRegion & { draft: boolean }) | undefined => {
+    const drafted = pendingLightShapeRef.current?.lightId === lightId ? pendingLightShapeRef.current : undefined;
+    if (drafted) return drafted;
+    const meta = lightsMetaRef.current.get(lightId);
+    return meta && meta.radius > 0 ? { ...meta, draft: false } : undefined;
+  }, []);
+
   const computeLightSourceRestPosition = useCallback(
     (lightIdOverride?: number) => {
       if (source.kind !== "static") return undefined;
       const targetLightId = lightIdOverride ?? resolveTargetLightId();
+      // Rest means where it rests on screen, so a shaped light answers with its
+      // own centre -- the same one resolveRestingLightSources draws it at.
+      const shaped = targetLightId !== undefined ? resolveLightSilhouette(targetLightId) : undefined;
+      if (shaped) return { x: shaped.cx, y: shaped.cy };
       const indices =
         pendingLightRef.current ??
         (targetLightId !== undefined ? lightsRef.current.get(targetLightId) : undefined) ??
@@ -478,9 +591,28 @@ export function ProjectMaskItem({
       if (!indices) return undefined;
       return centerOfIndices(maskGeometry(source.maskData).points, indices);
     },
-    [source, resolveTargetLightId],
+    [source, resolveTargetLightId, resolveLightSilhouette],
   );
 
+  /**
+   * Every light on the mask as the shader wants it.
+   *
+   * Where a light's silhouette comes from is a three-way choice, most specific
+   * first: the outline the pen is dragging right now, the one the light has
+   * stored, or -- for a light drawn before they could be shaped -- the disc it
+   * has always lit with, centred on its triangles and half its `size` across.
+   * The
+   * last is not a fallback so much as the original behaviour, still exactly
+   * itself: lightProfile's two branches are the same formula, so a light with
+   * no outline lights as it always did.
+   *
+   * A stored outline stops the centre following the triangles, and that is
+   * deliberate rather than a limitation. Once someone has drawn where the light
+   * falls, that is where it falls; re-deriving the centre would slide their
+   * curve sideways the next time the grouping changed. It is also the pairing
+   * rule the outline itself demands -- a normalized path is only meaningful
+   * with the cx/cy/radius it was measured against.
+   */
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
@@ -490,6 +622,27 @@ export function ProjectMaskItem({
       if (playbackLightSourcesRef.current.has(lightId)) return;
       const meta = lightsMetaRef.current.get(lightId);
       if (!meta) return;
+
+      const shaped = resolveLightSilhouette(lightId);
+      const appearance = { falloff: meta.falloff, intensity: meta.intensity, darkness: meta.darkness };
+
+      if (shaped) {
+        lights.push({
+          x: shaped.cx,
+          y: canvas.height - shaped.cy,
+          radius: shaped.radius,
+          // Mid-drag the outline is sampled at the editor's own lower tile
+          // resolution: it is rebuilt on every pointer move, and the full field
+          // costs far more than the difference can be seen to be worth while
+          // an anchor is still moving. The commit that ends the gesture is not
+          // a draft, so the light settles at full resolution the moment the
+          // anchor is let go rather than waiting for the save.
+          shape: cachedObjectShape(shaped.shape, shaped.draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE),
+          ...appearance,
+        });
+        return;
+      }
+
       const pending = pendingLightIdRef.current === lightId ? pendingLightRef.current : undefined;
       const center = lightCenterFromCentroids(centroids, pending ?? indices);
       if (!center) return;
@@ -497,13 +650,11 @@ export function ProjectMaskItem({
         x: center[0],
         y: canvas.height - center[1],
         radius: meta.size / 2,
-        falloff: meta.falloff,
-        intensity: meta.intensity,
-        darkness: meta.darkness,
+        ...appearance,
       });
     });
     return lights;
-  }, []);
+  }, [resolveLightSilhouette]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -537,61 +688,131 @@ export function ProjectMaskItem({
     isDragging: isDragging || isDraggingLight || isDraggingTopology,
   });
   const isReviewingThisMask =
-    source.kind === "static" &&
-    uiState.objectReview?.maskKey === mediaKey &&
-    !isObjectReviewLocked(uiState.objectReview);
+    source.kind === "static" && uiState.maskEdit?.maskKey === mediaKey && !isMaskEditLocked(uiState.maskEdit);
   const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
 
+  /**
+   * The silhouette a light already has, or the one it should start from.
+   *
+   * A light drawn today is born with one, so this is for the ones drawn before
+   * they could be: those have no geometry of their own, and zeros are not
+   * something the pen can draw. What such a light *does* have is the
+   * silhouette it has been lighting with all along -- a disc of `size / 2`
+   * centred on its triangles -- which is exactly what resolveRestingLightSources
+   * derives to draw it. Seeding from that is what makes opening the pen a
+   * no-op to look at: the first thing shown is the light as it already is,
+   * rather than a circle that has appeared from nowhere and moved it.
+   *
+   * The membership passed in is the session's, not the mask's, so the seed
+   * follows triangles the editor has already added or removed rather than
+   * centring on where the light used to be.
+   */
+  const lightRegion = useCallback((light: LaurusLight, indices: Set<number>): EditableRegion => {
+    if (light.radius > 0) return light;
+    const center = lightCenterFromCentroids(maskGeometryRef.current.centroids, indices);
+    return {
+      ...light,
+      cx: center?.[0] ?? light.cx,
+      cy: center?.[1] ?? light.cy,
+      radius: light.size / 2,
+      shape: unitCirclePath(),
+    };
+  }, []);
+
+  /**
+   * The outline the pen should be showing, and the one it started from.
+   *
+   * `current` is what the editor draws and `original` the ghost behind it,
+   * present only once the two differ. Both are needed here rather than in the
+   * editor because only this component can see the mask, and the mask is what
+   * settles which of the three possible outlines is the live one.
+   */
   const reviewShape = useMemo(() => {
-    const review = uiState.objectReview;
-    if (source.kind !== "static" || review?.maskKey !== mediaKey) return undefined;
-    const candidate = review.candidates[review.currentIndex]?.object;
-    if (!candidate) return undefined;
-    // Not `decisions`, which only knows about this session: a review can be
-    // resumed on a mask that was half decided days ago, and what settles
-    // whether an outline was accepted is whether the object is on the mask.
-    const stored = coreState.canvasMasks.get(mediaKey)?.objects.find((o) => o.id === candidate.id);
-    const base = stored ?? candidate;
+    const session = uiState.maskEdit;
+    if (source.kind !== "static" || session?.maskKey !== mediaKey) return undefined;
+
+    // Not the session's own copy, and for an object not `decisions` either:
+    // a review can be resumed on a mask that was half decided days ago, and
+    // what settles whether an outline was accepted is whether it is on the
+    // mask now. The same rule gives a light its stored outline.
+    const maskData = coreState.canvasMasks.get(mediaKey);
+
+    // A stored light that has never been shaped is still all zeros, so it goes
+    // through the same seeding the session's own copy does -- otherwise saving
+    // only a description would hand the pen a radius of 0 the next time it
+    // opened. Resolved inside the branch rather than after it so that neither
+    // side has to be told what the other's `stored` is.
+    const resolved: { opened: EditableRegion; stored: EditableRegion | undefined } | undefined = (() => {
+      if (session.subject === "light") {
+        const held = maskData?.lights.find((l) => l.id === session.light.id);
+        return {
+          opened: lightRegion(session.light, session.currentIndices),
+          stored: held && lightRegion(held, session.currentIndices),
+        };
+      }
+      const candidate = session.candidates[session.currentIndex]?.object;
+      if (!candidate) return undefined;
+      return { opened: candidate, stored: maskData?.objects.find((o) => o.id === candidate.id) };
+    })();
+    if (!resolved) return undefined;
+    const { opened, stored } = resolved;
+    const base = stored ?? opened;
+
     // Geometry and outline must come from the same place. A path is normalized
     // against the geometry it was measured with -- pulling an anchor outward
     // grows the radius rather than the path -- so pairing one with another's
     // cx/cy/radius renders it back at roughly the size and position that other
     // one had. Which looks exactly like the pen snapping back the instant it
     // is released.
-    const from = review.editedShape ?? base;
+    const from = session.editedShape ?? base;
     const current = {
-      id: candidate.id,
+      id: opened.id,
       cx: from.cx,
       cy: from.cy,
       radius: from.radius,
-      shape: review.editedShape?.path ?? base.shape,
+      shape: session.editedShape?.path ?? base.shape,
       // what the editor is remounted on -- see the key below
-      origin: review.editedShape ? "edited" : stored ? "stored" : "detected",
+      origin: session.editedShape ? "edited" : stored ? "stored" : "detected",
     };
     const changed =
-      current.shape !== candidate.shape ||
-      current.cx !== candidate.cx ||
-      current.cy !== candidate.cy ||
-      current.radius !== candidate.radius;
+      current.shape !== opened.shape ||
+      current.cx !== opened.cx ||
+      current.cy !== opened.cy ||
+      current.radius !== opened.radius;
     return {
       current,
-      original: changed
-        ? { cx: candidate.cx, cy: candidate.cy, radius: candidate.radius, shape: candidate.shape }
-        : undefined,
+      original: changed ? { cx: opened.cx, cy: opened.cy, radius: opened.radius, shape: opened.shape } : undefined,
     };
-  }, [uiState.objectReview, source.kind, mediaKey, coreState.canvasMasks]);
+  }, [uiState.maskEdit, source.kind, mediaKey, coreState.canvasMasks, lightRegion]);
 
-  // The object the pen is open on, if any.
-  const shapeEditorObject = uiState.objectReview?.editingShape ? reviewShape : undefined;
+  // The region the pen is open on, if any.
+  const shapeEditorObject = uiState.maskEdit?.editingShape ? reviewShape : undefined;
 
-  // A reshape previews through the same pending-topology channel an object
-  // drag already uses, so the relief follows the pen without a round trip and
-  // without touching the state the editor reads its own rings from.
+  // A reshape previews without a round trip and without touching the state the
+  // editor reads its own rings from. Which channel depends on what is being
+  // reshaped: an object's outline is relief, so it goes through the same
+  // pending-topology channel an object drag already uses, while a light's is
+  // light, so it goes to the uniform the mesh is shaded with.
   const previewShapeEdit = useCallback(
     (edit: ShapeEdit, draft = true) => {
-      const review = uiState.objectReview;
-      const candidate = review?.candidates[review.currentIndex]?.object;
-      if (!review || !candidate) return;
+      const session = uiState.maskEdit;
+      if (!session) return;
+
+      if (session.subject === "light") {
+        pendingLightShapeRef.current = {
+          lightId: session.light.id,
+          cx: edit.cx,
+          cy: edit.cy,
+          radius: edit.radius,
+          shape: edit.path,
+          draft,
+        };
+        renderRef.current();
+        return;
+      }
+
+      const candidate = session.candidates[session.currentIndex]?.object;
+      if (!candidate) return;
       const pending: PendingTopologyEdit = {
         maskKey: mediaKey,
         objectId: candidate.id,
@@ -602,21 +823,22 @@ export function ProjectMaskItem({
         falloff: candidate.falloff,
         shape: edit.path,
         blackPoint: toObjectBlackPoint(candidate),
-        polygonIndices: review.currentIndices,
+        polygonIndices: session.currentIndices,
         draft,
       };
 
       if (!draft) dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
       notifyMaskPendingTopologySet(mediaKey, pending);
     },
-    [uiState.objectReview, mediaKey, dispatch, notifyMaskPendingTopologySet],
+    [uiState.maskEdit, mediaKey, dispatch, notifyMaskPendingTopologySet],
   );
 
   /**
-   * Re-tag the object's triangles to the ones the outline actually encloses.
+   * Re-tag the triangles to the ones the outline actually encloses -- an
+   * object's or a light's, on the same rule.
    *
-   * **Only ever called for an edit the reviewer actually made.** Opening the
-   * pen must leave the object exactly as it was -- it is a view onto the
+   * **Only ever called for an edit the editor actually made.** Opening the
+   * pen must leave things exactly as they were -- it is a view onto the
    * outline, and a view that rewrites what it is shown is not one. This was
    * briefly wired to run on open as well, on the theory that the triangles
    * ought to look flush the moment the curve appears; what it actually did was
@@ -632,21 +854,22 @@ export function ProjectMaskItem({
    * without moving them at all.
    *
    * Taking membership from the outline makes the curve the thing that decides,
-   * which is what a reviewer dragging it expects. A triangle is in when its
-   * centroid is, which is the same test the mesh already uses for objects
-   * everywhere else.
+   * which is what anyone dragging an anchor expects. A triangle is in when its
+   * centroid is, which is the same test the mesh already uses everywhere else
+   * -- and a retouch afterwards cuts the rim triangles flush to the curve, so
+   * the edge stops being a staircase of whole triangles.
    */
   const snapIndicesToShape = useCallback(
     (region: { cx: number; cy: number; radius: number; shape: string }) => {
-      const review = uiState.objectReview;
-      if (!review || review.maskKey !== mediaKey || isObjectReviewLocked(review)) return;
+      const review = uiState.maskEdit;
+      if (!review || review.maskKey !== mediaKey || isMaskEditLocked(review)) return;
       const indices = indicesInObjectFromCentroids(maskGeometryRef.current.centroids, region);
-      uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices });
+      uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
       // routes straight back to this component's own setObjectReviewPreview,
       // which sets the ref and repaints
-      notifyMaskObjectReviewPreview(mediaKey, indices, undefined, objectReviewDiffBaseRef.current);
+      notifyMaskObjectReviewPreview(mediaKey, indices, objectReviewDiffBaseRef.current);
     },
-    [uiState.objectReview, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
+    [uiState.maskEdit, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
   );
 
   // Recorded only on release: this is the value the accept decision carries,
@@ -656,7 +879,7 @@ export function ProjectMaskItem({
       // no longer a draft: the gesture is over, so this one gets built at full
       // resolution and is what the relief settles on
       previewShapeEdit(edit, false);
-      uiDispatch({ type: UIActionType.SetObjectReviewShape, shape: edit });
+      uiDispatch({ type: UIActionType.SetMaskEditShape, shape: edit });
       snapIndicesToShape({ cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path });
     },
     [previewShapeEdit, uiDispatch, snapIndicesToShape],
@@ -678,15 +901,15 @@ export function ProjectMaskItem({
    * chance to disagree with it.
    */
   const retouchObjectMesh = useCallback(() => {
-    const review = uiState.objectReview;
-    if (source.kind !== "static" || review?.maskKey !== mediaKey || isObjectReviewLocked(review)) return;
-    const candidate = review.candidates[review.currentIndex]?.object;
-    if (!candidate) return;
+    const session = uiState.maskEdit;
+    if (source.kind !== "static" || session?.maskKey !== mediaKey || isMaskEditLocked(session)) return;
 
-    // the outline the pen is showing, not the one detection drew: a recut has
-    // to follow the curve the reviewer is looking at, and after an accepted
-    // reshape those are two different curves -- see reviewShape
-    const from = reviewShape?.current ?? candidate;
+    // the outline the pen is showing, not the one it opened on: a recut has to
+    // follow the curve being looked at, and after an accepted reshape those are
+    // two different curves -- see reviewShape, which is also what seeds an
+    // unshaped light's circle, so there is always something here to cut to
+    const from = reviewShape?.current;
+    if (!from) return;
     const outline = shapeOutline(from.shape, from);
     const maskData = coreState.canvasMasks.get(mediaKey);
     if (!outline || !maskData) return;
@@ -700,12 +923,12 @@ export function ProjectMaskItem({
     const patched = { ...maskData, polygons: result.polygons };
     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
     uiDispatch({
-      type: UIActionType.SetObjectReviewRetouch,
+      type: UIActionType.SetMaskEditRetouch,
       retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
     });
-    uiDispatch({ type: UIActionType.SetObjectReviewIndices, indices: result.indices });
+    uiDispatch({ type: UIActionType.SetMaskEditIndices, indices: result.indices });
     notifyMaskObjectsUpdated(mediaKey, patched);
-    notifyMaskObjectReviewPreview(mediaKey, result.indices, undefined, objectReviewDiffBaseRef.current);
+    notifyMaskObjectReviewPreview(mediaKey, result.indices, objectReviewDiffBaseRef.current);
 
     // the relief preview names the triangles it is raised over, and the recut
     // has just renumbered them
@@ -716,7 +939,7 @@ export function ProjectMaskItem({
       notifyMaskPendingTopologySet(mediaKey, next);
     }
   }, [
-    uiState.objectReview,
+    uiState.maskEdit,
     reviewShape,
     source.kind,
     mediaKey,
@@ -756,6 +979,7 @@ export function ProjectMaskItem({
       glowColor: glowColorRef.current,
     });
   }, [resolveObjectUniforms, resolveRestingLightSources]);
+  renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
     const state = glStateRef.current;
@@ -789,7 +1013,13 @@ export function ProjectMaskItem({
     };
 
     const pendingLight = pendingLightRef.current;
-    const editingLightId = pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined;
+    const maskEditSubject = maskEditSubjectRef.current;
+    // Two ways a light's stored membership is not the one to paint: a drag is
+    // moving it, or a session has it open. Both mean something else on this
+    // pass is painting those triangles.
+    const editingLightId =
+      (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
+      (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
     if (selectedHighlightRef.current) {
       const activeLightId = selectedLightIdRef.current;
       lightsRef.current.forEach((indices, lightId) => {
@@ -806,7 +1036,7 @@ export function ProjectMaskItem({
       const activeObjectId = selectedObjectIdRef.current;
       objectsMapRef.current.forEach((indices, objectId) => {
         if (objectId === pendingTopology?.objectId) return;
-        if (objectId === objectEditIdRef.current) return;
+        if (maskEditSubject?.subject === "object" && objectId === maskEditSubject.id) return;
         paint(indices, objectId === activeObjectId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
@@ -849,7 +1079,15 @@ export function ProjectMaskItem({
         if (first < 0) first = i;
         last = i;
       }
-      if (first < 0) return;
+      // No highlight byte moved -- but this runs for every change the canvas
+      // has to react to, not only for the highlight, and something else may
+      // well have moved: a light's silhouette, its appearance, the mesh under
+      // it. Skipping the upload is the optimization; skipping the frame was
+      // only ever an accident of the two sharing a function.
+      if (first < 0) {
+        render();
+        return;
+      }
       const start = first - (first % 4);
       const end = last + (4 - (last % 4));
       uploaded.set(highlights.subarray(start, end), start);
@@ -1152,10 +1390,21 @@ export function ProjectMaskItem({
                   const darkness = lightPoint?.light_darkness ?? lightMeta?.darkness ?? lightDarknessRef.current;
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
+                  // A light keeps its silhouette while it animates. Position
+                  // comes from the move -- that is what is being animated --
+                  // but the outline and the reach it was drawn with are the
+                  // light's own, or a shaped light would snap back to a disc
+                  // the moment playback started and back again when it ended.
+                  //
+                  // Through the same resolver the rest position came from, so
+                  // that frame zero of a move -- where the move contributes
+                  // nothing -- lands exactly where the light already was.
+                  const shapedMeta = resolveLightSilhouette(t.lightId);
                   playbackLightSourcesRef.current.set(t.lightId, {
                     x: bufferX,
                     y: canvas.height - bufferY,
-                    radius: (size / 2) * scaleMultiplier,
+                    radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
+                    shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
                     falloff,
                     intensity,
                     darkness,
@@ -1224,6 +1473,7 @@ export function ProjectMaskItem({
       mediaKey,
       resolveTargetLightId,
       computeLightSourceRestPosition,
+      resolveLightSilhouette,
       coreState.effects,
       coreState.apiOrigin,
       coreState.project.fps,
@@ -1261,6 +1511,19 @@ export function ProjectMaskItem({
     stopLightSourceAnimation,
     retouchObjectMesh,
   };
+
+  // The session can open, move to another candidate and close without the
+  // canvas being torn down, so this is reconciled on every change rather than
+  // read once at mount. Repainting from here because nothing else will: the
+  // highlight this decides is only redrawn when something asks for it, and
+  // "the session changed" is not otherwise one of those things.
+  useEffect(() => {
+    const next = maskEditSubjectFor(uiState.maskEdit, mediaKey);
+    const previous = maskEditSubjectRef.current;
+    if (next?.subject === previous?.subject && next?.id === previous?.id) return;
+    maskEditSubjectRef.current = next;
+    recolorHighlight();
+  }, [uiState.maskEdit, mediaKey, recolorHighlight]);
 
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
@@ -1368,16 +1631,13 @@ export function ProjectMaskItem({
         polygonsRef.current = maskData.polygons;
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
-        const reviewHere = uiState.objectReview?.maskKey === mediaKey ? uiState.objectReview : undefined;
-        objectReviewPreviewRef.current = reviewHere?.currentIndices;
+        const sessionHere = uiState.maskEdit?.maskKey === mediaKey ? uiState.maskEdit : undefined;
+        objectReviewPreviewRef.current = sessionHere?.currentIndices;
         objectReviewDiffBaseRef.current =
-          reviewHere && isObjectReviewLocked(reviewHere)
-            ? new Set(reviewHere.candidates[reviewHere.currentIndex].polygon_indices)
+          sessionHere?.subject === "object" && isMaskEditLocked(sessionHere)
+            ? new Set(sessionHere.candidates[sessionHere.currentIndex].polygon_indices)
             : undefined;
-        objectEditIdRef.current =
-          uiState.objectReview?.maskKey === mediaKey && uiState.objectReview.mode === "edit"
-            ? uiState.objectReview.candidates[0]?.object.id
-            : undefined;
+        maskEditSubjectRef.current = maskEditSubjectFor(uiState.maskEdit, mediaKey);
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
@@ -1438,6 +1698,11 @@ export function ProjectMaskItem({
           clearPendingLight: () => {
             pendingLightIdRef.current = undefined;
             pendingLightRef.current = undefined;
+            // The drag is over, so its preview of where the light was going
+            // goes with it -- by now the mask either holds the new position or
+            // the drag was abandoned, and either way the stored light is the
+            // one to draw. Same pairing clearPendingTopology has with the pen.
+            pendingLightShapeRef.current = undefined;
             recolorHighlight();
           },
           syncLitIndices: (updated) => {
@@ -1456,12 +1721,19 @@ export function ProjectMaskItem({
           },
           clearPendingTopology: () => {
             pendingTopologyRef.current = undefined;
+            // The two are one signal wearing two names: this fires from every
+            // way out of an uncommitted reshape -- reverting, stepping away,
+            // shutting the pen, ending the session -- and a light's drafted
+            // silhouette is the same uncommitted reshape seen from the other
+            // side. Clearing only the relief would leave a light lit by a
+            // curve nobody can see any more.
+            pendingLightShapeRef.current = undefined;
             recolorHighlight();
+            renderRef.current();
           },
-          setObjectReviewPreview: (indices, editObjectId, diffBase) => {
+          setObjectReviewPreview: (indices, diffBase) => {
             objectReviewPreviewRef.current = indices;
             objectReviewDiffBaseRef.current = diffBase;
-            objectEditIdRef.current = editObjectId;
             recolorHighlight();
           },
           syncObjects: (updated) => {
@@ -1470,6 +1742,14 @@ export function ProjectMaskItem({
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
             objectsRef.current = updated.objects;
             objectsMapRef.current = buildObjectsMap(updated.polygons);
+            // The lights' own tagging is derived from the very same polygons,
+            // and a recut appends fragments carrying the tags of the triangles
+            // they were cut from. Rebuilt alongside the objects' rather than
+            // left to the next light update, which may never come: a recut
+            // driven from a light edit changes the mesh without changing any
+            // light, and a stale map would leave that light's highlight and
+            // hit-testing pointing at triangles that are no longer its shape.
+            lightsRef.current = buildLightsMap(updated.polygons);
             const geometry = maskGeometry(updated);
             maskGeometryRef.current = geometry;
             const signature = objectsMeshSignature(updated.objects);
@@ -1675,8 +1955,8 @@ export function ProjectMaskItem({
                 return;
               }
               if (source.kind !== "static") return;
-              if (uiState.objectReview?.maskKey === mediaKey) {
-                if (isObjectReviewLocked(uiState.objectReview)) return;
+              if (uiState.maskEdit?.maskKey === mediaKey) {
+                if (isMaskEditLocked(uiState.maskEdit)) return;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 const index = point
                   ? swelledPolygonIndexAtPoint(maskGeometryRef.current.points, resolveObjectUniforms(), point)
@@ -1687,7 +1967,7 @@ export function ProjectMaskItem({
                   else previewed.add(index);
                   objectReviewPreviewRef.current = previewed;
                   recolorHighlight();
-                  uiDispatch({ type: UIActionType.ToggleObjectReviewPolygon, index });
+                  uiDispatch({ type: UIActionType.ToggleMaskEditPolygon, index });
                 }
                 return;
               }
@@ -1898,14 +2178,31 @@ export function ProjectMaskItem({
               source.maskData.polygons.forEach((p, i) => {
                 if (p.light_id === lightId) originalIndices.add(i);
               });
-              const persistedSize = source.maskData.lights.find((c) => c.id === lightId)?.size ?? 0;
+              // A light that has a silhouette of its own is dragged by it,
+              // full stop -- there is nothing to reconstruct and nothing that
+              // could be more authoritative than the outline someone drew.
+              // The reconstruction below is for lights drawn before they could
+              // be shaped: rebuild the disc they have been lighting with, and
+              // remember it across drags so repeated nudges do not each
+              // re-derive a slightly different centre from the triangles.
+              const light = source.maskData.lights.find((c) => c.id === lightId);
               const known = lastKnownLightRef.current.get(lightId);
-              const reconstructed =
-                known && sameIndices(known.indices, originalIndices)
-                  ? known.circle
-                  : litRegionCircle(source.maskData.polygons, maskGeometryRef.current.centroids, lightId);
-              if (!reconstructed) return;
-              const circle = persistedSize > 0 ? { ...reconstructed, radius: persistedSize / 2 } : reconstructed;
+              let region: LightDragRegion;
+              if (light && light.radius > 0) {
+                region = { cx: light.cx, cy: light.cy, radius: light.radius, shape: light.shape };
+              } else {
+                const reconstructed =
+                  known && sameIndices(known.indices, originalIndices)
+                    ? known.region
+                    : litRegionCircle(source.maskData.polygons, maskGeometryRef.current.centroids, lightId);
+                if (!reconstructed) return;
+                const persistedSize = light?.size ?? 0;
+                region = {
+                  ...reconstructed,
+                  radius: persistedSize > 0 ? persistedSize / 2 : reconstructed.radius,
+                  shape: "",
+                };
+              }
               e.stopPropagation();
               e.preventDefault();
               canvas.setPointerCapture(e.pointerId);
@@ -1914,7 +2211,7 @@ export function ProjectMaskItem({
                 lightId,
                 startX: bufferX,
                 startY: bufferY,
-                originalCircle: circle,
+                originalRegion: region,
                 originalIndices,
                 rafId: undefined,
                 latestX: bufferX,
@@ -2014,7 +2311,7 @@ export function ProjectMaskItem({
               if (finalIndices.size === 0) {
                 lastKnownLightRef.current.set(lightId, {
                   indices: drag.originalIndices,
-                  circle: drag.originalCircle,
+                  region: drag.originalRegion,
                 });
                 dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
                 notifyMaskPendingLightCleared(mediaKey);
@@ -2026,15 +2323,27 @@ export function ProjectMaskItem({
               });
               notifyMaskPendingLightSet(mediaKey, finalIndices, lightId);
               lightCommitInFlightRef.current.add(lightId);
-              sendMaskLightUpdate(source.maskData.mask_media_id, {
-                light_id: lightId,
-                name: lightName,
-                polygon_indices: [...finalIndices],
-                size: existingLight?.size ?? 0,
-                intensity: existingLight?.intensity ?? 0,
-                falloff: existingLight?.falloff ?? 0,
-                darkness: existingLight?.darkness ?? 0,
-              }).then((updated) => {
+              sendMaskLightUpdate(
+                source.maskData.mask_media_id,
+                toLightUpdate(existingLight ?? newLight(lightId, lightName), {
+                  name: lightName,
+                  polygon_indices: [...finalIndices],
+                  // A drag is a translation, so a light that has been given a
+                  // silhouette is translated by the same offset its triangles
+                  // were. Leaving the outline where it was would make dragging
+                  // a shaped light do nothing anyone could see -- the triangles
+                  // would move out from under the light rather than with it.
+                  // A light with no silhouette has nothing to move: its centre
+                  // is derived from the triangles and follows them already.
+                  //
+                  // Off the drag's own region rather than the mask's copy,
+                  // because the region is what was actually dragged and the
+                  // offset below is measured against it.
+                  ...(existingLight && existingLight.radius > 0
+                    ? { cx: drag.originalRegion.cx + dx, cy: drag.originalRegion.cy + dy }
+                    : {}),
+                }),
+              ).then((updated) => {
                 lightCommitInFlightRef.current.delete(lightId);
                 const latestMask = latestRef.current.source;
                 if (updated && latestMask.kind === "static") {
@@ -2047,16 +2356,16 @@ export function ProjectMaskItem({
                   }
                   lastKnownLightRef.current.set(lightId, {
                     indices: finalIndices,
-                    circle: {
-                      cx: drag.originalCircle.cx + dx,
-                      cy: drag.originalCircle.cy + dy,
-                      radius: drag.originalCircle.radius,
+                    region: {
+                      ...drag.originalRegion,
+                      cx: drag.originalRegion.cx + dx,
+                      cy: drag.originalRegion.cy + dy,
                     },
                   });
                 } else {
                   lastKnownLightRef.current.set(lightId, {
                     indices: drag.originalIndices,
-                    circle: drag.originalCircle,
+                    region: drag.originalRegion,
                   });
                 }
                 dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
