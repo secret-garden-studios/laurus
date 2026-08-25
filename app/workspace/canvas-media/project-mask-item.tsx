@@ -329,6 +329,7 @@ export function ProjectMaskItem({
         originalShape: string;
         originalBlackPoint: LaurusObjectBlackPoint;
         originalReviewed: boolean;
+        originalLift: boolean;
         originalIndices: Set<number>;
         rafId: number | undefined;
         latestX: number;
@@ -467,6 +468,11 @@ export function ProjectMaskItem({
           falloff: playing.falloff,
           shape,
           blackPoint: playing.blackPoint,
+          // Lift only ever means something against a pose the object has moved
+          // away from, so it is attached here and nowhere else: `playing` is
+          // the animated pose and the stored object is still the resting one.
+          // A lifted object nothing is animating never reaches this branch.
+          lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
         };
       }
       return pending && pending.objectId === object.id
@@ -2151,6 +2157,7 @@ export function ProjectMaskItem({
                     originalShape: object.shape,
                     originalBlackPoint: toObjectBlackPoint(object),
                     originalReviewed: object.reviewed,
+                    originalLift: object.lift,
                     originalIndices,
                     rafId: undefined,
                     latestX: bufferX,
@@ -2275,6 +2282,7 @@ export function ProjectMaskItem({
                   ...toObjectBlackPointFields(objectDrag.originalBlackPoint),
                   description: existingObject?.description ?? "",
                   reviewed: objectDrag.originalReviewed,
+                  lift: objectDrag.originalLift,
                   remove: false,
                   polygon_indices: [...(edit.polygonIndices ?? [])],
                 }).then((updated) => {

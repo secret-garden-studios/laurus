@@ -292,6 +292,84 @@ vec2 lightProfile(float row, float maxDepth, vec2 toPoint, float radius) {
 }
 `;
 
+/**
+ * Carrying an object's pixels with it, in the fragment stage only.
+ *
+ * Every other object uniform describes where an object *is*; these describe
+ * where it *was*, and the whole feature is the difference between the two. An
+ * object the client has marked lifted and an effect is animating arrives with
+ * both poses -- the animated one in u_objects, the resting one here -- and this
+ * reads the base image back through the transform between them, so the picture
+ * inside the object travels with it instead of the relief sliding over a
+ * picture that stays put.
+ *
+ * The footprint it vacates has to be punched out by hand, because nothing about
+ * the mesh moves out of the way: an object's triangles are displaced radially by
+ * objectSwell and never translate, so the geometry over the old location is
+ * still there and still drawing. `hole` minus `body` is what is left of the rest
+ * footprint once the current one is subtracted back out, and that is the alpha
+ * the fragment gives up.
+ *
+ * Region tests read the undisplaced mesh position, the same space objectField
+ * and objectBlackPoint are asked about, while the sample point is derived from
+ * gl_FragCoord -- so an object whose rest pose is its current pose samples
+ * exactly the texel it samples today, and turning lift on changes nothing until
+ * something actually moves.
+ */
+const OBJECT_LIFT_GLSL = `
+uniform mediump vec4 u_objectLifts[MAX_MASK_OBJECTS];
+
+struct ObjectLift {
+  vec2 uv;
+  float body;
+  float hole;
+};
+
+// One pixel of feather at the outline, in the normalized units u is measured
+// in: u spans the radius, so a pixel is 1/radius of it. Analytic rather than
+// fwidth because this is called from inside a loop whose per-object guards are
+// not uniform control flow, where a derivative is undefined.
+float objectCoverage(float u, float radius) {
+  float width = 1.0 / max(radius, 1.0);
+  return 1.0 - smoothstep(1.0 - width, 1.0, u);
+}
+
+ObjectLift objectLift(vec2 meshPos) {
+  ObjectLift lift = ObjectLift(gl_FragCoord.xy / u_resolution, 0.0, 0.0);
+  float nearest = 1.0;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (u_objectLifts[i].w < 0.5) continue;
+
+    vec2 center = u_objects[i].xy;
+    float radius = u_objects[i].z;
+    vec2 restCenter = u_objectLifts[i].xy;
+    float restRadius = max(u_objectLifts[i].z, 1.0);
+    float row = u_objectShapeRows[i];
+    float maxDepth = u_objectShapeMaxDepth[i];
+
+    // The same outline asked about twice. Normalizing by each pose's own radius
+    // is what makes the two agree: a point at u inside the rest footprint is at
+    // the same u inside the current one, whatever the scale between them.
+    float body = objectU(row, maxDepth, meshPos - center, radius).x;
+    float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius).x;
+    lift.body = max(lift.body, objectCoverage(body, radius));
+    lift.hole = max(lift.hole, objectCoverage(rest, restRadius));
+
+    // Deepest cover wins the sample, so two lifted objects overlapping read one
+    // image each rather than averaging into a double exposure.
+    if (body < nearest) {
+      nearest = body;
+      float scale = radius / restRadius;
+      vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+      vec2 there = restCenter + (here - center) / scale;
+      lift.uv = vec2(there.x, u_resolution.y - there.y) / u_resolution;
+    }
+  }
+  return lift;
+}
+`;
+
 export const LIGHT_SOURCE_SHADER: Shader = {
   vertex: `
 attribute vec2 a_position;
@@ -363,6 +441,7 @@ uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
 uniform vec4 u_objectBlackPoints[MAX_MASK_OBJECTS];
+${OBJECT_LIFT_GLSL}
 
 #define BLACK_POINT_HALO_MAX ${glFloat(OBJECT_BLACK_POINT_HALO_MAX)}
 #define BLACK_POINT_HALO_EASE ${glFloat(OBJECT_BLACK_POINT_HALO_EASE)}
@@ -405,8 +484,8 @@ void main() {
   vec3 highlightFactors = smoothstep(vec3(0.0), baryDeriv * HIGHLIGHT_STROKE_WIDTH_PX, v_barycentric);
   float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
 
-  vec2 screenUV = gl_FragCoord.xy / u_resolution;
-  vec3 base = u_hasTexture > 0.5 ? texture2D(u_texture, screenUV).rgb : v_color;
+  ObjectLift lift = objectLift(v_meshPos);
+  vec3 base = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
 
   vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
@@ -455,7 +534,11 @@ void main() {
   float lightEdge = highlightEdge * v_highlight.a;
   vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
 
-  gl_FragColor = vec4(withLightStroke, mix(1.0, mask.a, u_maskActive));
+  // Inside a lift's rest footprint and outside every lift's current one is
+  // where the pixels used to be and no longer are, so there is nothing left to
+  // draw there. Zero for every fragment when nothing is lifted.
+  float vacated = clamp(lift.hole - lift.body, 0.0, 1.0);
+  gl_FragColor = vec4(withLightStroke, mix(1.0, mask.a, u_maskActive) * (1.0 - vacated));
 }
 `,
 };
@@ -519,6 +602,7 @@ export interface GLState {
   objectShapeRowsLoc: WebGLUniformLocation;
   objectShapeMaxDepthLoc: WebGLUniformLocation;
   objectBlackPointsLoc: WebGLUniformLocation;
+  objectLiftsLoc: WebGLUniformLocation;
   objectShapeTexture: WebGLTexture;
   objectShapeSignature: string;
   lightShapesLoc: WebGLUniformLocation;
@@ -635,6 +719,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
   const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
   const objectBlackPointsLoc = gl.getUniformLocation(program, "u_objectBlackPoints");
+  const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
@@ -665,6 +750,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightShapeRowsLoc ||
     !lightShapeMaxDepthLoc ||
     !objectBlackPointsLoc ||
+    !objectLiftsLoc ||
     !textureMixLoc ||
     !textureLoc ||
     !hasTextureLoc ||
@@ -703,6 +789,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectShapeRowsLoc,
     objectShapeMaxDepthLoc,
     objectBlackPointsLoc,
+    objectLiftsLoc,
     objectShapeTexture,
     objectShapeSignature: "",
     lightShapesLoc,
@@ -830,6 +917,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     const objects = new Float32Array(activeObjects.length * 4);
     const falloffs = new Float32Array(activeObjects.length);
     const blackPoints = new Float32Array(activeObjects.length * 4);
+    // Written for every slot in play on every draw, lifted or not: the w is
+    // the "is this one lifted" flag, and a slot left alone would go on being
+    // read against the pose whichever object held it last was animating from.
+    const lifts = new Float32Array(activeObjects.length * 4);
     activeObjects.forEach((object, i) => {
       objects[i * 4] = object.cx;
       objects[i * 4 + 1] = object.cy;
@@ -840,10 +931,15 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       blackPoints[i * 4 + 1] = object.blackPoint?.g ?? 0;
       blackPoints[i * 4 + 2] = object.blackPoint?.b ?? 0;
       blackPoints[i * 4 + 3] = object.blackPoint?.a ?? 0;
+      lifts[i * 4] = object.lift?.cx ?? object.cx;
+      lifts[i * 4 + 1] = object.lift?.cy ?? object.cy;
+      lifts[i * 4 + 2] = Math.max(object.lift?.radius ?? object.radius, 1);
+      lifts[i * 4 + 3] = object.lift ? 1 : 0;
     });
     gl.uniform4fv(state.objectsLoc, objects);
     gl.uniform1fv(state.objectFalloffsLoc, falloffs);
     gl.uniform4fv(state.objectBlackPointsLoc, blackPoints);
+    gl.uniform4fv(state.objectLiftsLoc, lifts);
   }
 
   const shapeRows = new Float32Array(MAX_MASK_OBJECTS).fill(-1);
@@ -1091,6 +1187,18 @@ export interface ObjectGeometryInput {
   falloff: number;
   shape?: ObjectShape;
   blackPoint?: ObjectBlackPoint_V1_0;
+  /**
+   * Where this object sits when nothing is animating it, for an object whose
+   * `lift` is on and which an effect is moving or scaling right now. Present
+   * means lifted: cx/cy/radius above are then the animated pose and these are
+   * the pose the source image was painted in, which is the pair objectLift
+   * needs to carry the image's own pixels along and leave a hole behind.
+   *
+   * Absent for every object at rest and for every unlifted one, and an object
+   * whose rest pose *is* its current pose renders identically either way --
+   * the transform between them is the identity and the hole is empty.
+   */
+  lift?: { cx: number; cy: number; radius: number };
 }
 
 export function isActiveObject(object: ObjectGeometryInput): boolean {

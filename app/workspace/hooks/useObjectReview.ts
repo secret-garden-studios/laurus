@@ -352,6 +352,7 @@ export function useObjectReview() {
           ...toObjectBlackPointFields(toObjectBlackPoint(object)),
           description,
           reviewed: true,
+          lift: object.lift,
           remove: false,
           polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
           ...(review.retouch ? { retouch: retouchDelta(review.retouch) } : {}),

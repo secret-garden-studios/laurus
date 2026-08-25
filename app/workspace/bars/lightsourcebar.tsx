@@ -208,14 +208,27 @@ export default function LightSourcebar() {
         ? `object|${selectedElement.key}|${selectedElement.objectId}`
         : undefined;
   const [prevSelectedSubElement, setPrevSelectedSubElement] = useState<string | undefined>(undefined);
+  const [pendingLift, setPendingLift] = useState<boolean | undefined>(undefined);
 
   // beta: render-phase state adjustment pattern
   if (selectedSubElement !== prevSelectedSubElement) {
     setPrevSelectedSubElement(selectedSubElement);
+    setPendingLift(undefined);
     if (selectedSubElement !== undefined) {
       setTarget(selectedSubElement.startsWith("object|") ? "object" : "light");
     }
   }
+
+  // Lift is read straight back off the object and the object only changes once
+  // the save lands, so the toggle locks until the queue settles rather than
+  // debouncing: a second click while one is still in flight would race its own
+  // commit and settle on whichever reply happened to arrive last. Released in
+  // persistObjectQueue's finally, so a rejected save unlocks it too -- and
+  // falls back to the stored value, which is what a rejected save left there.
+  const liftValue = pendingLift ?? selectedObject?.lift ?? false;
+  // Unlike every slider beside it, lift has nowhere to be staged: a raise mints
+  // an unlifted object and there is no lift to preview until one exists.
+  const isLiftDisabled = !selectedObject || pendingLift !== undefined;
 
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingPreviewRef = useRef(false);
@@ -385,6 +398,7 @@ export default function LightSourcebar() {
     elevation?: number;
     falloff?: number;
     blackPoint?: LaurusObjectBlackPoint;
+    lift?: boolean;
   };
 
   const toStagedObjectPatch = useCallback(
@@ -410,6 +424,7 @@ export default function LightSourcebar() {
     shape: string;
     blackPoint: LaurusObjectBlackPoint;
     reviewed: boolean;
+    lift: boolean;
     polygonIndices: number[];
   }
 
@@ -436,6 +451,7 @@ export default function LightSourcebar() {
           ...toObjectBlackPointFields(toSave.blackPoint),
           description: toSave.description,
           reviewed: toSave.reviewed,
+          lift: toSave.lift,
           remove: false,
           polygon_indices: toSave.polygonIndices,
         });
@@ -450,6 +466,7 @@ export default function LightSourcebar() {
       }
     } finally {
       isPersistingObjectRef.current = false;
+      setPendingLift(undefined);
       if (settledMaskKey !== undefined) {
         dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
         notifyMaskPendingTopologyCleared(settledMaskKey);
@@ -513,6 +530,7 @@ export default function LightSourcebar() {
         shape: edit.shape,
         blackPoint: edit.blackPoint,
         reviewed: existingObject?.reviewed ?? false,
+        lift: patch.lift ?? existingObject?.lift ?? false,
         polygonIndices,
       };
       void persistObjectQueue();
@@ -1076,6 +1094,44 @@ export default function LightSourcebar() {
               display: "flex",
               alignItems: "center",
               height: "100%",
+              ...dynamicSizes.toggle.div,
+            }}
+          >
+            <span
+              title={
+                !selectedObject
+                  ? "select an object on the mesh to carry the image's own pixels with it as it animates"
+                  : liftValue
+                    ? "the image's own pixels travel with this object while a move or a scale plays it, leaving a transparent hole where they were -- turn off to animate the relief alone"
+                    : "only this object's relief animates, over an image that stays put -- turn on to carry the image's own pixels with it"
+              }
+              style={{
+                opacity: !selectedObject ? 0.3 : 1,
+                textShadow: liftValue ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                userSelect: "none",
+              }}
+            >
+              {"lift"}
+            </span>
+            <Toggle
+              value={liftValue}
+              disabled={isLiftDisabled}
+              onClick={() => {
+                const next = !liftValue;
+                setPendingLift(next);
+                saveObjectField({ lift: next });
+              }}
+              trackStyles={{ ...dynamicSizes.toggle.track }}
+              buttonStyles={{ ...dynamicSizes.toggle.button }}
+              translateX={dynamicSizes.toggle.translateX}
+            />
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
               ...dynamicSizes.toggle.div,
             }}
           >

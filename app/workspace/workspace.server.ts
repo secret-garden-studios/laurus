@@ -351,6 +351,14 @@ export interface Object_V1_0 {
   black_point_a: number;
   description: string;
   reviewed: boolean;
+  /**
+   * Carry the source image's own pixels with this object while an effect
+   * animates it, instead of letting the relief slide over an image that stays
+   * put. Only the renderer reads it -- see objectLift in mask-gl.ts -- and only
+   * while a move or a scale is actually playing, which is why it is safe for an
+   * object to be lifted and look no different at rest.
+   */
+  lift: boolean;
 }
 export type LaurusObject = Object_V1_0;
 
@@ -411,7 +419,7 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 
 type RawObject_V1_0 = Omit<
   Object_V1_0,
-  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description" | "reviewed"
+  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description" | "reviewed" | "lift"
 > & {
   name?: string;
   falloff?: number;
@@ -422,6 +430,7 @@ type RawObject_V1_0 = Omit<
   black_point_a?: number;
   description?: string;
   reviewed?: boolean;
+  lift?: boolean;
 };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
 
@@ -437,6 +446,7 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     black_point_a: object.black_point_a ?? OBJECT_BLACK_POINT_DEFAULT.a,
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
+    lift: object.lift ?? false,
   };
 }
 
@@ -817,6 +827,7 @@ export interface MaskObjectUpdateRequest_V1_0 {
   black_point_a: number;
   description: string;
   reviewed: boolean;
+  lift: boolean;
   remove: boolean;
   polygon_indices: number[];
   retouch?: RetouchedMesh_V1_0;

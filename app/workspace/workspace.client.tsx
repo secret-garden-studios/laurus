@@ -1349,6 +1349,7 @@ export default function Workspace({
         ...toObjectBlackPointFields(seed.blackPoint),
         description: "",
         reviewed: false,
+        lift: false,
         remove: false,
         polygon_indices: polygonIndices,
       });
@@ -1397,6 +1398,7 @@ export default function Workspace({
         ...toObjectBlackPointFields(toObjectBlackPoint(object)),
         description: object.description,
         reviewed: object.reviewed,
+        lift: object.lift,
         remove: true,
         polygon_indices: [],
       });
