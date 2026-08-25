@@ -40,8 +40,6 @@ export const defaultScaleEquation: LaurusScaleEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
-const MAX_VISIBLE_PARAM_SLIDERS = 4;
-
 interface ScaleUnit {
   scale: LaurusScaleResult;
   carouselIndexInit: number;
@@ -491,11 +489,6 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 style={{
                   height: "100%",
                   display: "flex",
-                  maxWidth:
-                    dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
-                    dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
-                    dynamicSizes.paramFlex.paddingInline * 2,
-                  overflowX: "auto",
                   overflowY: "hidden",
                   ...dynamicSizes.paramFlex,
                 }}
