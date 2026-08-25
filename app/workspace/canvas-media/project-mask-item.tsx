@@ -1284,7 +1284,10 @@ export function ProjectMaskItem({
           objectTarget.wiredLightSource ??
           objectTarget.wiredScale ??
           objectTarget.wiredRotate)!.value;
-        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        // The project is the single source of truth for frame rate. Effects
+        // used to carry their own fps, stamped at creation and never resynced,
+        // which went stale the moment the project's fps changed.
+        fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
         const objectFetches: Promise<void>[] = [];
@@ -1336,7 +1339,9 @@ export function ProjectMaskItem({
       } else {
         const target = targets[0];
         const timingValue = (target.wiredMove ?? target.wiredLightSource ?? target.wiredScale)!.value;
-        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        // See the object-target branch above: the project's fps is the only
+        // source of frame rate.
+        fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
         const fetches: Promise<void>[] = [];
@@ -1380,12 +1385,27 @@ export function ProjectMaskItem({
           new Promise<void>((resolve) => {
             session.resolve = resolve;
             const loopStartMs = performance.now();
+            let lastFrameIndex = -1;
 
             const loop = () => {
               if (activePlaybackRef.current !== session) return;
 
               const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
               const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
+
+              // Redraw only when the fps-quantized frame actually advances, so
+              // playback runs at project.fps instead of the display's native
+              // refresh rate -- the canvas otherwise repaints the same frame
+              // on every rAF tick between fps steps.
+              if (frameIndex === lastFrameIndex) {
+                if (elapsedSeconds < durationSeconds) {
+                  session.rafId = requestAnimationFrame(loop);
+                } else {
+                  stopLightSourceAnimation();
+                }
+                return;
+              }
+              lastFrameIndex = frameIndex;
 
               const canvas = canvasRef.current;
               const rect = canvas?.getBoundingClientRect();

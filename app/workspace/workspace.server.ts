@@ -1308,7 +1308,6 @@ export interface Scale_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1330,7 +1329,6 @@ export interface ScaleResult_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1506,7 +1504,6 @@ export interface Move_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1522,7 +1519,6 @@ export interface MoveResult_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1697,7 +1693,6 @@ export interface Rotate_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1713,7 +1708,6 @@ export interface RotateResult_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1935,7 +1929,6 @@ export interface LightSource_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
@@ -1957,7 +1950,6 @@ export interface LightSourceResult_V1_0 {
   project_id: string;
   effect_group_id: string;
   order: number;
-  fps: number;
   locked: boolean;
   disabled: boolean;
   description: string;
