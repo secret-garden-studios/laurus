@@ -48,7 +48,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
       }
       case "rotate": {
         const eqKeys = Array.from(effect.value.math.keys());
-        const k = keys.findIndex((k) => eqKeys.includes(k.key));
+        const k = keys.findIndex((k) => eqKeys.includes(carouselEntryMathKey(k)));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setRotateCarouselIndex(newIndex);
         break;
