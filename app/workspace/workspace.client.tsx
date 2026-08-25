@@ -1129,7 +1129,6 @@ export default function Workspace({
     maskHandlesRef.current?.forEach((handles) =>
       handles.forEach((h) => {
         h.abortLightDragForToolChange(toolType);
-        h.abortTopologyDragForToolChange();
       }),
     );
   }, []);

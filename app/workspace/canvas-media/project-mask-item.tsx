@@ -54,10 +54,9 @@ import {
   indicesInObjectFromCentroids,
   objectIdAtPoint,
   swelledPolygonIndexAtPoint,
-  translateIndices,
 } from "./light-geometry";
 import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
-import { applyLightDelta, applyObjectDelta } from "./mask-delta";
+import { applyLightDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
 import { retouchMesh } from "./object-retouch";
@@ -82,7 +81,6 @@ import {
   toEquationObjectBlackPoint,
   toLightUpdate,
   toObjectBlackPoint,
-  toObjectBlackPointFields,
 } from "../workspace.server";
 import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
@@ -174,14 +172,6 @@ function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
   };
 }
 
-function confirmObjectMove(object: LaurusObject): boolean {
-  const label = object.description ?? object.name ?? object.id;
-  return confirm(
-    `"${label}" is an object accepted during a manual review, so its position and its triangles are exactly where ` +
-      "someone put them. moving it changes both. are you sure?",
-  );
-}
-
 function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: number): [number, number] | undefined {
   const rect = canvas.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return undefined;
@@ -199,7 +189,6 @@ export interface MaskImperativeHandle {
   ) => Promise<(() => Promise<void>) | undefined>;
   stop: () => void;
   abortLightDragForToolChange: (newToolType: string) => void;
-  abortTopologyDragForToolChange: () => void;
   setSelectedHighlighted: (active: boolean) => void;
   setSelectedLight: (lightId: number | undefined) => void;
   setSelectedObject: (objectId: number | undefined) => void;
@@ -254,7 +243,7 @@ export function ProjectMaskItem({
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskLightUpdate, sendMaskObjectUpdate } = useContext(SocketContext);
+  const { sendMaskLightUpdate } = useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
     notifyMaskSelectedLightChanged,
@@ -263,7 +252,6 @@ export function ProjectMaskItem({
     notifyMaskPendingLightCleared,
     notifyMaskLightUpdated,
     notifyMaskPendingTopologySet,
-    notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
     notifyMaskObjectReviewPreview,
     notifyMaskLightSourcePreviewToggled,
@@ -326,31 +314,7 @@ export function ProjectMaskItem({
   const lastKnownLightRef = useRef<Map<number, { indices: Set<number>; region: LightDragRegion }>>(new Map());
   const lightCommitInFlightRef = useRef<Set<number>>(new Set());
   const [isDraggingLight, setIsDraggingLight] = useState(false);
-  const objectDragRef = useRef<
-    | {
-        pointerId: number;
-        objectId: number;
-        startX: number;
-        startY: number;
-        originalCx: number;
-        originalCy: number;
-        originalRadius: number;
-        originalElevation: number;
-        originalFalloff: number;
-        originalShape: string;
-        originalBlackPoint: LaurusObjectBlackPoint;
-        originalReviewed: boolean;
-        originalLift: boolean;
-        originalIndices: Set<number>;
-        rafId: number | undefined;
-        latestX: number;
-        latestY: number;
-      }
-    | undefined
-  >(undefined);
-  const objectCommitInFlightRef = useRef<Set<number>>(new Set());
   const suppressNextClickRef = useRef(false);
-  const [isDraggingTopology, setIsDraggingTopology] = useState(false);
   const objectsRef = useRef<LaurusObject[]>([]);
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
@@ -513,56 +477,6 @@ export function ProjectMaskItem({
     return objects;
   }, []);
 
-  const objectDragEdit = useCallback(
-    (drag: NonNullable<typeof objectDragRef.current>, dx: number, dy: number): PendingTopologyEdit => {
-      const moved = {
-        maskKey: mediaKey,
-        objectId: drag.objectId,
-        cx: drag.originalCx + dx,
-        cy: drag.originalCy + dy,
-        radius: drag.originalRadius,
-        elevation: drag.originalElevation,
-        falloff: drag.originalFalloff,
-        shape: drag.originalShape,
-        blackPoint: drag.originalBlackPoint,
-      };
-      return {
-        ...moved,
-        polygonIndices:
-          drag.originalIndices.size > 0
-            ? translateIndices(
-                maskGeometryRef.current.points,
-                maskGeometryRef.current.centroids,
-                drag.originalIndices,
-                dx,
-                dy,
-              )
-            : indicesInObjectFromCentroids(maskGeometryRef.current.centroids, moved),
-      };
-    },
-    [mediaKey],
-  );
-
-  const recomputeTopologyDrag = useCallback(() => {
-    const drag = objectDragRef.current;
-    if (!drag) return;
-    drag.rafId = undefined;
-    const edit = objectDragEdit(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
-    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
-    notifyMaskPendingTopologySet(mediaKey, edit);
-  }, [mediaKey, dispatch, notifyMaskPendingTopologySet, objectDragEdit]);
-
-  const abortTopologyDrag = useCallback(() => {
-    const drag = objectDragRef.current;
-    if (!drag) return;
-    if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
-    canvasRef.current?.releasePointerCapture(drag.pointerId);
-    objectDragRef.current = undefined;
-    setIsDraggingTopology(false);
-    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-    notifyMaskPendingTopologyCleared(mediaKey);
-  }, [dispatch, mediaKey, notifyMaskPendingTopologyCleared]);
-
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
     source.kind === "static"
@@ -703,7 +617,7 @@ export function ProjectMaskItem({
   const toolCursor = useToolCursor({
     target: source.kind === "static" ? "mask" : undefined,
     dragDisabled,
-    isDragging: isDragging || isDraggingLight || isDraggingTopology,
+    isDragging: isDragging || isDraggingLight,
   });
   const isReviewingThisMask =
     source.kind === "static" && uiState.maskEdit?.maskKey === mediaKey && !isMaskEditLocked(uiState.maskEdit);
@@ -808,9 +722,9 @@ export function ProjectMaskItem({
 
   // A reshape previews without a round trip and without touching the state the
   // editor reads its own rings from. Which channel depends on what is being
-  // reshaped: an object's outline is relief, so it goes through the same
-  // pending-topology channel an object drag already uses, while a light's is
-  // light, so it goes to the uniform the mesh is shaded with.
+  // reshaped: an object's outline is relief, so it goes through the
+  // pending-topology channel, while a light's is light, so it goes to the
+  // uniform the mesh is shaded with.
   const previewShapeEdit = useCallback(
     (edit: ShapeEdit, draft = true) => {
       const session = uiState.maskEdit;
@@ -1736,12 +1650,6 @@ export function ProjectMaskItem({
             if (newToolType === "move") return;
             if (lightDragRef.current) abortLightDrag();
           },
-          abortTopologyDragForToolChange: () => {
-            if (!objectDragRef.current) return;
-            const tool = latestRef.current.uiState.tool;
-            if (tool.type === "mask" && tool.raisingObjects) return;
-            abortTopologyDrag();
-          },
           setSelectedHighlighted: (active) => {
             selectedHighlightRef.current = active;
             if (!active) {
@@ -1975,16 +1883,7 @@ export function ProjectMaskItem({
       };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      meshIdentityKey,
-      render,
-      recolorHighlight,
-      abortLightDrag,
-      abortTopologyDrag,
-      maskHandlesRef,
-      maskElementsRef,
-      mediaKey,
-    ],
+    [meshIdentityKey, render, recolorHighlight, abortLightDrag, maskHandlesRef, maskElementsRef, mediaKey],
   );
 
   const showContextMenu =
@@ -2181,55 +2080,6 @@ export function ProjectMaskItem({
             onPointerDown={(e) => {
               suppressNextClickRef.current = false;
               if (source.kind !== "static") return;
-              const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
-              const isMoveTool = uiState.tool.type === "move";
-              if (isRaisingObjects || isMoveTool) {
-                const canvas = e.currentTarget;
-                const point = toBufferPoint(canvas, e.clientX, e.clientY);
-                const objectId = point ? objectIdAtPoint(objectsRef.current, point) : undefined;
-                const object = objectId !== undefined ? objectsRef.current.find((p) => p.id === objectId) : undefined;
-                if (point && objectId !== undefined && object && !objectCommitInFlightRef.current.has(objectId)) {
-                  const [bufferX, bufferY] = point;
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (object.reviewed) {
-                    if (!confirmObjectMove(object)) return;
-                    try {
-                      canvas.setPointerCapture(e.pointerId);
-                    } catch {
-                      return;
-                    }
-                  } else {
-                    canvas.setPointerCapture(e.pointerId);
-                  }
-                  const originalIndices = new Set<number>();
-                  source.maskData.polygons.forEach((p, i) => {
-                    if (p.object_id === objectId) originalIndices.add(i);
-                  });
-                  objectDragRef.current = {
-                    pointerId: e.pointerId,
-                    objectId,
-                    startX: bufferX,
-                    startY: bufferY,
-                    originalCx: object.cx,
-                    originalCy: object.cy,
-                    originalRadius: object.radius,
-                    originalElevation: object.elevation,
-                    originalFalloff: object.falloff,
-                    originalShape: object.shape,
-                    originalBlackPoint: toObjectBlackPoint(object),
-                    originalReviewed: object.reviewed,
-                    originalLift: object.lift,
-                    originalIndices,
-                    rafId: undefined,
-                    latestX: bufferX,
-                    latestY: bufferY,
-                  };
-                  setIsDraggingTopology(true);
-                  return;
-                }
-                if (isRaisingObjects) return;
-              }
               if (uiState.tool.type !== "move") return;
               const canvas = e.currentTarget;
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
@@ -2302,68 +2152,8 @@ export function ProjectMaskItem({
                 if (lightDrag.rafId === undefined) lightDrag.rafId = requestAnimationFrame(recomputeLightDrag);
                 return;
               }
-              const objectDrag = objectDragRef.current;
-              if (objectDrag && e.pointerId === objectDrag.pointerId) {
-                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-                if (!point) return;
-                [objectDrag.latestX, objectDrag.latestY] = point;
-                if (objectDrag.rafId === undefined) objectDrag.rafId = requestAnimationFrame(recomputeTopologyDrag);
-              }
             }}
             onPointerUp={(e) => {
-              const objectDrag = objectDragRef.current;
-              if (objectDrag && e.pointerId === objectDrag.pointerId && source.kind === "static") {
-                suppressNextClickRef.current = true;
-                if (objectDrag.rafId !== undefined) cancelAnimationFrame(objectDrag.rafId);
-                e.currentTarget.releasePointerCapture(e.pointerId);
-                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-                const dx = (point?.[0] ?? objectDrag.latestX) - objectDrag.startX;
-                const dy = (point?.[1] ?? objectDrag.latestY) - objectDrag.startY;
-                const objectId = objectDrag.objectId;
-                const finalElevation = objectDrag.originalElevation;
-                const finalFalloff = objectDrag.originalFalloff;
-                const existingObject = source.maskData.objects.find((p) => p.id === objectId);
-                const objectName = existingObject?.name ?? `object ${objectId}`;
-                const edit = objectDragEdit(objectDrag, dx, dy);
-                const finalCx = edit.cx;
-                const finalCy = edit.cy;
-                objectDragRef.current = undefined;
-                setIsDraggingTopology(false);
-                dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
-                notifyMaskPendingTopologySet(mediaKey, edit);
-                objectCommitInFlightRef.current.add(objectId);
-                sendMaskObjectUpdate(source.maskData.mask_media_id, {
-                  object_id: objectId,
-                  name: objectName,
-                  cx: finalCx,
-                  cy: finalCy,
-                  radius: objectDrag.originalRadius,
-                  elevation: finalElevation,
-                  falloff: finalFalloff,
-                  shape: objectDrag.originalShape,
-                  ...toObjectBlackPointFields(objectDrag.originalBlackPoint),
-                  description: existingObject?.description ?? "",
-                  reviewed: objectDrag.originalReviewed,
-                  lift: objectDrag.originalLift,
-                  remove: false,
-                  polygon_indices: [...(edit.polygonIndices ?? [])],
-                }).then((updated) => {
-                  objectCommitInFlightRef.current.delete(objectId);
-                  const latestMask = latestRef.current.source;
-                  if (updated && latestMask.kind === "static") {
-                    const patched = applyObjectDelta(latestMask.maskData, updated);
-                    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
-                    notifyMaskObjectsUpdated(mediaKey, patched);
-                    if (uiState.lightSourcePreview) {
-                      uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
-                      notifyMaskLightSourcePreviewToggled(false);
-                    }
-                  }
-                  dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-                  notifyMaskPendingTopologyCleared(mediaKey);
-                });
-                return;
-              }
               const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId || source.kind !== "static") return;
               suppressNextClickRef.current = true;
@@ -2443,11 +2233,6 @@ export function ProjectMaskItem({
               });
             }}
             onPointerCancel={(e) => {
-              const objectDrag = objectDragRef.current;
-              if (objectDrag && e.pointerId === objectDrag.pointerId) {
-                abortTopologyDrag();
-                return;
-              }
               const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId) return;
               abortLightDrag();
@@ -2457,7 +2242,7 @@ export function ProjectMaskItem({
             }}
             onMouseMove={(e) => {
               setIsHovered(true);
-              if (lightDragRef.current || objectDragRef.current) return;
+              if (lightDragRef.current) return;
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
               setMostRecentlyHoveredMaskKey(mediaKey);
               const canvas = e.currentTarget;
