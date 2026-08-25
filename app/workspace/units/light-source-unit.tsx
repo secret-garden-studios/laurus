@@ -701,6 +701,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={objectFalloffTitle}
                         liveTitleRef={objectFalloffRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -725,6 +726,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={blackPointTitles?.r}
                         liveTitleRef={blackPointRRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -749,6 +751,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={blackPointTitles?.g}
                         liveTitleRef={blackPointGRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -773,6 +776,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={blackPointTitles?.b}
                         liveTitleRef={blackPointBRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -797,6 +801,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={blackPointTitles?.a}
                         liveTitleRef={blackPointARef}
+                        escapeOverflow
                       />
                     </>
                   ) : (
@@ -824,6 +829,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={intensityTitle}
                         liveTitleRef={intensityRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -848,6 +854,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={falloffTitle}
                         liveTitleRef={falloffRef}
+                        escapeOverflow
                       />
                       <ParameterSliderY
                         resolution={{ ...uiState.resolution }}
@@ -872,6 +879,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                         title={darknessTitle}
                         liveTitleRef={darknessRef}
+                        escapeOverflow
                       />
                     </>
                   )}
@@ -911,6 +919,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                     disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                        escapeOverflow
                   />
                 </div>
                 <div />

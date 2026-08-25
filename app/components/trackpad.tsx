@@ -1,7 +1,8 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
-import { CSSProperties, RefObject, useState } from "react";
+import { CSSProperties, RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { LaurusResolution } from "../landing.boot";
 import { beginBodyDragCursor, endBodyDragCursor } from "../workspace/hooks/useToolCursor";
 
@@ -30,6 +31,7 @@ interface TrackpadProps {
   disabled?: boolean;
   title?: string;
   liveTitleRef?: RefObject<HTMLDivElement | null>;
+  escapeOverflow?: boolean;
 }
 
 export function Trackpad({
@@ -45,6 +47,7 @@ export function Trackpad({
   disabled,
   title,
   liveTitleRef,
+  escapeOverflow,
 }: TrackpadProps) {
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -96,6 +99,7 @@ export function Trackpad({
             disabled={disabled}
             title={title}
             liveTitleRef={liveTitleRef}
+            escapeOverflow={escapeOverflow}
           />
         </DndContext>
       </div>
@@ -115,6 +119,7 @@ interface CoarsePointerProps {
   disabled?: boolean;
   title?: string;
   liveTitleRef?: RefObject<HTMLDivElement | null>;
+  escapeOverflow?: boolean;
 }
 
 function CoarsePointer({
@@ -129,8 +134,17 @@ function CoarsePointer({
   disabled,
   title,
   liveTitleRef,
+  escapeOverflow,
 }: CoarsePointerProps) {
   const { listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+  const pointerElRef = useRef<HTMLDivElement | null>(null);
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      setNodeRef(node);
+      pointerElRef.current = node;
+    },
+    [setNodeRef],
+  );
   const [dynamicSizes] = useState(() => {
     switch (resolution.type) {
       case "high":
@@ -170,12 +184,69 @@ function CoarsePointer({
     }
   });
   const [isHovered, setIsHovered] = useState(false);
+  const isActive = isDragging || isHovered;
+  const [pointerRect, setPointerRect] = useState<{ top: number; left: number; right: number; bottom: number } | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    if (!escapeOverflow || !isActive) {
+      setPointerRect(null);
+      return;
+    }
+    const updatePointerRect = () => {
+      const el = pointerElRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setPointerRect({ top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom });
+    };
+    updatePointerRect();
+    window.addEventListener("scroll", updatePointerRect, true);
+    window.addEventListener("resize", updatePointerRect);
+    return () => {
+      window.removeEventListener("scroll", updatePointerRect, true);
+      window.removeEventListener("resize", updatePointerRect);
+    };
+  }, [escapeOverflow, isActive, transform?.x, transform?.y, coords.x, coords.y]);
   const dndCss = {
     left: coords.x,
     top: coords.y,
     transform: CSS.Translate.toString(transform),
     touchAction: "none",
   };
+  const fixedTooltipCss: CSSProperties = pointerRect
+    ? ((p) => {
+        switch (p) {
+          case PointerStyle.BlurryBottomTitle:
+            return {
+              position: "fixed",
+              top: pointerRect.bottom + dynamicSizes.titleOffsets.top,
+              left: (pointerRect.left + pointerRect.right) / 2,
+              transform: "translate(-50%, -50%)",
+              color: "rgb(227,227,227)",
+              fontWeight: "bold",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+              zIndex: 2000,
+              ...dynamicSizes.tooltip,
+            };
+          default:
+            return {
+              position: "fixed",
+              top: (pointerRect.top + pointerRect.bottom) / 2,
+              left: pointerRect.right + dynamicSizes.titleOffsets.left,
+              transform: "translateY(-50%)",
+              color: "rgb(227,227,227)",
+              fontWeight: "bold",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+              zIndex: 2000,
+              ...dynamicSizes.tooltip,
+            };
+        }
+      })(pointerStyle)
+    : {};
   const tooltipCss: CSSProperties = ((p) => {
     switch (p) {
       case PointerStyle.BlurryBottomTitle:
@@ -232,9 +303,15 @@ function CoarsePointer({
   })(pointerStyle);
 
   if (liveTitleRef !== undefined) {
+    const shouldRenderTitle = isActive && (!escapeOverflow || pointerRect !== null);
+    const titleElement = shouldRenderTitle && (
+      <div ref={liveTitleRef} style={escapeOverflow ? fixedTooltipCss : tooltipCss}>
+        {title}
+      </div>
+    );
     return (
       <div
-        ref={setNodeRef}
+        ref={setRefs}
         {...listeners}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -248,12 +325,7 @@ function CoarsePointer({
           zIndex,
         }}
       >
-        {title && (isDragging || isHovered) && (
-          <div ref={liveTitleRef} style={tooltipCss}>
-            {title}
-          </div>
-        )}
-        {!title && (isDragging || isHovered) && <div ref={liveTitleRef} style={tooltipCss}></div>}
+        {titleElement && (escapeOverflow ? createPortal(titleElement, document.body) : titleElement)}
       </div>
     );
   } else {
