@@ -184,7 +184,7 @@ export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): K
 }
 
 export interface HoverContextProps {
-  mostRecentlyEnteredEffectUnitKey: string | undefined;
+  getMostRecentlyEnteredEffectUnitKey: () => string | undefined;
   setMostRecentlyEnteredEffectUnitKey: (key: string | undefined) => void;
   mostRecentlyHoveredMaskKey: string | undefined;
   setMostRecentlyHoveredMaskKey: (key: string | undefined) => void;
@@ -201,7 +201,7 @@ export interface HoverContextProps {
 }
 
 export const HoverContext = createContext<HoverContextProps>({
-  mostRecentlyEnteredEffectUnitKey: undefined,
+  getMostRecentlyEnteredEffectUnitKey: () => undefined,
   setMostRecentlyEnteredEffectUnitKey: () => {},
   mostRecentlyHoveredMaskKey: undefined,
   setMostRecentlyHoveredMaskKey: () => {},
@@ -756,9 +756,11 @@ export default function Workspace({
   const mediaGroupsInit = use(mediaGroupsInitPromise);
   const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false);
-  const [mostRecentlyEnteredEffectUnitKey, setMostRecentlyEnteredEffectUnitKey] = useState<string | undefined>(
-    undefined,
-  );
+  const mostRecentlyEnteredEffectUnitKeyRef = useRef<string | undefined>(undefined);
+  const getMostRecentlyEnteredEffectUnitKey = useCallback(() => mostRecentlyEnteredEffectUnitKeyRef.current, []);
+  const setMostRecentlyEnteredEffectUnitKey = useCallback((key: string | undefined) => {
+    mostRecentlyEnteredEffectUnitKeyRef.current = key;
+  }, []);
   const [mostRecentlyHoveredMaskKey, setMostRecentlyHoveredMaskKey] = useState<string | undefined>(undefined);
   const [selectedEffectUnitKeys, setSelectedEffectUnitKeys] = useState<Set<string>>(new Set<string>());
   const [selectedImgKeys, setSelectedImgKeys] = useState<Set<string>>(new Set<string>());
@@ -1721,7 +1723,7 @@ export default function Workspace({
 
   const hoverContextValue = useMemo(
     () => ({
-      mostRecentlyEnteredEffectUnitKey,
+      getMostRecentlyEnteredEffectUnitKey,
       setMostRecentlyEnteredEffectUnitKey,
       mostRecentlyHoveredMaskKey,
       setMostRecentlyHoveredMaskKey,
@@ -1737,7 +1739,8 @@ export default function Workspace({
       setSelectedMaskKeys,
     }),
     [
-      mostRecentlyEnteredEffectUnitKey,
+      getMostRecentlyEnteredEffectUnitKey,
+      setMostRecentlyEnteredEffectUnitKey,
       mostRecentlyHoveredMaskKey,
       isMetaKeyPressed,
       isAltKeyPressed,

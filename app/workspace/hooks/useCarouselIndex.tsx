@@ -24,7 +24,7 @@ export const useCarouselIndex = (
   effectKey: string,
   isNavigable?: (entry: CarouselEntry) => boolean,
 ) => {
-  const { mostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
+  const { getMostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
   const activeKey = activeElement?.key;
   const locallyActivatedKey = activeElement?.locallyActivatedEffectKey;
   const totalEntries = carouselEntries.length;
@@ -51,6 +51,7 @@ export const useCarouselIndex = (
     setLocalIndex(clampIndex(0));
   }
 
+  const mostRecentlyEnteredEffectUnitKey = getMostRecentlyEnteredEffectUnitKey();
   const shouldSync = !mostRecentlyEnteredEffectUnitKey || mostRecentlyEnteredEffectUnitKey === effectKey;
 
   if (activeKey !== prevKey) {

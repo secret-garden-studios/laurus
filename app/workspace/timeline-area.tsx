@@ -630,10 +630,7 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
                     return next;
                   })
                 }
-                onEnter={() => {
-                  if (isAnyDragActive()) return;
-                  setMostRecentlyEnteredEffectUnitKey(effect.key);
-                }}
+                onEnter={() => setMostRecentlyEnteredEffectUnitKey(effect.key)}
               />
             ))}
           </SortableContext>
@@ -715,21 +712,13 @@ function EffectGroupRow({
       onClick={(e) => {
         if (e.altKey) onToggleSelect();
       }}
-      onMouseEnter={(e) => {
+      onMouseEnter={() => {
         if (isAnyDragActive()) return;
         onEnter();
-        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.05)";
-        e.currentTarget.style.border = isSelected
-          ? "1px solid rgba(255, 255, 255, 0.2)"
-          : "1px solid rgba(255, 255, 255, 0.05)";
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)";
-        e.currentTarget.style.border = isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)";
-      }}
+      className={styles["effect-group-row"]}
+      data-selected={isSelected ? "" : undefined}
       style={{
-        border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
-        background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
         display: "flex",
         borderRadius: 0,
         cursor: isAltKeyPressed ? "crosshair" : "",

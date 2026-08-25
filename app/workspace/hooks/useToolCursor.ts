@@ -141,10 +141,12 @@ export function isAnyDragActive(): boolean {
 
 export function beginBodyDragCursor(): void {
   document.body.style.cursor = "grabbing";
+  document.body.dataset.dragging = "true";
   isAnyDragActiveFlag = true;
 }
 
 export function endBodyDragCursor(): void {
   document.body.style.cursor = "";
+  delete document.body.dataset.dragging;
   isAnyDragActiveFlag = false;
 }
