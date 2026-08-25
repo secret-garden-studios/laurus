@@ -575,7 +575,7 @@ describe("isDrawnObject -- the 'worth uploading' predicate", () => {
     assert.equal(isDrawnObject(object({ elevation: 0, lift: restPose })), true, "a flat lift");
   });
 
-  it("reads the black point's alpha rather than its colour", () => {
+  it("reads the black point's alpha rather than its color", () => {
     const invisible = { r: 1, g: 0, b: 0, a: 0 };
     assert.equal(isDrawnObject(object({ elevation: 0, blackPoint: invisible })), false, "fully transparent");
     assert.equal(
@@ -585,7 +585,7 @@ describe("isDrawnObject -- the 'worth uploading' predicate", () => {
     );
   });
 
-  it("still rejects what no amount of colour can rescue", () => {
+  it("still rejects what no amount of color can rescue", () => {
     assert.equal(isDrawnObject(object({ radius: 0, blackPoint: opaqueRed })), false, "zero radius");
     assert.equal(isDrawnObject(object({ radius: -5, blackPoint: opaqueRed })), false, "negative radius");
     assert.equal(

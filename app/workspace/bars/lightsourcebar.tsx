@@ -1243,7 +1243,7 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of red in the selected object's black point"}
+              title={"red in the selected object's flat fill color"}
               style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"r"}
@@ -1280,7 +1280,7 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of green in the selected object's black point"}
+              title={"green in the selected object's flat fill color"}
               style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"g"}
@@ -1317,7 +1317,7 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"the strength of blue in the selected object's black point"}
+              title={"blue in the selected object's flat fill color"}
               style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"b"}
@@ -1355,7 +1355,7 @@ export default function LightSourcebar() {
           >
             <span
               title={
-                "how strongly the selected object's black point is applied -- 0 leaves the object unaffected, 100% drives its floor fully to that colour"
+                "the opacity of the selected object's flat fill color -- 0 leaves the object untinted, 100% paints it fully opaque before lights and elevation shade it"
               }
               style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >

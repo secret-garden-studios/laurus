@@ -30,10 +30,6 @@ export const LIGHT_SDF_GRID = 3;
 export const LIGHT_SDF_ATLAS = LIGHT_SDF_GRID * OBJECT_SDF_TILE;
 export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
 export const OBJECT_GRADIENT_LIMIT = 32.0;
-export const OBJECT_BLACK_POINT_RELIEF_K = 1e-3;
-export const OBJECT_BLACK_POINT_HALO_MAX = 0.2;
-export const OBJECT_BLACK_POINT_HALO_EASE = 0.35;
-export const OBJECT_BLACK_POINT_HALO_FADE = 1.5;
 export const MASK_BUMP_STRENGTH = 0.85;
 export const MASK_LIGHT_HEIGHT_SCALE = 1.0;
 export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
@@ -476,39 +472,27 @@ uniform vec3 u_glowColor;
 uniform vec4 u_objectBlackPoints[MAX_MASK_OBJECTS];
 ${OBJECT_LIFT_GLSL}
 
-#define BLACK_POINT_HALO_MAX ${glFloat(OBJECT_BLACK_POINT_HALO_MAX)}
-#define BLACK_POINT_HALO_EASE ${glFloat(OBJECT_BLACK_POINT_HALO_EASE)}
-#define BLACK_POINT_HALO_FADE ${glFloat(OBJECT_BLACK_POINT_HALO_FADE)}
-#define BLACK_POINT_RELIEF_K ${glFloat(OBJECT_BLACK_POINT_RELIEF_K)}
-#define OBJECT_FALLOFF_MIN ${glFloat(MIN_MASK_OBJECT_FALLOFF)}
-#define OBJECT_FALLOFF_MAX ${glFloat(MAX_MASK_OBJECT_FALLOFF)}
-
+// The flat fill an object's own color paints over its interior, as
+// vec4(rgb, alpha) -- read before any lighting is applied, so highlight,
+// shadow and bump shading all still land on top of it exactly as they would
+// on a textured object. Where two filled objects overlap, whichever one's
+// point sits deepest inside its own outline wins the sample, the same
+// tie-break objectLift uses to keep overlapping objects from blending into
+// each other.
 vec4 objectBlackPoint(vec2 p) {
-  vec3 color = vec3(0.0);
-  float total = 0.0;
-  float weight = 0.0;
+  vec4 fill = vec4(0.0);
+  float nearest = 1.0;
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
+    if (u_objectBlackPoints[i].a <= 0.0) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float u = objectU(
       u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
-    float falloff = max(u_objectFalloffs[i], OBJECT_FALLOFF_MIN);
-    float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
-    float haloT = clamp((falloff - OBJECT_FALLOFF_MIN) / (OBJECT_FALLOFF_MAX - OBJECT_FALLOFF_MIN), 0.0, 1.0);
-    float halo = BLACK_POINT_HALO_MAX * pow(haloT, BLACK_POINT_HALO_EASE);
-    if (u >= reliefEnd + halo) continue;
-    float t = clamp((u - reliefEnd) / max(halo, 1e-4), 0.0, 1.0);
-    float w = pow(1.0 - t, BLACK_POINT_HALO_FADE) * u_objectBlackPoints[i].a;
-    color += u_objectBlackPoints[i].rgb * w;
-    total += w;
-    weight = max(weight, w);
+    if (u >= 1.0 || u >= nearest) continue;
+    nearest = u;
+    fill = u_objectBlackPoints[i];
   }
-  return total > 0.0 ? vec4(color / total, weight) : vec4(0.0);
-}
-
-vec3 liftToBlackPoint(vec3 color, vec4 blackPoint) {
-  vec3 lifted = blackPoint.rgb + clamp(color, 0.0, 1.0) * (1.0 - blackPoint.rgb);
-  return mix(color, lifted, blackPoint.a);
+  return fill;
 }
 
 void main() {
@@ -519,7 +503,9 @@ void main() {
   float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
 
   ObjectLift lift = objectLift(v_meshPos);
-  vec3 base = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
+  vec3 textured = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
+  vec4 blackPoint = objectBlackPoint(v_meshPos);
+  vec3 base = mix(textured, blackPoint.rgb, blackPoint.a);
 
   vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
@@ -557,9 +543,8 @@ void main() {
   }
 
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec4 blackPoint = objectBlackPoint(v_meshPos);
-  vec3 shaded = liftToBlackPoint(lit - leastShadow - bumpShade, blackPoint);
-  vec3 strokeColor = liftToBlackPoint(STROKE_COLOR - leastShadow - bumpShade, blackPoint);
+  vec3 shaded = lit - leastShadow - bumpShade;
+  vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
   vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
 
   vec4 mask = texture2D(u_mask, v_uv);
@@ -1342,12 +1327,12 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
  * Whether this object puts anything on screen -- the question the uniform
  * upload asks, which is a strictly weaker one.
  *
- * Relief is not the only thing an object draws. objectBlackPoint tints from its
- * outline and its falloff with no reference to elevation at all, and objectLift
- * carries the picture inside it from centre, radius and rotation alone. Both
- * read `u_objects`, so both need the object in a slot -- and gating that upload
+ * Relief is not the only thing an object draws. objectBlackPoint fills its
+ * outline from centre, radius and rotation alone, with no reference to
+ * elevation at all, and objectLift carries the picture inside it from those
+ * same three. Both read `u_objects`, so both need the object in a slot -- and gating that upload
  * on elevation, the way the deformation test does, is what made a flat object
- * inert: never uploaded, so its colour had nowhere to land and an effect
+ * inert: never uploaded, so its color had nowhere to land and an effect
  * animating its pose had no slot to write the new pose into, which is why a
  * move, rotate or scale preview looked like it did nothing at all.
  */

@@ -614,7 +614,7 @@ export function stitchRing(rings: CubicRing[], ringIndex: number, a: number, b: 
  * piece of its own.
  *
  * Both things the pen needs come off the same walk -- which rings to draw in
- * the hole colour, and which pieces the reviewer is being asked to choose
+ * the hole color, and which pieces the reviewer is being asked to choose
  * between once stitching has left more than one.
  */
 export interface RingPieces {
