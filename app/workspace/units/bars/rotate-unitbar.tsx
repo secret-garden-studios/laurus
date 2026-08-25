@@ -3,6 +3,7 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  antigravity300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
@@ -69,6 +70,8 @@ export default function RotateUnitbar({
         return polyline200();
       case "mask":
         return texture300();
+      case "object":
+        return antigravity300();
     }
   }, [target]);
 

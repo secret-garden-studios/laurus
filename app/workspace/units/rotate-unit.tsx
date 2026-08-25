@@ -10,7 +10,7 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import RotateUnitbar from "./bars/rotate-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey } from "../effects-utils";
+import { carouselEntryMathKey, maskObjectInputId } from "../effects-utils";
 
 export interface RotateUnitControls {
   x: number;
@@ -36,11 +36,11 @@ export const defaultRotateEquation: LaurusRotateEquation = {
 
 const MAX_VISIBLE_PARAM_SLIDERS = 4;
 
-const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "light" && entry.type !== "object";
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "light";
 
-export type RotateUnitTarget = "img" | "svg" | "mask";
+export type RotateUnitTarget = "img" | "svg" | "mask" | "object";
 
-const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask"];
+const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask", "object"];
 
 interface RotateUnit {
   rotate: LaurusRotateResult;
@@ -60,7 +60,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     isRotateCarouselEntry,
   );
   const entryType = uiState.carouselEntries[carouselIndex]?.type;
-  const target: RotateUnitTarget = entryType === "svg" || entryType === "mask" ? entryType : "img";
+  const target: RotateUnitTarget =
+    entryType === "svg" || entryType === "mask" || entryType === "object" ? entryType : "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
     x: 0,
@@ -123,8 +124,11 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "light":
         case "object": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskObjectInputId(maskKey, carouselEntry.objectId) : "";
+        }
+        case "light": {
           return "";
         }
       }
@@ -229,6 +233,26 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
             type: UIActionType.SetActiveElement,
             value: newActiveElement,
           });
+          break;
+        }
+        case "object": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "object",
+            locallyActivatedEffectKey: rotate.rotate_id,
+            objectId: carouselEntry.objectId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "object", objectId: carouselEntry.objectId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
           break;
         }
         case "light": {

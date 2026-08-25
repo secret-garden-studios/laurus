@@ -70,6 +70,13 @@ uniform mediump vec4 u_objects[MAX_MASK_OBJECTS];
 uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
 uniform mediump int u_objectCount;
 
+// Each object's rotate3d, reduced to the 2x2 that survives dropping z -- and
+// stored already inverted, mesh offset to shape-local, because sampling only
+// ever asks it that way round. Row-major: (a, b, c, d) is [[a, b], [c, d]],
+// identity for an object nothing is turning. See objectRotation.
+uniform mediump vec4 u_objectRotations[MAX_MASK_OBJECTS];
+#define OBJECT_ROTATION_NONE vec4(1.0, 0.0, 0.0, 1.0)
+
 uniform mediump sampler2D u_objectShapes;
 uniform mediump float u_objectShapeRows[MAX_MASK_OBJECTS];
 uniform mediump float u_objectShapeMaxDepth[MAX_MASK_OBJECTS];
@@ -120,6 +127,19 @@ vec3 objectDepthAt(float row, vec2 n) {
   return vec3(sampled.x, reach > 1e-4 ? sampled.yz / reach : vec2(0.0));
 }
 
+// A mesh-space offset in the shape's own coordinates -- the inverse rotation
+// applied, which is what turning the shape looks like from the sampling side.
+vec2 objectToShape(vec4 rotation, vec2 v) {
+  return vec2(rotation.x * v.x + rotation.y * v.y, rotation.z * v.x + rotation.w * v.y);
+}
+
+// A gradient measured in shape coordinates, back in mesh ones. The transpose
+// rather than the inverse-again: the field being differentiated is
+// d(q) = d(Aq) for A the matrix above, so grad_q = A^T grad_n.
+vec2 objectToMesh(vec4 rotation, vec2 v) {
+  return vec2(rotation.x * v.x + rotation.z * v.y, rotation.y * v.x + rotation.w * v.y);
+}
+
 // How far along its falloff a point sits, plus the gradient of that, in mesh
 // units: vec3(u, gradU.xy). u is 0 at the shape's deepest interior point and
 // 1 at its outline.
@@ -127,16 +147,21 @@ vec3 objectDepthAt(float row, vec2 n) {
 // The two branches agree exactly where they overlap. For a circle of radius R
 // the field is d = R - dist with its deepest point at R, so
 // u = 1 - (R - dist)/R = dist/R -- which is the shapeless branch verbatim.
-// An object with no shape and one shaped like a circle are the same object.
-vec3 objectU(float row, float maxDepth, vec2 toPoint, float radius) {
+// An object with no shape and one shaped like a circle are the same object,
+// and stay the same object once turned: both branches read the same rotated
+// offset, so a rotation foreshortens the shapeless disc into the same ellipse
+// it foreshortens a drawn circle into.
+vec3 objectU(float row, float maxDepth, vec2 toPoint, float radius, vec4 rotation) {
+  vec2 n = objectToShape(rotation, toPoint / radius);
   if (row < 0.0) {
-    float dist = length(toPoint);
-    return vec3(dist / radius, dist > 1e-4 ? toPoint / (dist * radius) : vec2(0.0));
+    float dist = length(n);
+    vec2 gradient = dist > 1e-4 ? objectToMesh(rotation, n / dist) : vec2(0.0);
+    return vec3(dist, gradient / radius);
   }
-  vec3 depth = objectDepthAt(row, toPoint / radius);
+  vec3 depth = objectDepthAt(row, n);
   // d is measured in normalized units, so its gradient converts to mesh units
   // by dividing through by the same radius that normalized the position
-  return vec3(1.0 - depth.x / maxDepth, -depth.yz / (maxDepth * radius));
+  return vec3(1.0 - depth.x / maxDepth, objectToMesh(rotation, -depth.yz / maxDepth) / radius);
 }
 
 vec2 objectProfile(float u, float falloff) {
@@ -153,7 +178,8 @@ vec3 objectField(vec2 p) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
     float elevation = u_objects[i].w;
-    vec3 profileU = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z);
+    vec3 profileU = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]);
     float u = profileU.x;
     if (u >= 1.0) continue;
     vec2 profile = objectProfile(u, u_objectFalloffs[i]);
@@ -171,7 +197,8 @@ vec2 objectSwell(vec2 p) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
     float radius = u_objects[i].z;
-    float u = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, radius).x;
+    float u = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, radius, u_objectRotations[i]).x;
     if (u >= 1.0) continue;
     float height = u_objects[i].w * objectProfile(u, u_objectFalloffs[i]).x;
     float coefficient = clamp(
@@ -350,9 +377,12 @@ ObjectLift objectLift(vec2 meshPos) {
 
     // The same outline asked about twice. Normalizing by each pose's own radius
     // is what makes the two agree: a point at u inside the rest footprint is at
-    // the same u inside the current one, whatever the scale between them.
-    float body = objectU(row, maxDepth, meshPos - center, radius).x;
-    float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius).x;
+    // the same u inside the current one, whatever the scale between them -- and
+    // whatever the rotation, which is why only the current pose carries one.
+    // The footprint being vacated is the one the image was painted in, and that
+    // one was never turned.
+    float body = objectU(row, maxDepth, meshPos - center, radius, u_objectRotations[i]).x;
+    float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius, OBJECT_ROTATION_NONE).x;
     lift.body = max(lift.body, objectCoverage(body, radius));
     lift.hole = max(lift.hole, objectCoverage(rest, restRadius));
 
@@ -362,7 +392,10 @@ ObjectLift objectLift(vec2 meshPos) {
       nearest = body;
       float scale = radius / restRadius;
       vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
-      vec2 there = restCenter + (here - center) / scale;
+      // Reading the image back through the whole transform, not just the scale:
+      // the object got to where it is by being scaled and then turned, so the
+      // texel it is standing on is found by undoing both, in that order.
+      vec2 there = restCenter + objectToShape(u_objectRotations[i], here - center) / scale;
       lift.uv = vec2(there.x, u_resolution.y - there.y) / u_resolution;
     }
   }
@@ -457,7 +490,8 @@ vec4 objectBlackPoint(vec2 p) {
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     vec2 toPoint = p - u_objects[i].xy;
-    float u = objectU(u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z).x;
+    float u = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
     float falloff = max(u_objectFalloffs[i], OBJECT_FALLOFF_MIN);
     float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
     float haloT = clamp((falloff - OBJECT_FALLOFF_MIN) / (OBJECT_FALLOFF_MAX - OBJECT_FALLOFF_MIN), 0.0, 1.0);
@@ -596,6 +630,7 @@ export interface GLState {
   lightSourceDarknessesLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
   objectsLoc: WebGLUniformLocation;
+  objectRotationsLoc: WebGLUniformLocation;
   objectFalloffsLoc: WebGLUniformLocation;
   objectCountLoc: WebGLUniformLocation;
   objectShapesLoc: WebGLUniformLocation;
@@ -710,6 +745,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
   const objectsLoc = gl.getUniformLocation(program, "u_objects");
+  const objectRotationsLoc = gl.getUniformLocation(program, "u_objectRotations");
   const objectFalloffsLoc = gl.getUniformLocation(program, "u_objectFalloffs");
   const objectCountLoc = gl.getUniformLocation(program, "u_objectCount");
   const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
@@ -741,6 +777,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceDarknessesLoc ||
     !lightSourceCountLoc ||
     !objectsLoc ||
+    !objectRotationsLoc ||
     !objectFalloffsLoc ||
     !objectCountLoc ||
     !objectShapesLoc ||
@@ -783,6 +820,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceDarknessesLoc,
     lightSourceCountLoc,
     objectsLoc,
+    objectRotationsLoc,
     objectFalloffsLoc,
     objectCountLoc,
     objectShapesLoc,
@@ -921,6 +959,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     // the "is this one lifted" flag, and a slot left alone would go on being
     // read against the pose whichever object held it last was animating from.
     const lifts = new Float32Array(activeObjects.length * 4);
+    // Identity for the slots nothing is turning, for the same reason the lifts
+    // are written unconditionally: a slot carrying the matrix its last tenant
+    // spun by would sample every later object through that spin.
+    const rotations = new Float32Array(activeObjects.length * 4);
     activeObjects.forEach((object, i) => {
       objects[i * 4] = object.cx;
       objects[i * 4 + 1] = object.cy;
@@ -935,8 +977,14 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       lifts[i * 4 + 1] = object.lift?.cy ?? object.cy;
       lifts[i * 4 + 2] = Math.max(object.lift?.radius ?? object.radius, 1);
       lifts[i * 4 + 3] = object.lift ? 1 : 0;
+      const rotation = object.rotation?.inverse ?? OBJECT_ROTATION_NONE.inverse;
+      rotations[i * 4] = rotation[0];
+      rotations[i * 4 + 1] = rotation[1];
+      rotations[i * 4 + 2] = rotation[2];
+      rotations[i * 4 + 3] = rotation[3];
     });
     gl.uniform4fv(state.objectsLoc, objects);
+    gl.uniform4fv(state.objectRotationsLoc, rotations);
     gl.uniform1fv(state.objectFalloffsLoc, falloffs);
     gl.uniform4fv(state.objectBlackPointsLoc, blackPoints);
     gl.uniform4fv(state.objectLiftsLoc, lifts);
@@ -1199,10 +1247,86 @@ export interface ObjectGeometryInput {
    * the transform between them is the identity and the hole is empty.
    */
   lift?: { cx: number; cy: number; radius: number };
+  /**
+   * How the object is turned right now, or absent for one sitting square --
+   * which is every object at rest, since a rotation is something an effect
+   * does to an object during playback and never part of what is stored.
+   */
+  rotation?: ObjectRotation;
+}
+
+/**
+ * A rotate3d, as much of it as a flat relief can show.
+ *
+ * The object's outline lives in the z = 0 plane, so of the full 3x3 rotation
+ * only the upper-left 2x2 survives dropping z -- and that 2x2 is not merely
+ * the in-plane spin. Turning about x scales the shape down in y by cos(angle)
+ * and turning about y does the same in x, which is the foreshortening the DOM
+ * media types already get from CSS `rotate3d` with no `perspective` set. This
+ * is that same projection, arrived at the same way, so a mask object wired to
+ * the rotate unit tilts like an image wired to it.
+ *
+ * Stored inverted because sampling runs backwards: the shader has a mesh point
+ * and needs the point of the *unturned* shape that landed there, which is the
+ * inverse matrix applied to the offset. Row-major, `[a, b, c, d]` for
+ * `[[a, b], [c, d]]`.
+ */
+export interface ObjectRotation {
+  inverse: [number, number, number, number];
+  /**
+   * False once the turn has taken the shape edge-on, where the projected 2x2
+   * is singular: the outline has collapsed to a line with no area, there is no
+   * inverse, and there is nothing left to draw. Callers gate on
+   * `isActiveObject`, which folds this in, rather than testing it directly.
+   */
+  visible: boolean;
+}
+
+export const OBJECT_ROTATION_NONE: ObjectRotation = { inverse: [1, 0, 0, 1], visible: true };
+
+// Below this the projected outline is thinner than a rounding error and the
+// inverse it would produce stretches the shape across the whole mesh, so
+// edge-on is called at the point the matrix stops being usable rather than at
+// exactly 90 degrees, which floating point never lands on anyway.
+const OBJECT_ROTATION_EDGE_ON = 1e-4;
+
+/**
+ * The projected rotation for one rotate3d, or undefined when there is nothing
+ * to turn -- a zero axis or a zero angle, both of which the rotate unit's
+ * defaults start at.
+ */
+export function objectRotation(x: number, y: number, z: number, angleDegrees: number): ObjectRotation | undefined {
+  const length = Math.hypot(x, y, z);
+  if (length === 0 || angleDegrees % 360 === 0) return undefined;
+  const angle = (angleDegrees * Math.PI) / 180;
+
+  // Rodrigues, but only the four entries that outlive the projection.
+  const [ax, ay, az] = [x / length, y / length, z / length];
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const t = 1 - cos;
+  const a = t * ax * ax + cos;
+  const b = t * ax * ay - sin * az;
+  const c = t * ax * ay + sin * az;
+  const d = t * ay * ay + cos;
+
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < OBJECT_ROTATION_EDGE_ON) return { inverse: [1, 0, 0, 1], visible: false };
+  return {
+    inverse: [d / determinant, -b / determinant, -c / determinant, a / determinant],
+    visible: true,
+  };
+}
+
+/** A mesh-space offset in the shape's own coordinates -- the shader's objectToShape. */
+export function objectToShape(rotation: ObjectRotation | undefined, x: number, y: number): [number, number] {
+  if (!rotation) return [x, y];
+  const [a, b, c, d] = rotation.inverse;
+  return [a * x + b * y, c * x + d * y];
 }
 
 export function isActiveObject(object: ObjectGeometryInput): boolean {
-  return object.radius > 0 && object.elevation !== 0;
+  return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
 }
 
 export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
@@ -1227,10 +1351,13 @@ export function objectProfileK(u: number, falloff: number): number {
  * same test the shader's early-out makes.
  */
 export function objectProfileUAt(object: ObjectGeometryInput, point: [number, number]): number {
-  const toPointX = point[0] - object.cx;
-  const toPointY = point[1] - object.cy;
-  if (!object.shape) return Math.hypot(toPointX, toPointY) / object.radius;
-  return objectShapeProfileU(object.shape, toPointX / object.radius, toPointY / object.radius);
+  const [nx, ny] = objectToShape(
+    object.rotation,
+    (point[0] - object.cx) / object.radius,
+    (point[1] - object.cy) / object.radius,
+  );
+  if (!object.shape) return Math.hypot(nx, ny);
+  return objectShapeProfileU(object.shape, nx, ny);
 }
 
 export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {

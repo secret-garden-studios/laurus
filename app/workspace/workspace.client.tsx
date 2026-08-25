@@ -1593,7 +1593,10 @@ export default function Workspace({
       const targetDrivesLightSource = coreState.effects.some(
         (effect) =>
           effect.key === target.effectKey &&
-          (effect.type === "move" || effect.type === "light_source" || effect.type === "scale") &&
+          (effect.type === "move" ||
+            effect.type === "light_source" ||
+            effect.type === "scale" ||
+            effect.type === "rotate") &&
           (parseMaskLightInputId(target.inputKey).lightId !== undefined || targetObjectId !== undefined),
       );
       const lightSourceFinished: Promise<void>[] = [];

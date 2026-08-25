@@ -26,6 +26,8 @@ import {
   HIGHLIGHT_SIBLING_COLOR,
   MaskLightSource,
   ObjectGeometryInput,
+  ObjectRotation,
+  objectRotation,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
   uploadStaticMaskMesh,
@@ -66,6 +68,7 @@ import {
   getImg,
   getLightSourceFrames,
   getMoveFrames,
+  getRotateFrames,
   getScaleFrames,
   LaurusLight,
   LaurusEffect,
@@ -293,7 +296,15 @@ export function ProjectMaskItem({
   const playbackObjectsRef = useRef<
     Map<
       number,
-      { cx: number; cy: number; elevation: number; radius: number; falloff: number; blackPoint: LaurusObjectBlackPoint }
+      {
+        cx: number;
+        cy: number;
+        elevation: number;
+        radius: number;
+        falloff: number;
+        blackPoint: LaurusObjectBlackPoint;
+        rotation: ObjectRotation | undefined;
+      }
     >
   >(new Map());
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
@@ -468,6 +479,7 @@ export function ProjectMaskItem({
           falloff: playing.falloff,
           shape,
           blackPoint: playing.blackPoint,
+          rotation: playing.rotation,
           // Lift only ever means something against a pose the object has moved
           // away from, so it is attached here and nowhere else: `playing` is
           // the animated pose and the stored object is still the resting one.
@@ -1190,9 +1202,15 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale };
+          const wiredRotate = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "rotate" }> =>
+              effect.type === "rotate" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale);
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate);
 
       if (targets.length === 0 && objectTargets.length === 0) return Promise.resolve(undefined);
 
@@ -1206,6 +1224,7 @@ export function ProjectMaskItem({
       const moveFramesByObject = new Map<number, LaurusFrame[]>();
       const lightSourceFramesByObject = new Map<number, LaurusFrame[]>();
       const scaleFramesByObject = new Map<number, LaurusFrame[]>();
+      const rotateFramesByObject = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
 
@@ -1261,7 +1280,10 @@ export function ProjectMaskItem({
         });
       } else if (targets.length === 0) {
         const objectTarget = objectTargets[0];
-        const timingValue = (objectTarget.wiredMove ?? objectTarget.wiredLightSource ?? objectTarget.wiredScale)!.value;
+        const timingValue = (objectTarget.wiredMove ??
+          objectTarget.wiredLightSource ??
+          objectTarget.wiredScale ??
+          objectTarget.wiredRotate)!.value;
         fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
@@ -1296,6 +1318,17 @@ export function ProjectMaskItem({
             ).then((result) => {
               if (activePlaybackRef.current === session && result)
                 scaleFramesByObject.set(objectTarget.objectId, result);
+            }),
+          );
+        }
+        if (objectTarget.wiredRotate) {
+          const wiredRotate = objectTarget.wiredRotate;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `rotate:${objectTarget.inputId}`, () =>
+              getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result)
+                rotateFramesByObject.set(objectTarget.objectId, result);
             }),
           );
         }
@@ -1424,6 +1457,7 @@ export function ProjectMaskItem({
                   const moveFrames = moveFramesByObject.get(t.objectId);
                   const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
                   const scaleFrames = scaleFramesByObject.get(t.objectId);
+                  const rotateFrames = rotateFramesByObject.get(t.objectId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
@@ -1442,6 +1476,11 @@ export function ProjectMaskItem({
                     : scaleFrames && scaleFrames.length > 0
                       ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
                       : undefined;
+                  const rotatePoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : rotateFrames && rotateFrames.length > 0
+                      ? rotateFrames[Math.min(frameIndex, rotateFrames.length - 1)]
+                      : undefined;
                   const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
                   const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
                   const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
@@ -1459,6 +1498,9 @@ export function ProjectMaskItem({
                     radius: radius * scaleMultiplier,
                     falloff,
                     blackPoint,
+                    rotation: rotatePoint
+                      ? objectRotation(rotatePoint.rx, rotatePoint.ry, rotatePoint.rz, rotatePoint.rangle)
+                      : undefined,
                   });
                 });
                 render();

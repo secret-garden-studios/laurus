@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   LIGHT_SOURCE_SHADER,
+  OBJECT_ROTATION_NONE,
+  objectRotation,
+  objectToShape,
   MASK_OBJECT_SWELL,
   MASK_OBJECT_SWELL_LIMIT,
   MAX_MASK_OBJECT_ELEVATION,
@@ -12,6 +15,7 @@ import {
   OBJECT_SDF_ATLAS,
   OBJECT_SDF_GRID,
   OBJECT_SDF_RANGE,
+  activeMaskObjects,
   encodeObjectSdfAtlas,
   objectProfileUAt,
 } from "./mask-gl.ts";
@@ -194,7 +198,7 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
   });
 
   it("declares the object uniforms at the same precision in both stages", () => {
-    for (const name of ["u_objects", "u_objectFalloffs"]) {
+    for (const name of ["u_objects", "u_objectFalloffs", "u_objectRotations"]) {
       const qualifierOf = (src: string) => (src.match(new RegExp(`uniform (\\w+) \\w+ ${name}\\[`)) ?? [])[1];
       const vertex = qualifierOf(LIGHT_SOURCE_SHADER.vertex);
       assert.ok(vertex, `${name}: not declared in the vertex stage`);
@@ -550,5 +554,127 @@ describe("isActiveObject -- the shared 'worth uploading / worth subdividing for'
     for (let d = 0; d < flat.radius; d += 1) {
       assert.deepEqual(objectSwellAt([flat.cx + d, flat.cy], [flat]), [0, 0], `at d=${d}`);
     }
+  });
+});
+
+describe("objectRotation -- rotate3d, projected onto the plane a relief lives in", () => {
+  const rotationOf = (x: number, y: number, z: number, angle: number) => {
+    const rotation = objectRotation(x, y, z, angle);
+    assert.ok(rotation, `no rotation for (${x},${y},${z}) at ${angle}deg`);
+    return rotation;
+  };
+
+  it("has nothing to say about a zero axis or a zero angle", () => {
+    assert.equal(objectRotation(0, 0, 0, 90), undefined, "zero axis");
+    assert.equal(objectRotation(0, 0, 1, 0), undefined, "zero angle");
+    assert.equal(objectRotation(0, 0, 1, 360), undefined, "a full turn");
+    assert.equal(objectRotation(0, 0, 1, -720), undefined, "two full turns the other way");
+  });
+
+  it("turns a point about z by exactly the angle asked for", () => {
+    for (const angle of [30, 45, 120, 200, 330]) {
+      const radians = (angle * Math.PI) / 180;
+      // The stored matrix is the inverse, so asking it where a mesh point came
+      // from is asking for the turn undone -- hence the sign.
+      const [nx, ny] = objectToShape(rotationOf(0, 0, 1, angle), 1, 0);
+      assert.ok(Math.abs(nx - Math.cos(radians)) < 1e-9, `x at ${angle}deg: ${nx}`);
+      assert.ok(Math.abs(ny + Math.sin(radians)) < 1e-9, `y at ${angle}deg: ${ny}`);
+    }
+  });
+
+  it("foreshortens by the cosine when the turn is about x or y, as CSS does", () => {
+    for (const angle of [30, 45, 60]) {
+      const cos = Math.cos((angle * Math.PI) / 180);
+      // A shape squashed to `cos` of its height means a mesh offset of 1 reads
+      // back as 1/cos in the shape's own coordinates -- further out, so the
+      // outline is met sooner.
+      const [, aboutX] = objectToShape(rotationOf(1, 0, 0, angle), 0, 1);
+      assert.ok(Math.abs(aboutX - 1 / cos) < 1e-9, `about x at ${angle}deg: ${aboutX}`);
+      const [aboutY] = objectToShape(rotationOf(0, 1, 0, angle), 1, 0);
+      assert.ok(Math.abs(aboutY - 1 / cos) < 1e-9, `about y at ${angle}deg: ${aboutY}`);
+      // and leaves the axis it turns about alone
+      const [alongX] = objectToShape(rotationOf(1, 0, 0, angle), 1, 0);
+      assert.ok(Math.abs(alongX - 1) < 1e-9, `along x at ${angle}deg: ${alongX}`);
+    }
+  });
+
+  it("goes edge-on at a quarter turn about an in-plane axis, and comes back", () => {
+    for (const [x, y] of [
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ]) {
+      assert.equal(objectRotation(x, y, 0, 90)?.visible, false, `(${x},${y}) at 90deg`);
+      assert.equal(objectRotation(x, y, 0, 270)?.visible, false, `(${x},${y}) at 270deg`);
+      assert.equal(objectRotation(x, y, 0, 180)?.visible, true, `(${x},${y}) at 180deg`);
+    }
+    assert.equal(objectRotation(0, 0, 1, 90)?.visible, true, "a quarter turn in the plane stays visible");
+  });
+
+  it("mirrors rather than vanishes once the shape is past edge-on", () => {
+    // 180 about x is a vertical flip: y comes back negated, x untouched
+    const [nx, ny] = objectToShape(rotationOf(1, 0, 0, 180), 1, 1);
+    assert.ok(Math.abs(nx - 1) < 1e-9, `x: ${nx}`);
+    assert.ok(Math.abs(ny + 1) < 1e-9, `y: ${ny}`);
+  });
+
+  it("is a no-op on the offset when there is no rotation to apply", () => {
+    assert.deepEqual(objectToShape(undefined, 3, -7), [3, -7]);
+    assert.deepEqual(objectToShape(OBJECT_ROTATION_NONE, 3, -7), [3, -7]);
+  });
+});
+
+describe("a rotated object's field", () => {
+  it("leaves a shapeless object's profile alone when the turn is in the plane", () => {
+    // a disc is its own rotation about z, and this is the invariant that keeps
+    // a shapeless object and a circular one the same object once turned
+    const spun = object({ rotation: objectRotation(0, 0, 1, 37) });
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+      for (const d of [10, 25, 49]) {
+        const point: [number, number] = [100 + d * Math.cos(angle), 100 + d * Math.sin(angle)];
+        assert.ok(
+          Math.abs(objectProfileUAt(spun, point) - objectProfileUAt(object(), point)) < 1e-9,
+          `at ${angle.toFixed(2)}, d=${d}`,
+        );
+      }
+    }
+  });
+
+  it("pulls a shapeless object's rim in along the foreshortened axis", () => {
+    // turned 60 degrees about x the disc is half as tall, so the rim sits at
+    // half the radius above the centre and still at the radius beside it
+    const tilted = object({ rotation: objectRotation(1, 0, 0, 60) });
+    assert.ok(Math.abs(objectProfileUAt(tilted, [tilted.cx + tilted.radius, tilted.cy]) - 1) < 1e-9, "across");
+    assert.ok(Math.abs(objectProfileUAt(tilted, [tilted.cx, tilted.cy + tilted.radius / 2]) - 1) < 1e-9, "up");
+    assert.ok(objectProfileUAt(tilted, [tilted.cx, tilted.cy + tilted.radius]) > 1.9, "beyond the squashed rim");
+  });
+
+  it("stops swelling the mesh once the turn has taken it edge-on", () => {
+    const edgeOn = object({ rotation: objectRotation(1, 0, 0, 90) });
+    assert.equal(isActiveObject(edgeOn), false);
+    assert.equal(activeMaskObjects([edgeOn]).length, 0);
+  });
+
+  it("turns a drawn shape with it", () => {
+    // a wide, short rectangle: upright it reaches further across than up, and a
+    // quarter turn about z has to swap which of those is which
+    const built = buildObjectShapeFromRings([
+      [
+        [-1, -0.25],
+        [1, -0.25],
+        [1, 0.25],
+        [-1, 0.25],
+      ],
+    ]);
+    assert.ok(built.ok);
+    const upright = object({ shape: built.shape });
+    const turned = object({ shape: built.shape, rotation: objectRotation(0, 0, 1, 90) });
+    const across: [number, number] = [upright.cx + upright.radius * 0.6, upright.cy];
+    const up: [number, number] = [upright.cx, upright.cy + upright.radius * 0.6];
+
+    assert.ok(objectProfileUAt(upright, across) < 1, "upright: inside across the long way");
+    assert.ok(objectProfileUAt(upright, up) > 1, "upright: outside up the short way");
+    assert.ok(objectProfileUAt(turned, up) < 1, "turned: now inside up");
+    assert.ok(objectProfileUAt(turned, across) > 1, "turned: now outside across");
   });
 });
