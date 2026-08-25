@@ -19,6 +19,7 @@ import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useS
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 
 type MediaGroupItem =
   | { type: "img"; key: string; img: LaurusImgResult }
@@ -577,7 +578,11 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             sensors={dragSensors}
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-            onDragEnd={onGroupDragEnd}
+            onDragStart={beginBodyDragCursor}
+            onDragEnd={(e) => {
+              endBodyDragCursor();
+              onGroupDragEnd(e);
+            }}
           >
             <SortableContext items={groupItems.map((item) => item.key)} strategy={verticalListSortingStrategy}>
               {groupItems.map((item, index) => (

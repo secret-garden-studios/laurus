@@ -126,10 +126,25 @@ export function dragFallbackCursor({
   return dragDisabled ? "" : isDragging ? "grabbing" : "grab";
 }
 
+// Set for the duration of any dnd-kit drag anywhere in the app (dial, trackpad,
+// camera, canvas media, timeline/group reordering). dnd-kit tracks drag deltas via
+// document-level listeners rather than pointer capture, so the browser keeps
+// dispatching real mouseenter/mousemove/mouseleave to whatever sits under the
+// cursor as it sweeps across other units mid-drag. Hover handlers should check
+// this before touching HoverContext so an in-progress drag can't spuriously
+// highlight/select things the cursor merely passed over.
+let isAnyDragActiveFlag = false;
+
+export function isAnyDragActive(): boolean {
+  return isAnyDragActiveFlag;
+}
+
 export function beginBodyDragCursor(): void {
   document.body.style.cursor = "grabbing";
+  isAnyDragActiveFlag = true;
 }
 
 export function endBodyDragCursor(): void {
   document.body.style.cursor = "";
+  isAnyDragActiveFlag = false;
 }

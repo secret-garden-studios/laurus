@@ -48,6 +48,7 @@ import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useS
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { beginBodyDragCursor, endBodyDragCursor, isAnyDragActive } from "./hooks/useToolCursor";
 
 function reindexEffectGroups(effectGroups: Map<string, LaurusEffectGroupResult>): LaurusEffectGroupResult[] {
   return Array.from(effectGroups.values())
@@ -604,7 +605,11 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
           sensors={dragSensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          onDragEnd={onEffectDragEnd}
+          onDragStart={beginBodyDragCursor}
+          onDragEnd={(e) => {
+            endBodyDragCursor();
+            onEffectDragEnd(e);
+          }}
         >
           <SortableContext items={groupEffects.map((e) => e.key)} strategy={verticalListSortingStrategy}>
             {groupEffects.map((effect, index) => (
@@ -625,7 +630,10 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
                     return next;
                   })
                 }
-                onEnter={() => setMostRecentlyEnteredEffectUnitKey(effect.key)}
+                onEnter={() => {
+                  if (isAnyDragActive()) return;
+                  setMostRecentlyEnteredEffectUnitKey(effect.key);
+                }}
               />
             ))}
           </SortableContext>
@@ -708,6 +716,7 @@ function EffectGroupRow({
         if (e.altKey) onToggleSelect();
       }}
       onMouseEnter={(e) => {
+        if (isAnyDragActive()) return;
         onEnter();
         e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.05)";
         e.currentTarget.style.border = isSelected

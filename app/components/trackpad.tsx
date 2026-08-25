@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
 import { CSSProperties, RefObject, useState } from "react";
 import { LaurusResolution } from "../landing.boot";
+import { beginBodyDragCursor, endBodyDragCursor } from "../workspace/hooks/useToolCursor";
 
 export enum PointerStyle {
   Blurry,
@@ -61,7 +62,7 @@ export function Trackpad({
           sensors={sensors}
           autoScroll={false}
           onDragStart={() => {
-            document.body.style.cursor = "grabbing";
+            beginBodyDragCursor();
           }}
           onDragMove={(e) => {
             if (!onMove) return;
@@ -73,7 +74,7 @@ export function Trackpad({
             onMove(newPosition);
           }}
           onDragEnd={(e) => {
-            document.body.style.cursor = "";
+            endBodyDragCursor();
             const delta = e.delta;
             const newPosition = {
               x: Math.round(value.x + delta.x),

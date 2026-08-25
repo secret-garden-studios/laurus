@@ -10,7 +10,7 @@ import {
   UIContext,
   getNewContextMenuConfig,
 } from "../workspace.client";
-import { useToolCursor } from "../hooks/useToolCursor";
+import { isAnyDragActive, useToolCursor } from "../hooks/useToolCursor";
 import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 import { RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -2244,6 +2244,7 @@ export function ProjectMaskItem({
               setIsHovered(true);
               if (lightDragRef.current) return;
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
+              if (isAnyDragActive()) return;
               setMostRecentlyHoveredMaskKey(mediaKey);
               const canvas = e.currentTarget;
               const rect = canvas.getBoundingClientRect();
