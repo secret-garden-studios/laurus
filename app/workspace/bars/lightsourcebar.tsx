@@ -6,11 +6,7 @@ import { UIActionType } from "../states/ui-state";
 import { SvgRepo, asterisk300, antigravity300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
-import {
-  MAX_MASK_OBJECT_ELEVATION,
-  MAX_MASK_OBJECT_FALLOFF,
-  MIN_MASK_OBJECT_FALLOFF,
-} from "../mask-gl";
+import { MAX_MASK_OBJECT_ELEVATION, MAX_MASK_OBJECT_FALLOFF, MIN_MASK_OBJECT_FALLOFF } from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
   LaurusLight,
@@ -86,6 +82,17 @@ export default function LightSourcebar() {
             tickLeft: 2,
             svgSize: { width: 24, height: 24 },
           },
+          paramPlusMinueSize: {
+            containerHeight: 38,
+            containerWidth: 190,
+            capWidth: 17,
+            capHeight: 17,
+            capBorderOffset: 0,
+            trackHeight: 1,
+            tickHeight: 24,
+            tickLeft: 2,
+            svgSize: { width: 24, height: 24 },
+          },
         };
       case "midhigh":
         return {
@@ -113,6 +120,17 @@ export default function LightSourcebar() {
             translateX: 12,
           },
           paramSize: {
+            capWidth: 13,
+            capHeight: 13,
+            capBorderOffset: 0,
+            containerWidth: 170,
+            containerHeight: 36,
+            trackHeight: 1,
+            tickHeight: 0,
+            tickLeft: 1,
+            svgSize: { width: 20, height: 20 },
+          },
+          paramPlusMinueSize: {
             capWidth: 13,
             capHeight: 13,
             capBorderOffset: 0,
@@ -157,9 +175,20 @@ export default function LightSourcebar() {
             containerWidth: 170,
             containerHeight: 36,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 0,
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
+          },
+          paramPlusMinueSize: {
+            containerHeight: 38,
+            containerWidth: 190,
+            capWidth: 17,
+            capHeight: 17,
+            capBorderOffset: 0,
+            trackHeight: 1,
+            tickHeight: 20,
+            tickLeft: 2,
+            svgSize: { width: 24, height: 24 },
           },
         };
     }
@@ -561,13 +590,17 @@ export default function LightSourcebar() {
   const elevationTrackRef = useRef<HTMLDivElement | null>(null);
 
   const elevationSpan = MAX_MASK_OBJECT_ELEVATION * 2;
+  const elevationSnap = elevationSpan * 0.03;
   const { getTrackValue: getElevationValue, getTrackCursor: getElevationCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     elevationSpan,
   );
   const elevationFromTrack = useCallback(
-    (cursorX: number, trackWidth: number) => getElevationValue(cursorX, trackWidth, 0) - MAX_MASK_OBJECT_ELEVATION,
-    [getElevationValue],
+    (cursorX: number, trackWidth: number) => {
+      const centered = getElevationValue(cursorX, trackWidth, 0) - MAX_MASK_OBJECT_ELEVATION;
+      return Math.abs(centered) <= elevationSnap ? 0 : centered;
+    },
+    [getElevationValue, elevationSnap],
   );
   const elevationToTrack = useCallback(
     (value: number, trackWidth: number) => getElevationCursor(value + MAX_MASK_OBJECT_ELEVATION, trackWidth),
@@ -1139,7 +1172,7 @@ export default function LightSourcebar() {
             <ParameterSliderXPlusMinus
               resolution={{ ...uiState.resolution }}
               hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|elevation|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
+              size={dynamicSizes.paramPlusMinueSize}
               containerRef={elevationTrackRef}
               cursor={elevationCursor}
               onCursorMove={(newCursor) => {

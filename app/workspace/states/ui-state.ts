@@ -11,9 +11,9 @@ import {
 } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
 import { RESOLUTION } from "@/app/landing.config";
-import { MAX_MASK_OBJECTS, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
+import { MAX_MASK_OBJECTS, MIN_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
-import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT, OBJECT_FALLOFF_DEFAULT } from "../workspace.server";
+import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT } from "../workspace.server";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
@@ -389,7 +389,7 @@ export const defaultUIState: UIState = {
   canvasZoom: CANVAS_ZOOM_DEFAULT,
   stagedObject: {
     elevation: OBJECT_ELEVATION_DEFAULT,
-    falloff: OBJECT_FALLOFF_DEFAULT,
+    falloff: MIN_MASK_OBJECT_FALLOFF,
     blackPoint: OBJECT_BLACK_POINT_DEFAULT,
   },
   maskEdit: undefined,
