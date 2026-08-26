@@ -2489,6 +2489,7 @@ export function ProjectMaskItem({
               bufferHeight={canvasSize.height}
               cssWidth={containerSize.width}
               cssHeight={containerSize.height}
+              canvasZoom={canvasZoom}
               onPreview={previewShapeEdit}
               onCommit={commitShapeEdit}
               stitch={uiState.tool.type === "pen" && uiState.tool.stitch}

@@ -25,6 +25,7 @@ const CONTROL_RADIUS_PX = 3.5;
 const OUTLINE_WIDTH_PX = 1.5;
 const LEASH_WIDTH_PX = 1;
 const GRAB_RADIUS_PX = 9;
+const ZOOM_COMPENSATION = 0.85;
 const COLLAPSED_AREA = 1e-3;
 const BUFFER_SPACE = { cx: 0, cy: 0, radius: 1 };
 
@@ -58,6 +59,7 @@ export interface ObjectShapeEditorProps {
   bufferHeight: number;
   cssWidth: number;
   cssHeight: number;
+  canvasZoom: number;
   onPreview: (edit: ShapeEdit) => void;
   onCommit: (edit: ShapeEdit) => void;
   stitch: boolean;
@@ -80,6 +82,7 @@ export default function ObjectShapeEditor({
   bufferHeight,
   cssWidth,
   cssHeight,
+  canvasZoom,
   onPreview,
   onCommit,
   stitch,
@@ -128,8 +131,17 @@ export default function ObjectShapeEditor({
 
   const [hoveredPiece, setHoveredPiece] = useState<number | undefined>(undefined);
 
+  /* Every size here is chrome -- an anchor, a control, the leash between them,
+     the fat invisible stroke that catches a grab -- and chrome is sized against
+     the hand holding it, not against the mask underneath. Buffer over layout
+     size puts a CSS pixel into buffer units; dividing out the zoom then holds it
+     near that many pixels on the display, so zooming in to reach a fine detail
+     grows the detail and very nearly leaves the anchors alone rather than
+     burying it under them. (The opposite of an authored value like a light's
+     reach, which is in canvas units and must not divide.) */
   const perBufferUnit = cssWidth > 0 ? bufferWidth / cssWidth : 1;
-  const px = useCallback((size: number) => size * perBufferUnit, [perBufferUnit]);
+  const perScreenPx = perBufferUnit / Math.pow(canvasZoom > 0 ? canvasZoom : 1, ZOOM_COMPENSATION);
+  const px = useCallback((size: number) => size * perScreenPx, [perScreenPx]);
 
   const fromClient = useCallback(
     (clientX: number, clientY: number): Point | undefined => {
@@ -308,6 +320,14 @@ export default function ObjectShapeEditor({
       width={cssWidth}
       height={cssHeight}
       viewBox={`0 0 ${bufferWidth} ${bufferHeight}`}
+      /* The canvas underneath stretches its buffer to fill its box, and
+         `fromClient` below reads a pointer back the same way. An SVG left to
+         itself does neither -- the default is to scale uniformly and centre the
+         letterbox -- so the moment a mask is scaled unevenly the overlay sits
+         at a different place and a different size than the mask it is tracing,
+         drifting further the further a point is from the centre. Matching the
+         canvas is the whole job here, so: stretch, like it does. */
+      preserveAspectRatio="none"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
@@ -399,6 +419,24 @@ export default function ObjectShapeEditor({
             const { point, inControl, outControl } = anchor;
             const key = `${ringIndex}-${anchorIndex}`;
             const isSelected = selected?.ring === ringIndex && selected.anchor === anchorIndex;
+            /* An anchor and its two controls each catch a grab over a circle
+               wider than the dot drawn for them, because a 3.5px dot is not a
+               thing a hand can hit. Those circles must not overlap: the one
+               drawn last wins the overlap, so a fat anchor circle laid over a
+               control eats the half of it facing the anchor and leaves a
+               crescent -- the control then only answers on its far side, which
+               reads exactly like the dot being off-centre, and worst on the
+               short handles where it matters most. Half the distance to the
+               neighbour is the furthest either can reach without touching, so
+               each keeps a circle centred on its own dot and the boundary
+               between them falls where a hand would guess it does. */
+            const toIn = Math.hypot(inControl[0] - point[0], inControl[1] - point[1]);
+            const toOut = Math.hypot(outControl[0] - point[0], outControl[1] - point[1]);
+            const reach = (toNeighbour: number, drawn: number) =>
+              Math.max(px(drawn), Math.min(px(GRAB_RADIUS_PX), toNeighbour / 2));
+            const anchorReach = stitch
+              ? px(GRAB_RADIUS_PX)
+              : reach(Math.min(toIn, toOut), isSelected ? SELECTED_RADIUS_PX : ANCHOR_RADIUS_PX);
             return (
               <g key={key} style={{ pointerEvents: "auto" }}>
                 {!stitch && (
@@ -422,21 +460,31 @@ export default function ObjectShapeEditor({
                     {(["in", "out"] as const).map((side) => {
                       const at = side === "in" ? inControl : outControl;
                       return (
-                        <circle
-                          key={side}
-                          cx={at[0]}
-                          cy={at[1]}
-                          r={px(CONTROL_RADIUS_PX)}
-                          fill={CONTROL_FILL}
-                          stroke={stroke}
-                          strokeWidth={px(LEASH_WIDTH_PX)}
-                          style={{ cursor: "grab" }}
-                          strokeOpacity={1}
-                          pointerEvents="all"
-                          onPointerDown={(e) => onPointerDown(e, { ring: ringIndex, anchor: anchorIndex, kind: side })}
-                        >
-                          <title>{`drag to curve -- alt-drag to break the corner`}</title>
-                        </circle>
+                        <g key={side}>
+                          <circle
+                            cx={at[0]}
+                            cy={at[1]}
+                            r={reach(side === "in" ? toIn : toOut, CONTROL_RADIUS_PX)}
+                            fill="transparent"
+                            style={{ cursor: "grab" }}
+                            pointerEvents="all"
+                            onPointerDown={(e) =>
+                              onPointerDown(e, { ring: ringIndex, anchor: anchorIndex, kind: side })
+                            }
+                          >
+                            <title>{`drag to curve -- alt-drag to break the corner`}</title>
+                          </circle>
+                          <circle
+                            cx={at[0]}
+                            cy={at[1]}
+                            r={px(CONTROL_RADIUS_PX)}
+                            fill={CONTROL_FILL}
+                            stroke={stroke}
+                            strokeWidth={px(LEASH_WIDTH_PX)}
+                            strokeOpacity={1}
+                            pointerEvents="none"
+                          />
+                        </g>
                       );
                     })}
                   </>
@@ -444,7 +492,7 @@ export default function ObjectShapeEditor({
                 <circle
                   cx={point[0]}
                   cy={point[1]}
-                  r={px(GRAB_RADIUS_PX)}
+                  r={anchorReach}
                   fill="transparent"
                   style={{ cursor: stitch ? "crosshair" : "move" }}
                   pointerEvents="all"
