@@ -149,7 +149,7 @@ describe("editableRings -- opening whatever is stored", () => {
   });
 });
 
-describe("fitCubicRing -- the server's twin", () => {
+describe("fitCubicRing -- re-fitting a path with no boundary underneath it", () => {
   it("passes exactly through every anchor", () => {
     const flattened = flattenCubicRing(fitCubicRing(DIAMOND));
     for (const anchor of DIAMOND) {
@@ -159,8 +159,7 @@ describe("fitCubicRing -- the server's twin", () => {
   });
 
   it("overshoots less than uniform weighting on uneven anchors", () => {
-    // the reason for centripetal alpha, and the same assertion the server
-    // makes in test_object_math.py
+    // the reason for centripetal alpha
     const anchors: Point[] = [
       [-1, -0.2],
       [1, -0.2],

@@ -29,7 +29,7 @@ export const EDITABLE_MAX_ANCHORS = 24;
 const SIMPLIFY_START_FRACTION = 0.006;
 const SIMPLIFY_GROWTH = 1.3;
 const MAX_SIMPLIFY_PASSES = 24;
-/** Centripetal. See fitCubicRing -- the same alpha the server fits with. */
+/** Centripetal. See fitCubicRing. */
 const CENTRIPETAL_ALPHA = 0.5;
 
 export type Point = [number, number];
@@ -192,11 +192,17 @@ export function unitCirclePath(): string {
 /**
  * Fit a closed cubic through every anchor, in order.
  *
- * Centripetal Catmull-Rom -- the TypeScript twin of fit_cubic_ring in the
- * server's object_math.py, down to the alpha. Uniform weighting overshoots
- * wherever anchor spacing is uneven, and simplification deliberately makes it
- * uneven; an overshoot at a tight corner is a loop crossing the outline it was
- * fitted to.
+ * Centripetal Catmull-Rom. Uniform weighting overshoots wherever anchor
+ * spacing is uneven, and simplification deliberately makes it uneven; an
+ * overshoot at a tight corner is a loop crossing the outline it was fitted to.
+ *
+ * Smoothing between anchors rather than fitting to a boundary, which is not
+ * what the server does any more (fit_cubic_ring in object_math.py follows the
+ * traced contour between each pair of anchors, so a straight run stays
+ * straight and a corner stays a corner). It is still the right tool here,
+ * because this runs on a stored path that arrived with too many anchors to
+ * edit -- an uploaded svg, a shape from before detection emitted curves -- and
+ * there is no traced boundary underneath it to fit to. Only the anchors.
  */
 export function fitCubicRing(anchors: Point[], alpha = CENTRIPETAL_ALPHA): CubicRing {
   const count = anchors.length;
