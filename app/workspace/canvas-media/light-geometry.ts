@@ -93,8 +93,18 @@ export interface ObjectRegion {
   shape: string;
 }
 
-export function indicesInObjectFromCentroids(centroids: [number, number][], object: ObjectRegion): Set<number> {
-  const shape = object.shape ? cachedObjectShape(object.shape) : undefined;
+/**
+ * `tile` is the shape editor's, for the same reason cachedObjectShape takes one:
+ * a drag mints a new path every frame, so asking at full resolution is a ~58ms
+ * rebuild per frame. Passing the draft tile a live gesture is already
+ * rasterizing at makes this share that build rather than starting its own.
+ */
+export function indicesInObjectFromCentroids(
+  centroids: [number, number][],
+  object: ObjectRegion,
+  tile?: number,
+): Set<number> {
+  const shape = object.shape ? cachedObjectShape(object.shape, tile) : undefined;
   if (!shape) return indicesInCircleFromCentroids(centroids, object);
   const indices = new Set<number>();
   const geometry = { cx: object.cx, cy: object.cy, radius: object.radius, elevation: 0, falloff: 0, shape };

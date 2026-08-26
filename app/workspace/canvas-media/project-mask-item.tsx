@@ -21,9 +21,10 @@ import {
   initGLState,
   loadImageTexture,
   HIGHLIGHT_MOVING_COLOR,
-  HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR,
   HIGHLIGHT_SELECTED_COLOR,
   HIGHLIGHT_SIBLING_COLOR,
+  highlightObjectReviewAddedColor,
+  highlightShapeEditColor,
   MaskLightSource,
   ObjectGeometryInput,
   ObjectRotation,
@@ -338,6 +339,10 @@ export function ProjectMaskItem({
    * first thing the session did.
    */
   const maskEditSubjectRef = useRef<{ subject: "light" | "object"; id: number } | undefined>(undefined);
+  // Kept in step alongside maskEditSubjectRef, for the same reason: whether the
+  // pen's handles are up changes far less often than the preview they gate, so
+  // an effect tracks it rather than every setObjectReviewPreview call knowing it.
+  const editingShapeRef = useRef(false);
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
@@ -376,6 +381,8 @@ export function ProjectMaskItem({
   const objectsMeshSignatureRef = useRef<string>("");
   const highlightScratchRef = useRef<Float32Array>(new Float32Array(0));
   const highlightUploadedRef = useRef<Float32Array>(new Float32Array(0));
+  const fillOverlayScratchRef = useRef<Float32Array>(new Float32Array(0));
+  const fillOverlayUploadedRef = useRef<Float32Array>(new Float32Array(0));
   const selectedObjectIdRef = useRef<number | undefined>(undefined);
   const lightIndicesAtOffset = useCallback(
     (drag: NonNullable<typeof lightDragRef.current>, dx: number, dy: number): Set<number> => {
@@ -479,6 +486,19 @@ export function ProjectMaskItem({
         shape: pendingShape,
         fill: pending.fill,
       });
+    }
+    // The shape test the shader fills against has no notion of a triangle
+    // leaving or joining an object mid-review -- only its outline, which a
+    // triangle toggle never moves. recolorHighlight paints that per-triangle
+    // instead for as long as the session is open, so the outline's own fill
+    // sits out rather than double-painting (or painting over) a deselected
+    // triangle the overlay has already gone dark.
+    const editedObjectId = maskEditSubjectRef.current?.subject === "object" ? maskEditSubjectRef.current.id : undefined;
+    if (editedObjectId !== undefined) {
+      const index = objectsRef.current.findIndex((object) => object.id === editedObjectId);
+      if (index >= 0 && objects[index].fill) {
+        objects[index] = { ...objects[index], fill: { ...objects[index].fill, a: 0 } };
+      }
     }
     return objects;
   }, []);
@@ -751,24 +771,43 @@ export function ProjectMaskItem({
 
       const candidate = session.candidates[session.currentIndex]?.object;
       if (!candidate) return;
+      // The candidate is a detection snapshot -- its appearance is whatever
+      // the detector guessed, not whatever the reviewer has since painted on.
+      // The stored object is the one that's been touched by a fill or an
+      // elevation edit, so it wins whenever it exists, the same way
+      // reviewShape prefers it for geometry.
+      const stored = coreState.canvasMasks.get(mediaKey)?.objects.find((o) => o.id === candidate.id);
+      const appearance = stored ?? candidate;
       const pending: PendingTopologyEdit = {
         maskKey: mediaKey,
         objectId: candidate.id,
         cx: edit.cx,
         cy: edit.cy,
         radius: edit.radius,
-        elevation: candidate.elevation,
-        falloff: candidate.falloff,
+        elevation: appearance.elevation,
+        falloff: appearance.falloff,
         shape: edit.path,
-        fill: toObjectFill(candidate),
-        polygonIndices: session.currentIndices,
+        fill: toObjectFill(appearance),
+        // The outline's own membership, not the session's -- re-derived here on
+        // every frame of the drag rather than carried over from before it. The
+        // session's set is only re-tagged once the gesture ends (see
+        // snapIndicesToShape), so reusing it here showed every preview the
+        // triangles of the *previous* edit: whatever the anchor had just swept
+        // in was left unpainted until the next drag brought it along. Asked at
+        // the resolution the gesture is already rasterizing at, so it reads the
+        // shape resolveObjectUniforms builds rather than forcing its own.
+        polygonIndices: indicesInObjectFromCentroids(
+          maskGeometryRef.current.centroids,
+          { cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path },
+          draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE,
+        ),
         draft,
       };
 
       if (!draft) dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
       notifyMaskPendingTopologySet(mediaKey, pending);
     },
-    [uiState.maskEdit, mediaKey, dispatch, notifyMaskPendingTopologySet],
+    [uiState.maskEdit, mediaKey, coreState.canvasMasks, dispatch, notifyMaskPendingTopologySet],
   );
 
   /**
@@ -933,12 +972,20 @@ export function ProjectMaskItem({
     if (resized) {
       highlightScratchRef.current = new Float32Array(length);
       highlightUploadedRef.current = new Float32Array(length);
+      fillOverlayScratchRef.current = new Float32Array(length);
+      fillOverlayUploadedRef.current = new Float32Array(length);
     }
     const highlights = highlightScratchRef.current;
     highlights.fill(0);
+    const fillOverlay = fillOverlayScratchRef.current;
+    fillOverlay.fill(0);
     const suppressed = highlightSuppressedRef.current;
     const vertexRanges = vertexRangesRef.current;
-    const paint = (indices: Set<number>, color: readonly [number, number, number, number]) => {
+    const paintInto = (
+      target: Float32Array,
+      indices: Set<number>,
+      color: readonly [number, number, number, number],
+    ) => {
       indices.forEach((polygonIndex) => {
         const range = vertexRanges[polygonIndex];
         if (!range) return;
@@ -946,10 +993,12 @@ export function ProjectMaskItem({
         for (let v = 0; v < count; v++) {
           const vertex = startVertex + v;
           if (vertex >= vertexCount) continue;
-          highlights.set(color, vertex * 4);
+          target.set(color, vertex * 4);
         }
       });
     };
+    const paint = (indices: Set<number>, color: readonly [number, number, number, number]) =>
+      paintInto(highlights, indices, color);
 
     const pendingLight = pendingLightRef.current;
     const maskEditSubject = maskEditSubjectRef.current;
@@ -989,7 +1038,14 @@ export function ProjectMaskItem({
 
     const objectReviewPreview = objectReviewPreviewRef.current;
     const objectReviewDiffBase = objectReviewDiffBaseRef.current;
-    if (objectReviewDiffBase && !suppressed) {
+    // The added/unchanged split is a review-mode question -- what a decided
+    // candidate looked like versus what it looks like now. While the pen's
+    // handles are up that question is beside the point, and answering it
+    // anyway is what made a previously-decided object's reshape look
+    // different from a fresh "edit" session's: this object gets the same
+    // single-color preview either way, and the split resumes once the pen
+    // closes.
+    if (objectReviewDiffBase && !editingShapeRef.current && !suppressed) {
       const unchanged = new Set<number>();
       const edited = new Set<number>();
       objectReviewPreview?.forEach((index) => {
@@ -1000,38 +1056,69 @@ export function ProjectMaskItem({
         if (!objectReviewPreview?.has(index)) edited.add(index);
       });
       paint(unchanged, HIGHLIGHT_SELECTED_COLOR);
-      paint(edited, HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR);
+      paint(edited, highlightObjectReviewAddedColor(latestRef.current.uiState.gridlinesBright));
     } else if (objectReviewPreview?.size && !suppressed) {
-      paint(objectReviewPreview, HIGHLIGHT_SELECTED_COLOR);
+      paint(
+        objectReviewPreview,
+        editingShapeRef.current
+          ? highlightShapeEditColor(latestRef.current.uiState.gridlinesBright)
+          : HIGHLIGHT_SELECTED_COLOR,
+      );
     }
 
-    const uploaded = highlightUploadedRef.current;
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
-    if (resized) {
-      gl.bufferData(gl.ARRAY_BUFFER, highlights, gl.STATIC_DRAW);
-      uploaded.set(highlights);
-    } else {
+    // The object being reviewed paints its own fill here, per triangle, for as
+    // long as the session is open -- resolveObjectUniforms has zeroed that
+    // object's u_objectFills slot for exactly this window, so the outline's
+    // shape test is not also painting it. Read live off the object rather than
+    // off whatever pending/candidate snapshot happens to be in flight: a color
+    // picked mid-session must show up here the same frame it is picked.
+    if (maskEditSubject?.subject === "object" && !suppressed) {
+      const editedObject = objectsRef.current.find((object) => object.id === maskEditSubject.id);
+      const fill = editedObject && toObjectFill(editedObject);
+      if (fill && fill.a > 0) {
+        const color: readonly [number, number, number, number] = [fill.r, fill.g, fill.b, fill.a];
+        // The session's own set is the object's membership and the thing that
+        // gets saved, so it is what this paints -- except while a pen gesture
+        // is actually in flight, which is the one window it goes stale in: it
+        // is not re-tagged until the drag ends (see snapIndicesToShape), so
+        // during those frames the outline the pen is holding is the only thing
+        // that knows what the object now covers. `draft` is exactly that
+        // window; reading the pending edit outside it would pin the fill to
+        // the last reshape and leave every later triangle toggle unpainted.
+        const liveIndices =
+          pendingTopology?.objectId === maskEditSubject.id && pendingTopology.draft
+            ? (pendingTopology.polygonIndices ??
+              indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology))
+            : objectReviewPreview;
+        if (liveIndices) paintInto(fillOverlay, liveIndices, color);
+      }
+    }
+
+    // Each buffer is diffed and (maybe) uploaded on its own -- sharing one
+    // "did anything move" check would let a fill-only change slip past
+    // because the highlight bytes it looked at never moved.
+    const syncBuffer = (buffer: WebGLBuffer, data: Float32Array, uploaded: Float32Array) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      if (resized) {
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        uploaded.set(data);
+        return;
+      }
       let first = -1;
       let last = -1;
       for (let i = 0; i < length; i++) {
-        if (highlights[i] === uploaded[i]) continue;
+        if (data[i] === uploaded[i]) continue;
         if (first < 0) first = i;
         last = i;
       }
-      // No highlight byte moved -- but this runs for every change the canvas
-      // has to react to, not only for the highlight, and something else may
-      // well have moved: a light's silhouette, its appearance, the mesh under
-      // it. Skipping the upload is the optimization; skipping the frame was
-      // only ever an accident of the two sharing a function.
-      if (first < 0) {
-        render();
-        return;
-      }
+      if (first < 0) return;
       const start = first - (first % 4);
       const end = last + (4 - (last % 4));
-      uploaded.set(highlights.subarray(start, end), start);
-      gl.bufferSubData(gl.ARRAY_BUFFER, start * Float32Array.BYTES_PER_ELEMENT, highlights.subarray(start, end));
-    }
+      uploaded.set(data.subarray(start, end), start);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * Float32Array.BYTES_PER_ELEMENT, data.subarray(start, end));
+    };
+    syncBuffer(state.highlightBuffer, highlights, highlightUploadedRef.current);
+    syncBuffer(state.fillOverlayBuffer, fillOverlay, fillOverlayUploadedRef.current);
     render();
   }, [render]);
 
@@ -1507,10 +1594,25 @@ export function ProjectMaskItem({
   useEffect(() => {
     const next = maskEditSubjectFor(uiState.maskEdit, mediaKey);
     const previous = maskEditSubjectRef.current;
-    if (next?.subject === previous?.subject && next?.id === previous?.id) return;
+    const editingShapeNext =
+      uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.subject === "object" && uiState.maskEdit.editingShape;
+    if (
+      next?.subject === previous?.subject &&
+      next?.id === previous?.id &&
+      editingShapeRef.current === editingShapeNext
+    ) {
+      return;
+    }
     maskEditSubjectRef.current = next;
+    editingShapeRef.current = editingShapeNext;
     recolorHighlight();
   }, [uiState.maskEdit, mediaKey, recolorHighlight]);
+
+  // Only the alpha of already-painted highlights changes here, so a recolor is
+  // all this needs -- the geometry and indices it paints are untouched.
+  useEffect(() => {
+    recolorHighlight();
+  }, [uiState.gridlinesBright, recolorHighlight]);
 
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
@@ -1547,6 +1649,10 @@ export function ProjectMaskItem({
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
         highlightScratchRef.current = new Float32Array(0);
         highlightUploadedRef.current = new Float32Array(0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
+        fillOverlayScratchRef.current = new Float32Array(0);
+        fillOverlayUploadedRef.current = new Float32Array(0);
 
         if (maskData.curves.length > 0 && colorCtx) {
           const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
@@ -1792,6 +1898,7 @@ export function ProjectMaskItem({
           gl.deleteBuffer(state.uvBuffer);
           gl.deleteBuffer(state.centroidBuffer);
           gl.deleteBuffer(state.highlightBuffer);
+          gl.deleteBuffer(state.fillOverlayBuffer);
           if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
           if (textureRef.current) gl.deleteTexture(textureRef.current);
           glStateRef.current = undefined;
@@ -1852,6 +1959,8 @@ export function ProjectMaskItem({
           vertexCountRef.current = positionsRef.current.length / 2;
           gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
           gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current * 4), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current * 4), gl.DYNAMIC_DRAW);
           dirtyRef.current = false;
         }
 
@@ -1885,6 +1994,7 @@ export function ProjectMaskItem({
         gl.deleteBuffer(state.uvBuffer);
         gl.deleteBuffer(state.centroidBuffer);
         gl.deleteBuffer(state.highlightBuffer);
+        gl.deleteBuffer(state.fillOverlayBuffer);
         if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
         if (textureRef.current) gl.deleteTexture(textureRef.current);
         glStateRef.current = undefined;
@@ -2303,6 +2413,7 @@ export function ProjectMaskItem({
               stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
               addAnchor={uiState.tool.type === "pen" && uiState.tool.addAnchor}
               showAnchors={uiState.tool.type !== "pen" || uiState.tool.showAnchors}
+              gridlinesBright={uiState.gridlinesBright}
             />
           )}
         </div>

@@ -355,6 +355,8 @@ export interface UIState {
   stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
   /** Whatever the pen is open on, or undefined when it is open on nothing. */
   maskEdit: MaskEditSession | undefined;
+  /** dim (0.5 alpha) vs bright (1 alpha) for the pen's outline/highlight overlays. */
+  gridlinesBright: boolean;
 }
 
 export const defaultUIState: UIState = {
@@ -393,6 +395,7 @@ export const defaultUIState: UIState = {
     fill: OBJECT_FILL_DEFAULT,
   },
   maskEdit: undefined,
+  gridlinesBright: false,
 };
 
 export enum UIActionType {
@@ -410,6 +413,7 @@ export enum UIActionType {
   SetActiveElement,
   SetSelectedElement,
   SetLightFrameBackground,
+  SetGridlinesBright,
   SetEffectClipboard,
   SetRecordingLight,
   AddCarouselEntry,
@@ -471,6 +475,7 @@ export type UIAction =
       value: LaurusSelectedElement | undefined;
     }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
+  | { type: UIActionType.SetGridlinesBright; value: boolean }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
@@ -678,6 +683,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };
+    }
+    case UIActionType.SetGridlinesBright: {
+      return { ...state, gridlinesBright: action.value };
     }
     case UIActionType.SetEffectClipboard: {
       return { ...state, effectClipboard: { ...action.value } };

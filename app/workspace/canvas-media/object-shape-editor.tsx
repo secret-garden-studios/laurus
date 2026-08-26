@@ -27,10 +27,12 @@ const LEASH_WIDTH_PX = 1;
 const GRAB_RADIUS_PX = 9;
 const COLLAPSED_AREA = 1e-3;
 const BUFFER_SPACE = { cx: 0, cy: 0, radius: 1 };
-const OUTLINE_COLOR = "rgb(66, 133, 244)";
-const REFERENCE_COLOR = "rgb(251, 166, 39)";
-const INVALID_COLOR = "rgb(211, 71, 71)";
+
+const outlineColor = (bright: boolean) => `rgba(66, 133, 244, ${bright ? 1 : 0.5})`;
+const referenceColor = (bright: boolean) => `rgba(251, 166, 39, ${bright ? 1 : 0.5})`;
+
 const HOLE_COLOR = "rgba(66, 133, 244, 0.5)";
+const INVALID_COLOR = "rgb(211, 71, 71)";
 const ANCHOR_FILL = "rgb(255, 255, 255)";
 const CONTROL_FILL = "rgb(32, 32, 32)";
 const SELECTED_FILL = "rgb(66, 133, 244)";
@@ -61,6 +63,7 @@ export interface ObjectShapeEditorProps {
   stitch: boolean;
   addAnchor: boolean;
   showAnchors: boolean;
+  gridlinesBright: boolean;
   reference?: { cx: number; cy: number; radius: number; shape: string };
 }
 
@@ -82,6 +85,7 @@ export default function ObjectShapeEditor({
   stitch,
   addAnchor,
   showAnchors,
+  gridlinesBright,
   reference,
 }: ObjectShapeEditorProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -296,7 +300,7 @@ export default function ObjectShapeEditor({
     if (edit) onCommit(edit);
   };
 
-  const stroke = invalid ? INVALID_COLOR : OUTLINE_COLOR;
+  const stroke = invalid ? INVALID_COLOR : outlineColor(gridlinesBright);
 
   return (
     <svg
@@ -322,7 +326,7 @@ export default function ObjectShapeEditor({
           d={reference.shape}
           transform={`translate(${reference.cx} ${reference.cy}) scale(${reference.radius})`}
           fill="none"
-          stroke={REFERENCE_COLOR}
+          stroke={referenceColor(gridlinesBright)}
           strokeWidth={px(OUTLINE_WIDTH_PX) / reference.radius}
           pointerEvents="none"
         />

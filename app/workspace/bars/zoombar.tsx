@@ -35,14 +35,14 @@ export default function Zoombar() {
         return {
           container: { paddingRight: 10 },
           slider: {
-            capWidth: 14,
-            capHeight: 14,
+            capWidth: 15,
+            capHeight: 15,
             capBorderOffset: 0,
-            containerWidth: 120,
+            containerWidth: 200,
             containerHeight: 22,
             trackHeight: 1,
             tickHeight: 20,
-            tickLeft: 1,
+            tickLeft: 0,
             svgSize: { width: 24, height: 24 },
           },
         };
@@ -50,10 +50,10 @@ export default function Zoombar() {
         return {
           container: { paddingRight: 5 },
           slider: {
-            capWidth: 12,
-            capHeight: 12,
+            capWidth: 13,
+            capHeight: 13,
             capBorderOffset: 0,
-            containerWidth: 100,
+            containerWidth: 180,
             containerHeight: 18,
             trackHeight: 1,
             tickHeight: 16,
@@ -66,10 +66,10 @@ export default function Zoombar() {
         return {
           container: { paddingRight: 5 },
           slider: {
-            capWidth: 12,
-            capHeight: 12,
+            capWidth: 13,
+            capHeight: 13,
             capBorderOffset: 0,
-            containerWidth: 80,
+            containerWidth: 160,
             containerHeight: 18,
             trackHeight: 1,
             tickHeight: 16,

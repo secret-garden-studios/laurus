@@ -4,6 +4,11 @@ import { inkPen300, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import { UIActionType, editedRegion, isMaskEditLocked } from "../states/ui-state";
 
+const GRIDLINES_OPTIONS = [
+  { label: "dim", value: false },
+  { label: "bright", value: true },
+] as const;
+
 /**
  * The pen's controls.
  *
@@ -29,6 +34,7 @@ export default function Penbar() {
             button: { width: 8, height: 8 },
             translateX: 14,
           },
+          segment: { fontSize: 12 },
           action: { marginLeft: 20, marginRight: 20, fontSize: 13, padding: "4px 12px", minWidth: 108 },
         };
       case "midhigh":
@@ -40,6 +46,7 @@ export default function Penbar() {
             button: { width: 6, height: 6 },
             translateX: 12,
           },
+          segment: { fontSize: 11 },
           action: { marginLeft: 14, marginRight: 14, fontSize: 12, padding: "3px 10px", minWidth: 96 },
         };
       case "midlow":
@@ -52,6 +59,7 @@ export default function Penbar() {
             button: { width: 5, height: 5 },
             translateX: 11,
           },
+          segment: { fontSize: 11 },
           action: { marginLeft: 12, marginRight: 12, fontSize: 11, padding: "3px 10px", minWidth: 88 },
         };
     }
@@ -224,6 +232,38 @@ export default function Penbar() {
           buttonStyles={{ ...dynamicSizes.toggle.button }}
           translateX={dynamicSizes.toggle.translateX}
         />
+      </div>
+      <div
+        title="dim draws the outline and its highlight overlays faintly, bright draws them fully"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span>{"gridlines"}</span>
+        <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
+          {GRIDLINES_OPTIONS.map((option) => {
+            const isSelected = uiState.gridlinesBright === option.value;
+            return (
+              <span
+                key={option.label}
+                onClick={() => uiDispatch({ type: UIActionType.SetGridlinesBright, value: option.value })}
+                style={{
+                  cursor: "pointer",
+                  color: isSelected ? "inherit" : "rgb(67,67,67)",
+                  textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                  padding: "4px 8px",
+                  ...dynamicSizes.segment,
+                }}
+              >
+                {option.label}
+              </span>
+            );
+          })}
+        </div>
       </div>
       <button
         type="button"

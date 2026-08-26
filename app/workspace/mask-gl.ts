@@ -42,7 +42,14 @@ export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.
 export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 1.0];
 export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 0.35];
 export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
-export const HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR: [number, number, number, number] = [0.984314, 0.65098, 0.152941, 1.0];
+export const GRIDLINES_DIM_ALPHA = 0.5;
+export const GRIDLINES_BRIGHT_ALPHA = 1;
+export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
+  return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+}
+export function highlightObjectReviewAddedColor(bright: boolean): [number, number, number, number] {
+  return [0.984314, 0.65098, 0.152941, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+}
 
 function glFloat(n: number): string {
   return n.toFixed(6);
@@ -410,6 +417,7 @@ attribute vec3 a_barycentric;
 attribute vec2 a_uv;
 attribute vec2 a_centroid;
 attribute vec4 a_highlight;
+attribute vec4 a_fillOverlay;
 
 uniform mediump vec2 u_resolution;
 
@@ -418,6 +426,7 @@ varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying vec4 v_highlight;
+varying vec4 v_fillOverlay;
 varying vec2 v_meshPos;
 ${OBJECT_FIELD_GLSL}
 void main() {
@@ -432,6 +441,7 @@ void main() {
   vec2 centroid = a_centroid + objectSwell(a_centroid);
   v_lightSourcePos = vec2(centroid.x, u_resolution.y - centroid.y);
   v_highlight = a_highlight;
+  v_fillOverlay = a_fillOverlay;
 }
 `,
   fragment: `
@@ -444,6 +454,7 @@ varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying vec4 v_highlight;
+varying vec4 v_fillOverlay;
 varying vec2 v_meshPos;
 
 #define BUMP_STRENGTH ${glFloat(MASK_BUMP_STRENGTH)}
@@ -509,6 +520,12 @@ void main() {
   vec3 textured = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
   vec4 fill = objectFill(v_meshPos);
   vec3 base = mix(textured, fill.rgb, fill.a);
+  // Per-triangle, painted only while a review session is deciding this
+  // object's membership one triangle at a time -- the shape test above has no
+  // notion of a triangle leaving or joining an object mid-session, so the
+  // caller zeroes that object's own u_objectFills slot and this stands in for
+  // it, painted from a_fillOverlay rather than the outline.
+  base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a);
 
   vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
@@ -604,12 +621,14 @@ export interface GLState {
   uvBuffer: WebGLBuffer;
   centroidBuffer: WebGLBuffer;
   highlightBuffer: WebGLBuffer;
+  fillOverlayBuffer: WebGLBuffer;
   positionLoc: number;
   colorLoc: number;
   barycentricLoc: number;
   uvLoc: number;
   centroidLoc: number;
   highlightLoc: number;
+  fillOverlayLoc: number;
   resolutionLoc: WebGLUniformLocation;
   lightSourceCentersLoc: WebGLUniformLocation;
   lightSourceRadiiLoc: WebGLUniformLocation;
@@ -702,7 +721,16 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvBuffer = gl.createBuffer();
   const centroidBuffer = gl.createBuffer();
   const highlightBuffer = gl.createBuffer();
-  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer || !centroidBuffer || !highlightBuffer)
+  const fillOverlayBuffer = gl.createBuffer();
+  if (
+    !positionBuffer ||
+    !colorBuffer ||
+    !barycentricBuffer ||
+    !uvBuffer ||
+    !centroidBuffer ||
+    !highlightBuffer ||
+    !fillOverlayBuffer
+  )
     return undefined;
 
   const positionLoc = gl.getAttribLocation(program, "a_position");
@@ -711,6 +739,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvLoc = gl.getAttribLocation(program, "a_uv");
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
+  const fillOverlayLoc = gl.getAttribLocation(program, "a_fillOverlay");
   const objectShapeTexture = gl.createTexture();
   const lightShapeTexture = gl.createTexture();
   if (!objectShapeTexture || !lightShapeTexture) return undefined;
@@ -757,6 +786,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     uvLoc < 0 ||
     centroidLoc < 0 ||
     highlightLoc < 0 ||
+    fillOverlayLoc < 0 ||
     !resolutionLoc ||
     !lightSourceCentersLoc ||
     !lightSourceRadiiLoc ||
@@ -794,12 +824,14 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     uvBuffer,
     centroidBuffer,
     highlightBuffer,
+    fillOverlayBuffer,
     positionLoc,
     colorLoc,
     barycentricLoc,
     uvLoc,
     centroidLoc,
     highlightLoc,
+    fillOverlayLoc,
     resolutionLoc,
     lightSourceCentersLoc,
     lightSourceRadiiLoc,
@@ -1047,6 +1079,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
   gl.enableVertexAttribArray(state.highlightLoc);
   gl.vertexAttribPointer(state.highlightLoc, 4, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+  gl.enableVertexAttribArray(state.fillOverlayLoc);
+  gl.vertexAttribPointer(state.fillOverlayLoc, 4, gl.FLOAT, false, 0, 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
 }

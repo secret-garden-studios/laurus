@@ -291,8 +291,17 @@ export function useObjectReview() {
 
   const requestRedo = useCallback(() => {
     if (!review || !isMaskEditLocked(review)) return;
+    // The original candidate's proposal, not undefined: unlocking is not
+    // itself an edit, so nothing should show as changed yet, but a reshape
+    // right after unlocking still needs a base to diff its new triangles
+    // against -- the same one revertShape hands back on the way out.
+    const candidate = review.candidates[review.currentIndex];
     uiDispatch({ type: UIActionType.RequestObjectReviewRedo });
-    notifyMaskObjectReviewPreview(review.maskKey, review.currentIndices, undefined);
+    notifyMaskObjectReviewPreview(
+      review.maskKey,
+      review.currentIndices,
+      candidate ? new Set(candidate.polygon_indices) : undefined,
+    );
   }, [review, uiDispatch, notifyMaskObjectReviewPreview]);
 
   const goToPreviousCandidate = useCallback(() => {
