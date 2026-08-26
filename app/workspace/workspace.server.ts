@@ -463,7 +463,7 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     fill_s: object.fill_s ?? OBJECT_FILL_DEFAULT.s,
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
-    lift: object.lift ?? false,
+    lift: object.lift ?? true,
   };
 }
 

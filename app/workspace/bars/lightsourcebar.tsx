@@ -1,4 +1,4 @@
-import { useCallback, useContext, useRef, useState } from "react";
+import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext, SocketContext } from "../workspace.client";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
@@ -233,6 +233,29 @@ export default function LightSourcebar() {
   const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectParamDisabled = !selectedObject && !isRaisingObjects;
 
+  // Same eligibility the context menu's edit button computes: the pen is one
+  // overlay on one canvas, so a mask-edit already in progress blocks starting
+  // another one until it finishes.
+  const editableLight = useMemo(() => {
+    if (uiState.maskEdit !== undefined) return undefined;
+    if (!selectedLight || selectedLightMaskKey === undefined || !selectedLightMaskData) return undefined;
+    const polygonIndices: number[] = [];
+    selectedLightMaskData.polygons.forEach((p, i) => {
+      if (p.light_id === selectedLight.id) polygonIndices.push(i);
+    });
+    return { maskMediaId: selectedLightMaskData.mask_media_id, light: selectedLight, polygonIndices };
+  }, [uiState.maskEdit, selectedLight, selectedLightMaskKey, selectedLightMaskData]);
+
+  const editableObject = useMemo(() => {
+    if (uiState.maskEdit !== undefined) return undefined;
+    if (!selectedObject || selectedObjectMaskKey === undefined || !selectedObjectMaskData) return undefined;
+    const polygonIndices: number[] = [];
+    selectedObjectMaskData.polygons.forEach((p, i) => {
+      if (p.object_id === selectedObject.id) polygonIndices.push(i);
+    });
+    return { maskMediaId: selectedObjectMaskData.mask_media_id, object: selectedObject, polygonIndices };
+  }, [uiState.maskEdit, selectedObject, selectedObjectMaskKey, selectedObjectMaskData]);
+
   const pendingObjectEdit =
     selectedObject &&
     selectedObjectMaskKey !== undefined &&
@@ -268,9 +291,9 @@ export default function LightSourcebar() {
   // commit and settle on whichever reply happened to arrive last. Released in
   // persistObjectQueue's finally, so a rejected save unlocks it too -- and
   // falls back to the stored value, which is what a rejected save left there.
-  const liftValue = pendingLift ?? selectedObject?.lift ?? false;
+  const liftValue = pendingLift ?? selectedObject?.lift ?? true;
   // Unlike every slider beside it, lift has nowhere to be staged: a raise mints
-  // an unlifted object and there is no lift to preview until one exists.
+  // a lifted object and there is no lift to preview until one exists.
   const isLiftDisabled = !selectedObject || pendingLift !== undefined;
 
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
@@ -758,10 +781,43 @@ export default function LightSourcebar() {
       {target === "light" ? (
         <>
           <div
+            title={
+              editableLight
+                ? "open the edit panel for this light -- its outline and what it is"
+                : selectedLight
+                  ? "finish the edit in progress first"
+                  : "select a light on the mesh to edit its outline"
+            }
             style={{
               display: "flex",
               alignItems: "center",
               height: "100%",
+              cursor: editableLight ? "pointer" : "default",
+              opacity: editableLight ? 1 : 0.3,
+              userSelect: "none",
+              ...dynamicSizes.toggle.div,
+            }}
+            onClick={() => {
+              if (!editableLight || selectedLightMaskKey === undefined) return;
+              uiDispatch({
+                type: UIActionType.StartLightEdit,
+                maskMediaId: editableLight.maskMediaId,
+                maskKey: selectedLightMaskKey,
+                light: editableLight.light,
+                polygonIndices: editableLight.polygonIndices,
+              });
+              mask.notifyMaskObjectReviewPreview(selectedLightMaskKey, new Set(editableLight.polygonIndices));
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+          >
+            {"edit"}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
               ...dynamicSizes.toggle.div,
             }}
           >
@@ -1101,10 +1157,43 @@ export default function LightSourcebar() {
       ) : (
         <>
           <div
+            title={
+              editableObject
+                ? "reopen the review panel for this object"
+                : selectedObject
+                  ? "finish the edit in progress first"
+                  : "select an object on the mesh to edit it"
+            }
             style={{
               display: "flex",
               alignItems: "center",
               height: "100%",
+              cursor: editableObject ? "pointer" : "default",
+              opacity: editableObject ? 1 : 0.3,
+              userSelect: "none",
+              ...dynamicSizes.toggle.div,
+            }}
+            onClick={() => {
+              if (!editableObject || selectedObjectMaskKey === undefined) return;
+              uiDispatch({
+                type: UIActionType.StartObjectEdit,
+                maskMediaId: editableObject.maskMediaId,
+                maskKey: selectedObjectMaskKey,
+                object: editableObject.object,
+                polygonIndices: editableObject.polygonIndices,
+              });
+              mask.notifyMaskObjectReviewPreview(selectedObjectMaskKey, new Set(editableObject.polygonIndices));
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+          >
+            {"edit"}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
               ...dynamicSizes.toggle.div,
             }}
           >

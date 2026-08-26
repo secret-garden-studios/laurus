@@ -1357,7 +1357,7 @@ export default function Workspace({
         ...toObjectFillFields(seed.fill),
         description: "",
         reviewed: false,
-        lift: false,
+        lift: true,
         remove: false,
         polygon_indices: polygonIndices,
       });
