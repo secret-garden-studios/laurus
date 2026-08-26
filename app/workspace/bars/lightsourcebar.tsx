@@ -5,16 +5,18 @@ import { CoreActionType, PendingTopologyEdit } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 import { SvgRepo, asterisk300, antigravity300 } from "@/app/svg-repo";
 import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/parameter-slider";
+import { ColorPickerButton } from "../../components/color-picker";
+import { LaurusColor } from "../../components/color-utils";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import { MAX_MASK_OBJECT_ELEVATION, MAX_MASK_OBJECT_FALLOFF, MIN_MASK_OBJECT_FALLOFF } from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
   LaurusLight,
   LaurusMaskResult,
-  LaurusObjectBlackPoint,
+  LaurusObjectFill,
   toLightUpdate,
-  toObjectBlackPoint,
-  toObjectBlackPointFields,
+  toObjectFill,
+  toObjectFillFields,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
 import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
@@ -41,6 +43,7 @@ export default function LightSourcebar() {
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
+    notifyMaskHighlightSuppressed,
     ...mask
   } = useContext(MaskContext);
   const [target, setTarget] = useState<"light" | "object">("light");
@@ -93,6 +96,10 @@ export default function LightSourcebar() {
             tickLeft: 2,
             svgSize: { width: 24, height: 24 },
           },
+          colorPicker: { planeHeight: 150, stripHeight: 14, capSize: 14, gap: 8 },
+          colorPickerPanel: { width: 250, padding: 10 },
+          colorPickerSwatch: 20,
+          colorPickerReadout: 13,
         };
       case "midhigh":
         return {
@@ -141,6 +148,10 @@ export default function LightSourcebar() {
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
           },
+          colorPicker: { planeHeight: 115, stripHeight: 12, capSize: 12, gap: 6 },
+          colorPickerPanel: { width: 195, padding: 8 },
+          colorPickerSwatch: 16,
+          colorPickerReadout: 11,
         };
       case "low":
       case "midlow":
@@ -190,6 +201,10 @@ export default function LightSourcebar() {
             tickLeft: 2,
             svgSize: { width: 24, height: 24 },
           },
+          colorPicker: { planeHeight: 100, stripHeight: 10, capSize: 10, gap: 5 },
+          colorPickerPanel: { width: 175, padding: 7 },
+          colorPickerSwatch: 15,
+          colorPickerReadout: 10,
         };
     }
   });
@@ -227,9 +242,8 @@ export default function LightSourcebar() {
       : undefined;
   const elevationValue = pendingObjectEdit?.elevation ?? selectedObject?.elevation ?? uiState.stagedObject.elevation;
   const objectFalloffValue = pendingObjectEdit?.falloff ?? selectedObject?.falloff ?? uiState.stagedObject.falloff;
-  const blackPointValue =
-    pendingObjectEdit?.blackPoint ??
-    (selectedObject ? toObjectBlackPoint(selectedObject) : uiState.stagedObject.blackPoint);
+  const fillValue =
+    pendingObjectEdit?.fill ?? (selectedObject ? toObjectFill(selectedObject) : uiState.stagedObject.fill);
   const selectedSubElement =
     selectedElement?.type === "light"
       ? `light|${selectedElement.key}|${selectedElement.lightId}`
@@ -426,7 +440,7 @@ export default function LightSourcebar() {
   type ObjectPatch = {
     elevation?: number;
     falloff?: number;
-    blackPoint?: LaurusObjectBlackPoint;
+    fill?: LaurusObjectFill;
     lift?: boolean;
   };
 
@@ -434,7 +448,7 @@ export default function LightSourcebar() {
     (patch: ObjectPatch) => ({
       ...(patch.elevation !== undefined ? { elevation: patch.elevation } : {}),
       ...(patch.falloff !== undefined ? { falloff: patch.falloff } : {}),
-      ...(patch.blackPoint !== undefined ? { blackPoint: patch.blackPoint } : {}),
+      ...(patch.fill !== undefined ? { fill: patch.fill } : {}),
     }),
     [],
   );
@@ -451,7 +465,7 @@ export default function LightSourcebar() {
     elevation: number;
     falloff: number;
     shape: string;
-    blackPoint: LaurusObjectBlackPoint;
+    fill: LaurusObjectFill;
     reviewed: boolean;
     lift: boolean;
     polygonIndices: number[];
@@ -477,7 +491,7 @@ export default function LightSourcebar() {
           elevation: toSave.elevation,
           falloff: toSave.falloff,
           shape: toSave.shape,
-          ...toObjectBlackPointFields(toSave.blackPoint),
+          ...toObjectFillFields(toSave.fill),
           description: toSave.description,
           reviewed: toSave.reviewed,
           lift: toSave.lift,
@@ -515,7 +529,7 @@ export default function LightSourcebar() {
         elevation: patch.elevation ?? selectedObject.elevation,
         falloff: patch.falloff ?? selectedObject.falloff,
         shape: selectedObject.shape,
-        blackPoint: patch.blackPoint ?? toObjectBlackPoint(selectedObject),
+        fill: patch.fill ?? toObjectFill(selectedObject),
       };
     },
     [selectedObjectMaskKey, selectedObject],
@@ -537,7 +551,7 @@ export default function LightSourcebar() {
       const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
       const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
-      // Every patch this bar makes -- elevation, falloff, black point -- leaves cx/cy/
+      // Every patch this bar makes -- elevation, falloff, fill -- leaves cx/cy/
       // radius/shape alone, so the object still owns exactly the triangles it owns now.
       // Reshaping lives in the shape editor, which recuts the region itself.
       const polygonIndices = maskData.polygons.reduce<number[]>((indices, p, i) => {
@@ -557,7 +571,7 @@ export default function LightSourcebar() {
         elevation: edit.elevation,
         falloff: edit.falloff,
         shape: edit.shape,
-        blackPoint: edit.blackPoint,
+        fill: edit.fill,
         reviewed: existingObject?.reviewed ?? false,
         lift: patch.lift ?? existingObject?.lift ?? false,
         polygonIndices,
@@ -622,42 +636,6 @@ export default function LightSourcebar() {
   };
   const objectFalloffTitle = objectFalloffValue.toFixed(2);
   const objectFalloffRef = useRef<HTMLDivElement | null>(null);
-
-  const blackPointRTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getBlackPointRValue, getTrackCursor: getBlackPointRCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-  const blackPointRCursor = { x: getBlackPointRCursor(blackPointValue.r, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const blackPointRTitle = blackPointValue.r.toFixed(2);
-  const blackPointRRef = useRef<HTMLDivElement | null>(null);
-
-  const blackPointGTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getBlackPointGValue, getTrackCursor: getBlackPointGCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-  const blackPointGCursor = { x: getBlackPointGCursor(blackPointValue.g, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const blackPointGTitle = blackPointValue.g.toFixed(2);
-  const blackPointGRef = useRef<HTMLDivElement | null>(null);
-
-  const blackPointBTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getBlackPointBValue, getTrackCursor: getBlackPointBCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-  const blackPointBCursor = { x: getBlackPointBCursor(blackPointValue.b, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const blackPointBTitle = blackPointValue.b.toFixed(2);
-  const blackPointBRef = useRef<HTMLDivElement | null>(null);
-
-  const blackPointATrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getBlackPointAValue, getTrackCursor: getBlackPointACursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-  const blackPointACursor = { x: getBlackPointACursor(blackPointValue.a, dynamicSizes.paramSize.containerWidth), y: 0 };
-  const blackPointATitle = blackPointValue.a.toFixed(2);
-  const blackPointARef = useRef<HTMLDivElement | null>(null);
 
   const previewSizeTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getPreviewSizeValue, getTrackCursor: getPreviewSizeCursor } = useTrackpadState(
@@ -1243,144 +1221,23 @@ export default function LightSourcebar() {
             }}
           >
             <span
-              title={"red in the selected object's flat fill color"}
+              title={"the selected object's flat fill color"}
               style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
             >
-              {"r"}
+              {"fill"}
             </span>
-            <ParameterSliderX
+            <ColorPickerButton
               resolution={{ ...uiState.resolution }}
-              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-r|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={blackPointRTrackRef}
-              cursor={blackPointRCursor}
-              onCursorMove={(newCursor) => {
-                if (!blackPointRTrackRef.current) return;
-                const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
-                previewObjectChange({ blackPoint: { ...blackPointValue, r: newValue } });
-                if (blackPointRRef.current) blackPointRRef.current.innerHTML = newValue.toFixed(2);
-              }}
-              onNewCursor={(newCursor) => {
-                if (!blackPointRTrackRef.current) return;
-                const newValue = getBlackPointRValue(newCursor.x, blackPointRTrackRef.current.clientWidth, 0);
-                saveObjectField({ blackPoint: { ...blackPointValue, r: newValue } });
-              }}
+              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-fill|${selectedObject?.id ?? "staged"}`}
+              size={dynamicSizes.colorPicker}
+              panel={dynamicSizes.colorPickerPanel}
+              swatchSize={dynamicSizes.colorPickerSwatch}
+              readoutFontSize={dynamicSizes.colorPickerReadout}
+              color={fillValue}
+              onOpenChange={notifyMaskHighlightSuppressed}
+              onColorMove={(fill: LaurusColor) => previewObjectChange({ fill })}
+              onNewColor={(fill: LaurusColor) => saveObjectField({ fill })}
               disabled={isObjectParamDisabled}
-              title={blackPointRTitle}
-              liveTitleRef={blackPointRRef}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              title={"green in the selected object's flat fill color"}
-              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
-            >
-              {"g"}
-            </span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-g|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={blackPointGTrackRef}
-              cursor={blackPointGCursor}
-              onCursorMove={(newCursor) => {
-                if (!blackPointGTrackRef.current) return;
-                const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
-                previewObjectChange({ blackPoint: { ...blackPointValue, g: newValue } });
-                if (blackPointGRef.current) blackPointGRef.current.innerHTML = newValue.toFixed(2);
-              }}
-              onNewCursor={(newCursor) => {
-                if (!blackPointGTrackRef.current) return;
-                const newValue = getBlackPointGValue(newCursor.x, blackPointGTrackRef.current.clientWidth, 0);
-                saveObjectField({ blackPoint: { ...blackPointValue, g: newValue } });
-              }}
-              disabled={isObjectParamDisabled}
-              title={blackPointGTitle}
-              liveTitleRef={blackPointGRef}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              title={"blue in the selected object's flat fill color"}
-              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
-            >
-              {"b"}
-            </span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-b|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={blackPointBTrackRef}
-              cursor={blackPointBCursor}
-              onCursorMove={(newCursor) => {
-                if (!blackPointBTrackRef.current) return;
-                const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
-                previewObjectChange({ blackPoint: { ...blackPointValue, b: newValue } });
-                if (blackPointBRef.current) blackPointBRef.current.innerHTML = newValue.toFixed(2);
-              }}
-              onNewCursor={(newCursor) => {
-                if (!blackPointBTrackRef.current) return;
-                const newValue = getBlackPointBValue(newCursor.x, blackPointBTrackRef.current.clientWidth, 0);
-                saveObjectField({ blackPoint: { ...blackPointValue, b: newValue } });
-              }}
-              disabled={isObjectParamDisabled}
-              title={blackPointBTitle}
-              liveTitleRef={blackPointBRef}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              title={
-                "the opacity of the selected object's flat fill color -- 0 leaves the object untinted, 100% paints it fully opaque before lights and elevation shade it"
-              }
-              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
-            >
-              {"a"}
-            </span>
-            <ParameterSliderX
-              resolution={{ ...uiState.resolution }}
-              hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|object-black-point-a|${selectedObject?.id ?? "staged"}`}
-              size={dynamicSizes.paramSize}
-              containerRef={blackPointATrackRef}
-              cursor={blackPointACursor}
-              onCursorMove={(newCursor) => {
-                if (!blackPointATrackRef.current) return;
-                const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
-                previewObjectChange({ blackPoint: { ...blackPointValue, a: newValue } });
-                if (blackPointARef.current) blackPointARef.current.innerHTML = newValue.toFixed(2);
-              }}
-              onNewCursor={(newCursor) => {
-                if (!blackPointATrackRef.current) return;
-                const newValue = getBlackPointAValue(newCursor.x, blackPointATrackRef.current.clientWidth, 0);
-                saveObjectField({ blackPoint: { ...blackPointValue, a: newValue } });
-              }}
-              disabled={isObjectParamDisabled}
-              title={blackPointATitle}
-              liveTitleRef={blackPointARef}
             />
           </div>
         </>

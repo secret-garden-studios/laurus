@@ -345,10 +345,18 @@ export interface Object_V1_0 {
   elevation: number;
   falloff: number;
   shape: string;
-  black_point_r: number;
-  black_point_g: number;
-  black_point_b: number;
-  black_point_a: number;
+  fill_r: number;
+  fill_g: number;
+  fill_b: number;
+  fill_a: number;
+  /**
+   * The hue and saturation the picker was holding when this fill was chosen.
+   * rgb stays authoritative for rendering; these two are consulted only where
+   * rgb carries no answer -- black has neither, grey has no hue -- so that
+   * reopening the picker on a black fill does not snap it back to red.
+   */
+  fill_h: number;
+  fill_s: number;
   description: string;
   reviewed: boolean;
   /**
@@ -362,22 +370,27 @@ export interface Object_V1_0 {
 }
 export type LaurusObject = Object_V1_0;
 
-export interface ObjectBlackPoint_V1_0 {
+export interface ObjectFill_V1_0 {
   r: number;
   g: number;
   b: number;
   a: number;
+  /** see Object_V1_0.fill_h -- what the picker remembered, for colours rgb cannot describe */
+  h: number;
+  s: number;
 }
-export type LaurusObjectBlackPoint = ObjectBlackPoint_V1_0;
+export type LaurusObjectFill = ObjectFill_V1_0;
 
-export const OBJECT_BLACK_POINT_DEFAULT: ObjectBlackPoint_V1_0 = { r: 0, g: 0, b: 0, a: 0 };
+export const OBJECT_FILL_DEFAULT: ObjectFill_V1_0 = { r: 0, g: 0, b: 0, a: 0, h: 0, s: 0 };
 
-export function toObjectBlackPoint(object: Object_V1_0): ObjectBlackPoint_V1_0 {
+export function toObjectFill(object: Object_V1_0): ObjectFill_V1_0 {
   return {
-    r: object.black_point_r,
-    g: object.black_point_g,
-    b: object.black_point_b,
-    a: object.black_point_a,
+    r: object.fill_r,
+    g: object.fill_g,
+    b: object.fill_b,
+    a: object.fill_a,
+    h: object.fill_h,
+    s: object.fill_s,
   };
 }
 
@@ -419,15 +432,17 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 
 type RawObject_V1_0 = Omit<
   Object_V1_0,
-  "name" | "falloff" | "shape" | `black_point_${"r" | "g" | "b" | "a"}` | "description" | "reviewed" | "lift"
+  "name" | "falloff" | "shape" | `fill_${"r" | "g" | "b" | "a" | "h" | "s"}` | "description" | "reviewed" | "lift"
 > & {
   name?: string;
   falloff?: number;
   shape?: string;
-  black_point_r?: number;
-  black_point_g?: number;
-  black_point_b?: number;
-  black_point_a?: number;
+  fill_r?: number;
+  fill_g?: number;
+  fill_b?: number;
+  fill_a?: number;
+  fill_h?: number;
+  fill_s?: number;
   description?: string;
   reviewed?: boolean;
   lift?: boolean;
@@ -440,10 +455,12 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     name: object.name ?? `object ${object.id}`,
     falloff: object.falloff ?? OBJECT_FALLOFF_DEFAULT,
     shape: object.shape ?? "",
-    black_point_r: object.black_point_r ?? OBJECT_BLACK_POINT_DEFAULT.r,
-    black_point_g: object.black_point_g ?? OBJECT_BLACK_POINT_DEFAULT.g,
-    black_point_b: object.black_point_b ?? OBJECT_BLACK_POINT_DEFAULT.b,
-    black_point_a: object.black_point_a ?? OBJECT_BLACK_POINT_DEFAULT.a,
+    fill_r: object.fill_r ?? OBJECT_FILL_DEFAULT.r,
+    fill_g: object.fill_g ?? OBJECT_FILL_DEFAULT.g,
+    fill_b: object.fill_b ?? OBJECT_FILL_DEFAULT.b,
+    fill_a: object.fill_a ?? OBJECT_FILL_DEFAULT.a,
+    fill_h: object.fill_h ?? OBJECT_FILL_DEFAULT.h,
+    fill_s: object.fill_s ?? OBJECT_FILL_DEFAULT.s,
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
     lift: object.lift ?? false,
@@ -821,10 +838,12 @@ export interface MaskObjectUpdateRequest_V1_0 {
   elevation: number;
   falloff: number;
   shape: string;
-  black_point_r: number;
-  black_point_g: number;
-  black_point_b: number;
-  black_point_a: number;
+  fill_r: number;
+  fill_g: number;
+  fill_b: number;
+  fill_a: number;
+  fill_h: number;
+  fill_s: number;
   description: string;
   reviewed: boolean;
   lift: boolean;
@@ -833,12 +852,14 @@ export interface MaskObjectUpdateRequest_V1_0 {
   retouch?: RetouchedMesh_V1_0;
 }
 
-export function toObjectBlackPointFields(blackPoint: ObjectBlackPoint_V1_0) {
+export function toObjectFillFields(fill: ObjectFill_V1_0) {
   return {
-    black_point_r: blackPoint.r,
-    black_point_g: blackPoint.g,
-    black_point_b: blackPoint.b,
-    black_point_a: blackPoint.a,
+    fill_r: fill.r,
+    fill_g: fill.g,
+    fill_b: fill.b,
+    fill_a: fill.a,
+    fill_h: fill.h,
+    fill_s: fill.s,
   };
 }
 export interface MaskObjectUpdateComplete_V1_0 {
@@ -1870,10 +1891,10 @@ export interface LightSourceSolution_V1_0 {
   light_darkness: number;
   object_elevation: number;
   object_falloff: number;
-  object_black_point_r: number;
-  object_black_point_g: number;
-  object_black_point_b: number;
-  object_black_point_a: number;
+  object_fill_r: number;
+  object_fill_g: number;
+  object_fill_b: number;
+  object_fill_a: number;
 }
 export interface LightSourceEquation_V1_0 {
   input_id: string;
@@ -1886,34 +1907,46 @@ export interface LightSourceEquation_V1_0 {
   light_darkness: number;
   object_elevation: number;
   object_falloff: number;
-  object_black_point_r: number;
-  object_black_point_g: number;
-  object_black_point_b: number;
-  object_black_point_a: number;
+  object_fill_r: number;
+  object_fill_g: number;
+  object_fill_b: number;
+  object_fill_a: number;
+  object_fill_h: number;
+  object_fill_s: number;
   loop: LaurusLoopType;
   solution: LightSourceSolution_V1_0[];
   limit_factor: number;
 }
-export function toObjectBlackPointEquationFields(blackPoint: ObjectBlackPoint_V1_0) {
+export function toObjectFillEquationFields(fill: ObjectFill_V1_0) {
   return {
-    object_black_point_r: blackPoint.r,
-    object_black_point_g: blackPoint.g,
-    object_black_point_b: blackPoint.b,
-    object_black_point_a: blackPoint.a,
+    object_fill_r: fill.r,
+    object_fill_g: fill.g,
+    object_fill_b: fill.b,
+    object_fill_a: fill.a,
+    object_fill_h: fill.h,
+    object_fill_s: fill.s,
   };
 }
 
-export function toEquationObjectBlackPoint(fields: {
-  object_black_point_r: number;
-  object_black_point_g: number;
-  object_black_point_b: number;
-  object_black_point_a: number;
-}): ObjectBlackPoint_V1_0 {
+export function toEquationObjectFill(fields: {
+  object_fill_r: number;
+  object_fill_g: number;
+  object_fill_b: number;
+  object_fill_a: number;
+  /**
+   * Absent on a solved frame, which nobody authored -- 0/0 reads as "nothing
+   * remembered", which is exactly what a computed colour has to say.
+   */
+  object_fill_h?: number;
+  object_fill_s?: number;
+}): ObjectFill_V1_0 {
   return {
-    r: fields.object_black_point_r,
-    g: fields.object_black_point_g,
-    b: fields.object_black_point_b,
-    a: fields.object_black_point_a,
+    r: fields.object_fill_r,
+    g: fields.object_fill_g,
+    b: fields.object_fill_b,
+    a: fields.object_fill_a,
+    h: fields.object_fill_h ?? OBJECT_FILL_DEFAULT.h,
+    s: fields.object_fill_s ?? OBJECT_FILL_DEFAULT.s,
   };
 }
 
@@ -2124,17 +2157,17 @@ interface Frame_V1_0 {
   light_darkness: number;
   object_elevation: number;
   object_falloff: number;
-  object_black_point_r: number;
-  object_black_point_g: number;
-  object_black_point_b: number;
-  object_black_point_a: number;
+  object_fill_r: number;
+  object_fill_g: number;
+  object_fill_b: number;
+  object_fill_a: number;
   input_id: string;
 }
 
 const NEUTRAL_OBJECT_FRAME = {
   object_elevation: 0,
   object_falloff: OBJECT_FALLOFF_DEFAULT,
-  ...toObjectBlackPointEquationFields(OBJECT_BLACK_POINT_DEFAULT),
+  ...toObjectFillEquationFields(OBJECT_FILL_DEFAULT),
 };
 export async function getScaleFrames(
   baseUrl: string | undefined,

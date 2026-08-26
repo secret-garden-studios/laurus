@@ -6,7 +6,7 @@ import {
   LaurusMediaGroupResult,
   LaurusSvgResult,
   LaurusMaskResult,
-  LaurusObjectBlackPoint,
+  LaurusObjectFill,
   LaurusObjectReview,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
@@ -46,7 +46,7 @@ export interface PendingTopologyEdit {
   elevation: number;
   falloff: number;
   shape: string;
-  blackPoint: LaurusObjectBlackPoint;
+  fill: LaurusObjectFill;
   polygonIndices?: Set<number>;
   /**
    * Set while a gesture is still in flight, so the renderer can rasterize the

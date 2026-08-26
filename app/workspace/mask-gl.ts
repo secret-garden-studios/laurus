@@ -1,4 +1,4 @@
-import type { MaskCurve_V1_0, ObjectBlackPoint_V1_0 } from "./workspace.server";
+import type { MaskCurve_V1_0, ObjectFill_V1_0 } from "./workspace.server";
 import {
   OBJECT_SDF_MARGIN,
   OBJECT_SDF_TILE,
@@ -18,6 +18,9 @@ export const OBJECT_ELEVATION_DEFAULT = 0;
 export const MAX_MASK_OBJECT_ELEVATION = 300;
 export const MIN_MASK_OBJECT_FALLOFF = 1.0;
 export const MAX_MASK_OBJECT_FALLOFF = 6.0;
+// the exponent that shapes no dome in particular - every falloff shapes the profile, so this
+// is a convention rather than a true identity, and it matches the server's NEUTRAL_FRAME.
+export const NEUTRAL_MASK_OBJECT_FALLOFF = 2.0;
 export const MIN_MASK_OBJECT_RADIUS_PX = 8;
 export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
@@ -334,7 +337,7 @@ vec2 lightProfile(float row, float maxDepth, vec2 toPoint, float radius) {
  * the fragment gives up.
  *
  * Region tests read the undisplaced mesh position, the same space objectField
- * and objectBlackPoint are asked about, while the sample point is derived from
+ * and objectFill are asked about, while the sample point is derived from
  * gl_FragCoord -- so an object whose rest pose is its current pose samples
  * exactly the texel it samples today, and turning lift on changes nothing until
  * something actually moves.
@@ -469,7 +472,7 @@ uniform sampler2D u_mask;
 uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
-uniform vec4 u_objectBlackPoints[MAX_MASK_OBJECTS];
+uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
 ${OBJECT_LIFT_GLSL}
 
 // The flat fill an object's own color paints over its interior, as
@@ -479,18 +482,18 @@ ${OBJECT_LIFT_GLSL}
 // point sits deepest inside its own outline wins the sample, the same
 // tie-break objectLift uses to keep overlapping objects from blending into
 // each other.
-vec4 objectBlackPoint(vec2 p) {
+vec4 objectFill(vec2 p) {
   vec4 fill = vec4(0.0);
   float nearest = 1.0;
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
-    if (u_objectBlackPoints[i].a <= 0.0) continue;
+    if (u_objectFills[i].a <= 0.0) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float u = objectU(
       u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
     if (u >= 1.0 || u >= nearest) continue;
     nearest = u;
-    fill = u_objectBlackPoints[i];
+    fill = u_objectFills[i];
   }
   return fill;
 }
@@ -504,8 +507,8 @@ void main() {
 
   ObjectLift lift = objectLift(v_meshPos);
   vec3 textured = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
-  vec4 blackPoint = objectBlackPoint(v_meshPos);
-  vec3 base = mix(textured, blackPoint.rgb, blackPoint.a);
+  vec4 fill = objectFill(v_meshPos);
+  vec3 base = mix(textured, fill.rgb, fill.a);
 
   vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
@@ -621,7 +624,7 @@ export interface GLState {
   objectShapesLoc: WebGLUniformLocation;
   objectShapeRowsLoc: WebGLUniformLocation;
   objectShapeMaxDepthLoc: WebGLUniformLocation;
-  objectBlackPointsLoc: WebGLUniformLocation;
+  objectFillsLoc: WebGLUniformLocation;
   objectLiftsLoc: WebGLUniformLocation;
   objectShapeTexture: WebGLTexture;
   objectShapeSignature: string;
@@ -739,7 +742,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightShapesLoc = gl.getUniformLocation(program, "u_lightShapes");
   const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
   const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
-  const objectBlackPointsLoc = gl.getUniformLocation(program, "u_objectBlackPoints");
+  const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
   const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
@@ -771,7 +774,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightShapesLoc ||
     !lightShapeRowsLoc ||
     !lightShapeMaxDepthLoc ||
-    !objectBlackPointsLoc ||
+    !objectFillsLoc ||
     !objectLiftsLoc ||
     !textureMixLoc ||
     !textureLoc ||
@@ -811,7 +814,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectShapesLoc,
     objectShapeRowsLoc,
     objectShapeMaxDepthLoc,
-    objectBlackPointsLoc,
+    objectFillsLoc,
     objectLiftsLoc,
     objectShapeTexture,
     objectShapeSignature: "",
@@ -939,7 +942,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
     const falloffs = new Float32Array(activeObjects.length);
-    const blackPoints = new Float32Array(activeObjects.length * 4);
+    const fills = new Float32Array(activeObjects.length * 4);
     // Written for every slot in play on every draw, lifted or not: the w is
     // the "is this one lifted" flag, and a slot left alone would go on being
     // read against the pose whichever object held it last was animating from.
@@ -954,10 +957,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       objects[i * 4 + 2] = Math.max(object.radius, 1);
       objects[i * 4 + 3] = object.elevation;
       falloffs[i] = Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF);
-      blackPoints[i * 4] = object.blackPoint?.r ?? 0;
-      blackPoints[i * 4 + 1] = object.blackPoint?.g ?? 0;
-      blackPoints[i * 4 + 2] = object.blackPoint?.b ?? 0;
-      blackPoints[i * 4 + 3] = object.blackPoint?.a ?? 0;
+      fills[i * 4] = object.fill?.r ?? 0;
+      fills[i * 4 + 1] = object.fill?.g ?? 0;
+      fills[i * 4 + 2] = object.fill?.b ?? 0;
+      fills[i * 4 + 3] = object.fill?.a ?? 0;
       lifts[i * 4] = object.lift?.cx ?? object.cx;
       lifts[i * 4 + 1] = object.lift?.cy ?? object.cy;
       lifts[i * 4 + 2] = Math.max(object.lift?.radius ?? object.radius, 1);
@@ -971,7 +974,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform4fv(state.objectsLoc, objects);
     gl.uniform4fv(state.objectRotationsLoc, rotations);
     gl.uniform1fv(state.objectFalloffsLoc, falloffs);
-    gl.uniform4fv(state.objectBlackPointsLoc, blackPoints);
+    gl.uniform4fv(state.objectFillsLoc, fills);
     gl.uniform4fv(state.objectLiftsLoc, lifts);
   }
 
@@ -1219,7 +1222,7 @@ export interface ObjectGeometryInput {
   elevation: number;
   falloff: number;
   shape?: ObjectShape;
-  blackPoint?: ObjectBlackPoint_V1_0;
+  fill?: ObjectFill_V1_0;
   /**
    * Where this object sits when nothing is animating it, for an object whose
    * `lift` is on and which an effect is moving or scaling right now. Present
@@ -1327,7 +1330,7 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
  * Whether this object puts anything on screen -- the question the uniform
  * upload asks, which is a strictly weaker one.
  *
- * Relief is not the only thing an object draws. objectBlackPoint fills its
+ * Relief is not the only thing an object draws. objectFill fills its
  * outline from centre, radius and rotation alone, with no reference to
  * elevation at all, and objectLift carries the picture inside it from those
  * same three. Both read `u_objects`, so both need the object in a slot -- and gating that upload
@@ -1338,7 +1341,7 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
  */
 export function isDrawnObject(object: ObjectGeometryInput): boolean {
   if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
-  return object.elevation !== 0 || (object.blackPoint?.a ?? 0) > 0 || object.lift !== undefined;
+  return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
 }
 
 // Deepest relief first, since that is the one whose loss would show most if

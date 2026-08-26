@@ -34,11 +34,11 @@ import {
   ObjectUpdateDelta_V1_0,
   MaskLightUpdateRequest_V1_0,
   MaskObjectUpdateRequest_V1_0,
-  LaurusObjectBlackPoint,
+  LaurusObjectFill,
   newLight,
   toLightUpdate,
-  toObjectBlackPoint,
-  toObjectBlackPointFields,
+  toObjectFill,
+  toObjectFillFields,
 } from "./workspace.server";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
@@ -264,11 +264,12 @@ export interface MaskNotifyValue {
   createObject: (
     maskKey: string,
     circle: { cx: number; cy: number; radius: number },
-    seed: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint },
+    seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
   ) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
+  notifyMaskHighlightSuppressed: (suppressed: boolean) => void;
   notifyMaskSelectedLightChanged: (maskKey: string, lightId: number | undefined) => void;
   notifyMaskSelectedObjectChanged: (maskKey: string, objectId: number | undefined) => void;
   notifyMaskPendingLightSet: (maskKey: string, indices: Set<number>, lightId?: number) => void;
@@ -342,6 +343,7 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   deleteObject: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskSelectionChanged: () => {},
+  notifyMaskHighlightSuppressed: () => {},
   notifyMaskSelectedLightChanged: () => {},
   notifyMaskSelectedObjectChanged: () => {},
   notifyMaskPendingLightSet: () => {},
@@ -1139,6 +1141,11 @@ export default function Workspace({
       handles.forEach((h) => h.setSelectedHighlighted(maskKey === key)),
     );
   }, []);
+  // Quiet every mask's selection and edit cues without disturbing what is selected -- for a colour
+  // being picked against the mesh, where the highlight is the thing in the way.
+  const notifyMaskHighlightSuppressed = useCallback((suppressed: boolean) => {
+    maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.setHighlightSuppressed(suppressed)));
+  }, []);
   const notifyMaskSelectedLightChanged = useCallback((maskKey: string, lightId: number | undefined) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setSelectedLight(lightId));
   }, []);
@@ -1306,7 +1313,7 @@ export default function Workspace({
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint },
+      seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
     ) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
@@ -1332,7 +1339,7 @@ export default function Workspace({
         elevation: seed.elevation,
         falloff: seed.falloff,
         shape,
-        blackPoint: seed.blackPoint,
+        fill: seed.fill,
       };
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
@@ -1347,7 +1354,7 @@ export default function Workspace({
         elevation: seed.elevation,
         falloff: seed.falloff,
         shape,
-        ...toObjectBlackPointFields(seed.blackPoint),
+        ...toObjectFillFields(seed.fill),
         description: "",
         reviewed: false,
         lift: false,
@@ -1396,7 +1403,7 @@ export default function Workspace({
         elevation: object.elevation,
         falloff: object.falloff,
         shape: object.shape,
-        ...toObjectBlackPointFields(toObjectBlackPoint(object)),
+        ...toObjectFillFields(toObjectFill(object)),
         description: object.description,
         reviewed: object.reviewed,
         lift: object.lift,
@@ -1794,6 +1801,7 @@ export default function Workspace({
       deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
+      notifyMaskHighlightSuppressed,
       notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
       notifyMaskPendingLightSet,
@@ -1814,6 +1822,7 @@ export default function Workspace({
       deleteObject,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
+      notifyMaskHighlightSuppressed,
       notifyMaskSelectedLightChanged,
       notifyMaskSelectedObjectChanged,
       notifyMaskPendingLightSet,

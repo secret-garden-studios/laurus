@@ -31,7 +31,7 @@ function object(over: Partial<ObjectGeometryInput> = {}): ObjectGeometryInput {
   return { cx: 100, cy: 100, radius: 50, elevation: 80, falloff: 2, ...over };
 }
 
-const opaqueRed = { r: 1, g: 0, b: 0, a: 1 };
+const opaqueRed = { r: 1, g: 0, b: 0, a: 1, h: 0, s: 1 };
 const restPose = { cx: 100, cy: 100, radius: 50 };
 
 function maxSwellAlongRadius(p: ObjectGeometryInput, step = 0.001): number {
@@ -563,7 +563,7 @@ describe("isActiveObject -- the 'worth subdividing for / worth swelling against'
   });
 
   it("stays blind to the things that draw without deforming", () => {
-    assert.equal(isActiveObject(object({ elevation: 0, blackPoint: opaqueRed })), false, "a flat tint");
+    assert.equal(isActiveObject(object({ elevation: 0, fill: opaqueRed })), false, "a flat tint");
     assert.equal(isActiveObject(object({ elevation: 0, lift: restPose })), false, "a flat lift");
   });
 });
@@ -571,25 +571,25 @@ describe("isActiveObject -- the 'worth subdividing for / worth swelling against'
 describe("isDrawnObject -- the 'worth uploading' predicate", () => {
   it("uploads a flat object that still has something to draw", () => {
     assert.equal(isDrawnObject(object({ elevation: 0 })), false, "flat, uncoloured and unlifted");
-    assert.equal(isDrawnObject(object({ elevation: 0, blackPoint: opaqueRed })), true, "a flat tint");
+    assert.equal(isDrawnObject(object({ elevation: 0, fill: opaqueRed })), true, "a flat tint");
     assert.equal(isDrawnObject(object({ elevation: 0, lift: restPose })), true, "a flat lift");
   });
 
-  it("reads the black point's alpha rather than its color", () => {
-    const invisible = { r: 1, g: 0, b: 0, a: 0 };
-    assert.equal(isDrawnObject(object({ elevation: 0, blackPoint: invisible })), false, "fully transparent");
+  it("reads the fill's alpha rather than its color", () => {
+    const invisible = { r: 1, g: 0, b: 0, a: 0, h: 0, s: 1 };
+    assert.equal(isDrawnObject(object({ elevation: 0, fill: invisible })), false, "fully transparent");
     assert.equal(
-      isDrawnObject(object({ elevation: 0, blackPoint: { ...invisible, a: 0.01 } })),
+      isDrawnObject(object({ elevation: 0, fill: { ...invisible, a: 0.01 } })),
       true,
       "barely there is still there",
     );
   });
 
   it("still rejects what no amount of color can rescue", () => {
-    assert.equal(isDrawnObject(object({ radius: 0, blackPoint: opaqueRed })), false, "zero radius");
-    assert.equal(isDrawnObject(object({ radius: -5, blackPoint: opaqueRed })), false, "negative radius");
+    assert.equal(isDrawnObject(object({ radius: 0, fill: opaqueRed })), false, "zero radius");
+    assert.equal(isDrawnObject(object({ radius: -5, fill: opaqueRed })), false, "negative radius");
     assert.equal(
-      isDrawnObject(object({ blackPoint: opaqueRed, rotation: { inverse: [1, 0, 0, 1], visible: false } })),
+      isDrawnObject(object({ fill: opaqueRed, rotation: { inverse: [1, 0, 0, 1], visible: false } })),
       false,
       "turned edge-on",
     );
@@ -600,7 +600,7 @@ describe("isDrawnObject -- the 'worth uploading' predicate", () => {
       object(),
       object({ elevation: -80 }),
       object({ elevation: 0 }),
-      object({ elevation: 0, blackPoint: opaqueRed }),
+      object({ elevation: 0, fill: opaqueRed }),
       object({ elevation: 0, lift: restPose }),
       object({ radius: 0 }),
       object({ rotation: { inverse: [1, 0, 0, 1], visible: false } }),
@@ -613,7 +613,7 @@ describe("isDrawnObject -- the 'worth uploading' predicate", () => {
 
 describe("drawnMaskObjects -- the uploaded set", () => {
   it("carries a flat tinted object into the uniforms alongside the raised ones", () => {
-    const flat = object({ cx: 10, elevation: 0, blackPoint: opaqueRed });
+    const flat = object({ cx: 10, elevation: 0, fill: opaqueRed });
     const raised = object({ cx: 20 });
     const inert = object({ cx: 30, elevation: 0 });
 
@@ -623,7 +623,7 @@ describe("drawnMaskObjects -- the uploaded set", () => {
 
   it("never exceeds the shader's slot count", () => {
     const many = Array.from({ length: MAX_MASK_OBJECTS * 2 }, (_, i) =>
-      object({ cx: i, elevation: 0, blackPoint: opaqueRed }),
+      object({ cx: i, elevation: 0, fill: opaqueRed }),
     );
     assert.equal(drawnMaskObjects(many).length, MAX_MASK_OBJECTS);
   });

@@ -452,6 +452,7 @@ export default function LightSourceUnitbar({
               clipboardData = { ...activeEquation };
             }
             const currentEq: LaurusLightSourceEquation = {
+              ...defaultLightSourceEquation,
               ...clipboardData,
               input_id: "clipboard",
               solution: defaultLightSourceEquation.solution,

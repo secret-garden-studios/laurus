@@ -75,12 +75,12 @@ import {
   LaurusImgResult,
   LaurusMaskResult,
   LaurusObject,
-  LaurusObjectBlackPoint,
+  LaurusObjectFill,
   LaurusPolygonPath,
   newLight,
-  toEquationObjectBlackPoint,
+  toEquationObjectFill,
   toLightUpdate,
-  toObjectBlackPoint,
+  toObjectFill,
 } from "../workspace.server";
 import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
@@ -168,7 +168,7 @@ function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
     elevation: object.elevation,
     falloff: object.falloff,
     shape: cachedObjectShape(object.shape),
-    blackPoint: toObjectBlackPoint(object),
+    fill: toObjectFill(object),
   };
 }
 
@@ -190,6 +190,7 @@ export interface MaskImperativeHandle {
   stop: () => void;
   abortLightDragForToolChange: (newToolType: string) => void;
   setSelectedHighlighted: (active: boolean) => void;
+  setHighlightSuppressed: (suppressed: boolean) => void;
   setSelectedLight: (lightId: number | undefined) => void;
   setSelectedObject: (objectId: number | undefined) => void;
   setPendingLight: (indices: Set<number>, lightId?: number) => void;
@@ -290,7 +291,7 @@ export function ProjectMaskItem({
         elevation: number;
         radius: number;
         falloff: number;
-        blackPoint: LaurusObjectBlackPoint;
+        fill: LaurusObjectFill;
         rotation: ObjectRotation | undefined;
       }
     >
@@ -340,6 +341,11 @@ export function ProjectMaskItem({
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
+  // Held separately from selectedHighlightRef so that suppressing the highlight does not disturb
+  // what is selected: picking a fill wants the triangles to go quiet for a moment, not to lose the
+  // object being edited. The effect below rewrites selectedHighlightRef on every mask change and
+  // would otherwise stamp on a flag kept there.
+  const highlightSuppressedRef = useRef(false);
   const lightsRef = useRef<Map<number, Set<number>>>(new Map());
   const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
   /**
@@ -442,7 +448,7 @@ export function ProjectMaskItem({
           elevation: playing.elevation,
           falloff: playing.falloff,
           shape,
-          blackPoint: playing.blackPoint,
+          fill: playing.fill,
           rotation: playing.rotation,
           // Lift only ever means something against a pose the object has moved
           // away from, so it is attached here and nowhere else: `playing` is
@@ -459,7 +465,7 @@ export function ProjectMaskItem({
             elevation: pending.elevation,
             falloff: pending.falloff,
             shape: pendingShape,
-            blackPoint: pending.blackPoint,
+            fill: pending.fill,
           }
         : toObjectGeometry(object);
     });
@@ -471,7 +477,7 @@ export function ProjectMaskItem({
         elevation: pending.elevation,
         falloff: pending.falloff,
         shape: pendingShape,
-        blackPoint: pending.blackPoint,
+        fill: pending.fill,
       });
     }
     return objects;
@@ -754,7 +760,7 @@ export function ProjectMaskItem({
         elevation: candidate.elevation,
         falloff: candidate.falloff,
         shape: edit.path,
-        blackPoint: toObjectBlackPoint(candidate),
+        fill: toObjectFill(candidate),
         polygonIndices: session.currentIndices,
         draft,
       };
@@ -930,6 +936,7 @@ export function ProjectMaskItem({
     }
     const highlights = highlightScratchRef.current;
     highlights.fill(0);
+    const suppressed = highlightSuppressedRef.current;
     const vertexRanges = vertexRangesRef.current;
     const paint = (indices: Set<number>, color: readonly [number, number, number, number]) => {
       indices.forEach((polygonIndex) => {
@@ -952,19 +959,19 @@ export function ProjectMaskItem({
     const editingLightId =
       (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
       (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
-    if (selectedHighlightRef.current) {
+    if (selectedHighlightRef.current && !suppressed) {
       const activeLightId = selectedLightIdRef.current;
       lightsRef.current.forEach((indices, lightId) => {
         if (lightId === editingLightId) return;
         paint(indices, lightId === activeLightId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
-    if (pendingLight && pendingLight.size > 0) {
+    if (pendingLight && pendingLight.size > 0 && !suppressed) {
       paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
 
     const pendingTopology = pendingTopologyRef.current;
-    if (selectedHighlightRef.current) {
+    if (selectedHighlightRef.current && !suppressed) {
       const activeObjectId = selectedObjectIdRef.current;
       objectsMapRef.current.forEach((indices, objectId) => {
         if (objectId === pendingTopology?.objectId) return;
@@ -972,7 +979,7 @@ export function ProjectMaskItem({
         paint(indices, objectId === activeObjectId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
-    if (pendingTopology) {
+    if (pendingTopology && !suppressed) {
       paint(
         pendingTopology.polygonIndices ??
           indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology),
@@ -982,7 +989,7 @@ export function ProjectMaskItem({
 
     const objectReviewPreview = objectReviewPreviewRef.current;
     const objectReviewDiffBase = objectReviewDiffBaseRef.current;
-    if (objectReviewDiffBase) {
+    if (objectReviewDiffBase && !suppressed) {
       const unchanged = new Set<number>();
       const edited = new Set<number>();
       objectReviewPreview?.forEach((index) => {
@@ -994,7 +1001,7 @@ export function ProjectMaskItem({
       });
       paint(unchanged, HIGHLIGHT_SELECTED_COLOR);
       paint(edited, HIGHLIGHT_OBJECT_REVIEW_ADDED_COLOR);
-    } else if (objectReviewPreview?.size) {
+    } else if (objectReviewPreview?.size && !suppressed) {
       paint(objectReviewPreview, HIGHLIGHT_SELECTED_COLOR);
     }
 
@@ -1420,9 +1427,7 @@ export function ProjectMaskItem({
                   const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
                   const radius = object.radius;
                   const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
-                  const blackPoint = lightSourcePoint
-                    ? toEquationObjectBlackPoint(lightSourcePoint)
-                    : toObjectBlackPoint(object);
+                  const fill = lightSourcePoint ? toEquationObjectFill(lightSourcePoint) : toObjectFill(object);
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
                   playbackObjectsRef.current.set(t.objectId, {
@@ -1431,7 +1436,7 @@ export function ProjectMaskItem({
                     elevation,
                     radius: radius * scaleMultiplier,
                     falloff,
-                    blackPoint,
+                    fill,
                     rotation: rotatePoint
                       ? objectRotation(rotatePoint.rx, rotatePoint.ry, rotatePoint.rz, rotatePoint.rangle)
                       : undefined,
@@ -1649,6 +1654,11 @@ export function ProjectMaskItem({
           abortLightDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;
             if (lightDragRef.current) abortLightDrag();
+          },
+          setHighlightSuppressed: (suppressed) => {
+            if (highlightSuppressedRef.current === suppressed) return;
+            highlightSuppressedRef.current = suppressed;
+            recolorHighlight();
           },
           setSelectedHighlighted: (active) => {
             selectedHighlightRef.current = active;

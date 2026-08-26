@@ -13,7 +13,7 @@ import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/p
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, MIN_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
-import { LaurusObjectBlackPoint, OBJECT_BLACK_POINT_DEFAULT } from "../workspace.server";
+import { LaurusObjectFill, OBJECT_FILL_DEFAULT } from "../workspace.server";
 
 export interface ProjectMediaContextMenu {
   showContextMenu: boolean;
@@ -352,7 +352,7 @@ export interface UIState {
   mediaBrowserFilter: MediaBrowserFilter;
   lightSourcePreview: boolean;
   canvasZoom: number;
-  stagedObject: { elevation: number; falloff: number; blackPoint: LaurusObjectBlackPoint };
+  stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
   /** Whatever the pen is open on, or undefined when it is open on nothing. */
   maskEdit: MaskEditSession | undefined;
 }
@@ -390,7 +390,7 @@ export const defaultUIState: UIState = {
   stagedObject: {
     elevation: OBJECT_ELEVATION_DEFAULT,
     falloff: MIN_MASK_OBJECT_FALLOFF,
-    blackPoint: OBJECT_BLACK_POINT_DEFAULT,
+    fill: OBJECT_FILL_DEFAULT,
   },
   maskEdit: undefined,
 };

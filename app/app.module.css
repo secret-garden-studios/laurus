@@ -95,7 +95,6 @@
 }
 
 @keyframes text-focus {
-
   0%,
   5%,
   100% {
@@ -182,13 +181,16 @@
   border-radius: 10px;
   background:
     linear-gradient(rgb(25, 25, 25), rgb(23, 23, 23)) padding-box,
-    conic-gradient(from var(--angle),
-      var(--color-primary, rgb(227, 227, 227)),
-      var(--color-secondary, rgb(21, 21, 21)),
-      var(--color-tertiary, rgb(40, 40, 40)),
-      var(--color-tertiary, rgb(40, 40, 40)),
-      var(--color-secondary, rgb(21, 21, 21)),
-      var(--color-primary, rgb(227, 227, 227))) border-box;
+    conic-gradient(
+        from var(--angle),
+        var(--color-primary, rgb(227, 227, 227)),
+        var(--color-secondary, rgb(21, 21, 21)),
+        var(--color-tertiary, rgb(40, 40, 40)),
+        var(--color-tertiary, rgb(40, 40, 40)),
+        var(--color-secondary, rgb(21, 21, 21)),
+        var(--color-primary, rgb(227, 227, 227))
+      )
+      border-box;
 
   appearance: none;
   animation: rotateGradient 8s linear infinite;

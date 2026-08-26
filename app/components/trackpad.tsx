@@ -185,68 +185,70 @@ function CoarsePointer({
   });
   const [isHovered, setIsHovered] = useState(false);
   const isActive = isDragging || isHovered;
-  const [pointerRect, setPointerRect] = useState<{ top: number; left: number; right: number; bottom: number } | null>(
-    null,
+  // An escaping title is portalled to the body and positioned in viewport coordinates, which means
+  // measuring the pointer after layout. That measurement is not state: routing it through React
+  // would re-render the pointer on every scroll event of a drag to move a tooltip the browser can
+  // be told about directly. Writing the two offsets onto the node is what an effect is for, and it
+  // keeps a dragging cap off the render path entirely.
+  const fixedTitleElRef = useRef<HTMLDivElement | null>(null);
+  const setTitleRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      fixedTitleElRef.current = node;
+      if (liveTitleRef) liveTitleRef.current = node;
+    },
+    [liveTitleRef],
   );
   useLayoutEffect(() => {
-    if (!escapeOverflow || !isActive) {
-      setPointerRect(null);
-      return;
-    }
-    const updatePointerRect = () => {
+    if (!escapeOverflow || !isActive) return;
+    const positionTitle = () => {
       const el = pointerElRef.current;
-      if (!el) return;
+      const title = fixedTitleElRef.current;
+      if (!el || !title) return;
       const rect = el.getBoundingClientRect();
-      setPointerRect({ top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom });
+      if (pointerStyle === PointerStyle.BlurryBottomTitle) {
+        title.style.top = `${rect.bottom + dynamicSizes.titleOffsets.top}px`;
+        title.style.left = `${(rect.left + rect.right) / 2}px`;
+      } else {
+        title.style.top = `${(rect.top + rect.bottom) / 2}px`;
+        title.style.left = `${rect.right + dynamicSizes.titleOffsets.left}px`;
+      }
     };
-    updatePointerRect();
-    window.addEventListener("scroll", updatePointerRect, true);
-    window.addEventListener("resize", updatePointerRect);
+    positionTitle();
+    window.addEventListener("scroll", positionTitle, true);
+    window.addEventListener("resize", positionTitle);
     return () => {
-      window.removeEventListener("scroll", updatePointerRect, true);
-      window.removeEventListener("resize", updatePointerRect);
+      window.removeEventListener("scroll", positionTitle, true);
+      window.removeEventListener("resize", positionTitle);
     };
-  }, [escapeOverflow, isActive, transform?.x, transform?.y, coords.x, coords.y]);
+  }, [
+    escapeOverflow,
+    isActive,
+    pointerStyle,
+    dynamicSizes.titleOffsets.top,
+    dynamicSizes.titleOffsets.left,
+    transform?.x,
+    transform?.y,
+    coords.x,
+    coords.y,
+  ]);
   const dndCss = {
     left: coords.x,
     top: coords.y,
     transform: CSS.Translate.toString(transform),
     touchAction: "none",
   };
-  const fixedTooltipCss: CSSProperties = pointerRect
-    ? ((p) => {
-        switch (p) {
-          case PointerStyle.BlurryBottomTitle:
-            return {
-              position: "fixed",
-              top: pointerRect.bottom + dynamicSizes.titleOffsets.top,
-              left: (pointerRect.left + pointerRect.right) / 2,
-              transform: "translate(-50%, -50%)",
-              color: "rgb(227,227,227)",
-              fontWeight: "bold",
-              textAlign: "center",
-              whiteSpace: "nowrap",
-              pointerEvents: "none",
-              zIndex: 2000,
-              ...dynamicSizes.tooltip,
-            };
-          default:
-            return {
-              position: "fixed",
-              top: (pointerRect.top + pointerRect.bottom) / 2,
-              left: pointerRect.right + dynamicSizes.titleOffsets.left,
-              transform: "translateY(-50%)",
-              color: "rgb(227,227,227)",
-              fontWeight: "bold",
-              textAlign: "center",
-              whiteSpace: "nowrap",
-              pointerEvents: "none",
-              zIndex: 2000,
-              ...dynamicSizes.tooltip,
-            };
-        }
-      })(pointerStyle)
-    : {};
+  const fixedTooltipCss: CSSProperties = {
+    position: "fixed",
+    // top and left are written by the layout effect above, in viewport coordinates
+    transform: pointerStyle === PointerStyle.BlurryBottomTitle ? "translate(-50%, -50%)" : "translateY(-50%)",
+    color: "rgb(227,227,227)",
+    fontWeight: "bold",
+    textAlign: "center",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    zIndex: 2000,
+    ...dynamicSizes.tooltip,
+  };
   const tooltipCss: CSSProperties = ((p) => {
     switch (p) {
       case PointerStyle.BlurryBottomTitle:
@@ -303,9 +305,8 @@ function CoarsePointer({
   })(pointerStyle);
 
   if (liveTitleRef !== undefined) {
-    const shouldRenderTitle = isActive && (!escapeOverflow || pointerRect !== null);
-    const titleElement = shouldRenderTitle && (
-      <div ref={liveTitleRef} style={escapeOverflow ? fixedTooltipCss : tooltipCss}>
+    const titleElement = isActive && (
+      <div ref={escapeOverflow ? setTitleRefs : liveTitleRef} style={escapeOverflow ? fixedTooltipCss : tooltipCss}>
         {title}
       </div>
     );

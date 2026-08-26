@@ -5,8 +5,8 @@ import { UIActionType, advanceObjectReview, isMaskEditLocked, type ObjectShapeEd
 import {
   postObjectReviewDecision,
   toLightUpdate,
-  toObjectBlackPoint,
-  toObjectBlackPointFields,
+  toObjectFill,
+  toObjectFillFields,
   type LaurusMaskResult,
 } from "../workspace.server";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
@@ -349,7 +349,7 @@ export function useObjectReview() {
           elevation: object.elevation,
           falloff: object.falloff,
           shape: review.editedShape?.path ?? object.shape,
-          ...toObjectBlackPointFields(toObjectBlackPoint(object)),
+          ...toObjectFillFields(toObjectFill(object)),
           description,
           reviewed: true,
           lift: object.lift,
