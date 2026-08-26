@@ -524,7 +524,76 @@ void main() {
   float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
 
   ObjectLift lift = objectLift(v_meshPos);
-  vec3 textured = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
+  vec4 mask = texture2D(u_mask, v_uv);
+
+  // Two layers, composited. Writing that down is the point of this block: the
+  // three things that used to live here were each a special case of it, and
+  // each of them was discovered by something looking wrong on screen.
+  //
+  // The resting layer is the mask as it sits -- the picture at this fragment's
+  // own position, seen through the silhouette, less whatever a lift has taken
+  // away from here. The travelling layer is the piece a lifted object is
+  // carrying over this fragment. Source-over between them, in straight rather
+  // than premultiplied alpha, which is how the context is configured and how
+  // gl_FragColor is read.
+  vec2 restingUv = gl_FragCoord.xy / u_resolution;
+  vec4 restingTexel = u_hasTexture > 0.5 ? texture2D(u_texture, restingUv) : vec4(v_color, 1.0);
+  vec4 carriedTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv) : vec4(v_color, 1.0);
+
+  // What the travelling layer delivers: coverage of the object's outline times
+  // the source's own alpha at the texel being carried. An outline is a
+  // smoothed description of a region and reaches past it freely, so part of
+  // what a lift carries is routinely background rather than drawing -- and
+  // there is no colour under a transparent pixel. delia.png stores pure white
+  // beneath every one of them, which is what an exporter left rather than
+  // anything anyone drew, so those samples have to contribute nothing.
+  float carried = lift.body * carriedTexel.a;
+
+  // How much of the resting layer is here at all, before any lift.
+  //
+  // The source's own alpha when there is a source, because it is the exact
+  // answer and u_mask is an approximation of it: the curve is fit a pixel
+  // outside the drawing on purpose (see clip_silhouette) so that it can never
+  // shave anything off, which necessarily means it also covers ground the
+  // drawing does not, and it fills all of that at a hard 1. On delia that is
+  // 13,471 pixels of antialiased outline rendered fully opaque. The curve is
+  // still what answers this when no texture has loaded, which is what it was
+  // always for -- a mesh that stops at the silhouette needs something to say
+  // where the silhouette is.
+  //
+  // Nothing about the travelling layer belongs in this term. It used to be
+  // written "hole minus body", which let any lifted footprint cancel any hole:
+  // a second object passing over the first one's hole refilled it with the
+  // picture that had been taken away, and did so most visibly where its own
+  // texels were transparent and it was painting nothing at all. Whether a hole
+  // is covered is not a question this term should answer -- it is settled
+  // below, by covering it.
+  //
+  // Nor does the hole need weighting by what stood here, which was an attempt
+  // to say the same thing from the wrong end and got the sign of it backwards:
+  // multiplying the hole by the source alpha leaves 1 - alpha behind, so the
+  // softer the drawing's edge the *more* of it survived being carried away,
+  // and a lifted piece bordering transparency left a bright rim of itself
+  // standing exactly where it had been. With coverage read from the source to
+  // begin with, a hole is simply a hole and takes all of whatever was there.
+  float restingCoverage = u_hasTexture > 0.5 ? restingTexel.a : mix(1.0, mask.a, u_maskActive);
+  float restingAlpha = restingCoverage * (1.0 - lift.hole);
+
+  float alpha = carried + restingAlpha * (1.0 - carried);
+  // Guarded rather than branched: the numerator vanishes with the denominator,
+  // and at an alpha this low there is nothing to see either way.
+  float safeAlpha = max(alpha, 1e-4);
+  vec3 textured =
+    (carriedTexel.rgb * carried + restingTexel.rgb * restingAlpha * (1.0 - carried)) / safeAlpha;
+
+  // The resting layer's share of the result, and so how much of the mask's own
+  // decoration still belongs to this fragment. Everything below that is
+  // synthesized rather than photographed -- a resting object's fill, the
+  // wireframe, the glow -- is scaled by it. That is what makes a lift read as
+  // a cut-out on a plane above the mask instead of something sliding along
+  // underneath its markings.
+  float beneath = restingAlpha * (1.0 - carried) / safeAlpha;
+
   vec4 fill = objectFill(v_meshPos);
   vec3 base = mix(textured, fill.rgb, fill.a);
   // The same fill, per-triangle: a mesh is what an object is made of, so its
@@ -534,7 +603,10 @@ void main() {
   // triangle toggled in or out of the object mid-review, which moves no
   // outline. Every object the caller paints from a_fillOverlay has its own
   // u_objectFills slot zeroed, so the two never double up.
-  base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a);
+  // Scaled by beneath where the two meet: this is a *resting* object's
+  // colour, pinned to triangles that are not moving, and a piece travelling
+  // over one is in front of it.
+  base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a * beneath);
 
   vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
@@ -574,19 +646,37 @@ void main() {
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
   vec3 shaded = lit - leastShadow - bumpShade;
   vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
-  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
+  // The wireframe belongs to the triangle being rasterized, and under a
+  // travelling piece that triangle is behind it.
+  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA * beneath);
 
-  vec4 mask = texture2D(u_mask, v_uv);
-  vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
+  // The glow's own colour answers "what is a fragment out here worth when
+  // there is nothing to sample". Past the silhouette the mesh has stopped, so
+  // the only description of the edge left is the mean measure_glow averaged
+  // over it, and painting that outward is how a glowing or shadowed subject
+  // avoids coming out cut from paper.
+  //
+  // With a texture loaded there IS something to sample, and the mean is then
+  // strictly the worse answer: lift.uv lands on the source's own edge pixels
+  // and textured already holds them, at their real colour, one by one.
+  // Measured over delia's band those pixels have a standard deviation of ~29
+  // per channel and a quarter of them differ from the single synthesized
+  // colour by more than 40 -- so the mix was flattening a real, varied soft
+  // edge into one flat dark band, on top of the pixels it was averaged from.
+  //
+  // Scaled by beneath for the same reason as the layers above: the profile is
+  // measured from the resting silhouette and read at v_uv, the resting mesh's
+  // own coordinate, which knows nothing about what has moved. Without it a
+  // piece crossing an outline -- the outer one, or any of the interior holes
+  // the glow is stroked around too -- picks up a band of the glow's colour and
+  // reads as passing beneath a line that is not in the drawing at all.
+  float glowMix = mask.r * u_maskActive * beneath * (u_hasTexture > 0.5 ? 0.0 : 1.0);
+  vec3 withGlow = mix(withEdge, u_glowColor, glowMix);
 
   float lightEdge = highlightEdge * v_highlight.a;
   vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
 
-  // Inside a lift's rest footprint and outside every lift's current one is
-  // where the pixels used to be and no longer are, so there is nothing left to
-  // draw there. Zero for every fragment when nothing is lifted.
-  float vacated = clamp(lift.hole - lift.body, 0.0, 1.0);
-  gl_FragColor = vec4(withLightStroke, mix(1.0, mask.a, u_maskActive) * (1.0 - vacated));
+  gl_FragColor = vec4(withLightStroke, alpha);
 }
 `,
 };
