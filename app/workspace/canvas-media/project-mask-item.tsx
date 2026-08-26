@@ -297,6 +297,18 @@ export function ProjectMaskItem({
       }
     >
   >(new Map());
+  /**
+   * Which objects this playback session is animating -- known the moment the
+   * session opens, where `playbackObjectsRef` is only filled once frames have
+   * arrived and the first one is drawn.
+   *
+   * That gap is the whole reason this exists. An object's fill is painted on
+   * its triangles at rest and by the shader's outline while it animates, and
+   * the two must swap over on the same frame: keyed off the poses, the
+   * triangles would still be painted for the frames between "play" and the
+   * first pose, on top of an outline fill that had not stood down yet.
+   */
+  const playingObjectIdsRef = useRef<Set<number>>(new Set());
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
   const lightDragRef = useRef<
     | {
@@ -444,6 +456,25 @@ export function ProjectMaskItem({
     // show a reshape as a move. Built at draft resolution while the gesture is
     // still in flight; see cachedObjectShape.
     const pendingShape = pending ? cachedObjectShape(pending.shape, pendingTileSize(pending)) : undefined;
+    /**
+     * A resting object does not fill from its outline -- recolorHighlight
+     * paints it on the triangles the object actually owns instead, and this
+     * stands the outline's own fill down so the two cannot double up.
+     *
+     * The mesh is what an object is made of, so its triangles are what its
+     * colour belongs to. All the shader's shape test can fill is the smoothed
+     * curve, which is a description of the region and not the region itself:
+     * the colour spilled past the triangles the object owns and stopped short
+     * of ones it does, and a triangle toggled in or out of the object mid-
+     * review moved no outline and so changed nothing at all.
+     *
+     * An animating object is the exception, and keeps filling from its
+     * outline: a vertex attribute cannot travel, and the fill has to arrive
+     * wherever the pose does.
+     */
+    const restingFill = (object: ObjectGeometryInput): ObjectGeometryInput =>
+      object.fill ? { ...object, fill: { ...object.fill, a: 0 } } : object;
+    const animating = playingObjectIdsRef.current;
     const objects = objectsRef.current.map((object): ObjectGeometryInput => {
       const shape = cachedObjectShape(object.shape);
       const playing = playbackObjectsRef.current.get(object.id);
@@ -464,20 +495,22 @@ export function ProjectMaskItem({
           lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
         };
       }
-      return pending && pending.objectId === object.id
-        ? {
-            cx: pending.cx,
-            cy: pending.cy,
-            radius: pending.radius,
-            elevation: pending.elevation,
-            falloff: pending.falloff,
-            shape: pendingShape,
-            fill: pending.fill,
-          }
-        : toObjectGeometry(object);
+      const geometry =
+        pending && pending.objectId === object.id
+          ? {
+              cx: pending.cx,
+              cy: pending.cy,
+              radius: pending.radius,
+              elevation: pending.elevation,
+              falloff: pending.falloff,
+              shape: pendingShape,
+              fill: pending.fill,
+            }
+          : toObjectGeometry(object);
+      return animating.has(object.id) ? geometry : restingFill(geometry);
     });
     if (pending && !objectsRef.current.some((object) => object.id === pending.objectId)) {
-      objects.push({
+      const candidate: ObjectGeometryInput = {
         cx: pending.cx,
         cy: pending.cy,
         radius: pending.radius,
@@ -485,20 +518,8 @@ export function ProjectMaskItem({
         falloff: pending.falloff,
         shape: pendingShape,
         fill: pending.fill,
-      });
-    }
-    // The shape test the shader fills against has no notion of a triangle
-    // leaving or joining an object mid-review -- only its outline, which a
-    // triangle toggle never moves. recolorHighlight paints that per-triangle
-    // instead for as long as the session is open, so the outline's own fill
-    // sits out rather than double-painting (or painting over) a deselected
-    // triangle the overlay has already gone dark.
-    const editedObjectId = maskEditSubjectRef.current?.subject === "object" ? maskEditSubjectRef.current.id : undefined;
-    if (editedObjectId !== undefined) {
-      const index = objectsRef.current.findIndex((object) => object.id === editedObjectId);
-      if (index >= 0 && objects[index].fill) {
-        objects[index] = { ...objects[index], fill: { ...objects[index].fill, a: 0 } };
-      }
+      };
+      objects.push(animating.has(pending.objectId) ? candidate : restingFill(candidate));
     }
     return objects;
   }, []);
@@ -1066,33 +1087,61 @@ export function ProjectMaskItem({
       );
     }
 
-    // The object being reviewed paints its own fill here, per triangle, for as
-    // long as the session is open -- resolveObjectUniforms has zeroed that
-    // object's u_objectFills slot for exactly this window, so the outline's
-    // shape test is not also painting it. Read live off the object rather than
-    // off whatever pending/candidate snapshot happens to be in flight: a color
-    // picked mid-session must show up here the same frame it is picked.
-    if (maskEditSubject?.subject === "object" && !suppressed) {
-      const editedObject = objectsRef.current.find((object) => object.id === maskEditSubject.id);
-      const fill = editedObject && toObjectFill(editedObject);
-      if (fill && fill.a > 0) {
-        const color: readonly [number, number, number, number] = [fill.r, fill.g, fill.b, fill.a];
-        // The session's own set is the object's membership and the thing that
-        // gets saved, so it is what this paints -- except while a pen gesture
-        // is actually in flight, which is the one window it goes stale in: it
-        // is not re-tagged until the drag ends (see snapIndicesToShape), so
-        // during those frames the outline the pen is holding is the only thing
-        // that knows what the object now covers. `draft` is exactly that
-        // window; reading the pending edit outside it would pin the fill to
-        // the last reshape and leave every later triangle toggle unpainted.
-        const liveIndices =
-          pendingTopology?.objectId === maskEditSubject.id && pendingTopology.draft
-            ? (pendingTopology.polygonIndices ??
-              indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology))
-            : objectReviewPreview;
-        if (liveIndices) paintInto(fillOverlay, liveIndices, color);
-      }
+    // Every object paints its own fill here, on the triangles it owns --
+    // resolveObjectUniforms has zeroed u_objectFills for each of them, so the
+    // outline's shape test is not also painting it. See `restingFill` there
+    // for why the triangles are the right thing to fill; the objects left out
+    // below are the ones still filling from their outline, which must not be
+    // painted twice.
+    //
+    // Read live off each object rather than off whatever pending/candidate
+    // snapshot happens to be in flight: a color picked mid-session must show
+    // up here the same frame it is picked.
+    const animatingObjects = playingObjectIdsRef.current;
+    const pendingObjectIndices = () =>
+      pendingTopology &&
+      (pendingTopology.polygonIndices ??
+        indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology));
+    const objectFills = objectsRef.current.map((object) => ({
+      id: object.id,
+      fill: toObjectFill(object),
+      // An open session's own set is the object's membership and the thing
+      // that gets saved, so it is what this paints -- except while a pen
+      // gesture is actually in flight, which is the one window it goes stale
+      // in: it is not re-tagged until the drag ends (see snapIndicesToShape),
+      // so during those frames the outline the pen is holding is the only
+      // thing that knows what the object now covers. `draft` is exactly that
+      // window; reading the pending edit outside it would pin the fill to the
+      // last reshape and leave every later triangle toggle unpainted.
+      indices:
+        maskEditSubject?.subject === "object" && maskEditSubject.id === object.id
+          ? pendingTopology?.objectId === object.id && pendingTopology.draft
+            ? pendingObjectIndices()
+            : objectReviewPreview
+          : pendingTopology?.objectId === object.id
+            ? pendingObjectIndices()
+            : objectsMapRef.current.get(object.id),
+    }));
+    // A candidate the review has not stored yet owns no triangles of its own,
+    // only whichever ones its outline currently encloses.
+    if (pendingTopology && !objectsRef.current.some((object) => object.id === pendingTopology.objectId)) {
+      objectFills.push({
+        id: pendingTopology.objectId,
+        fill: pendingTopology.fill,
+        indices: pendingObjectIndices(),
+      });
     }
+    objectFills.forEach(({ id, fill, indices }) => {
+      // An object an effect is animating fills from its outline for as long as
+      // the effect runs, so that the color arrives wherever the pose does.
+      if (animatingObjects.has(id)) return;
+      // A session's fill is one of the cues an eyedropper picking against the
+      // mesh needs out of the way. A resting object's fill is not a cue -- it
+      // is the object -- and stays put.
+      if (suppressed && maskEditSubject?.subject === "object" && maskEditSubject.id === id) return;
+      if (!indices || fill.a <= 0) return;
+      paintInto(fillOverlay, indices, [fill.r, fill.g, fill.b, fill.a]);
+    });
 
     // Each buffer is diffed and (maybe) uploaded on its own -- sharing one
     // "did anything move" check would let a fill-only change slip past
@@ -1141,10 +1190,14 @@ export function ProjectMaskItem({
     wiredMoveRef.current = false;
     playbackLightSourcesRef.current = new Map();
     playbackObjectsRef.current = new Map();
+    const wasAnimating = playingObjectIdsRef.current.size > 0;
+    playingObjectIdsRef.current = new Set();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
     applyDefaultLightValue();
     render();
-  }, [render, applyDefaultLightValue]);
+    // Hands every object that was animating its fill back to its triangles.
+    if (wasAnimating) recolorHighlight();
+  }, [render, recolorHighlight, applyDefaultLightValue]);
 
   const preparePlayback = useCallback(
     (effectKey?: string, lightId?: number, objectId?: number): Promise<(() => Promise<void>) | undefined> => {
@@ -1235,6 +1288,14 @@ export function ProjectMaskItem({
       const rotateFramesByObject = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
+      // Claimed here rather than on the first drawn frame: these objects hand
+      // their fill from their triangles back to their outline for the length
+      // of the session, and the frames between here and the first pose are
+      // still frames someone can see.
+      if (objectTargets.length > 0) {
+        playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
+        recolorHighlight();
+      }
 
       const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
       let fps: number;
@@ -1555,6 +1616,7 @@ export function ProjectMaskItem({
       coreState.inputsToRender,
       framesCacheRef,
       render,
+      recolorHighlight,
       stopLightSourceAnimation,
     ],
   );

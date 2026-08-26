@@ -493,6 +493,13 @@ ${OBJECT_LIFT_GLSL}
 // point sits deepest inside its own outline wins the sample, the same
 // tie-break objectLift uses to keep overlapping objects from blending into
 // each other.
+//
+// This fills the outline, which is a smoothed description of the region and
+// not the region itself, so it is not how a resting object is coloured -- the
+// caller paints those on their own triangles, through a_fillOverlay below,
+// and leaves their slots here at zero alpha. What is left for this is the
+// objects an effect is animating: a vertex attribute cannot travel, and their
+// colour has to arrive wherever the pose does.
 vec4 objectFill(vec2 p) {
   vec4 fill = vec4(0.0);
   float nearest = 1.0;
@@ -520,11 +527,13 @@ void main() {
   vec3 textured = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv).rgb : v_color;
   vec4 fill = objectFill(v_meshPos);
   vec3 base = mix(textured, fill.rgb, fill.a);
-  // Per-triangle, painted only while a review session is deciding this
-  // object's membership one triangle at a time -- the shape test above has no
-  // notion of a triangle leaving or joining an object mid-session, so the
-  // caller zeroes that object's own u_objectFills slot and this stands in for
-  // it, painted from a_fillOverlay rather than the outline.
+  // The same fill, per-triangle: a mesh is what an object is made of, so its
+  // triangles are what its colour belongs to, and the shape test above can
+  // only reach the smoothed outline -- spilling colour past the triangles the
+  // object owns, stopping short of ones it does, and missing entirely a
+  // triangle toggled in or out of the object mid-review, which moves no
+  // outline. Every object the caller paints from a_fillOverlay has its own
+  // u_objectFills slot zeroed, so the two never double up.
   base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a);
 
   vec3 field = objectField(v_meshPos);
