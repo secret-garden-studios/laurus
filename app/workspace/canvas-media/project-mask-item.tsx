@@ -654,6 +654,24 @@ export function ProjectMaskItem({
     };
   }, [frame.height, frame.scale_x, frame.scale_y, frame.width]);
   const canvasZoom = useCanvasZoomValue();
+  /* Authored pixel values -- a move's distance, a preview light's reach -- are
+     in canvas units: the unzoomed size the mask is laid out at. Getting them
+     into the buffer the shader draws in is buffer over layout size, and
+     nothing else.
+
+     Deliberately not `canvas.width / rect.width`, which is the ratio the
+     pointer handlers want: the on-screen rect carries the canvas zoom, so
+     using it here divided the authored value by the zoom on the way in and the
+     canvas multiplied it back out again on the way to the screen. A
+     distance-100 move then travelled 100 screen pixels at every zoom -- fixed
+     against the display, shrinking against the mask that grew underneath it.
+     (The rect also carries the mask's own rotate3d, since it is an
+     axis-aligned bounding box, which skewed the same values a second way.) */
+  const bufferScaleRef = useRef({ x: 1, y: 1 });
+  bufferScaleRef.current = {
+    x: containerSize.width > 0 ? canvasSize.width / containerSize.width : 1,
+    y: containerSize.height > 0 ? canvasSize.height / containerSize.height : 1,
+  };
   const dndCss = {
     left: dndPosition.x,
     top: dndPosition.y,
@@ -1477,10 +1495,8 @@ export function ProjectMaskItem({
               lastFrameIndex = frameIndex;
 
               const canvas = canvasRef.current;
-              const rect = canvas?.getBoundingClientRect();
-              if (canvas && rect && rect.width > 0 && rect.height > 0) {
-                const scaleX = canvas.width / rect.width;
-                const scaleY = canvas.height / rect.height;
+              if (canvas) {
+                const { x: scaleX, y: scaleY } = bufferScaleRef.current;
 
                 targets.forEach((t) => {
                   const mergedFrames = mergedFramesByLight.get(t.lightId);
@@ -2431,15 +2447,18 @@ export function ProjectMaskItem({
               const canvas = e.currentTarget;
               const rect = canvas.getBoundingClientRect();
               if (rect.width === 0 || rect.height === 0) return;
-              const scaleX = canvas.width / rect.width;
-              const scaleY = canvas.height / rect.height;
-              const bufferX = (e.clientX - rect.left) * scaleX;
-              const bufferY = (e.clientY - rect.top) * scaleY;
+              // Screen to buffer for where the cursor is -- the rect's zoom is
+              // exactly what that mapping needs -- but canvas to buffer for how
+              // big the light is, so it keeps its size against the mask rather
+              // than against the display.
+              const bufferX = ((e.clientX - rect.left) * canvas.width) / rect.width;
+              const bufferY = ((e.clientY - rect.top) * canvas.height) / rect.height;
+              const bufferScaleX = bufferScaleRef.current.x;
               lightSourceRef.current = {
                 x: bufferX,
                 y: canvas.height - bufferY,
-                radius: (lightSizeRef.current / 2) * scaleX,
-                falloff: lightFalloffRef.current * scaleX,
+                radius: (lightSizeRef.current / 2) * bufferScaleX,
+                falloff: lightFalloffRef.current * bufferScaleX,
               };
               render();
             }}
