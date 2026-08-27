@@ -29,7 +29,7 @@ export const MIN_MASK_OBJECT_RADIUS_PX = 8;
 // mesh on the near side of it. Measured from a candidate triangle's centroid
 // to the nearest point of a claimed one, so zero still drops the overlap
 // itself and only the separation is tunable. See dropIndicesClaimedByObjects.
-export const MASK_OBJECT_COLLISION_BUFFER_PX = 6;
+export const MASK_OBJECT_COLLISION_BUFFER_PX = 1;
 export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
 export const OBJECT_SDF_GRID = 4;
