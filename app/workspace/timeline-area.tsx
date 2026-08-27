@@ -556,10 +556,11 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
       const snapshot = [...coreState.effects];
       const mergedEffects = snapshot.map((e) => reorderedGroupEffects.find((re) => re.key === e.key) ?? e);
       const reindexedEffects = reindexEffects(mergedEffects, coreState.effectGroups);
+      dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
       persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexedEffects, snapshot).then(
         (updated) => {
-          if (updated) {
-            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+          if (!updated) {
+            dispatch({ type: CoreActionType.SetEffects, value: snapshot });
           }
         },
       );
