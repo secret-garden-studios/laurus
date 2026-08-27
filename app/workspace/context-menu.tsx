@@ -803,6 +803,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     [media, reordering, reorderObject, updateMediaOrder],
   );
 
+  const reorderEnabled = useMemo(() => {
+    switch (media.type) {
+      case "light":
+        return false;
+      default:
+        return true;
+    }
+  }, [media.type]);
+
   const revertEnabled = useMemo(() => {
     switch (media.type) {
       case "img": {
@@ -1310,20 +1319,22 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     </div>
                   )}
                   <div
-                    style={{ color: reordering ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
-                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    style={{ color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
                     title={media.type === "object" ? MOVE_UP_TITLE : undefined}
                     onClick={() => {
+                      if (!reorderEnabled) return;
                       moveInStack(isAltPressed ? "top" : "increment");
                     }}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
-                    style={{ color: reordering ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
-                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    style={{ color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
                     title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
                     onClick={() => {
+                      if (!reorderEnabled) return;
                       moveInStack(isAltPressed ? "bottom" : "decrement");
                     }}
                   >
