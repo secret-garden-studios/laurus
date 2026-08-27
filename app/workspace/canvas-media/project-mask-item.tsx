@@ -41,7 +41,9 @@ import {
   MaskEditSession,
   UIActionType,
   editedRegion,
+  isAwaitingRegionPick,
   isMaskEditLocked,
+  isPenArmed,
 } from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
@@ -57,7 +59,13 @@ import {
   objectIdAtPoint,
   swelledPolygonIndexAtPoint,
 } from "./light-geometry";
-import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
+import {
+  MaskGeometry,
+  maskGeometry,
+  maskPolygonColors,
+  polygonIndicesForLight,
+  polygonIndicesForObject,
+} from "./mask-geometry";
 import { applyLightDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
@@ -392,6 +400,20 @@ export function ProjectMaskItem({
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
+  /**
+   * Whether this mask is hovered while a bar waits to be pointed at something.
+   *
+   * A second reason to light up every light and object, alongside the mask
+   * being the selected one. A bar in that state -- the armed pen, the light
+   * source tool with nothing picked -- is asking for one of them, and a resting
+   * mask says nothing about where they are; hovering it is taken as asking
+   * where, and answered in the cues that already mean "here is one of these,
+   * and it is not the one you are on".
+   *
+   * A ref rather than the hover state itself because the highlight pass reads
+   * everything through refs; the effect below is what keeps it in step.
+   */
+  const pickHoverRef = useRef(false);
   // Held separately from selectedHighlightRef so that suppressing the highlight does not disturb
   // what is selected: picking a fill wants the triangles to go quiet for a moment, not to lose the
   // object being edited. The effect below rewrites selectedHighlightRef on every mask change and
@@ -731,9 +753,14 @@ export function ProjectMaskItem({
     dragDisabled,
     isDragging: isDragging || isDraggingLight,
   });
-  const isReviewingThisMask =
-    source.kind === "static" && uiState.maskEdit?.maskKey === mediaKey && !isMaskEditLocked(uiState.maskEdit);
-  const cursor = isReviewingThisMask ? "crosshair" : toolCursor;
+  // The crosshair belongs to the triangles and to nothing else: it says they
+  // are there to be picked. It comes down with the pen's handles, which own
+  // every click on the mesh while they are up and put their own cursors on
+  // whatever can be taken hold of -- a crosshair over them would be promising
+  // a pick that no longer happens.
+  const sessionHere = source.kind === "static" && uiState.maskEdit?.maskKey === mediaKey ? uiState.maskEdit : undefined;
+  const isPickingTriangles = sessionHere !== undefined && !isMaskEditLocked(sessionHere) && !sessionHere.editingShape;
+  const cursor = isPickingTriangles ? "crosshair" : toolCursor;
 
   /**
    * The silhouette a light already has, or the one it should start from.
@@ -1117,7 +1144,7 @@ export function ProjectMaskItem({
     const editingLightId =
       (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
       (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
-    if (selectedHighlightRef.current && !suppressed) {
+    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
       const activeLightId = selectedLightIdRef.current;
       lightsRef.current.forEach((indices, lightId) => {
         if (lightId === editingLightId) return;
@@ -1129,7 +1156,11 @@ export function ProjectMaskItem({
     }
 
     const pendingTopology = pendingTopologyRef.current;
-    if (selectedHighlightRef.current && !suppressed) {
+    // A pick-hover paints these the same way, and the ids it reads come out
+    // undefined -- so every light and every object lands on the sibling
+    // colour, which is the whole of what is wanted: where they are, with none
+    // of them claimed.
+    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
       const activeObjectId = selectedObjectIdRef.current;
       objectsMapRef.current.forEach((indices, objectId) => {
         if (objectId === pendingTopology?.objectId) return;
@@ -1777,6 +1808,17 @@ export function ProjectMaskItem({
     recolorHighlight();
   }, [uiState.gridlinesBright, recolorHighlight]);
 
+  // Hovering a mask while a bar waits for a pick shows what there is to aim
+  // at. Both ways out of it come through the same reconcile: the cursor
+  // leaving, and the bar stopping waiting -- which is what the click that
+  // picks something does, and what it picked takes the cues over from here.
+  const pickHover = source.kind === "static" && isHovered && isAwaitingRegionPick(uiState);
+  useEffect(() => {
+    if (pickHoverRef.current === pickHover) return;
+    pickHoverRef.current = pickHover;
+    recolorHighlight();
+  }, [pickHover, recolorHighlight]);
+
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
     (canvas: HTMLCanvasElement | null) => {
@@ -2169,6 +2211,53 @@ export function ProjectMaskItem({
     [meshIdentityKey, render, recolorHighlight, abortLightDrag, maskHandlesRef, maskElementsRef, mediaKey],
   );
 
+  /**
+   * Open the pen on a light or an object that has just been clicked.
+   *
+   * The same pair of dispatches the edit buttons in the context menu and the
+   * light source bar make -- the session, then the highlight showing which
+   * triangles it opened on -- because this is the same gesture reached a
+   * shorter way. Those two name something that was already selected and sit
+   * behind a menu; the armed pen takes the click that selects it as the
+   * instruction to edit it, which is the whole of what arming it buys.
+   *
+   * A region the mask no longer holds is left alone rather than opened on a
+   * stale copy: what was hit is resolved against the mask here, not carried in
+   * from the hit test.
+   */
+  const openPenOn = useCallback(
+    (picked: Extract<LaurusSelectedElement, { type: "light" | "object" }>) => {
+      if (source.kind !== "static") return;
+      const maskData = source.maskData;
+      if (picked.type === "object") {
+        const object = maskData.objects.find((o) => o.id === picked.objectId);
+        if (!object) return;
+        const polygonIndices = polygonIndicesForObject(maskData.polygons, object.id);
+        uiDispatch({
+          type: UIActionType.StartObjectEdit,
+          maskMediaId: maskData.mask_media_id,
+          maskKey: mediaKey,
+          object,
+          polygonIndices,
+        });
+        notifyMaskObjectReviewPreview(mediaKey, new Set(polygonIndices));
+        return;
+      }
+      const light = maskData.lights.find((l) => l.id === picked.lightId);
+      if (!light) return;
+      const polygonIndices = polygonIndicesForLight(maskData.polygons, light.id);
+      uiDispatch({
+        type: UIActionType.StartLightEdit,
+        maskMediaId: maskData.mask_media_id,
+        maskKey: mediaKey,
+        light,
+        polygonIndices,
+      });
+      notifyMaskObjectReviewPreview(mediaKey, new Set(polygonIndices));
+    },
+    [source, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
+  );
+
   const showContextMenu =
     source.kind === "static" && (uiState.projectContextMenus.get(mediaKey)?.showContextMenu ?? false);
   const maskMeta = source.kind === "static" ? coreState.project.masks.get(mediaKey) : undefined;
@@ -2206,7 +2295,13 @@ export function ProjectMaskItem({
               }
               if (source.kind !== "static") return;
               if (uiState.maskEdit?.maskKey === mediaKey) {
-                if (isMaskEditLocked(uiState.maskEdit)) return;
+                // The two halves of a session read the same click, so only one
+                // of them is ever live: the handles are up, or the triangles
+                // are pickable. Reading it as both is what let a click meant
+                // for an anchor -- missed by a few pixels, or landing on the
+                // curve between two of them -- quietly change what the region
+                // covers instead. The pen is shut to go back to the triangles.
+                if (isMaskEditLocked(uiState.maskEdit) || uiState.maskEdit.editingShape) return;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 const index = point
                   ? swelledPolygonIndexAtPoint(maskGeometryRef.current.points, resolveObjectUniforms(), point)
@@ -2254,6 +2349,25 @@ export function ProjectMaskItem({
                 uiState.selectedElement?.type === "object" && uiState.selectedElement.key === mediaKey
                   ? uiState.selectedElement.objectId
                   : undefined;
+              // The pen picked from the toolbar with nothing open under it: the
+              // click that names a light or an object is also the instruction
+              // to edit it, so it goes straight through to the pen rather than
+              // leaving something selected for a menu to act on later.
+              //
+              // A click that lands on bare mesh does nothing at all -- not even
+              // select the mask -- because there is nothing there for a pen to
+              // draw, and the crosshair is already saying as much. Alt is left
+              // out because alt-click means "select what is under the cursor"
+              // everywhere else, and that is still how a light or an object is
+              // picked up without opening it.
+              if (isPenArmed(uiState) && !isAltKeyPressed && !e.metaKey) {
+                const hit = hitSubElement();
+                if (hit) {
+                  select(hit);
+                  openPenOn(hit);
+                }
+                return;
+              }
               const isIdleMaskTool =
                 uiState.tool.type === "mask" && !uiState.tool.lightingMeshSection && !uiState.tool.raisingObjects;
               if (isIdleMaskTool && !isAltKeyPressed && !e.metaKey) {

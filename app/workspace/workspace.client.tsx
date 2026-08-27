@@ -1999,6 +1999,12 @@ export default function Workspace({
         setSelectedSvgKeys(new Set<string>());
         setSelectedMaskKeys(new Set<string>());
         notifyMaskSelectionChanged(undefined);
+        // The line above takes every mask's cues down, so the selection itself
+        // has to go with them, or a bar goes on reading a light the canvas has
+        // already forgotten -- its parameters over a mesh with nothing lit.
+        // Clearing it is also what hands the light source bar and the armed pen
+        // back their greeting; see isAwaitingRegionPick.
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
           notifyMaskToolChanged(uiState.tool.type);

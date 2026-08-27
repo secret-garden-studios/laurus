@@ -221,7 +221,7 @@ export default function ObjectReviewPanel() {
             isLocked
               ? "double-click the check mark to make a new decision"
               : session.editingShape
-                ? "hide the outline's handles"
+                ? "hide the outline's handles, and go back to picking the triangles it covers"
                 : "show the outline's handles -- drag an anchor to move it, a handle to curve it, alt-drag to corner it"
           }
           style={{

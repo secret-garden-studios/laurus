@@ -2,34 +2,25 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType, advanceObjectReview, isMaskEditLocked, type ObjectShapeEdit } from "../states/ui-state";
-import { postObjectReviewDecision, toLightUpdate, toObjectUpdate, type LaurusMaskResult } from "../workspace.server";
+import {
+  postObjectReviewDecision,
+  toLightUpdate,
+  toObjectUpdate,
+  type LaurusMaskResult,
+  type LaurusPolygonPath,
+} from "../workspace.server";
+import { polygonIndicesForLight, polygonIndicesForObject } from "../canvas-media/mask-geometry";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import { retouchDelta } from "../canvas-media/object-retouch";
-
-function polygonIndicesForObject(polygons: { object_id: number }[] | undefined, objectId: number): Set<number> {
-  const indices = new Set<number>();
-  polygons?.forEach((p, i) => {
-    if (p.object_id === objectId) indices.add(i);
-  });
-  return indices;
-}
-
-function polygonIndicesForLight(polygons: { light_id: number }[] | undefined, lightId: number): Set<number> {
-  const indices = new Set<number>();
-  polygons?.forEach((p, i) => {
-    if (p.light_id === lightId) indices.add(i);
-  });
-  return indices;
-}
 
 function reviewPreviewFor(
   candidate: { object: { id: number }; polygon_indices: number[] },
   decided: boolean,
-  polygons: { object_id: number }[] | undefined,
+  polygons: LaurusPolygonPath[] | undefined,
 ): { current: Set<number>; diffBase: Set<number> | undefined } {
   const proposed = new Set(candidate.polygon_indices);
   if (!decided) return { current: proposed, diffBase: undefined };
-  return { current: polygonIndicesForObject(polygons, candidate.object.id), diffBase: proposed };
+  return { current: new Set(polygonIndicesForObject(polygons, candidate.object.id)), diffBase: proposed };
 }
 
 export function useObjectReview() {
@@ -121,7 +112,7 @@ export function useObjectReview() {
     const restored = ((): { current: Set<number>; diffBase: Set<number> | undefined } | undefined => {
       if (session.subject === "light") {
         return {
-          current: polygonIndicesForLight(restoreRetouchedMesh()?.polygons, session.light.id),
+          current: new Set(polygonIndicesForLight(restoreRetouchedMesh()?.polygons, session.light.id)),
           diffBase: undefined,
         };
       }

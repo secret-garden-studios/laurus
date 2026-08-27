@@ -27,6 +27,7 @@ import {
   toLightUpdate,
 } from "./workspace.server";
 import { applyLightDelta } from "./canvas-media/mask-delta";
+import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
 import type { ObjectOrderDirection } from "./canvas-media/object-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
@@ -916,11 +917,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     const maskData = coreState.canvasMasks.get(media.key);
     const object = maskData?.objects.find((o) => o.id === media.objectId);
     if (!maskData || !object) return undefined;
-    const polygonIndices: number[] = [];
-    maskData.polygons.forEach((p, i) => {
-      if (p.object_id === object.id) polygonIndices.push(i);
-    });
-    return { maskMediaId: maskData.mask_media_id, object, polygonIndices };
+    return {
+      maskMediaId: maskData.mask_media_id,
+      object,
+      polygonIndices: polygonIndicesForObject(maskData.polygons, object.id),
+    };
   }, [coreState.canvasMasks, media, uiState.maskEdit]);
 
   const editableLight = useMemo(() => {
@@ -929,11 +930,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     const maskData = coreState.canvasMasks.get(media.key);
     const light = maskData?.lights.find((l) => l.id === media.lightId);
     if (!maskData || !light) return undefined;
-    const polygonIndices: number[] = [];
-    maskData.polygons.forEach((p, i) => {
-      if (p.light_id === light.id) polygonIndices.push(i);
-    });
-    return { maskMediaId: maskData.mask_media_id, light, polygonIndices };
+    return {
+      maskMediaId: maskData.mask_media_id,
+      light,
+      polygonIndices: polygonIndicesForLight(maskData.polygons, light.id),
+    };
   }, [coreState.canvasMasks, media, uiState.maskEdit]);
 
   const reviewMaskMediaId = useMemo(() => {
@@ -1297,7 +1298,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         ...cellStyle,
                       }}
                       title={
-                        editableObject ? "reopen the review panel for this object" : "finish the edit in progress first"
+                        editableObject
+                          ? "open this object for editing -- the pen comes up on its outline"
+                          : "finish the edit in progress first"
                       }
                       onClick={() => {
                         if (!editableObject) return;
@@ -1324,7 +1327,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                       }}
                       title={
                         editableLight
-                          ? "open the edit panel for this light -- its outline and what it is"
+                          ? "open this light for editing -- the pen comes up on its outline"
                           : "finish the edit in progress first"
                       }
                       onClick={() => {

@@ -39,6 +39,35 @@ export function maskGeometry(maskData: MaskGeometrySource): MaskGeometry {
   return geometry;
 }
 
+/**
+ * The triangles a light or an object currently claims.
+ *
+ * Membership is recorded the other way round -- every polygon carries the id
+ * of whatever tagged it -- so anything wanting one region's own triangles has
+ * to sweep the mesh for them. Enough things do, and in enough different
+ * corners (every way into the pen, the revert, a recorded decision), that the
+ * sweep is worth having in one place rather than rewritten wherever it is
+ * needed.
+ */
+export function polygonIndicesForObject(polygons: LaurusPolygonPath[] | undefined, objectId: number): number[] {
+  return polygonIndicesWhere(polygons, (p) => p.object_id === objectId);
+}
+
+export function polygonIndicesForLight(polygons: LaurusPolygonPath[] | undefined, lightId: number): number[] {
+  return polygonIndicesWhere(polygons, (p) => p.light_id === lightId);
+}
+
+function polygonIndicesWhere(
+  polygons: LaurusPolygonPath[] | undefined,
+  claimed: (polygon: LaurusPolygonPath) => boolean,
+): number[] {
+  const indices: number[] = [];
+  polygons?.forEach((polygon, index) => {
+    if (claimed(polygon)) indices.push(index);
+  });
+  return indices;
+}
+
 export function carryGeometryForward(from: LaurusPolygonPath[], to: LaurusPolygonPath[]): void {
   if (from === to) return;
   const cached = cache.get(from);

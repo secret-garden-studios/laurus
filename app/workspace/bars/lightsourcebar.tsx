@@ -10,6 +10,7 @@ import { LaurusColor } from "../../components/color-utils";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import { MAX_MASK_OBJECT_ELEVATION, MAX_MASK_OBJECT_FALLOFF, MIN_MASK_OBJECT_FALLOFF } from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
+import { polygonIndicesForLight, polygonIndicesForObject } from "../canvas-media/mask-geometry";
 import {
   LaurusLight,
   LaurusMaskResult,
@@ -242,21 +243,21 @@ export default function LightSourcebar() {
   const editableLight = useMemo(() => {
     if (uiState.maskEdit !== undefined) return undefined;
     if (!selectedLight || selectedLightMaskKey === undefined || !selectedLightMaskData) return undefined;
-    const polygonIndices: number[] = [];
-    selectedLightMaskData.polygons.forEach((p, i) => {
-      if (p.light_id === selectedLight.id) polygonIndices.push(i);
-    });
-    return { maskMediaId: selectedLightMaskData.mask_media_id, light: selectedLight, polygonIndices };
+    return {
+      maskMediaId: selectedLightMaskData.mask_media_id,
+      light: selectedLight,
+      polygonIndices: polygonIndicesForLight(selectedLightMaskData.polygons, selectedLight.id),
+    };
   }, [uiState.maskEdit, selectedLight, selectedLightMaskKey, selectedLightMaskData]);
 
   const editableObject = useMemo(() => {
     if (uiState.maskEdit !== undefined) return undefined;
     if (!selectedObject || selectedObjectMaskKey === undefined || !selectedObjectMaskData) return undefined;
-    const polygonIndices: number[] = [];
-    selectedObjectMaskData.polygons.forEach((p, i) => {
-      if (p.object_id === selectedObject.id) polygonIndices.push(i);
-    });
-    return { maskMediaId: selectedObjectMaskData.mask_media_id, object: selectedObject, polygonIndices };
+    return {
+      maskMediaId: selectedObjectMaskData.mask_media_id,
+      object: selectedObject,
+      polygonIndices: polygonIndicesForObject(selectedObjectMaskData.polygons, selectedObject.id),
+    };
   }, [uiState.maskEdit, selectedObject, selectedObjectMaskKey, selectedObjectMaskData]);
 
   const pendingObjectEdit =
@@ -743,6 +744,39 @@ export default function LightSourcebar() {
   const lightDarknessTitle = lightDarknessValue.toFixed(2);
   const lightDarknessRef = useRef<HTMLDivElement | null>(null);
 
+  /**
+   * Nothing picked, so nothing for the bar to be about.
+   *
+   * Both submenus reach this and both say the same thing, because the parameters
+   * they would otherwise show are all a selected light's or a selected object's
+   * own -- a row of dead sliders reads as a bar that is broken rather than one
+   * that is waiting. The same greeting the pen shows, for the same reason, and
+   * the canvas answers it the same way: hovering a mask brings up the dim cues
+   * for what there is to click. See isAwaitingRegionPick.
+   *
+   * The light preview is the exception, and it is not one really: its controls
+   * belong to the hovered mask rather than to anything selected, so while it is
+   * running the bar has plenty to be about. Its toggle stays up either way --
+   * it is the way back out of the greeting as much as into the preview.
+   */
+  const isLightGreeting = !uiState.lightSourcePreview && !selectedLight;
+  const isObjectGreeting = isObjectParamDisabled;
+  const greeting = (
+    <span
+      title="hovering a mask shows where its lights and objects are"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        opacity: 0.6,
+        userSelect: "none",
+        ...dynamicSizes.toggle.div,
+      }}
+    >
+      {"click a light or an object on a mask to edit its properties"}
+    </span>
+  );
+
   return (
     <div
       style={{
@@ -776,38 +810,42 @@ export default function LightSourcebar() {
       </div>
       {target === "light" ? (
         <>
-          <div
-            title={
-              editableLight
-                ? "open the edit panel for this light -- its outline and what it is"
-                : selectedLight
-                  ? "finish the edit in progress first"
-                  : "select a light on the mesh to edit its outline"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              cursor: editableLight ? "pointer" : "default",
-              opacity: editableLight ? 1 : 0.3,
-              userSelect: "none",
-              ...dynamicSizes.toggle.div,
-            }}
-            onClick={() => {
-              if (!editableLight || selectedLightMaskKey === undefined) return;
-              uiDispatch({
-                type: UIActionType.StartLightEdit,
-                maskMediaId: editableLight.maskMediaId,
-                maskKey: selectedLightMaskKey,
-                light: editableLight.light,
-                polygonIndices: editableLight.polygonIndices,
-              });
-              mask.notifyMaskObjectReviewPreview(selectedLightMaskKey, new Set(editableLight.polygonIndices));
-              uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            }}
-          >
-            {"edit"}
-          </div>
+          {isLightGreeting ? (
+            greeting
+          ) : (
+            <div
+              title={
+                editableLight
+                  ? "open this light for editing -- the pen comes up on its outline"
+                  : selectedLight
+                    ? "finish the edit in progress first"
+                    : "select a light on the mesh to edit its outline"
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: "100%",
+                cursor: editableLight ? "pointer" : "default",
+                opacity: editableLight ? 1 : 0.3,
+                userSelect: "none",
+                ...dynamicSizes.toggle.div,
+              }}
+              onClick={() => {
+                if (!editableLight || selectedLightMaskKey === undefined) return;
+                uiDispatch({
+                  type: UIActionType.StartLightEdit,
+                  maskMediaId: editableLight.maskMediaId,
+                  maskKey: selectedLightMaskKey,
+                  light: editableLight.light,
+                  polygonIndices: editableLight.polygonIndices,
+                });
+                mask.notifyMaskObjectReviewPreview(selectedLightMaskKey, new Set(editableLight.polygonIndices));
+                uiDispatch({ type: UIActionType.CloseAllContextMenus });
+              }}
+            >
+              {"edit"}
+            </div>
+          )}
           <div
             style={{
               display: "flex",
@@ -1026,7 +1064,7 @@ export default function LightSourcebar() {
                 />
               </div>
             </>
-          ) : (
+          ) : isLightGreeting ? null : (
             <>
               <div
                 style={{
@@ -1150,12 +1188,14 @@ export default function LightSourcebar() {
             </>
           )}
         </>
+      ) : isObjectGreeting ? (
+        greeting
       ) : (
         <>
           <div
             title={
               editableObject
-                ? "reopen the review panel for this object"
+                ? "open this object for editing -- the pen comes up on its outline"
                 : selectedObject
                   ? "finish the edit in progress first"
                   : "select an object on the mesh to edit it"

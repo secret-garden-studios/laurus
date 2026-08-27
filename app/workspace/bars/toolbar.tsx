@@ -16,8 +16,9 @@ import {
   bookmarkStacks200,
   texture200,
   asterisk200,
+  inkPen300,
 } from "../../svg-repo";
-import { defaultMarqueeTool, defaultMaskTool, UIActionType } from "../states/ui-state";
+import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, UIActionType } from "../states/ui-state";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
 import Navbar from "@/app/navbar";
@@ -205,6 +206,65 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
                 <p>
                   Convert media from the <strong>browser</strong> into a mask while dropping it on the canvas. Define
                   light sources on existing masks or sculpt their surface.
+                </p>
+              </div>
+            )}
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "pen"}
+            svg={{
+              svg: inkPen300(),
+              scale: 0.5,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              if (uiState.tool.type == "pen") {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: { type: "none" },
+                });
+                notifyMaskToolChanged("none");
+              } else {
+                uiDispatch({
+                  type: UIActionType.SetTool,
+                  value: defaultPenTool,
+                });
+                notifyMaskToolChanged(defaultPenTool.type);
+              }
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            tooltipId="pen-tool-tooltip"
+          />
+          <Tooltip
+            className={dellaRespira.className}
+            id="pen-tool-tooltip"
+            delayShow={tooltipDelay}
+            style={{
+              backgroundColor: "rgb(40, 40, 40)",
+              color: "rgb(227, 227, 227)",
+              fontSize: dynamicSizes.tooltipFont2,
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
+              maxWidth: "300px",
+              zIndex: 99,
+            }}
+            render={() => (
+              <div style={{ padding: 4, width: "100%" }}>
+                <h4
+                  style={{
+                    marginBottom: dynamicSizes.tooltipMarginBottom,
+                    color: "rgb(255, 255, 255)",
+                    fontSize: dynamicSizes.tooltipFont,
+                  }}
+                >
+                  Pen Tool
+                </h4>
+                <p>
+                  Redraw the outline of a light or an <strong>object</strong> on a mask. Click one on the canvas and its
+                  handles come up straight away -- or pick it from a context menu and the pen is already here.
                 </p>
               </div>
             )}

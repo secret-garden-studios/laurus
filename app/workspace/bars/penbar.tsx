@@ -13,9 +13,9 @@ const GRIDLINES_OPTIONS = [
  * The pen's controls.
  *
  * Shown while an outline is open for editing -- an object's during a mask
- * review, or a light's. The pen is entered and left through the edit panel
- * rather than picked from the toolbar, so this bar appears and disappears with
- * the overlay it belongs to. See withShapeEditing in ui-state.
+ * review, or a light's -- and while the pen is armed with nothing open on it
+ * at all, which is the first thing this renders. See withShapeEditing and
+ * isPenArmed in ui-state.
  */
 export default function Penbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -107,6 +107,37 @@ export default function Penbar() {
     }
   };
 
+  // Armed -- picked from the toolbar with nothing open on it. Every control
+  // below is aimed at a curve there is not one of yet, so what the bar has to
+  // say instead is the one thing that would give it one. The crosshair on the
+  // canvas is the other half of the same sentence; see isPenArmed.
+  if (!session) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", height: "100%", width: "100%", overflowX: "auto" }}>
+        <SvgRepo
+          title="pen"
+          svg={inkPen300()}
+          containerStyle={{ ...dynamicSizes.svgSize }}
+          scale={1}
+          scaleToContaier={true}
+        />
+        <span
+          title="hovering a mask shows where its lights and objects are"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            opacity: 0.6,
+            userSelect: "none",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          {"click a light or an object on a mask to edit its outline"}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -126,8 +157,8 @@ export default function Penbar() {
       />
       <div
         title={
-          "keep the anchors on the outline. turn them off and the curve is fixed but no longer in the way -- " +
-          "the small triangles it cuts near itself become clickable again, which is the other half of reviewing"
+          "keep the anchors on the outline. turn them off and the curve is left exactly where it is, drawn " +
+          "but no longer handled -- which is how to see it against the mesh with nothing on top of it"
         }
         style={{
           display: "flex",
