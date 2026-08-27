@@ -489,7 +489,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                 style={{
                   height: "100%",
                   display: "flex",
-                  overflowY: "hidden",
+                  overflow: "hidden",
                   ...dynamicSizes.paramFlex,
                 }}
               >

@@ -923,15 +923,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return { maskMediaId: maskData.mask_media_id, object, polygonIndices };
   }, [coreState.canvasMasks, media, uiState.maskEdit]);
 
-  /**
-   * The same thing one line down for a light, and refused under the same
-   * condition: the pen is one overlay on one canvas, so whatever it is already
-   * open on has to be finished before anything else can claim it.
-   *
-   * Membership is read off the mask's polygons rather than the light, because
-   * that is where it lives -- a light knows its own appearance and outline, but
-   * which triangles carry it is a property of the triangles.
-   */
   const editableLight = useMemo(() => {
     if (media.type !== "light") return undefined;
     if (uiState.maskEdit !== undefined) return undefined;
@@ -953,6 +944,21 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const maskObjectCount = useMemo(() => {
     if (media.type !== "mask") return undefined;
     return coreState.canvasMasks.get(media.key)?.objects.length;
+  }, [coreState.canvasMasks, media]);
+
+  const maskLightCount = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.lights.length;
+  }, [coreState.canvasMasks, media]);
+
+  const objectPolygonCount = useMemo(() => {
+    if (media.type !== "object") return undefined;
+    return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.object_id === media.objectId).length;
+  }, [coreState.canvasMasks, media]);
+
+  const lightPolygonCount = useMemo(() => {
+    if (media.type !== "light") return undefined;
+    return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
   }, [coreState.canvasMasks, media]);
 
   const pendingReview = useMemo((): PendingObjectReview | undefined => {
@@ -993,6 +999,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       style={{
         color: reviewableMask ? "inherit" : "rgba(127,127,127, 1)",
         ...cellStyle,
+        cursor: reviewableMask ? "pointer" : "not-allowed",
       }}
       title={reviewTitle}
       onClick={() => {
@@ -1018,21 +1025,59 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       case "img":
       case "svg":
         return media.meta.media_key;
-      case "mask":
-      case "object":
-      case "light": {
-        let h = media.key;
+      case "mask": {
+        let filename = media.key;
         const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return h;
+        if (!mask) return filename;
         coreState.canvasImgs.forEach((i) => {
           if (i.img_media_id == mask.source_img_media_id) {
-            h = i.media_key;
+            filename = i.media_key;
           }
         });
-        return h;
+        return filename;
+      }
+      case "object": {
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return media.key;
+        const object = mask.objects.find((o) => o.id === media.objectId);
+        if (!object) return media.key;
+        return object.description ? object.description : object.name ? object.name : "";
+      }
+      case "light": {
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return media.key;
+        const light = mask.lights.find((o) => o.id === media.lightId);
+        if (!light) return media.key;
+        return light.description ? light.description : light.name ? light.name : "";
       }
     }
   }, [coreState.canvasImgs, coreState.canvasMasks, media]);
+
+  const subheader = useMemo(() => {
+    switch (media.type) {
+      case "img":
+      case "svg":
+      case "mask": {
+        return `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+      }
+      case "object": {
+        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return fallback;
+        const object = mask.objects.find((o) => o.id === media.objectId);
+        if (!object) return fallback;
+        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
+      }
+      case "light": {
+        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return fallback;
+        const object = mask.lights.find((o) => o.id === media.lightId);
+        if (!object) return fallback;
+        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
+      }
+    }
+  }, [coreState.canvasMasks, media]);
 
   return (
     <>
@@ -1116,31 +1161,14 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 >
                   {header}
                 </div>
-                <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
-                  <div>
-                    {"x"}
-                    {media.meta.left.toFixed()}
-                    {" | "}
-                    {"y"}
-                    {media.meta.top.toFixed()}
-                    {" | "}
-                    {"w"}
-                    {media.meta.width.toFixed()}
-                    {" | "}
-                    {"h"}
-                    {media.meta.height.toFixed()}
-                  </div>
-                </div>
+                <div style={{ display: "flex", ...dynamicSizes.h2 }}>{subheader}</div>
                 <div
-                  title="description"
                   style={{
                     overflowX: "auto",
                     display: "flex",
                     ...dynamicSizes.h2,
                   }}
-                >
-                  {media.meta.description}
-                </div>
+                />
               </div>
               <div style={{ gridRow: 2, gridColumn: 1, display: "grid" }}>
                 <div
@@ -1308,9 +1336,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           light: editableLight.light,
                           polygonIndices: editableLight.polygonIndices,
                         });
-                        // the same highlight channel the object review uses:
-                        // it means "the triangles this session claims", which
-                        // is a question a light answers too
                         notifyMaskObjectReviewPreview(media.key, new Set(editableLight.polygonIndices));
                         uiDispatch({ type: UIActionType.CloseAllContextMenus });
                       }}
@@ -1319,7 +1344,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     </div>
                   )}
                   <div
-                    style={{ color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    style={{
+                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      ...cellStyle,
+                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                    }}
                     className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
                     title={media.type === "object" ? MOVE_UP_TITLE : undefined}
                     onClick={() => {
@@ -1330,7 +1359,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
-                    style={{ color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    style={{
+                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      ...cellStyle,
+                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                    }}
                     className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
                     title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
                     onClick={() => {
@@ -1345,6 +1378,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     style={{
                       color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
                       ...cellStyle,
+                      cursor: revertEnabled ? "pointer" : "not-allowed",
                     }}
                     onClick={() => {
                       if (!revertEnabled) return;
@@ -1384,9 +1418,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           break;
                         }
                         case "light": {
-                          // A light with no triangles is a deleted light, which
-                          // is why this sends a blank one rather than a flag:
-                          // membership is the whole of what makes it exist.
                           const updated: LightUpdateDelta_V1_0 | undefined = await sendMaskLightUpdate(
                             media.meta.media_id,
                             toLightUpdate(newLight(media.lightId, ""), { polygon_indices: [] }),
@@ -1444,15 +1475,15 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
                     height: "100%",
+                    gap: "2.5ch",
                     ...dynamicSizes.footer.div,
                   }}
                 >
-                  {maskObjectCount === undefined ? (
-                    <div />
+                  {maskObjectCount == undefined ? (
+                    <></>
                   ) : (
-                    <div style={{ display: "flex", gap: "1ch" }} title="objects on this mask">
+                    <div style={{ display: "flex", gap: "1ch" }}>
                       <div
                         style={{
                           fontWeight: "bold",
@@ -1462,6 +1493,51 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         {`${maskObjectCount}`}
                       </div>
                       <div>{maskObjectCount === 1 ? "object" : "objects"}</div>
+                    </div>
+                  )}
+                  {maskLightCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${maskLightCount}`}
+                      </div>
+                      <div>{maskLightCount === 1 ? "light" : "lights"}</div>
+                    </div>
+                  )}
+                  {objectPolygonCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${objectPolygonCount}`}
+                      </div>
+                      <div>{objectPolygonCount === 1 ? "polygon" : "polygons"}</div>
+                    </div>
+                  )}
+                  {lightPolygonCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${lightPolygonCount}`}
+                      </div>
+                      <div>{lightPolygonCount === 1 ? "polygon" : "polygons"}</div>
                     </div>
                   )}
                   <SvgRepo
@@ -1483,6 +1559,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     containerStyle={{
                       width: dynamicSizes.footer.svgSize,
                       height: dynamicSizes.footer.svgSize,
+                      marginLeft: "auto",
                     }}
                     scale={1}
                   />

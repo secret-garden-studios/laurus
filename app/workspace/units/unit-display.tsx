@@ -51,6 +51,7 @@ function ObjectOrLightThumbnail({
         display: "grid",
         placeContent: "center",
         cursor: isAltKeyPressed ? "crosshair" : "pointer",
+        backgroundColor: "rgb(50, 50, 50)",
       }}
     >
       <LaurusImage
@@ -487,12 +488,13 @@ export default function UnitDisplay({
                     );
                     if (!hasLitGeometry) break;
                     const light = maskData.lights.find((cap) => cap.id === c.lightId);
+                    const name = light ? (light.description ? light.description : light.name) : `light ${c.lightId}`;
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-light-${c.lightId}`}
                         title="mesh light"
                         polygonCount={litPolygons.length}
-                        name={light?.name ?? `light ${c.lightId}`}
+                        name={name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={asterisk200("rgb(255, 255, 255)")}
                         style={dynamicSizes.displayImg}
@@ -511,12 +513,17 @@ export default function UnitDisplay({
                     const object = maskData?.objects.find((p) => p.id === c.objectId);
                     if (!maskData || !object) break;
                     const coveredPolygonCount = maskData.polygons.filter((p) => p.object_id === c.objectId).length;
+                    const name = object.description
+                      ? object.description
+                      : object.name
+                        ? object.name
+                        : `object ${c.objectId}`;
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-object-${c.objectId}`}
                         title="mesh object"
                         polygonCount={coveredPolygonCount}
-                        name={object.name}
+                        name={name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={antigravity200("rgb(255, 255, 255)")}
                         style={dynamicSizes.displayImg}

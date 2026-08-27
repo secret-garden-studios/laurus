@@ -914,7 +914,6 @@ function ObjectGroupThumbnail({
 
   return (
     <div
-      title={behind ? `${object.name} -- behind the mask` : object.name}
       onClick={onClick}
       style={{
         position: "relative",
@@ -924,6 +923,7 @@ function ObjectGroupThumbnail({
         placeContent: "center",
         cursor: "pointer",
         overflow: "hidden",
+        backgroundColor: "rgb(60, 60, 60)",
       }}
     >
       <LaurusImage draggable={false} alt={object.name} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
@@ -932,7 +932,7 @@ function ObjectGroupThumbnail({
           position: "absolute",
           inset: 0,
           backgroundColor: "rgba(0, 0, 0, 0.55)",
-          backdropFilter: "blur(6px)",
+          backdropFilter: "blur(2px)",
         }}
       />
       <SvgRepo
@@ -943,8 +943,6 @@ function ObjectGroupThumbnail({
           position: "relative",
           width: Math.round(size * 0.5),
           height: Math.round(size * 0.5),
-          // Dropped for an object behind the mask, which is exactly how it
-          // renders on the canvas: still there, not lit.
           filter: behind ? "none" : "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
         }}
       />
@@ -956,7 +954,6 @@ interface MaskObjectRow {
   maskKey: string;
   mask: LaurusMaskResult;
   object: LaurusObject;
-  /** What the drag handle reads, e.g. "1.1" -- the mask's row, then this row. */
   label: string;
   isEven: boolean;
   indexColumnStyle: { width: string; fontSize: number };
@@ -1012,11 +1009,6 @@ function MaskObjectRow({
         {...attributes}
         {...listeners}
         style={{
-          // alignSelf rather than height: 100%. This row's height comes from the
-          // content beside this cell, so a percentage resolves against a height
-          // that is not settled yet and the cell collapses to its own text --
-          // which is why the handle sat in the corner. Stretch is the flex way
-          // of saying "as tall as the row turns out to be".
           alignSelf: "stretch",
           background: "rgba(22, 22, 22, 0.9)",
           display: "grid",
@@ -1064,7 +1056,7 @@ function MaskObjectRow({
               ...filenameStyle,
             }}
           >
-            {object.name}
+            {object.description ? object.description : object.name ? object.name : `object ${object.id}`}
           </div>
           <div
             style={{
@@ -1095,25 +1087,6 @@ function MaskObjectRow({
   );
 }
 
-/**
- * The mask's own row, sitting at its own plane inside its stack.
- *
- * There is no separate divider: the sheet the objects are stacked around is the
- * mask itself, so the mask's row is what marks it. Everything above this row
- * renders in front of the mask and everything below renders behind it, and the
- * row carries the mask's real content -- thumbnail, name, its own buttons --
- * rather than a line labelled "the mask".
- *
- * Dragging it is the practical way to send objects behind the sheet. With every
- * object in front, this is the last row in the stack, so there is nothing below
- * an object to drop it onto and reaching behind the mask means aiming at this
- * row exactly. Moving the mask up through the stack says the same thing far
- * more easily: every object it passes ends up behind it.
- *
- * The two gestures produce the same orders -- restackFromDrop reads the plane's
- * index out of the dropped sequence and does not care which row moved to put it
- * there.
- */
 function MaskPlaneRow({
   maskKey,
   indexColumnStyle,
@@ -1137,8 +1110,6 @@ function MaskPlaneRow({
       style={{
         width: "100%",
         display: "flex",
-        // Marked off from the objects around it: this row is the boundary they
-        // are ordered against, not another member of the list.
         background: `rgba(255, 255, 255, ${(isEven ? 0.05 : 0.075) + (isRowHovered ? 0.02 : 0)})`,
         borderTop: "1px solid rgba(255, 255, 255, 0.25)",
         borderBottom: "1px solid rgba(255, 255, 255, 0.25)",
@@ -1153,7 +1124,6 @@ function MaskPlaneRow({
       <div
         {...attributes}
         {...listeners}
-        title="drag the mask through its own stack -- objects it passes end up behind it"
         style={{
           alignSelf: "stretch",
           background: "rgba(22, 22, 22, 0.9)",
@@ -1206,16 +1176,7 @@ function MediaGroupRow({
   objectRows,
 }: MediaGroupRow) {
   const { uiState } = useContext(UIContext);
-  /**
-   * Whether this mask is showing its stack, and so whether its own row has
-   * moved down into it.
-   *
-   * An open mask has no row of its own above the stack -- the plane's row *is*
-   * its row, which is what makes the sheet's place in the stack something you
-   * can see and drag rather than a line labelled "the mask". The handle on that
-   * row therefore drives the plane, not the group, so this also stands the
-   * group drag down: there is nothing left to start one with.
-   */
+  const { coreState } = useContext(CoreContext);
   const stackOpen = item.type === "mask" && objectRows !== undefined;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.key,
@@ -1271,6 +1232,19 @@ function MediaGroupRow({
   });
   const [isItemHovered, setIsItemHovered] = useState<boolean>(false);
   const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
+  const maskSourceFilename = useCallback(
+    (mask: LaurusMaskResult) => {
+      let filename = mask.source_img_media_id;
+      if (!mask) return filename;
+      coreState.canvasImgs.forEach((i) => {
+        if (i.img_media_id == mask.source_img_media_id) {
+          filename = i.media_key;
+        }
+      });
+      return filename;
+    },
+    [coreState.canvasImgs],
+  );
 
   const display = useMemo(() => {
     if (item.type !== "img" && item.type !== "mask") return undefined;
@@ -1508,7 +1482,7 @@ function MediaGroupRow({
                   ...dynamicSizes.filename.filename,
                 }}
               >
-                {item.mask.mask_media_id}
+                {maskSourceFilename(item.mask)}
               </div>
             </div>
             <div />
@@ -1617,10 +1591,6 @@ function MediaGroupRow({
         </div>
       )}
       {stackOpen && item.type === "mask" && objectRows !== undefined && (
-        // No DndContext of its own: these rows belong to the group's, so that a
-        // drag anywhere in the group is one gesture with one set of sensors.
-        // Only the SortableContext is local, which is what keeps an object row
-        // sorting against its own stack instead of against the group's media.
         <SortableContext items={objectRowIds} strategy={verticalListSortingStrategy}>
           {objectRows.map((row, i) => {
             if (row === MASK_PLANE_ROW) {
@@ -1644,9 +1614,6 @@ function MediaGroupRow({
                 maskKey={item.key}
                 mask={item.mask}
                 object={object}
-                // "1.1", "1.2" -- this mask's own row number, then the object's
-                // place in its stack, so a row says which mask it belongs to
-                // now that nothing indents it.
                 label={`${index + 1}.${(i < planeRowIndex ? i : i - 1) + 1}`}
                 isEven={i % 2 === 0}
                 indexColumnStyle={indexColumnStyle}

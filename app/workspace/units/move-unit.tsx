@@ -449,7 +449,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                   style={{
                     height: "100%",
                     display: "flex",
-                    overflowY: "hidden",
+                    overflow: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >

@@ -791,7 +791,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                   style={{
                     height: "100%",
                     display: "flex",
-                    overflowY: "hidden",
+                    overflow: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >
