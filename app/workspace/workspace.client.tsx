@@ -60,7 +60,11 @@ import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
 import { useMaskLightSockets } from "./hooks/useMaskLightSockets";
 import { useMaskObjectSockets } from "./hooks/useMaskObjectSockets";
-import { indicesInObjectFromCentroids, lightCenterFromCentroids } from "./canvas-media/light-geometry";
+import {
+  dropIndicesClaimedByObjects,
+  indicesInObjectFromCentroids,
+  lightCenterFromCentroids,
+} from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
@@ -1320,14 +1324,18 @@ export default function Workspace({
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
       const shape = unitCirclePath();
-      const polygonIndices = [
-        ...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, {
-          cx: circle.cx,
-          cy: circle.cy,
-          radius,
-          shape,
-        }),
-      ];
+      const geometry = maskGeometry(maskData);
+      // The disc the drag swept, minus whatever an object already on this mesh
+      // has a claim to. A triangle carries one object_id, so an overlap is the
+      // newcomer taking triangles off its neighbour rather than sharing them:
+      // the object already placed keeps its own, and this one is raised over
+      // what is left, with a lane of unclaimed mesh between the two.
+      const membership = dropIndicesClaimedByObjects(
+        indicesInObjectFromCentroids(geometry.centroids, { cx: circle.cx, cy: circle.cy, radius, shape }),
+        geometry,
+        maskData.polygons,
+      );
+      const polygonIndices = [...membership];
       if (polygonIndices.length === 0) return;
 
       const edit: PendingTopologyEdit = {
@@ -1340,6 +1348,10 @@ export default function Workspace({
         falloff: seed.falloff,
         shape,
         fill: seed.fill,
+        // Carried rather than left to be re-derived from the outline: the
+        // preview would otherwise light up the triangles this just gave away,
+        // then drop them again the moment the server's delta lands.
+        polygonIndices: membership,
       };
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });

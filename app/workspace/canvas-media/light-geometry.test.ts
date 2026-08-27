@@ -3,11 +3,13 @@ import { describe, it } from "node:test";
 import { objectSwellAt } from "../mask-gl.ts";
 import { centroidOf } from "./mask-geometry.ts";
 import {
+  dropIndicesClaimedByObjects,
   indicesInObjectFromCentroids,
   lightIdAtPoint,
   polygonIndexAtPoint,
   swelledPolygonIndexAtPoint,
 } from "./light-geometry.ts";
+import type { LaurusPolygonPath } from "../workspace.server.ts";
 import { cachedObjectShape, objectShapeDepthAt } from "./object-shape.ts";
 
 const CELL = 10;
@@ -169,5 +171,77 @@ describe("indicesInObjectFromCentroids -- the outline decides membership", () =>
     });
     assert.notDeepEqual([...before].sort(), [...after].sort());
     assert.ok(after.size > 0 && before.size > 0);
+  });
+});
+
+describe("dropIndicesClaimedByObjects -- the object already there wins", () => {
+  const geometry = grid();
+
+  function tagged(indices: Iterable<number>, objectId: number): LaurusPolygonPath[] {
+    const owned = new Set(indices);
+    return geometry.points.map((_, i) => ({
+      d: "",
+      fill: "#808080",
+      stroke: "none",
+      stroke_width: 0,
+      light_id: 0,
+      object_id: owned.has(i) ? objectId : 0,
+    }));
+  }
+
+  const left = indicesInObjectFromCentroids(geometry.centroids, { cx: 40, cy: 60, radius: 30, shape: "" });
+  const right = indicesInObjectFromCentroids(geometry.centroids, { cx: 75, cy: 60, radius: 30, shape: "" });
+
+  it("leaves an untagged mesh exactly as it found it", () => {
+    const kept = dropIndicesClaimedByObjects(right, geometry, tagged([], 1));
+    assert.deepEqual([...kept].sort(), [...right].sort());
+  });
+
+  it("drops every triangle the existing object already owns", () => {
+    const overlap = [...right].filter((i) => left.has(i));
+    assert.ok(overlap.length > 0, "the fixture must actually overlap");
+    const kept = dropIndicesClaimedByObjects(right, geometry, tagged(left, 1), { buffer: 0 });
+    assert.ok(overlap.every((i) => !kept.has(i)));
+    assert.ok(kept.size > 0, "the non-colliding part survives");
+  });
+
+  it("never touches the existing object's own membership", () => {
+    const polygons = tagged(left, 1);
+    const kept = dropIndicesClaimedByObjects(right, geometry, polygons);
+    left.forEach((i) => assert.ok(!kept.has(i), `triangle ${i} stayed with object 1`));
+  });
+
+  it("opens a wider lane as the buffer grows", () => {
+    const polygons = tagged(left, 1);
+    const flush = dropIndicesClaimedByObjects(right, geometry, polygons, { buffer: 0 });
+    const spaced = dropIndicesClaimedByObjects(right, geometry, polygons, { buffer: CELL * 2 });
+    assert.ok(spaced.size < flush.size, `buffered ${spaced.size} vs flush ${flush.size}`);
+    spaced.forEach((i) => assert.ok(flush.has(i), "a buffer only ever removes"));
+  });
+
+  it("exempts the object being recomputed, so an edit does not eat itself", () => {
+    const polygons = tagged(left, 1);
+    const kept = dropIndicesClaimedByObjects(left, geometry, polygons, { objectId: 1 });
+    assert.deepEqual([...kept].sort(), [...left].sort());
+  });
+
+  it("keeps a reshaped object's own triangles while it loses the neighbour's", () => {
+    // what the pen sees: object 2 already sits to the right of object 1, and
+    // an anchor is dragged out over it. It keeps everything it already had and
+    // gives up everything object 1 holds.
+    const ownedByTwo = new Set([...right].filter((i) => !left.has(i)));
+    assert.ok(ownedByTwo.size > 0 && left.size > 0, "the fixture must tag both");
+    const polygons = geometry.points.map((_, i) => ({
+      d: "",
+      fill: "#808080",
+      stroke: "none",
+      stroke_width: 0,
+      light_id: 0,
+      object_id: left.has(i) ? 1 : ownedByTwo.has(i) ? 2 : 0,
+    }));
+    const reshaped = indicesInObjectFromCentroids(geometry.centroids, { cx: 60, cy: 60, radius: 45, shape: "" });
+    const kept = dropIndicesClaimedByObjects(reshaped, geometry, polygons, { objectId: 2, buffer: 0 });
+    [...reshaped].filter((i) => ownedByTwo.has(i)).forEach((i) => assert.ok(kept.has(i), `kept its own ${i}`));
+    [...reshaped].filter((i) => left.has(i)).forEach((i) => assert.ok(!kept.has(i), `gave up ${i}`));
   });
 });

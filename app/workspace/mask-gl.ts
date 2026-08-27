@@ -22,6 +22,14 @@ export const MAX_MASK_OBJECT_FALLOFF = 6.0;
 // is a convention rather than a true identity, and it matches the server's NEUTRAL_FRAME.
 export const NEUTRAL_MASK_OBJECT_FALLOFF = 2.0;
 export const MIN_MASK_OBJECT_RADIUS_PX = 8;
+// The gap a newly raised object leaves around an object already on the mesh,
+// in mesh pixels. Membership is a triangle at a time, so two objects that meet
+// share an edge and read as one blob at the seam; a buffer wider than nothing
+// makes the older object's rim the boundary and leaves a lane of unclaimed
+// mesh on the near side of it. Measured from a candidate triangle's centroid
+// to the nearest point of a claimed one, so zero still drops the overlap
+// itself and only the separation is tunable. See dropIndicesClaimedByObjects.
+export const MASK_OBJECT_COLLISION_BUFFER_PX = 6;
 export const MASK_OBJECT_SWELL = 0.5;
 export const MASK_OBJECT_SWELL_LIMIT = 0.9;
 export const OBJECT_SDF_GRID = 4;

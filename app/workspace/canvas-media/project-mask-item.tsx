@@ -52,6 +52,7 @@ import {
   lightCenterFromCentroids,
   lightIdAtPoint,
   centerOfIndices,
+  dropIndicesClaimedByObjects,
   indicesInObjectFromCentroids,
   objectIdAtPoint,
   swelledPolygonIndexAtPoint,
@@ -115,6 +116,37 @@ function maskEditSubjectFor(
   if (session?.maskKey !== maskKey) return undefined;
   const region = editedRegion(session);
   return region && { subject: session.subject, id: region.id };
+}
+
+/**
+ * The membership an edit claims, with whatever a *different* object already
+ * owns subtracted back out -- the outline's answer, refereed.
+ *
+ * The reshape half of the rule a fresh drop obeys in createObject: `object_id`
+ * is one field per triangle, so an outline dragged across a neighbour does not
+ * come to share those triangles, it takes them, and the object that was
+ * already there is the one somebody has already placed and accepted. So it
+ * keeps what it has and the edit gives up the overlap, plus the buffer lane
+ * dropIndicesClaimedByObjects opens between the two.
+ *
+ * A light session passes straight through. `light_id` and `object_id` are
+ * separate fields, so a light and an object may cover the same triangle
+ * without either one losing anything, and there is no collision to referee.
+ *
+ * The edited object exempts itself, or every commit would shave its own rim.
+ * A candidate under review is untagged until it is accepted, so for one of
+ * those the exemption is simply a no-op.
+ */
+function withoutNeighbouringObjects(
+  indices: Set<number>,
+  session: MaskEditSession,
+  geometry: MaskGeometry,
+  polygons: LaurusPolygonPath[],
+): Set<number> {
+  if (session.subject !== "object") return indices;
+  const edited = editedRegion(session);
+  if (!edited) return indices;
+  return dropIndicesClaimedByObjects(indices, geometry, polygons, { objectId: edited.id });
 }
 
 function sameIndices(a: Set<number>, b: Set<number>): boolean {
@@ -835,10 +867,21 @@ export function ProjectMaskItem({
         // in was left unpainted until the next drag brought it along. Asked at
         // the resolution the gesture is already rasterizing at, so it reads the
         // shape resolveObjectUniforms builds rather than forcing its own.
-        polygonIndices: indicesInObjectFromCentroids(
-          maskGeometryRef.current.centroids,
-          { cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path },
-          draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE,
+        // Minus whatever a neighbouring object already owns, on the same rule
+        // a fresh drop obeys: a triangle carries one object_id, so an outline
+        // dragged over a neighbour is taking its triangles rather than sharing
+        // them, and the object already on the mesh keeps its own. Subtracted
+        // here as well as at the commit so the relief the drag is showing is
+        // the relief the release will settle on, buffer lane and all.
+        polygonIndices: dropIndicesClaimedByObjects(
+          indicesInObjectFromCentroids(
+            maskGeometryRef.current.centroids,
+            { cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path },
+            draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE,
+          ),
+          maskGeometryRef.current,
+          polygonsRef.current,
+          { objectId: candidate.id },
         ),
         draft,
       };
@@ -879,7 +922,12 @@ export function ProjectMaskItem({
     (region: { cx: number; cy: number; radius: number; shape: string }) => {
       const review = uiState.maskEdit;
       if (!review || review.maskKey !== mediaKey || isMaskEditLocked(review)) return;
-      const indices = indicesInObjectFromCentroids(maskGeometryRef.current.centroids, region);
+      const indices = withoutNeighbouringObjects(
+        indicesInObjectFromCentroids(maskGeometryRef.current.centroids, region),
+        review,
+        maskGeometryRef.current,
+        polygonsRef.current,
+      );
       uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
       // routes straight back to this component's own setObjectReviewPreview,
       // which sets the ref and repaints
@@ -937,20 +985,27 @@ export function ProjectMaskItem({
     if (result.added === 0) return;
 
     const patched = { ...maskData, polygons: result.polygons };
+    // The recut answers membership from the curve alone -- and a rim triangle
+    // it cut may have belonged to a neighbouring object all along, in which
+    // case the fragment inside the curve carries that neighbour's tag (see
+    // retouchMesh, which deliberately leaves tags alone). Refereed here for
+    // the same reason the reshape is: the object already on the mesh wins.
+    // Against the recut mesh, whose geometry syncObjects below then reuses.
+    const indices = withoutNeighbouringObjects(result.indices, session, maskGeometry(patched), result.polygons);
     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
     uiDispatch({
       type: UIActionType.SetMaskEditRetouch,
       retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
     });
-    uiDispatch({ type: UIActionType.SetMaskEditIndices, indices: result.indices });
+    uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
     notifyMaskObjectsUpdated(mediaKey, patched);
-    notifyMaskObjectReviewPreview(mediaKey, result.indices, objectReviewDiffBaseRef.current);
+    notifyMaskObjectReviewPreview(mediaKey, indices, objectReviewDiffBaseRef.current);
 
     // the relief preview names the triangles it is raised over, and the recut
     // has just renumbered them
     const pending = coreState.pendingTopologyEdit;
     if (pending?.maskKey === mediaKey) {
-      const next = { ...pending, polygonIndices: result.indices };
+      const next = { ...pending, polygonIndices: indices };
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: next });
       notifyMaskPendingTopologySet(mediaKey, next);
     }
