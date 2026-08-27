@@ -56,6 +56,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   const {
     notifyMaskToolChanged,
     notifyMaskSelectionChanged,
+    notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
     deleteObject,
     restackMaskObjects,
@@ -465,26 +466,23 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const onMaskContextMenuClick = useCallback(
     (key: string) => {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: { key, type: "mask" } });
+      notifyMaskSelectionChanged(key);
+      notifyMaskSelectedLightChanged(key, undefined);
+      notifyMaskSelectedObjectChanged(key, undefined);
       uiDispatch({ type: UIActionType.SetProjectContextMenu, key, showContextMenu: true });
     },
-    [uiDispatch],
+    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged],
   );
 
-  /**
-   * Selecting an object from its row.
-   *
-   * The same pair of dispatches the carousel and the canvas make, so an object
-   * picked here is the object every other panel is talking about -- which is
-   * what makes the row a way into the object and not just a handle for dragging
-   * it.
-   */
   const onObjectSelectClick = useCallback(
     (maskKey: string, objectId: number) => {
       uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
       notifyMaskSelectionChanged(maskKey);
       notifyMaskSelectedObjectChanged(maskKey, objectId);
+      notifyMaskSelectedLightChanged(maskKey, undefined);
     },
-    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged],
+    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged, notifyMaskSelectedLightChanged],
   );
 
   const onObjectDeleteClick = useCallback(

@@ -2277,6 +2277,9 @@ export function ProjectMaskItem({
                     select(alreadySelected ? { key: mediaKey, type: "mask" } : hit);
                     return;
                   }
+                  if (previouslySelectedLightId !== undefined || previouslySelectedObjectId !== undefined) {
+                    select({ key: mediaKey, type: "mask" });
+                  }
                 }
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
@@ -2303,13 +2306,14 @@ export function ProjectMaskItem({
                   return next;
                 });
               }
-              const hit = e.metaKey ? hitSubElement() : undefined;
+              const aimsContextMenu = e.metaKey || uiState.tool.type === "contextmenu";
+              const hit = aimsContextMenu ? hitSubElement() : undefined;
               const hitLightId = hit?.type === "light" ? hit.lightId : undefined;
               const hitObjectId = hit?.type === "object" ? hit.objectId : undefined;
               if (hit) {
                 select(hit);
               } else if (
-                showContextMenu &&
+                aimsContextMenu &&
                 (previouslySelectedLightId !== undefined || previouslySelectedObjectId !== undefined)
               ) {
                 select({ key: mediaKey, type: "mask" });
