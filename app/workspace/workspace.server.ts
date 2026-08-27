@@ -1,4 +1,5 @@
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
+import { OBJECT_ORDER_UNRANKED } from "./canvas-media/object-order.ts";
 
 const onNotOk = (status: number, message?: string) => {
   const suffix = message ? ` ${message}` : "";
@@ -367,6 +368,30 @@ export interface Object_V1_0 {
    * object to be lifted and look no different at rest.
    */
   lift: boolean;
+  /**
+   * Where this object sits in its parent mask's stack -- relative to that mask
+   * and scoped no further, so two objects on different masks say nothing to
+   * each other through it.
+   *
+   * Zero is the mask's own plane rather than an object slot. Positive puts the
+   * object in front of the mask, negative behind it, and the magnitude ranks it
+   * against the mask's other objects on the same side. A mask holding three
+   * ordered objects therefore reads -1, 1, 2: no 0 in it, because 0 is the
+   * sheet they are stacked around.
+   *
+   * What it decides is occlusion during playback -- an object behind the mask
+   * shows only where the mask is transparent, and where two travelling objects
+   * meet the higher order takes the pixel. A negative order also raises no
+   * relief at all, since an object behind the sheet cannot emboss it. All three
+   * rules live in mask-gl.ts.
+   *
+   * 0 is the *unranked* state rather than a broken one: normalizeObject leaves
+   * it there for every object stored before this field existed, and the
+   * stacking order resolves a run of them by object id (see stackedObjects), so
+   * such a mask keeps the stacking it already had. The first reorder anyone
+   * performs numbers the whole mask.
+   */
+  order: number;
 }
 export type LaurusObject = Object_V1_0;
 
@@ -432,7 +457,14 @@ export type LaurusMaskResult = MaskMediaResult_V1_0;
 
 type RawObject_V1_0 = Omit<
   Object_V1_0,
-  "name" | "falloff" | "shape" | `fill_${"r" | "g" | "b" | "a" | "h" | "s"}` | "description" | "reviewed" | "lift"
+  | "name"
+  | "falloff"
+  | "shape"
+  | `fill_${"r" | "g" | "b" | "a" | "h" | "s"}`
+  | "description"
+  | "reviewed"
+  | "lift"
+  | "order"
 > & {
   name?: string;
   falloff?: number;
@@ -446,6 +478,7 @@ type RawObject_V1_0 = Omit<
   description?: string;
   reviewed?: boolean;
   lift?: boolean;
+  order?: number;
 };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
 
@@ -464,6 +497,7 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
     lift: object.lift ?? true,
+    order: object.order ?? OBJECT_ORDER_UNRANKED,
   };
 }
 
@@ -847,9 +881,85 @@ export interface MaskObjectUpdateRequest_V1_0 {
   description: string;
   reviewed: boolean;
   lift: boolean;
+  order: number;
   remove: boolean;
   polygon_indices: number[];
   retouch?: RetouchedMesh_V1_0;
+}
+
+/**
+ * An object with nothing placed on it yet -- the blank a caller drawing a new
+ * one fills in.
+ *
+ * The twin of newLight, and here for the same reason: an object edit is a
+ * full-replace, so the fields a *creating* caller does not care about still
+ * have to be spelled out, and spelling them out at the call site is what makes
+ * a field added later invisible there. Geometry is the caller's to supply --
+ * an object with no radius is not one the server will keep (see
+ * update_mask_object_in_redis, which reads `radius <= 0` as a removal) -- and
+ * everything else rests at the value an untouched object has.
+ */
+export function newObject(id: number, name: string): Object_V1_0 {
+  return {
+    id,
+    name,
+    cx: 0,
+    cy: 0,
+    radius: 0,
+    elevation: 0,
+    falloff: OBJECT_FALLOFF_DEFAULT,
+    shape: "",
+    ...toObjectFillFields(OBJECT_FILL_DEFAULT),
+    description: "",
+    reviewed: false,
+    lift: true,
+    order: OBJECT_ORDER_UNRANKED,
+  };
+}
+
+/**
+ * Build one object edit from the object as it stands, changing only what is
+ * named.
+ *
+ * The exact twin of toLightUpdate, written for the exact reason that one was.
+ * An object edit is a full-replace -- the server rewrites every field from this
+ * payload -- so an omitted field is indistinguishable from a deliberate reset,
+ * and a field added *after* a call site was written is invisible at it: nothing
+ * errors, nothing type-checks differently, and the loss surfaces in a feature
+ * nobody was touching.
+ *
+ * That already happened once here, to `object_id` on the polygons (see
+ * repolygon on the server). This side had four call sites hand-building the
+ * request instead -- a drawn object, a deleted one, a reviewed one, and the
+ * light-source bar's queue -- which is four places for the next field to go
+ * missing. Route every object write through here and a new field is a one-line
+ * change in this file.
+ *
+ * `polygon_indices` is required rather than defaulted for the same reason it is
+ * on toLightUpdate: membership lives on the mask's polygons, not on the object,
+ * so there is nothing here to carry forward.
+ */
+export function toObjectUpdate(
+  object: Object_V1_0,
+  changes: Partial<Omit<MaskObjectUpdateRequest_V1_0, "object_id">> & { polygon_indices: number[] },
+): MaskObjectUpdateRequest_V1_0 {
+  return {
+    object_id: object.id,
+    name: object.name,
+    cx: object.cx,
+    cy: object.cy,
+    radius: object.radius,
+    elevation: object.elevation,
+    falloff: object.falloff,
+    shape: object.shape,
+    ...toObjectFillFields(toObjectFill(object)),
+    description: object.description,
+    reviewed: object.reviewed,
+    lift: object.lift,
+    order: object.order,
+    remove: false,
+    ...changes,
+  };
 }
 
 export function toObjectFillFields(fill: ObjectFill_V1_0) {

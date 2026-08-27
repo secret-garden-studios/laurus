@@ -1,4 +1,5 @@
 import type { MaskCurve_V1_0, ObjectFill_V1_0 } from "./workspace.server";
+import { isBehindMask } from "./canvas-media/object-order.ts";
 import {
   OBJECT_SDF_MARGIN,
   OBJECT_SDF_TILE,
@@ -83,6 +84,46 @@ const OBJECT_FIELD_GLSL = `
 uniform mediump vec4 u_objects[MAX_MASK_OBJECTS];
 uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
 uniform mediump int u_objectCount;
+
+// Where each object sits in the mask's own stack. Zero is the mask's plane
+// rather than a slot an object occupies: a positive order is in front of the
+// sheet, a negative one behind it, and the magnitude ranks an object against
+// the others on its side. See Object_V1_0.order.
+//
+// Three things read it, and only these three. Relief skips an object behind the
+// sheet entirely -- a thing under a page does not emboss the page, and letting
+// it would put a travelling bump on screen over exactly the opaque ground the
+// object is supposed to be hidden behind. Compositing splits the travelling
+// layer by its sign, so what an object behind the mask carries shows only where
+// the mask is transparent. And where two objects cover the same pixel the
+// higher order takes it, in place of the depth tie-break that used to settle it
+// alone -- which is still the tie-break, but now only among equals.
+//
+// Equals are real rather than hypothetical: every object stored before ordering
+// existed reads back at 0, so a whole mask of them ties, and the depth rule is
+// what keeps such a mask looking exactly as it did. Hence the epsilon
+// comparisons below rather than == on a float.
+uniform mediump float u_objectOrders[MAX_MASK_OBJECTS];
+#define OBJECT_ORDER_EPSILON 0.5
+
+// Both of these take an order rather than the slot it came out of, and have to:
+// GLSL ES 1.00 only lets a uniform array be indexed by a loop index or a
+// constant, and a function parameter is neither however plainly it is one at
+// every call site. Reading u_objectOrders[i] in here compiles nowhere -- so the
+// read stays out in the loop, where i really is the loop's own index, and only
+// the value it found comes in.
+bool objectBehindMask(float order) {
+  return order < 0.0;
+}
+
+// Whether an object beats the best found so far, at a pixel each of them
+// covers: higher order first, and deeper inside its own outline only among
+// objects of the same order.
+bool objectOutranks(float order, float bestOrder, float u, float nearest) {
+  if (order > bestOrder + OBJECT_ORDER_EPSILON) return true;
+  if (order < bestOrder - OBJECT_ORDER_EPSILON) return false;
+  return u < nearest;
+}
 
 // Each object's rotate3d, reduced to the 2x2 that survives dropping z -- and
 // stored already inverted, mesh offset to shape-local, because sampling only
@@ -190,6 +231,7 @@ vec3 objectField(vec2 p) {
   vec3 field = vec3(0.0);
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
+    if (objectBehindMask(u_objectOrders[i])) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float elevation = u_objects[i].w;
     vec3 profileU = objectU(
@@ -209,6 +251,12 @@ vec2 objectSwell(vec2 p) {
   vec2 swell = vec2(0.0);
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
+    // Skipped for the same reason objectField skips it, and it has to be the
+    // same test in both: this displaces the vertices whose normals that one
+    // tilts, so an object contributing to one and not the other would light a
+    // surface that is not the surface being drawn. isActiveObject is the CPU
+    // twin of exactly this guard.
+    if (objectBehindMask(u_objectOrders[i])) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float radius = u_objects[i].z;
     float u = objectU(
@@ -363,6 +411,11 @@ uniform mediump vec4 u_objectLifts[MAX_MASK_OBJECTS];
 struct ObjectLift {
   vec2 uv;
   float body;
+  // The same two again for the objects stacked behind the mask, kept apart from
+  // the pair above because the two layers composite on opposite sides of the
+  // sheet -- see the fragment's main, where they are laid down in order.
+  vec2 underUv;
+  float under;
   float hole;
 };
 
@@ -376,8 +429,12 @@ float objectCoverage(float u, float radius) {
 }
 
 ObjectLift objectLift(vec2 meshPos) {
-  ObjectLift lift = ObjectLift(gl_FragCoord.xy / u_resolution, 0.0, 0.0);
+  vec2 own = gl_FragCoord.xy / u_resolution;
+  ObjectLift lift = ObjectLift(own, 0.0, own, 0.0, 0.0);
   float nearest = 1.0;
+  float bestOrder = -1e9;
+  float underNearest = 1.0;
+  float underBestOrder = -1e9;
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     if (u_objectLifts[i].w < 0.5) continue;
@@ -397,20 +454,42 @@ ObjectLift objectLift(vec2 meshPos) {
     // one was never turned.
     float body = objectU(row, maxDepth, meshPos - center, radius, u_objectRotations[i]).x;
     float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius, OBJECT_ROTATION_NONE).x;
-    lift.body = max(lift.body, objectCoverage(body, radius));
+    float coverage = objectCoverage(body, radius);
+    // The hole is not split by side, and must not be: a footprint is vacated by
+    // the object leaving it whichever way the object then stacks, and an object
+    // behind the mask is carrying the mask's own pixels away from exactly the
+    // ground the mask is drawn on. Punching it is what makes the piece read as
+    // having detached rather than as a copy sliding out from under a whole one.
     lift.hole = max(lift.hole, objectCoverage(rest, restRadius));
 
-    // Deepest cover wins the sample, so two lifted objects overlapping read one
-    // image each rather than averaging into a double exposure.
-    if (body < nearest) {
-      nearest = body;
-      float scale = radius / restRadius;
-      vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
-      // Reading the image back through the whole transform, not just the scale:
-      // the object got to where it is by being scaled and then turned, so the
-      // texel it is standing on is found by undoing both, in that order.
-      vec2 there = restCenter + objectToShape(u_objectRotations[i], here - center) / scale;
-      lift.uv = vec2(there.x, u_resolution.y - there.y) / u_resolution;
+    float scale = radius / restRadius;
+    vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+    // Reading the image back through the whole transform, not just the scale:
+    // the object got to where it is by being scaled and then turned, so the
+    // texel it is standing on is found by undoing both, in that order.
+    vec2 there = restCenter + objectToShape(u_objectRotations[i], here - center) / scale;
+    vec2 sampled = vec2(there.x, u_resolution.y - there.y) / u_resolution;
+
+    // The higher order takes the sample, and depth settles it only between
+    // objects of the same order -- which is what keeps two overlapping pieces
+    // reading one image each rather than averaging into a double exposure, the
+    // job depth alone used to do. Accumulated per side, so a piece behind the
+    // mask never wins the sample the layer in front of it is drawn from.
+    float order = u_objectOrders[i];
+    if (objectBehindMask(order)) {
+      lift.under = max(lift.under, coverage);
+      if (objectOutranks(order, underBestOrder, body, underNearest)) {
+        underBestOrder = order;
+        underNearest = body;
+        lift.underUv = sampled;
+      }
+    } else {
+      lift.body = max(lift.body, coverage);
+      if (objectOutranks(order, bestOrder, body, nearest)) {
+        bestOrder = order;
+        nearest = body;
+        lift.uv = sampled;
+      }
     }
   }
   return lift;
@@ -497,9 +576,9 @@ ${OBJECT_LIFT_GLSL}
 // The flat fill an object's own color paints over its interior, as
 // vec4(rgb, alpha) -- read before any lighting is applied, so highlight,
 // shadow and bump shading all still land on top of it exactly as they would
-// on a textured object. Where two filled objects overlap, whichever one's
-// point sits deepest inside its own outline wins the sample, the same
-// tie-break objectLift uses to keep overlapping objects from blending into
+// on a textured object. Where two filled objects overlap the higher order
+// takes the sample and depth settles the rest, the same tie-break objectLift
+// uses -- and the same reason, to keep overlapping objects from blending into
 // each other.
 //
 // This fills the outline, which is a smoothed description of the region and
@@ -508,16 +587,24 @@ ${OBJECT_LIFT_GLSL}
 // and leaves their slots here at zero alpha. What is left for this is the
 // objects an effect is animating: a vertex attribute cannot travel, and their
 // colour has to arrive wherever the pose does.
-vec4 objectFill(vec2 p) {
+vec4 objectFill(vec2 p, bool behind) {
   vec4 fill = vec4(0.0);
   float nearest = 1.0;
+  float bestOrder = -1e9;
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     if (u_objectFills[i].a <= 0.0) continue;
+    // One side at a time, because the two are painted into different layers:
+    // an animating object's colour has to arrive wherever its pose does, and
+    // for an object behind the mask that is underneath the mask's own pixels.
+    float order = u_objectOrders[i];
+    if (objectBehindMask(order) != behind) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float u = objectU(
       u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
-    if (u >= 1.0 || u >= nearest) continue;
+    if (u >= 1.0) continue;
+    if (!objectOutranks(order, bestOrder, u, nearest)) continue;
+    bestOrder = order;
     nearest = u;
     fill = u_objectFills[i];
   }
@@ -534,19 +621,28 @@ void main() {
   ObjectLift lift = objectLift(v_meshPos);
   vec4 mask = texture2D(u_mask, v_uv);
 
-  // Two layers, composited. Writing that down is the point of this block: the
-  // three things that used to live here were each a special case of it, and
-  // each of them was discovered by something looking wrong on screen.
+  // Three layers, composited back to front. Writing that down is the point of
+  // this block: the three things that used to live here were each a special
+  // case of it, and each of them was discovered by something looking wrong on
+  // screen.
   //
   // The resting layer is the mask as it sits -- the picture at this fragment's
   // own position, seen through the silhouette, less whatever a lift has taken
-  // away from here. The travelling layer is the piece a lifted object is
-  // carrying over this fragment. Source-over between them, in straight rather
-  // than premultiplied alpha, which is how the context is configured and how
-  // gl_FragColor is read.
+  // away from here. On either side of it sits a travelling layer: the piece a
+  // lifted object is carrying over this fragment, in front of the mask or
+  // behind it according to that object's order. Source-over throughout, in
+  // straight rather than premultiplied alpha, which is how the context is
+  // configured and how gl_FragColor is read.
+  //
+  // The layer behind is the whole of what an order below zero buys. The mask
+  // occludes it exactly as far as the mask is opaque, so a piece travelling
+  // under the sheet surfaces only through the transparency in it -- and since a
+  // negative order raises no relief either (see objectField), that is the only
+  // way such a piece is ever seen at all.
   vec2 restingUv = gl_FragCoord.xy / u_resolution;
   vec4 restingTexel = u_hasTexture > 0.5 ? texture2D(u_texture, restingUv) : vec4(v_color, 1.0);
   vec4 carriedTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv) : vec4(v_color, 1.0);
+  vec4 underTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.underUv) : vec4(v_color, 1.0);
 
   // What the travelling layer delivers: coverage of the object's outline times
   // the source's own alpha at the texel being carried. An outline is a
@@ -587,12 +683,28 @@ void main() {
   float restingCoverage = u_hasTexture > 0.5 ? restingTexel.a : mix(1.0, mask.a, u_maskActive);
   float restingAlpha = restingCoverage * (1.0 - lift.hole);
 
-  float alpha = carried + restingAlpha * (1.0 - carried);
+  // What the layer behind the mask delivers, tinted by its own object's fill
+  // before anything above it is laid down. The fill rides on this layer rather
+  // than on 'base' below for the same reason the pixels do: a colour belonging
+  // to a piece behind the sheet has to be occluded by the sheet, and painting
+  // it into the composite would put it in front of the mask instead.
+  vec4 behindFill = objectFill(v_meshPos, true);
+  float under = lift.under * underTexel.a;
+  vec3 underRgb = mix(underTexel.rgb, behindFill.rgb, behindFill.a);
+
+  // The mask laid over what is behind it. Everything above reads this pair as
+  // one layer, which is what keeps the front travelling layer's own compositing
+  // -- and 'beneath' with it -- exactly the arithmetic it already was.
+  float lowerAlpha = restingAlpha + under * (1.0 - restingAlpha);
+  float safeLower = max(lowerAlpha, 1e-4);
+  vec3 lowerRgb =
+    (restingTexel.rgb * restingAlpha + underRgb * under * (1.0 - restingAlpha)) / safeLower;
+
+  float alpha = carried + lowerAlpha * (1.0 - carried);
   // Guarded rather than branched: the numerator vanishes with the denominator,
   // and at an alpha this low there is nothing to see either way.
   float safeAlpha = max(alpha, 1e-4);
-  vec3 textured =
-    (carriedTexel.rgb * carried + restingTexel.rgb * restingAlpha * (1.0 - carried)) / safeAlpha;
+  vec3 textured = (carriedTexel.rgb * carried + lowerRgb * lowerAlpha * (1.0 - carried)) / safeAlpha;
 
   // The resting layer's share of the result, and so how much of the mask's own
   // decoration still belongs to this fragment. Everything below that is
@@ -600,9 +712,15 @@ void main() {
   // wireframe, the glow -- is scaled by it. That is what makes a lift read as
   // a cut-out on a plane above the mask instead of something sliding along
   // underneath its markings.
+  //
+  // Still the *resting* layer's share alone, and deliberately not the lower
+  // pair's: the layer behind the mask is occluded by the mask exactly where the
+  // mask has decoration to scale, so it takes nothing away from it. Reading
+  // lowerAlpha here instead would let a piece passing underneath brighten the
+  // wireframe and the glow it is supposed to be hidden behind.
   float beneath = restingAlpha * (1.0 - carried) / safeAlpha;
 
-  vec4 fill = objectFill(v_meshPos);
+  vec4 fill = objectFill(v_meshPos, false);
   vec3 base = mix(textured, fill.rgb, fill.a);
   // The same fill, per-triangle: a mesh is what an object is made of, so its
   // triangles are what its colour belongs to, and the shape test above can
@@ -746,6 +864,7 @@ export interface GLState {
   objectsLoc: WebGLUniformLocation;
   objectRotationsLoc: WebGLUniformLocation;
   objectFalloffsLoc: WebGLUniformLocation;
+  objectOrdersLoc: WebGLUniformLocation;
   objectCountLoc: WebGLUniformLocation;
   objectShapesLoc: WebGLUniformLocation;
   objectShapeRowsLoc: WebGLUniformLocation;
@@ -871,6 +990,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const objectsLoc = gl.getUniformLocation(program, "u_objects");
   const objectRotationsLoc = gl.getUniformLocation(program, "u_objectRotations");
   const objectFalloffsLoc = gl.getUniformLocation(program, "u_objectFalloffs");
+  const objectOrdersLoc = gl.getUniformLocation(program, "u_objectOrders");
   const objectCountLoc = gl.getUniformLocation(program, "u_objectCount");
   const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
   const objectShapeRowsLoc = gl.getUniformLocation(program, "u_objectShapeRows");
@@ -904,6 +1024,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !objectsLoc ||
     !objectRotationsLoc ||
     !objectFalloffsLoc ||
+    !objectOrdersLoc ||
     !objectCountLoc ||
     !objectShapesLoc ||
     !objectShapeRowsLoc ||
@@ -949,6 +1070,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     objectsLoc,
     objectRotationsLoc,
     objectFalloffsLoc,
+    objectOrdersLoc,
     objectCountLoc,
     objectShapesLoc,
     objectShapeRowsLoc,
@@ -1081,6 +1203,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
     const falloffs = new Float32Array(activeObjects.length);
+    const orders = new Float32Array(activeObjects.length);
     const fills = new Float32Array(activeObjects.length * 4);
     // Written for every slot in play on every draw, lifted or not: the w is
     // the "is this one lifted" flag, and a slot left alone would go on being
@@ -1096,6 +1219,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       objects[i * 4 + 2] = Math.max(object.radius, 1);
       objects[i * 4 + 3] = object.elevation;
       falloffs[i] = Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF);
+      orders[i] = object.order;
       fills[i * 4] = object.fill?.r ?? 0;
       fills[i * 4 + 1] = object.fill?.g ?? 0;
       fills[i * 4 + 2] = object.fill?.b ?? 0;
@@ -1113,6 +1237,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform4fv(state.objectsLoc, objects);
     gl.uniform4fv(state.objectRotationsLoc, rotations);
     gl.uniform1fv(state.objectFalloffsLoc, falloffs);
+    gl.uniform1fv(state.objectOrdersLoc, orders);
     gl.uniform4fv(state.objectFillsLoc, fills);
     gl.uniform4fv(state.objectLiftsLoc, lifts);
   }
@@ -1358,12 +1483,30 @@ function assembleMaskMeshPositions(
   return { positions, uvs, centroids };
 }
 
+/**
+ * The part of an object that answers "is this point inside it" -- its
+ * silhouette, its size and how it is turned, and nothing else.
+ *
+ * Every object is one of these; not everything that needs to ask is an object.
+ */
+export type ObjectOutline = Pick<ObjectGeometryInput, "cx" | "cy" | "radius" | "shape" | "rotation">;
+
 export interface ObjectGeometryInput {
   cx: number;
   cy: number;
   radius: number;
   elevation: number;
   falloff: number;
+  /**
+   * Where this object sits in the mask's stack -- see Object_V1_0.order, and
+   * u_objectOrders for the three things the shader does with it.
+   *
+   * Required rather than defaulted, unlike the four optional fields below it.
+   * A missing order would read as 0, and 0 is in front of the mask: an object
+   * meant to be behind it would silently render in front, which is the one
+   * mistake here that looks like nothing being wrong.
+   */
+  order: number;
   shape?: ObjectShape;
   fill?: ObjectFill_V1_0;
   /**
@@ -1464,8 +1607,17 @@ export function objectToShape(rotation: ObjectRotation | undefined, x: number, y
  * `elevation * profile` and objectField accumulates `elevation * profile`, so a
  * flat object moves no vertex and tilts no normal however large its radius.
  * There is nothing to subdivide for and nothing to swell a hit-test against.
+ *
+ * An order behind the mask makes it false whatever the elevation, because both
+ * of those shader functions skip such an object outright -- a thing under a page
+ * does not emboss the page. This is the CPU twin of that guard and has to stay
+ * the same test: the mesh swell, the subdivision and the swelled hit-tests are
+ * all answers to "where did the geometry actually end up", and one of them
+ * disagreeing with the shader puts a light or a cursor somewhere the surface is
+ * not.
  */
 export function isActiveObject(object: ObjectGeometryInput): boolean {
+  if (isBehindMask(object)) return false;
   return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
 }
 
@@ -1484,6 +1636,11 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
  */
 export function isDrawnObject(object: ObjectGeometryInput): boolean {
   if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  // Behind the mask, relief is not one of the things an object draws: the
+  // shader skips it, so elevation alone puts nothing on screen and would only
+  // cost a slot. What such an object can still show is what it carries and what
+  // it fills, both of which surface through the mask's own transparency.
+  if (isBehindMask(object)) return (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
   return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
 }
 
@@ -1514,8 +1671,13 @@ export function objectProfileK(u: number, falloff: number): number {
  * 0 at the object's deepest interior point, 1 at its outline, above 1 outside
  * it. Callers asking "is this point in the object" want `u < 1`, which is the
  * same test the shader's early-out makes.
+ *
+ * Takes an outline rather than a whole object because that is all it reads, and
+ * because most of what asks it is not holding an object at all -- a hit-test
+ * and a membership sweep both build a bare silhouette to ask about, and neither
+ * has an elevation or a place in the stack to give.
  */
-export function objectProfileUAt(object: ObjectGeometryInput, point: [number, number]): number {
+export function objectProfileUAt(object: ObjectOutline, point: [number, number]): number {
   const [nx, ny] = objectToShape(
     object.rotation,
     (point[0] - object.cx) / object.radius,

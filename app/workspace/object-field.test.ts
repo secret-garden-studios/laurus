@@ -28,7 +28,7 @@ import { OBJECT_SDF_TILE, buildObjectShapeFromRings } from "./canvas-media/objec
 const FALLOFFS = [1, 2, 4, 6];
 
 function object(over: Partial<ObjectGeometryInput> = {}): ObjectGeometryInput {
-  return { cx: 100, cy: 100, radius: 50, elevation: 80, falloff: 2, ...over };
+  return { cx: 100, cy: 100, radius: 50, elevation: 80, falloff: 2, order: 1, ...over };
 }
 
 const opaqueRed = { r: 1, g: 0, b: 0, a: 1, h: 0, s: 1 };

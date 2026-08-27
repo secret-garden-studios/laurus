@@ -36,10 +36,17 @@ import {
   MaskObjectUpdateRequest_V1_0,
   LaurusObjectFill,
   newLight,
+  newObject,
   toLightUpdate,
-  toObjectFill,
   toObjectFillFields,
+  toObjectUpdate,
 } from "./workspace.server";
+import {
+  frontObjectOrder,
+  reorderObjects,
+  type ObjectOrderChange,
+  type ObjectOrderDirection,
+} from "./canvas-media/object-order";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
@@ -271,6 +278,8 @@ export interface MaskNotifyValue {
     seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
   ) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
+  reorderObject: (maskKey: string, objectId: number, direction: ObjectOrderDirection) => Promise<void>;
+  restackMaskObjects: (maskKey: string, changes: ObjectOrderChange[]) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
   notifyMaskHighlightSuppressed: (suppressed: boolean) => void;
@@ -345,6 +354,8 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   lightMeshSection: async () => {},
   createObject: async () => {},
   deleteObject: async () => {},
+  reorderObject: async () => {},
+  restackMaskObjects: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskSelectionChanged: () => {},
   notifyMaskHighlightSuppressed: () => {},
@@ -1357,22 +1368,23 @@ export default function Workspace({
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(maskKey, edit);
 
-      const updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
-        object_id: objectId,
-        name: `object ${objectId}`,
-        cx: circle.cx,
-        cy: circle.cy,
-        radius,
-        elevation: seed.elevation,
-        falloff: seed.falloff,
-        shape,
-        ...toObjectFillFields(seed.fill),
-        description: "",
-        reviewed: false,
-        lift: true,
-        remove: false,
-        polygon_indices: polygonIndices,
-      });
+      const updated = await sendMaskObjectUpdate(
+        maskData.mask_media_id,
+        toObjectUpdate(newObject(objectId, `object ${objectId}`), {
+          cx: circle.cx,
+          cy: circle.cy,
+          radius,
+          elevation: seed.elevation,
+          falloff: seed.falloff,
+          shape,
+          ...toObjectFillFields(seed.fill),
+          // In front of everything already on the mask: what "I just drew this
+          // here" means, and what keeps a new object from appearing underneath
+          // one it happens to overlap.
+          order: frontObjectOrder(maskData.objects),
+          polygon_indices: polygonIndices,
+        }),
+      );
       if (updated) {
         const patched = applyObjectDelta(maskData, updated);
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
@@ -1400,28 +1412,111 @@ export default function Workspace({
     ],
   );
 
+  /**
+   * Writes down a set of new orders, one object at a time.
+   *
+   * A reorder is not one edit. Ranking is dense around the mask's own plane, so
+   * moving one object renumbers its neighbours too -- and on a mask whose
+   * objects have never been ordered, the first change numbers all of them at
+   * once (see reorderObjects). Each change is a full-replace of that object, so they
+   * go one at a time down the same socket every other object edit uses, each
+   * patched onto the mask before the next is built: the deltas come back
+   * carrying polygon tagging as well, and building the second send from a mask
+   * that had not yet absorbed the first would send stale tags back up.
+   *
+   * `polygon_indices` is re-derived per object rather than carried, for the
+   * same reason -- membership lives on the mask's polygons, and a full-replace
+   * that omitted it would clear the object's triangles as a side effect of
+   * moving it up one slot.
+   */
+  const applyObjectOrders = useCallback(
+    async (maskKey: string, changes: ObjectOrderChange[]) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData || changes.length === 0) return;
+
+      // Drawn before anything is sent. A reorder is several full-replace round
+      // trips down the object socket -- one per object the renumber touched --
+      // and until the first of them lands there is nothing in state to redraw
+      // the stack from. A drag that ends here would therefore let go, snap back
+      // to where it started, and only jump to its new place once the last ack
+      // arrived. The project's own media reorder has never had that problem
+      // because it dispatches first and rolls back on failure (see
+      // onGroupDragEnd); this is the same bargain for objects.
+      const optimisticOrders = new Map(changes.map((change) => [change.id, change.order]));
+      const optimistic: LaurusMaskResult = {
+        ...maskData,
+        objects: maskData.objects.map((object) => {
+          const order = optimisticOrders.get(object.id);
+          return order === undefined ? object : { ...object, order };
+        }),
+      };
+      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: optimistic });
+      notifyMaskObjectsUpdated(maskKey, optimistic);
+
+      // Reconciled from what was actually stored, not from the guess above, so
+      // that a run which fails part-way settles on the orders the server really
+      // holds rather than on the ones the drag asked for.
+      let patched = maskData;
+      for (const change of changes) {
+        const object = patched.objects.find((o) => o.id === change.id);
+        if (!object) continue;
+        const polygonIndices = patched.polygons.reduce<number[]>((indices, polygon, index) => {
+          if (polygon.object_id === object.id) indices.push(index);
+          return indices;
+        }, []);
+        const updated = await sendMaskObjectUpdate(
+          patched.mask_media_id,
+          toObjectUpdate(object, { order: change.order, polygon_indices: polygonIndices }),
+        );
+        // A failure part-way leaves the mask ranked inconsistently, which the
+        // stacking order still reads without complaint -- ties break by id, and
+        // the next reorder renumbers from whatever is actually stored. Stopping
+        // is better than pressing on: the sends left are renumbers of objects
+        // whose new places assumed the one that just failed.
+        if (!updated) break;
+        patched = applyObjectDelta(patched, updated);
+      }
+      // Always dispatched, even when nothing landed: the optimistic stack is on
+      // screen by now, and this is what takes it back off again if the sends
+      // did not go through.
+      dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+      notifyMaskObjectsUpdated(maskKey, patched);
+    },
+    [coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated],
+  );
+
+  /** One object stepped through its mask's stack -- see the context menu. */
+  const reorderObject = useCallback(
+    async (maskKey: string, objectId: number, direction: ObjectOrderDirection) => {
+      const maskData = coreState.canvasMasks.get(maskKey);
+      if (!maskData) return;
+      await applyObjectOrders(maskKey, reorderObjects(maskData.objects, objectId, direction));
+    },
+    [coreState.canvasMasks, applyObjectOrders],
+  );
+
+  /**
+   * A whole stack rewritten at once, from orders a drag settled on -- see the
+   * media group browser's expanded mask rows, where restackFromDrop turns the
+   * drop into this list.
+   */
+  const restackMaskObjects = useCallback(
+    async (maskKey: string, changes: ObjectOrderChange[]) => {
+      await applyObjectOrders(maskKey, changes);
+    },
+    [applyObjectOrders],
+  );
+
   const deleteObject = useCallback(
     async (maskKey: string, objectId: number) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       const object = maskData?.objects.find((p) => p.id === objectId);
       if (!maskData || !object) return;
 
-      const updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
-        object_id: objectId,
-        name: object.name,
-        cx: object.cx,
-        cy: object.cy,
-        radius: object.radius,
-        elevation: object.elevation,
-        falloff: object.falloff,
-        shape: object.shape,
-        ...toObjectFillFields(toObjectFill(object)),
-        description: object.description,
-        reviewed: object.reviewed,
-        lift: object.lift,
-        remove: true,
-        polygon_indices: [],
-      });
+      const updated = await sendMaskObjectUpdate(
+        maskData.mask_media_id,
+        toObjectUpdate(object, { remove: true, polygon_indices: [] }),
+      );
       if (!updated) return;
 
       const patched = applyObjectDelta(maskData, updated);
@@ -1811,6 +1906,8 @@ export default function Workspace({
       lightMeshSection,
       createObject,
       deleteObject,
+      reorderObject,
+      restackMaskObjects,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskHighlightSuppressed,
@@ -1832,6 +1929,8 @@ export default function Workspace({
       lightMeshSection,
       createObject,
       deleteObject,
+      reorderObject,
+      restackMaskObjects,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskHighlightSuppressed,

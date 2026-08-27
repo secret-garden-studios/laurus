@@ -2,13 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { CoreContext, MaskContext, SocketContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType, advanceObjectReview, isMaskEditLocked, type ObjectShapeEdit } from "../states/ui-state";
-import {
-  postObjectReviewDecision,
-  toLightUpdate,
-  toObjectFill,
-  toObjectFillFields,
-  type LaurusMaskResult,
-} from "../workspace.server";
+import { postObjectReviewDecision, toLightUpdate, toObjectUpdate, type LaurusMaskResult } from "../workspace.server";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import { retouchDelta } from "../canvas-media/object-retouch";
 
@@ -349,23 +343,19 @@ export function useObjectReview() {
 
       let updated;
       try {
-        updated = await sendMaskObjectUpdate(maskData.mask_media_id, {
-          object_id: object.id,
-          name: object.name,
-          cx: review.editedShape?.cx ?? object.cx,
-          cy: review.editedShape?.cy ?? object.cy,
-          radius: review.editedShape?.radius ?? object.radius,
-          elevation: object.elevation,
-          falloff: object.falloff,
-          shape: review.editedShape?.path ?? object.shape,
-          ...toObjectFillFields(toObjectFill(object)),
-          description,
-          reviewed: true,
-          lift: object.lift,
-          remove: false,
-          polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
-          ...(review.retouch ? { retouch: retouchDelta(review.retouch) } : {}),
-        });
+        updated = await sendMaskObjectUpdate(
+          maskData.mask_media_id,
+          toObjectUpdate(object, {
+            cx: review.editedShape?.cx ?? object.cx,
+            cy: review.editedShape?.cy ?? object.cy,
+            radius: review.editedShape?.radius ?? object.radius,
+            shape: review.editedShape?.path ?? object.shape,
+            description,
+            reviewed: true,
+            polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
+            ...(review.retouch ? { retouch: retouchDelta(review.retouch) } : {}),
+          }),
+        );
       } finally {
         decidingRef.current = false;
         setIsDeciding(false);

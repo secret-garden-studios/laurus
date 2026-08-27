@@ -96,6 +96,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         description: "a thing",
         reviewed: false,
         lift: false,
+        order: 1,
       },
       removed: false,
       tagged_polygon_indices: [0, 1],
@@ -134,6 +135,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         description: "",
         reviewed: false,
         lift: false,
+        order: 1,
       },
     ];
 

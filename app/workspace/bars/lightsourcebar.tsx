@@ -13,10 +13,13 @@ import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import {
   LaurusLight,
   LaurusMaskResult,
+  LaurusObject,
   LaurusObjectFill,
+  newObject,
   toLightUpdate,
   toObjectFill,
   toObjectFillFields,
+  toObjectUpdate,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
 import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
@@ -476,21 +479,20 @@ export default function LightSourcebar() {
     [],
   );
 
+  /**
+   * The object this bar is about to write, as the object itself rather than as
+   * a field-by-field copy of one.
+   *
+   * It used to be the copy, and that is precisely the shape toObjectUpdate
+   * exists to retire: an object is a full-replace, so every field it has had to
+   * be restated here and then restated again at the send, and a field added to
+   * an object later went missing at both. Carrying the object means a new field
+   * rides along on the spread below without this file having to hear about it.
+   */
   interface PendingObjectSave {
     maskKey: string;
     maskMediaId: string;
-    objectId: number;
-    name: string;
-    description: string;
-    cx: number;
-    cy: number;
-    radius: number;
-    elevation: number;
-    falloff: number;
-    shape: string;
-    fill: LaurusObjectFill;
-    reviewed: boolean;
-    lift: boolean;
+    object: LaurusObject;
     polygonIndices: number[];
   }
 
@@ -505,29 +507,17 @@ export default function LightSourcebar() {
         const toSave = pendingObjectSaveRef.current;
         pendingObjectSaveRef.current = null;
         settledMaskKey = toSave.maskKey;
-        const updated = await sendMaskObjectUpdate(toSave.maskMediaId, {
-          object_id: toSave.objectId,
-          name: toSave.name,
-          cx: toSave.cx,
-          cy: toSave.cy,
-          radius: toSave.radius,
-          elevation: toSave.elevation,
-          falloff: toSave.falloff,
-          shape: toSave.shape,
-          ...toObjectFillFields(toSave.fill),
-          description: toSave.description,
-          reviewed: toSave.reviewed,
-          lift: toSave.lift,
-          remove: false,
-          polygon_indices: toSave.polygonIndices,
-        });
+        const updated = await sendMaskObjectUpdate(
+          toSave.maskMediaId,
+          toObjectUpdate(toSave.object, { polygon_indices: toSave.polygonIndices }),
+        );
         const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
         if (updated && maskData) {
           const patched = applyObjectDelta(maskData, updated);
           dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
           notifyMaskObjectsUpdated(toSave.maskKey, patched);
         } else {
-          console.error("failed to save object change", { object_id: toSave.objectId });
+          console.error("failed to save object change", { object_id: toSave.object.id });
         }
       }
     } finally {
@@ -582,21 +572,27 @@ export default function LightSourcebar() {
         return indices;
       }, []);
 
+      // The object as it stands, with only what this bar touched laid over it --
+      // so order, description, reviewed and everything added to an object later
+      // carry forward without being named. An object the mask does not hold yet
+      // starts from a blank, whose lift is stood down: this bar's own toggle is
+      // the only thing that turns it on for one being staged.
+      const base: LaurusObject = existingObject ?? { ...newObject(edit.objectId, objectName), lift: false };
       pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
         maskMediaId: maskData.mask_media_id,
-        objectId: edit.objectId,
-        name: objectName,
-        description: existingObject?.description ?? "",
-        cx: edit.cx,
-        cy: edit.cy,
-        radius: edit.radius,
-        elevation: edit.elevation,
-        falloff: edit.falloff,
-        shape: edit.shape,
-        fill: edit.fill,
-        reviewed: existingObject?.reviewed ?? false,
-        lift: patch.lift ?? existingObject?.lift ?? false,
+        object: {
+          ...base,
+          name: objectName,
+          cx: edit.cx,
+          cy: edit.cy,
+          radius: edit.radius,
+          elevation: edit.elevation,
+          falloff: edit.falloff,
+          shape: edit.shape,
+          ...toObjectFillFields(edit.fill),
+          lift: patch.lift ?? base.lift,
+        },
         polygonIndices,
       };
       void persistObjectQueue();

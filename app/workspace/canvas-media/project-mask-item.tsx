@@ -61,6 +61,7 @@ import { MaskGeometry, maskGeometry, maskPolygonColors } from "./mask-geometry";
 import { applyLightDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
+import { frontObjectOrder, isBehindMask } from "./object-order";
 import { retouchMesh } from "./object-retouch";
 import { unitCirclePath } from "./object-path";
 import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
@@ -200,6 +201,7 @@ function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
     radius: object.radius,
     elevation: object.elevation,
     falloff: object.falloff,
+    order: object.order,
     shape: cachedObjectShape(object.shape),
     fill: toObjectFill(object),
   };
@@ -517,6 +519,10 @@ export function ProjectMaskItem({
           radius: playing.radius,
           elevation: playing.elevation,
           falloff: playing.falloff,
+          // Off the stored object, not the animated pose: an effect moves an
+          // object through the mask, it does not move it through the stack.
+          // Where it renders in that stack is the whole point of playing it.
+          order: object.order,
           shape,
           fill: playing.fill,
           rotation: playing.rotation,
@@ -535,6 +541,9 @@ export function ProjectMaskItem({
               radius: pending.radius,
               elevation: pending.elevation,
               falloff: pending.falloff,
+              // A pending edit reshapes an object; it never restacks one, so
+              // the object's own order stands whatever the gesture is doing.
+              order: object.order,
               shape: pendingShape,
               fill: pending.fill,
             }
@@ -548,6 +557,12 @@ export function ProjectMaskItem({
         radius: pending.radius,
         elevation: pending.elevation,
         falloff: pending.falloff,
+        // An object being drawn that the mask does not hold yet, so there is no
+        // stored order to read. In front of everything, which is where it will
+        // land when the create actually goes through -- see createObject, whose
+        // frontObjectOrder this has to agree with or the object would jump one
+        // slot the instant it was saved.
+        order: frontObjectOrder(objectsRef.current),
         shape: pendingShape,
         fill: pending.fill,
       };
@@ -1178,6 +1193,7 @@ export function ProjectMaskItem({
     const objectFills = objectsRef.current.map((object) => ({
       id: object.id,
       fill: toObjectFill(object),
+      behind: isBehindMask(object),
       // An open session's own set is the object's membership and the thing
       // that gets saved, so it is what this paints -- except while a pen
       // gesture is actually in flight, which is the one window it goes stale
@@ -1201,13 +1217,27 @@ export function ProjectMaskItem({
       objectFills.push({
         id: pendingTopology.objectId,
         fill: pendingTopology.fill,
+        // An object still being drawn is going in front of the mask, the same
+        // place createObject will actually put it -- see the candidate branch
+        // in resolveObjectUniforms, whose order this has to agree with.
+        behind: false,
         indices: pendingObjectIndices(),
       });
     }
-    objectFills.forEach(({ id, fill, indices }) => {
+    objectFills.forEach(({ id, fill, indices, behind }) => {
       // An object an effect is animating fills from its outline for as long as
       // the effect runs, so that the color arrives wherever the pose does.
       if (animatingObjects.has(id)) return;
+      // An object behind the mask paints nothing on the mask's own triangles.
+      // These are the mask's triangles: painting there would put the object's
+      // colour in front of the sheet it is stacked behind, which is the one
+      // place the shader cannot correct it -- a vertex attribute arrives
+      // already composited into the resting layer. Behind the mask an object
+      // shows through the mask's transparency and nowhere else, and at rest
+      // there is none of that to show through, so it shows nothing. Its colour
+      // still travels with it: objectFill paints the behind layer from the
+      // outline while an effect runs (see the shader's objectFill).
+      if (behind) return;
       // A session's fill is one of the cues an eyedropper picking against the
       // mesh needs out of the way. A resting object's fill is not a cue -- it
       // is the object -- and stays put.

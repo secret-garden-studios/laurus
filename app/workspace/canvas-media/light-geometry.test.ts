@@ -38,7 +38,7 @@ function grid(): { points: [number, number][][]; centroids: [number, number][] }
 }
 
 describe("swelledPolygonIndexAtPoint -- picking the triangle the shader actually drew", () => {
-  const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, shape: undefined, fill: undefined };
+  const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, order: 1, shape: undefined, fill: undefined };
   const raised = { ...flat, elevation: 50 };
 
   it("falls back to the plain scan when nothing on the mesh is swollen", () => {
@@ -92,7 +92,7 @@ describe("lightIdAtPoint -- reading the light off the mesh as drawn", () => {
 
   it("leaves the answer alone when no object bends the mesh", () => {
     const { polygons, points } = halved();
-    const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, shape: undefined, fill: undefined };
+    const flat = { cx: 60, cy: 60, radius: 40, elevation: 0, falloff: 2, order: 1, shape: undefined, fill: undefined };
 
     assert.equal(lightIdAtPoint(polygons as never, points, [flat], [10, 60]), 1);
     assert.equal(lightIdAtPoint(polygons as never, points, [], [10, 60]), 1);
@@ -101,7 +101,16 @@ describe("lightIdAtPoint -- reading the light off the mesh as drawn", () => {
 
   it("stretches the light's bounds the way the shader stretched its triangles", () => {
     const { polygons, points } = halved();
-    const raised = { cx: 30, cy: 60, radius: 50, elevation: 60, falloff: 2, shape: undefined, fill: undefined };
+    const raised = {
+      cx: 30,
+      cy: 60,
+      radius: 50,
+      elevation: 60,
+      falloff: 2,
+      order: 1,
+      shape: undefined,
+      fill: undefined,
+    };
 
     const flatEdge = Math.max(
       ...points.flatMap((triangle, i) => (polygons[i].light_id === 1 ? triangle.map(([x]) => x) : [])),

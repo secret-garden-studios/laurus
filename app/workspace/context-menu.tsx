@@ -27,6 +27,7 @@ import {
   toLightUpdate,
 } from "./workspace.server";
 import { applyLightDelta } from "./canvas-media/mask-delta";
+import type { ObjectOrderDirection } from "./canvas-media/object-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -119,6 +120,9 @@ function cleanUpBrowserElement(
   }
 }
 
+const MOVE_UP_TITLE = "move this object forward in its mask -- alt to put it in front of everything";
+const MOVE_DOWN_TITLE = "move this object back in its mask -- past the mask itself, it renders behind it";
+
 function projectSvgIsTransformed(svg: LaurusProjectSvg) {
   if (svg.scale_x == 1 && svg.scale_y == 1 && svg.rotate_x == 0 && svg.rotate_y == 0 && svg.rotate_z == 0) {
     return false;
@@ -169,6 +173,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     notifyMaskLightUpdated,
     notifyMaskObjectReviewPreview,
     deleteObject,
+    reorderObject,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
@@ -764,6 +769,40 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     [coreState.project, coreState.apiOrigin, coreState.accessToken, media.key, dispatch],
   );
 
+  /**
+   * True while a reorder is in flight, and what stands the two buttons down.
+   *
+   * A single object reorder is several sends -- ranking is dense, so moving one
+   * object renumbers its neighbours, and each is a full-replace down the object
+   * socket. A second click landing mid-run would build its own step from a mask
+   * that has absorbed only some of the first one's deltas and write a stacking
+   * neither click asked for. Locking rather than debouncing, because the thing
+   * to wait for is the acknowledgement, not a quiet interval: every click still
+   * lands, just never on top of its own commit.
+   */
+  const [reordering, setReordering] = useState(false);
+
+  const moveInStack = useCallback(
+    async (direction: ObjectOrderDirection) => {
+      // An object's stack is its parent mask; everything else's is the project.
+      // Same four gestures, two different things being ordered -- and before
+      // objects had an order of their own, these buttons on an object's menu
+      // silently reordered the whole mask it belongs to.
+      if (media.type !== "object") {
+        await updateMediaOrder(direction);
+        return;
+      }
+      if (reordering) return;
+      setReordering(true);
+      try {
+        await reorderObject(media.key, media.objectId, direction);
+      } finally {
+        setReordering(false);
+      }
+    },
+    [media, reordering, reorderObject, updateMediaOrder],
+  );
+
   const revertEnabled = useMemo(() => {
     switch (media.type) {
       case "img": {
@@ -1271,19 +1310,21 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     </div>
                   )}
                   <div
-                    style={{ ...cellStyle }}
-                    className={styles["animated-nav-dark"]}
+                    style={{ color: reordering ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={media.type === "object" ? MOVE_UP_TITLE : undefined}
                     onClick={() => {
-                      updateMediaOrder(isAltPressed ? "top" : "increment");
+                      moveInStack(isAltPressed ? "top" : "increment");
                     }}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
-                    style={{ ...cellStyle }}
-                    className={styles["animated-nav-dark"]}
+                    style={{ color: reordering ? "rgba(127,127,127, 1)" : "inherit", ...cellStyle }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
                     onClick={() => {
-                      updateMediaOrder(isAltPressed ? "bottom" : "decrement");
+                      moveInStack(isAltPressed ? "bottom" : "decrement");
                     }}
                   >
                     {isAltPressed ? "move to bottom" : "move down"}
