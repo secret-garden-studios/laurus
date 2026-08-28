@@ -77,7 +77,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+        if (uiState.maskEdit === undefined && uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
           const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
@@ -94,6 +94,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       setSelectedImgKeys,
       setSelectedSvgKeys,
       uiState.tool.type,
+      uiState.maskEdit,
       notifyMaskToolChanged,
     ],
   );

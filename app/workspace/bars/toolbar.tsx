@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { MaskContext, UIContext } from "../workspace.client";
+import { UIContext } from "../workspace.client";
 import { Tooltip } from "react-tooltip";
 import { dellaRespira } from "../../fonts";
 import {
@@ -18,7 +18,8 @@ import {
   asterisk200,
   inkPen300,
 } from "../../svg-repo";
-import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, UIActionType } from "../states/ui-state";
+import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, LaurusTool, UIActionType } from "../states/ui-state";
+import { useToolSwitch } from "../hooks/useMaskEditExit";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
 import Navbar from "@/app/navbar";
@@ -29,7 +30,7 @@ interface Toolbar {
 }
 export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskToolChanged } = useContext(MaskContext);
+  const switchTool = useToolSwitch();
   const [tooltipDelay] = useState(1000);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -101,19 +102,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "marquee") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: defaultMarqueeTool,
-                });
-                notifyMaskToolChanged(defaultMarqueeTool.type);
-              }
+              const next: LaurusTool = uiState.tool.type == "marquee" ? { type: "none" } : defaultMarqueeTool;
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -161,19 +151,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "mask") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: defaultMaskTool,
-                });
-                notifyMaskToolChanged(defaultMaskTool.type);
-              }
+              const next: LaurusTool = uiState.tool.type == "mask" ? { type: "none" } : defaultMaskTool;
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -220,19 +199,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "pen") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: defaultPenTool,
-                });
-                notifyMaskToolChanged(defaultPenTool.type);
-              }
+              const next: LaurusTool = uiState.tool.type == "pen" ? { type: "none" } : defaultPenTool;
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -279,19 +247,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "contextmenu") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "contextmenu" },
-                });
-                notifyMaskToolChanged("contextmenu");
-              }
+              const next: LaurusTool = uiState.tool.type == "contextmenu" ? { type: "none" } : { type: "contextmenu" };
+              if (!switchTool(next)) return;
             }}
             resolution={{ ...uiState.resolution }}
             title="context menu tool"
@@ -306,19 +263,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "viewport") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "viewport" },
-                });
-                notifyMaskToolChanged("viewport");
-              }
+              const next: LaurusTool = uiState.tool.type == "viewport" ? { type: "none" } : { type: "viewport" };
+              if (!switchTool(next)) return;
             }}
             resolution={{ ...uiState.resolution }}
             tooltipId="viewport-tool-tooltip"
@@ -363,19 +309,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "move") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "move" },
-                });
-                notifyMaskToolChanged("move");
-              }
+              const next: LaurusTool = uiState.tool.type == "move" ? { type: "none" } : { type: "move" };
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -391,19 +326,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "scale") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "scale" },
-                });
-                notifyMaskToolChanged("scale");
-              }
+              const next: LaurusTool = uiState.tool.type == "scale" ? { type: "none" } : { type: "scale" };
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -419,19 +343,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "rotate") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "rotate" },
-                });
-                notifyMaskToolChanged("rotate");
-              }
+              const next: LaurusTool = uiState.tool.type == "rotate" ? { type: "none" } : { type: "rotate" };
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -447,19 +360,9 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "light_source") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "light_source" },
-                });
-                notifyMaskToolChanged("light_source");
-              }
+              const next: LaurusTool =
+                uiState.tool.type == "light_source" ? { type: "none" } : { type: "light_source" };
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
@@ -503,19 +406,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              if (uiState.tool.type == "mix") {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "none" },
-                });
-                notifyMaskToolChanged("none");
-              } else {
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: { type: "mix" },
-                });
-                notifyMaskToolChanged("mix");
-              }
+              const next: LaurusTool = uiState.tool.type == "mix" ? { type: "none" } : { type: "mix" };
+              if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}

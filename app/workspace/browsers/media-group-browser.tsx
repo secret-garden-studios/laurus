@@ -27,6 +27,7 @@ import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
+import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import {
   closestCenter,
   DndContext,
@@ -62,6 +63,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     restackMaskObjects,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
+  const guardSelection = useSelectionGuard();
   const {
     isAltKeyPressed,
     selectedImgKeys,
@@ -475,12 +477,24 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged],
   );
 
-  const onObjectSelectClick = useCallback(
+  /**
+   * Open an object's context menu from its row, the way every other row here
+   * opens its own.
+   *
+   * Two dispatches rather than one, because a mask's menu is one component
+   * showing whichever of three things is selected on it (see the ContextMenu
+   * the mask item renders): selecting the object is what makes it the object's
+   * menu, and showContextMenu on the *mask's* key is what puts it on screen.
+   * Selecting alone left the row looking inert -- it moved the bars and lit the
+   * mesh, but nothing opened.
+   */
+  const onObjectContextMenuClick = useCallback(
     (maskKey: string, objectId: number) => {
       uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
       notifyMaskSelectionChanged(maskKey);
       notifyMaskSelectedObjectChanged(maskKey, objectId);
       notifyMaskSelectedLightChanged(maskKey, undefined);
+      uiDispatch({ type: UIActionType.SetProjectContextMenu, key: maskKey, showContextMenu: true });
     },
     [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged, notifyMaskSelectedLightChanged],
   );
@@ -755,13 +769,17 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                     else onRemoveMaskFromGroupClick(item.key);
                   }}
                   onContextMenuClick={() => {
+                    if (!guardSelection({ type: item.type, key: item.key })) return;
                     if (item.type === "img") onImgContextMenuClick(item.key);
                     else if (item.type === "svg") onSvgContextMenuClick(item.key);
                     else onMaskContextMenuClick(item.key);
                   }}
                   expanded={expandedMaskKeys.has(item.key)}
                   onExpandClick={() => toggleMaskExpanded(item.key)}
-                  onObjectContextMenuClick={(objectId) => onObjectSelectClick(item.key, objectId)}
+                  onObjectContextMenuClick={(objectId) => {
+                    if (!guardSelection({ type: "object", key: item.key, objectId })) return;
+                    onObjectContextMenuClick(item.key, objectId);
+                  }}
                   onObjectRemoveClick={(objectId) => onObjectDeleteClick(item.key, objectId)}
                   objectRows={expandedStacks.get(item.key)}
                 />

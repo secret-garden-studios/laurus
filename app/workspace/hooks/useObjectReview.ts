@@ -136,26 +136,6 @@ export function useObjectReview() {
     notifyMaskObjectReviewPreview,
   ]);
 
-  /**
-   * Shut the pen when the toolbar moves out from under it.
-   *
-   * The pen is a tool as much as a panel button -- while it is open the
-   * subtitle bar is its own -- so picking another tool has to be a way out of
-   * it, or the overlay would sit there over a bar describing something else.
-   *
-   * Reconciled here rather than in the reducer, and rather than in the toolbar
-   * itself, because leaving the pen is three things and only one of them is
-   * state: the reshape has to be dropped, the relief it was previewing torn
-   * down, and the triangles put back where the outline had not yet moved them.
-   * revertShape already knows how to do all three, and this is the one place
-   * that can call it.
-   */
-  useEffect(() => {
-    if (!session?.editingShape || uiState.tool.type === "pen") return;
-    revertShape();
-    uiDispatch({ type: UIActionType.SetMaskEditShapeEditing, editing: false });
-  }, [session?.editingShape, uiState.tool.type, revertShape, uiDispatch]);
-
   const decideCurrentObject = useCallback(
     async (decision: "accepted" | "rejected", description?: string) => {
       if (!review || review.mode !== "review" || decidingRef.current) return;
@@ -322,6 +302,13 @@ export function useObjectReview() {
     else restoreRetouchedMesh();
     closeReview();
   }, [session, revertShape, restoreRetouchedMesh, closeReview]);
+
+  // TODO: refactor
+  useEffect(() => {
+    if (!session) return;
+    if (uiState.tool.type === "pen" && uiState.playbackMode.type === "stopped" && !session.endRequested) return;
+    endReview();
+  }, [session, uiState.tool.type, uiState.playbackMode.type, endReview]);
 
   const saveEditedObject = useCallback(
     async (description: string) => {

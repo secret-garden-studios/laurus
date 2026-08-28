@@ -12,10 +12,11 @@ const GRIDLINES_OPTIONS = [
 /**
  * The pen's controls.
  *
- * Shown while an outline is open for editing -- an object's during a mask
- * review, or a light's -- and while the pen is armed with nothing open on it
- * at all, which is the first thing this renders. See withShapeEditing and
- * isPenArmed in ui-state.
+ * Shown for the whole of a session -- an object under review, or a light --
+ * and while the pen is armed with nothing open on it at all, which is the
+ * first thing this renders. The panel below is this bar's supplement rather
+ * than a thing of its own, so the two come and go together; see openMaskEdit
+ * and isPenArmed in ui-state.
  */
 export default function Penbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -80,6 +81,15 @@ export default function Penbar() {
   const [isRetouching, setIsRetouching] = useState(false);
 
   const session = uiState.maskEdit;
+  // Whether the outline's handles are up. This bar now stands through the
+  // whole of a session rather than only the half of it spent reshaping -- the
+  // pen stays selected while the panel picks over triangles instead (see
+  // defaultPenTool) -- so the three controls below have to say when there is
+  // no curve under them to act on. Everything else here still applies: the
+  // outline is drawn either way, so gridlines mean something, and a retouch
+  // cuts against the stored curve whether or not anyone is holding it.
+  const handlesUp = session !== undefined && session.editingShape;
+
   // A retouch recuts the mesh against the outline, so there has to be an
   // outline: a candidate detection found no shape for has nothing to cut to,
   // and a decided candidate is not the reviewer's to change until they unlock
@@ -157,19 +167,25 @@ export default function Penbar() {
       />
       <div
         title={
-          "keep the anchors on the outline. turn them off and the curve is left exactly where it is, drawn " +
-          "but no longer handled -- which is how to see it against the mesh with nothing on top of it"
+          handlesUp
+            ? "keep the anchors on the outline. turn them off and the curve is left exactly where it is, drawn " +
+              "but no longer handled -- which is how to see it against the mesh with nothing on top of it"
+            : "the handles are down -- press 'edit shape' on the panel to bring the outline up"
         }
         style={{
           display: "flex",
           alignItems: "center",
           height: "100%",
+          opacity: handlesUp ? 1 : 0.4,
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ textShadow: showAnchors ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"show anchors"}</span>
+        <span style={{ textShadow: showAnchors && handlesUp ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>
+          {"show anchors"}
+        </span>
         <Toggle
           value={showAnchors}
+          disabled={!handlesUp}
           onClick={() => {
             if (uiState.tool.type !== "pen") return;
             const next = !uiState.tool.showAnchors;
@@ -195,24 +211,26 @@ export default function Penbar() {
       </div>
       <div
         title={
-          showAnchors
-            ? "click two anchors on the outline to draw the shortest curve between them. " +
-              "whatever lay between them comes off: a run of two or more branches off as an island of its own, " +
-              "a single anchor is deleted, and two neighbours just pull straight"
-            : "stitching is done by clicking anchors -- turn 'show anchors' back on to reach them"
+          !handlesUp
+            ? "the handles are down -- press 'edit shape' on the panel to bring the outline up"
+            : showAnchors
+              ? "click two anchors on the outline to draw the shortest curve between them. " +
+                "whatever lay between them comes off: a run of two or more branches off as an island of its own, " +
+                "a single anchor is deleted, and two neighbours just pull straight"
+              : "stitching is done by clicking anchors -- turn 'show anchors' back on to reach them"
         }
         style={{
           display: "flex",
           alignItems: "center",
           height: "100%",
-          opacity: showAnchors ? 1 : 0.4,
+          opacity: showAnchors && handlesUp ? 1 : 0.4,
           ...dynamicSizes.toggle.div,
         }}
       >
         <span style={{ textShadow: isStitchOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"stitch"}</span>
         <Toggle
           value={isStitchOn}
-          disabled={!showAnchors}
+          disabled={!showAnchors || !handlesUp}
           onClick={() => {
             if (uiState.tool.type !== "pen") return;
             const next = !uiState.tool.stitch;
@@ -232,24 +250,26 @@ export default function Penbar() {
       </div>
       <div
         title={
-          showAnchors
-            ? "click anywhere on the outline and a new anchor is put down there. the curve does not move -- " +
-              "the segment is split into the two halves it already traced -- so this only ever hands you " +
-              "somewhere else to take hold of a run that had nothing to grab"
-            : "an anchor added where none can be seen is one nobody can take hold of -- turn 'show anchors' back on"
+          !handlesUp
+            ? "the handles are down -- press 'edit shape' on the panel to bring the outline up"
+            : showAnchors
+              ? "click anywhere on the outline and a new anchor is put down there. the curve does not move -- " +
+                "the segment is split into the two halves it already traced -- so this only ever hands you " +
+                "somewhere else to take hold of a run that had nothing to grab"
+              : "an anchor added where none can be seen is one nobody can take hold of -- turn 'show anchors' back on"
         }
         style={{
           display: "flex",
           alignItems: "center",
           height: "100%",
-          opacity: showAnchors ? 1 : 0.4,
+          opacity: showAnchors && handlesUp ? 1 : 0.4,
           ...dynamicSizes.toggle.div,
         }}
       >
         <span style={{ textShadow: isAddAnchorOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add anchor"}</span>
         <Toggle
           value={isAddAnchorOn}
-          disabled={!showAnchors}
+          disabled={!showAnchors || !handlesUp}
           onClick={() => {
             if (uiState.tool.type !== "pen") return;
             const next = !uiState.tool.addAnchor;

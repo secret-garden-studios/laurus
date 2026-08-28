@@ -1,4 +1,14 @@
-import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect, RefObject } from "react";
+import {
+  useContext,
+  useMemo,
+  useCallback,
+  CSSProperties,
+  useState,
+  Dispatch,
+  useEffect,
+  useRef,
+  RefObject,
+} from "react";
 import {
   updateProject,
   LaurusProjectImg,
@@ -23,6 +33,7 @@ import {
   LaurusObjectReview,
   LaurusSvgResult,
   deleteMask,
+  getObjectReview,
   newLight,
   toLightUpdate,
 } from "./workspace.server";
@@ -961,6 +972,24 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     if (media.type !== "light") return undefined;
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
   }, [coreState.canvasMasks, media]);
+
+  // TODO: refactor
+  const reviewFetchedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!reviewMaskMediaId) return;
+    if (coreState.objectReviews.has(reviewMaskMediaId)) return;
+    if (reviewFetchedRef.current.has(reviewMaskMediaId)) return;
+    reviewFetchedRef.current.add(reviewMaskMediaId);
+    let cancelled = false;
+    void (async () => {
+      const review = await getObjectReview(coreState.apiOrigin, coreState.accessToken, reviewMaskMediaId);
+      if (cancelled || !review) return;
+      dispatch({ type: CoreActionType.SetObjectReview, maskMediaId: reviewMaskMediaId, value: review });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewMaskMediaId, coreState.objectReviews, coreState.apiOrigin, coreState.accessToken, dispatch]);
 
   const pendingReview = useMemo((): PendingObjectReview | undefined => {
     if (!reviewMaskMediaId) return undefined;

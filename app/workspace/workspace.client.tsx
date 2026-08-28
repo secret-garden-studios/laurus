@@ -59,6 +59,7 @@ import { useToolCursor } from "./hooks/useToolCursor";
 import { deleteMaskObjectEffects, parseMaskLightInputId, parseMaskObjectInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import ObjectReviewPanel from "./object-review-panel";
+import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
@@ -1567,6 +1568,7 @@ export default function Workspace({
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
       if (uiState.playbackMode.type !== "stopped" || !uiState.filledForwards) return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
       handleMixRestoration();
       closeContextMenus();
       uiDispatch({
@@ -1607,11 +1609,19 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.filledForwards, uiState.playbackMode.type],
+    [
+      closeContextMenus,
+      getNewAnimations,
+      handleMixRestoration,
+      uiState.filledForwards,
+      uiState.maskEdit,
+      uiState.playbackMode.type,
+    ],
   );
 
   const handlePlayAll = useCallback(async () => {
     if (uiState.playbackMode.type !== "stopped") return;
+    if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
     handleMixRestoration();
     closeContextMenus();
     uiDispatch({
@@ -1677,6 +1687,7 @@ export default function Workspace({
     closeContextMenus,
     getNewAnimations,
     handleMixRestoration,
+    uiState.maskEdit,
     uiState.playbackMode.type,
     uiState.tool.type,
     uiState.activeElement,
@@ -1688,6 +1699,7 @@ export default function Workspace({
   const handlePlayTarget = useCallback(
     async (target: AnimationTarget) => {
       if (uiState.playbackMode.type !== "stopped") return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
       handleMixRestoration();
       closeContextMenus();
       if (uiState.activeElement !== undefined) {
@@ -1762,6 +1774,7 @@ export default function Workspace({
       coreState.effects,
       getNewAnimationsByTarget,
       handleMixRestoration,
+      uiState.maskEdit,
       uiState.playbackMode.type,
       uiState.activeElement,
       uiState.selectedElement,
@@ -1772,6 +1785,7 @@ export default function Workspace({
   const handleFastForwardAll = useCallback(
     async (playbackRate: number) => {
       if (uiState.playbackMode.type !== "stopped") return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
       handleMixRestoration();
       closeContextMenus();
       uiDispatch({
@@ -1812,7 +1826,7 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.playbackMode.type],
+    [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.maskEdit, uiState.playbackMode.type],
   );
 
   const handleStopAll = useCallback(async () => {
@@ -2024,40 +2038,48 @@ export default function Workspace({
         }
       } else if (event.key.toLowerCase() === "m" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "move" ? { type: "none" } : { type: "move" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "r" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "rotate" ? { type: "none" } : { type: "rotate" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "s" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "scale" ? { type: "none" } : { type: "scale" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "v" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "viewport" ? { type: "none" } : { type: "viewport" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
       } else if (event.key.toLowerCase() === "d" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "marquee" ? { type: "none" } : defaultMarqueeTool;
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "x" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mix" ? { type: "none" } : { type: "mix" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "t" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "mask" ? { type: "none" } : defaultMaskTool;
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
@@ -2072,6 +2094,7 @@ export default function Workspace({
     handleStopAll,
     uiState.playbackMode.type,
     uiState.tool,
+    uiState.maskEdit,
     notifyMaskToolChanged,
     notifyMaskSelectionChanged,
   ]);

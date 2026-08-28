@@ -6,6 +6,7 @@ import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
+import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import { maskGeometry } from "../canvas-media/mask-geometry";
 import { LaurusMaskResult } from "../workspace.server";
 import { CoreState } from "../states/core-state";
@@ -188,6 +189,7 @@ export default function UnitDisplay({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
+  const guardSelection = useSelectionGuard();
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
       if (uiState.carouselEntries.length <= newCarouselIndex) return;
@@ -384,6 +386,8 @@ export default function UnitDisplay({
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, -1);
                 if (newIndex === undefined) return;
+                const entry = uiState.carouselEntries[newIndex];
+                if (entry && !guardSelection(entry)) return;
                 onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);
@@ -411,6 +415,7 @@ export default function UnitDisplay({
                         key={c.key}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -447,6 +452,7 @@ export default function UnitDisplay({
                         }}
                         onContainerClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -469,6 +475,7 @@ export default function UnitDisplay({
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -500,6 +507,7 @@ export default function UnitDisplay({
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -529,6 +537,7 @@ export default function UnitDisplay({
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -560,6 +569,8 @@ export default function UnitDisplay({
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, 1);
                 if (newIndex === undefined) return;
+                const entry = uiState.carouselEntries[newIndex];
+                if (entry && !guardSelection(entry)) return;
                 onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);

@@ -67,12 +67,18 @@ export const defaultMaskTool: LaurusTool = {
 /**
  * The pen reaches the toolbar two ways, and they meet in the same place.
  *
- * It is what the toolbar shows while an outline is open for editing, so
- * opening one -- from the review panel, the context menu's edit button, or the
- * light source bar's -- selects the pen as a side effect. And it can be picked
- * from the toolbar directly, which selects it with nothing open under it: see
- * isPenArmed for what it does while it waits. Either way, what is selected is
- * this, and the bar it shows is the same bar.
+ * It is what the toolbar shows for the whole of a session, so opening one --
+ * from the context menu's edit button, the light source bar's, or a mask
+ * review -- selects the pen, and it stays selected until the session is over.
+ * And it can be picked from the toolbar directly, which selects it with
+ * nothing open under it: see isPenArmed for what it does while it waits.
+ * Either way, what is selected is this, and the bar it shows is the same bar.
+ *
+ * So the pen is the one tool a session can be open under. The review panel is
+ * the pen's own supplement rather than a thing of its own, which makes leaving
+ * the pen the same act as leaving the session: openMaskEdit is the half of
+ * that invariant which holds, and useObjectReview's tool watch is the half
+ * that tears down.
  */
 export const defaultPenTool: LaurusTool = {
   type: "pen",
@@ -192,27 +198,34 @@ interface MaskEditSessionBase {
    */
   editedShape: ObjectShapeEdit | undefined;
   /**
-   * Whether the pen overlay is open.
+   * Whether the outline's handles are up.
    *
-   * Also which half of the session a click on the mesh belongs to. With the
-   * handles up every click is the outline's; what the region covers is changed
-   * with them down, and shutting the pen is what hands the triangles back. See
-   * ToggleMaskEditPolygon, which refuses either way round.
+   * Which half of the session a click on the mesh belongs to, and nothing
+   * beyond that: with the handles up every click is the outline's, and what
+   * the region covers is changed with them down. See ToggleMaskEditPolygon,
+   * which refuses either way round.
+   *
+   * Not a question of which tool is selected. The pen is selected for the
+   * whole of a session however this sits, so putting the handles down leaves
+   * the penbar exactly where it was -- what changes is which of its controls
+   * still have something to act on. See defaultPenTool.
    */
   editingShape: boolean;
   /**
-   * The tool the pen was opened over, held so closing it can put the toolbar
-   * back exactly as it was. Undefined whenever the pen is shut.
+   * A standing request to shut this session down, raised from somewhere that
+   * cannot shut it down itself.
    *
-   * Restoring a remembered tool rather than a default, because a session is
-   * reached part-way through a mask-tool gesture -- objects armed, light off
-   * -- and dropping back to a fresh mask tool would quietly undo that.
+   * Ending a session is mostly not state -- the relief a reshape was
+   * previewing has to come down, and the mask has to be handed back the mesh
+   * it was triangulated with -- so useObjectReview is the only thing that can
+   * actually do it, and only the review panel mounts that. Everywhere else
+   * that has to end one, having asked the editor first, raises this instead
+   * and lets the one place that knows how do the work.
    *
-   * It can be the pen itself, which is a session opened from the armed pen
-   * rather than from a bar: see closedPenTool for when that one is handed back
-   * and when it is not.
+   * On the session rather than beside it so it cannot outlive the thing it is
+   * a request about: no session, nothing requested.
    */
-  penReturnTool: LaurusTool | undefined;
+  endRequested: boolean;
   /**
    * The recut mesh the editor has asked for, or undefined while the mesh is
    * still the one the mask was triangulated with.
@@ -279,65 +292,42 @@ export function editedRegion(session: MaskEditSession): EditableRegion | undefin
 }
 
 /**
- * Open or close the pen, keeping the toolbar in step with it.
+ * Whether this entry is the very thing the pen has open.
  *
- * The pen is a tool as much as it is a panel button: while it is open the
- * subtitle bar shows the pen's own controls, and those controls live on
- * `tool` the way every other bar's do. The two therefore have to move
- * together, and there are six places the pen closes -- the panel button,
- * stepping to another candidate, recording a decision, ending the review,
- * saving a light, starting a new session -- so they all come through here
- * rather than each remembering to set the tool as well.
+ * The question every control that selects something has to ask before it acts:
+ * moving the selection off what is being edited abandons the session, so the
+ * one target that is not a move away is the subject itself. Read through
+ * editedRegion rather than off the session, because a review's subject is
+ * whichever candidate it currently stands on.
  *
- * Generic over the session kind so that closing the pen hands back a session
- * of the kind it was given, rather than widening a light edit to the union on
- * the way through and making every caller narrow it again.
+ * A mask is never the subject, not even the mask the session is on. The pen is
+ * open on one region of it, and selecting the whole thing points every bar at
+ * something else.
  */
-function withShapeEditing<T extends MaskEditSession>(state: UIState, session: T, editing: boolean): UIState {
-  if (editing === session.editingShape) return { ...state, maskEdit: session };
-  if (editing) {
-    return {
-      ...state,
-      tool: defaultPenTool,
-      maskEdit: {
-        ...session,
-        editingShape: true,
-        // Opened over an armed pen, the tool to go back to is the armed pen:
-        // picking it from the toolbar is a standing intention to edit outlines,
-        // and dropping to the mask tool the moment one is saved would end that
-        // after a single use. The session's own remembered tool still wins
-        // where there is one, which is the pen reopening within a review it
-        // was already opened from.
-        penReturnTool: state.tool.type === "pen" ? (session.penReturnTool ?? defaultPenTool) : state.tool,
-      },
-    };
-  }
-  return {
-    ...state,
-    tool: closedPenTool(state, session),
-    maskEdit: { ...session, editingShape: false, penReturnTool: undefined },
-  };
+export function isMaskEditSubject(session: MaskEditSession, entry: CarouselEntry): boolean {
+  if (entry.key !== session.maskKey) return false;
+  if (entry.type === "light") return session.subject === "light" && entry.lightId === session.light.id;
+  if (entry.type === "object") return session.subject === "object" && entry.objectId === editedRegion(session)?.id;
+  return false;
 }
 
 /**
- * The tool to leave behind once the pen is gone.
+ * Open the pen on something, which is the same act as selecting it.
  *
- * The mask tool is the fallback rather than the current one because the
- * current one is the pen, and leaving that selected would show a bar for an
- * overlay that is no longer mounted.
+ * The panel is the pen's supplement rather than a thing of its own, so there
+ * is no reaching the left half of this without the right: every session starts
+ * here, and none of the four openers is trusted to remember the tool for
+ * itself. The way back out is the mirror of it -- a session ends by clearing
+ * `maskEdit` and leaving the pen exactly where it is, armed and waiting for
+ * whatever is clicked next (see isPenArmed).
  *
- * `sessionEnded` is that same argument applied to the one remembered tool that
- * can itself be a pen -- the armed pen a session was opened over. Going back
- * to it is right when the session is over, and it is what keeps the toolbar
- * pen selected through editing one outline after another. It is wrong while
- * the session stays open with only its handles down, because then there *is*
- * something on screen the pen's own bar would be describing wrongly.
+ * A fresh pen rather than the one already selected, which matters on the way
+ * in from an armed one: stitch and add-anchor read clicks on an outline that
+ * did not exist when they were switched on, and carrying them over would open
+ * the session in a mode nobody asked this outline for.
  */
-function closedPenTool(state: UIState, session: MaskEditSession | undefined, sessionEnded = false): LaurusTool {
-  if (state.tool.type !== "pen") return state.tool;
-  const back = session?.penReturnTool ?? defaultMaskTool;
-  if (back.type === "pen" && !sessionEnded) return defaultMaskTool;
-  return back;
+function openMaskEdit(state: UIState, session: MaskEditSession): UIState {
+  return { ...state, tool: defaultPenTool, maskEdit: session };
 }
 
 /**
@@ -516,6 +506,7 @@ export enum UIActionType {
   SetMaskEditShapeEditing,
   SetMaskEditIndices,
   SetMaskEditRetouch,
+  RequestMaskEditEnd,
   EndMaskEdit,
 }
 
@@ -604,6 +595,7 @@ export type UIAction =
       decision: "accepted" | "rejected";
       nextCurrentIndices?: Set<number>;
     }
+  | { type: UIActionType.RequestMaskEditEnd }
   | { type: UIActionType.EndMaskEdit }
   | {
       type: UIActionType.ResumeObjectReview;
@@ -656,7 +648,7 @@ export function resumeObjectReview(
     redoRequested: false,
     editedShape: undefined,
     editingShape: false,
-    penReturnTool: undefined,
+    endRequested: false,
     retouch: undefined,
   };
 }
@@ -733,24 +725,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, browserSvgs: newBrowserSvgs };
     }
     case UIActionType.SetTool: {
-      // Picking the pen while something is open but unshaped raises its
-      // handles, rather than selecting a tool that then sits there doing
-      // nothing. That is the whole of what picking the pen means -- a review
-      // reached from the context menu opens with the pen down, and the way
-      // back up should be the pen itself as much as the panel's own button.
-      //
-      // A decided candidate is left alone: it refuses edits until it is
-      // unlocked, which is exactly why the panel's button is disabled on one,
-      // and handles that cannot commit anything would be worse than none.
-      const session = state.maskEdit;
-      if (action.value.type === "pen" && session && !session.editingShape && !isMaskEditLocked(session)) {
-        return { ...withShapeEditing(state, session, true), tool: { ...action.value } };
-      }
-      // Picking another tool while the pen is open leaves the pen, but not
-      // from here: shutting it also has to put back the relief and the
-      // triangles the reshape was previewing, which are not this reducer's to
-      // touch. useObjectReview watches for the tool moving out from under the
-      // pen and closes it the same way the panel's own button does.
       return { ...state, tool: { ...action.value } };
     }
     case UIActionType.SetBrowserElement: {
@@ -862,69 +836,60 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.StartObjectReview: {
       if (action.candidates.length === 0) return state;
-      return {
-        ...state,
-        tool: closedPenTool(state, state.maskEdit),
-        maskEdit: {
-          subject: "object",
-          mode: "review",
-          maskMediaId: action.maskMediaId,
-          maskKey: action.maskKey,
-          candidates: action.candidates,
-          decisions: new Map(),
-          currentIndex: 0,
-          currentIndices: new Set(action.candidates[0].polygon_indices),
-          redoRequested: false,
-          editedShape: undefined,
-          editingShape: false,
-          penReturnTool: undefined,
-          retouch: undefined,
-        },
-      };
+      // Handles down, but the pen selected all the same: a candidate is
+      // reviewed before it is redrawn, so the first thing to do with one is
+      // pick over the triangles it claims. The panel's own button raises the
+      // handles when there turns out to be something to redraw.
+      return openMaskEdit(state, {
+        subject: "object",
+        mode: "review",
+        maskMediaId: action.maskMediaId,
+        maskKey: action.maskKey,
+        candidates: action.candidates,
+        decisions: new Map(),
+        currentIndex: 0,
+        currentIndices: new Set(action.candidates[0].polygon_indices),
+        redoRequested: false,
+        editedShape: undefined,
+        editingShape: false,
+        endRequested: false,
+        retouch: undefined,
+      });
     }
-    // Both of these open with the pen already up, rather than a panel with a
-    // shut pen and a button to open it. Editing an outline is the whole of
-    // what they are for -- there is no reviewing to do first, the way there is
-    // for a detected candidate -- so the button was one click standing between
-    // asking to edit a shape and being able to. withShapeEditing is what puts
-    // the toolbar on the pen and remembers the tool to hand back.
+    // Both of these open with the handles already up, unlike a review.
+    // Editing an outline is the whole of what they are for -- there is no
+    // reviewing to do first, the way there is for a detected candidate -- so
+    // the panel's button was one click standing between asking to edit a shape
+    // and being able to.
     case UIActionType.StartObjectEdit: {
-      return withShapeEditing(
-        state,
-        {
-          subject: "object",
-          mode: "edit",
-          maskMediaId: action.maskMediaId,
-          maskKey: action.maskKey,
-          candidates: [{ object: action.object, polygon_indices: action.polygonIndices }],
-          decisions: new Map(),
-          currentIndex: 0,
-          currentIndices: new Set(action.polygonIndices),
-          redoRequested: false,
-          editedShape: undefined,
-          editingShape: false,
-          penReturnTool: undefined,
-          retouch: undefined,
-        },
-        true,
-      );
+      return openMaskEdit(state, {
+        subject: "object",
+        mode: "edit",
+        maskMediaId: action.maskMediaId,
+        maskKey: action.maskKey,
+        candidates: [{ object: action.object, polygon_indices: action.polygonIndices }],
+        decisions: new Map(),
+        currentIndex: 0,
+        currentIndices: new Set(action.polygonIndices),
+        redoRequested: false,
+        editedShape: undefined,
+        editingShape: true,
+        endRequested: false,
+        retouch: undefined,
+      });
     }
     case UIActionType.StartLightEdit: {
-      return withShapeEditing(
-        state,
-        {
-          subject: "light",
-          maskMediaId: action.maskMediaId,
-          maskKey: action.maskKey,
-          light: action.light,
-          currentIndices: new Set(action.polygonIndices),
-          editedShape: undefined,
-          editingShape: false,
-          penReturnTool: undefined,
-          retouch: undefined,
-        },
-        true,
-      );
+      return openMaskEdit(state, {
+        subject: "light",
+        maskMediaId: action.maskMediaId,
+        maskKey: action.maskKey,
+        light: action.light,
+        currentIndices: new Set(action.polygonIndices),
+        editedShape: undefined,
+        editingShape: true,
+        endRequested: false,
+        retouch: undefined,
+      });
     }
     case UIActionType.ToggleMaskEditPolygon: {
       const session = state.maskEdit;
@@ -949,20 +914,22 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (review?.subject !== "object") return state;
       const index = Math.min(review.candidates.length - 1, Math.max(0, action.index));
       if (index === review.currentIndex) return state;
-      // editingShape is left as it is and closed by withShapeEditing, which is
-      // the only thing that knows to hand the toolbar back its tool
-      return withShapeEditing(
-        state,
-        {
+      // Handles down on the way in, the same as the review opened: the next
+      // candidate is another thing to look over before it is anything to
+      // redraw, and leaving them up would have them come up around an outline
+      // nobody has yet decided is wrong. The pen stays selected either way.
+      return {
+        ...state,
+        maskEdit: {
           ...review,
           currentIndex: index,
           currentIndices: action.currentIndices ?? new Set(review.candidates[index].polygon_indices),
           redoRequested: false,
           editedShape: undefined,
+          editingShape: false,
           retouch: undefined,
         },
-        false,
-      );
+      };
     }
     case UIActionType.SetMaskEditIndices: {
       const session = state.maskEdit;
@@ -1007,7 +974,10 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetMaskEditShapeEditing: {
       const session = state.maskEdit;
       if (!session) return state;
-      return withShapeEditing(state, session, action.editing);
+      // Only the handles. The pen was selected when the session opened and
+      // stays selected until it ends, so this no longer moves the toolbar --
+      // see the field's own note.
+      return { ...state, maskEdit: { ...session, editingShape: action.editing } };
     }
     case UIActionType.RequestObjectReviewRedo: {
       const review = state.maskEdit;
@@ -1017,7 +987,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.RecordObjectReviewDecision: {
       const review = state.maskEdit;
       if (review?.subject !== "object") return state;
-      if (review.mode === "edit") return { ...state, tool: closedPenTool(state, review, true), maskEdit: undefined };
+      if (review.mode === "edit") return { ...state, maskEdit: undefined };
       const candidate = review.candidates[review.currentIndex];
       if (!candidate) return state;
 
@@ -1025,26 +995,35 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       decisions.set(candidate.object.id, action.decision);
 
       const next = advanceObjectReview(review, decisions);
-      if (next.done) return { ...state, tool: closedPenTool(state, review, true), maskEdit: undefined };
-      return withShapeEditing(
-        state,
-        {
+      // The pen is left selected and armed on the way out, not handed back to
+      // some tool the session was opened over -- deciding the last candidate
+      // is the end of one outline, not of the standing intention to edit them.
+      if (next.done) return { ...state, maskEdit: undefined };
+      return {
+        ...state,
+        maskEdit: {
           ...review,
           decisions,
           currentIndex: next.currentIndex,
           currentIndices: action.nextCurrentIndices ?? new Set(review.candidates[next.currentIndex].polygon_indices),
           redoRequested: false,
+          editingShape: false,
           retouch: undefined,
         },
-        false,
-      );
+      };
+    }
+    case UIActionType.RequestMaskEditEnd: {
+      const session = state.maskEdit;
+      if (!session || session.endRequested) return state;
+      return { ...state, maskEdit: { ...session, endRequested: true } };
     }
     case UIActionType.EndMaskEdit: {
-      return { ...state, tool: closedPenTool(state, state.maskEdit, true), maskEdit: undefined };
+      // The pen stays where it is, armed -- see openMaskEdit.
+      return { ...state, maskEdit: undefined };
     }
     case UIActionType.ResumeObjectReview: {
       const resumed = resumeObjectReview(action.maskMediaId, action.maskKey, action.candidates, action.decisions);
-      return resumed ? { ...state, tool: closedPenTool(state, state.maskEdit), maskEdit: resumed } : state;
+      return resumed ? openMaskEdit(state, resumed) : state;
     }
   }
 }
