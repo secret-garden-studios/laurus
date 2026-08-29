@@ -287,9 +287,6 @@ export function ReviewPanel() {
         placeholder={`describe me...`}
         defaultValue={currentDecision === "accepted" ? (currentDescription ?? "") : ""}
         autoComplete="off"
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-        }}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -492,9 +489,6 @@ export function EditPanel() {
         placeholder={`describe me...`}
         defaultValue={region.description}
         autoComplete="off"
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-        }}
         style={{
           width: "100%",
           boxSizing: "border-box",
