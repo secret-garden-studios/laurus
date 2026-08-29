@@ -4,8 +4,11 @@ import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { maskArm, UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
+import { LaurusImgResult } from "../workspace.server";
+import { WorkspaceResolution } from "../workspace.config";
+import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
 
 const GRIDLINES_OPTIONS = [
   { label: "off", value: 0 },
@@ -13,151 +16,246 @@ const GRIDLINES_OPTIONS = [
   { label: "bright", value: 1 },
 ] as const;
 
+function maskbarSizes(resolution: WorkspaceResolution) {
+  switch (resolution.type) {
+    case "high":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 22,
+          height: 22,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 20,
+            paddingRight: 20,
+            gap: 12,
+            fontSize: 13,
+          },
+          track: {
+            width: 26,
+            height: 12,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 8,
+            height: 8,
+          },
+          translateX: 14,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 20,
+          },
+          label: {
+            fontSize: 12,
+          },
+          input: {
+            fontSize: 12,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+    case "midhigh":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 18,
+          height: 18,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 14,
+            paddingRight: 14,
+            gap: 8,
+            fontSize: 12,
+          },
+          track: {
+            width: 22,
+            height: 10,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 12,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 14,
+          },
+          label: {
+            fontSize: 11,
+          },
+          input: {
+            fontSize: 11,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+    case "low":
+    case "midlow":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 20,
+          height: 20,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 16,
+            paddingRight: 16,
+            gap: 12,
+            fontSize: 12,
+          },
+          track: {
+            width: 20,
+            height: 9,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 10,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 16,
+          },
+          label: {
+            fontSize: 11,
+          },
+          input: {
+            fontSize: 11,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+  }
+}
+
+type MaskbarSizes = ReturnType<typeof maskbarSizes>;
+
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { coreState, dispatch } = useContext(CoreContext);
-  const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const { notifyMaskToolChanged, notifyMaskAppearanceChanged, ...mask } = useContext(MaskContext);
-  const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
-      case "high":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 22,
-            height: 22,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 20,
-              paddingRight: 20,
-              gap: 12,
-              fontSize: 13,
-            },
-            track: {
-              width: 26,
-              height: 12,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 8,
-              height: 8,
-            },
-            translateX: 14,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 20,
-            },
-            label: {
-              fontSize: 12,
-            },
-            input: {
-              fontSize: 12,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-      case "midhigh":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 18,
-            height: 18,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 14,
-              paddingRight: 14,
-              gap: 8,
-              fontSize: 12,
-            },
-            track: {
-              width: 22,
-              height: 10,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 12,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 14,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-      case "low":
-      case "midlow":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 20,
-            height: 20,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 16,
-              paddingRight: 16,
-              gap: 12,
-              fontSize: 12,
-            },
-            track: {
-              width: 20,
-              height: 9,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 10,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 16,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-    }
-  });
+  const { selectedMaskKeys } = useContext(HoverContext);
+  const { notifyMaskToolChanged, status, reset } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
+
+  const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
+  const arm = maskArm(uiState, selectedMaskKey);
+  const armType = arm?.type;
+  const armedImgKey = arm?.type === "img" ? arm.img.media_key : undefined;
+
+  useEffect(() => {
+    if (status === "connecting" || status === "streaming") return;
+    reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armedImgKey]);
+
+  useEffect(() => {
+    if (uiState.tool.type !== "mask") return;
+    const nextLight = armType === "mask" && uiState.tool.lightingMeshSection;
+    const nextRaising = armType !== undefined && uiState.tool.raisingObjects;
+    if (nextLight === uiState.tool.lightingMeshSection && nextRaising === uiState.tool.raisingObjects) return;
+    uiDispatch({
+      type: UIActionType.SetTool,
+      value: { type: "mask", lightingMeshSection: nextLight, raisingObjects: nextRaising },
+    });
+    notifyMaskToolChanged("mask");
+  }, [armType, uiState.tool, uiDispatch, notifyMaskToolChanged]);
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        overflow: "auto",
+        ...dynamicSizes.flex,
+      }}
+    >
+      <SvgRepo
+        title="mask"
+        svg={texture300()}
+        containerStyle={{
+          width: dynamicSizes.svgSize.width,
+          height: dynamicSizes.svgSize.height,
+        }}
+        scale={1}
+        scaleToContaier={true}
+      />
+      {arm === undefined ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            ...dynamicSizes.toggle.div,
+            overflowX: "auto",
+          }}
+        >
+          <div
+            style={{
+              userSelect: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {
+              "select an image from the browser to generate a mask, or select an existing mask to add lights and objects to it"
+            }
+          </div>
+        </div>
+      ) : arm.type === "img" ? (
+        <MaskGenerationControls img={arm.img} />
+      ) : (
+        <MaskMeshControls maskKey={arm.maskKey} />
+      )}
+    </div>
+  );
+}
+
+interface MaskGenerationControls {
+  img: LaurusImgResult;
+}
+
+function MaskGenerationControls({ img }: MaskGenerationControls) {
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const {
+    notifyMaskToolChanged,
+    position,
+    setPosition,
+    size,
+    setSize,
+    resolution,
+    setResolution,
+    textureMix,
+    setTextureMix,
+  } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
 
   const xInputRef = useRef<HTMLInputElement | null>(null);
   const yInputRef = useRef<HTMLInputElement | null>(null);
   const wInputRef = useRef<HTMLInputElement | null>(null);
   const hInputRef = useRef<HTMLInputElement | null>(null);
-  const { position, setPosition, size, setSize } = mask;
 
   const isPositionOn = position.value;
   const isSizeOn = size.value;
@@ -202,17 +300,10 @@ export default function Maskbar() {
     }));
   }, [setPosition]);
 
-  const selectedImgKey = selectedImgKeys.size === 1 ? Array.from(selectedImgKeys)[0] : undefined;
-  const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
-  const isArmedForMaskDrop = uiState.tool.type === "mask" && uiState.browserElement?.type === "img";
-  const armedImg =
-    isArmedForMaskDrop && uiState.browserElement?.type === "img" ? uiState.browserElement.value : undefined;
-  const sourceWidth = imgMeta ? imgMeta.width * imgMeta.scale_x : armedImg?.width;
-  const sourceHeight = imgMeta ? imgMeta.height * imgMeta.scale_y : armedImg?.height;
   const sourceAspectRatio = useMemo(() => {
-    if (sourceWidth === undefined || !sourceHeight) return undefined;
-    return sourceWidth / sourceHeight;
-  }, [sourceWidth, sourceHeight]);
+    if (!img.height) return undefined;
+    return img.width / img.height;
+  }, [img.width, img.height]);
 
   const updateToolWidth = useCallback(() => {
     const newWidth = parseFloat(wInputRef.current?.value || "");
@@ -232,28 +323,260 @@ export default function Maskbar() {
     }));
   }, [sourceAspectRatio, setSize]);
 
-  const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
-  const hasMesh = mask.status === "streaming" || mask.status === "done";
-  const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const hasSelectedMask = selectedMaskKey !== undefined;
-  const isGridlinesDisabled = !(hasSelectedMask || hasMesh || isArmedForMaskDrop);
-  const isLightDisabled = !hasSelectedMask;
-  const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
-  const canSeedEdgeObjects = Boolean(imgMeta) || isArmedForMaskDrop;
   const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
-  const isObjectsDisabled = !hasSelectedMask && !canSeedEdgeObjects;
 
-  const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
-  const gridlinesValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
-  const selectedGridlines = useMemo(
-    () =>
-      GRIDLINES_OPTIONS.reduce((closest, option) =>
-        Math.abs(option.value - gridlinesValue) < Math.abs(closest.value - gridlinesValue) ? option : closest,
-      ).value,
-    [gridlinesValue],
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          height: "100%",
+          alignItems: "center",
+          ...dynamicSizes.input.container,
+        }}
+      >
+        <div
+          title={"place the generated mask at an exact x/y position"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"position"}</span>
+          <Toggle
+            value={isPositionOn}
+            onClick={() => {
+              const newPositionValue = !isPositionOn;
+              const newX = parseFloat(xInputRef.current?.value || "");
+              const newY = parseFloat(yInputRef.current?.value || "");
+              setPosition({
+                value: newPositionValue,
+                x: newPositionValue && !isNaN(newX) ? newX : undefined,
+                y: newPositionValue && !isNaN(newY) ? newY : undefined,
+              });
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
+          }}
+        >
+          {"x"}
+        </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|x`}
+          disabled={!isPositionOn}
+          ref={xInputRef}
+          onChange={updateToolPosition}
+          type="text"
+          value={xValue}
+          autoComplete="off"
+          style={positionInputStyle}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
+          }}
+        >
+          {"y"}
+        </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|y`}
+          disabled={!isPositionOn}
+          ref={yInputRef}
+          onChange={updateToolPosition}
+          type="text"
+          value={yValue}
+          autoComplete="off"
+          style={positionInputStyle}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.input.container,
+        }}
+      >
+        <div
+          title={"size the generated mask to an exact width/height"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            ...dynamicSizes.toggle.div,
+          }}
+        >
+          <span style={{ textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"size"}</span>
+          <Toggle
+            value={isSizeOn}
+            onClick={() => {
+              const newSizeValue = !isSizeOn;
+              setSize(
+                newSizeValue
+                  ? { value: true, width: img.width, height: img.height }
+                  : { value: false, width: undefined, height: undefined },
+              );
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
+          }}
+        >
+          {"width"}
+        </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|w`}
+          disabled={!isSizeOn}
+          ref={wInputRef}
+          onChange={updateToolWidth}
+          type="text"
+          value={widthValue}
+          autoComplete="off"
+          style={sizeInputStyle}
+        />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
+          }}
+        >
+          {"height"}
+        </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|h`}
+          disabled={!isSizeOn}
+          ref={hInputRef}
+          onChange={updateToolHeight}
+          type="text"
+          value={heightValue}
+          autoComplete="off"
+          style={sizeInputStyle}
+        />
+      </div>
+      <div
+        title={"how finely the generated mask is triangulated"}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span>{"resolution"}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            letterSpacing: 2,
+          }}
+        >
+          {([1, 2, 3] as const).map((factor) => {
+            const isSelected = resolution === factor;
+            return (
+              <span
+                key={factor}
+                onClick={() => setResolution(factor)}
+                style={{
+                  cursor: "pointer",
+                  color: isSelected ? "inherit" : "rgb(67,67,67)",
+                  textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                  padding: "4px 8px",
+                  ...dynamicSizes.input.label,
+                }}
+              >
+                {`${factor}x`}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <Gridlines value={textureMix} onChange={setTextureMix} dynamicSizes={dynamicSizes} />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>
+          {"generate objects"}
+        </span>
+        <Toggle
+          value={isObjectsOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, raisingObjects: !isObjectsOn, lightingMeshSection: false },
+            });
+            notifyMaskToolChanged("mask");
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div />
+    </>
   );
+}
+
+interface MaskMeshControls {
+  maskKey: string;
+}
+
+function MaskMeshControls({ maskKey }: MaskMeshControls) {
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
+
+  const maskMeta = coreState.project.masks.get(maskKey);
+  const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
+  const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
+
   const pendingGridlinesSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingGridlinesRef = useRef(false);
   const persistGridlinesQueue = useCallback(async () => {
@@ -277,426 +600,133 @@ export default function Maskbar() {
 
   const saveGridlinesField = useCallback(
     (value: number) => {
-      if (selectedMaskKey === undefined) return;
-      const maskMeta = coreState.project.masks.get(selectedMaskKey);
       if (!maskMeta) return;
-
       const newMasks = new Map(coreState.project.masks);
       const newMaskMeta: LaurusProjectMask = { ...maskMeta, texture: value };
-      newMasks.set(selectedMaskKey, newMaskMeta);
+      newMasks.set(maskKey, newMaskMeta);
       const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
       dispatch({ type: CoreActionType.SetProject, value: newProject });
-      notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
+      notifyMaskAppearanceChanged(maskKey, { textureMix: value });
       pendingGridlinesSaveRef.current = newProject;
       void persistGridlinesQueue();
     },
-    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
+    [maskKey, maskMeta, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
   );
-
-  const handleGridlinesChange = useCallback(
-    (value: number) => {
-      if (selectedMaskMeta) {
-        saveGridlinesField(value);
-      } else {
-        mask.setTextureMix(value);
-      }
-    },
-    [selectedMaskMeta, saveGridlinesField, mask],
-  );
-
-  useEffect(() => {
-    if (mask.status === "connecting" || mask.status === "streaming") return;
-    mask.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedImgKey]);
-
-  useEffect(() => {
-    if (uiState.tool.type !== "mask") return;
-    const nextRaising = uiState.tool.raisingObjects && (hasSelectedMask || canSeedEdgeObjects);
-    const nextLight = hasSelectedMask && uiState.tool.lightingMeshSection;
-    if (nextRaising === uiState.tool.raisingObjects && nextLight === uiState.tool.lightingMeshSection) return;
-    uiDispatch({
-      type: UIActionType.SetTool,
-      value: { type: "mask", lightingMeshSection: nextLight, raisingObjects: nextRaising },
-    });
-    notifyMaskToolChanged("mask");
-  }, [hasSelectedMask, canSeedEdgeObjects, uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
   return (
     <>
       <div
         style={{
-          width: "100%",
-          height: "100%",
           display: "flex",
           alignItems: "center",
-          overflow: "auto",
-          ...dynamicSizes.flex,
+          height: "100%",
+          ...dynamicSizes.toggle.div,
         }}
       >
-        <SvgRepo
-          svg={texture300()}
-          containerStyle={{
-            width: dynamicSizes.svgSize.width,
-            height: dynamicSizes.svgSize.height,
-          }}
-          scale={1}
-          scaleToContaier={true}
+        <Gridlines
+          value={maskMeta?.texture ?? TEXTURE_MIX_DEFAULT}
+          onChange={saveGridlinesField}
+          dynamicSizes={dynamicSizes}
         />
-        <div
-          style={{
-            display: "flex",
-            height: "100%",
-            alignItems: "center",
-            ...dynamicSizes.input.container,
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add light"}</span>
+        <Toggle
+          value={isLightOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, lightingMeshSection: !isLightOn, raisingObjects: false },
+            });
+            notifyMaskToolChanged("mask");
           }}
-        >
-          <div
-            title={
-              isPositionDisabled
-                ? "select an image to mask, or arm one from the browser, to set an exact position for the result"
-                : "place the generated mask at an exact x/y position instead of overlaying the source image"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add object"}</span>
+        <Toggle
+          value={isObjectsOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, raisingObjects: !isObjectsOn, lightingMeshSection: false },
+            });
+            notifyMaskToolChanged("mask");
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div />
+    </>
+  );
+}
+
+interface Gridlines {
+  value: number;
+  onChange: (value: number) => void;
+  dynamicSizes: MaskbarSizes;
+}
+
+function Gridlines({ value, onChange, dynamicSizes }: Gridlines) {
+  const selected = useMemo(
+    () =>
+      GRIDLINES_OPTIONS.reduce((closest, option) =>
+        Math.abs(option.value - value) < Math.abs(closest.value - value) ? option : closest,
+      ).value,
+    [value],
+  );
+
+  return (
+    <>
+      <span>{"gridlines"}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          letterSpacing: 2,
+        }}
+      >
+        {GRIDLINES_OPTIONS.map((option) => {
+          const isSelected = selected === option.value;
+          return (
             <span
+              key={option.label}
+              onClick={() => onChange(option.value)}
               style={{
-                textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                cursor: "pointer",
+                color: isSelected ? "inherit" : "rgb(67,67,67)",
+                textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                padding: "4px 8px",
+                ...dynamicSizes.input.label,
               }}
             >
-              {"position"}
+              {option.label}
             </span>
-            <Toggle
-              value={isPositionOn}
-              onClick={() => {
-                const newPositionValue = !isPositionOn;
-                const newX = parseFloat(xInputRef.current?.value || "");
-                const newY = parseFloat(yInputRef.current?.value || "");
-                setPosition({
-                  value: newPositionValue,
-                  x: newPositionValue && !isNaN(newX) ? newX : undefined,
-                  y: newPositionValue && !isNaN(newY) ? newY : undefined,
-                });
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isPositionDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"x"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|x`}
-            disabled={!isPositionOn}
-            ref={xInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={xValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"y"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|y`}
-            disabled={!isPositionOn}
-            ref={yInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={yValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.input.container,
-          }}
-        >
-          <div
-            title={
-              isSizeDisabled
-                ? "select an image to mask, or arm one from the browser, to set an exact size for the result"
-                : "size the generated mask to an exact width/height instead of matching the source image"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              style={{
-                textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-              }}
-            >
-              {"size"}
-            </span>
-            <Toggle
-              value={isSizeOn}
-              onClick={() => {
-                const newSizeValue = !isSizeOn;
-                setSize(
-                  newSizeValue && sourceWidth !== undefined && sourceHeight !== undefined
-                    ? {
-                        value: true,
-                        width: sourceWidth,
-                        height: sourceHeight,
-                      }
-                    : { value: newSizeValue, width: undefined, height: undefined },
-                );
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isSizeDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"width"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|w`}
-            disabled={!isSizeOn}
-            ref={wInputRef}
-            onChange={updateToolWidth}
-            type="text"
-            value={widthValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"height"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|h`}
-            disabled={!isSizeOn}
-            ref={hInputRef}
-            onChange={updateToolHeight}
-            type="text"
-            value={heightValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-        </div>
-        <div
-          title={
-            isResolutionDisabled
-              ? "select an image to mask, or arm one from the browser, to set the generated mesh's resolution"
-              : "how finely the generated mesh is triangulated -- 2x/3x roughly double/triple the point density of the default"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ opacity: isResolutionDisabled ? 0.3 : 1 }}>{"resolution"}</span>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              letterSpacing: 2,
-            }}
-          >
-            {([1, 2, 3] as const).map((factor) => {
-              const isSelected = mask.resolution === factor;
-              return (
-                <span
-                  key={factor}
-                  onClick={isResolutionDisabled ? undefined : () => mask.setResolution(factor)}
-                  style={{
-                    cursor: isResolutionDisabled ? "default" : "pointer",
-                    color: isSelected && !isResolutionDisabled ? "inherit" : "rgb(67,67,67)",
-                    textShadow: isSelected && !isResolutionDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                    padding: "4px 8px",
-                    ...dynamicSizes.input.label,
-                  }}
-                >
-                  {`${factor}x`}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-        <div
-          title={
-            isGridlinesDisabled
-              ? "select or generate a mesh to adjust its wireframe overlay"
-              : "off hides the mesh's triangle wireframe, dim draws it faintly, bright draws it fully in over the source image"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ opacity: isGridlinesDisabled ? 0.3 : 1 }}>{"gridlines"}</span>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              letterSpacing: 2,
-            }}
-          >
-            {GRIDLINES_OPTIONS.map((option) => {
-              const isSelected = selectedGridlines === option.value;
-              return (
-                <span
-                  key={option.label}
-                  onClick={isGridlinesDisabled ? undefined : () => handleGridlinesChange(option.value)}
-                  style={{
-                    cursor: isGridlinesDisabled ? "default" : "pointer",
-                    color: isSelected && !isGridlinesDisabled ? "inherit" : "rgb(67,67,67)",
-                    textShadow: isSelected && !isGridlinesDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                    padding: "4px 8px",
-                    ...dynamicSizes.input.label,
-                  }}
-                >
-                  {option.label}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-        <div
-          title={
-            isLightDisabled
-              ? "select a mesh to light a subsection of it"
-              : "drag a circle over this mesh to light a subsection of its triangles"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"light"}
-          </span>
-          <Toggle
-            value={isLightOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newLightValue = !uiState.tool.lightingMeshSection;
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  lightingMeshSection: newLightValue,
-                  raisingObjects: newLightValue ? false : uiState.tool.raisingObjects,
-                },
-              });
-              notifyMaskToolChanged("mask");
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isLightDisabled}
-          />
-        </div>
-        <div
-          title={
-            isObjectsDisabled
-              ? "select a mesh to raise objects onto it, or arm an image from the browser to raise objects from its edges"
-              : hasSelectedMask
-                ? "drag a circle over this mesh to raise that area's elevation, warping the surrounding triangles like a topographic map"
-                : "with no mesh selected, detect the image's edges while generating, fill the areas they enclose " +
-                  "with polygons, and raise an object over each of the largest to review one by one"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              opacity: isObjectsDisabled ? 0.3 : 1,
-              textShadow: isObjectsOn && !isObjectsDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"objects"}
-          </span>
-          <Toggle
-            value={isObjectsOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newRaisingObjects = !isObjectsOn;
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  raisingObjects: newRaisingObjects,
-                  lightingMeshSection: newRaisingObjects ? false : uiState.tool.lightingMeshSection,
-                },
-              });
-              notifyMaskToolChanged("mask");
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isObjectsDisabled}
-          />
-        </div>
-        <div />
+          );
+        })}
       </div>
     </>
   );

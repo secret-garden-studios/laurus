@@ -368,6 +368,15 @@ export function isAwaitingRegionPick(state: UIState): boolean {
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
 }
 
+export type MaskArm = { type: "img"; img: LaurusImgResult } | { type: "mask"; maskKey: string };
+
+export function maskArm(state: UIState, selectedMaskKey: string | undefined): MaskArm | undefined {
+  if (state.tool.type !== "mask") return undefined;
+  if (selectedMaskKey !== undefined) return { type: "mask", maskKey: selectedMaskKey };
+  if (state.browserElement?.type === "img") return { type: "img", img: state.browserElement.value };
+  return undefined;
+}
+
 /**
  * Whether the session refuses edits because its subject has already been
  * decided.

@@ -1986,6 +1986,11 @@ export default function Workspace({
     notifyCanvasZoomChanged(canvasZoom);
   }, [canvasZoom, notifyCanvasZoomChanged]);
 
+  useEffect(() => {
+    if (selectedMaskKeys.size === 0 || uiState.browserElement?.type !== "img") return;
+    uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
+  }, [selectedMaskKeys, uiState.browserElement]);
+
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
       if (canvasAreaRef.current && (coreState.project.frame_top < 0 || coreState.project.frame_left < 0)) {
