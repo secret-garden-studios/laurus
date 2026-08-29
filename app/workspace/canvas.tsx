@@ -1,4 +1,4 @@
-import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import {
@@ -15,6 +15,7 @@ import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
 import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
+import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
 /* The drawing canvas lives inside the zoom transform, so its client rect is the
@@ -476,6 +477,21 @@ export default function Canvas() {
       uiDispatch,
     ],
   );
+
+  /* An armed image is one drop away from being a mask, and a mask draws
+     the picture it was made from at its own full size -- which is not the
+     one the browser panel loaded, since next/image serves that resized
+     and under its own URL. Fetched and decoded here, while the marquee is
+     still being drawn, so the drop can upload it in the frame it starts
+     in rather than leaving an empty frame on the canvas until the picture
+     lands. */
+  useEffect(() => {
+    if (uiState.browserElement?.type === "img") warmImageTexture(uiState.browserElement.value.src);
+    // The other way into a mask: an image already on the canvas,
+    // picked up with the mask tool. Nothing was armed in the
+    // browser for that one, so it is warmed from the selection.
+    warmImageTexture(activeMaskImg?.imgData.src);
+  }, [uiState.browserElement, activeMaskImg]);
 
   const handleMaskDrop = useCallback(
     (imgData: LaurusImgResult, dropArea: ProjectCircle) => {

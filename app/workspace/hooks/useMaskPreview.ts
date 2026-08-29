@@ -16,6 +16,7 @@ import {
   LIGHT_FALLOFF_CSS_PX_DEFAULT,
   LIGHT_INTENSITY_DEFAULT,
   LIGHT_SIZE_CSS_PX_DEFAULT,
+  MASK_BACKING_VERTEX_COUNT,
   TEXTURE_MIX_DEFAULT,
 } from "../mask-gl";
 
@@ -54,10 +55,16 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   const vertexCountRef = useRef(0);
   const dirtyRef = useRef(false);
   const curvesRef = useRef<MaskCurve_V1_0[]>([]);
+  const backingVertexCountRef = useRef(0);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const objectCandidatesRef = useRef<LaurusObjectReviewCandidate[]>([]);
 
-  const [status, setStatus] = useState<MaskStatus>("idle");
+  const [status, setStatusState] = useState<MaskStatus>("idle");
+  const statusRef = useRef<MaskStatus>("idle");
+  const setStatus = useCallback((value: MaskStatus) => {
+    statusRef.current = value;
+    setStatusState(value);
+  }, []);
   const [triangleCount, setTriangleCount] = useState(0);
   const [result, setResult] = useState<LaurusMaskResult | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
@@ -136,9 +143,30 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     return colorCtxRef.current;
   }, []);
 
+  const pushBackingSheet = useCallback((img: LaurusImgResult) => {
+    const corners: [number, number][] = [
+      [0, 0],
+      [img.width, 0],
+      [0, img.height],
+      [img.width, 0],
+      [img.width, img.height],
+      [0, img.height],
+    ];
+    for (const [x, y] of corners) {
+      positionsRef.current.push(x, y);
+      colorsRef.current.push(1, 1, 1);
+      uvsRef.current.push(x / img.width, 1 - y / img.height);
+      centroidsRef.current.push(x, y);
+      barycentricsRef.current.push(1, 1, 1);
+    }
+    backingVertexCountRef.current = MASK_BACKING_VERTEX_COUNT;
+    dirtyRef.current = true;
+  }, []);
+
   const reset = useCallback(() => {
     socketRef.current?.close();
     socketRef.current = undefined;
+    backingVertexCountRef.current = 0;
     positionsRef.current = [];
     colorsRef.current = [];
     barycentricsRef.current = [];
@@ -160,7 +188,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setLightDarkness(LIGHT_DARKNESS_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setTextureMix, setLightSize, setLightIntensity, setLightFalloff, setLightDarkness]);
+  }, [setStatus, setTextureMix, setLightSize, setLightIntensity, setLightFalloff, setLightDarkness]);
 
   const start = useCallback(
     (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, objectSeed?: EdgeObjectSeed) => {
@@ -168,8 +196,10 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       colorsRef.current = [];
       barycentricsRef.current = [];
       uvsRef.current = [];
+      centroidsRef.current = [];
       vertexCountRef.current = 0;
       dirtyRef.current = true;
+      pushBackingSheet(img);
       curvesRef.current = [];
       glowColorRef.current = [1, 1, 1];
       objectCandidatesRef.current = [];
@@ -214,20 +244,10 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             if (curvesRef.current.length === 1) {
               const colorCtx = getColorCtx();
               const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
-              const corners: [number, number][] = [
-                [0, 0],
-                [img.width, 0],
-                [0, img.height],
-                [img.width, 0],
-                [img.width, img.height],
-                [0, img.height],
-              ];
-              for (const [x, y] of corners) {
-                positionsRef.current.push(x, y);
-                colorsRef.current.push(r, g, b);
-                uvsRef.current.push(x / img.width, 1 - y / img.height);
-                centroidsRef.current.push(x, y);
-                barycentricsRef.current.push(1, 1, 1);
+              for (let i = 0; i < MASK_BACKING_VERTEX_COUNT; i++) {
+                colorsRef.current[i * 3] = r;
+                colorsRef.current[i * 3 + 1] = g;
+                colorsRef.current[i * 3 + 2] = b;
               }
               dirtyRef.current = true;
             }
@@ -271,6 +291,8 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       apiOrigin,
       accessToken,
       getColorCtx,
+      pushBackingSheet,
+      setStatus,
       setTextureMix,
       setLightSize,
       setLightIntensity,
@@ -281,6 +303,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
 
   return {
     status,
+    statusRef,
     triangleCount,
     result,
     objectCandidatesRef,
@@ -318,6 +341,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       dirtyRef,
       curvesRef,
       glowColorRef,
+      backingVertexCountRef,
     },
   };
 }

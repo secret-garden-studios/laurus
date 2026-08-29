@@ -315,6 +315,8 @@ export function ProjectMaskItem({
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   const vertexRangesRef = useRef<[number, number][]>([]);
+  const backingVertexCountRef = useRef(0);
+  const backingGreyRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
   const lightSourceRef = useRef<{ x: number; y: number; radius: number; falloff: number }>({
@@ -1090,6 +1092,8 @@ export function ProjectMaskItem({
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
+      backingVertexCount: backingVertexCountRef.current,
+      backingGrey: backingGreyRef.current,
     });
   }, [resolveObjectUniforms, resolveRestingLightSources]);
   renderRef.current = render;
@@ -2179,6 +2183,10 @@ export function ProjectMaskItem({
           maskTextureRef.current = uploadCurveMask(gl, maskCanvas, curvesRef.current, maskTextureRef.current);
         }
         glowColorRef.current = liveGlowColorRef.current;
+
+        const streaming = mask.statusRef.current === "connecting" || mask.statusRef.current === "streaming";
+        backingVertexCountRef.current = mask.meshRefs.backingVertexCountRef.current;
+        backingGreyRef.current = streaming ? 1 : 0;
         textureMixRef.current = mask.textureMixRef.current;
         lightSizeRef.current = mask.lightSizeRef.current;
         lightIntensityRef.current = mask.lightIntensityRef.current;

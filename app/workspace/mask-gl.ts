@@ -53,6 +53,9 @@ export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.2588
 export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
 export const GRIDLINES_DIM_ALPHA = 0.5;
 export const GRIDLINES_BRIGHT_ALPHA = 1;
+export const MASK_BACKING_VERTEX_COUNT = 6;
+export const MASK_BACKING_GREY_LEVEL = 0.55;
+
 export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
   return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
 }
@@ -570,6 +573,14 @@ uniform sampler2D u_mask;
 uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
+// How far this pass is held back toward flat grey: 1 while the backing
+// sheet is drawn under a mask that is still streaming, 0 for the
+// triangles laid over it and for everything on a settled mask. The
+// caller draws the two in separate passes -- see drawMaskMesh.
+uniform float u_backingGrey;
+#define BACKING_GREY_LEVEL ${glFloat(MASK_BACKING_GREY_LEVEL)}
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
 uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
 ${OBJECT_LIFT_GLSL}
 
@@ -802,7 +813,15 @@ void main() {
   float lightEdge = highlightEdge * v_highlight.a;
   vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
 
-  gl_FragColor = vec4(withLightStroke, alpha);
+  // Last of all, so that it takes the picture and everything drawn on
+  // it together: the sheet is being held back as a whole, and a
+  // wireframe or a glow left at full colour on a greyed sheet would
+  // read as belonging to the triangles rather than to what is behind
+  // them.
+  float luma = dot(withLightStroke, LUMA);
+  vec3 greyed = mix(withLightStroke, vec3(luma * BACKING_GREY_LEVEL), u_backingGrey);
+
+  gl_FragColor = vec4(greyed, alpha);
 }
 `,
 };
@@ -885,6 +904,7 @@ export interface GLState {
   maskLoc: WebGLUniformLocation;
   maskActiveLoc: WebGLUniformLocation;
   glowColorLoc: WebGLUniformLocation;
+  backingGreyLoc: WebGLUniformLocation;
 }
 
 /**
@@ -1006,6 +1026,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const maskLoc = gl.getUniformLocation(program, "u_mask");
   const maskActiveLoc = gl.getUniformLocation(program, "u_maskActive");
   const glowColorLoc = gl.getUniformLocation(program, "u_glowColor");
+  const backingGreyLoc = gl.getUniformLocation(program, "u_backingGrey");
   if (
     positionLoc < 0 ||
     colorLoc < 0 ||
@@ -1039,7 +1060,8 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !hasTextureLoc ||
     !maskLoc ||
     !maskActiveLoc ||
-    !glowColorLoc
+    !glowColorLoc ||
+    !backingGreyLoc
   )
     return undefined;
 
@@ -1091,6 +1113,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     maskLoc,
     maskActiveLoc,
     glowColorLoc,
+    backingGreyLoc,
   };
 }
 
@@ -1124,6 +1147,19 @@ export interface DrawMaskMeshOptions {
   texture: WebGLTexture | undefined;
   maskTexture: WebGLTexture | undefined;
   glowColor: [number, number, number];
+  /**
+   * How many vertices at the front of the mesh are the backing sheet
+   * rather than mask triangles, and how far to hold that sheet back
+   * toward grey -- 0 for a settled mask, which is drawn as one pass.
+   *
+   * Taken as a count rather than a flag because the split is what
+   * makes the two passes possible at all: the sheet is laid down
+   * first and everything after it is the mesh, so one uniform can
+   * differ between the two without a per-vertex attribute to carry
+   * it. See MASK_BACKING_VERTEX_COUNT.
+   */
+  backingVertexCount?: number;
+  backingGrey?: number;
 }
 
 export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void {
@@ -1316,7 +1352,25 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.enableVertexAttribArray(state.fillOverlayLoc);
   gl.vertexAttribPointer(state.fillOverlayLoc, 4, gl.FLOAT, false, 0, 0);
 
-  gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
+  const backingGrey = options.backingGrey ?? 0;
+  const backingCount = Math.min(options.backingVertexCount ?? 0, options.vertexCount);
+  if (backingGrey <= 0 || backingCount === 0) {
+    gl.uniform1f(state.backingGreyLoc, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
+    return;
+  }
+
+  // The sheet, then the mesh over it. Two passes rather than a
+  // vertex attribute saying which is which: the attribute would have
+  // to be kept in step with five other buffers on every triangle
+  // that arrives, to carry one value that is constant across each of
+  // the two runs. Nothing is blended (the context has no BLEND
+  // enabled), so a triangle simply takes the pixels it covers back
+  // to full colour.
+  gl.uniform1f(state.backingGreyLoc, backingGrey);
+  gl.drawArrays(gl.TRIANGLES, 0, backingCount);
+  gl.uniform1f(state.backingGreyLoc, 0);
+  gl.drawArrays(gl.TRIANGLES, backingCount, options.vertexCount - backingCount);
 }
 
 export function colorToRGB01(ctx: CanvasRenderingContext2D, color: string): [number, number, number] {
@@ -1370,15 +1424,70 @@ export function uploadCurveMask(
   return texture;
 }
 
+/**
+ * Source images already fetched and decoded, by src.
+ *
+ * A mask draws the picture it was made from, so the first thing a
+ * drop needs is that picture -- at full size, which is not what the
+ * browser panel loaded (next/image serves it a resized one, under
+ * its own URL). Left to the drop, that fetch and decode is a cold
+ * one, and the canvas has nothing to show until it lands.
+ *
+ * Kept as decoded <img> elements rather than bitmaps because that is
+ * what texImage2D takes either way, and one element can be uploaded
+ * into as many contexts as ask for it -- the live preview and the
+ * settled mask that replaces it both want the same picture.
+ */
+const warmedImages = new Map<string, HTMLImageElement>();
+const WARMED_IMAGE_LIMIT = 4;
+
+function warmedImage(src: string): HTMLImageElement {
+  const held = warmedImages.get(src);
+  if (held) return held;
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.src = src;
+  warmedImages.set(src, image);
+  // Oldest first, which for this is also least recently armed: the
+  // cap is here to keep a session's worth of full-size pictures from
+  // being held forever, not to be clever about which one goes.
+  while (warmedImages.size > WARMED_IMAGE_LIMIT) {
+    const oldest = warmedImages.keys().next();
+    if (oldest.done || oldest.value === src) break;
+    warmedImages.delete(oldest.value);
+  }
+  return image;
+}
+
+/**
+ * Fetch and decode an image now, against a texture upload later.
+ *
+ * Called when an image is armed, so that the drop that follows finds
+ * it decoded and can upload it in the same frame the mask starts in.
+ * Costs nothing when it is not followed by a drop: the picture is one
+ * the browser would have fetched on the next drop anyway.
+ */
+export function warmImageTexture(src: string | undefined): void {
+  if (!src) return;
+  warmedImage(src);
+}
+
 export function loadImageTexture(
   gl: WebGLRenderingContext,
   src: string,
   onLoaded: (texture: WebGLTexture) => void,
   onError?: (error: unknown) => void,
 ): void {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.onload = () => {
+  let image = warmedImage(src);
+  // A held image whose fetch already failed has no event left to
+  // fire, so waiting on one would wait forever. Dropped and
+  // fetched again instead, which is what asking for it a second
+  // time means anyway.
+  if (image.complete && image.naturalWidth === 0) {
+    warmedImages.delete(src);
+    image = warmedImage(src);
+  }
+  const upload = () => {
     try {
       const texture = gl.createTexture();
       if (!texture) return;
@@ -1394,10 +1503,27 @@ export function loadImageTexture(
       onError?.(error);
     }
   };
-  image.onerror = (error) => {
+  // Straight through when the picture is already here, which is the
+  // whole point of warming it: waiting for a load event that has
+  // already fired would put the upload a frame or more away, and on
+  // a warmed image there is no event left to wait for.
+  if (image.complete && image.naturalWidth > 0) {
+    upload();
+    return;
+  }
+  const onImageLoad = () => {
+    image.removeEventListener("error", onImageError);
+    upload();
+  };
+  const onImageError = (error: unknown) => {
+    image.removeEventListener("load", onImageLoad);
+    // Dropped rather than kept as a failure, so that a picture whose
+    // fetch failed once is tried again the next time it is asked for.
+    warmedImages.delete(src);
     onError?.(error);
   };
-  image.src = src;
+  image.addEventListener("load", onImageLoad, { once: true });
+  image.addEventListener("error", onImageError, { once: true });
 }
 
 export function parsePathPoints(d: string): [number, number][] {
@@ -1963,4 +2089,5 @@ export type MaskMeshRefs = {
   dirtyRef: React.RefObject<boolean>;
   curvesRef: React.RefObject<MaskCurve_V1_0[]>;
   glowColorRef: React.RefObject<[number, number, number]>;
+  backingVertexCountRef: React.RefObject<number>;
 };

@@ -312,6 +312,7 @@ export const UIContext = createContext<UIContextProps>({
 
 const defaultMaskPreview: UseMaskPreview = {
   status: "idle",
+  statusRef: { current: "idle" },
   triangleCount: 0,
   result: undefined,
   objectCandidatesRef: { current: [] },
@@ -349,6 +350,7 @@ const defaultMaskPreview: UseMaskPreview = {
     dirtyRef: { current: false },
     curvesRef: { current: [] },
     glowColorRef: { current: [1, 1, 1] },
+    backingVertexCountRef: { current: 0 },
   },
 };
 
