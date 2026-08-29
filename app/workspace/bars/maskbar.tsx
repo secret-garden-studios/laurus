@@ -2,192 +2,260 @@ import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useE
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { ParameterSliderX } from "@/app/components/parameter-slider";
-import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { maskArm, UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
-import { PeakShapeResult, buildPeakShapeFromMarkup, decodeSvgMarkup } from "../canvas-media/peak-shape";
+import { LaurusImgResult } from "../workspace.server";
+import { WorkspaceResolution } from "../workspace.config";
+import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
+
+const GRIDLINES_OPTIONS = [
+  { label: "off", value: 0 },
+  { label: "dim", value: 0.5 },
+  { label: "bright", value: 1 },
+] as const;
+
+function maskbarSizes(resolution: WorkspaceResolution) {
+  switch (resolution.type) {
+    case "high":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 22,
+          height: 22,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 20,
+            paddingRight: 20,
+            gap: 12,
+            fontSize: 13,
+          },
+          track: {
+            width: 26,
+            height: 12,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 8,
+            height: 8,
+          },
+          translateX: 14,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 20,
+          },
+          label: {
+            fontSize: 12,
+          },
+          input: {
+            fontSize: 12,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+    case "midhigh":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 18,
+          height: 18,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 14,
+            paddingRight: 14,
+            gap: 8,
+            fontSize: 12,
+          },
+          track: {
+            width: 22,
+            height: 10,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 12,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 14,
+          },
+          label: {
+            fontSize: 11,
+          },
+          input: {
+            fontSize: 11,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+    case "low":
+    case "midlow":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 20,
+          height: 20,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 16,
+            paddingRight: 16,
+            gap: 12,
+            fontSize: 12,
+          },
+          track: {
+            width: 20,
+            height: 9,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 10,
+        },
+        input: {
+          container: {
+            gap: 10,
+            paddingRight: 16,
+          },
+          label: {
+            fontSize: 11,
+          },
+          input: {
+            fontSize: 11,
+            padding: 4,
+            letterSpacing: 1,
+          },
+        },
+      };
+  }
+}
+
+type MaskbarSizes = ReturnType<typeof maskbarSizes>;
 
 export default function Maskbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { coreState, dispatch } = useContext(CoreContext);
-  const { selectedImgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const { notifyMaskToolChanged, notifyMaskAppearanceChanged, ...mask } = useContext(MaskContext);
-  const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
-      case "high":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 22,
-            height: 22,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 20,
-              paddingRight: 20,
-              gap: 12,
-              fontSize: 13,
-            },
-            track: {
-              width: 26,
-              height: 12,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 8,
-              height: 8,
-            },
-            translateX: 14,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 20,
-            },
-            label: {
-              fontSize: 12,
-            },
-            input: {
-              fontSize: 12,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-          paramSize: {
-            containerHeight: 38,
-            containerWidth: 190,
-            capWidth: 17,
-            capHeight: 17,
-            capBorderOffset: 0,
-            trackHeight: 1,
-            tickHeight: 0,
-            tickLeft: 2,
-            svgSize: { width: 24, height: 24 },
-          },
-        };
-      case "midhigh":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 18,
-            height: 18,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 14,
-              paddingRight: 14,
-              gap: 8,
-              fontSize: 12,
-            },
-            track: {
-              width: 22,
-              height: 10,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 12,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 14,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-          paramSize: {
-            capWidth: 13,
-            capHeight: 13,
-            capBorderOffset: 0,
-            containerWidth: 170,
-            containerHeight: 36,
-            trackHeight: 1,
-            tickHeight: 20,
-            tickLeft: 1,
-            svgSize: { width: 20, height: 20 },
-          },
-        };
-      case "low":
-      case "midlow":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 20,
-            height: 20,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 16,
-              paddingRight: 16,
-              gap: 12,
-              fontSize: 12,
-            },
-            track: {
-              width: 20,
-              height: 9,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 10,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 16,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-          paramSize: {
-            capWidth: 13,
-            capHeight: 13,
-            capBorderOffset: 0,
-            containerWidth: 170,
-            containerHeight: 36,
-            trackHeight: 1,
-            tickHeight: 20,
-            tickLeft: 1,
-            svgSize: { width: 20, height: 20 },
-          },
-        };
-    }
-  });
+  const { selectedMaskKeys } = useContext(HoverContext);
+  const { notifyMaskToolChanged, status, reset } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
+
+  const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
+  const arm = maskArm(uiState, selectedMaskKey);
+  const armType = arm?.type;
+  const armedImgKey = arm?.type === "img" ? arm.img.media_key : undefined;
+
+  useEffect(() => {
+    if (status === "connecting" || status === "streaming") return;
+    reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armedImgKey]);
+
+  useEffect(() => {
+    if (uiState.tool.type !== "mask") return;
+    const nextLight = armType === "mask" && uiState.tool.lightingMeshSection;
+    const nextRaising = armType !== undefined && uiState.tool.raisingObjects;
+    if (nextLight === uiState.tool.lightingMeshSection && nextRaising === uiState.tool.raisingObjects) return;
+    uiDispatch({
+      type: UIActionType.SetTool,
+      value: { type: "mask", lightingMeshSection: nextLight, raisingObjects: nextRaising },
+    });
+    notifyMaskToolChanged("mask");
+  }, [armType, uiState.tool, uiDispatch, notifyMaskToolChanged]);
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        overflow: "auto",
+        ...dynamicSizes.flex,
+      }}
+    >
+      <SvgRepo
+        title="mask"
+        svg={texture300()}
+        containerStyle={{
+          width: dynamicSizes.svgSize.width,
+          height: dynamicSizes.svgSize.height,
+        }}
+        scale={1}
+        scaleToContaier={true}
+      />
+      {arm === undefined ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            ...dynamicSizes.toggle.div,
+            overflowX: "auto",
+          }}
+        >
+          <div
+            style={{
+              userSelect: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {
+              "select an image from the browser to generate a mask, or select an existing mask to add lights and objects to it"
+            }
+          </div>
+        </div>
+      ) : arm.type === "img" ? (
+        <MaskGenerationControls img={arm.img} />
+      ) : (
+        <MaskMeshControls maskKey={arm.maskKey} />
+      )}
+    </div>
+  );
+}
+
+interface MaskGenerationControls {
+  img: LaurusImgResult;
+}
+
+function MaskGenerationControls({ img }: MaskGenerationControls) {
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const {
+    notifyMaskToolChanged,
+    position,
+    setPosition,
+    size,
+    setSize,
+    resolution,
+    setResolution,
+    textureMix,
+    setTextureMix,
+  } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
 
   const xInputRef = useRef<HTMLInputElement | null>(null);
   const yInputRef = useRef<HTMLInputElement | null>(null);
   const wInputRef = useRef<HTMLInputElement | null>(null);
   const hInputRef = useRef<HTMLInputElement | null>(null);
-  const { position, setPosition, size, setSize } = mask;
 
   const isPositionOn = position.value;
   const isSizeOn = size.value;
@@ -232,17 +300,10 @@ export default function Maskbar() {
     }));
   }, [setPosition]);
 
-  const selectedImgKey = selectedImgKeys.size === 1 ? Array.from(selectedImgKeys)[0] : undefined;
-  const imgMeta = selectedImgKey ? coreState.project.imgs.get(selectedImgKey) : undefined;
-  const isArmedForMaskDrop = uiState.tool.type === "mask" && uiState.browserElement?.type === "img";
-  const armedImg =
-    isArmedForMaskDrop && uiState.browserElement?.type === "img" ? uiState.browserElement.value : undefined;
-  const sourceWidth = imgMeta ? imgMeta.width * imgMeta.scale_x : armedImg?.width;
-  const sourceHeight = imgMeta ? imgMeta.height * imgMeta.scale_y : armedImg?.height;
   const sourceAspectRatio = useMemo(() => {
-    if (sourceWidth === undefined || !sourceHeight) return undefined;
-    return sourceWidth / sourceHeight;
-  }, [sourceWidth, sourceHeight]);
+    if (!img.height) return undefined;
+    return img.width / img.height;
+  }, [img.width, img.height]);
 
   const updateToolWidth = useCallback(() => {
     const newWidth = parseFloat(wInputRef.current?.value || "");
@@ -262,527 +323,410 @@ export default function Maskbar() {
     }));
   }, [sourceAspectRatio, setSize]);
 
-  const isPositionDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isSizeDisabled = !imgMeta && !isArmedForMaskDrop;
-  const isResolutionDisabled = !imgMeta && !isArmedForMaskDrop;
-  const hasMesh = mask.status === "streaming" || mask.status === "done";
-  const selectedMaskKey = selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined;
-  const isTextureDisabled = !(selectedMaskKey !== undefined || hasMesh || isArmedForMaskDrop);
-  const isCaptureDisabled = selectedMaskKey === undefined;
-  const isCaptureOn = uiState.tool.type === "mask" && uiState.tool.capturingMeshSection;
-  const isTopologyDisabled = selectedMaskKey === undefined;
-  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
-  const isTopologyOn = topologyMode === "circle";
-  const isShapeOn = topologyMode === "shape";
-
-  const armedSvg = uiState.browserElement?.type === "svg" ? uiState.browserElement.value : undefined;
-  const armedMarkup = armedSvg?.markup;
-  const armedShape = useMemo<PeakShapeResult | undefined>(() => {
-    if (!armedMarkup) return undefined;
-    const decoded = decodeSvgMarkup(armedMarkup);
-    if (!decoded) return { ok: false, reason: "the svg's markup could not be read" };
-    return buildPeakShapeFromMarkup(decoded);
-  }, [armedMarkup]);
-  const shapeError = armedShape && !armedShape.ok ? armedShape.reason : undefined;
-  const isShapeDisabled = isTopologyDisabled || !armedShape?.ok;
-
-  useEffect(() => {
-    if (uiState.tool.type !== "mask" || uiState.tool.editingTopology !== "shape") return;
-    if (armedShape?.ok) return;
-    uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, editingTopology: false } });
-    notifyMaskToolChanged("mask");
-  }, [uiState.tool, armedShape, uiDispatch, notifyMaskToolChanged]);
-
-  const selectedMaskMeta = selectedMaskKey !== undefined ? coreState.project.masks.get(selectedMaskKey) : undefined;
-  const textureMixValue = selectedMaskMeta ? selectedMaskMeta.texture : mask.textureMix;
-  const pendingTextureSaveRef = useRef<LaurusProjectResult | null>(null);
-  const isPersistingTextureRef = useRef(false);
-  const persistTextureQueue = useCallback(async () => {
-    if (isPersistingTextureRef.current) return;
-    isPersistingTextureRef.current = true;
-    try {
-      while (pendingTextureSaveRef.current) {
-        const projectToSave = pendingTextureSaveRef.current;
-        pendingTextureSaveRef.current = null;
-        const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, projectToSave.project_id, {
-          ...projectToSave,
-        });
-        if (!saved) {
-          console.error("failed to save texture change", { project_id: projectToSave.project_id });
-        }
-      }
-    } finally {
-      isPersistingTextureRef.current = false;
-    }
-  }, [coreState.apiOrigin, coreState.accessToken]);
-
-  const saveTextureField = useCallback(
-    (value: number) => {
-      if (selectedMaskKey === undefined) return;
-      const maskMeta = coreState.project.masks.get(selectedMaskKey);
-      if (!maskMeta) return;
-
-      const newMasks = new Map(coreState.project.masks);
-      const newMaskMeta: LaurusProjectMask = { ...maskMeta, texture: value };
-      newMasks.set(selectedMaskKey, newMaskMeta);
-      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
-      dispatch({ type: CoreActionType.SetProject, value: newProject });
-      notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
-      pendingTextureSaveRef.current = newProject;
-      void persistTextureQueue();
-    },
-    [selectedMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistTextureQueue],
-  );
-
-  const handleTextureMixChange = useCallback(
-    (value: number) => {
-      if (selectedMaskMeta) {
-        saveTextureField(value);
-      } else {
-        mask.setTextureMix(value);
-      }
-    },
-    [selectedMaskMeta, saveTextureField, mask],
-  );
-
-  const previewTextureMixChange = useCallback(
-    (value: number) => {
-      if (selectedMaskKey !== undefined) {
-        notifyMaskAppearanceChanged(selectedMaskKey, { textureMix: value });
-      } else {
-        mask.setTextureMix(value);
-      }
-    },
-    [selectedMaskKey, mask, notifyMaskAppearanceChanged],
-  );
-
-  const textureTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getTextureValue, getTrackCursor: getTextureCursor } = useTrackpadState(
-    dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    1,
-  );
-
-  const textureCursor = { x: getTextureCursor(textureMixValue, dynamicSizes.paramSize.containerWidth), y: 0 };
-
-  useEffect(() => {
-    if (mask.status === "connecting" || mask.status === "streaming") return;
-    mask.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedImgKey]);
-
-  useEffect(() => {
-    if (selectedMaskKey !== undefined) return;
-    if (uiState.tool.type !== "mask" || (!uiState.tool.capturingMeshSection && !uiState.tool.editingTopology)) return;
-    uiDispatch({
-      type: UIActionType.SetTool,
-      value: { type: "mask", capturingMeshSection: false, editingTopology: false },
-    });
-    notifyMaskToolChanged("mask");
-  }, [selectedMaskKey, uiState.tool, uiDispatch, notifyMaskToolChanged]);
+  const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
   return (
     <>
       <div
         style={{
-          width: "100%",
-          height: "100%",
           display: "flex",
+          height: "100%",
           alignItems: "center",
-          overflow: "auto",
-          ...dynamicSizes.flex,
+          ...dynamicSizes.input.container,
         }}
       >
-        <SvgRepo
-          svg={texture300()}
-          containerStyle={{
-            width: dynamicSizes.svgSize.width,
-            height: dynamicSizes.svgSize.height,
+        <div
+          title={"place the generated mask at an exact x/y position"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+            ...dynamicSizes.toggle.div,
           }}
-          scale={1}
-          scaleToContaier={true}
+        >
+          <span style={{ textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"position"}</span>
+          <Toggle
+            value={isPositionOn}
+            onClick={() => {
+              const newPositionValue = !isPositionOn;
+              const newX = parseFloat(xInputRef.current?.value || "");
+              const newY = parseFloat(yInputRef.current?.value || "");
+              setPosition({
+                value: newPositionValue,
+                x: newPositionValue && !isNaN(newX) ? newX : undefined,
+                y: newPositionValue && !isNaN(newY) ? newY : undefined,
+              });
+            }}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
+          }}
+        >
+          {"x"}
+        </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|x`}
+          disabled={!isPositionOn}
+          ref={xInputRef}
+          onChange={updateToolPosition}
+          type="text"
+          value={xValue}
+          autoComplete="off"
+          style={positionInputStyle}
         />
         <div
           style={{
             display: "flex",
-            height: "100%",
             alignItems: "center",
-            ...dynamicSizes.input.container,
+            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
           }}
         >
-          <div
-            title={
-              isPositionDisabled
-                ? "select an image to mask, or arm one from the browser, to set an exact position for the result"
-                : "place the generated mask at an exact x/y position instead of overlaying the source image"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              style={{
-                textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-              }}
-            >
-              {"position"}
-            </span>
-            <Toggle
-              value={isPositionOn}
-              onClick={() => {
-                const newPositionValue = !isPositionOn;
-                const newX = parseFloat(xInputRef.current?.value || "");
-                const newY = parseFloat(yInputRef.current?.value || "");
-                setPosition({
-                  value: newPositionValue,
-                  x: newPositionValue && !isNaN(newX) ? newX : undefined,
-                  y: newPositionValue && !isNaN(newY) ? newY : undefined,
-                });
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isPositionDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"x"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|x`}
-            disabled={!isPositionOn}
-            ref={xInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={xValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"y"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|y`}
-            disabled={!isPositionOn}
-            ref={yInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={yValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
+          {"y"}
         </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|y`}
+          disabled={!isPositionOn}
+          ref={yInputRef}
+          onChange={updateToolPosition}
+          type="text"
+          value={yValue}
+          autoComplete="off"
+          style={positionInputStyle}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.input.container,
+        }}
+      >
         <div
+          title={"size the generated mask to an exact width/height"}
           style={{
             display: "flex",
             alignItems: "center",
             height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.input.container,
-          }}
-        >
-          <div
-            title={
-              isSizeDisabled
-                ? "select an image to mask, or arm one from the browser, to set an exact size for the result"
-                : "size the generated mask to an exact width/height instead of matching the source image"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              style={{
-                textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-              }}
-            >
-              {"size"}
-            </span>
-            <Toggle
-              value={isSizeOn}
-              onClick={() => {
-                const newSizeValue = !isSizeOn;
-                setSize(
-                  newSizeValue && sourceWidth !== undefined && sourceHeight !== undefined
-                    ? {
-                        value: true,
-                        width: sourceWidth,
-                        height: sourceHeight,
-                      }
-                    : { value: newSizeValue, width: undefined, height: undefined },
-                );
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isSizeDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"width"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|w`}
-            disabled={!isSizeOn}
-            ref={wInputRef}
-            onChange={updateToolWidth}
-            type="text"
-            value={widthValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"height"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${selectedImgKey ?? "maskbar"}|input|h`}
-            disabled={!isSizeOn}
-            ref={hInputRef}
-            onChange={updateToolHeight}
-            type="text"
-            value={heightValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-        </div>
-        <div
-          title={
-            isResolutionDisabled
-              ? "select an image to mask, or arm one from the browser, to set the generated mesh's resolution"
-              : "how finely the generated mesh is triangulated -- 2x/3x roughly double/triple the point density of the default"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
             ...dynamicSizes.toggle.div,
           }}
         >
-          <span style={{ opacity: isResolutionDisabled ? 0.3 : 1 }}>{"resolution"}</span>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              letterSpacing: 2,
-            }}
-          >
-            {([1, 2, 3] as const).map((factor) => {
-              const isSelected = mask.resolution === factor;
-              return (
-                <span
-                  key={factor}
-                  onClick={isResolutionDisabled ? undefined : () => mask.setResolution(factor)}
-                  style={{
-                    cursor: isResolutionDisabled ? "default" : "pointer",
-                    color: isSelected && !isResolutionDisabled ? "inherit" : "rgb(67,67,67)",
-                    textShadow: isSelected && !isResolutionDisabled ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                    padding: "4px 8px",
-                    ...dynamicSizes.input.label,
-                  }}
-                >
-                  {`${factor}x`}
-                </span>
+          <span style={{ textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"size"}</span>
+          <Toggle
+            value={isSizeOn}
+            onClick={() => {
+              const newSizeValue = !isSizeOn;
+              setSize(
+                newSizeValue
+                  ? { value: true, width: img.width, height: img.height }
+                  : { value: false, width: undefined, height: undefined },
               );
-            })}
-          </div>
-        </div>
-        <div
-          title={
-            isTextureDisabled
-              ? "select or generate a mesh to adjust its wireframe overlay"
-              : "0% hides the mesh's triangle wireframe, 100% draws it fully in over the source image"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ opacity: isTextureDisabled ? 0.3 : 1 }}>{"texture"}</span>
-          <ParameterSliderX
-            resolution={{ ...uiState.resolution }}
-            hash={`${selectedMaskKey ?? "maskbar"}|texture`}
-            size={dynamicSizes.paramSize}
-            containerRef={textureTrackRef}
-            cursor={textureCursor}
-            onCursorMove={(newCursor) => {
-              if (!textureTrackRef.current) return;
-              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
-              previewTextureMixChange(newValue);
-            }}
-            onNewCursor={(newCursor) => {
-              if (!textureTrackRef.current) return;
-              const newValue = getTextureValue(newCursor.x, textureTrackRef.current.clientWidth, 0);
-              handleTextureMixChange(newValue);
-            }}
-            disabled={isTextureDisabled}
-          />
-        </div>
-        <div
-          title={
-            isCaptureDisabled
-              ? "select a mesh to capture a subsection of it"
-              : "drag a circle over this mesh to capture a subsection of its triangles"
-          }
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span
-            style={{
-              textShadow: isCaptureOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"capture"}
-          </span>
-          <Toggle
-            value={isCaptureOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newCaptureValue = !uiState.tool.capturingMeshSection;
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  capturingMeshSection: newCaptureValue,
-                  editingTopology: newCaptureValue ? false : uiState.tool.editingTopology,
-                },
-              });
-              notifyMaskToolChanged("mask");
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}
             buttonStyles={{ ...dynamicSizes.toggle.button }}
             translateX={dynamicSizes.toggle.translateX}
-            disabled={isCaptureDisabled}
           />
         </div>
         <div
-          title={
-            isTopologyDisabled
-              ? "select a mesh to adjust its topology"
-              : 'drag a circle over this mesh to raise that area\'s elevation, warping the surrounding triangles like a topographic map -- see "shape" for peaks shaped like an svg instead'
-          }
           style={{
             display: "flex",
             alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
+            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
           }}
         >
-          <span
-            style={{
-              textShadow: isTopologyOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"peak"}
-          </span>
-          <Toggle
-            value={isTopologyOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newTopologyMode = isTopologyOn ? false : "circle";
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  editingTopology: newTopologyMode,
-                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
-                },
-              });
-              notifyMaskToolChanged("mask");
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isTopologyDisabled}
-          />
+          {"width"}
         </div>
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|w`}
+          disabled={!isSizeOn}
+          ref={wInputRef}
+          onChange={updateToolWidth}
+          type="text"
+          value={widthValue}
+          autoComplete="off"
+          style={sizeInputStyle}
+        />
         <div
-          title={
-            isTopologyDisabled
-              ? "select a mesh to give its peaks a custom shape"
-              : shapeError
-                ? `${armedSvg?.media_key ?? "this svg"} can't shape a peak: ${shapeError}`
-                : armedShape?.ok
-                  ? `drag a circle over this mesh to raise a peak shaped like ${armedSvg?.media_key}'s outline instead of a round one`
-                  : "pick an svg in the browser to shape new peaks like its outline"
-          }
           style={{
             display: "flex",
             alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
+            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
+            ...dynamicSizes.input.label,
           }}
         >
-          <span style={{ textShadow: isShapeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"shape"}</span>
-          <Toggle
-            value={isShapeOn}
-            onClick={() => {
-              if (uiState.tool.type !== "mask") return;
-              const newTopologyMode = isShapeOn ? false : "shape";
-              uiDispatch({
-                type: UIActionType.SetTool,
-                value: {
-                  ...uiState.tool,
-                  editingTopology: newTopologyMode,
-                  capturingMeshSection: newTopologyMode ? false : uiState.tool.capturingMeshSection,
-                },
-              });
-              notifyMaskToolChanged("mask");
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={isShapeDisabled}
-          />
+          {"height"}
         </div>
-        <div />
+        <input
+          className={styles["numberInput"]}
+          id={`${img.media_key}|input|h`}
+          disabled={!isSizeOn}
+          ref={hInputRef}
+          onChange={updateToolHeight}
+          type="text"
+          value={heightValue}
+          autoComplete="off"
+          style={sizeInputStyle}
+        />
+      </div>
+      <div
+        title={"how finely the generated mask is triangulated"}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span>{"resolution"}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            letterSpacing: 2,
+          }}
+        >
+          {([1, 2, 3] as const).map((factor) => {
+            const isSelected = resolution === factor;
+            return (
+              <span
+                key={factor}
+                onClick={() => setResolution(factor)}
+                style={{
+                  cursor: "pointer",
+                  color: isSelected ? "inherit" : "rgb(67,67,67)",
+                  textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                  padding: "4px 8px",
+                  ...dynamicSizes.input.label,
+                }}
+              >
+                {`${factor}x`}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <Gridlines value={textureMix} onChange={setTextureMix} dynamicSizes={dynamicSizes} />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>
+          {"generate objects"}
+        </span>
+        <Toggle
+          value={isObjectsOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, raisingObjects: !isObjectsOn, lightingMeshSection: false },
+            });
+            notifyMaskToolChanged("mask");
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div />
+    </>
+  );
+}
+
+interface MaskMeshControls {
+  maskKey: string;
+}
+
+function MaskMeshControls({ maskKey }: MaskMeshControls) {
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskToolChanged, notifyMaskAppearanceChanged } = useContext(MaskContext);
+  const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
+
+  const maskMeta = coreState.project.masks.get(maskKey);
+  const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
+  const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
+
+  const pendingGridlinesSaveRef = useRef<LaurusProjectResult | null>(null);
+  const isPersistingGridlinesRef = useRef(false);
+  const persistGridlinesQueue = useCallback(async () => {
+    if (isPersistingGridlinesRef.current) return;
+    isPersistingGridlinesRef.current = true;
+    try {
+      while (pendingGridlinesSaveRef.current) {
+        const projectToSave = pendingGridlinesSaveRef.current;
+        pendingGridlinesSaveRef.current = null;
+        const saved = await updateProject(coreState.apiOrigin, coreState.accessToken, projectToSave.project_id, {
+          ...projectToSave,
+        });
+        if (!saved) {
+          console.error("failed to save gridlines change", { project_id: projectToSave.project_id });
+        }
+      }
+    } finally {
+      isPersistingGridlinesRef.current = false;
+    }
+  }, [coreState.apiOrigin, coreState.accessToken]);
+
+  const saveGridlinesField = useCallback(
+    (value: number) => {
+      if (!maskMeta) return;
+      const newMasks = new Map(coreState.project.masks);
+      const newMaskMeta: LaurusProjectMask = { ...maskMeta, texture: value };
+      newMasks.set(maskKey, newMaskMeta);
+      const newProject: LaurusProjectResult = { ...coreState.project, masks: newMasks };
+      dispatch({ type: CoreActionType.SetProject, value: newProject });
+      notifyMaskAppearanceChanged(maskKey, { textureMix: value });
+      pendingGridlinesSaveRef.current = newProject;
+      void persistGridlinesQueue();
+    },
+    [maskKey, maskMeta, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
+  );
+
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <Gridlines
+          value={maskMeta?.texture ?? TEXTURE_MIX_DEFAULT}
+          onChange={saveGridlinesField}
+          dynamicSizes={dynamicSizes}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add light"}</span>
+        <Toggle
+          value={isLightOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, lightingMeshSection: !isLightOn, raisingObjects: false },
+            });
+            notifyMaskToolChanged("mask");
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add object"}</span>
+        <Toggle
+          value={isObjectsOn}
+          onClick={() => {
+            if (uiState.tool.type !== "mask") return;
+            uiDispatch({
+              type: UIActionType.SetTool,
+              value: { ...uiState.tool, raisingObjects: !isObjectsOn, lightingMeshSection: false },
+            });
+            notifyMaskToolChanged("mask");
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div />
+    </>
+  );
+}
+
+interface Gridlines {
+  value: number;
+  onChange: (value: number) => void;
+  dynamicSizes: MaskbarSizes;
+}
+
+function Gridlines({ value, onChange, dynamicSizes }: Gridlines) {
+  const selected = useMemo(
+    () =>
+      GRIDLINES_OPTIONS.reduce((closest, option) =>
+        Math.abs(option.value - value) < Math.abs(closest.value - value) ? option : closest,
+      ).value,
+    [value],
+  );
+
+  return (
+    <>
+      <span>{"gridlines"}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          letterSpacing: 2,
+        }}
+      >
+        {GRIDLINES_OPTIONS.map((option) => {
+          const isSelected = selected === option.value;
+          return (
+            <span
+              key={option.label}
+              onClick={() => onChange(option.value)}
+              style={{
+                cursor: "pointer",
+                color: isSelected ? "inherit" : "rgb(67,67,67)",
+                textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                padding: "4px 8px",
+                ...dynamicSizes.input.label,
+              }}
+            >
+              {option.label}
+            </span>
+          );
+        })}
       </div>
     </>
   );

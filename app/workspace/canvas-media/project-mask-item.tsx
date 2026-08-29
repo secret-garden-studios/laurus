@@ -10,8 +10,9 @@ import {
   UIContext,
   getNewContextMenuConfig,
 } from "../workspace.client";
-import { useToolCursor } from "../hooks/useToolCursor";
-import { RefObject, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { isAnyDragActive, useToolCursor } from "../hooks/useToolCursor";
+import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
+import { RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildStaticMaskMesh,
   colorToRGB01,
@@ -22,54 +23,140 @@ import {
   HIGHLIGHT_MOVING_COLOR,
   HIGHLIGHT_SELECTED_COLOR,
   HIGHLIGHT_SIBLING_COLOR,
+  highlightObjectReviewAddedColor,
+  highlightShapeEditColor,
   MaskLightSource,
-  parsePathPoints,
-  PeakGeometryInput,
+  ObjectGeometryInput,
+  ObjectRotation,
+  objectRotation,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
   uploadStaticMaskMesh,
 } from "../mask-gl";
-import { CoreActionType, DEFAULT_CAPTURE_VALUE, PendingTopologyEdit } from "../states/core-state";
-import { LaurusActiveElement, LaurusSelectedElement, UIActionType } from "../states/ui-state";
+import { CoreActionType, DEFAULT_LIGHT_VALUE, PendingTopologyEdit } from "../states/core-state";
+import {
+  EditableRegion,
+  LaurusActiveElement,
+  LaurusSelectedElement,
+  MaskEditSession,
+  UIActionType,
+  editedRegion,
+  isAwaitingRegionPick,
+  isMaskEditLocked,
+  isPenArmed,
+} from "../states/ui-state";
 import { DEFAULT_CONTEXT_MENU_CONFIG, LaurusProjectMask } from "../../projects/projects.server";
 import { UseMaskPreview } from "../hooks/useMaskPreview";
 import { Z_INDEX } from "../workspace.config";
 import ContextMenu from "../context-menu";
 import {
-  capturedRegionCircle,
-  captureCenterFromCentroids,
-  captureTriangleIndicesInCircle,
-  captureIdAtPoint,
-  indicesInPeakFromCentroids,
-  peakIdAtPoint,
-  peakTriangleIndices,
-  polygonCentroids,
-} from "./light-source-capture";
-import { cachedPeakShape } from "./peak-shape";
+  litRegionCircle,
+  lightCenterFromCentroids,
+  lightIdAtPoint,
+  centerOfIndices,
+  dropIndicesClaimedByObjects,
+  indicesInObjectFromCentroids,
+  objectIdAtPoint,
+  swelledPolygonIndexAtPoint,
+} from "./light-geometry";
+import {
+  MaskGeometry,
+  maskGeometry,
+  maskPolygonColors,
+  polygonIndicesForLight,
+  polygonIndicesForObject,
+} from "./mask-geometry";
+import { applyLightDelta } from "./mask-delta";
+import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
+import { shapeOutline } from "./object-clip";
+import { frontObjectOrder, isBehindMask } from "./object-order";
+import { retouchMesh } from "./object-retouch";
+import { unitCirclePath } from "./object-path";
+import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
 import {
   getFrames,
   getImg,
   getLightSourceFrames,
   getMoveFrames,
+  getRotateFrames,
   getScaleFrames,
-  LaurusCapture,
+  LaurusLight,
   LaurusEffect,
   LaurusFrame,
   LaurusImgResult,
   LaurusMaskResult,
-  LaurusPeak,
-  LaurusPeakBlackPoint,
+  LaurusObject,
+  LaurusObjectFill,
   LaurusPolygonPath,
-  toEquationPeakBlackPoint,
-  toPeakBlackPoint,
-  toPeakBlackPointFields,
+  newLight,
+  toEquationObjectFill,
+  toLightUpdate,
+  toObjectFill,
 } from "../workspace.server";
-import { maskCaptureInputId, maskPeakInputId } from "../effects-utils";
+import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
 export type ProjectMaskItemSource =
   { kind: "static"; maskData: LaurusMaskResult } | { kind: "live"; mask: UseMaskPreview; sourceImg: LaurusImgResult };
 
-const CAPTURE_DRAG_EPSILON_SQ = 1;
+const LIGHT_DRAG_EPSILON_SQ = 1;
+
+/**
+ * The silhouette a light drag carries with it.
+ *
+ * A drag is a translation of the region the light covers, so it has to be the
+ * light's *own* region -- an empty `shape` here is a circle, exactly as it is
+ * everywhere else, which is what keeps a light drawn before lights could be
+ * shaped dragging the way it always did.
+ *
+ * This used to be a bare circle, reconstructed from the light's triangles at
+ * the start of every drag. That was right when every light was a circle, and
+ * became wrong the moment one could be drawn: the reconstruction threw the
+ * outline away, so dragging a shaped light picked up whatever triangles a
+ * circle of the same reach happened to cover and the shape appeared to snap
+ * back to a disc.
+ */
+type LightDragRegion = { cx: number; cy: number; radius: number; shape: string };
+
+/** What an open session is editing on this mask, if anything -- see maskEditSubjectRef. */
+function maskEditSubjectFor(
+  session: MaskEditSession | undefined,
+  maskKey: string,
+): { subject: "light" | "object"; id: number } | undefined {
+  if (session?.maskKey !== maskKey) return undefined;
+  const region = editedRegion(session);
+  return region && { subject: session.subject, id: region.id };
+}
+
+/**
+ * The membership an edit claims, with whatever a *different* object already
+ * owns subtracted back out -- the outline's answer, refereed.
+ *
+ * The reshape half of the rule a fresh drop obeys in createObject: `object_id`
+ * is one field per triangle, so an outline dragged across a neighbour does not
+ * come to share those triangles, it takes them, and the object that was
+ * already there is the one somebody has already placed and accepted. So it
+ * keeps what it has and the edit gives up the overlap, plus the buffer lane
+ * dropIndicesClaimedByObjects opens between the two.
+ *
+ * A light session passes straight through. `light_id` and `object_id` are
+ * separate fields, so a light and an object may cover the same triangle
+ * without either one losing anything, and there is no collision to referee.
+ *
+ * The edited object exempts itself, or every commit would shave its own rim.
+ * A candidate under review is untagged until it is accepted, so for one of
+ * those the exemption is simply a no-op.
+ */
+function withoutNeighbouringObjects(
+  indices: Set<number>,
+  session: MaskEditSession,
+  geometry: MaskGeometry,
+  polygons: LaurusPolygonPath[],
+): Set<number> {
+  if (session.subject !== "object") return indices;
+  const edited = editedRegion(session);
+  if (!edited) return indices;
+  return dropIndicesClaimedByObjects(indices, geometry, polygons, { objectId: edited.id });
+}
 
 function sameIndices(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -77,41 +164,54 @@ function sameIndices(a: Set<number>, b: Set<number>): boolean {
   return true;
 }
 
-function buildCapturesMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
-  const byCapture = new Map<number, Set<number>>();
+function buildLightsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
+  const byLight = new Map<number, Set<number>>();
   polygons.forEach((p, i) => {
-    if (p.capture_id === 0) return;
-    const indices = byCapture.get(p.capture_id) ?? new Set<number>();
+    if (p.light_id === 0) return;
+    const indices = byLight.get(p.light_id) ?? new Set<number>();
     indices.add(i);
-    byCapture.set(p.capture_id, indices);
+    byLight.set(p.light_id, indices);
   });
-  return byCapture;
+  return byLight;
 }
 
-function buildCapturesMetaMap(captures: LaurusCapture[]): Map<number, LaurusCapture> {
-  return new Map(captures.map((capture) => [capture.id, capture]));
+function buildLightsMetaMap(lights: LaurusLight[]): Map<number, LaurusLight> {
+  return new Map(lights.map((light) => [light.id, light]));
 }
 
-function buildPeaksMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
-  const byPeak = new Map<number, Set<number>>();
+function buildObjectsMap(polygons: LaurusPolygonPath[]): Map<number, Set<number>> {
+  const byObject = new Map<number, Set<number>>();
   polygons.forEach((p, i) => {
-    if (p.peak_id === 0) return;
-    const indices = byPeak.get(p.peak_id) ?? new Set<number>();
+    if (p.object_id === 0) return;
+    const indices = byObject.get(p.object_id) ?? new Set<number>();
     indices.add(i);
-    byPeak.set(p.peak_id, indices);
+    byObject.set(p.object_id, indices);
   });
-  return byPeak;
+  return byObject;
 }
 
-function toPeakGeometry(peak: LaurusPeak): PeakGeometryInput {
+function objectsMeshSignature(objects: LaurusObject[]): string {
+  return objects.map((o) => `${o.id}:${o.cx},${o.cy},${o.radius},${o.elevation},${o.falloff},${o.shape}`).join("|");
+}
+
+/**
+ * What resolution to rasterize a pending edit's shape at: draft while the
+ * gesture is still running, full once it has settled.
+ */
+function pendingTileSize(pending: PendingTopologyEdit): number {
+  return pending.draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE;
+}
+
+function toObjectGeometry(object: LaurusObject): ObjectGeometryInput {
   return {
-    cx: peak.cx,
-    cy: peak.cy,
-    radius: peak.radius,
-    elevation: peak.elevation,
-    falloff: peak.falloff,
-    shape: cachedPeakShape(peak.shape),
-    blackPoint: toPeakBlackPoint(peak),
+    cx: object.cx,
+    cy: object.cy,
+    radius: object.radius,
+    elevation: object.elevation,
+    falloff: object.falloff,
+    order: object.order,
+    shape: cachedObjectShape(object.shape),
+    fill: toObjectFill(object),
   };
 }
 
@@ -124,31 +224,34 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
 }
 
 export interface MaskImperativeHandle {
-  play: (effectKey?: string, captureId?: number, peakId?: number) => Promise<void>;
+  play: (effectKey?: string, lightId?: number, objectId?: number) => Promise<void>;
   preparePlayback: (
     effectKey?: string,
-    captureId?: number,
-    peakId?: number,
+    lightId?: number,
+    objectId?: number,
   ) => Promise<(() => Promise<void>) | undefined>;
   stop: () => void;
-  abortCaptureDragForToolChange: (newToolType: string) => void;
-  abortTopologyDragForToolChange: () => void;
+  abortLightDragForToolChange: (newToolType: string) => void;
   setSelectedHighlighted: (active: boolean) => void;
-  setSelectedCapture: (captureId: number | undefined) => void;
-  setSelectedPeak: (peakId: number | undefined) => void;
-  setPendingCapture: (indices: Set<number>, captureId?: number) => void;
-  clearPendingCapture: () => void;
-  syncCapturedIndices: (updated: LaurusMaskResult) => void;
+  setHighlightSuppressed: (suppressed: boolean) => void;
+  setSelectedLight: (lightId: number | undefined) => void;
+  setSelectedObject: (objectId: number | undefined) => void;
+  setPendingLight: (indices: Set<number>, lightId?: number) => void;
+  clearPendingLight: () => void;
+  syncLitIndices: (updated: LaurusMaskResult) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
-  syncPeaks: (updated: LaurusMaskResult) => void;
+  /** Recut this mask's mesh against the outline the pen has open -- see retouchMesh. */
+  retouchObjectMesh: () => void;
+  setObjectReviewPreview: (indices: Set<number> | undefined, diffBase?: Set<number>) => void;
+  syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
 }
 
 export interface MaskAppearanceOverride {
   textureMix?: number;
-  capture?: { size: number; intensity: number; falloff: number; darkness: number };
+  light?: { size: number; intensity: number; falloff: number; darkness: number };
 }
 
 interface ProjectMaskItem {
@@ -184,17 +287,17 @@ export function ProjectMaskItem({
 }: ProjectMaskItem) {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskCaptureUpdate, sendMaskPeakUpdate } = useContext(SocketContext);
+  const { sendMaskLightUpdate } = useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
-    notifyMaskPendingCaptureSet,
-    notifyMaskPendingCaptureCleared,
-    notifyMaskCaptureUpdated,
+    notifyMaskSelectedLightChanged,
+    notifyMaskSelectedObjectChanged,
+    notifyMaskPendingLightSet,
+    notifyMaskPendingLightCleared,
+    notifyMaskLightUpdated,
     notifyMaskPendingTopologySet,
-    notifyMaskPendingTopologyCleared,
-    notifyMaskPeaksUpdated,
+    notifyMaskObjectsUpdated,
+    notifyMaskObjectReviewPreview,
     notifyMaskLightSourcePreviewToggled,
   } = useContext(MaskContext);
   const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
@@ -205,13 +308,15 @@ export function ProjectMaskItem({
   const maskTextureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureRef = useRef<WebGLTexture | undefined>(undefined);
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
-  const captureSizeRef = useRef(DEFAULT_CAPTURE_VALUE.size);
-  const captureIntensityRef = useRef(DEFAULT_CAPTURE_VALUE.intensity);
-  const captureFalloffRef = useRef(DEFAULT_CAPTURE_VALUE.falloff);
-  const captureDarknessRef = useRef(DEFAULT_CAPTURE_VALUE.darkness);
+  const lightSizeRef = useRef(DEFAULT_LIGHT_VALUE.size);
+  const lightIntensityRef = useRef(DEFAULT_LIGHT_VALUE.intensity);
+  const lightFalloffRef = useRef(DEFAULT_LIGHT_VALUE.falloff);
+  const lightDarknessRef = useRef(DEFAULT_LIGHT_VALUE.darkness);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   const vertexRangesRef = useRef<[number, number][]>([]);
+  const backingVertexCountRef = useRef(0);
+  const backingGreyRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
   const lightSourceRef = useRef<{ x: number; y: number; radius: number; falloff: number }>({
@@ -222,20 +327,40 @@ export function ProjectMaskItem({
   });
   const wiredMoveRef = useRef(false);
   const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
-  const playbackPeaksRef = useRef<
+  const playbackObjectsRef = useRef<
     Map<
       number,
-      { cx: number; cy: number; elevation: number; radius: number; falloff: number; blackPoint: LaurusPeakBlackPoint }
+      {
+        cx: number;
+        cy: number;
+        elevation: number;
+        radius: number;
+        falloff: number;
+        fill: LaurusObjectFill;
+        rotation: ObjectRotation | undefined;
+      }
     >
   >(new Map());
+  /**
+   * Which objects this playback session is animating -- known the moment the
+   * session opens, where `playbackObjectsRef` is only filled once frames have
+   * arrived and the first one is drawn.
+   *
+   * That gap is the whole reason this exists. An object's fill is painted on
+   * its triangles at rest and by the shader's outline while it animates, and
+   * the two must swap over on the same frame: keyed off the poses, the
+   * triangles would still be painted for the frames between "play" and the
+   * first pose, on top of an outline fill that had not stood down yet.
+   */
+  const playingObjectIdsRef = useRef<Set<number>>(new Set());
   const activePlaybackRef = useRef<{ rafId: number | undefined; resolve: () => void } | undefined>(undefined);
-  const captureDragRef = useRef<
+  const lightDragRef = useRef<
     | {
         pointerId: number;
-        captureId: number;
+        lightId: number;
         startX: number;
         startY: number;
-        originalCircle: { cx: number; cy: number; radius: number };
+        originalRegion: LightDragRegion;
         originalIndices: Set<number>;
         rafId: number | undefined;
         latestX: number;
@@ -244,85 +369,173 @@ export function ProjectMaskItem({
     | undefined
   >(undefined);
 
-  const lastKnownCaptureRef = useRef<
-    Map<number, { indices: Set<number>; circle: { cx: number; cy: number; radius: number } }>
-  >(new Map());
-  const captureCommitInFlightRef = useRef<Set<number>>(new Set());
-  const [isDraggingCapture, setIsDraggingCapture] = useState(false);
-  const peakDragRef = useRef<
-    | {
-        pointerId: number;
-        peakId: number;
-        startX: number;
-        startY: number;
-        originalCx: number;
-        originalCy: number;
-        originalRadius: number;
-        originalElevation: number;
-        originalFalloff: number;
-        originalShape: string;
-        originalBlackPoint: LaurusPeakBlackPoint;
-        rafId: number | undefined;
-        latestX: number;
-        latestY: number;
-      }
-    | undefined
-  >(undefined);
-  const peakCommitInFlightRef = useRef<Set<number>>(new Set());
+  const lastKnownLightRef = useRef<Map<number, { indices: Set<number>; region: LightDragRegion }>>(new Map());
+  const lightCommitInFlightRef = useRef<Set<number>>(new Set());
+  const [isDraggingLight, setIsDraggingLight] = useState(false);
   const suppressNextClickRef = useRef(false);
-  const [isDraggingTopology, setIsDraggingTopology] = useState(false);
-  const peaksRef = useRef<LaurusPeak[]>([]);
+  const objectsRef = useRef<LaurusObject[]>([]);
   const pendingTopologyRef = useRef<PendingTopologyEdit | undefined>(undefined);
-  const pendingCaptureRef = useRef<Set<number> | undefined>(undefined);
-  const pendingCaptureIdRef = useRef<number | undefined>(undefined);
+  const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
+  const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
+  /**
+   * Which region the open session is editing, if it is on this mask.
+   *
+   * Read only by recolorHighlight, and only to make the loops that paint
+   * *stored* membership stand aside for it. While a session is open the
+   * preview is the authority on which triangles that region covers, and the
+   * mask still holds the membership it had when the session opened -- so
+   * painting both puts the union on screen: the triangles the outline has
+   * moved off stay lit, and the reshape looks like it did nothing.
+   *
+   * Kept in step by an effect rather than pushed through
+   * setObjectReviewPreview, which is where it used to live. That channel fires
+   * many times during one session -- every re-tag, every recut, every revert --
+   * and all but the first of those carried no subject, so the suppression was
+   * switched on when the session opened and switched straight back off by the
+   * first thing the session did.
+   */
+  const maskEditSubjectRef = useRef<{ subject: "light" | "object"; id: number } | undefined>(undefined);
+  // Kept in step alongside maskEditSubjectRef, for the same reason: whether the
+  // pen's handles are up changes far less often than the preview they gate, so
+  // an effect tracks it rather than every setObjectReviewPreview call knowing it.
+  const editingShapeRef = useRef(false);
+  const pendingLightRef = useRef<Set<number> | undefined>(undefined);
+  const pendingLightIdRef = useRef<number | undefined>(undefined);
   const selectedHighlightRef = useRef(false);
-  const capturesRef = useRef<Map<number, Set<number>>>(new Map());
-  const capturesMetaRef = useRef<Map<number, LaurusCapture>>(new Map());
-  const selectedCaptureIdRef = useRef<number | undefined>(undefined);
-  const peaksMapRef = useRef<Map<number, Set<number>>>(new Map());
-  const polygonCentroidsRef = useRef<[number, number][]>([]);
-  const selectedPeakIdRef = useRef<number | undefined>(undefined);
-  const captureIndicesAtOffset = useCallback(
-    (drag: NonNullable<typeof captureDragRef.current>, dx: number, dy: number): Set<number> => {
+  /**
+   * Whether this mask is hovered while a bar waits to be pointed at something.
+   *
+   * A second reason to light up every light and object, alongside the mask
+   * being the selected one. A bar in that state -- the armed pen, the light
+   * source tool with nothing picked -- is asking for one of them, and a resting
+   * mask says nothing about where they are; hovering it is taken as asking
+   * where, and answered in the cues that already mean "here is one of these,
+   * and it is not the one you are on".
+   *
+   * A ref rather than the hover state itself because the highlight pass reads
+   * everything through refs; the effect below is what keeps it in step.
+   */
+  const pickHoverRef = useRef(false);
+  // Held separately from selectedHighlightRef so that suppressing the highlight does not disturb
+  // what is selected: picking a fill wants the triangles to go quiet for a moment, not to lose the
+  // object being edited. The effect below rewrites selectedHighlightRef on every mask change and
+  // would otherwise stamp on a flag kept there.
+  const highlightSuppressedRef = useRef(false);
+  const lightsRef = useRef<Map<number, Set<number>>>(new Map());
+  const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
+  /**
+   * Where a light's silhouette is being moved to, held only while some gesture
+   * is moving it -- the pen reshaping it, or the move tool dragging it whole.
+   * Read by resolveRestingLightSources so the light itself follows the gesture
+   * without a round trip, exactly as pendingLightRef already does for the
+   * triangles.
+   *
+   * One ref for both because they are the same question ("where is this light
+   * right now, as against where it is stored?") and the two gestures cannot
+   * overlap: the pen owns the pointer while it is open. Each clears it on the
+   * way out -- the pen through clearPendingTopology, the drag through
+   * clearPendingLight -- so it is never left behind.
+   */
+  const pendingLightShapeRef = useRef<
+    { lightId: number; cx: number; cy: number; radius: number; shape: string; draft: boolean } | undefined
+  >(undefined);
+  // `render` is defined below, and the preview is only ever called from a
+  // pointer handler long after that -- so it is reached through a ref rather
+  // than by hoisting the whole of `render` above the callbacks it depends on.
+  const renderRef = useRef<() => void>(() => {});
+  const selectedLightIdRef = useRef<number | undefined>(undefined);
+  const objectsMapRef = useRef<Map<number, Set<number>>>(new Map());
+  const maskGeometryRef = useRef<MaskGeometry>({ corners: [], points: [], centroids: [] });
+  /** The polygon array the uploaded mesh was built from -- see syncObjects. */
+  const polygonsRef = useRef<LaurusPolygonPath[]>([]);
+  const objectsMeshSignatureRef = useRef<string>("");
+  const highlightScratchRef = useRef<Float32Array>(new Float32Array(0));
+  const highlightUploadedRef = useRef<Float32Array>(new Float32Array(0));
+  const fillOverlayScratchRef = useRef<Float32Array>(new Float32Array(0));
+  const fillOverlayUploadedRef = useRef<Float32Array>(new Float32Array(0));
+  const selectedObjectIdRef = useRef<number | undefined>(undefined);
+  const lightIndicesAtOffset = useCallback(
+    (drag: NonNullable<typeof lightDragRef.current>, dx: number, dy: number): Set<number> => {
       if (source.kind !== "static") return new Set();
-      if (dx * dx + dy * dy <= CAPTURE_DRAG_EPSILON_SQ) return drag.originalIndices;
-      return captureTriangleIndicesInCircle(source.maskData.polygons, {
-        cx: drag.originalCircle.cx + dx,
-        cy: drag.originalCircle.cy + dy,
-        radius: drag.originalCircle.radius,
+      if (dx * dx + dy * dy <= LIGHT_DRAG_EPSILON_SQ) return drag.originalIndices;
+      return indicesInObjectFromCentroids(maskGeometry(source.maskData).centroids, {
+        ...drag.originalRegion,
+        cx: drag.originalRegion.cx + dx,
+        cy: drag.originalRegion.cy + dy,
       });
     },
     [source],
   );
 
-  const recomputeCaptureDrag = useCallback(() => {
-    const drag = captureDragRef.current;
+  const recomputeLightDrag = useCallback(() => {
+    const drag = lightDragRef.current;
     if (!drag) return;
     drag.rafId = undefined;
-    const indices = captureIndicesAtOffset(drag, drag.latestX - drag.startX, drag.latestY - drag.startY);
+    const dx = drag.latestX - drag.startX;
+    const dy = drag.latestY - drag.startY;
+    const indices = lightIndicesAtOffset(drag, dx, dy);
+    // The light goes with its triangles. A shaped light draws from its stored
+    // centre, which has not moved yet, so without this the glow would sit
+    // still while the triangles slid out from under it and only catch up when
+    // the drag was let go. Not a draft: the outline is not changing, only
+    // where it is, so the tile it was already sampled at is the right one.
+    if (drag.originalRegion.shape) {
+      pendingLightShapeRef.current = {
+        lightId: drag.lightId,
+        cx: drag.originalRegion.cx + dx,
+        cy: drag.originalRegion.cy + dy,
+        radius: drag.originalRegion.radius,
+        shape: drag.originalRegion.shape,
+        draft: false,
+      };
+    }
     dispatch({
-      type: CoreActionType.SetPendingLightSourceCapture,
-      value: { maskKey: mediaKey, captureId: drag.captureId, polygonIndices: [...indices] },
+      type: CoreActionType.SetPendingLight,
+      value: { maskKey: mediaKey, lightId: drag.lightId, polygonIndices: [...indices] },
     });
-    notifyMaskPendingCaptureSet(mediaKey, indices, drag.captureId);
-  }, [captureIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingCaptureSet]);
+    notifyMaskPendingLightSet(mediaKey, indices, drag.lightId);
+  }, [lightIndicesAtOffset, mediaKey, dispatch, notifyMaskPendingLightSet]);
 
-  const abortCaptureDrag = useCallback(() => {
-    const drag = captureDragRef.current;
+  const abortLightDrag = useCallback(() => {
+    const drag = lightDragRef.current;
     if (!drag) return;
     if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
     canvasRef.current?.releasePointerCapture(drag.pointerId);
-    captureDragRef.current = undefined;
-    setIsDraggingCapture(false);
-    dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-    notifyMaskPendingCaptureCleared(mediaKey);
-  }, [dispatch, mediaKey, notifyMaskPendingCaptureCleared]);
+    lightDragRef.current = undefined;
+    setIsDraggingLight(false);
+    dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+    notifyMaskPendingLightCleared(mediaKey);
+  }, [dispatch, mediaKey, notifyMaskPendingLightCleared]);
 
-  const resolvePeakUniforms = useCallback((): PeakGeometryInput[] => {
+  const resolveObjectUniforms = useCallback((): ObjectGeometryInput[] => {
     const pending = pendingTopologyRef.current;
-    const peaks = peaksRef.current.map((peak): PeakGeometryInput => {
-      const shape = cachedPeakShape(peak.shape);
-      const playing = playbackPeaksRef.current.get(peak.id);
+    // A pending edit may have reshaped the object, not just moved it, so its
+    // own shape is the one to render -- reading the stored shape here would
+    // show a reshape as a move. Built at draft resolution while the gesture is
+    // still in flight; see cachedObjectShape.
+    const pendingShape = pending ? cachedObjectShape(pending.shape, pendingTileSize(pending)) : undefined;
+    /**
+     * A resting object does not fill from its outline -- recolorHighlight
+     * paints it on the triangles the object actually owns instead, and this
+     * stands the outline's own fill down so the two cannot double up.
+     *
+     * The mesh is what an object is made of, so its triangles are what its
+     * colour belongs to. All the shader's shape test can fill is the smoothed
+     * curve, which is a description of the region and not the region itself:
+     * the colour spilled past the triangles the object owns and stopped short
+     * of ones it does, and a triangle toggled in or out of the object mid-
+     * review moved no outline and so changed nothing at all.
+     *
+     * An animating object is the exception, and keeps filling from its
+     * outline: a vertex attribute cannot travel, and the fill has to arrive
+     * wherever the pose does.
+     */
+    const restingFill = (object: ObjectGeometryInput): ObjectGeometryInput =>
+      object.fill ? { ...object, fill: { ...object.fill, a: 0 } } : object;
+    const animating = playingObjectIdsRef.current;
+    const objects = objectsRef.current.map((object): ObjectGeometryInput => {
+      const shape = cachedObjectShape(object.shape);
+      const playing = playbackObjectsRef.current.get(object.id);
       if (playing) {
         return {
           cx: playing.cx,
@@ -330,67 +543,57 @@ export function ProjectMaskItem({
           radius: playing.radius,
           elevation: playing.elevation,
           falloff: playing.falloff,
+          // Off the stored object, not the animated pose: an effect moves an
+          // object through the mask, it does not move it through the stack.
+          // Where it renders in that stack is the whole point of playing it.
+          order: object.order,
           shape,
-          blackPoint: playing.blackPoint,
+          fill: playing.fill,
+          rotation: playing.rotation,
+          // Lift only ever means something against a pose the object has moved
+          // away from, so it is attached here and nowhere else: `playing` is
+          // the animated pose and the stored object is still the resting one.
+          // A lifted object nothing is animating never reaches this branch.
+          lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
         };
       }
-      return pending && pending.peakId === peak.id
-        ? {
-            cx: pending.cx,
-            cy: pending.cy,
-            radius: pending.radius,
-            elevation: pending.elevation,
-            falloff: pending.falloff,
-            shape,
-            blackPoint: pending.blackPoint,
-          }
-        : toPeakGeometry(peak);
+      const geometry =
+        pending && pending.objectId === object.id
+          ? {
+              cx: pending.cx,
+              cy: pending.cy,
+              radius: pending.radius,
+              elevation: pending.elevation,
+              falloff: pending.falloff,
+              // A pending edit reshapes an object; it never restacks one, so
+              // the object's own order stands whatever the gesture is doing.
+              order: object.order,
+              shape: pendingShape,
+              fill: pending.fill,
+            }
+          : toObjectGeometry(object);
+      return animating.has(object.id) ? geometry : restingFill(geometry);
     });
-    if (pending && !peaksRef.current.some((peak) => peak.id === pending.peakId)) {
-      peaks.push({
+    if (pending && !objectsRef.current.some((object) => object.id === pending.objectId)) {
+      const candidate: ObjectGeometryInput = {
         cx: pending.cx,
         cy: pending.cy,
         radius: pending.radius,
         elevation: pending.elevation,
         falloff: pending.falloff,
-        shape: cachedPeakShape(pending.shape),
-        blackPoint: pending.blackPoint,
-      });
+        // An object being drawn that the mask does not hold yet, so there is no
+        // stored order to read. In front of everything, which is where it will
+        // land when the create actually goes through -- see createObject, whose
+        // frontObjectOrder this has to agree with or the object would jump one
+        // slot the instant it was saved.
+        order: frontObjectOrder(objectsRef.current),
+        shape: pendingShape,
+        fill: pending.fill,
+      };
+      objects.push(animating.has(pending.objectId) ? candidate : restingFill(candidate));
     }
-    return peaks;
+    return objects;
   }, []);
-
-  const recomputeTopologyDrag = useCallback(() => {
-    const drag = peakDragRef.current;
-    if (!drag) return;
-    drag.rafId = undefined;
-    const dx = drag.latestX - drag.startX;
-    const dy = drag.latestY - drag.startY;
-    const edit: PendingTopologyEdit = {
-      maskKey: mediaKey,
-      peakId: drag.peakId,
-      cx: drag.originalCx + dx,
-      cy: drag.originalCy + dy,
-      radius: drag.originalRadius,
-      elevation: drag.originalElevation,
-      falloff: drag.originalFalloff,
-      shape: drag.originalShape,
-      blackPoint: drag.originalBlackPoint,
-    };
-    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
-    notifyMaskPendingTopologySet(mediaKey, edit);
-  }, [mediaKey, dispatch, notifyMaskPendingTopologySet]);
-
-  const abortTopologyDrag = useCallback(() => {
-    const drag = peakDragRef.current;
-    if (!drag) return;
-    if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
-    canvasRef.current?.releasePointerCapture(drag.pointerId);
-    peakDragRef.current = undefined;
-    setIsDraggingTopology(false);
-    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-    notifyMaskPendingTopologyCleared(mediaKey);
-  }, [dispatch, mediaKey, notifyMaskPendingTopologyCleared]);
 
   const isSelected = source.kind === "static" && selectedMaskKeys.has(mediaKey);
   const canvasSize =
@@ -398,53 +601,110 @@ export function ProjectMaskItem({
       ? { width: source.maskData.width, height: source.maskData.height }
       : { width: source.sourceImg.width, height: source.sourceImg.height };
 
-  const resolveTargetCaptureId = useCallback((): number | undefined => {
-    if (selectedCaptureIdRef.current !== undefined) return selectedCaptureIdRef.current;
-    return capturesRef.current.keys().next().value;
+  const resolveTargetLightId = useCallback((): number | undefined => {
+    if (selectedLightIdRef.current !== undefined) return selectedLightIdRef.current;
+    return lightsRef.current.keys().next().value;
+  }, []);
+
+  /**
+   * The silhouette a light is drawing with right now -- the one a gesture is
+   * moving it to, or the one it has stored -- or undefined for a light drawn
+   * before they could be shaped, which is still drawn from its triangles.
+   *
+   * The single answer to "where is this light", so that everything which needs
+   * to know cannot disagree about it. They did disagree: the animation derived
+   * a rest position from the light's triangles while the canvas drew the light
+   * at its own centre, and for anything but a blob those are different points
+   * -- a crescent's triangles sit in its arc, its centre in the notch. The
+   * first frame of a move therefore teleported the light from one to the other
+   * before it had moved at all.
+   */
+  const resolveLightSilhouette = useCallback((lightId: number): (LightDragRegion & { draft: boolean }) | undefined => {
+    const drafted = pendingLightShapeRef.current?.lightId === lightId ? pendingLightShapeRef.current : undefined;
+    if (drafted) return drafted;
+    const meta = lightsMetaRef.current.get(lightId);
+    return meta && meta.radius > 0 ? { ...meta, draft: false } : undefined;
   }, []);
 
   const computeLightSourceRestPosition = useCallback(
-    (captureIdOverride?: number) => {
+    (lightIdOverride?: number) => {
       if (source.kind !== "static") return undefined;
-      const targetCaptureId = captureIdOverride ?? resolveTargetCaptureId();
+      const targetLightId = lightIdOverride ?? resolveTargetLightId();
+      // Rest means where it rests on screen, so a shaped light answers with its
+      // own centre -- the same one resolveRestingLightSources draws it at.
+      const shaped = targetLightId !== undefined ? resolveLightSilhouette(targetLightId) : undefined;
+      if (shaped) return { x: shaped.cx, y: shaped.cy };
       const indices =
-        pendingCaptureRef.current ??
-        (targetCaptureId !== undefined ? capturesRef.current.get(targetCaptureId) : undefined) ??
-        capturesRef.current.values().next().value;
+        pendingLightRef.current ??
+        (targetLightId !== undefined ? lightsRef.current.get(targetLightId) : undefined) ??
+        lightsRef.current.values().next().value;
       if (!indices) return undefined;
-      const allPoints = source.maskData.polygons.filter((_, i) => indices.has(i)).flatMap((p) => parsePathPoints(p.d));
-      if (allPoints.length === 0) return undefined;
-      return {
-        x: allPoints.reduce((sum, [px]) => sum + px, 0) / allPoints.length,
-        y: allPoints.reduce((sum, [, py]) => sum + py, 0) / allPoints.length,
-      };
+      return centerOfIndices(maskGeometry(source.maskData).points, indices);
     },
-    [source, resolveTargetCaptureId],
+    [source, resolveTargetLightId, resolveLightSilhouette],
   );
 
+  /**
+   * Every light on the mask as the shader wants it.
+   *
+   * Where a light's silhouette comes from is a three-way choice, most specific
+   * first: the outline the pen is dragging right now, the one the light has
+   * stored, or -- for a light drawn before they could be shaped -- the disc it
+   * has always lit with, centred on its triangles and half its `size` across.
+   * The
+   * last is not a fallback so much as the original behaviour, still exactly
+   * itself: lightProfile's two branches are the same formula, so a light with
+   * no outline lights as it always did.
+   *
+   * A stored outline stops the centre following the triangles, and that is
+   * deliberate rather than a limitation. Once someone has drawn where the light
+   * falls, that is where it falls; re-deriving the centre would slide their
+   * curve sideways the next time the grouping changed. It is also the pairing
+   * rule the outline itself demands -- a normalized path is only meaningful
+   * with the cx/cy/radius it was measured against.
+   */
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
-    const centroids = polygonCentroidsRef.current;
+    const centroids = maskGeometryRef.current.centroids;
     const lights: MaskLightSource[] = [];
-    capturesRef.current.forEach((indices, captureId) => {
-      if (playbackLightSourcesRef.current.has(captureId)) return;
-      const meta = capturesMetaRef.current.get(captureId);
+    lightsRef.current.forEach((indices, lightId) => {
+      if (playbackLightSourcesRef.current.has(lightId)) return;
+      const meta = lightsMetaRef.current.get(lightId);
       if (!meta) return;
-      const pending = pendingCaptureIdRef.current === captureId ? pendingCaptureRef.current : undefined;
-      const center = captureCenterFromCentroids(centroids, pending ?? indices);
+
+      const shaped = resolveLightSilhouette(lightId);
+      const appearance = { falloff: meta.falloff, intensity: meta.intensity, darkness: meta.darkness };
+
+      if (shaped) {
+        lights.push({
+          x: shaped.cx,
+          y: canvas.height - shaped.cy,
+          radius: shaped.radius,
+          // Mid-drag the outline is sampled at the editor's own lower tile
+          // resolution: it is rebuilt on every pointer move, and the full field
+          // costs far more than the difference can be seen to be worth while
+          // an anchor is still moving. The commit that ends the gesture is not
+          // a draft, so the light settles at full resolution the moment the
+          // anchor is let go rather than waiting for the save.
+          shape: cachedObjectShape(shaped.shape, shaped.draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE),
+          ...appearance,
+        });
+        return;
+      }
+
+      const pending = pendingLightIdRef.current === lightId ? pendingLightRef.current : undefined;
+      const center = lightCenterFromCentroids(centroids, pending ?? indices);
       if (!center) return;
       lights.push({
         x: center[0],
         y: canvas.height - center[1],
         radius: meta.size / 2,
-        falloff: meta.falloff,
-        intensity: meta.intensity,
-        darkness: meta.darkness,
+        ...appearance,
       });
     });
     return lights;
-  }, []);
+  }, [resolveLightSilhouette]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -464,18 +724,348 @@ export function ProjectMaskItem({
       height: frame.height * frame.scale_y,
     };
   }, [frame.height, frame.scale_x, frame.scale_y, frame.width]);
+  const canvasZoom = useCanvasZoomValue();
+  /* Authored pixel values -- a move's distance, a preview light's reach -- are
+     in canvas units: the unzoomed size the mask is laid out at. Getting them
+     into the buffer the shader draws in is buffer over layout size, and
+     nothing else.
+
+     Deliberately not `canvas.width / rect.width`, which is the ratio the
+     pointer handlers want: the on-screen rect carries the canvas zoom, so
+     using it here divided the authored value by the zoom on the way in and the
+     canvas multiplied it back out again on the way to the screen. A
+     distance-100 move then travelled 100 screen pixels at every zoom -- fixed
+     against the display, shrinking against the mask that grew underneath it.
+     (The rect also carries the mask's own rotate3d, since it is an
+     axis-aligned bounding box, which skewed the same values a second way.) */
+  const bufferScaleRef = useRef({ x: 1, y: 1 });
+  bufferScaleRef.current = {
+    x: containerSize.width > 0 ? canvasSize.width / containerSize.width : 1,
+    y: containerSize.height > 0 ? canvasSize.height / containerSize.height : 1,
+  };
   const dndCss = {
     left: dndPosition.x,
     top: dndPosition.y,
-    transform: CSS.Translate.toString(dndTransform),
+    transform: CSS.Translate.toString(toCanvasTranslate(dndTransform, canvasZoom)),
     touchAction: "none",
   };
 
-  const cursor = useToolCursor({
+  const toolCursor = useToolCursor({
     target: source.kind === "static" ? "mask" : undefined,
     dragDisabled,
-    isDragging: isDragging || isDraggingCapture || isDraggingTopology,
+    isDragging: isDragging || isDraggingLight,
   });
+  // The crosshair belongs to the triangles and to nothing else: it says they
+  // are there to be picked. It comes down with the pen's handles, which own
+  // every click on the mesh while they are up and put their own cursors on
+  // whatever can be taken hold of -- a crosshair over them would be promising
+  // a pick that no longer happens.
+  const sessionHere = source.kind === "static" && uiState.maskEdit?.maskKey === mediaKey ? uiState.maskEdit : undefined;
+  const isPickingTriangles = sessionHere !== undefined && !isMaskEditLocked(sessionHere) && !sessionHere.editingShape;
+  const cursor = isPickingTriangles ? "crosshair" : toolCursor;
+
+  /**
+   * The silhouette a light already has, or the one it should start from.
+   *
+   * A light drawn today is born with one, so this is for the ones drawn before
+   * they could be: those have no geometry of their own, and zeros are not
+   * something the pen can draw. What such a light *does* have is the
+   * silhouette it has been lighting with all along -- a disc of `size / 2`
+   * centred on its triangles -- which is exactly what resolveRestingLightSources
+   * derives to draw it. Seeding from that is what makes opening the pen a
+   * no-op to look at: the first thing shown is the light as it already is,
+   * rather than a circle that has appeared from nowhere and moved it.
+   *
+   * The membership passed in is the session's, not the mask's, so the seed
+   * follows triangles the editor has already added or removed rather than
+   * centring on where the light used to be.
+   */
+  const lightRegion = useCallback((light: LaurusLight, indices: Set<number>): EditableRegion => {
+    if (light.radius > 0) return light;
+    const center = lightCenterFromCentroids(maskGeometryRef.current.centroids, indices);
+    return {
+      ...light,
+      cx: center?.[0] ?? light.cx,
+      cy: center?.[1] ?? light.cy,
+      radius: light.size / 2,
+      shape: unitCirclePath(),
+    };
+  }, []);
+
+  /**
+   * The outline the pen should be showing, and the one it started from.
+   *
+   * `current` is what the editor draws and `original` the ghost behind it,
+   * present only once the two differ. Both are needed here rather than in the
+   * editor because only this component can see the mask, and the mask is what
+   * settles which of the three possible outlines is the live one.
+   */
+  const reviewShape = useMemo(() => {
+    const session = uiState.maskEdit;
+    if (source.kind !== "static" || session?.maskKey !== mediaKey) return undefined;
+
+    // Not the session's own copy, and for an object not `decisions` either:
+    // a review can be resumed on a mask that was half decided days ago, and
+    // what settles whether an outline was accepted is whether it is on the
+    // mask now. The same rule gives a light its stored outline.
+    const maskData = coreState.canvasMasks.get(mediaKey);
+
+    // A stored light that has never been shaped is still all zeros, so it goes
+    // through the same seeding the session's own copy does -- otherwise saving
+    // only a description would hand the pen a radius of 0 the next time it
+    // opened. Resolved inside the branch rather than after it so that neither
+    // side has to be told what the other's `stored` is.
+    const resolved: { opened: EditableRegion; stored: EditableRegion | undefined } | undefined = (() => {
+      if (session.subject === "light") {
+        const held = maskData?.lights.find((l) => l.id === session.light.id);
+        return {
+          opened: lightRegion(session.light, session.currentIndices),
+          stored: held && lightRegion(held, session.currentIndices),
+        };
+      }
+      const candidate = session.candidates[session.currentIndex]?.object;
+      if (!candidate) return undefined;
+      return { opened: candidate, stored: maskData?.objects.find((o) => o.id === candidate.id) };
+    })();
+    if (!resolved) return undefined;
+    const { opened, stored } = resolved;
+    const base = stored ?? opened;
+
+    // Geometry and outline must come from the same place. A path is normalized
+    // against the geometry it was measured with -- pulling an anchor outward
+    // grows the radius rather than the path -- so pairing one with another's
+    // cx/cy/radius renders it back at roughly the size and position that other
+    // one had. Which looks exactly like the pen snapping back the instant it
+    // is released.
+    const from = session.editedShape ?? base;
+    const current = {
+      id: opened.id,
+      cx: from.cx,
+      cy: from.cy,
+      radius: from.radius,
+      shape: session.editedShape?.path ?? base.shape,
+      // what the editor is remounted on -- see the key below
+      origin: session.editedShape ? "edited" : stored ? "stored" : "detected",
+    };
+    const changed =
+      current.shape !== opened.shape ||
+      current.cx !== opened.cx ||
+      current.cy !== opened.cy ||
+      current.radius !== opened.radius;
+    return {
+      current,
+      original: changed ? { cx: opened.cx, cy: opened.cy, radius: opened.radius, shape: opened.shape } : undefined,
+    };
+  }, [uiState.maskEdit, source.kind, mediaKey, coreState.canvasMasks, lightRegion]);
+
+  // The region the pen is open on, if any.
+  const shapeEditorObject = uiState.maskEdit?.editingShape ? reviewShape : undefined;
+
+  // A reshape previews without a round trip and without touching the state the
+  // editor reads its own rings from. Which channel depends on what is being
+  // reshaped: an object's outline is relief, so it goes through the
+  // pending-topology channel, while a light's is light, so it goes to the
+  // uniform the mesh is shaded with.
+  const previewShapeEdit = useCallback(
+    (edit: ShapeEdit, draft = true) => {
+      const session = uiState.maskEdit;
+      if (!session) return;
+
+      if (session.subject === "light") {
+        pendingLightShapeRef.current = {
+          lightId: session.light.id,
+          cx: edit.cx,
+          cy: edit.cy,
+          radius: edit.radius,
+          shape: edit.path,
+          draft,
+        };
+        renderRef.current();
+        return;
+      }
+
+      const candidate = session.candidates[session.currentIndex]?.object;
+      if (!candidate) return;
+      // The candidate is a detection snapshot -- its appearance is whatever
+      // the detector guessed, not whatever the reviewer has since painted on.
+      // The stored object is the one that's been touched by a fill or an
+      // elevation edit, so it wins whenever it exists, the same way
+      // reviewShape prefers it for geometry.
+      const stored = coreState.canvasMasks.get(mediaKey)?.objects.find((o) => o.id === candidate.id);
+      const appearance = stored ?? candidate;
+      const pending: PendingTopologyEdit = {
+        maskKey: mediaKey,
+        objectId: candidate.id,
+        cx: edit.cx,
+        cy: edit.cy,
+        radius: edit.radius,
+        elevation: appearance.elevation,
+        falloff: appearance.falloff,
+        shape: edit.path,
+        fill: toObjectFill(appearance),
+        // The outline's own membership, not the session's -- re-derived here on
+        // every frame of the drag rather than carried over from before it. The
+        // session's set is only re-tagged once the gesture ends (see
+        // snapIndicesToShape), so reusing it here showed every preview the
+        // triangles of the *previous* edit: whatever the anchor had just swept
+        // in was left unpainted until the next drag brought it along. Asked at
+        // the resolution the gesture is already rasterizing at, so it reads the
+        // shape resolveObjectUniforms builds rather than forcing its own.
+        // Minus whatever a neighbouring object already owns, on the same rule
+        // a fresh drop obeys: a triangle carries one object_id, so an outline
+        // dragged over a neighbour is taking its triangles rather than sharing
+        // them, and the object already on the mesh keeps its own. Subtracted
+        // here as well as at the commit so the relief the drag is showing is
+        // the relief the release will settle on, buffer lane and all.
+        polygonIndices: dropIndicesClaimedByObjects(
+          indicesInObjectFromCentroids(
+            maskGeometryRef.current.centroids,
+            { cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path },
+            draft ? OBJECT_SDF_DRAFT_TILE : OBJECT_SDF_TILE,
+          ),
+          maskGeometryRef.current,
+          polygonsRef.current,
+          { objectId: candidate.id },
+        ),
+        draft,
+      };
+
+      if (!draft) dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: pending });
+      notifyMaskPendingTopologySet(mediaKey, pending);
+    },
+    [uiState.maskEdit, mediaKey, coreState.canvasMasks, dispatch, notifyMaskPendingTopologySet],
+  );
+
+  /**
+   * Re-tag the triangles to the ones the outline actually encloses -- an
+   * object's or a light's, on the same rule.
+   *
+   * **Only ever called for an edit the editor actually made.** Opening the
+   * pen must leave things exactly as they were -- it is a view onto the
+   * outline, and a view that rewrites what it is shown is not one. This was
+   * briefly wired to run on open as well, on the theory that the triangles
+   * ought to look flush the moment the curve appears; what it actually did was
+   * silently re-cut every rim triangle of an object nobody had touched yet.
+   * Keep the single call site below.
+   *
+   * The two were only ever cousins: membership came from the server's
+   * per-triangle vote on which region it mostly covers, while the outline is a
+   * smoothed curve through a couple of dozen anchors of that same region's
+   * boundary. Both describe the region, neither is derived from the other, and
+   * the smoothing is exactly where they part company -- so the triangles sat
+   * near the curve rather than flush against it, and reshaping moved the curve
+   * without moving them at all.
+   *
+   * Taking membership from the outline makes the curve the thing that decides,
+   * which is what anyone dragging an anchor expects. A triangle is in when its
+   * centroid is, which is the same test the mesh already uses everywhere else
+   * -- and a retouch afterwards cuts the rim triangles flush to the curve, so
+   * the edge stops being a staircase of whole triangles.
+   */
+  const snapIndicesToShape = useCallback(
+    (region: { cx: number; cy: number; radius: number; shape: string }) => {
+      const review = uiState.maskEdit;
+      if (!review || review.maskKey !== mediaKey || isMaskEditLocked(review)) return;
+      const indices = withoutNeighbouringObjects(
+        indicesInObjectFromCentroids(maskGeometryRef.current.centroids, region),
+        review,
+        maskGeometryRef.current,
+        polygonsRef.current,
+      );
+      uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
+      // routes straight back to this component's own setObjectReviewPreview,
+      // which sets the ref and repaints
+      notifyMaskObjectReviewPreview(mediaKey, indices, objectReviewDiffBaseRef.current);
+    },
+    [uiState.maskEdit, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
+  );
+
+  // Recorded only on release: this is the value the accept decision carries,
+  // and writing it mid-drag would feed the edit straight back into the editor.
+  const commitShapeEdit = useCallback(
+    (edit: ShapeEdit) => {
+      // no longer a draft: the gesture is over, so this one gets built at full
+      // resolution and is what the relief settles on
+      previewShapeEdit(edit, false);
+      uiDispatch({ type: UIActionType.SetMaskEditShape, shape: edit });
+      snapIndicesToShape({ cx: edit.cx, cy: edit.cy, radius: edit.radius, shape: edit.path });
+    },
+    [previewShapeEdit, uiDispatch, snapIndicesToShape],
+  );
+
+  /**
+   * Recut the mask's mesh along the outline the pen has open, so the triangles
+   * near the curve follow it instead of straddling it.
+   *
+   * The recut mesh goes straight into the mask the canvas is drawing, because
+   * the whole point of it is to be looked at -- a recut nobody could see until
+   * they saved it would be worthless. It is still uncommitted: the mesh it
+   * replaced rides along on the review session as `restore`, and every way out
+   * of the pen puts it back. Only accepting the object sends it anywhere.
+   *
+   * Membership comes back from the recut rather than being re-derived here.
+   * Every fragment now lies wholly on one side of the curve, and which side is
+   * what the cut decided; asking the centroid test again would only be a
+   * chance to disagree with it.
+   */
+  const retouchObjectMesh = useCallback(() => {
+    const session = uiState.maskEdit;
+    if (source.kind !== "static" || session?.maskKey !== mediaKey || isMaskEditLocked(session)) return;
+
+    // the outline the pen is showing, not the one it opened on: a recut has to
+    // follow the curve being looked at, and after an accepted reshape those are
+    // two different curves -- see reviewShape, which is also what seeds an
+    // unshaped light's circle, so there is always something here to cut to
+    const from = reviewShape?.current;
+    if (!from) return;
+    const outline = shapeOutline(from.shape, from);
+    const maskData = coreState.canvasMasks.get(mediaKey);
+    if (!outline || !maskData) return;
+
+    const geometry = maskGeometry(maskData);
+    const result = retouchMesh(maskData.polygons, geometry.points, outline);
+    // nothing crossed the curve that was worth cutting -- the mesh already
+    // follows it, which is the ordinary answer for a second retouch in a row
+    if (result.added === 0) return;
+
+    const patched = { ...maskData, polygons: result.polygons };
+    // The recut answers membership from the curve alone -- and a rim triangle
+    // it cut may have belonged to a neighbouring object all along, in which
+    // case the fragment inside the curve carries that neighbour's tag (see
+    // retouchMesh, which deliberately leaves tags alone). Refereed here for
+    // the same reason the reshape is: the object already on the mesh wins.
+    // Against the recut mesh, whose geometry syncObjects below then reuses.
+    const indices = withoutNeighbouringObjects(result.indices, session, maskGeometry(patched), result.polygons);
+    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
+    uiDispatch({
+      type: UIActionType.SetMaskEditRetouch,
+      retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
+    });
+    uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
+    notifyMaskObjectsUpdated(mediaKey, patched);
+    notifyMaskObjectReviewPreview(mediaKey, indices, objectReviewDiffBaseRef.current);
+
+    // the relief preview names the triangles it is raised over, and the recut
+    // has just renumbered them
+    const pending = coreState.pendingTopologyEdit;
+    if (pending?.maskKey === mediaKey) {
+      const next = { ...pending, polygonIndices: indices };
+      dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: next });
+      notifyMaskPendingTopologySet(mediaKey, next);
+    }
+  }, [
+    uiState.maskEdit,
+    reviewShape,
+    source.kind,
+    mediaKey,
+    coreState.canvasMasks,
+    coreState.pendingTopologyEdit,
+    dispatch,
+    uiDispatch,
+    notifyMaskObjectsUpdated,
+    notifyMaskObjectReviewPreview,
+    notifyMaskPendingTopologySet,
+  ]);
 
   const render = useCallback(() => {
     const state = glStateRef.current;
@@ -487,8 +1077,8 @@ export function ProjectMaskItem({
         : [
             {
               ...lightSourceRef.current,
-              intensity: captureIntensityRef.current,
-              darkness: captureDarknessRef.current,
+              intensity: lightIntensityRef.current,
+              darkness: lightDarknessRef.current,
             },
           ]),
       ...resolveRestingLightSources(),
@@ -497,13 +1087,16 @@ export function ProjectMaskItem({
     drawMaskMesh(state, {
       vertexCount: vertexCountRef.current,
       lightSources,
-      peaks: resolvePeakUniforms(),
+      objects: resolveObjectUniforms(),
       texture: textureRef.current,
       textureMix: textureMixRef.current,
       maskTexture: maskTextureRef.current,
       glowColor: glowColorRef.current,
+      backingVertexCount: backingVertexCountRef.current,
+      backingGrey: backingGreyRef.current,
     });
-  }, [resolvePeakUniforms, resolveRestingLightSources]);
+  }, [resolveObjectUniforms, resolveRestingLightSources]);
+  renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
     const state = glStateRef.current;
@@ -514,9 +1107,25 @@ export function ProjectMaskItem({
     if (latestSource.kind !== "static") return;
     const { gl } = state;
 
-    const highlights = new Float32Array(vertexCount * 4);
+    const length = vertexCount * 4;
+    const resized = highlightScratchRef.current.length !== length;
+    if (resized) {
+      highlightScratchRef.current = new Float32Array(length);
+      highlightUploadedRef.current = new Float32Array(length);
+      fillOverlayScratchRef.current = new Float32Array(length);
+      fillOverlayUploadedRef.current = new Float32Array(length);
+    }
+    const highlights = highlightScratchRef.current;
+    highlights.fill(0);
+    const fillOverlay = fillOverlayScratchRef.current;
+    fillOverlay.fill(0);
+    const suppressed = highlightSuppressedRef.current;
     const vertexRanges = vertexRangesRef.current;
-    const paint = (indices: Set<number>, color: readonly [number, number, number, number]) => {
+    const paintInto = (
+      target: Float32Array,
+      indices: Set<number>,
+      color: readonly [number, number, number, number],
+    ) => {
       indices.forEach((polygonIndex) => {
         const range = vertexRanges[polygonIndex];
         if (!range) return;
@@ -524,48 +1133,189 @@ export function ProjectMaskItem({
         for (let v = 0; v < count; v++) {
           const vertex = startVertex + v;
           if (vertex >= vertexCount) continue;
-          highlights.set(color, vertex * 4);
+          target.set(color, vertex * 4);
         }
       });
     };
+    const paint = (indices: Set<number>, color: readonly [number, number, number, number]) =>
+      paintInto(highlights, indices, color);
 
-    const pendingCapture = pendingCaptureRef.current;
-    const editingCaptureId = pendingCapture ? (pendingCaptureIdRef.current ?? selectedCaptureIdRef.current) : undefined;
-    if (selectedHighlightRef.current) {
-      const activeCaptureId = selectedCaptureIdRef.current;
-      capturesRef.current.forEach((indices, captureId) => {
-        if (captureId === editingCaptureId) return;
-        paint(indices, captureId === activeCaptureId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
+    const pendingLight = pendingLightRef.current;
+    const maskEditSubject = maskEditSubjectRef.current;
+    // Two ways a light's stored membership is not the one to paint: a drag is
+    // moving it, or a session has it open. Both mean something else on this
+    // pass is painting those triangles.
+    const editingLightId =
+      (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
+      (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
+    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
+      const activeLightId = selectedLightIdRef.current;
+      lightsRef.current.forEach((indices, lightId) => {
+        if (lightId === editingLightId) return;
+        paint(indices, lightId === activeLightId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
-    if (pendingCapture && pendingCapture.size > 0) {
-      paint(pendingCapture, HIGHLIGHT_MOVING_COLOR);
+    if (pendingLight && pendingLight.size > 0 && !suppressed) {
+      paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
 
     const pendingTopology = pendingTopologyRef.current;
-    if (selectedHighlightRef.current) {
-      const activePeakId = selectedPeakIdRef.current;
-      peaksMapRef.current.forEach((indices, peakId) => {
-        if (peakId === pendingTopology?.peakId) return;
-        paint(indices, peakId === activePeakId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
+    // A pick-hover paints these the same way, and the ids it reads come out
+    // undefined -- so every light and every object lands on the sibling
+    // colour, which is the whole of what is wanted: where they are, with none
+    // of them claimed.
+    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
+      const activeObjectId = selectedObjectIdRef.current;
+      objectsMapRef.current.forEach((indices, objectId) => {
+        if (objectId === pendingTopology?.objectId) return;
+        if (maskEditSubject?.subject === "object" && objectId === maskEditSubject.id) return;
+        paint(indices, objectId === activeObjectId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
       });
     }
-    if (pendingTopology) {
-      paint(indicesInPeakFromCentroids(polygonCentroidsRef.current, pendingTopology), HIGHLIGHT_MOVING_COLOR);
+    if (pendingTopology && !suppressed) {
+      paint(
+        pendingTopology.polygonIndices ??
+          indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology),
+        HIGHLIGHT_MOVING_COLOR,
+      );
     }
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, highlights, gl.STATIC_DRAW);
+    const objectReviewPreview = objectReviewPreviewRef.current;
+    const objectReviewDiffBase = objectReviewDiffBaseRef.current;
+    // The added/unchanged split is a review-mode question -- what a decided
+    // candidate looked like versus what it looks like now. While the pen's
+    // handles are up that question is beside the point, and answering it
+    // anyway is what made a previously-decided object's reshape look
+    // different from a fresh "edit" session's: this object gets the same
+    // single-color preview either way, and the split resumes once the pen
+    // closes.
+    if (objectReviewDiffBase && !editingShapeRef.current && !suppressed) {
+      const unchanged = new Set<number>();
+      const edited = new Set<number>();
+      objectReviewPreview?.forEach((index) => {
+        if (objectReviewDiffBase.has(index)) unchanged.add(index);
+        else edited.add(index);
+      });
+      objectReviewDiffBase.forEach((index) => {
+        if (!objectReviewPreview?.has(index)) edited.add(index);
+      });
+      paint(unchanged, HIGHLIGHT_SELECTED_COLOR);
+      paint(edited, highlightObjectReviewAddedColor(latestRef.current.uiState.gridlinesBright));
+    } else if (objectReviewPreview?.size && !suppressed) {
+      paint(
+        objectReviewPreview,
+        editingShapeRef.current
+          ? highlightShapeEditColor(latestRef.current.uiState.gridlinesBright)
+          : HIGHLIGHT_SELECTED_COLOR,
+      );
+    }
+
+    // Every object paints its own fill here, on the triangles it owns --
+    // resolveObjectUniforms has zeroed u_objectFills for each of them, so the
+    // outline's shape test is not also painting it. See `restingFill` there
+    // for why the triangles are the right thing to fill; the objects left out
+    // below are the ones still filling from their outline, which must not be
+    // painted twice.
+    //
+    // Read live off each object rather than off whatever pending/candidate
+    // snapshot happens to be in flight: a color picked mid-session must show
+    // up here the same frame it is picked.
+    const animatingObjects = playingObjectIdsRef.current;
+    const pendingObjectIndices = () =>
+      pendingTopology &&
+      (pendingTopology.polygonIndices ??
+        indicesInObjectFromCentroids(maskGeometryRef.current.centroids, pendingTopology));
+    const objectFills = objectsRef.current.map((object) => ({
+      id: object.id,
+      fill: toObjectFill(object),
+      behind: isBehindMask(object),
+      // An open session's own set is the object's membership and the thing
+      // that gets saved, so it is what this paints -- except while a pen
+      // gesture is actually in flight, which is the one window it goes stale
+      // in: it is not re-tagged until the drag ends (see snapIndicesToShape),
+      // so during those frames the outline the pen is holding is the only
+      // thing that knows what the object now covers. `draft` is exactly that
+      // window; reading the pending edit outside it would pin the fill to the
+      // last reshape and leave every later triangle toggle unpainted.
+      indices:
+        maskEditSubject?.subject === "object" && maskEditSubject.id === object.id
+          ? pendingTopology?.objectId === object.id && pendingTopology.draft
+            ? pendingObjectIndices()
+            : objectReviewPreview
+          : pendingTopology?.objectId === object.id
+            ? pendingObjectIndices()
+            : objectsMapRef.current.get(object.id),
+    }));
+    // A candidate the review has not stored yet owns no triangles of its own,
+    // only whichever ones its outline currently encloses.
+    if (pendingTopology && !objectsRef.current.some((object) => object.id === pendingTopology.objectId)) {
+      objectFills.push({
+        id: pendingTopology.objectId,
+        fill: pendingTopology.fill,
+        // An object still being drawn is going in front of the mask, the same
+        // place createObject will actually put it -- see the candidate branch
+        // in resolveObjectUniforms, whose order this has to agree with.
+        behind: false,
+        indices: pendingObjectIndices(),
+      });
+    }
+    objectFills.forEach(({ id, fill, indices, behind }) => {
+      // An object an effect is animating fills from its outline for as long as
+      // the effect runs, so that the color arrives wherever the pose does.
+      if (animatingObjects.has(id)) return;
+      // An object behind the mask paints nothing on the mask's own triangles.
+      // These are the mask's triangles: painting there would put the object's
+      // colour in front of the sheet it is stacked behind, which is the one
+      // place the shader cannot correct it -- a vertex attribute arrives
+      // already composited into the resting layer. Behind the mask an object
+      // shows through the mask's transparency and nowhere else, and at rest
+      // there is none of that to show through, so it shows nothing. Its colour
+      // still travels with it: objectFill paints the behind layer from the
+      // outline while an effect runs (see the shader's objectFill).
+      if (behind) return;
+      // A session's fill is one of the cues an eyedropper picking against the
+      // mesh needs out of the way. A resting object's fill is not a cue -- it
+      // is the object -- and stays put.
+      if (suppressed && maskEditSubject?.subject === "object" && maskEditSubject.id === id) return;
+      if (!indices || fill.a <= 0) return;
+      paintInto(fillOverlay, indices, [fill.r, fill.g, fill.b, fill.a]);
+    });
+
+    // Each buffer is diffed and (maybe) uploaded on its own -- sharing one
+    // "did anything move" check would let a fill-only change slip past
+    // because the highlight bytes it looked at never moved.
+    const syncBuffer = (buffer: WebGLBuffer, data: Float32Array, uploaded: Float32Array) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      if (resized) {
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        uploaded.set(data);
+        return;
+      }
+      let first = -1;
+      let last = -1;
+      for (let i = 0; i < length; i++) {
+        if (data[i] === uploaded[i]) continue;
+        if (first < 0) first = i;
+        last = i;
+      }
+      if (first < 0) return;
+      const start = first - (first % 4);
+      const end = last + (4 - (last % 4));
+      uploaded.set(data.subarray(start, end), start);
+      gl.bufferSubData(gl.ARRAY_BUFFER, start * Float32Array.BYTES_PER_ELEMENT, data.subarray(start, end));
+    };
+    syncBuffer(state.highlightBuffer, highlights, highlightUploadedRef.current);
+    syncBuffer(state.fillOverlayBuffer, fillOverlay, fillOverlayUploadedRef.current);
     render();
   }, [render]);
 
-  const applyDefaultCaptureValue = useCallback(() => {
+  const applyDefaultLightValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
-    captureSizeRef.current = maskMeta?.capture_preview_size ?? DEFAULT_CAPTURE_VALUE.size;
-    captureIntensityRef.current = maskMeta?.capture_preview_intensity ?? DEFAULT_CAPTURE_VALUE.intensity;
-    captureFalloffRef.current = maskMeta?.capture_preview_falloff ?? DEFAULT_CAPTURE_VALUE.falloff;
-    captureDarknessRef.current = maskMeta?.capture_preview_darkness ?? DEFAULT_CAPTURE_VALUE.darkness;
+    lightSizeRef.current = maskMeta?.light_preview_size ?? DEFAULT_LIGHT_VALUE.size;
+    lightIntensityRef.current = maskMeta?.light_preview_intensity ?? DEFAULT_LIGHT_VALUE.intensity;
+    lightFalloffRef.current = maskMeta?.light_preview_falloff ?? DEFAULT_LIGHT_VALUE.falloff;
+    lightDarknessRef.current = maskMeta?.light_preview_darkness ?? DEFAULT_LIGHT_VALUE.darkness;
   }, [source, coreState.project.masks, mediaKey]);
 
   const stopLightSourceAnimation = useCallback(() => {
@@ -577,26 +1327,30 @@ export function ProjectMaskItem({
     }
     wiredMoveRef.current = false;
     playbackLightSourcesRef.current = new Map();
-    playbackPeaksRef.current = new Map();
+    playbackObjectsRef.current = new Map();
+    const wasAnimating = playingObjectIdsRef.current.size > 0;
+    playingObjectIdsRef.current = new Set();
     lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-    applyDefaultCaptureValue();
+    applyDefaultLightValue();
     render();
-  }, [render, applyDefaultCaptureValue]);
+    // Hands every object that was animating its fill back to its triangles.
+    if (wasAnimating) recolorHighlight();
+  }, [render, recolorHighlight, applyDefaultLightValue]);
 
   const preparePlayback = useCallback(
-    (effectKey?: string, captureId?: number, peakId?: number): Promise<(() => Promise<void>) | undefined> => {
+    (effectKey?: string, lightId?: number, objectId?: number): Promise<(() => Promise<void>) | undefined> => {
       stopLightSourceAnimation();
       if (source.kind !== "static") return Promise.resolve(undefined);
-      const playAll = effectKey === undefined && captureId === undefined && peakId === undefined;
-      const candidateCaptureIds = playAll
-        ? Array.from(capturesRef.current.keys())
-        : peakId !== undefined
+      const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
+      const candidateLightIds = playAll
+        ? Array.from(lightsRef.current.keys())
+        : objectId !== undefined
           ? []
-          : [captureId ?? resolveTargetCaptureId()].filter((id): id is number => id !== undefined);
+          : [lightId ?? resolveTargetLightId()].filter((id): id is number => id !== undefined);
 
-      const targets = candidateCaptureIds
+      const targets = candidateLightIds
         .map((id) => {
-          const inputId = maskCaptureInputId(mediaKey, id);
+          const inputId = maskLightInputId(mediaKey, id);
           const wiredMove = coreState.effects.find(
             (effect): effect is Extract<LaurusEffect, { type: "move" }> =>
               effect.type === "move" &&
@@ -616,15 +1370,19 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { captureId: id, inputId, wiredMove, wiredLightSource, wiredScale };
+          return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale };
         })
         .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale)
-        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.captureId) }));
+        .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.lightId) }));
 
-      const candidatePeakIds = playAll ? peaksRef.current.map((peak) => peak.id) : peakId !== undefined ? [peakId] : [];
-      const peakTargets = candidatePeakIds
+      const candidateObjectIds = playAll
+        ? objectsRef.current.map((object) => object.id)
+        : objectId !== undefined
+          ? [objectId]
+          : [];
+      const objectTargets = candidateObjectIds
         .map((id) => {
-          const inputId = maskPeakInputId(mediaKey, id);
+          const inputId = maskObjectInputId(mediaKey, id);
           const wiredMove = coreState.effects.find(
             (effect): effect is Extract<LaurusEffect, { type: "move" }> =>
               effect.type === "move" &&
@@ -643,24 +1401,39 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { peakId: id, inputId, wiredMove, wiredLightSource, wiredScale };
+          const wiredRotate = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "rotate" }> =>
+              effect.type === "rotate" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale);
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate);
 
-      if (targets.length === 0 && peakTargets.length === 0) return Promise.resolve(undefined);
+      if (targets.length === 0 && objectTargets.length === 0) return Promise.resolve(undefined);
 
       wiredMoveRef.current = targets.length > 0;
 
-      const mergedFramesByCapture = new Map<number, LaurusFrame[]>();
-      const moveFramesByCapture = new Map<number, LaurusFrame[]>();
-      const lightSourceFramesByCapture = new Map<number, LaurusFrame[]>();
-      const scaleFramesByCapture = new Map<number, LaurusFrame[]>();
-      const mergedFramesByPeak = new Map<number, LaurusFrame[]>();
-      const moveFramesByPeak = new Map<number, LaurusFrame[]>();
-      const lightSourceFramesByPeak = new Map<number, LaurusFrame[]>();
-      const scaleFramesByPeak = new Map<number, LaurusFrame[]>();
+      const mergedFramesByLight = new Map<number, LaurusFrame[]>();
+      const moveFramesByLight = new Map<number, LaurusFrame[]>();
+      const lightSourceFramesByLight = new Map<number, LaurusFrame[]>();
+      const scaleFramesByLight = new Map<number, LaurusFrame[]>();
+      const mergedFramesByObject = new Map<number, LaurusFrame[]>();
+      const moveFramesByObject = new Map<number, LaurusFrame[]>();
+      const lightSourceFramesByObject = new Map<number, LaurusFrame[]>();
+      const scaleFramesByObject = new Map<number, LaurusFrame[]>();
+      const rotateFramesByObject = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
+      // Claimed here rather than on the first drawn frame: these objects hand
+      // their fill from their triangles back to their outline for the length
+      // of the session, and the frames between here and the first pose are
+      // still frames someone can see.
+      if (objectTargets.length > 0) {
+        playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
+        recolorHighlight();
+      }
 
       const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
       let fps: number;
@@ -692,69 +1465,90 @@ export function ProjectMaskItem({
               getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
             ).then((result) => {
               if (activePlaybackRef.current !== session) return;
-              mergedFramesByCapture.set(t.captureId, result ?? []);
+              mergedFramesByLight.set(t.lightId, result ?? []);
             }),
           ),
-          ...peakTargets.map((t) =>
+          ...objectTargets.map((t) =>
             fetchFramesCached(t.inputId, t.inputId, () =>
               getFrames(coreState.apiOrigin, coreState.project.project_id, t.inputId, fps),
             ).then((result) => {
               if (activePlaybackRef.current !== session) return;
-              mergedFramesByPeak.set(t.peakId, result ?? []);
+              mergedFramesByObject.set(t.objectId, result ?? []);
             }),
           ),
         ]).then(() => {
           if (activePlaybackRef.current !== session) return;
           totalFrames = Math.max(
             1,
-            ...Array.from(mergedFramesByCapture.values()).map((f) => f.length),
-            ...Array.from(mergedFramesByPeak.values()).map((f) => f.length),
+            ...Array.from(mergedFramesByLight.values()).map((f) => f.length),
+            ...Array.from(mergedFramesByObject.values()).map((f) => f.length),
           );
           durationSeconds = totalFrames / fps;
         });
       } else if (targets.length === 0) {
-        const peakTarget = peakTargets[0];
-        const timingValue = (peakTarget.wiredMove ?? peakTarget.wiredLightSource ?? peakTarget.wiredScale)!.value;
-        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        const objectTarget = objectTargets[0];
+        const timingValue = (objectTarget.wiredMove ??
+          objectTarget.wiredLightSource ??
+          objectTarget.wiredScale ??
+          objectTarget.wiredRotate)!.value;
+        // The project is the single source of truth for frame rate. Effects
+        // used to carry their own fps, stamped at creation and never resynced,
+        // which went stale the moment the project's fps changed.
+        fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
-        const peakFetches: Promise<void>[] = [];
-        if (peakTarget.wiredMove) {
-          const wiredMove = peakTarget.wiredMove;
-          peakFetches.push(
-            fetchFramesCached(peakTarget.inputId, `move:${peakTarget.inputId}`, () =>
-              getMoveFrames(coreState.apiOrigin, wiredMove.key, peakTarget.inputId),
-            ).then((result) => {
-              if (activePlaybackRef.current === session && result) moveFramesByPeak.set(peakTarget.peakId, result);
-            }),
-          );
-        }
-        if (peakTarget.wiredLightSource) {
-          const wiredLightSource = peakTarget.wiredLightSource;
-          peakFetches.push(
-            fetchFramesCached(peakTarget.inputId, `light_source:${peakTarget.inputId}`, () =>
-              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, peakTarget.inputId),
+        const objectFetches: Promise<void>[] = [];
+        if (objectTarget.wiredMove) {
+          const wiredMove = objectTarget.wiredMove;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `move:${objectTarget.inputId}`, () =>
+              getMoveFrames(coreState.apiOrigin, wiredMove.key, objectTarget.inputId),
             ).then((result) => {
               if (activePlaybackRef.current === session && result)
-                lightSourceFramesByPeak.set(peakTarget.peakId, result);
+                moveFramesByObject.set(objectTarget.objectId, result);
             }),
           );
         }
-        if (peakTarget.wiredScale) {
-          const wiredScale = peakTarget.wiredScale;
-          peakFetches.push(
-            fetchFramesCached(peakTarget.inputId, `scale:${peakTarget.inputId}`, () =>
-              getScaleFrames(coreState.apiOrigin, wiredScale.key, peakTarget.inputId),
+        if (objectTarget.wiredLightSource) {
+          const wiredLightSource = objectTarget.wiredLightSource;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `light_source:${objectTarget.inputId}`, () =>
+              getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, objectTarget.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result) scaleFramesByPeak.set(peakTarget.peakId, result);
+              if (activePlaybackRef.current === session && result)
+                lightSourceFramesByObject.set(objectTarget.objectId, result);
             }),
           );
         }
-        ready = Promise.all(peakFetches).then(() => {});
+        if (objectTarget.wiredScale) {
+          const wiredScale = objectTarget.wiredScale;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `scale:${objectTarget.inputId}`, () =>
+              getScaleFrames(coreState.apiOrigin, wiredScale.key, objectTarget.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result)
+                scaleFramesByObject.set(objectTarget.objectId, result);
+            }),
+          );
+        }
+        if (objectTarget.wiredRotate) {
+          const wiredRotate = objectTarget.wiredRotate;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `rotate:${objectTarget.inputId}`, () =>
+              getRotateFrames(coreState.apiOrigin, wiredRotate.key, objectTarget.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result)
+                rotateFramesByObject.set(objectTarget.objectId, result);
+            }),
+          );
+        }
+        ready = Promise.all(objectFetches).then(() => {});
       } else {
         const target = targets[0];
         const timingValue = (target.wiredMove ?? target.wiredLightSource ?? target.wiredScale)!.value;
-        fps = timingValue.fps > 0 ? timingValue.fps : projectFps;
+        // See the object-target branch above: the project's fps is the only
+        // source of frame rate.
+        fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
         const fetches: Promise<void>[] = [];
@@ -764,7 +1558,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `move:${target.inputId}`, () =>
               getMoveFrames(coreState.apiOrigin, wiredMove.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result) moveFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) moveFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -774,8 +1568,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `light_source:${target.inputId}`, () =>
               getLightSourceFrames(coreState.apiOrigin, wiredLightSource.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result)
-                lightSourceFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) lightSourceFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -785,7 +1578,7 @@ export function ProjectMaskItem({
             fetchFramesCached(target.inputId, `scale:${target.inputId}`, () =>
               getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
             ).then((result) => {
-              if (activePlaybackRef.current === session && result) scaleFramesByCapture.set(target.captureId, result);
+              if (activePlaybackRef.current === session && result) scaleFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -799,6 +1592,7 @@ export function ProjectMaskItem({
           new Promise<void>((resolve) => {
             session.resolve = resolve;
             const loopStartMs = performance.now();
+            let lastFrameIndex = -1;
 
             const loop = () => {
               if (activePlaybackRef.current !== session) return;
@@ -806,24 +1600,36 @@ export function ProjectMaskItem({
               const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
               const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
 
+              // Redraw only when the fps-quantized frame actually advances, so
+              // playback runs at project.fps instead of the display's native
+              // refresh rate -- the canvas otherwise repaints the same frame
+              // on every rAF tick between fps steps.
+              if (frameIndex === lastFrameIndex) {
+                if (elapsedSeconds < durationSeconds) {
+                  session.rafId = requestAnimationFrame(loop);
+                } else {
+                  stopLightSourceAnimation();
+                }
+                return;
+              }
+              lastFrameIndex = frameIndex;
+
               const canvas = canvasRef.current;
-              const rect = canvas?.getBoundingClientRect();
-              if (canvas && rect && rect.width > 0 && rect.height > 0) {
-                const scaleX = canvas.width / rect.width;
-                const scaleY = canvas.height / rect.height;
+              if (canvas) {
+                const { x: scaleX, y: scaleY } = bufferScaleRef.current;
 
                 targets.forEach((t) => {
-                  const mergedFrames = mergedFramesByCapture.get(t.captureId);
-                  const moveFrames = moveFramesByCapture.get(t.captureId);
-                  const lightSourceFrames = lightSourceFramesByCapture.get(t.captureId);
-                  const scaleFrames = scaleFramesByCapture.get(t.captureId);
+                  const mergedFrames = mergedFramesByLight.get(t.lightId);
+                  const moveFrames = moveFramesByLight.get(t.lightId);
+                  const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
+                  const scaleFrames = scaleFramesByLight.get(t.lightId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                     : moveFrames && moveFrames.length > 0
                       ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
                       : undefined;
-                  const capturePoint = playAll
+                  const lightPoint = playAll
                     ? t.wiredLightSource
                       ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                       : undefined
@@ -841,32 +1647,42 @@ export function ProjectMaskItem({
                   const pointY = movePoint?.y ?? 0;
                   const bufferX = restX + pointX * scaleX;
                   const bufferY = restY + pointY * scaleY;
-                  const captureMeta = source.maskData.captures.find((c) => c.id === t.captureId);
-                  const size = capturePoint?.capture_size ?? captureMeta?.size ?? captureSizeRef.current;
-                  const intensity =
-                    capturePoint?.capture_intensity ?? captureMeta?.intensity ?? captureIntensityRef.current;
-                  const falloff = capturePoint?.capture_falloff ?? captureMeta?.falloff ?? captureFalloffRef.current;
-                  const darkness =
-                    capturePoint?.capture_darkness ?? captureMeta?.darkness ?? captureDarknessRef.current;
+                  const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
+                  const size = lightMeta?.size ?? lightSizeRef.current;
+                  const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
+                  const falloff = lightPoint?.light_falloff ?? lightMeta?.falloff ?? lightFalloffRef.current;
+                  const darkness = lightPoint?.light_darkness ?? lightMeta?.darkness ?? lightDarknessRef.current;
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
-                  playbackLightSourcesRef.current.set(t.captureId, {
+                  // A light keeps its silhouette while it animates. Position
+                  // comes from the move -- that is what is being animated --
+                  // but the outline and the reach it was drawn with are the
+                  // light's own, or a shaped light would snap back to a disc
+                  // the moment playback started and back again when it ended.
+                  //
+                  // Through the same resolver the rest position came from, so
+                  // that frame zero of a move -- where the move contributes
+                  // nothing -- lands exactly where the light already was.
+                  const shapedMeta = resolveLightSilhouette(t.lightId);
+                  playbackLightSourcesRef.current.set(t.lightId, {
                     x: bufferX,
                     y: canvas.height - bufferY,
-                    radius: (size / 2) * scaleMultiplier,
+                    radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
+                    shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
                     falloff,
                     intensity,
                     darkness,
                   });
                 });
 
-                peakTargets.forEach((t) => {
-                  const peak = peaksRef.current.find((p) => p.id === t.peakId);
-                  if (!peak) return;
-                  const mergedFrames = mergedFramesByPeak.get(t.peakId);
-                  const moveFrames = moveFramesByPeak.get(t.peakId);
-                  const lightSourceFrames = lightSourceFramesByPeak.get(t.peakId);
-                  const scaleFrames = scaleFramesByPeak.get(t.peakId);
+                objectTargets.forEach((t) => {
+                  const object = objectsRef.current.find((p) => p.id === t.objectId);
+                  if (!object) return;
+                  const mergedFrames = mergedFramesByObject.get(t.objectId);
+                  const moveFrames = moveFramesByObject.get(t.objectId);
+                  const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
+                  const scaleFrames = scaleFramesByObject.get(t.objectId);
+                  const rotateFrames = rotateFramesByObject.get(t.objectId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
@@ -885,23 +1701,29 @@ export function ProjectMaskItem({
                     : scaleFrames && scaleFrames.length > 0
                       ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
                       : undefined;
-                  const cx = peak.cx + (movePoint?.x ?? 0) * scaleX;
-                  const cy = peak.cy + (movePoint?.y ?? 0) * scaleY;
-                  const elevation = lightSourcePoint?.peak_elevation ?? peak.elevation;
-                  const radius = lightSourcePoint?.peak_radius ?? peak.radius;
-                  const falloff = lightSourcePoint?.peak_falloff ?? peak.falloff;
-                  const blackPoint = lightSourcePoint
-                    ? toEquationPeakBlackPoint(lightSourcePoint)
-                    : toPeakBlackPoint(peak);
+                  const rotatePoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : rotateFrames && rotateFrames.length > 0
+                      ? rotateFrames[Math.min(frameIndex, rotateFrames.length - 1)]
+                      : undefined;
+                  const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
+                  const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
+                  const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
+                  const radius = object.radius;
+                  const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
+                  const fill = lightSourcePoint ? toEquationObjectFill(lightSourcePoint) : toObjectFill(object);
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
-                  playbackPeaksRef.current.set(t.peakId, {
+                  playbackObjectsRef.current.set(t.objectId, {
                     cx,
                     cy,
                     elevation,
                     radius: radius * scaleMultiplier,
                     falloff,
-                    blackPoint,
+                    fill,
+                    rotation: rotatePoint
+                      ? objectRotation(rotatePoint.rx, rotatePoint.ry, rotatePoint.rz, rotatePoint.rangle)
+                      : undefined,
                   });
                 });
                 render();
@@ -920,8 +1742,9 @@ export function ProjectMaskItem({
     [
       source,
       mediaKey,
-      resolveTargetCaptureId,
+      resolveTargetLightId,
       computeLightSourceRestPosition,
+      resolveLightSilhouette,
       coreState.effects,
       coreState.apiOrigin,
       coreState.project.fps,
@@ -929,13 +1752,14 @@ export function ProjectMaskItem({
       coreState.inputsToRender,
       framesCacheRef,
       render,
+      recolorHighlight,
       stopLightSourceAnimation,
     ],
   );
 
   const playLightSourceAnimation = useCallback(
-    (effectKey?: string, captureId?: number, peakId?: number): Promise<void> =>
-      preparePlayback(effectKey, captureId, peakId).then((start) => start?.()),
+    (effectKey?: string, lightId?: number, objectId?: number): Promise<void> =>
+      preparePlayback(effectKey, lightId, objectId).then((start) => start?.()),
     [preparePlayback],
   );
 
@@ -943,20 +1767,61 @@ export function ProjectMaskItem({
     source,
     coreState,
     uiState,
-    applyDefaultCaptureValue,
+    applyDefaultLightValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
+    retouchObjectMesh,
   });
   latestRef.current = {
     source,
     coreState,
     uiState,
-    applyDefaultCaptureValue,
+    applyDefaultLightValue,
     playLightSourceAnimation,
     preparePlayback,
     stopLightSourceAnimation,
+    retouchObjectMesh,
   };
+
+  // The session can open, move to another candidate and close without the
+  // canvas being torn down, so this is reconciled on every change rather than
+  // read once at mount. Repainting from here because nothing else will: the
+  // highlight this decides is only redrawn when something asks for it, and
+  // "the session changed" is not otherwise one of those things.
+  useEffect(() => {
+    const next = maskEditSubjectFor(uiState.maskEdit, mediaKey);
+    const previous = maskEditSubjectRef.current;
+    const editingShapeNext =
+      uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.subject === "object" && uiState.maskEdit.editingShape;
+    if (
+      next?.subject === previous?.subject &&
+      next?.id === previous?.id &&
+      editingShapeRef.current === editingShapeNext
+    ) {
+      return;
+    }
+    maskEditSubjectRef.current = next;
+    editingShapeRef.current = editingShapeNext;
+    recolorHighlight();
+  }, [uiState.maskEdit, mediaKey, recolorHighlight]);
+
+  // Only the alpha of already-painted highlights changes here, so a recolor is
+  // all this needs -- the geometry and indices it paints are untouched.
+  useEffect(() => {
+    recolorHighlight();
+  }, [uiState.gridlinesBright, recolorHighlight]);
+
+  // Hovering a mask while a bar waits for a pick shows what there is to aim
+  // at. Both ways out of it come through the same reconcile: the cursor
+  // leaving, and the bar stopping waiting -- which is what the click that
+  // picks something does, and what it picked takes the cues over from here.
+  const pickHover = source.kind === "static" && isHovered && isAwaitingRegionPick(uiState);
+  useEffect(() => {
+    if (pickHoverRef.current === pickHover) return;
+    pickHoverRef.current = pickHover;
+    recolorHighlight();
+  }, [pickHover, recolorHighlight]);
 
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
@@ -976,14 +1841,27 @@ export function ProjectMaskItem({
         colorCanvas.width = 1;
         colorCanvas.height = 1;
         const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
+        const initialGeometry = maskGeometry(maskData);
         const mesh = colorCtx
-          ? buildStaticMaskMesh({ ...maskData, peaks: maskData.peaks.map(toPeakGeometry) }, colorCtx)
+          ? buildStaticMaskMesh(
+              { ...maskData, objects: maskData.objects.map(toObjectGeometry) },
+              colorCtx,
+              { corners: initialGeometry.corners, polygonPointSets: initialGeometry.points },
+              maskPolygonColors(maskData.polygons, colorCtx),
+            )
           : { positions: [], colors: [], barycentrics: [], uvs: [], centroids: [], vertexCount: 0, vertexRanges: [] };
+        objectsMeshSignatureRef.current = objectsMeshSignature(maskData.objects);
         vertexCountRef.current = mesh.vertexCount;
         vertexRangesRef.current = mesh.vertexRanges;
         uploadStaticMaskMesh(state, mesh);
         gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
+        highlightScratchRef.current = new Float32Array(0);
+        highlightUploadedRef.current = new Float32Array(0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.vertexCount * 4), gl.STATIC_DRAW);
+        fillOverlayScratchRef.current = new Float32Array(0);
+        fillOverlayUploadedRef.current = new Float32Array(0);
 
         if (maskData.curves.length > 0 && colorCtx) {
           const glowSource = maskData.curves.find((c) => c.glow_color)?.glow_color;
@@ -1035,39 +1913,46 @@ export function ProjectMaskItem({
         }
 
         lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
-        const pendingCapture =
-          coreState.pendingLightSourceCapture?.maskKey === mediaKey ? coreState.pendingLightSourceCapture : undefined;
-        pendingCaptureRef.current = pendingCapture ? new Set(pendingCapture.polygonIndices) : undefined;
-        pendingCaptureIdRef.current = pendingCapture?.captureId;
+        const pendingLight = coreState.pendingLight?.maskKey === mediaKey ? coreState.pendingLight : undefined;
+        pendingLightRef.current = pendingLight ? new Set(pendingLight.polygonIndices) : undefined;
+        pendingLightIdRef.current = pendingLight?.lightId;
         selectedHighlightRef.current = uiState.selectedElement?.key === mediaKey;
-        selectedCaptureIdRef.current =
-          selectedHighlightRef.current && uiState.selectedElement?.type === "capture"
-            ? uiState.selectedElement.captureId
+        selectedLightIdRef.current =
+          selectedHighlightRef.current && uiState.selectedElement?.type === "light"
+            ? uiState.selectedElement.lightId
             : undefined;
-        selectedPeakIdRef.current =
-          selectedHighlightRef.current && uiState.selectedElement?.type === "peak"
-            ? uiState.selectedElement.peakId
+        selectedObjectIdRef.current =
+          selectedHighlightRef.current && uiState.selectedElement?.type === "object"
+            ? uiState.selectedElement.objectId
             : undefined;
-        capturesRef.current = buildCapturesMap(maskData.polygons);
-        capturesMetaRef.current = buildCapturesMetaMap(maskData.captures);
-        peaksRef.current = maskData.peaks;
-        peaksMapRef.current = buildPeaksMap(maskData.polygons);
-        polygonCentroidsRef.current = polygonCentroids(maskData.polygons);
+        lightsRef.current = buildLightsMap(maskData.polygons);
+        lightsMetaRef.current = buildLightsMetaMap(maskData.lights);
+        objectsRef.current = maskData.objects;
+        objectsMapRef.current = buildObjectsMap(maskData.polygons);
+        maskGeometryRef.current = maskGeometry(maskData);
+        polygonsRef.current = maskData.polygons;
         pendingTopologyRef.current =
           coreState.pendingTopologyEdit?.maskKey === mediaKey ? coreState.pendingTopologyEdit : undefined;
+        const sessionHere = uiState.maskEdit?.maskKey === mediaKey ? uiState.maskEdit : undefined;
+        objectReviewPreviewRef.current = sessionHere?.currentIndices;
+        objectReviewDiffBaseRef.current =
+          sessionHere?.subject === "object" && isMaskEditLocked(sessionHere)
+            ? new Set(sessionHere.candidates[sessionHere.currentIndex].polygon_indices)
+            : undefined;
+        maskEditSubjectRef.current = maskEditSubjectFor(uiState.maskEdit, mediaKey);
 
         const applyMaskAppearanceDefaults = (override?: MaskAppearanceOverride) => {
           const latest = latestRef.current;
           if (latest.source.kind !== "static") return;
           textureMixRef.current =
             override?.textureMix ?? latest.coreState.project.masks.get(mediaKey)?.texture ?? TEXTURE_MIX_DEFAULT;
-          if (override?.capture) {
-            captureSizeRef.current = override.capture.size;
-            captureIntensityRef.current = override.capture.intensity;
-            captureFalloffRef.current = override.capture.falloff;
-            captureDarknessRef.current = override.capture.darkness;
+          if (override?.light) {
+            lightSizeRef.current = override.light.size;
+            lightIntensityRef.current = override.light.intensity;
+            lightFalloffRef.current = override.light.falloff;
+            lightDarknessRef.current = override.light.darkness;
           } else {
-            latest.applyDefaultCaptureValue();
+            latest.applyDefaultLightValue();
           }
           render();
         };
@@ -1076,74 +1961,116 @@ export function ProjectMaskItem({
         recolorHighlight();
 
         const handle: MaskImperativeHandle = {
-          play: (effectKey, captureId, peakId) =>
-            latestRef.current.playLightSourceAnimation(effectKey, captureId, peakId),
-          preparePlayback: (effectKey, captureId, peakId) =>
-            latestRef.current.preparePlayback(effectKey, captureId, peakId),
+          play: (effectKey, lightId, objectId) =>
+            latestRef.current.playLightSourceAnimation(effectKey, lightId, objectId),
+          preparePlayback: (effectKey, lightId, objectId) =>
+            latestRef.current.preparePlayback(effectKey, lightId, objectId),
           stop: () => latestRef.current.stopLightSourceAnimation(),
-          abortCaptureDragForToolChange: (newToolType) => {
+          abortLightDragForToolChange: (newToolType) => {
             if (newToolType === "move") return;
-            if (captureDragRef.current) abortCaptureDrag();
+            if (lightDragRef.current) abortLightDrag();
           },
-          abortTopologyDragForToolChange: () => {
-            if (!peakDragRef.current) return;
-            const tool = latestRef.current.uiState.tool;
-            if (tool.type === "mask" && tool.editingTopology) return;
-            abortTopologyDrag();
+          setHighlightSuppressed: (suppressed) => {
+            if (highlightSuppressedRef.current === suppressed) return;
+            highlightSuppressedRef.current = suppressed;
+            recolorHighlight();
           },
           setSelectedHighlighted: (active) => {
             selectedHighlightRef.current = active;
             if (!active) {
-              selectedCaptureIdRef.current = undefined;
-              selectedPeakIdRef.current = undefined;
+              selectedLightIdRef.current = undefined;
+              selectedObjectIdRef.current = undefined;
             }
             recolorHighlight();
           },
-          setSelectedCapture: (captureId) => {
-            selectedCaptureIdRef.current = captureId;
+          setSelectedLight: (lightId) => {
+            selectedLightIdRef.current = lightId;
             recolorHighlight();
           },
-          setSelectedPeak: (peakId) => {
-            selectedPeakIdRef.current = peakId;
+          setSelectedObject: (objectId) => {
+            selectedObjectIdRef.current = objectId;
             recolorHighlight();
           },
-          setPendingCapture: (indices, captureId) => {
-            pendingCaptureIdRef.current = captureId;
-            pendingCaptureRef.current = indices;
+          setPendingLight: (indices, lightId) => {
+            pendingLightIdRef.current = lightId;
+            pendingLightRef.current = indices;
             recolorHighlight();
           },
-          clearPendingCapture: () => {
-            pendingCaptureIdRef.current = undefined;
-            pendingCaptureRef.current = undefined;
+          clearPendingLight: () => {
+            pendingLightIdRef.current = undefined;
+            pendingLightRef.current = undefined;
+            // The drag is over, so its preview of where the light was going
+            // goes with it -- by now the mask either holds the new position or
+            // the drag was abandoned, and either way the stored light is the
+            // one to draw. Same pairing clearPendingTopology has with the pen.
+            pendingLightShapeRef.current = undefined;
             recolorHighlight();
           },
-          syncCapturedIndices: (updated) => {
+          syncLitIndices: (updated) => {
             const latestSource = latestRef.current.source;
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
-            capturesRef.current = buildCapturesMap(updated.polygons);
-            capturesMetaRef.current = buildCapturesMetaMap(updated.captures);
-            polygonCentroidsRef.current = polygonCentroids(updated.polygons);
+            lightsRef.current = buildLightsMap(updated.polygons);
+            lightsMetaRef.current = buildLightsMetaMap(updated.lights);
+            maskGeometryRef.current = maskGeometry(updated);
             recolorHighlight();
           },
+          retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
             recolorHighlight();
           },
           clearPendingTopology: () => {
             pendingTopologyRef.current = undefined;
+            // The two are one signal wearing two names: this fires from every
+            // way out of an uncommitted reshape -- reverting, stepping away,
+            // shutting the pen, ending the session -- and a light's drafted
+            // silhouette is the same uncommitted reshape seen from the other
+            // side. Clearing only the relief would leave a light lit by a
+            // curve nobody can see any more.
+            pendingLightShapeRef.current = undefined;
+            recolorHighlight();
+            renderRef.current();
+          },
+          setObjectReviewPreview: (indices, diffBase) => {
+            objectReviewPreviewRef.current = indices;
+            objectReviewDiffBaseRef.current = diffBase;
             recolorHighlight();
           },
-          syncPeaks: (updated) => {
+          syncObjects: (updated) => {
             const latestSource = latestRef.current.source;
             if (latestSource.kind !== "static") return;
             if (latestSource.maskData.mask_media_id !== updated.mask_media_id) return;
-            peaksRef.current = updated.peaks;
-            peaksMapRef.current = buildPeaksMap(updated.polygons);
-            polygonCentroidsRef.current = polygonCentroids(updated.polygons);
+            objectsRef.current = updated.objects;
+            objectsMapRef.current = buildObjectsMap(updated.polygons);
+            // The lights' own tagging is derived from the very same polygons,
+            // and a recut appends fragments carrying the tags of the triangles
+            // they were cut from. Rebuilt alongside the objects' rather than
+            // left to the next light update, which may never come: a recut
+            // driven from a light edit changes the mesh without changing any
+            // light, and a stale map would leave that light's highlight and
+            // hit-testing pointing at triangles that are no longer its shape.
+            lightsRef.current = buildLightsMap(updated.polygons);
+            const geometry = maskGeometry(updated);
+            maskGeometryRef.current = geometry;
+            const signature = objectsMeshSignature(updated.objects);
             const glState = glStateRef.current;
-            if (glState && colorCtx) {
-              const mesh = buildStaticMaskMesh({ ...updated, peaks: updated.peaks.map(toPeakGeometry) }, colorCtx);
+            // A retouch changes the polygons without touching a single object,
+            // so the objects' signature alone would miss it and leave the
+            // canvas drawing the mesh from before the recut. Identity is the
+            // right test: the recut leaves every triangle it did not cut as
+            // the very same entry, and hands back a new array only when
+            // something actually moved.
+            const remeshed = updated.polygons !== polygonsRef.current;
+            polygonsRef.current = updated.polygons;
+            if (glState && colorCtx && (remeshed || signature !== objectsMeshSignatureRef.current)) {
+              objectsMeshSignatureRef.current = signature;
+              const mesh = buildStaticMaskMesh(
+                { ...updated, objects: updated.objects.map(toObjectGeometry) },
+                colorCtx,
+                { corners: geometry.corners, polygonPointSets: geometry.points },
+                maskPolygonColors(updated.polygons, colorCtx),
+              );
               vertexCountRef.current = mesh.vertexCount;
               vertexRangesRef.current = mesh.vertexRanges;
               uploadStaticMaskMesh(glState, mesh);
@@ -1180,6 +2107,7 @@ export function ProjectMaskItem({
           gl.deleteBuffer(state.uvBuffer);
           gl.deleteBuffer(state.centroidBuffer);
           gl.deleteBuffer(state.highlightBuffer);
+          gl.deleteBuffer(state.fillOverlayBuffer);
           if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
           if (textureRef.current) gl.deleteTexture(textureRef.current);
           glStateRef.current = undefined;
@@ -1240,6 +2168,8 @@ export function ProjectMaskItem({
           vertexCountRef.current = positionsRef.current.length / 2;
           gl.bindBuffer(gl.ARRAY_BUFFER, state.highlightBuffer);
           gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current * 4), gl.DYNAMIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexCountRef.current * 4), gl.DYNAMIC_DRAW);
           dirtyRef.current = false;
         }
 
@@ -1253,11 +2183,15 @@ export function ProjectMaskItem({
           maskTextureRef.current = uploadCurveMask(gl, maskCanvas, curvesRef.current, maskTextureRef.current);
         }
         glowColorRef.current = liveGlowColorRef.current;
+
+        const streaming = mask.statusRef.current === "connecting" || mask.statusRef.current === "streaming";
+        backingVertexCountRef.current = mask.meshRefs.backingVertexCountRef.current;
+        backingGreyRef.current = streaming ? 1 : 0;
         textureMixRef.current = mask.textureMixRef.current;
-        captureSizeRef.current = mask.captureSizeRef.current;
-        captureIntensityRef.current = mask.captureIntensityRef.current;
-        captureFalloffRef.current = mask.captureFalloffRef.current;
-        captureDarknessRef.current = mask.captureDarknessRef.current;
+        lightSizeRef.current = mask.lightSizeRef.current;
+        lightIntensityRef.current = mask.lightIntensityRef.current;
+        lightFalloffRef.current = mask.lightFalloffRef.current;
+        lightDarknessRef.current = mask.lightDarknessRef.current;
 
         render();
         rafRef.current = requestAnimationFrame(loop);
@@ -1273,6 +2207,7 @@ export function ProjectMaskItem({
         gl.deleteBuffer(state.uvBuffer);
         gl.deleteBuffer(state.centroidBuffer);
         gl.deleteBuffer(state.highlightBuffer);
+        gl.deleteBuffer(state.fillOverlayBuffer);
         if (maskTextureRef.current) gl.deleteTexture(maskTextureRef.current);
         if (textureRef.current) gl.deleteTexture(textureRef.current);
         glStateRef.current = undefined;
@@ -1281,16 +2216,54 @@ export function ProjectMaskItem({
       };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      meshIdentityKey,
-      render,
-      recolorHighlight,
-      abortCaptureDrag,
-      abortTopologyDrag,
-      maskHandlesRef,
-      maskElementsRef,
-      mediaKey,
-    ],
+    [meshIdentityKey, render, recolorHighlight, abortLightDrag, maskHandlesRef, maskElementsRef, mediaKey],
+  );
+
+  /**
+   * Open the pen on a light or an object that has just been clicked.
+   *
+   * The same pair of dispatches the edit buttons in the context menu and the
+   * light source bar make -- the session, then the highlight showing which
+   * triangles it opened on -- because this is the same gesture reached a
+   * shorter way. Those two name something that was already selected and sit
+   * behind a menu; the armed pen takes the click that selects it as the
+   * instruction to edit it, which is the whole of what arming it buys.
+   *
+   * A region the mask no longer holds is left alone rather than opened on a
+   * stale copy: what was hit is resolved against the mask here, not carried in
+   * from the hit test.
+   */
+  const openPenOn = useCallback(
+    (picked: Extract<LaurusSelectedElement, { type: "light" | "object" }>) => {
+      if (source.kind !== "static") return;
+      const maskData = source.maskData;
+      if (picked.type === "object") {
+        const object = maskData.objects.find((o) => o.id === picked.objectId);
+        if (!object) return;
+        const polygonIndices = polygonIndicesForObject(maskData.polygons, object.id);
+        uiDispatch({
+          type: UIActionType.StartObjectEdit,
+          maskMediaId: maskData.mask_media_id,
+          maskKey: mediaKey,
+          object,
+          polygonIndices,
+        });
+        notifyMaskObjectReviewPreview(mediaKey, new Set(polygonIndices));
+        return;
+      }
+      const light = maskData.lights.find((l) => l.id === picked.lightId);
+      if (!light) return;
+      const polygonIndices = polygonIndicesForLight(maskData.polygons, light.id);
+      uiDispatch({
+        type: UIActionType.StartLightEdit,
+        maskMediaId: maskData.mask_media_id,
+        maskKey: mediaKey,
+        light,
+        polygonIndices,
+      });
+      notifyMaskObjectReviewPreview(mediaKey, new Set(polygonIndices));
+    },
+    [source, mediaKey, uiDispatch, notifyMaskObjectReviewPreview],
   );
 
   const showContextMenu =
@@ -1329,42 +2302,85 @@ export function ProjectMaskItem({
                 return;
               }
               if (source.kind !== "static") return;
-              const hitSubElement = (): Extract<LaurusSelectedElement, { type: "capture" | "peak" }> | undefined => {
+              if (uiState.maskEdit?.maskKey === mediaKey) {
+                // The two halves of a session read the same click, so only one
+                // of them is ever live: the handles are up, or the triangles
+                // are pickable. Reading it as both is what let a click meant
+                // for an anchor -- missed by a few pixels, or landing on the
+                // curve between two of them -- quietly change what the region
+                // covers instead. The pen is shut to go back to the triangles.
+                if (isMaskEditLocked(uiState.maskEdit) || uiState.maskEdit.editingShape) return;
+                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
+                const index = point
+                  ? swelledPolygonIndexAtPoint(maskGeometryRef.current.points, resolveObjectUniforms(), point)
+                  : undefined;
+                if (index !== undefined) {
+                  const previewed = new Set(objectReviewPreviewRef.current ?? []);
+                  if (previewed.has(index)) previewed.delete(index);
+                  else previewed.add(index);
+                  objectReviewPreviewRef.current = previewed;
+                  recolorHighlight();
+                  uiDispatch({ type: UIActionType.ToggleMaskEditPolygon, index });
+                }
+                return;
+              }
+              const hitSubElement = (): Extract<LaurusSelectedElement, { type: "light" | "object" }> | undefined => {
                 if (source.kind !== "static") return undefined;
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 if (!point) return undefined;
-                const peakId = peakIdAtPoint(peaksRef.current, point);
-                if (peakId !== undefined) return { key: mediaKey, type: "peak", peakId };
-                const captureId = captureIdAtPoint(source.maskData.polygons, point);
-                if (captureId !== undefined) return { key: mediaKey, type: "capture", captureId };
+                const objectId = objectIdAtPoint(objectsRef.current, point);
+                if (objectId !== undefined) return { key: mediaKey, type: "object", objectId };
+                const lightId = lightIdAtPoint(
+                  source.maskData.polygons,
+                  maskGeometryRef.current.points,
+                  resolveObjectUniforms(),
+                  point,
+                );
+                if (lightId !== undefined) return { key: mediaKey, type: "light", lightId };
                 return undefined;
               };
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
-                if ((selected.type === "capture" || selected.type === "peak") && uiState.lightSourcePreview) {
+                if ((selected.type === "light" || selected.type === "object") && uiState.lightSourcePreview) {
                   uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                   notifyMaskLightSourcePreviewToggled(false);
                 }
                 notifyMaskSelectionChanged(mediaKey);
-                notifyMaskSelectedCaptureChanged(
-                  mediaKey,
-                  selected.type === "capture" ? selected.captureId : undefined,
-                );
-                notifyMaskSelectedPeakChanged(mediaKey, selected.type === "peak" ? selected.peakId : undefined);
+                notifyMaskSelectedLightChanged(mediaKey, selected.type === "light" ? selected.lightId : undefined);
+                notifyMaskSelectedObjectChanged(mediaKey, selected.type === "object" ? selected.objectId : undefined);
               };
-              const previouslySelectedCaptureId =
-                uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
-                  ? uiState.selectedElement.captureId
+              const previouslySelectedLightId =
+                uiState.selectedElement?.type === "light" && uiState.selectedElement.key === mediaKey
+                  ? uiState.selectedElement.lightId
                   : undefined;
-              const previouslySelectedPeakId =
-                uiState.selectedElement?.type === "peak" && uiState.selectedElement.key === mediaKey
-                  ? uiState.selectedElement.peakId
+              const previouslySelectedObjectId =
+                uiState.selectedElement?.type === "object" && uiState.selectedElement.key === mediaKey
+                  ? uiState.selectedElement.objectId
                   : undefined;
+              // The pen picked from the toolbar with nothing open under it: the
+              // click that names a light or an object is also the instruction
+              // to edit it, so it goes straight through to the pen rather than
+              // leaving something selected for a menu to act on later.
+              //
+              // A click that lands on bare mesh does nothing at all -- not even
+              // select the mask -- because there is nothing there for a pen to
+              // draw, and the crosshair is already saying as much. Alt is left
+              // out because alt-click means "select what is under the cursor"
+              // everywhere else, and that is still how a light or an object is
+              // picked up without opening it.
+              if (isPenArmed(uiState) && !isAltKeyPressed && !e.metaKey) {
+                const hit = hitSubElement();
+                if (hit) {
+                  select(hit);
+                  openPenOn(hit);
+                }
+                return;
+              }
               const isIdleMaskTool =
-                uiState.tool.type === "mask" && !uiState.tool.capturingMeshSection && !uiState.tool.editingTopology;
+                uiState.tool.type === "mask" && !uiState.tool.lightingMeshSection && !uiState.tool.raisingObjects;
               if (isIdleMaskTool && !isAltKeyPressed && !e.metaKey) {
                 setSelectedMaskKeys(new Set([mediaKey]));
-                if (source.maskData.captures.length > 0) {
+                if (source.maskData.lights.length > 0) {
                   select({ key: mediaKey, type: "mask" });
                 }
                 return;
@@ -1377,11 +2393,14 @@ export function ProjectMaskItem({
                   const hit = hitSubElement();
                   if (hit) {
                     const alreadySelected =
-                      hit.type === "capture"
-                        ? previouslySelectedCaptureId === hit.captureId
-                        : previouslySelectedPeakId === hit.peakId;
+                      hit.type === "light"
+                        ? previouslySelectedLightId === hit.lightId
+                        : previouslySelectedObjectId === hit.objectId;
                     select(alreadySelected ? { key: mediaKey, type: "mask" } : hit);
                     return;
+                  }
+                  if (previouslySelectedLightId !== undefined || previouslySelectedObjectId !== undefined) {
+                    select({ key: mediaKey, type: "mask" });
                   }
                 }
                 setSelectedMaskKeys((prev) => {
@@ -1390,7 +2409,7 @@ export function ProjectMaskItem({
                     next.delete(mediaKey);
                   } else {
                     next.add(mediaKey);
-                    if (source.maskData.captures.length > 0) {
+                    if (source.maskData.lights.length > 0) {
                       select({ key: mediaKey, type: "mask" });
                     }
                   }
@@ -1409,20 +2428,21 @@ export function ProjectMaskItem({
                   return next;
                 });
               }
-              const hit = e.metaKey ? hitSubElement() : undefined;
-              const hitCaptureId = hit?.type === "capture" ? hit.captureId : undefined;
-              const hitPeakId = hit?.type === "peak" ? hit.peakId : undefined;
+              const aimsContextMenu = e.metaKey || uiState.tool.type === "contextmenu";
+              const hit = aimsContextMenu ? hitSubElement() : undefined;
+              const hitLightId = hit?.type === "light" ? hit.lightId : undefined;
+              const hitObjectId = hit?.type === "object" ? hit.objectId : undefined;
               if (hit) {
                 select(hit);
               } else if (
-                showContextMenu &&
-                (previouslySelectedCaptureId !== undefined || previouslySelectedPeakId !== undefined)
+                aimsContextMenu &&
+                (previouslySelectedLightId !== undefined || previouslySelectedObjectId !== undefined)
               ) {
                 select({ key: mediaKey, type: "mask" });
               }
               if (
                 showContextMenu &&
-                (previouslySelectedCaptureId !== hitCaptureId || previouslySelectedPeakId !== hitPeakId)
+                (previouslySelectedLightId !== hitLightId || previouslySelectedObjectId !== hitObjectId)
               ) {
                 return;
               }
@@ -1469,164 +2489,81 @@ export function ProjectMaskItem({
             onPointerDown={(e) => {
               suppressNextClickRef.current = false;
               if (source.kind !== "static") return;
-              const isTopologyTool = uiState.tool.type === "mask" && uiState.tool.editingTopology;
-              const isMoveTool = uiState.tool.type === "move";
-              if (isTopologyTool || isMoveTool) {
-                const canvas = e.currentTarget;
-                const point = toBufferPoint(canvas, e.clientX, e.clientY);
-                const peakId = point ? peakIdAtPoint(peaksRef.current, point) : undefined;
-                const peak = peakId !== undefined ? peaksRef.current.find((p) => p.id === peakId) : undefined;
-                if (point && peakId !== undefined && peak && !peakCommitInFlightRef.current.has(peakId)) {
-                  const [bufferX, bufferY] = point;
-                  e.stopPropagation();
-                  e.preventDefault();
-                  canvas.setPointerCapture(e.pointerId);
-                  peakDragRef.current = {
-                    pointerId: e.pointerId,
-                    peakId,
-                    startX: bufferX,
-                    startY: bufferY,
-                    originalCx: peak.cx,
-                    originalCy: peak.cy,
-                    originalRadius: peak.radius,
-                    originalElevation: peak.elevation,
-                    originalFalloff: peak.falloff,
-                    originalShape: peak.shape,
-                    originalBlackPoint: toPeakBlackPoint(peak),
-                    rafId: undefined,
-                    latestX: bufferX,
-                    latestY: bufferY,
-                  };
-                  setIsDraggingTopology(true);
-                  return;
-                }
-                if (isTopologyTool) return;
-              }
               if (uiState.tool.type !== "move") return;
               const canvas = e.currentTarget;
               const point = toBufferPoint(canvas, e.clientX, e.clientY);
               if (!point) return;
               const [bufferX, bufferY] = point;
-              const captureId = captureIdAtPoint(source.maskData.polygons, [bufferX, bufferY]);
-              if (captureId === undefined) return;
-              if (captureCommitInFlightRef.current.has(captureId)) return;
+              const lightId = lightIdAtPoint(
+                source.maskData.polygons,
+                maskGeometryRef.current.points,
+                resolveObjectUniforms(),
+                [bufferX, bufferY],
+              );
+              if (lightId === undefined) return;
+              if (lightCommitInFlightRef.current.has(lightId)) return;
               const originalIndices = new Set<number>();
               source.maskData.polygons.forEach((p, i) => {
-                if (p.capture_id === captureId) originalIndices.add(i);
+                if (p.light_id === lightId) originalIndices.add(i);
               });
-              const persistedSize = source.maskData.captures.find((c) => c.id === captureId)?.size ?? 0;
-              const known = lastKnownCaptureRef.current.get(captureId);
-              const reconstructed =
-                known && sameIndices(known.indices, originalIndices)
-                  ? known.circle
-                  : capturedRegionCircle(source.maskData.polygons, captureId);
-              if (!reconstructed) return;
-              const circle = persistedSize > 0 ? { ...reconstructed, radius: persistedSize / 2 } : reconstructed;
+              // A light that has a silhouette of its own is dragged by it,
+              // full stop -- there is nothing to reconstruct and nothing that
+              // could be more authoritative than the outline someone drew.
+              // The reconstruction below is for lights drawn before they could
+              // be shaped: rebuild the disc they have been lighting with, and
+              // remember it across drags so repeated nudges do not each
+              // re-derive a slightly different centre from the triangles.
+              const light = source.maskData.lights.find((c) => c.id === lightId);
+              const known = lastKnownLightRef.current.get(lightId);
+              let region: LightDragRegion;
+              if (light && light.radius > 0) {
+                region = { cx: light.cx, cy: light.cy, radius: light.radius, shape: light.shape };
+              } else {
+                const reconstructed =
+                  known && sameIndices(known.indices, originalIndices)
+                    ? known.region
+                    : litRegionCircle(source.maskData.polygons, maskGeometryRef.current.centroids, lightId);
+                if (!reconstructed) return;
+                const persistedSize = light?.size ?? 0;
+                region = {
+                  ...reconstructed,
+                  radius: persistedSize > 0 ? persistedSize / 2 : reconstructed.radius,
+                  shape: "",
+                };
+              }
               e.stopPropagation();
               e.preventDefault();
               canvas.setPointerCapture(e.pointerId);
-              captureDragRef.current = {
+              lightDragRef.current = {
                 pointerId: e.pointerId,
-                captureId,
+                lightId,
                 startX: bufferX,
                 startY: bufferY,
-                originalCircle: circle,
+                originalRegion: region,
                 originalIndices,
                 rafId: undefined,
                 latestX: bufferX,
                 latestY: bufferY,
               };
-              setIsDraggingCapture(true);
+              setIsDraggingLight(true);
               dispatch({
-                type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, captureId, polygonIndices: [...originalIndices] },
+                type: CoreActionType.SetPendingLight,
+                value: { maskKey: mediaKey, lightId, polygonIndices: [...originalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, originalIndices, captureId);
+              notifyMaskPendingLightSet(mediaKey, originalIndices, lightId);
             }}
             onPointerMove={(e) => {
-              const captureDrag = captureDragRef.current;
-              if (captureDrag && e.pointerId === captureDrag.pointerId) {
+              const lightDrag = lightDragRef.current;
+              if (lightDrag && e.pointerId === lightDrag.pointerId) {
                 const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
                 if (!point) return;
-                [captureDrag.latestX, captureDrag.latestY] = point;
-                if (captureDrag.rafId === undefined) captureDrag.rafId = requestAnimationFrame(recomputeCaptureDrag);
+                [lightDrag.latestX, lightDrag.latestY] = point;
+                if (lightDrag.rafId === undefined) lightDrag.rafId = requestAnimationFrame(recomputeLightDrag);
                 return;
-              }
-              const peakDrag = peakDragRef.current;
-              if (peakDrag && e.pointerId === peakDrag.pointerId) {
-                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-                if (!point) return;
-                [peakDrag.latestX, peakDrag.latestY] = point;
-                if (peakDrag.rafId === undefined) peakDrag.rafId = requestAnimationFrame(recomputeTopologyDrag);
               }
             }}
             onPointerUp={(e) => {
-              const peakDrag = peakDragRef.current;
-              if (peakDrag && e.pointerId === peakDrag.pointerId && source.kind === "static") {
-                suppressNextClickRef.current = true;
-                if (peakDrag.rafId !== undefined) cancelAnimationFrame(peakDrag.rafId);
-                e.currentTarget.releasePointerCapture(e.pointerId);
-                const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
-                const dx = (point?.[0] ?? peakDrag.latestX) - peakDrag.startX;
-                const dy = (point?.[1] ?? peakDrag.latestY) - peakDrag.startY;
-                const peakId = peakDrag.peakId;
-                const finalCx = peakDrag.originalCx + dx;
-                const finalCy = peakDrag.originalCy + dy;
-                const finalElevation = peakDrag.originalElevation;
-                const finalFalloff = peakDrag.originalFalloff;
-                const existingPeak = source.maskData.peaks.find((p) => p.id === peakId);
-                const peakName = existingPeak?.name ?? `peak ${peakId}`;
-                peakDragRef.current = undefined;
-                setIsDraggingTopology(false);
-                const edit: PendingTopologyEdit = {
-                  maskKey: mediaKey,
-                  peakId,
-                  cx: finalCx,
-                  cy: finalCy,
-                  radius: peakDrag.originalRadius,
-                  elevation: finalElevation,
-                  falloff: finalFalloff,
-                  shape: peakDrag.originalShape,
-                  blackPoint: peakDrag.originalBlackPoint,
-                };
-                dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
-                notifyMaskPendingTopologySet(mediaKey, edit);
-                peakCommitInFlightRef.current.add(peakId);
-                sendMaskPeakUpdate(source.maskData.mask_media_id, {
-                  peak_id: peakId,
-                  name: peakName,
-                  cx: finalCx,
-                  cy: finalCy,
-                  radius: peakDrag.originalRadius,
-                  elevation: finalElevation,
-                  falloff: finalFalloff,
-                  shape: peakDrag.originalShape,
-                  ...toPeakBlackPointFields(peakDrag.originalBlackPoint),
-                  remove: false,
-                  polygon_indices: [
-                    ...peakTriangleIndices(source.maskData.polygons, {
-                      cx: finalCx,
-                      cy: finalCy,
-                      radius: peakDrag.originalRadius,
-                      shape: peakDrag.originalShape,
-                    }),
-                  ],
-                }).then((updated) => {
-                  peakCommitInFlightRef.current.delete(peakId);
-                  if (updated) {
-                    dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
-                    notifyMaskPeaksUpdated(mediaKey, updated);
-                    if (uiState.lightSourcePreview) {
-                      uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
-                      notifyMaskLightSourcePreviewToggled(false);
-                    }
-                  }
-                  dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-                  notifyMaskPendingTopologyCleared(mediaKey);
-                });
-                return;
-              }
-              const drag = captureDragRef.current;
+              const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId || source.kind !== "static") return;
               suppressNextClickRef.current = true;
               if (drag.rafId !== undefined) cancelAnimationFrame(drag.rafId);
@@ -1634,92 +2571,105 @@ export function ProjectMaskItem({
               const point = toBufferPoint(e.currentTarget, e.clientX, e.clientY);
               const dx = (point?.[0] ?? drag.latestX) - drag.startX;
               const dy = (point?.[1] ?? drag.latestY) - drag.startY;
-              const finalIndices = captureIndicesAtOffset(drag, dx, dy);
-              const captureId = drag.captureId;
-              const existingCapture = source.maskData.captures.find((c) => c.id === captureId);
-              const captureName = existingCapture?.name ?? `light ${captureId}`;
-              captureDragRef.current = undefined;
-              setIsDraggingCapture(false);
+              const finalIndices = lightIndicesAtOffset(drag, dx, dy);
+              const lightId = drag.lightId;
+              const existingLight = source.maskData.lights.find((c) => c.id === lightId);
+              const lightName = existingLight?.name ?? `light ${lightId}`;
+              lightDragRef.current = undefined;
+              setIsDraggingLight(false);
               if (finalIndices.size === 0) {
-                lastKnownCaptureRef.current.set(captureId, {
+                lastKnownLightRef.current.set(lightId, {
                   indices: drag.originalIndices,
-                  circle: drag.originalCircle,
+                  region: drag.originalRegion,
                 });
-                dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-                notifyMaskPendingCaptureCleared(mediaKey);
+                dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+                notifyMaskPendingLightCleared(mediaKey);
                 return;
               }
               dispatch({
-                type: CoreActionType.SetPendingLightSourceCapture,
-                value: { maskKey: mediaKey, captureId, polygonIndices: [...finalIndices] },
+                type: CoreActionType.SetPendingLight,
+                value: { maskKey: mediaKey, lightId, polygonIndices: [...finalIndices] },
               });
-              notifyMaskPendingCaptureSet(mediaKey, finalIndices, captureId);
-              captureCommitInFlightRef.current.add(captureId);
-              sendMaskCaptureUpdate(source.maskData.mask_media_id, {
-                capture_id: captureId,
-                name: captureName,
-                polygon_indices: [...finalIndices],
-                size: existingCapture?.size ?? 0,
-                intensity: existingCapture?.intensity ?? 0,
-                falloff: existingCapture?.falloff ?? 0,
-                darkness: existingCapture?.darkness ?? 0,
-              }).then((updated) => {
-                captureCommitInFlightRef.current.delete(captureId);
-                if (updated) {
-                  dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: updated });
-                  notifyMaskCaptureUpdated(mediaKey, updated);
+              notifyMaskPendingLightSet(mediaKey, finalIndices, lightId);
+              lightCommitInFlightRef.current.add(lightId);
+              sendMaskLightUpdate(
+                source.maskData.mask_media_id,
+                toLightUpdate(existingLight ?? newLight(lightId, lightName), {
+                  name: lightName,
+                  polygon_indices: [...finalIndices],
+                  // A drag is a translation, so a light that has been given a
+                  // silhouette is translated by the same offset its triangles
+                  // were. Leaving the outline where it was would make dragging
+                  // a shaped light do nothing anyone could see -- the triangles
+                  // would move out from under the light rather than with it.
+                  // A light with no silhouette has nothing to move: its centre
+                  // is derived from the triangles and follows them already.
+                  //
+                  // Off the drag's own region rather than the mask's copy,
+                  // because the region is what was actually dragged and the
+                  // offset below is measured against it.
+                  ...(existingLight && existingLight.radius > 0
+                    ? { cx: drag.originalRegion.cx + dx, cy: drag.originalRegion.cy + dy }
+                    : {}),
+                }),
+              ).then((updated) => {
+                lightCommitInFlightRef.current.delete(lightId);
+                const latestMask = latestRef.current.source;
+                if (updated && latestMask.kind === "static") {
+                  const patched = applyLightDelta(latestMask.maskData, updated);
+                  dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
+                  notifyMaskLightUpdated(mediaKey, patched);
                   if (uiState.lightSourcePreview) {
                     uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                     notifyMaskLightSourcePreviewToggled(false);
                   }
-                  lastKnownCaptureRef.current.set(captureId, {
+                  lastKnownLightRef.current.set(lightId, {
                     indices: finalIndices,
-                    circle: {
-                      cx: drag.originalCircle.cx + dx,
-                      cy: drag.originalCircle.cy + dy,
-                      radius: drag.originalCircle.radius,
+                    region: {
+                      ...drag.originalRegion,
+                      cx: drag.originalRegion.cx + dx,
+                      cy: drag.originalRegion.cy + dy,
                     },
                   });
                 } else {
-                  lastKnownCaptureRef.current.set(captureId, {
+                  lastKnownLightRef.current.set(lightId, {
                     indices: drag.originalIndices,
-                    circle: drag.originalCircle,
+                    region: drag.originalRegion,
                   });
                 }
-                dispatch({ type: CoreActionType.SetPendingLightSourceCapture, value: undefined });
-                notifyMaskPendingCaptureCleared(mediaKey);
+                dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+                notifyMaskPendingLightCleared(mediaKey);
               });
             }}
             onPointerCancel={(e) => {
-              const peakDrag = peakDragRef.current;
-              if (peakDrag && e.pointerId === peakDrag.pointerId) {
-                abortTopologyDrag();
-                return;
-              }
-              const drag = captureDragRef.current;
+              const drag = lightDragRef.current;
               if (!drag || e.pointerId !== drag.pointerId) return;
-              abortCaptureDrag();
+              abortLightDrag();
             }}
             onMouseEnter={() => {
               setIsHovered(true);
             }}
             onMouseMove={(e) => {
               setIsHovered(true);
-              if (captureDragRef.current || peakDragRef.current) return;
+              if (lightDragRef.current) return;
               if (wiredMoveRef.current || !uiState.lightSourcePreview) return;
+              if (isAnyDragActive()) return;
               setMostRecentlyHoveredMaskKey(mediaKey);
               const canvas = e.currentTarget;
               const rect = canvas.getBoundingClientRect();
               if (rect.width === 0 || rect.height === 0) return;
-              const scaleX = canvas.width / rect.width;
-              const scaleY = canvas.height / rect.height;
-              const bufferX = (e.clientX - rect.left) * scaleX;
-              const bufferY = (e.clientY - rect.top) * scaleY;
+              // Screen to buffer for where the cursor is -- the rect's zoom is
+              // exactly what that mapping needs -- but canvas to buffer for how
+              // big the light is, so it keeps its size against the mask rather
+              // than against the display.
+              const bufferX = ((e.clientX - rect.left) * canvas.width) / rect.width;
+              const bufferY = ((e.clientY - rect.top) * canvas.height) / rect.height;
+              const bufferScaleX = bufferScaleRef.current.x;
               lightSourceRef.current = {
                 x: bufferX,
                 y: canvas.height - bufferY,
-                radius: (captureSizeRef.current / 2) * scaleX,
-                falloff: captureFalloffRef.current * scaleX,
+                radius: (lightSizeRef.current / 2) * bufferScaleX,
+                falloff: lightFalloffRef.current * bufferScaleX,
               };
               render();
             }}
@@ -1741,14 +2691,32 @@ export function ProjectMaskItem({
                     : "none",
             }}
           />
+          {shapeEditorObject && (
+            <ObjectShapeEditor
+              key={`${mediaKey}:${shapeEditorObject.current.id}:${shapeEditorObject.current.origin}`}
+              object={shapeEditorObject.current}
+              reference={shapeEditorObject.original}
+              bufferWidth={canvasSize.width}
+              bufferHeight={canvasSize.height}
+              cssWidth={containerSize.width}
+              cssHeight={containerSize.height}
+              canvasZoom={canvasZoom}
+              onPreview={previewShapeEdit}
+              onCommit={commitShapeEdit}
+              stitch={uiState.tool.type === "pen" && uiState.tool.stitch}
+              addAnchor={uiState.tool.type === "pen" && uiState.tool.addAnchor}
+              showAnchors={uiState.tool.type !== "pen" || uiState.tool.showAnchors}
+              gridlinesBright={uiState.gridlinesBright}
+            />
+          )}
         </div>
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
             media={
-              uiState.selectedElement?.type === "capture" && uiState.selectedElement.key === mediaKey
-                ? { key: mediaKey, type: "capture", captureId: uiState.selectedElement.captureId, meta: maskMeta }
-                : uiState.selectedElement?.type === "peak" && uiState.selectedElement.key === mediaKey
-                  ? { key: mediaKey, type: "peak", peakId: uiState.selectedElement.peakId, meta: maskMeta }
+              uiState.selectedElement?.type === "light" && uiState.selectedElement.key === mediaKey
+                ? { key: mediaKey, type: "light", lightId: uiState.selectedElement.lightId, meta: maskMeta }
+                : uiState.selectedElement?.type === "object" && uiState.selectedElement.key === mediaKey
+                  ? { key: mediaKey, type: "object", objectId: uiState.selectedElement.objectId, meta: maskMeta }
                   : { key: mediaKey, type: "mask", meta: maskMeta }
             }
             framesCacheRef={framesCacheRef}

@@ -2,6 +2,7 @@ import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSSProperties, RefObject, useEffect, useRef, useState } from "react";
 import { LaurusResolution } from "../landing.boot";
+import { beginBodyDragCursor, endBodyDragCursor } from "../workspace/hooks/useToolCursor";
 
 interface DialProps {
   resolution: LaurusResolution;
@@ -50,7 +51,7 @@ export default function Dial({
         sensors={sensors}
         autoScroll={false}
         onDragStart={() => {
-          document.body.style.cursor = "grabbing";
+          beginBodyDragCursor();
           rotationRef.current = rotation;
         }}
         onDragMove={(event) => {
@@ -64,7 +65,7 @@ export default function Dial({
           }
         }}
         onDragEnd={(event) => {
-          document.body.style.cursor = "";
+          endBodyDragCursor();
           const { delta } = event;
           const dragDistanceY = delta.y;
           const degreesPerPixel = -0.75;

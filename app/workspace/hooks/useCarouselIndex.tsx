@@ -24,7 +24,7 @@ export const useCarouselIndex = (
   effectKey: string,
   isNavigable?: (entry: CarouselEntry) => boolean,
 ) => {
-  const { mostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
+  const { getMostRecentlyEnteredEffectUnitKey } = useContext(HoverContext);
   const activeKey = activeElement?.key;
   const locallyActivatedKey = activeElement?.locallyActivatedEffectKey;
   const totalEntries = carouselEntries.length;
@@ -35,11 +35,11 @@ export const useCarouselIndex = (
   };
   const activeIndex = carouselEntries.findIndex((c) => {
     if (c.key !== activeKey) return false;
-    if (activeElement?.type === "capture") {
-      return c.type === "capture" && c.captureId === activeElement.captureId;
+    if (activeElement?.type === "light") {
+      return c.type === "light" && c.lightId === activeElement.lightId;
     }
-    if (activeElement?.type === "peak") {
-      return c.type === "peak" && c.peakId === activeElement.peakId;
+    if (activeElement?.type === "object") {
+      return c.type === "object" && c.objectId === activeElement.objectId;
     }
     return true;
   });
@@ -51,6 +51,7 @@ export const useCarouselIndex = (
     setLocalIndex(clampIndex(0));
   }
 
+  const mostRecentlyEnteredEffectUnitKey = getMostRecentlyEnteredEffectUnitKey();
   const shouldSync = !mostRecentlyEnteredEffectUnitKey || mostRecentlyEnteredEffectUnitKey === effectKey;
 
   if (activeKey !== prevKey) {

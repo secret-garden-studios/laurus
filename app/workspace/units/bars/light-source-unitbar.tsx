@@ -196,9 +196,9 @@ export default function LightSourceUnitbar({
       >
         <div
           title={
-            target === "peak"
-              ? "targeting peaks -- double-click for captures"
-              : "targeting captures -- double-click for peaks"
+            target === "object"
+              ? "targeting objects -- double-click for lights"
+              : "targeting lights -- double-click for objects"
           }
           onDoubleClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
@@ -212,8 +212,8 @@ export default function LightSourceUnitbar({
           }}
         >
           <SvgRepo
-            title={target === "peak" ? "peak" : "capture"}
-            svg={target === "peak" ? antigravity300() : asterisk300()}
+            title={target === "object" ? "object" : "light"}
+            svg={target === "object" ? antigravity300() : asterisk300()}
             containerStyle={{
               cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
               ...dynamicSizes.paramButton,
@@ -452,6 +452,7 @@ export default function LightSourceUnitbar({
               clipboardData = { ...activeEquation };
             }
             const currentEq: LaurusLightSourceEquation = {
+              ...defaultLightSourceEquation,
               ...clipboardData,
               input_id: "clipboard",
               solution: defaultLightSourceEquation.solution,

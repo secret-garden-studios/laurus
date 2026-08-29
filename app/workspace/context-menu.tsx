@@ -1,4 +1,14 @@
-import { useContext, useMemo, useCallback, CSSProperties, useState, Dispatch, useEffect, RefObject } from "react";
+import {
+  useContext,
+  useMemo,
+  useCallback,
+  CSSProperties,
+  useState,
+  Dispatch,
+  useEffect,
+  useRef,
+  RefObject,
+} from "react";
 import {
   updateProject,
   LaurusProjectImg,
@@ -15,7 +25,21 @@ import {
   UIContext,
   getMaskSourceImgIds,
 } from "./workspace.client";
-import { LaurusFrame, LaurusImgResult, LaurusMaskResult, LaurusSvgResult, deleteMask } from "./workspace.server";
+import {
+  LightUpdateDelta_V1_0,
+  LaurusFrame,
+  LaurusImgResult,
+  LaurusMaskResult,
+  LaurusObjectReview,
+  LaurusSvgResult,
+  deleteMask,
+  getObjectReview,
+  newLight,
+  toLightUpdate,
+} from "./workspace.server";
+import { applyLightDelta } from "./canvas-media/mask-delta";
+import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
+import type { ObjectOrderDirection } from "./canvas-media/object-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -23,12 +47,14 @@ import {
   LaurusActiveElement,
   LaurusBrowserElement,
   LaurusThumbnail,
+  ObjectReviewSession,
   UIAction,
   UIActionType,
   defaultUIState,
+  resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
-import { deleteEffects, deleteMaskCaptureEffects } from "./effects-utils";
+import { deleteEffects, deleteMaskLightEffects } from "./effects-utils";
 
 function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
   switch (mediaType) {
@@ -106,6 +132,9 @@ function cleanUpBrowserElement(
   }
 }
 
+const MOVE_UP_TITLE = "move this object forward in its mask -- alt to put it in front of everything";
+const MOVE_DOWN_TITLE = "move this object back in its mask -- past the mask itself, it renders behind it";
+
 function projectSvgIsTransformed(svg: LaurusProjectSvg) {
   if (svg.scale_x == 1 && svg.scale_y == 1 && svg.rotate_x == 0 && svg.rotate_y == 0 && svg.rotate_z == 0) {
     return false;
@@ -134,8 +163,13 @@ export type ContextMenuMedia =
   | { type: "img"; key: string; meta: LaurusProjectImg }
   | { type: "svg"; key: string; meta: LaurusProjectSvg }
   | { type: "mask"; key: string; meta: LaurusProjectMask }
-  | { type: "capture"; key: string; captureId: number; meta: LaurusProjectMask }
-  | { type: "peak"; key: string; peakId: number; meta: LaurusProjectMask };
+  | { type: "light"; key: string; lightId: number; meta: LaurusProjectMask }
+  | { type: "object"; key: string; objectId: number; meta: LaurusProjectMask };
+type PendingObjectReview = {
+  state: LaurusObjectReview;
+  decisions: Map<number, "accepted" | "rejected">;
+  resumed: ObjectReviewSession;
+};
 interface ContextMenu {
   media: ContextMenuMedia;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
@@ -143,24 +177,26 @@ interface ContextMenu {
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskCaptureUpdate, closeMaskCaptureSocket, closeMaskPeakSocket } = useContext(SocketContext);
+  const { sendMaskLightUpdate, closeMaskLightSocket, closeMaskObjectSocket } = useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
-    notifyMaskSelectedCaptureChanged,
-    notifyMaskSelectedPeakChanged,
-    notifyMaskCaptureUpdated,
-    deletePeak,
+    notifyMaskSelectedLightChanged,
+    notifyMaskSelectedObjectChanged,
+    notifyMaskLightUpdated,
+    notifyMaskObjectReviewPreview,
+    deleteObject,
+    reorderObject,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const active = useMemo<boolean>(() => {
     if (uiState.activeElement?.key !== media.key) return false;
-    if (media.type === "capture") {
-      return uiState.activeElement.type === "capture" && uiState.activeElement.captureId === media.captureId;
+    if (media.type === "light") {
+      return uiState.activeElement.type === "light" && uiState.activeElement.lightId === media.lightId;
     }
-    if (media.type === "peak") {
-      return uiState.activeElement.type === "peak" && uiState.activeElement.peakId === media.peakId;
+    if (media.type === "object") {
+      return uiState.activeElement.type === "object" && uiState.activeElement.objectId === media.objectId;
     }
     return true;
   }, [uiState.activeElement, media]);
@@ -459,7 +495,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (media.type === "mask") {
             await deleteMask(coreState.apiOrigin, coreState.accessToken, mediaId);
           }
-          if (media.type !== "capture" && media.type !== "peak") {
+          if (media.type !== "light" && media.type !== "object") {
             cleanUpCanvasMedia(media.type, media.key, dispatch);
             cleanUpMediaBrowser(media.type, mediaId, newProject, coreState.canvasMasks, uiDispatch);
           }
@@ -745,6 +781,49 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     [coreState.project, coreState.apiOrigin, coreState.accessToken, media.key, dispatch],
   );
 
+  /**
+   * True while a reorder is in flight, and what stands the two buttons down.
+   *
+   * A single object reorder is several sends -- ranking is dense, so moving one
+   * object renumbers its neighbours, and each is a full-replace down the object
+   * socket. A second click landing mid-run would build its own step from a mask
+   * that has absorbed only some of the first one's deltas and write a stacking
+   * neither click asked for. Locking rather than debouncing, because the thing
+   * to wait for is the acknowledgement, not a quiet interval: every click still
+   * lands, just never on top of its own commit.
+   */
+  const [reordering, setReordering] = useState(false);
+
+  const moveInStack = useCallback(
+    async (direction: ObjectOrderDirection) => {
+      // An object's stack is its parent mask; everything else's is the project.
+      // Same four gestures, two different things being ordered -- and before
+      // objects had an order of their own, these buttons on an object's menu
+      // silently reordered the whole mask it belongs to.
+      if (media.type !== "object") {
+        await updateMediaOrder(direction);
+        return;
+      }
+      if (reordering) return;
+      setReordering(true);
+      try {
+        await reorderObject(media.key, media.objectId, direction);
+      } finally {
+        setReordering(false);
+      }
+    },
+    [media, reordering, reorderObject, updateMediaOrder],
+  );
+
+  const reorderEnabled = useMemo(() => {
+    switch (media.type) {
+      case "light":
+        return false;
+      default:
+        return true;
+    }
+  }, [media.type]);
+
   const revertEnabled = useMemo(() => {
     switch (media.type) {
       case "img": {
@@ -758,8 +837,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         return projectSvgIsTransformed(m);
       }
       case "mask":
-      case "capture":
-      case "peak": {
+      case "light":
+      case "object": {
         const m = coreState.project.masks.get(media.key);
         if (!m) return false;
         return projectMaskIsTransformed(m);
@@ -808,8 +887,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         break;
       }
       case "mask":
-      case "capture":
-      case "peak": {
+      case "light":
+      case "object": {
         const m = newMasks.get(media.key);
         if (!m) return;
         if (projectMaskIsTransformed(m)) {
@@ -841,7 +920,100 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, media.key, media.type]);
 
-  const isCaptureOrPeak = media.type === "capture" || media.type === "peak";
+  const isLightOrObject = media.type === "light" || media.type === "object";
+
+  const editableObject = useMemo(() => {
+    if (media.type !== "object") return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
+    const maskData = coreState.canvasMasks.get(media.key);
+    const object = maskData?.objects.find((o) => o.id === media.objectId);
+    if (!maskData || !object) return undefined;
+    return {
+      maskMediaId: maskData.mask_media_id,
+      object,
+      polygonIndices: polygonIndicesForObject(maskData.polygons, object.id),
+    };
+  }, [coreState.canvasMasks, media, uiState.maskEdit]);
+
+  const editableLight = useMemo(() => {
+    if (media.type !== "light") return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
+    const maskData = coreState.canvasMasks.get(media.key);
+    const light = maskData?.lights.find((l) => l.id === media.lightId);
+    if (!maskData || !light) return undefined;
+    return {
+      maskMediaId: maskData.mask_media_id,
+      light,
+      polygonIndices: polygonIndicesForLight(maskData.polygons, light.id),
+    };
+  }, [coreState.canvasMasks, media, uiState.maskEdit]);
+
+  const reviewMaskMediaId = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.mask_media_id;
+  }, [coreState.canvasMasks, media]);
+
+  const maskObjectCount = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.objects.length;
+  }, [coreState.canvasMasks, media]);
+
+  const maskLightCount = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    return coreState.canvasMasks.get(media.key)?.lights.length;
+  }, [coreState.canvasMasks, media]);
+
+  const objectPolygonCount = useMemo(() => {
+    if (media.type !== "object") return undefined;
+    return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.object_id === media.objectId).length;
+  }, [coreState.canvasMasks, media]);
+
+  const lightPolygonCount = useMemo(() => {
+    if (media.type !== "light") return undefined;
+    return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
+  }, [coreState.canvasMasks, media]);
+
+  // TODO: refactor
+  const reviewFetchedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!reviewMaskMediaId) return;
+    if (coreState.objectReviews.has(reviewMaskMediaId)) return;
+    if (reviewFetchedRef.current.has(reviewMaskMediaId)) return;
+    reviewFetchedRef.current.add(reviewMaskMediaId);
+    let cancelled = false;
+    void (async () => {
+      const review = await getObjectReview(coreState.apiOrigin, coreState.accessToken, reviewMaskMediaId);
+      if (cancelled || !review) return;
+      dispatch({ type: CoreActionType.SetObjectReview, maskMediaId: reviewMaskMediaId, value: review });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewMaskMediaId, coreState.objectReviews, coreState.apiOrigin, coreState.accessToken, dispatch]);
+
+  const pendingReview = useMemo((): PendingObjectReview | undefined => {
+    if (!reviewMaskMediaId) return undefined;
+    const state = coreState.objectReviews.get(reviewMaskMediaId);
+    if (!state) return undefined;
+    const decisions = new Map(state.decisions.map((d) => [d.object_id, d.decision]));
+    const resumed = resumeObjectReview(reviewMaskMediaId, media.key, state.candidates, decisions);
+    return resumed ? { state, decisions, resumed } : undefined;
+  }, [reviewMaskMediaId, media.key, coreState.objectReviews]);
+
+  const reviewableMask = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    if (uiState.maskEdit !== undefined) return undefined;
+    if (!reviewMaskMediaId || !pendingReview) return undefined;
+    return { maskMediaId: reviewMaskMediaId, pending: pendingReview };
+  }, [media, uiState.maskEdit, reviewMaskMediaId, pendingReview]);
+
+  const reviewTitle = useMemo(() => {
+    if (media.type !== "mask") return undefined;
+    if (uiState.maskEdit !== undefined) return "finish the edit in progress first";
+    if (!pendingReview) return "no pending review for this mask";
+    const allDecided = pendingReview.state.candidates.every((c) => pendingReview.decisions.has(c.object.id));
+    return allDecided ? "reopen the completed object review for this mask" : "resume the object review for this mask";
+  }, [media.type, uiState.maskEdit, pendingReview]);
 
   const cellStyle: CSSProperties = {
     display: "flex",
@@ -851,26 +1023,91 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     ...dynamicSizes.cell,
   };
 
+  const reviewButton = (
+    <div
+      className={reviewableMask ? styles["animated-nav-dark"] : ""}
+      style={{
+        color: reviewableMask ? "inherit" : "rgba(127,127,127, 1)",
+        ...cellStyle,
+        cursor: reviewableMask ? "pointer" : "not-allowed",
+      }}
+      title={reviewTitle}
+      onClick={() => {
+        if (!reviewableMask) return;
+        const { pending } = reviewableMask;
+        uiDispatch({
+          type: UIActionType.ResumeObjectReview,
+          maskMediaId: reviewableMask.maskMediaId,
+          maskKey: media.key,
+          candidates: pending.state.candidates,
+          decisions: pending.decisions,
+        });
+        notifyMaskObjectReviewPreview(media.key, pending.resumed.currentIndices);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      }}
+    >
+      {"review"}
+    </div>
+  );
+
   const header = useMemo(() => {
     switch (media.type) {
       case "img":
       case "svg":
         return media.meta.media_key;
-      case "mask":
-      case "peak":
-      case "capture": {
-        let h = media.key;
+      case "mask": {
+        let filename = media.key;
         const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return h;
+        if (!mask) return filename;
         coreState.canvasImgs.forEach((i) => {
           if (i.img_media_id == mask.source_img_media_id) {
-            h = i.media_key;
+            filename = i.media_key;
           }
         });
-        return h;
+        return filename;
+      }
+      case "object": {
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return media.key;
+        const object = mask.objects.find((o) => o.id === media.objectId);
+        if (!object) return media.key;
+        return object.description ? object.description : object.name ? object.name : "";
+      }
+      case "light": {
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return media.key;
+        const light = mask.lights.find((o) => o.id === media.lightId);
+        if (!light) return media.key;
+        return light.description ? light.description : light.name ? light.name : "";
       }
     }
   }, [coreState.canvasImgs, coreState.canvasMasks, media]);
+
+  const subheader = useMemo(() => {
+    switch (media.type) {
+      case "img":
+      case "svg":
+      case "mask": {
+        return `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+      }
+      case "object": {
+        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return fallback;
+        const object = mask.objects.find((o) => o.id === media.objectId);
+        if (!object) return fallback;
+        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
+      }
+      case "light": {
+        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+        const mask = coreState.canvasMasks.get(media.key);
+        if (!mask) return fallback;
+        const object = mask.lights.find((o) => o.id === media.lightId);
+        if (!object) return fallback;
+        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
+      }
+    }
+  }, [coreState.canvasMasks, media]);
 
   return (
     <>
@@ -954,31 +1191,14 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 >
                   {header}
                 </div>
-                <div title="position & size" style={{ display: "flex", ...dynamicSizes.h2 }}>
-                  <div>
-                    {"x"}
-                    {media.meta.left.toFixed()}
-                    {" | "}
-                    {"y"}
-                    {media.meta.top.toFixed()}
-                    {" | "}
-                    {"w"}
-                    {media.meta.width.toFixed()}
-                    {" | "}
-                    {"h"}
-                    {media.meta.height.toFixed()}
-                  </div>
-                </div>
+                <div style={{ display: "flex", ...dynamicSizes.h2 }}>{subheader}</div>
                 <div
-                  title="description"
                   style={{
                     overflowX: "auto",
                     display: "flex",
                     ...dynamicSizes.h2,
                   }}
-                >
-                  {media.meta.description}
-                </div>
+                />
               </div>
               <div style={{ gridRow: 2, gridColumn: 1, display: "grid" }}>
                 <div
@@ -1040,11 +1260,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           break;
                         }
-                        case "capture": {
+                        case "light": {
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
-                            type: "capture",
-                            captureId: media.captureId,
+                            type: "light",
+                            lightId: media.lightId,
                           };
                           uiDispatch({
                             type: UIActionType.SetActiveElement,
@@ -1052,18 +1272,18 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           uiDispatch({
                             type: UIActionType.SetSelectedElement,
-                            value: { key: media.key, type: "capture", captureId: media.captureId },
+                            value: { key: media.key, type: "light", lightId: media.lightId },
                           });
                           notifyMaskSelectionChanged(media.key);
-                          notifyMaskSelectedCaptureChanged(media.key, media.captureId);
-                          notifyMaskSelectedPeakChanged(media.key, undefined);
+                          notifyMaskSelectedLightChanged(media.key, media.lightId);
+                          notifyMaskSelectedObjectChanged(media.key, undefined);
                           break;
                         }
-                        case "peak": {
+                        case "object": {
                           const newActiveElement: LaurusActiveElement = {
                             key: media.key,
-                            type: "peak",
-                            peakId: media.peakId,
+                            type: "object",
+                            objectId: media.objectId,
                           };
                           uiDispatch({
                             type: UIActionType.SetActiveElement,
@@ -1071,11 +1291,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           });
                           uiDispatch({
                             type: UIActionType.SetSelectedElement,
-                            value: { key: media.key, type: "peak", peakId: media.peakId },
+                            value: { key: media.key, type: "object", objectId: media.objectId },
                           });
                           notifyMaskSelectionChanged(media.key);
-                          notifyMaskSelectedPeakChanged(media.key, media.peakId);
-                          notifyMaskSelectedCaptureChanged(media.key, undefined);
+                          notifyMaskSelectedObjectChanged(media.key, media.objectId);
+                          notifyMaskSelectedLightChanged(media.key, undefined);
                           break;
                         }
                       }
@@ -1093,25 +1313,94 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     height: dynamicSizes.cell.height * 4,
                   }}
                 >
-                  {media.type !== "mask" && !isCaptureOrPeak && (
+                  {media.type === "mask" && reviewButton}
+                  {media.type !== "mask" && !isLightOrObject && (
                     <div style={{ ...cellStyle }} className={styles["animated-nav-dark"]} onClick={swapMedia}>
                       {"swap"}
                     </div>
                   )}
+                  {media.type === "object" && (
+                    <div
+                      className={editableObject ? styles["animated-nav-dark"] : ""}
+                      style={{
+                        color: editableObject ? "inherit" : "rgba(127,127,127, 1)",
+                        ...cellStyle,
+                      }}
+                      title={
+                        editableObject
+                          ? "open this object for editing -- the pen comes up on its outline"
+                          : "finish the edit in progress first"
+                      }
+                      onClick={() => {
+                        if (!editableObject) return;
+                        uiDispatch({
+                          type: UIActionType.StartObjectEdit,
+                          maskMediaId: editableObject.maskMediaId,
+                          maskKey: media.key,
+                          object: editableObject.object,
+                          polygonIndices: editableObject.polygonIndices,
+                        });
+                        notifyMaskObjectReviewPreview(media.key, new Set(editableObject.polygonIndices));
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+                      }}
+                    >
+                      {"edit"}
+                    </div>
+                  )}
+                  {media.type === "light" && (
+                    <div
+                      className={editableLight ? styles["animated-nav-dark"] : ""}
+                      style={{
+                        color: editableLight ? "inherit" : "rgba(127,127,127, 1)",
+                        ...cellStyle,
+                      }}
+                      title={
+                        editableLight
+                          ? "open this light for editing -- the pen comes up on its outline"
+                          : "finish the edit in progress first"
+                      }
+                      onClick={() => {
+                        if (!editableLight) return;
+                        uiDispatch({
+                          type: UIActionType.StartLightEdit,
+                          maskMediaId: editableLight.maskMediaId,
+                          maskKey: media.key,
+                          light: editableLight.light,
+                          polygonIndices: editableLight.polygonIndices,
+                        });
+                        notifyMaskObjectReviewPreview(media.key, new Set(editableLight.polygonIndices));
+                        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+                      }}
+                    >
+                      {"edit"}
+                    </div>
+                  )}
                   <div
-                    style={{ ...cellStyle }}
-                    className={styles["animated-nav-dark"]}
+                    style={{
+                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      ...cellStyle,
+                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                    }}
+                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
+                    title={media.type === "object" ? MOVE_UP_TITLE : undefined}
                     onClick={() => {
-                      updateMediaOrder(isAltPressed ? "top" : "increment");
+                      if (!reorderEnabled) return;
+                      moveInStack(isAltPressed ? "top" : "increment");
                     }}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
-                    style={{ ...cellStyle }}
-                    className={styles["animated-nav-dark"]}
+                    style={{
+                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      ...cellStyle,
+                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                    }}
+                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
+                    title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
                     onClick={() => {
-                      updateMediaOrder(isAltPressed ? "bottom" : "decrement");
+                      if (!reorderEnabled) return;
+                      moveInStack(isAltPressed ? "bottom" : "decrement");
                     }}
                   >
                     {isAltPressed ? "move to bottom" : "move down"}
@@ -1121,6 +1410,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     style={{
                       color: revertEnabled ? "inherit" : "rgba(127,127,127, 1)",
                       ...cellStyle,
+                      cursor: revertEnabled ? "pointer" : "not-allowed",
                     }}
                     onClick={() => {
                       if (!revertEnabled) return;
@@ -1154,30 +1444,24 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         case "mask": {
                           const newMasks: Map<string, LaurusProjectMask> = new Map(snapshot.masks);
                           newMasks.delete(media.key);
-                          closeMaskCaptureSocket(media.meta.media_id);
-                          closeMaskPeakSocket(media.meta.media_id);
+                          closeMaskLightSocket(media.meta.media_id);
+                          closeMaskObjectSocket(media.meta.media_id);
                           deleteProjectMedia(snapshot, media.meta.media_id, undefined, undefined, newMasks);
                           break;
                         }
-                        case "capture": {
-                          const updated: LaurusMaskResult | undefined = await sendMaskCaptureUpdate(
+                        case "light": {
+                          const updated: LightUpdateDelta_V1_0 | undefined = await sendMaskLightUpdate(
                             media.meta.media_id,
-                            {
-                              capture_id: media.captureId,
-                              name: "",
-                              polygon_indices: [],
-                              size: 0,
-                              intensity: 0,
-                              falloff: 0,
-                              darkness: 0,
-                            },
+                            toLightUpdate(newLight(media.lightId, ""), { polygon_indices: [] }),
                           );
-                          if (!updated) break;
-                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
-                          notifyMaskCaptureUpdated(media.key, updated);
-                          await deleteMaskCaptureEffects(
+                          const lightMaskData = coreState.canvasMasks.get(media.key);
+                          if (!updated || !lightMaskData) break;
+                          const patchedLightMask = applyLightDelta(lightMaskData, updated);
+                          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patchedLightMask });
+                          notifyMaskLightUpdated(media.key, patchedLightMask);
+                          await deleteMaskLightEffects(
                             media.key,
-                            media.captureId,
+                            media.lightId,
                             coreState.apiOrigin,
                             coreState.accessToken,
                             coreState.effects,
@@ -1185,32 +1469,32 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                           );
                           if (
                             uiState.activeElement?.key == media.key &&
-                            uiState.activeElement.type === "capture" &&
-                            uiState.activeElement.captureId === media.captureId
+                            uiState.activeElement.type === "light" &&
+                            uiState.activeElement.lightId === media.lightId
                           ) {
                             uiDispatch({ type: UIActionType.SetActiveElement, value: undefined });
                           }
                           if (
                             uiState.selectedElement?.key == media.key &&
-                            uiState.selectedElement.type === "capture" &&
-                            uiState.selectedElement.captureId === media.captureId
+                            uiState.selectedElement.type === "light" &&
+                            uiState.selectedElement.lightId === media.lightId
                           ) {
                             uiDispatch({
                               type: UIActionType.SetSelectedElement,
                               value: { key: media.key, type: "mask" },
                             });
                             notifyMaskSelectionChanged(media.key);
-                            notifyMaskSelectedCaptureChanged(media.key, undefined);
+                            notifyMaskSelectedLightChanged(media.key, undefined);
                           }
                           uiDispatch({
                             type: UIActionType.DeleteCarouselEntry,
                             key: media.key,
-                            captureId: media.captureId,
+                            lightId: media.lightId,
                           });
                           break;
                         }
-                        case "peak": {
-                          await deletePeak(media.key, media.peakId);
+                        case "object": {
+                          await deleteObject(media.key, media.objectId);
                           break;
                         }
                       }
@@ -1223,18 +1507,78 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "end",
                     height: "100%",
+                    gap: "2.5ch",
                     ...dynamicSizes.footer.div,
                   }}
                 >
+                  {maskObjectCount == undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${maskObjectCount}`}
+                      </div>
+                      <div>{maskObjectCount === 1 ? "object" : "objects"}</div>
+                    </div>
+                  )}
+                  {maskLightCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${maskLightCount}`}
+                      </div>
+                      <div>{maskLightCount === 1 ? "light" : "lights"}</div>
+                    </div>
+                  )}
+                  {objectPolygonCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${objectPolygonCount}`}
+                      </div>
+                      <div>{objectPolygonCount === 1 ? "polygon" : "polygons"}</div>
+                    </div>
+                  )}
+                  {lightPolygonCount === undefined ? (
+                    <></>
+                  ) : (
+                    <div style={{ display: "flex", gap: "1ch" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          textShadow: "0 0 1px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {`${lightPolygonCount}`}
+                      </div>
+                      <div>{lightPolygonCount === 1 ? "polygon" : "polygons"}</div>
+                    </div>
+                  )}
                   <SvgRepo
                     title="media type"
                     svg={(() => {
                       switch (media.type) {
-                        case "capture":
+                        case "light":
                           return asterisk300();
-                        case "peak":
+                        case "object":
                           return antigravity300();
                         case "img":
                           return image200();
@@ -1247,6 +1591,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                     containerStyle={{
                       width: dynamicSizes.footer.svgSize,
                       height: dynamicSizes.footer.svgSize,
+                      marginLeft: "auto",
                     }}
                     scale={1}
                   />

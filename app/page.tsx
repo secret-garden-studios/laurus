@@ -11,6 +11,7 @@ import {
   ImgMediaResult_V1_0,
   SvgMediaResult_V1_0,
   MaskMediaResult_V1_0,
+  ObjectReviewState_V1_0,
   getScales,
   getMoves,
   getRotates,
@@ -19,6 +20,7 @@ import {
   getSvg,
   getImg,
   getMasksByIds,
+  getObjectReview,
 } from "./workspace/workspace.server";
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,7 @@ export interface ProjectDependencies {
   canvasImgs: ImgMediaResult_V1_0[];
   canvasSvgs: SvgMediaResult_V1_0[];
   canvasMasks: MaskMediaResult_V1_0[];
+  objectReviews: ObjectReviewState_V1_0[];
 }
 export async function fetchProject(
   laurusApi: string | undefined,
@@ -118,6 +121,13 @@ export async function fetchProject(
       const maskMediaIds = masksArray.map((m) => m.media_id);
       canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
     }
+    const objectReviews: ObjectReviewState_V1_0[] = [];
+    if (fetchMedia && token) {
+      for (const maskResult of canvasMasks) {
+        const review = await getObjectReview(laurusApi, token, maskResult.mask_media_id);
+        if (review) objectReviews.push(review);
+      }
+    }
     if (fetchMedia) {
       const placedImgIds = new Set(imgsArray.map((i) => i.img_media_id));
       const fetchedImgIds = new Set(canvasImgs.map((i) => i.img_media_id));
@@ -141,6 +151,7 @@ export async function fetchProject(
       canvasImgs,
       canvasSvgs,
       canvasMasks,
+      objectReviews,
     };
   }
 }

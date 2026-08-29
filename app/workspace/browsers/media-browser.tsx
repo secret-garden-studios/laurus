@@ -330,10 +330,12 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                 type: UIActionType.SetBrowserElement,
                 value: { type: "img", value: { ...created } },
               });
-              const currentTool = { ...uiState.tool };
-              const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
-              uiDispatch({ type: UIActionType.SetTool, value: newTool });
-              notifyMaskToolChanged(newTool.type);
+              if (uiState.maskEdit === undefined) {
+                const currentTool = { ...uiState.tool };
+                const newTool: LaurusTool = currentTool.type == "marquee" ? currentTool : defaultMarqueeTool;
+                uiDispatch({ type: UIActionType.SetTool, value: newTool });
+                notifyMaskToolChanged(newTool.type);
+              }
               if (++actualImgUploads == expectedImgUploads) {
                 setMediaUploading(false);
               }

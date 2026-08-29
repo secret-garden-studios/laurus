@@ -63,10 +63,10 @@ export interface ProjectMask_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
-  capture_preview_size: number;
-  capture_preview_intensity: number;
-  capture_preview_falloff: number;
-  capture_preview_darkness: number;
+  light_preview_size: number;
+  light_preview_intensity: number;
+  light_preview_falloff: number;
+  light_preview_darkness: number;
   texture: number;
   description: string;
 }

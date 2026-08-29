@@ -4,7 +4,7 @@ import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
-import { decodeSvgMarkup } from "../canvas-media/peak-shape";
+import { decodeSvgMarkup } from "../canvas-media/object-shape";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;
@@ -77,7 +77,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+        if (uiState.maskEdit === undefined && uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
           const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
@@ -94,6 +94,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       setSelectedImgKeys,
       setSelectedSvgKeys,
       uiState.tool.type,
+      uiState.maskEdit,
       notifyMaskToolChanged,
     ],
   );

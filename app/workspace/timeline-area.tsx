@@ -48,6 +48,7 @@ import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useS
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { beginBodyDragCursor, endBodyDragCursor, isAnyDragActive } from "./hooks/useToolCursor";
 
 function reindexEffectGroups(effectGroups: Map<string, LaurusEffectGroupResult>): LaurusEffectGroupResult[] {
   return Array.from(effectGroups.values())
@@ -555,10 +556,11 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
       const snapshot = [...coreState.effects];
       const mergedEffects = snapshot.map((e) => reorderedGroupEffects.find((re) => re.key === e.key) ?? e);
       const reindexedEffects = reindexEffects(mergedEffects, coreState.effectGroups);
+      dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
       persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexedEffects, snapshot).then(
         (updated) => {
-          if (updated) {
-            dispatch({ type: CoreActionType.SetEffects, value: reindexedEffects });
+          if (!updated) {
+            dispatch({ type: CoreActionType.SetEffects, value: snapshot });
           }
         },
       );
@@ -604,7 +606,11 @@ function EffectGroup({ effectGroupId, effectGroupResult, maxWidth, isTimelineAre
           sensors={dragSensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          onDragEnd={onEffectDragEnd}
+          onDragStart={beginBodyDragCursor}
+          onDragEnd={(e) => {
+            endBodyDragCursor();
+            onEffectDragEnd(e);
+          }}
         >
           <SortableContext items={groupEffects.map((e) => e.key)} strategy={verticalListSortingStrategy}>
             {groupEffects.map((effect, index) => (
@@ -707,20 +713,13 @@ function EffectGroupRow({
       onClick={(e) => {
         if (e.altKey) onToggleSelect();
       }}
-      onMouseEnter={(e) => {
+      onMouseEnter={() => {
+        if (isAnyDragActive()) return;
         onEnter();
-        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.05)";
-        e.currentTarget.style.border = isSelected
-          ? "1px solid rgba(255, 255, 255, 0.2)"
-          : "1px solid rgba(255, 255, 255, 0.05)";
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)";
-        e.currentTarget.style.border = isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)";
-      }}
+      className={styles["effect-group-row"]}
+      data-selected={isSelected ? "" : undefined}
       style={{
-        border: isSelected ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid rgba(0, 0, 0, 0)",
-        background: isSelected ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.0275)",
         display: "flex",
         borderRadius: 0,
         cursor: isAltKeyPressed ? "crosshair" : "",
@@ -1254,7 +1253,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1284,7 +1282,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1314,7 +1311,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,
@@ -1344,7 +1340,6 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
             end: 0,
             project_id: newProjectIdAck,
             effect_group_id: newEffectGroupIdAck,
-            fps: coreState.project.fps,
             locked: false,
             order: newOrder,
             mix: false,

@@ -10,7 +10,7 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import RotateUnitbar from "./bars/rotate-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey } from "../effects-utils";
+import { carouselEntryMathKey, maskObjectInputId } from "../effects-utils";
 
 export interface RotateUnitControls {
   x: number;
@@ -34,13 +34,11 @@ export const defaultRotateEquation: LaurusRotateEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
-const MAX_VISIBLE_PARAM_SLIDERS = 4;
+const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "light";
 
-const isRotateCarouselEntry = (entry: CarouselEntry) => entry.type !== "capture" && entry.type !== "peak";
+export type RotateUnitTarget = "img" | "svg" | "mask" | "object";
 
-export type RotateUnitTarget = "img" | "svg" | "mask";
-
-const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask"];
+const ROTATE_TARGET_ORDER: RotateUnitTarget[] = ["img", "svg", "mask", "object"];
 
 interface RotateUnit {
   rotate: LaurusRotateResult;
@@ -48,7 +46,7 @@ interface RotateUnit {
 }
 export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
@@ -60,7 +58,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     isRotateCarouselEntry,
   );
   const entryType = uiState.carouselEntries[carouselIndex]?.type;
-  const target: RotateUnitTarget = entryType === "svg" || entryType === "mask" ? entryType : "img";
+  const target: RotateUnitTarget =
+    entryType === "svg" || entryType === "mask" || entryType === "object" ? entryType : "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<RotateUnitControls>({
     x: 0,
@@ -123,8 +122,11 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "capture":
-        case "peak": {
+        case "object": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskObjectInputId(maskKey, carouselEntry.objectId) : "";
+        }
+        case "light": {
           return "";
         }
       }
@@ -231,12 +233,12 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           break;
         }
-        case "capture": {
+        case "object": {
           const newActiveElement: LaurusActiveElement = {
             key: carouselEntry.key,
-            type: "capture",
+            type: "object",
             locallyActivatedEffectKey: rotate.rotate_id,
-            captureId: carouselEntry.captureId,
+            objectId: carouselEntry.objectId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -244,11 +246,31 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: carouselEntry.key, type: "capture", captureId: carouselEntry.captureId },
+            value: { key: carouselEntry.key, type: "object", objectId: carouselEntry.objectId },
           });
           notifyMaskSelectionChanged(newActiveElement.key);
-          notifyMaskSelectedCaptureChanged(newActiveElement.key, carouselEntry.captureId);
-          notifyMaskSelectedPeakChanged(newActiveElement.key, undefined);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
+          break;
+        }
+        case "light": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "light",
+            locallyActivatedEffectKey: rotate.rotate_id,
+            lightId: carouselEntry.lightId,
+          };
+          uiDispatch({
+            type: UIActionType.SetActiveElement,
+            value: newActiveElement,
+          });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
           break;
         }
       }
@@ -257,8 +279,8 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
       rotate.rotate_id,
       uiDispatch,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -423,12 +445,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                   style={{
                     height: "100%",
                     display: "flex",
-                    maxWidth:
-                      dynamicSizes.paramSlider.containerWidth * MAX_VISIBLE_PARAM_SLIDERS +
-                      dynamicSizes.paramFlex.gap * (MAX_VISIBLE_PARAM_SLIDERS - 1) +
-                      dynamicSizes.paramFlex.paddingInline * 2,
-                    overflowX: "auto",
-                    overflowY: "hidden",
+                    overflow: "hidden",
                     ...dynamicSizes.paramFlex,
                   }}
                 >

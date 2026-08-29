@@ -6,46 +6,55 @@ import {
   LaurusMediaGroupResult,
   LaurusSvgResult,
   LaurusMaskResult,
-  LaurusPeakBlackPoint,
+  LaurusObjectFill,
+  LaurusObjectReview,
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
-  CAPTURE_DARKNESS_DEFAULT,
-  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  CAPTURE_INTENSITY_DEFAULT,
-  CAPTURE_SIZE_CSS_PX_DEFAULT,
+  LIGHT_DARKNESS_DEFAULT,
+  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_INTENSITY_DEFAULT,
+  LIGHT_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
-export interface CaptureValue {
+export interface LightValue {
   size: number;
   intensity: number;
   falloff: number;
   darkness: number;
 }
 
-export const DEFAULT_CAPTURE_VALUE: CaptureValue = {
-  size: CAPTURE_SIZE_CSS_PX_DEFAULT,
-  intensity: CAPTURE_INTENSITY_DEFAULT,
-  falloff: CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  darkness: CAPTURE_DARKNESS_DEFAULT,
+export const DEFAULT_LIGHT_VALUE: LightValue = {
+  size: LIGHT_SIZE_CSS_PX_DEFAULT,
+  intensity: LIGHT_INTENSITY_DEFAULT,
+  falloff: LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  darkness: LIGHT_DARKNESS_DEFAULT,
 };
 
-export interface PendingLightSourceCapture {
+export interface PendingLight {
   maskKey: string;
-  captureId: number;
+  lightId: number;
   polygonIndices: number[];
 }
 
 export interface PendingTopologyEdit {
   maskKey: string;
-  peakId: number;
+  objectId: number;
   cx: number;
   cy: number;
   radius: number;
   elevation: number;
   falloff: number;
   shape: string;
-  blackPoint: LaurusPeakBlackPoint;
+  fill: LaurusObjectFill;
+  polygonIndices?: Set<number>;
+  /**
+   * Set while a gesture is still in flight, so the renderer can rasterize the
+   * shape at draft resolution. A drag mints a new path every frame and every
+   * frame is a cache miss, which at full resolution is ~58ms of rebuild before
+   * anything is drawn (see cachedObjectShape).
+   */
+  draft?: boolean;
 }
 
 export interface CoreState {
@@ -55,13 +64,14 @@ export interface CoreState {
   canvasImgs: Map<string, LaurusImgResult>;
   canvasSvgs: Map<string, LaurusSvgResult>;
   canvasMasks: Map<string, LaurusMaskResult>;
+  objectReviews: Map<string, LaurusObjectReview>;
   effects: LaurusEffect[];
   effectGroups: Map<string, LaurusEffectGroupResult>;
   mediaGroups: Map<string, LaurusMediaGroupResult>;
   timelineUnit: string;
   timelineMaxValue: number;
   inputsToRender: Set<string>;
-  pendingLightSourceCapture: PendingLightSourceCapture | undefined;
+  pendingLight: PendingLight | undefined;
   pendingTopologyEdit: PendingTopologyEdit | undefined;
 }
 
@@ -72,13 +82,14 @@ export const defaultCoreState: CoreState = {
   canvasImgs: new Map(),
   canvasSvgs: new Map(),
   canvasMasks: new Map(),
+  objectReviews: new Map(),
   effects: [],
   effectGroups: new Map(),
   mediaGroups: new Map(),
   timelineUnit: "",
   timelineMaxValue: 0,
   inputsToRender: new Set<string>(),
-  pendingLightSourceCapture: undefined,
+  pendingLight: undefined,
   pendingTopologyEdit: undefined,
 };
 
@@ -94,6 +105,8 @@ export enum CoreActionType {
   SetCanvasMask,
   DeleteCanvasMask,
   SetCanvasMasks,
+  SetObjectReview,
+  SetObjectReviews,
   SetProjectImg,
   SetProjectSvg,
   DeleteProjectImg,
@@ -110,7 +123,7 @@ export enum CoreActionType {
   SetTimelineUnit,
   SetTimelineMaxValue,
   SetInputsToRender,
-  SetPendingLightSourceCapture,
+  SetPendingLight,
   SetPendingTopologyEdit,
 }
 
@@ -126,6 +139,8 @@ export type CoreAction =
   | { type: CoreActionType.SetCanvasMask; key: string; value: LaurusMaskResult }
   | { type: CoreActionType.DeleteCanvasMask; key: string }
   | { type: CoreActionType.SetCanvasMasks; value: Map<string, LaurusMaskResult> }
+  | { type: CoreActionType.SetObjectReview; maskMediaId: string; value: LaurusObjectReview }
+  | { type: CoreActionType.SetObjectReviews; value: Map<string, LaurusObjectReview> }
   | { type: CoreActionType.DeleteProjectImg; key: string }
   | { type: CoreActionType.DeleteProjectSvg; key: string }
   | { type: CoreActionType.DeleteProjectMask; key: string }
@@ -143,7 +158,7 @@ export type CoreAction =
   | { type: CoreActionType.SetTimelineUnit; value: string }
   | { type: CoreActionType.SetTimelineMaxValue; value: number }
   | { type: CoreActionType.SetInputsToRender; value: Set<string> }
-  | { type: CoreActionType.SetPendingLightSourceCapture; value: PendingLightSourceCapture | undefined }
+  | { type: CoreActionType.SetPendingLight; value: PendingLight | undefined }
   | { type: CoreActionType.SetPendingTopologyEdit; value: PendingTopologyEdit | undefined };
 
 export function coreContextReducer(state: CoreState, action: CoreAction): CoreState {
@@ -235,6 +250,14 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         canvasMasks: new Map(action.value),
         inputsToRender: new Set<string>(["*"]),
       };
+    }
+    case CoreActionType.SetObjectReview: {
+      const newObjectReviews = new Map(state.objectReviews);
+      newObjectReviews.set(action.maskMediaId, action.value);
+      return { ...state, objectReviews: newObjectReviews };
+    }
+    case CoreActionType.SetObjectReviews: {
+      return { ...state, objectReviews: new Map(action.value) };
     }
     case CoreActionType.DeleteProjectMask: {
       const newMasks = new Map(state.project.masks);
@@ -372,8 +395,8 @@ export function coreContextReducer(state: CoreState, action: CoreAction): CoreSt
         inputsToRender: action.value,
       };
     }
-    case CoreActionType.SetPendingLightSourceCapture: {
-      return { ...state, pendingLightSourceCapture: action.value };
+    case CoreActionType.SetPendingLight: {
+      return { ...state, pendingLight: action.value };
     }
     case CoreActionType.SetPendingTopologyEdit: {
       return { ...state, pendingTopologyEdit: action.value };

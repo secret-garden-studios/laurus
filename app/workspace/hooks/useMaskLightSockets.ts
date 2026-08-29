@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
 import {
-  LaurusMaskResult,
-  MaskCaptureSocketMessage_V1_0,
-  MaskCaptureUpdateRequest_V1_0,
-  normalizeMaskResult,
-  toMaskCaptureSocketUrl,
+  LightUpdateDelta_V1_0,
+  MaskLightSocketMessage_V1_0,
+  MaskLightUpdateRequest_V1_0,
+  toMaskLightSocketUrl,
 } from "../workspace.server";
 
-export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
+export function useMaskLightSockets(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
-  const queuesRef = useRef<Map<string, Array<(result: LaurusMaskResult | undefined) => void>>>(new Map());
+  const queuesRef = useRef<Map<string, Array<(delta: LightUpdateDelta_V1_0 | undefined) => void>>>(new Map());
 
   const closeSocket = useCallback((maskMediaId: string) => {
     socketsRef.current.get(maskMediaId)?.close();
@@ -34,16 +33,16 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
       if (!apiOrigin || !accessToken) return undefined;
       let socket: WebSocket;
       try {
-        socket = new WebSocket(toMaskCaptureSocketUrl(apiOrigin, maskMediaId, accessToken));
+        socket = new WebSocket(toMaskLightSocketUrl(apiOrigin, maskMediaId, accessToken));
       } catch (error) {
         console.log({ error });
         return undefined;
       }
-      const resolveNext = (result: LaurusMaskResult | undefined) => {
-        queuesRef.current.get(maskMediaId)?.shift()?.(result);
+      const resolveNext = (delta: LightUpdateDelta_V1_0 | undefined) => {
+        queuesRef.current.get(maskMediaId)?.shift()?.(delta);
       };
       socket.onmessage = (event: MessageEvent<string>) => {
-        let message: MaskCaptureSocketMessage_V1_0;
+        let message: MaskLightSocketMessage_V1_0;
         try {
           message = JSON.parse(event.data);
         } catch (error) {
@@ -51,8 +50,8 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
           resolveNext(undefined);
           return;
         }
-        if (message.type === "capture_update_complete") {
-          resolveNext(normalizeMaskResult(message.result));
+        if (message.type === "light_update_complete") {
+          resolveNext(message.delta);
         } else {
           console.log({ error: message.message });
           resolveNext(undefined);
@@ -72,8 +71,8 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
     [apiOrigin, accessToken],
   );
 
-  const sendCaptureUpdate = useCallback(
-    (maskMediaId: string, request: MaskCaptureUpdateRequest_V1_0): Promise<LaurusMaskResult | undefined> => {
+  const sendLightUpdate = useCallback(
+    (maskMediaId: string, request: MaskLightUpdateRequest_V1_0): Promise<LightUpdateDelta_V1_0 | undefined> => {
       const socket = getSocket(maskMediaId);
       if (!socket) return Promise.resolve(undefined);
       return new Promise((resolve) => {
@@ -89,7 +88,7 @@ export function useMaskCaptureSockets(apiOrigin: string | undefined, accessToken
     [getSocket],
   );
 
-  return { sendCaptureUpdate, closeSocket };
+  return { sendLightUpdate, closeSocket };
 }
 
-export type UseMaskCaptureSockets = ReturnType<typeof useMaskCaptureSockets>;
+export type UseMaskLightSockets = ReturnType<typeof useMaskLightSockets>;

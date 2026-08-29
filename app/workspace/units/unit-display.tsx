@@ -6,7 +6,8 @@ import LaurusImage from "../../components/laurus-image";
 import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
-import { parsePathPoints } from "../mask-gl";
+import { useSelectionGuard } from "../hooks/useMaskEditExit";
+import { maskGeometry } from "../canvas-media/mask-geometry";
 import { LaurusMaskResult } from "../workspace.server";
 import { CoreState } from "../states/core-state";
 
@@ -19,7 +20,7 @@ function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browser
   return browserImgs.find((img) => img.img_media_id === sourceImgMediaId)?.src;
 }
 
-function PeakOrCaptureThumbnail({
+function ObjectOrLightThumbnail({
   title,
   polygonCount,
   name,
@@ -51,6 +52,7 @@ function PeakOrCaptureThumbnail({
         display: "grid",
         placeContent: "center",
         cursor: isAltKeyPressed ? "crosshair" : "pointer",
+        backgroundColor: "rgb(50, 50, 50)",
       }}
     >
       <LaurusImage
@@ -182,11 +184,12 @@ export default function UnitDisplay({
   isEntryWireable = () => true,
 }: UnitDisplay) {
   const { coreState } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged, notifyMaskSelectedCaptureChanged, notifyMaskSelectedPeakChanged } =
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
+  const guardSelection = useSelectionGuard();
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
       if (uiState.carouselEntries.length <= newCarouselIndex) return;
@@ -244,8 +247,8 @@ export default function UnitDisplay({
             value: { key: entry.key, type: "mask" },
           });
           notifyMaskSelectionChanged(entry.key);
-          notifyMaskSelectedCaptureChanged(entry.key, undefined);
-          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          notifyMaskSelectedLightChanged(entry.key, undefined);
+          notifyMaskSelectedObjectChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -253,12 +256,12 @@ export default function UnitDisplay({
           });
           break;
         }
-        case "capture": {
+        case "light": {
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
-            type: "capture",
+            type: "light",
             locallyActivatedEffectKey: effectKey,
-            captureId: entry.captureId,
+            lightId: entry.lightId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -266,11 +269,11 @@ export default function UnitDisplay({
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: entry.key, type: "capture", captureId: entry.captureId },
+            value: { key: entry.key, type: "light", lightId: entry.lightId },
           });
           notifyMaskSelectionChanged(entry.key);
-          notifyMaskSelectedCaptureChanged(entry.key, entry.captureId);
-          notifyMaskSelectedPeakChanged(entry.key, undefined);
+          notifyMaskSelectedLightChanged(entry.key, entry.lightId);
+          notifyMaskSelectedObjectChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -278,12 +281,12 @@ export default function UnitDisplay({
           });
           break;
         }
-        case "peak": {
+        case "object": {
           const newActiveElement: LaurusActiveElement = {
             key: entry.key,
-            type: "peak",
+            type: "object",
             locallyActivatedEffectKey: effectKey,
-            peakId: entry.peakId,
+            objectId: entry.objectId,
           };
           uiDispatch({
             type: UIActionType.SetActiveElement,
@@ -291,11 +294,11 @@ export default function UnitDisplay({
           });
           uiDispatch({
             type: UIActionType.SetSelectedElement,
-            value: { key: entry.key, type: "peak", peakId: entry.peakId },
+            value: { key: entry.key, type: "object", objectId: entry.objectId },
           });
           notifyMaskSelectionChanged(entry.key);
-          notifyMaskSelectedPeakChanged(entry.key, entry.peakId);
-          notifyMaskSelectedCaptureChanged(entry.key, undefined);
+          notifyMaskSelectedObjectChanged(entry.key, entry.objectId);
+          notifyMaskSelectedLightChanged(entry.key, undefined);
           uiDispatch({
             type: UIActionType.SetProjectContextMenu,
             key: entry.key,
@@ -310,8 +313,8 @@ export default function UnitDisplay({
       effectKey,
       uiDispatch,
       notifyMaskSelectionChanged,
-      notifyMaskSelectedCaptureChanged,
-      notifyMaskSelectedPeakChanged,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -383,6 +386,8 @@ export default function UnitDisplay({
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, -1);
                 if (newIndex === undefined) return;
+                const entry = uiState.carouselEntries[newIndex];
+                if (entry && !guardSelection(entry)) return;
                 onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);
@@ -410,6 +415,7 @@ export default function UnitDisplay({
                         key={c.key}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -446,6 +452,7 @@ export default function UnitDisplay({
                         }}
                         onContainerClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -468,57 +475,69 @@ export default function UnitDisplay({
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
                       />
                     );
                   }
-                  case "capture": {
+                  case "light": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
                     const maskData = coreState.canvasMasks.get(c.key);
                     if (!maskData) break;
-                    const capturedPolygons = maskData.polygons.filter((p) => p.capture_id === c.captureId);
-                    if (capturedPolygons.length === 0) break;
-                    const capturedPoints = capturedPolygons.flatMap((p) => parsePathPoints(p.d));
-                    if (capturedPoints.length === 0) break;
-                    const capture = maskData.captures.find((cap) => cap.id === c.captureId);
+                    const litPolygons = maskData.polygons.filter((p) => p.light_id === c.lightId);
+                    if (litPolygons.length === 0) break;
+                    const litGeometry = maskGeometry(maskData);
+                    const hasLitGeometry = maskData.polygons.some(
+                      (p, index) => p.light_id === c.lightId && (litGeometry.points[index]?.length ?? 0) > 0,
+                    );
+                    if (!hasLitGeometry) break;
+                    const light = maskData.lights.find((cap) => cap.id === c.lightId);
+                    const name = light ? (light.description ? light.description : light.name) : `light ${c.lightId}`;
                     return (
-                      <PeakOrCaptureThumbnail
-                        key={`${c.key}-capture-${c.captureId}`}
-                        title="mesh capture"
-                        polygonCount={capturedPolygons.length}
-                        name={capture?.name ?? `light ${c.captureId}`}
+                      <ObjectOrLightThumbnail
+                        key={`${c.key}-light-${c.lightId}`}
+                        title="mesh light"
+                        polygonCount={litPolygons.length}
+                        name={name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={asterisk200("rgb(255, 255, 255)")}
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
                       />
                     );
                   }
-                  case "peak": {
+                  case "object": {
                     const projectMask = coreState.project.masks.get(c.key);
                     if (!projectMask) break;
                     const maskData = coreState.canvasMasks.get(c.key);
-                    const peak = maskData?.peaks.find((p) => p.id === c.peakId);
-                    if (!maskData || !peak) break;
-                    const coveredPolygonCount = maskData.polygons.filter((p) => p.peak_id === c.peakId).length;
+                    const object = maskData?.objects.find((p) => p.id === c.objectId);
+                    if (!maskData || !object) break;
+                    const coveredPolygonCount = maskData.polygons.filter((p) => p.object_id === c.objectId).length;
+                    const name = object.description
+                      ? object.description
+                      : object.name
+                        ? object.name
+                        : `object ${c.objectId}`;
                     return (
-                      <PeakOrCaptureThumbnail
-                        key={`${c.key}-peak-${c.peakId}`}
-                        title="mesh peak"
+                      <ObjectOrLightThumbnail
+                        key={`${c.key}-object-${c.objectId}`}
+                        title="mesh object"
                         polygonCount={coveredPolygonCount}
-                        name={peak.name}
+                        name={name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={antigravity200("rgb(255, 255, 255)")}
                         style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
+                          if (!guardSelection(c)) return;
                           setActiveElement(i);
                           hideOtherContextMenus(i);
                         }}
@@ -550,6 +569,8 @@ export default function UnitDisplay({
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, 1);
                 if (newIndex === undefined) return;
+                const entry = uiState.carouselEntries[newIndex];
+                if (entry && !guardSelection(entry)) return;
                 onNewLocalIndex(newIndex);
                 setActiveElement(newIndex);
                 hideOtherContextMenus(newIndex);

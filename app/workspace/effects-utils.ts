@@ -13,40 +13,40 @@ import {
 import { CoreAction, CoreActionType } from "./states/core-state";
 import { CarouselEntry } from "./states/ui-state";
 
-export function maskCaptureInputId(maskKey: string, captureId: number): string {
-  return `${maskKey}:${captureId}`;
+export function maskLightInputId(maskKey: string, lightId: number): string {
+  return `${maskKey}:${lightId}`;
 }
 
-export function maskPeakInputId(maskKey: string, peakId: number): string {
-  return `${maskKey}:peak:${peakId}`;
+export function maskObjectInputId(maskKey: string, objectId: number): string {
+  return `${maskKey}:object:${objectId}`;
 }
 
-export function parseMaskPeakInputId(inputId: string): { maskKey: string; peakId: number | undefined } {
-  const separatorIndex = inputId.indexOf(":peak:");
-  if (separatorIndex === -1) return { maskKey: inputId, peakId: undefined };
-  const peakId = Number(inputId.slice(separatorIndex + ":peak:".length));
+export function parseMaskObjectInputId(inputId: string): { maskKey: string; objectId: number | undefined } {
+  const separatorIndex = inputId.indexOf(":object:");
+  if (separatorIndex === -1) return { maskKey: inputId, objectId: undefined };
+  const objectId = Number(inputId.slice(separatorIndex + ":object:".length));
   return {
     maskKey: inputId.slice(0, separatorIndex),
-    peakId: Number.isFinite(peakId) ? peakId : undefined,
+    objectId: Number.isFinite(objectId) ? objectId : undefined,
   };
 }
 
-export function parseMaskCaptureInputId(inputId: string): { maskKey: string; captureId: number | undefined } {
+export function parseMaskLightInputId(inputId: string): { maskKey: string; lightId: number | undefined } {
   const separatorIndex = inputId.indexOf(":");
-  if (separatorIndex === -1) return { maskKey: inputId, captureId: undefined };
-  const captureId = Number(inputId.slice(separatorIndex + 1));
+  if (separatorIndex === -1) return { maskKey: inputId, lightId: undefined };
+  const lightId = Number(inputId.slice(separatorIndex + 1));
   return {
     maskKey: inputId.slice(0, separatorIndex),
-    captureId: Number.isFinite(captureId) ? captureId : undefined,
+    lightId: Number.isFinite(lightId) ? lightId : undefined,
   };
 }
 
 export function carouselEntryMathKey(entry: CarouselEntry): string {
   switch (entry.type) {
-    case "capture":
-      return maskCaptureInputId(entry.key, entry.captureId);
-    case "peak":
-      return maskPeakInputId(entry.key, entry.peakId);
+    case "light":
+      return maskLightInputId(entry.key, entry.lightId);
+    case "object":
+      return maskObjectInputId(entry.key, entry.objectId);
     default:
       return entry.key;
   }
@@ -147,26 +147,26 @@ export async function deleteEffects(
   await deleteMathEntries(matchesMediaKey(mediaKey), apiOrigin, accessToken, effects, dispatch);
 }
 
-export async function deleteMaskCaptureEffects(
+export async function deleteMaskLightEffects(
   maskKey: string,
-  captureId: number,
+  lightId: number,
   apiOrigin: string | undefined,
   accessToken: string | undefined,
   effects: LaurusEffect[],
   dispatch: Dispatch<CoreAction>,
 ) {
-  const inputId = maskCaptureInputId(maskKey, captureId);
+  const inputId = maskLightInputId(maskKey, lightId);
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }
 
-export async function deleteMaskPeakEffects(
+export async function deleteMaskObjectEffects(
   maskKey: string,
-  peakId: number,
+  objectId: number,
   apiOrigin: string | undefined,
   accessToken: string | undefined,
   effects: LaurusEffect[],
   dispatch: Dispatch<CoreAction>,
 ) {
-  const inputId = maskPeakInputId(maskKey, peakId);
+  const inputId = maskObjectInputId(maskKey, objectId);
   await deleteMathEntries((key) => key === inputId, apiOrigin, accessToken, effects, dispatch);
 }

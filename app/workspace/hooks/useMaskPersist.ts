@@ -16,7 +16,7 @@ export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" 
 
 export function useMaskPersist() {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiDispatch } = useContext(UIContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
   const { setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
   const { position, size } = mask;
@@ -45,10 +45,10 @@ export function useMaskPersist() {
         rotate_y: 0,
         rotate_z: 0,
         rotate_angle: 0,
-        capture_preview_size: mask.captureSize,
-        capture_preview_intensity: mask.captureIntensity,
-        capture_preview_falloff: mask.captureFalloff,
-        capture_preview_darkness: mask.captureDarkness,
+        light_preview_size: mask.lightSize,
+        light_preview_intensity: mask.lightIntensity,
+        light_preview_falloff: mask.lightFalloff,
+        light_preview_darkness: mask.lightDarkness,
         texture: mask.textureMix,
         description: "",
       };
@@ -61,6 +61,25 @@ export function useMaskPersist() {
       dispatch({ type: CoreActionType.SetCanvasMask, key: newKey, value: result });
       dispatch({ type: CoreActionType.SetProject, value: newProject });
       uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "mask", key: newKey } });
+      for (const object of result.objects) {
+        uiDispatch({
+          type: UIActionType.AddCarouselEntry,
+          value: { type: "object", key: newKey, objectId: object.id },
+        });
+      }
+      if (mask.objectCandidatesRef.current.length > 0) {
+        dispatch({
+          type: CoreActionType.SetObjectReview,
+          maskMediaId: result.mask_media_id,
+          value: { mask_media_id: result.mask_media_id, candidates: mask.objectCandidatesRef.current, decisions: [] },
+        });
+        uiDispatch({
+          type: UIActionType.StartObjectReview,
+          maskMediaId: result.mask_media_id,
+          maskKey: newKey,
+          candidates: mask.objectCandidatesRef.current,
+        });
+      }
       setSelectedMaskKeys(new Set([newKey]));
 
       (async () => {
@@ -92,24 +111,32 @@ export function useMaskPersist() {
       dispatch,
       uiDispatch,
       setSelectedMaskKeys,
-      mask.captureSize,
-      mask.captureIntensity,
-      mask.captureFalloff,
-      mask.captureDarkness,
+      mask.lightSize,
+      mask.lightIntensity,
+      mask.lightFalloff,
+      mask.lightDarkness,
       mask.textureMix,
+      mask.objectCandidatesRef,
     ],
   );
 
   const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
+  const wantsEdgeObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
   const triggerMask = useCallback(
     (img: LaurusImgResult, sourceFrame: MaskSourceFrame) => {
       if (isMaskBusy) return;
       const initialTextureMix = mask.textureMix;
-      mask.start(img, (result) => persistMask(sourceFrame, result));
+      mask.start(
+        img,
+        (result) => persistMask(sourceFrame, result),
+        wantsEdgeObjects
+          ? { elevation: uiState.stagedObject.elevation, falloff: uiState.stagedObject.falloff }
+          : undefined,
+      );
       mask.setTextureMix(initialTextureMix);
     },
-    [isMaskBusy, mask, persistMask],
+    [isMaskBusy, mask, persistMask, wantsEdgeObjects, uiState.stagedObject.elevation, uiState.stagedObject.falloff],
   );
 
   return { triggerMask, isMaskBusy };

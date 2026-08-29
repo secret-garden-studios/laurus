@@ -1,8 +1,10 @@
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
-import { CSSProperties, RefObject, useState } from "react";
+import { CSSProperties, RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { LaurusResolution } from "../landing.boot";
+import { beginBodyDragCursor, endBodyDragCursor } from "../workspace/hooks/useToolCursor";
 
 export enum PointerStyle {
   Blurry,
@@ -29,6 +31,7 @@ interface TrackpadProps {
   disabled?: boolean;
   title?: string;
   liveTitleRef?: RefObject<HTMLDivElement | null>;
+  escapeOverflow?: boolean;
 }
 
 export function Trackpad({
@@ -44,6 +47,7 @@ export function Trackpad({
   disabled,
   title,
   liveTitleRef,
+  escapeOverflow,
 }: TrackpadProps) {
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -61,7 +65,7 @@ export function Trackpad({
           sensors={sensors}
           autoScroll={false}
           onDragStart={() => {
-            document.body.style.cursor = "grabbing";
+            beginBodyDragCursor();
           }}
           onDragMove={(e) => {
             if (!onMove) return;
@@ -73,7 +77,7 @@ export function Trackpad({
             onMove(newPosition);
           }}
           onDragEnd={(e) => {
-            document.body.style.cursor = "";
+            endBodyDragCursor();
             const delta = e.delta;
             const newPosition = {
               x: Math.round(value.x + delta.x),
@@ -95,6 +99,7 @@ export function Trackpad({
             disabled={disabled}
             title={title}
             liveTitleRef={liveTitleRef}
+            escapeOverflow={escapeOverflow}
           />
         </DndContext>
       </div>
@@ -114,6 +119,7 @@ interface CoarsePointerProps {
   disabled?: boolean;
   title?: string;
   liveTitleRef?: RefObject<HTMLDivElement | null>;
+  escapeOverflow?: boolean;
 }
 
 function CoarsePointer({
@@ -128,8 +134,17 @@ function CoarsePointer({
   disabled,
   title,
   liveTitleRef,
+  escapeOverflow,
 }: CoarsePointerProps) {
   const { listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+  const pointerElRef = useRef<HTMLDivElement | null>(null);
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      setNodeRef(node);
+      pointerElRef.current = node;
+    },
+    [setNodeRef],
+  );
   const [dynamicSizes] = useState(() => {
     switch (resolution.type) {
       case "high":
@@ -169,11 +184,70 @@ function CoarsePointer({
     }
   });
   const [isHovered, setIsHovered] = useState(false);
+  const isActive = isDragging || isHovered;
+  // An escaping title is portalled to the body and positioned in viewport coordinates, which means
+  // measuring the pointer after layout. That measurement is not state: routing it through React
+  // would re-render the pointer on every scroll event of a drag to move a tooltip the browser can
+  // be told about directly. Writing the two offsets onto the node is what an effect is for, and it
+  // keeps a dragging cap off the render path entirely.
+  const fixedTitleElRef = useRef<HTMLDivElement | null>(null);
+  const setTitleRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      fixedTitleElRef.current = node;
+      if (liveTitleRef) liveTitleRef.current = node;
+    },
+    [liveTitleRef],
+  );
+  useLayoutEffect(() => {
+    if (!escapeOverflow || !isActive) return;
+    const positionTitle = () => {
+      const el = pointerElRef.current;
+      const title = fixedTitleElRef.current;
+      if (!el || !title) return;
+      const rect = el.getBoundingClientRect();
+      if (pointerStyle === PointerStyle.BlurryBottomTitle) {
+        title.style.top = `${rect.bottom + dynamicSizes.titleOffsets.top}px`;
+        title.style.left = `${(rect.left + rect.right) / 2}px`;
+      } else {
+        title.style.top = `${(rect.top + rect.bottom) / 2}px`;
+        title.style.left = `${rect.right + dynamicSizes.titleOffsets.left}px`;
+      }
+    };
+    positionTitle();
+    window.addEventListener("scroll", positionTitle, true);
+    window.addEventListener("resize", positionTitle);
+    return () => {
+      window.removeEventListener("scroll", positionTitle, true);
+      window.removeEventListener("resize", positionTitle);
+    };
+  }, [
+    escapeOverflow,
+    isActive,
+    pointerStyle,
+    dynamicSizes.titleOffsets.top,
+    dynamicSizes.titleOffsets.left,
+    transform?.x,
+    transform?.y,
+    coords.x,
+    coords.y,
+  ]);
   const dndCss = {
     left: coords.x,
     top: coords.y,
     transform: CSS.Translate.toString(transform),
     touchAction: "none",
+  };
+  const fixedTooltipCss: CSSProperties = {
+    position: "fixed",
+    // top and left are written by the layout effect above, in viewport coordinates
+    transform: pointerStyle === PointerStyle.BlurryBottomTitle ? "translate(-50%, -50%)" : "translateY(-50%)",
+    color: "rgb(227,227,227)",
+    fontWeight: "bold",
+    textAlign: "center",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+    zIndex: 2000,
+    ...dynamicSizes.tooltip,
   };
   const tooltipCss: CSSProperties = ((p) => {
     switch (p) {
@@ -231,9 +305,14 @@ function CoarsePointer({
   })(pointerStyle);
 
   if (liveTitleRef !== undefined) {
+    const titleElement = isActive && (
+      <div ref={escapeOverflow ? setTitleRefs : liveTitleRef} style={escapeOverflow ? fixedTooltipCss : tooltipCss}>
+        {title}
+      </div>
+    );
     return (
       <div
-        ref={setNodeRef}
+        ref={setRefs}
         {...listeners}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -247,12 +326,7 @@ function CoarsePointer({
           zIndex,
         }}
       >
-        {title && (isDragging || isHovered) && (
-          <div ref={liveTitleRef} style={tooltipCss}>
-            {title}
-          </div>
-        )}
-        {!title && (isDragging || isHovered) && <div ref={liveTitleRef} style={tooltipCss}></div>}
+        {titleElement && (escapeOverflow ? createPortal(titleElement, document.body) : titleElement)}
       </div>
     );
   } else {

@@ -3,22 +3,44 @@ import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
-import { addCircle, checkCircle, circle, closeIcon, SvgRepo } from "../../svg-repo";
+import {
+  addCircle,
+  antigravity200,
+  arrowDropDown,
+  arrowDropUp,
+  checkCircle,
+  circle,
+  closeIcon,
+  SvgRepo,
+} from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
   LaurusMaskResult,
   LaurusMediaGroupResult,
+  LaurusObject,
   LaurusSvgResult,
   updateMediaGroup,
 } from "../workspace.server";
+import { isBehindMask, MASK_PLANE_ROW, restackFromDrop, stackRows, type StackRow } from "../canvas-media/object-order";
+import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "./media-stack";
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
-import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { useSelectionGuard } from "../hooks/useMaskEditExit";
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 
 type MediaGroupItem =
   | { type: "img"; key: string; img: LaurusImgResult }
@@ -32,8 +54,15 @@ export interface MediaGroupBrowser {
 }
 export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskToolChanged } = useContext(MaskContext);
+  const {
+    notifyMaskToolChanged,
+    notifyMaskSelectionChanged,
+    notifyMaskSelectedLightChanged,
+    notifyMaskSelectedObjectChanged,
+    restackMaskObjects,
+  } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
+  const guardSelection = useSelectionGuard();
   const {
     isAltKeyPressed,
     selectedImgKeys,
@@ -45,6 +74,15 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   } = useContext(HoverContext);
   const [adding, setAdding] = useState(false);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
+
+  const [expandedMaskKeys, setExpandedMaskKeys] = useState<Set<string>>(new Set());
+  const toggleMaskExpanded = useCallback((key: string) => {
+    setExpandedMaskKeys((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }, []);
   const hasSelection = useMemo(
     () => selectedImgKeys.size > 0 || selectedSvgKeys.size > 0 || selectedMaskKeys.size > 0,
     [selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
@@ -71,15 +109,14 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         return mask ? { type: "mask" as const, key, mask, order: meta.order } : undefined;
       })
       .filter((entry): entry is { type: "mask"; key: string; mask: LaurusMaskResult; order: number } => Boolean(entry));
-    return [...imgItems, ...svgItems, ...maskItems]
-      .sort((a, b) => a.order - b.order)
-      .map((entry) =>
-        entry.type === "img"
-          ? { type: "img" as const, key: entry.key, img: entry.img }
-          : entry.type === "svg"
-            ? { type: "svg" as const, key: entry.key, svg: entry.svg }
-            : { type: "mask" as const, key: entry.key, mask: entry.mask },
-      );
+
+    return frontToBackMedia([...imgItems, ...svgItems, ...maskItems]).map((entry) =>
+      entry.type === "img"
+        ? { type: "img" as const, key: entry.key, img: entry.img }
+        : entry.type === "svg"
+          ? { type: "svg" as const, key: entry.key, svg: entry.svg }
+          : { type: "mask" as const, key: entry.key, mask: entry.mask },
+    );
   }, [
     coreState.project.imgs,
     coreState.project.svgs,
@@ -421,53 +458,111 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const onMaskContextMenuClick = useCallback(
     (key: string) => {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: { key, type: "mask" } });
+      notifyMaskSelectionChanged(key);
+      notifyMaskSelectedLightChanged(key, undefined);
+      notifyMaskSelectedObjectChanged(key, undefined);
       uiDispatch({ type: UIActionType.SetProjectContextMenu, key, showContextMenu: true });
     },
-    [uiDispatch],
+    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged],
+  );
+
+  const onObjectContextMenuClick = useCallback(
+    (maskKey: string, objectId: number) => {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
+      notifyMaskSelectionChanged(maskKey);
+      notifyMaskSelectedObjectChanged(maskKey, objectId);
+      notifyMaskSelectedLightChanged(maskKey, undefined);
+      uiDispatch({ type: UIActionType.SetProjectContextMenu, key: maskKey, showContextMenu: true });
+    },
+    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged, notifyMaskSelectedLightChanged],
+  );
+
+  const expandedStacks = useMemo(() => {
+    const stacks = new Map<string, StackRow[]>();
+    groupItems.forEach((item) => {
+      if (item.type !== "mask" || !expandedMaskKeys.has(item.key)) return;
+      if (item.mask.objects.length === 0) return;
+      stacks.set(item.key, stackRows(item.mask.objects));
+    });
+    return stacks;
+  }, [groupItems, expandedMaskKeys]);
+
+  const siblingRowIds = useCallback(
+    (activeId: string): Set<string> => {
+      for (const [maskKey, rows] of expandedStacks) {
+        const ids = stackRowIds(maskKey, rows);
+        if (ids.includes(activeId)) return new Set(ids);
+      }
+      return new Set(groupItems.map((item) => item.key));
+    },
+    [expandedStacks, groupItems],
+  );
+
+  const collisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const allowed = siblingRowIds(String(args.active.id));
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((container) => allowed.has(String(container.id))),
+      });
+    },
+    [siblingRowIds],
   );
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  const onObjectDrop = useCallback(
+    (activeId: string, overId: string): boolean => {
+      for (const [maskKey, rows] of expandedStacks) {
+        const ids = stackRowIds(maskKey, rows);
+        const fromIndex = ids.indexOf(activeId);
+        if (fromIndex === -1) continue;
+        const toIndex = ids.indexOf(overId);
+        if (toIndex === -1) return true;
+        const mask = coreState.canvasMasks.get(maskKey);
+        if (mask) restackMaskObjects(maskKey, restackFromDrop(mask.objects, rows, fromIndex, toIndex));
+        return true;
+      }
+      return false;
+    },
+    [expandedStacks, coreState.canvasMasks, restackMaskObjects],
+  );
 
   const onGroupDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id || !coreState.project.project_id) return;
+      if (onObjectDrop(String(active.id), String(over.id))) return;
       const oldIndex = groupItems.findIndex((item) => item.key === active.id);
       const newIndex = groupItems.findIndex((item) => item.key === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
-      const reorderedGroup = arrayMove(groupItems, oldIndex, newIndex);
-
-      type AllItem = { type: "img" | "svg" | "mask"; key: string; order: number };
-      const allItems: AllItem[] = [
+      const groupFrontToBack = arrayMove(groupItems, oldIndex, newIndex).map((item) => item.key);
+      const allItems: StackedMedia[] = [
         ...Array.from(coreState.project.imgs, ([key, meta]) => ({ type: "img" as const, key, order: meta.order })),
         ...Array.from(coreState.project.svgs, ([key, meta]) => ({ type: "svg" as const, key, order: meta.order })),
         ...Array.from(coreState.project.masks, ([key, meta]) => ({ type: "mask" as const, key, order: meta.order })),
-      ].sort((a, b) => a.order - b.order);
-
-      const groupKeySet = new Set(groupItems.map((item) => item.key));
-      let groupCursor = 0;
-      const reorderedAllItems = allItems.map((item) => {
-        if (!groupKeySet.has(item.key)) return item;
-        const replacement = reorderedGroup[groupCursor];
-        groupCursor += 1;
-        return { type: replacement.type, key: replacement.key, order: item.order };
-      });
+      ];
+      const moved = restackGroupWithinProject(allItems, groupFrontToBack);
+      if (moved.size === 0) return;
 
       const snapshot = coreState.project;
       const newImgs = new Map(coreState.project.imgs);
       const newSvgs = new Map(coreState.project.svgs);
       const newMasks = new Map(coreState.project.masks);
-      reorderedAllItems.forEach((item, index) => {
-        if (item.type === "img") {
-          const existing = newImgs.get(item.key);
-          if (existing) newImgs.set(item.key, { ...existing, order: index });
-        } else if (item.type === "svg") {
-          const existing = newSvgs.get(item.key);
-          if (existing) newSvgs.set(item.key, { ...existing, order: index });
-        } else {
-          const existing = newMasks.get(item.key);
-          if (existing) newMasks.set(item.key, { ...existing, order: index });
+      moved.forEach((order, key) => {
+        const img = newImgs.get(key);
+        if (img) {
+          newImgs.set(key, { ...img, order });
+          return;
         }
+        const svg = newSvgs.get(key);
+        if (svg) {
+          newSvgs.set(key, { ...svg, order });
+          return;
+        }
+        const mask = newMasks.get(key);
+        if (mask) newMasks.set(key, { ...mask, order });
       });
 
       const newProject: LaurusProjectResult = { ...coreState.project, imgs: newImgs, svgs: newSvgs, masks: newMasks };
@@ -480,7 +575,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         },
       );
     },
-    [groupItems, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [groupItems, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, onObjectDrop],
   );
 
   useEffect(() => {
@@ -575,9 +670,13 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         >
           <DndContext
             sensors={dragSensors}
-            collisionDetection={closestCenter}
+            collisionDetection={collisionDetection}
             modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-            onDragEnd={onGroupDragEnd}
+            onDragStart={beginBodyDragCursor}
+            onDragEnd={(e) => {
+              endBodyDragCursor();
+              onGroupDragEnd(e);
+            }}
           >
             <SortableContext items={groupItems.map((item) => item.key)} strategy={verticalListSortingStrategy}>
               {groupItems.map((item, index) => (
@@ -594,10 +693,18 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                     else onRemoveMaskFromGroupClick(item.key);
                   }}
                   onContextMenuClick={() => {
+                    if (!guardSelection({ type: item.type, key: item.key })) return;
                     if (item.type === "img") onImgContextMenuClick(item.key);
                     else if (item.type === "svg") onSvgContextMenuClick(item.key);
                     else onMaskContextMenuClick(item.key);
                   }}
+                  expanded={expandedMaskKeys.has(item.key)}
+                  onExpandClick={() => toggleMaskExpanded(item.key)}
+                  onObjectContextMenuClick={(objectId) => {
+                    if (!guardSelection({ type: "object", key: item.key, objectId })) return;
+                    onObjectContextMenuClick(item.key, objectId);
+                  }}
+                  objectRows={expandedStacks.get(item.key)}
                 />
               ))}
             </SortableContext>
@@ -675,14 +782,263 @@ function MaskGroupThumbnail({
   );
 }
 
+function objectRowId(maskKey: string, objectId: number): string {
+  return `${maskKey}::object::${objectId}`;
+}
+
+function planeRowId(maskKey: string): string {
+  return `${maskKey}::plane`;
+}
+
+function stackRowIds(maskKey: string, rows: readonly StackRow[]): string[] {
+  return rows.map((row) => (row === MASK_PLANE_ROW ? planeRowId(maskKey) : objectRowId(maskKey, row)));
+}
+
+function ObjectGroupThumbnail({
+  mask,
+  object,
+  size,
+  behind,
+  onClick,
+}: {
+  mask: LaurusMaskResult;
+  object: LaurusObject;
+  size: number;
+  behind: boolean;
+  onClick: () => void;
+}) {
+  const { coreState } = useContext(CoreContext);
+  const { uiState } = useContext(UIContext);
+
+  let sourceImgSrc: string | undefined;
+  for (const [key, img] of coreState.project.imgs) {
+    if (img.img_media_id === mask.source_img_media_id) {
+      sourceImgSrc = coreState.canvasImgs.get(key)?.src;
+      break;
+    }
+  }
+  if (!sourceImgSrc) {
+    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        display: "grid",
+        placeContent: "center",
+        cursor: "pointer",
+        overflow: "hidden",
+        backgroundColor: "rgb(60, 60, 60)",
+      }}
+    >
+      <LaurusImage draggable={false} alt={object.name} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.55)",
+          backdropFilter: "blur(2px)",
+        }}
+      />
+      <SvgRepo
+        svg={antigravity200(behind ? "rgba(255, 255, 255, 0.45)" : "rgb(255, 255, 255)")}
+        scale={1}
+        scaleToContaier
+        containerStyle={{
+          position: "relative",
+          width: Math.round(size * 0.5),
+          height: Math.round(size * 0.5),
+          filter: behind ? "none" : "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
+        }}
+      />
+    </div>
+  );
+}
+
+interface MaskObjectRow {
+  maskKey: string;
+  mask: LaurusMaskResult;
+  object: LaurusObject;
+  label: string;
+  isEven: boolean;
+  indexColumnStyle: { width: string; fontSize: number };
+  rowHeight: number;
+  filenameStyle: { fontSize: number; letterSpacing: number };
+  filenameMargin: number;
+  removeOverlaySize: number;
+  onContextMenuClick: () => void;
+}
+function MaskObjectRow({
+  maskKey,
+  mask,
+  object,
+  label,
+  isEven,
+  indexColumnStyle,
+  rowHeight,
+  filenameStyle,
+  filenameMargin,
+  removeOverlaySize,
+  onContextMenuClick,
+}: MaskObjectRow) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: objectRowId(maskKey, object.id),
+  });
+  const [isRowHovered, setIsRowHovered] = useState(false);
+  const behind = isBehindMask(object);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: "100%",
+        display: "flex",
+        background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
+        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 1 : undefined,
+      }}
+      onMouseEnter={() => setIsRowHovered(true)}
+      onMouseLeave={() => setIsRowHovered(false)}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          alignSelf: "stretch",
+          background: "rgba(22, 22, 22, 0.9)",
+          display: "grid",
+          placeContent: "center",
+          cursor: "grab",
+          touchAction: "none",
+          width: indexColumnStyle.width,
+          fontSize: indexColumnStyle.fontSize,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `min-content ${filenameMargin}px auto ${filenameMargin}px min-content`,
+          gridTemplateRows: "1fr",
+          alignItems: "center",
+          height: rowHeight,
+          paddingLeft: 5,
+          width: "100%",
+        }}
+      >
+        <div
+          className={styles["transparent-checkerboard-background"]}
+          style={{ width: rowHeight - 10, height: rowHeight - 10 }}
+        >
+          <ObjectGroupThumbnail
+            mask={mask}
+            object={object}
+            size={rowHeight - 10}
+            behind={behind}
+            onClick={onContextMenuClick}
+          />
+        </div>
+        <div />
+        <div style={{ overflowX: "auto" }}>
+          <div
+            style={{
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              color: behind ? "rgba(220, 220, 220, 0.5)" : "rgb(220, 220, 220)",
+              ...filenameStyle,
+            }}
+          >
+            {object.description ? object.description : object.name ? object.name : `object ${object.id}`}
+          </div>
+        </div>
+        <div />
+        <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+          <SvgRepo
+            svg={circle("rgba(0,0,0,0)")}
+            scale={0.9}
+            scaleToContaier={true}
+            containerStyle={{ width: removeOverlaySize, height: removeOverlaySize }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MaskPlaneRow({
+  maskKey,
+  indexColumnStyle,
+  label,
+  isEven,
+  children,
+}: {
+  maskKey: string;
+  indexColumnStyle: { width: string; fontSize: number };
+  label: string;
+  isEven: boolean;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: planeRowId(maskKey),
+  });
+  const [isRowHovered, setIsRowHovered] = useState(false);
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: "100%",
+        display: "flex",
+        background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
+        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 1 : undefined,
+      }}
+      onMouseEnter={() => setIsRowHovered(true)}
+      onMouseLeave={() => setIsRowHovered(false)}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          alignSelf: "stretch",
+          background: "rgba(22, 22, 22, 0.9)",
+          display: "grid",
+          placeContent: "center",
+          cursor: "grab",
+          touchAction: "none",
+          width: indexColumnStyle.width,
+          fontSize: indexColumnStyle.fontSize,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 interface MediaGroupRow {
   item: MediaGroupItem;
   index: number;
   isEven: boolean;
   indexColumnStyle: { width: string; fontSize: number };
   removeOverlaySize: number;
+  expanded: boolean;
+  onExpandClick: () => void;
   onRemoveFromGroupClick: () => void;
   onContextMenuClick: () => void;
+  onObjectContextMenuClick: (objectId: number) => void;
+  objectRows: StackRow[] | undefined;
 }
 function MediaGroupRow({
   item,
@@ -690,11 +1046,20 @@ function MediaGroupRow({
   isEven,
   indexColumnStyle,
   removeOverlaySize,
+  expanded,
+  onExpandClick,
   onRemoveFromGroupClick,
   onContextMenuClick,
+  onObjectContextMenuClick,
+  objectRows,
 }: MediaGroupRow) {
   const { uiState } = useContext(UIContext);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.key });
+  const { coreState } = useContext(CoreContext);
+  const stackOpen = item.type === "mask" && objectRows !== undefined;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.key,
+    disabled: { draggable: stackOpen, droppable: false },
+  });
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -742,6 +1107,19 @@ function MediaGroupRow({
   });
   const [isItemHovered, setIsItemHovered] = useState<boolean>(false);
   const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
+  const maskSourceFilename = useCallback(
+    (mask: LaurusMaskResult) => {
+      let filename = mask.source_img_media_id;
+      if (!mask) return filename;
+      coreState.canvasImgs.forEach((i) => {
+        if (i.img_media_id == mask.source_img_media_id) {
+          filename = i.media_key;
+        }
+      });
+      return filename;
+    },
+    [coreState.canvasImgs],
+  );
 
   const display = useMemo(() => {
     if (item.type !== "img" && item.type !== "mask") return undefined;
@@ -762,263 +1140,352 @@ function MediaGroupRow({
     return { isSquareish, displayWidth, displayHeight };
   }, [dynamicSizes.groupItem.height, item]);
 
+  const objectsById = useMemo(
+    () => new Map(item.type === "mask" ? item.mask.objects.map((object) => [object.id, object]) : []),
+    [item],
+  );
+  const objectRowIds = useMemo(
+    () => (objectRows === undefined ? [] : stackRowIds(item.key, objectRows)),
+    [objectRows, item.key],
+  );
+
+  const objectCount = item.type === "mask" ? item.mask.objects.length : 0;
+  const planeRowIndex = objectRows === undefined ? -1 : objectRows.indexOf(MASK_PLANE_ROW);
+
+  const rowContent = (() => {
+    switch (item.type) {
+      case "img": {
+        if (!display) return <></>;
+        return (
+          <div
+            onMouseEnter={() => setIsItemHovered(true)}
+            onMouseLeave={() => setIsItemHovered(false)}
+            style={{
+              display: "grid",
+              alignItems: "center",
+              height: dynamicSizes.groupItem.height,
+              paddingLeft: 5,
+              width: "100%",
+              gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+              gridTemplateRows: "1fr",
+            }}
+          >
+            <div
+              className={styles["transparent-checkerboard-background"]}
+              style={{
+                width: dynamicSizes.groupItem.height - 10,
+                height: dynamicSizes.groupItem.height - 10,
+                overflow: display.isSquareish ? "none" : "auto",
+              }}
+            >
+              <LaurusImage
+                title={item.img.media_key}
+                draggable={false}
+                alt={item.img.media_key}
+                src={item.img.src}
+                onClick={onContextMenuClick}
+                width={display.displayWidth - 10}
+                height={display.displayHeight - 10}
+                style={{
+                  display: "block",
+                  objectFit: display.isSquareish ? "cover" : "unset",
+                  cursor: "pointer",
+                }}
+              />
+            </div>
+            <div />
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <div
+                style={{
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                  color: "rgb(220, 220, 220)",
+                  ...dynamicSizes.filename.filename,
+                }}
+              >
+                {item.img.media_key}
+              </div>
+            </div>
+            <div />
+            <div style={{ padding: "5px 5px 0px 0px", height: "100%", width: "min-content" }}>
+              <SvgRepo
+                title={"remove from group"}
+                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                scale={0.9}
+                scaleToContaier={true}
+                onContainerClick={onRemoveFromGroupClick}
+                style={{
+                  cursor: "pointer",
+                }}
+                containerStyle={{
+                  cursor: "pointer",
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+      case "svg":
+        return (
+          <div
+            onMouseEnter={() => setIsItemHovered(true)}
+            onMouseLeave={() => setIsItemHovered(false)}
+            style={{
+              display: "grid",
+              gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+              gridTemplateRows: "1fr",
+              alignItems: "center",
+              height: dynamicSizes.groupItem.height,
+              paddingLeft: 5,
+              width: "100%",
+            }}
+          >
+            <div
+              className={styles["transparent-checkerboard-background"]}
+              style={{
+                width: dynamicSizes.groupItem.height - 10,
+                height: dynamicSizes.groupItem.height - 10,
+                display: "grid",
+                placeContent: "center",
+              }}
+            >
+              <SvgRepo
+                title={item.svg.media_key}
+                svg={item.svg}
+                onContainerClick={onContextMenuClick}
+                containerStyle={{
+                  width: (dynamicSizes.groupItem.height - 10) * 0.7,
+                  height: (dynamicSizes.groupItem.height - 10) * 0.7,
+                  cursor: "pointer",
+                }}
+                scale={0.7}
+                scaleToContaier={true}
+              />
+            </div>
+            <div />
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <div
+                style={{
+                  textAlign: "center",
+                  whiteSpace: "nowrap",
+                  color: "rgb(220, 220, 220)",
+                  ...dynamicSizes.filename.filename,
+                }}
+              >
+                {item.svg.media_key}
+              </div>
+            </div>
+            <div />
+            <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+              <SvgRepo
+                title={"remove from group"}
+                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                scale={0.9}
+                scaleToContaier={true}
+                onContainerClick={onRemoveFromGroupClick}
+                style={{
+                  cursor: "pointer",
+                }}
+                containerStyle={{
+                  cursor: "pointer",
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
+                }}
+              />
+            </div>
+          </div>
+        );
+      case "mask": {
+        if (!display) return <></>;
+        return (
+          <div
+            onMouseEnter={() => setIsItemHovered(true)}
+            onMouseLeave={() => setIsItemHovered(false)}
+            style={{
+              display: "grid",
+              gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
+              gridTemplateRows: "1fr",
+              alignItems: "center",
+              height: dynamicSizes.groupItem.height,
+              paddingLeft: 5,
+              width: "100%",
+            }}
+          >
+            <div
+              className={styles["transparent-checkerboard-background"]}
+              style={{
+                width: dynamicSizes.groupItem.height - 10,
+                height: dynamicSizes.groupItem.height - 10,
+                overflow: display.isSquareish ? "none" : "auto",
+              }}
+            >
+              <MaskGroupThumbnail
+                mask={item.mask}
+                onContextMenuClick={onContextMenuClick}
+                width={display.displayWidth - 10}
+                height={display.displayHeight - 10}
+                isSquareish={display.isSquareish}
+              />
+            </div>
+            <div />
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <div
+                style={{
+                  textAlign: "center",
+                  whiteSpace: "nowrap",
+                  color: "rgb(220, 220, 220)",
+                  ...dynamicSizes.filename.filename,
+                }}
+              >
+                {maskSourceFilename(item.mask)}
+              </div>
+            </div>
+            <div />
+            <div
+              style={{
+                padding: 4,
+                height: "100%",
+                width: "min-content",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <SvgRepo
+                title={"remove from group"}
+                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+                scale={0.9}
+                scaleToContaier={true}
+                onContainerClick={onRemoveFromGroupClick}
+                style={{
+                  cursor: "pointer",
+                }}
+                containerStyle={{
+                  cursor: "pointer",
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
+                }}
+              />
+              <SvgRepo
+                svg={
+                  objectCount === 0
+                    ? arrowDropDown("rgb(45, 45, 45)")
+                    : expanded
+                      ? arrowDropUp(isItemHovered ? "rgba(227,227,227,1)" : "rgb(110, 110, 110)")
+                      : arrowDropDown(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")
+                }
+                scale={1.1}
+                scaleToContaier={true}
+                onContainerClick={objectCount === 0 ? undefined : onExpandClick}
+                style={{ cursor: objectCount === 0 ? "default" : "pointer" }}
+                containerStyle={{
+                  cursor: objectCount === 0 ? "default" : "pointer",
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+    }
+  })();
+
   return (
     <div
       ref={setNodeRef}
       style={{
         width: "100%",
         display: "flex",
-        background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
-        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
+        flexDirection: "column",
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 1 : undefined,
       }}
-      onMouseEnter={() => setIsRowHovered(true)}
-      onMouseLeave={() => setIsRowHovered(false)}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        style={{
-          height: "100%",
-          background: "rgba(22, 22, 22, 0.9)",
-          display: "grid",
-          placeContent: "center",
-          cursor: "grab",
-          touchAction: "none",
-          width: indexColumnStyle.width,
-          fontSize: indexColumnStyle.fontSize,
-        }}
-      >
-        {(index + 1).toFixed()}
-      </div>
-      {(() => {
-        switch (item.type) {
-          case "img": {
-            if (!display) return <></>;
+      {!stackOpen && (
+        <div
+          style={{
+            width: "100%",
+            display: "flex",
+            background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
+            border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
+          }}
+          onMouseEnter={() => setIsRowHovered(true)}
+          onMouseLeave={() => setIsRowHovered(false)}
+        >
+          <div
+            {...attributes}
+            {...listeners}
+            style={{
+              height: "100%",
+              background: "rgba(22, 22, 22, 0.9)",
+              display: "grid",
+              placeContent: "center",
+              cursor: "grab",
+              touchAction: "none",
+              width: indexColumnStyle.width,
+              fontSize: indexColumnStyle.fontSize,
+            }}
+          >
+            {(index + 1).toFixed()}
+          </div>
+          {rowContent}
+        </div>
+      )}
+      {stackOpen && item.type === "mask" && objectRows !== undefined && (
+        <SortableContext items={objectRowIds} strategy={verticalListSortingStrategy}>
+          {objectRows.map((row, i) => {
+            if (row === MASK_PLANE_ROW) {
+              return (
+                <MaskPlaneRow
+                  key={planeRowId(item.key)}
+                  maskKey={item.key}
+                  indexColumnStyle={indexColumnStyle}
+                  label={(index + 1).toFixed()}
+                  isEven={i % 2 === 0}
+                >
+                  {rowContent}
+                </MaskPlaneRow>
+              );
+            }
+            const object = objectsById.get(row);
+            if (!object) return null;
             return (
-              <div
-                onMouseEnter={() => setIsItemHovered(true)}
-                onMouseLeave={() => setIsItemHovered(false)}
-                style={{
-                  display: "grid",
-                  alignItems: "center",
-                  height: dynamicSizes.groupItem.height,
-                  paddingLeft: 5,
-                  width: "100%",
-                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
-                  gridTemplateRows: "1fr",
-                }}
-              >
-                <div
-                  className={styles["transparent-checkerboard-background"]}
-                  style={{
-                    width: dynamicSizes.groupItem.height - 10,
-                    height: dynamicSizes.groupItem.height - 10,
-                    overflow: display.isSquareish ? "none" : "auto",
-                  }}
-                >
-                  <LaurusImage
-                    title={item.img.media_key}
-                    draggable={false}
-                    alt={item.img.media_key}
-                    src={item.img.src}
-                    onClick={onContextMenuClick}
-                    width={display.displayWidth - 10}
-                    height={display.displayHeight - 10}
-                    style={{
-                      display: "block",
-                      objectFit: display.isSquareish ? "cover" : "unset",
-                      cursor: "pointer",
-                    }}
-                  />
-                </div>
-                <div />
-                <div
-                  style={{
-                    overflowX: "auto",
-                  }}
-                >
-                  <div
-                    style={{
-                      whiteSpace: "nowrap",
-                      textAlign: "center",
-                      color: "rgb(220, 220, 220)",
-                      ...dynamicSizes.filename.filename,
-                    }}
-                  >
-                    {item.img.media_key}
-                  </div>
-                </div>
-                <div />
-                <div style={{ padding: "5px 5px 0px 0px", height: "100%", width: "min-content" }}>
-                  <SvgRepo
-                    title={"remove from group"}
-                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                    scale={0.9}
-                    scaleToContaier={true}
-                    onContainerClick={onRemoveFromGroupClick}
-                    style={{
-                      cursor: "pointer",
-                    }}
-                    containerStyle={{
-                      cursor: "pointer",
-                      width: removeOverlaySize,
-                      height: removeOverlaySize,
-                    }}
-                  />
-                </div>
-              </div>
+              <MaskObjectRow
+                key={objectRowId(item.key, row)}
+                maskKey={item.key}
+                mask={item.mask}
+                object={object}
+                label={`${index + 1}.${(i < planeRowIndex ? i : i - 1) + 1}`}
+                isEven={i % 2 === 0}
+                indexColumnStyle={indexColumnStyle}
+                rowHeight={dynamicSizes.groupItem.height}
+                filenameStyle={dynamicSizes.filename.filename}
+                filenameMargin={dynamicSizes.filename.margin}
+                removeOverlaySize={removeOverlaySize}
+                onContextMenuClick={() => onObjectContextMenuClick(object.id)}
+              />
             );
-          }
-          case "svg":
-            return (
-              <div
-                onMouseEnter={() => setIsItemHovered(true)}
-                onMouseLeave={() => setIsItemHovered(false)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
-                  gridTemplateRows: "1fr",
-                  alignItems: "center",
-                  height: dynamicSizes.groupItem.height,
-                  paddingLeft: 5,
-                  width: "100%",
-                }}
-              >
-                <div
-                  className={styles["transparent-checkerboard-background"]}
-                  style={{
-                    width: dynamicSizes.groupItem.height - 10,
-                    height: dynamicSizes.groupItem.height - 10,
-                    display: "grid",
-                    placeContent: "center",
-                  }}
-                >
-                  <SvgRepo
-                    title={item.svg.media_key}
-                    svg={item.svg}
-                    onContainerClick={onContextMenuClick}
-                    containerStyle={{
-                      width: (dynamicSizes.groupItem.height - 10) * 0.7,
-                      height: (dynamicSizes.groupItem.height - 10) * 0.7,
-                      cursor: "pointer",
-                    }}
-                    scale={0.7}
-                    scaleToContaier={true}
-                  />
-                </div>
-                <div />
-                <div
-                  style={{
-                    overflowX: "auto",
-                  }}
-                >
-                  <div
-                    style={{
-                      whiteSpace: "normal",
-                      textAlign: "center",
-                      color: "rgb(220, 220, 220)",
-                      ...dynamicSizes.filename.filename,
-                    }}
-                  >
-                    {item.svg.media_key}
-                  </div>
-                </div>
-                <div />
-                <div style={{ padding: 4, height: "100%", width: "min-content" }}>
-                  <SvgRepo
-                    title={"remove from group"}
-                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                    scale={0.9}
-                    scaleToContaier={true}
-                    onContainerClick={onRemoveFromGroupClick}
-                    style={{
-                      cursor: "pointer",
-                    }}
-                    containerStyle={{
-                      cursor: "pointer",
-                      width: removeOverlaySize,
-                      height: removeOverlaySize,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          case "mask": {
-            if (!display) return <></>;
-            return (
-              <div
-                onMouseEnter={() => setIsItemHovered(true)}
-                onMouseLeave={() => setIsItemHovered(false)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `min-content ${dynamicSizes.filename.margin}px auto ${dynamicSizes.filename.margin}px min-content`,
-                  gridTemplateRows: "1fr",
-                  alignItems: "center",
-                  height: dynamicSizes.groupItem.height,
-                  paddingLeft: 5,
-                  width: "100%",
-                }}
-              >
-                <div
-                  className={styles["transparent-checkerboard-background"]}
-                  style={{
-                    width: dynamicSizes.groupItem.height - 10,
-                    height: dynamicSizes.groupItem.height - 10,
-                    overflow: display.isSquareish ? "none" : "auto",
-                  }}
-                >
-                  <MaskGroupThumbnail
-                    mask={item.mask}
-                    onContextMenuClick={onContextMenuClick}
-                    width={display.displayWidth - 10}
-                    height={display.displayHeight - 10}
-                    isSquareish={display.isSquareish}
-                  />
-                </div>
-                <div />
-                <div
-                  style={{
-                    overflowX: "auto",
-                  }}
-                >
-                  <div
-                    style={{
-                      whiteSpace: "normal",
-                      textAlign: "center",
-                      color: "rgb(220, 220, 220)",
-                      ...dynamicSizes.filename.filename,
-                    }}
-                  >
-                    {item.mask.mask_media_id}
-                  </div>
-                </div>
-                <div />
-                <div style={{ padding: 4, height: "100%", width: "min-content" }}>
-                  <SvgRepo
-                    title={"remove from group"}
-                    svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                    scale={0.9}
-                    scaleToContaier={true}
-                    onContainerClick={onRemoveFromGroupClick}
-                    style={{
-                      cursor: "pointer",
-                    }}
-                    containerStyle={{
-                      cursor: "pointer",
-                      width: removeOverlaySize,
-                      height: removeOverlaySize,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          }
-        }
-      })()}
+          })}
+        </SortableContext>
+      )}
     </div>
   );
 }

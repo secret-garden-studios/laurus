@@ -10,6 +10,7 @@ import { MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { Z_INDEX } from "./workspace.config";
 import { LaurusFrame } from "./workspace.server";
 import { beginBodyDragCursor, dragFallbackCursor, endBodyDragCursor } from "./hooks/useToolCursor";
+import { toCanvasDelta, toCanvasTranslate, useCanvasZoomValue } from "./hooks/useCanvasZoom";
 
 interface CameraDragOverlay {
   id: string;
@@ -19,10 +20,11 @@ interface CameraDragOverlay {
 }
 function CameraDragOverlay({ id, position, containerSize, disabled }: CameraDragOverlay) {
   const { listeners, setNodeRef, transform, isDragging } = useDraggable({ id, disabled });
+  const canvasZoom = useCanvasZoomValue();
   const dndCss = {
     left: position.x,
     top: position.y,
-    transform: DndCss.Translate.toString(transform),
+    transform: DndCss.Translate.toString(toCanvasTranslate(transform, canvasZoom)),
     touchAction: "none",
     border: isDragging ? "1px solid rgba(255, 255, 255, 0.1)" : "none",
     borderRadius: isDragging ? 10 : 0,
@@ -71,6 +73,7 @@ export default function DraggableCamera({
   const { coreState } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const sensors = useSensors(useSensor(PointerSensor));
+  const canvasZoom = useCanvasZoomValue();
   return (
     <>
       <DndContext
@@ -79,7 +82,7 @@ export default function DraggableCamera({
         onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
           endBodyDragCursor();
-          const delta = e.delta;
+          const delta = toCanvasDelta(e.delta, canvasZoom);
           const newPosition = {
             x: Math.min(
               coreState.project.canvas_width - coreState.project.frame_width,

@@ -259,3 +259,23 @@ input:-webkit-autofill::first-line {
     opacity: 1;
   }
 }
+
+.effect-group-row {
+  border: 1px solid rgba(0, 0, 0, 0);
+  background: rgba(255, 255, 255, 0.0275);
+}
+
+.effect-group-row[data-selected] {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body:not([data-dragging]) .effect-group-row:hover {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+body:not([data-dragging]) .effect-group-row[data-selected]:hover {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+}

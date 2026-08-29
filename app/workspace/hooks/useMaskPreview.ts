@@ -2,18 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LaurusImgResult,
   LaurusMaskResult,
+  LaurusObjectReviewCandidate,
   MaskComplete_V1_0,
   MaskCurve_V1_0,
   MaskError_V1_0,
+  MaskObject_V1_0,
   MaskTriangle_V1_0,
   maskImage,
 } from "../workspace.server";
 import {
   colorToRGB01,
-  CAPTURE_DARKNESS_DEFAULT,
-  CAPTURE_FALLOFF_CSS_PX_DEFAULT,
-  CAPTURE_INTENSITY_DEFAULT,
-  CAPTURE_SIZE_CSS_PX_DEFAULT,
+  LIGHT_DARKNESS_DEFAULT,
+  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_INTENSITY_DEFAULT,
+  LIGHT_SIZE_CSS_PX_DEFAULT,
+  MASK_BACKING_VERTEX_COUNT,
   TEXTURE_MIX_DEFAULT,
 } from "../mask-gl";
 
@@ -35,6 +38,11 @@ export interface MaskSizeOverride {
   height: number | undefined;
 }
 
+export interface EdgeObjectSeed {
+  elevation: number;
+  falloff: number;
+}
+
 export function useMaskPreview(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
@@ -47,9 +55,16 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   const vertexCountRef = useRef(0);
   const dirtyRef = useRef(false);
   const curvesRef = useRef<MaskCurve_V1_0[]>([]);
+  const backingVertexCountRef = useRef(0);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
+  const objectCandidatesRef = useRef<LaurusObjectReviewCandidate[]>([]);
 
-  const [status, setStatus] = useState<MaskStatus>("idle");
+  const [status, setStatusState] = useState<MaskStatus>("idle");
+  const statusRef = useRef<MaskStatus>("idle");
+  const setStatus = useCallback((value: MaskStatus) => {
+    statusRef.current = value;
+    setStatusState(value);
+  }, []);
   const [triangleCount, setTriangleCount] = useState(0);
   const [result, setResult] = useState<LaurusMaskResult | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
@@ -61,36 +76,36 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setTextureMixState(value);
   }, []);
 
-  const [captureSize, setCaptureSizeState] = useState(CAPTURE_SIZE_CSS_PX_DEFAULT);
-  const captureSizeRef = useRef(CAPTURE_SIZE_CSS_PX_DEFAULT);
+  const [lightSize, setLightSizeState] = useState(LIGHT_SIZE_CSS_PX_DEFAULT);
+  const lightSizeRef = useRef(LIGHT_SIZE_CSS_PX_DEFAULT);
 
-  const setCaptureSize = useCallback((value: number) => {
-    captureSizeRef.current = value;
-    setCaptureSizeState(value);
+  const setLightSize = useCallback((value: number) => {
+    lightSizeRef.current = value;
+    setLightSizeState(value);
   }, []);
 
-  const [captureIntensity, setCaptureIntensityState] = useState(CAPTURE_INTENSITY_DEFAULT);
-  const captureIntensityRef = useRef(CAPTURE_INTENSITY_DEFAULT);
+  const [lightIntensity, setLightIntensityState] = useState(LIGHT_INTENSITY_DEFAULT);
+  const lightIntensityRef = useRef(LIGHT_INTENSITY_DEFAULT);
 
-  const setCaptureIntensity = useCallback((value: number) => {
-    captureIntensityRef.current = value;
-    setCaptureIntensityState(value);
+  const setLightIntensity = useCallback((value: number) => {
+    lightIntensityRef.current = value;
+    setLightIntensityState(value);
   }, []);
 
-  const [captureFalloff, setCaptureFalloffState] = useState(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
-  const captureFalloffRef = useRef(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
+  const [lightFalloff, setLightFalloffState] = useState(LIGHT_FALLOFF_CSS_PX_DEFAULT);
+  const lightFalloffRef = useRef(LIGHT_FALLOFF_CSS_PX_DEFAULT);
 
-  const setCaptureFalloff = useCallback((value: number) => {
-    captureFalloffRef.current = value;
-    setCaptureFalloffState(value);
+  const setLightFalloff = useCallback((value: number) => {
+    lightFalloffRef.current = value;
+    setLightFalloffState(value);
   }, []);
 
-  const [captureDarkness, setCaptureDarknessState] = useState(CAPTURE_DARKNESS_DEFAULT);
-  const captureDarknessRef = useRef(CAPTURE_DARKNESS_DEFAULT);
+  const [lightDarkness, setLightDarknessState] = useState(LIGHT_DARKNESS_DEFAULT);
+  const lightDarknessRef = useRef(LIGHT_DARKNESS_DEFAULT);
 
-  const setCaptureDarkness = useCallback((value: number) => {
-    captureDarknessRef.current = value;
-    setCaptureDarknessState(value);
+  const setLightDarkness = useCallback((value: number) => {
+    lightDarknessRef.current = value;
+    setLightDarknessState(value);
   }, []);
 
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
@@ -128,9 +143,30 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     return colorCtxRef.current;
   }, []);
 
+  const pushBackingSheet = useCallback((img: LaurusImgResult) => {
+    const corners: [number, number][] = [
+      [0, 0],
+      [img.width, 0],
+      [0, img.height],
+      [img.width, 0],
+      [img.width, img.height],
+      [0, img.height],
+    ];
+    for (const [x, y] of corners) {
+      positionsRef.current.push(x, y);
+      colorsRef.current.push(1, 1, 1);
+      uvsRef.current.push(x / img.width, 1 - y / img.height);
+      centroidsRef.current.push(x, y);
+      barycentricsRef.current.push(1, 1, 1);
+    }
+    backingVertexCountRef.current = MASK_BACKING_VERTEX_COUNT;
+    dirtyRef.current = true;
+  }, []);
+
   const reset = useCallback(() => {
     socketRef.current?.close();
     socketRef.current = undefined;
+    backingVertexCountRef.current = 0;
     positionsRef.current = [];
     colorsRef.current = [];
     barycentricsRef.current = [];
@@ -140,51 +176,60 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     dirtyRef.current = true;
     curvesRef.current = [];
     glowColorRef.current = [1, 1, 1];
+    objectCandidatesRef.current = [];
     setTriangleCount(0);
     setResult(undefined);
     setErrorMessage(undefined);
     setStatus("idle");
     setTextureMix(TEXTURE_MIX_DEFAULT);
-    setCaptureSize(CAPTURE_SIZE_CSS_PX_DEFAULT);
-    setCaptureIntensity(CAPTURE_INTENSITY_DEFAULT);
-    setCaptureFalloff(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
-    setCaptureDarkness(CAPTURE_DARKNESS_DEFAULT);
+    setLightSize(LIGHT_SIZE_CSS_PX_DEFAULT);
+    setLightIntensity(LIGHT_INTENSITY_DEFAULT);
+    setLightFalloff(LIGHT_FALLOFF_CSS_PX_DEFAULT);
+    setLightDarkness(LIGHT_DARKNESS_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setTextureMix, setCaptureSize, setCaptureIntensity, setCaptureFalloff, setCaptureDarkness]);
+  }, [setStatus, setTextureMix, setLightSize, setLightIntensity, setLightFalloff, setLightDarkness]);
 
   const start = useCallback(
-    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void) => {
+    (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, objectSeed?: EdgeObjectSeed) => {
       positionsRef.current = [];
       colorsRef.current = [];
       barycentricsRef.current = [];
       uvsRef.current = [];
+      centroidsRef.current = [];
       vertexCountRef.current = 0;
       dirtyRef.current = true;
+      pushBackingSheet(img);
       curvesRef.current = [];
       glowColorRef.current = [1, 1, 1];
+      objectCandidatesRef.current = [];
       setTriangleCount(0);
       setResult(undefined);
       setErrorMessage(undefined);
       setStatus("connecting");
       setTextureMix(TEXTURE_MIX_DEFAULT);
-      setCaptureSize(CAPTURE_SIZE_CSS_PX_DEFAULT);
-      setCaptureIntensity(CAPTURE_INTENSITY_DEFAULT);
-      setCaptureFalloff(CAPTURE_FALLOFF_CSS_PX_DEFAULT);
-      setCaptureDarkness(CAPTURE_DARKNESS_DEFAULT);
+      setLightSize(LIGHT_SIZE_CSS_PX_DEFAULT);
+      setLightIntensity(LIGHT_INTENSITY_DEFAULT);
+      setLightFalloff(LIGHT_FALLOFF_CSS_PX_DEFAULT);
+      setLightDarkness(LIGHT_DARKNESS_DEFAULT);
 
       const resolutionFactor = resolutionRef.current;
       socketRef.current?.close();
       socketRef.current = maskImage(
         apiOrigin,
         accessToken,
-        resolutionFactor === 1
-          ? { img_media_id: img.img_media_id }
-          : {
-              img_media_id: img.img_media_id,
-              max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
-              detail_points: BASE_DETAIL_POINTS * resolutionFactor,
-            },
+        {
+          img_media_id: img.img_media_id,
+          ...(resolutionFactor === 1
+            ? {}
+            : {
+                max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
+                detail_points: BASE_DETAIL_POINTS * resolutionFactor,
+              }),
+          ...(objectSeed
+            ? { edge_objects: true, object_elevation: objectSeed.elevation, object_falloff: objectSeed.falloff }
+            : {}),
+        },
         {
           onGroupStart: () => {
             setStatus("streaming");
@@ -199,20 +244,10 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             if (curvesRef.current.length === 1) {
               const colorCtx = getColorCtx();
               const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
-              const corners: [number, number][] = [
-                [0, 0],
-                [img.width, 0],
-                [0, img.height],
-                [img.width, 0],
-                [img.width, img.height],
-                [0, img.height],
-              ];
-              for (const [x, y] of corners) {
-                positionsRef.current.push(x, y);
-                colorsRef.current.push(r, g, b);
-                uvsRef.current.push(x / img.width, 1 - y / img.height);
-                centroidsRef.current.push(x, y);
-                barycentricsRef.current.push(1, 1, 1);
+              for (let i = 0; i < MASK_BACKING_VERTEX_COUNT; i++) {
+                colorsRef.current[i * 3] = r;
+                colorsRef.current[i * 3 + 1] = g;
+                colorsRef.current[i * 3 + 2] = b;
               }
               dirtyRef.current = true;
             }
@@ -234,6 +269,12 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
             dirtyRef.current = true;
             setTriangleCount((n) => n + 1);
           },
+          onObject: (event: MaskObject_V1_0) => {
+            objectCandidatesRef.current = [
+              ...objectCandidatesRef.current,
+              { object: event.object, polygon_indices: event.polygon_indices },
+            ];
+          },
           onComplete: (event: MaskComplete_V1_0) => {
             setStatus("done");
             setResult(event.result);
@@ -250,34 +291,38 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       apiOrigin,
       accessToken,
       getColorCtx,
+      pushBackingSheet,
+      setStatus,
       setTextureMix,
-      setCaptureSize,
-      setCaptureIntensity,
-      setCaptureFalloff,
-      setCaptureDarkness,
+      setLightSize,
+      setLightIntensity,
+      setLightFalloff,
+      setLightDarkness,
     ],
   );
 
   return {
     status,
+    statusRef,
     triangleCount,
     result,
+    objectCandidatesRef,
     errorMessage,
     textureMix,
     setTextureMix,
     textureMixRef,
-    captureSize,
-    setCaptureSize,
-    captureSizeRef,
-    captureIntensity,
-    setCaptureIntensity,
-    captureIntensityRef,
-    captureFalloff,
-    setCaptureFalloff,
-    captureFalloffRef,
-    captureDarkness,
-    setCaptureDarkness,
-    captureDarknessRef,
+    lightSize,
+    setLightSize,
+    lightSizeRef,
+    lightIntensity,
+    setLightIntensity,
+    lightIntensityRef,
+    lightFalloff,
+    setLightFalloff,
+    lightFalloffRef,
+    lightDarkness,
+    setLightDarkness,
+    lightDarknessRef,
     position,
     setPosition,
     size,
@@ -296,6 +341,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       dirtyRef,
       curvesRef,
       glowColorRef,
+      backingVertexCountRef,
     },
   };
 }

@@ -78,7 +78,7 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
-        if (uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+        if (uiState.maskEdit === undefined && uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
           const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
@@ -93,6 +93,7 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       showContextMenu,
       uiDispatch,
       uiState.tool,
+      uiState.maskEdit,
       setSelectedImgKeys,
       setSelectedSvgKeys,
       setSelectedMaskKeys,

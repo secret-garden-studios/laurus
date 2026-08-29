@@ -1,37 +1,67 @@
-import type { MaskCurve_V1_0, PeakBlackPoint_V1_0 } from "./workspace.server";
-import type { PeakShape } from "./canvas-media/peak-shape";
+import type { MaskCurve_V1_0, ObjectFill_V1_0 } from "./workspace.server";
+import { isBehindMask } from "./canvas-media/object-order.ts";
+import {
+  OBJECT_SDF_MARGIN,
+  OBJECT_SDF_TILE,
+  objectShapeProfileU,
+  type ObjectShape,
+} from "./canvas-media/object-shape.ts";
 
-export const CAPTURE_SIZE_CSS_PX_DEFAULT = 150;
-export const CAPTURE_INTENSITY_DEFAULT = 0.05;
-export const CAPTURE_FALLOFF_CSS_PX_DEFAULT = 350;
-export const CAPTURE_DARKNESS_DEFAULT = 0.2;
-export const CAPTURE_FALLOFF_TO_SIZE_RATIO = CAPTURE_FALLOFF_CSS_PX_DEFAULT / CAPTURE_SIZE_CSS_PX_DEFAULT;
-export const TEXTURE_MIX_DEFAULT = 0.5;
+export const LIGHT_SIZE_CSS_PX_DEFAULT = 150;
+export const LIGHT_INTENSITY_DEFAULT = 0.05;
+export const LIGHT_FALLOFF_CSS_PX_DEFAULT = 350;
+export const LIGHT_DARKNESS_DEFAULT = 0.2;
+export const LIGHT_FALLOFF_TO_SIZE_RATIO = LIGHT_FALLOFF_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
+export const TEXTURE_MIX_DEFAULT = 1.0;
 export const MAX_MASK_LIGHT_SOURCES = 8;
-export const MAX_MASK_PEAKS = 16;
-export const PEAK_ELEVATION_DEFAULT = 80;
-export const MAX_MASK_PEAK_ELEVATION = 300;
-export const MIN_MASK_PEAK_FALLOFF = 1.0;
-export const MAX_MASK_PEAK_FALLOFF = 6.0;
-export const MIN_MASK_PEAK_RADIUS_PX = 8;
-export const MASK_PEAK_SWELL = 0.5;
-export const MASK_PEAK_SWELL_LIMIT = 0.9;
-export const PEAK_SHAPE_SLOPE_RANGE = 8.0;
-export const PEAK_SHAPE_MIN_RHO = 0.05;
-export const PEAK_GRADIENT_LIMIT = 32.0;
-export const PEAK_BLACK_POINT_RELIEF_K = 1e-3;
-export const PEAK_BLACK_POINT_HALO_MAX = 0.2;
-export const PEAK_BLACK_POINT_HALO_EASE = 0.35;
-export const PEAK_BLACK_POINT_HALO_FADE = 1.5;
+export const MAX_MASK_OBJECTS = 16;
+export const OBJECT_ELEVATION_DEFAULT = 0;
+export const MAX_MASK_OBJECT_ELEVATION = 300;
+export const MIN_MASK_OBJECT_FALLOFF = 1.0;
+export const MAX_MASK_OBJECT_FALLOFF = 6.0;
+// the exponent that shapes no dome in particular - every falloff shapes the profile, so this
+// is a convention rather than a true identity, and it matches the server's NEUTRAL_FRAME.
+export const NEUTRAL_MASK_OBJECT_FALLOFF = 2.0;
+export const MIN_MASK_OBJECT_RADIUS_PX = 8;
+// The gap a newly raised object leaves around an object already on the mesh,
+// in mesh pixels. Membership is a triangle at a time, so two objects that meet
+// share an edge and read as one blob at the seam; a buffer wider than nothing
+// makes the older object's rim the boundary and leaves a lane of unclaimed
+// mesh on the near side of it. Measured from a candidate triangle's centroid
+// to the nearest point of a claimed one, so zero still drops the overlap
+// itself and only the separation is tunable. See dropIndicesClaimedByObjects.
+export const MASK_OBJECT_COLLISION_BUFFER_PX = 1;
+export const MASK_OBJECT_SWELL = 0.5;
+export const MASK_OBJECT_SWELL_LIMIT = 0.9;
+export const OBJECT_SDF_GRID = 4;
+export const OBJECT_SDF_ATLAS = OBJECT_SDF_GRID * OBJECT_SDF_TILE;
+// 3x3 holds the eight lights a mask can have, in the same tiles at the same
+// resolution as an object's -- the shapes come off the same builder, so only
+// how many of them there are differs.
+export const LIGHT_SDF_GRID = 3;
+export const LIGHT_SDF_ATLAS = LIGHT_SDF_GRID * OBJECT_SDF_TILE;
+export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
+export const OBJECT_GRADIENT_LIMIT = 32.0;
 export const MASK_BUMP_STRENGTH = 0.85;
 export const MASK_LIGHT_HEIGHT_SCALE = 1.0;
-export const PEAK_SUBDIVISION_TOLERANCE_PX = 0.75;
+export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
 export const MASK_STROKE_WIDTH_PX = 1.0;
 export const MASK_HIGHLIGHT_STROKE_WIDTH_PX = 3.0;
 export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.0, 0.2];
 export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 1.0];
 export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 0.35];
 export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
+export const GRIDLINES_DIM_ALPHA = 0.5;
+export const GRIDLINES_BRIGHT_ALPHA = 1;
+export const MASK_BACKING_VERTEX_COUNT = 6;
+export const MASK_BACKING_GREY_LEVEL = 0.55;
+
+export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
+  return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+}
+export function highlightObjectReviewAddedColor(bright: boolean): [number, number, number, number] {
+  return [0.984314, 0.65098, 0.152941, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
+}
 
 function glFloat(n: number): string {
   return n.toFixed(6);
@@ -42,42 +72,157 @@ export interface Shader {
   fragment: string;
 }
 
-const PEAK_FIELD_GLSL = `
-#define MAX_MASK_PEAKS ${MAX_MASK_PEAKS}
-#define MASK_PEAK_SWELL ${glFloat(MASK_PEAK_SWELL)}
-#define MASK_PEAK_SWELL_LIMIT ${glFloat(MASK_PEAK_SWELL_LIMIT)}
-#define PEAK_SHAPE_SLOPE_RANGE ${glFloat(PEAK_SHAPE_SLOPE_RANGE)}
-#define PEAK_SHAPE_MIN_RHO ${glFloat(PEAK_SHAPE_MIN_RHO)}
-#define PEAK_GRADIENT_LIMIT ${glFloat(PEAK_GRADIENT_LIMIT)}
-#define PEAK_FIELD_PI 3.141592653589793
+const OBJECT_FIELD_GLSL = `
+#define MAX_MASK_OBJECTS ${MAX_MASK_OBJECTS}
+#define MASK_OBJECT_SWELL ${glFloat(MASK_OBJECT_SWELL)}
+#define MASK_OBJECT_SWELL_LIMIT ${glFloat(MASK_OBJECT_SWELL_LIMIT)}
+#define OBJECT_SDF_TILE ${glFloat(OBJECT_SDF_TILE)}
+#define OBJECT_SDF_GRID ${glFloat(OBJECT_SDF_GRID)}
+#define OBJECT_SDF_ATLAS ${glFloat(OBJECT_SDF_ATLAS)}
+#define OBJECT_SDF_MARGIN ${glFloat(OBJECT_SDF_MARGIN)}
+#define OBJECT_SDF_RANGE ${glFloat(OBJECT_SDF_RANGE)}
+#define OBJECT_GRADIENT_LIMIT ${glFloat(OBJECT_GRADIENT_LIMIT)}
+#define OBJECT_FIELD_PI 3.141592653589793
 
-uniform mediump vec4 u_peaks[MAX_MASK_PEAKS];
-uniform mediump float u_peakFalloffs[MAX_MASK_PEAKS];
-uniform mediump int u_peakCount;
+uniform mediump vec4 u_objects[MAX_MASK_OBJECTS];
+uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
+uniform mediump int u_objectCount;
 
-uniform mediump sampler2D u_peakShapes;
-uniform mediump float u_peakShapeRows[MAX_MASK_PEAKS];
-uniform mediump float u_peakShapeSamples;
+// Where each object sits in the mask's own stack. Zero is the mask's plane
+// rather than a slot an object occupies: a positive order is in front of the
+// sheet, a negative one behind it, and the magnitude ranks an object against
+// the others on its side. See Object_V1_0.order.
+//
+// Three things read it, and only these three. Relief skips an object behind the
+// sheet entirely -- a thing under a page does not emboss the page, and letting
+// it would put a travelling bump on screen over exactly the opaque ground the
+// object is supposed to be hidden behind. Compositing splits the travelling
+// layer by its sign, so what an object behind the mask carries shows only where
+// the mask is transparent. And where two objects cover the same pixel the
+// higher order takes it, in place of the depth tie-break that used to settle it
+// alone -- which is still the tie-break, but now only among equals.
+//
+// Equals are real rather than hypothetical: every object stored before ordering
+// existed reads back at 0, so a whole mask of them ties, and the depth rule is
+// what keeps such a mask looking exactly as it did. Hence the epsilon
+// comparisons below rather than == on a float.
+uniform mediump float u_objectOrders[MAX_MASK_OBJECTS];
+#define OBJECT_ORDER_EPSILON 0.5
 
-float decodePeakShape16(vec2 bytes) {
+// Both of these take an order rather than the slot it came out of, and have to:
+// GLSL ES 1.00 only lets a uniform array be indexed by a loop index or a
+// constant, and a function parameter is neither however plainly it is one at
+// every call site. Reading u_objectOrders[i] in here compiles nowhere -- so the
+// read stays out in the loop, where i really is the loop's own index, and only
+// the value it found comes in.
+bool objectBehindMask(float order) {
+  return order < 0.0;
+}
+
+// Whether an object beats the best found so far, at a pixel each of them
+// covers: higher order first, and deeper inside its own outline only among
+// objects of the same order.
+bool objectOutranks(float order, float bestOrder, float u, float nearest) {
+  if (order > bestOrder + OBJECT_ORDER_EPSILON) return true;
+  if (order < bestOrder - OBJECT_ORDER_EPSILON) return false;
+  return u < nearest;
+}
+
+// Each object's rotate3d, reduced to the 2x2 that survives dropping z -- and
+// stored already inverted, mesh offset to shape-local, because sampling only
+// ever asks it that way round. Row-major: (a, b, c, d) is [[a, b], [c, d]],
+// identity for an object nothing is turning. See objectRotation.
+uniform mediump vec4 u_objectRotations[MAX_MASK_OBJECTS];
+#define OBJECT_ROTATION_NONE vec4(1.0, 0.0, 0.0, 1.0)
+
+uniform mediump sampler2D u_objectShapes;
+uniform mediump float u_objectShapeRows[MAX_MASK_OBJECTS];
+uniform mediump float u_objectShapeMaxDepth[MAX_MASK_OBJECTS];
+
+float decodeObjectShape16(vec2 bytes) {
   return bytes.x + bytes.y * (1.0 / 255.0);
 }
 
-vec2 peakShapeAt(float row, float theta) {
-  if (row < 0.0) return vec2(1.0, 0.0);
-  float t = (theta + PEAK_FIELD_PI) / (2.0 * PEAK_FIELD_PI) * u_peakShapeSamples;
-  float index = floor(t);
-  float v = (row + 0.5) / float(MAX_MASK_PEAKS);
-  vec4 lower = texture2D(u_peakShapes, vec2((index + 0.5) / u_peakShapeSamples, v));
-  vec4 upper = texture2D(u_peakShapes, vec2((index + 1.5) / u_peakShapeSamples, v));
-  vec2 pair = mix(
-    vec2(decodePeakShape16(lower.rg), decodePeakShape16(lower.ba)),
-    vec2(decodePeakShape16(upper.rg), decodePeakShape16(upper.ba)),
-    t - index);
-  return vec2(max(pair.x, PEAK_SHAPE_MIN_RHO), (pair.y * 2.0 - 1.0) * PEAK_SHAPE_SLOPE_RANGE);
+// One texel of one object's tile, as vec3(signed distance, gradient.xy).
+//
+// The tile index is unpacked into a grid cell here rather than passed in as a
+// cell, so the CPU only ever has to know which slot an object took.
+vec3 objectShapeTexel(float row, vec2 texel) {
+  float col = mod(row, OBJECT_SDF_GRID);
+  float band = floor(row / OBJECT_SDF_GRID);
+  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
+  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / OBJECT_SDF_ATLAS;
+  // not "packed": that is a reserved word in GLSL ES and will not compile
+  vec4 stored = texture2D(u_objectShapes, uv);
+  return vec3(
+    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
+    stored.ba * 2.0 - 1.0);
 }
 
-vec2 peakProfile(float u, float falloff) {
+// The signed distance and its gradient at a point in the shape's own
+// normalized space, as vec3(distance, gradient.xy).
+//
+// Filtered by hand out of four NEAREST fetches, for the same reason
+// objectShapeAt used to mix two: this runs in the vertex stage, and WebGL1
+// makes no promise that a vertex texture fetch filters at all. Clamping
+// happens per-texel inside the tile, so a sample at a tile's edge cannot
+// bleed into the neighbouring object's.
+vec3 objectDepthAt(float row, vec2 n) {
+  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
+  vec2 base = floor(local);
+  vec2 f = local - base;
+  vec3 top = mix(objectShapeTexel(row, base), objectShapeTexel(row, base + vec2(1.0, 0.0)), f.x);
+  vec3 bottom = mix(
+    objectShapeTexel(row, base + vec2(0.0, 1.0)),
+    objectShapeTexel(row, base + vec2(1.0, 1.0)),
+    f.x);
+  vec3 sampled = mix(top, bottom, f.y);
+  // Along the medial axis the gradient flips, so filtering across it averages
+  // two opposing directions toward nothing. Renormalizing restores a usable
+  // direction; the guard is for the exact centre of a symmetric shape, where
+  // there genuinely is no downhill and a normalize would be a divide by zero.
+  float reach = length(sampled.yz);
+  return vec3(sampled.x, reach > 1e-4 ? sampled.yz / reach : vec2(0.0));
+}
+
+// A mesh-space offset in the shape's own coordinates -- the inverse rotation
+// applied, which is what turning the shape looks like from the sampling side.
+vec2 objectToShape(vec4 rotation, vec2 v) {
+  return vec2(rotation.x * v.x + rotation.y * v.y, rotation.z * v.x + rotation.w * v.y);
+}
+
+// A gradient measured in shape coordinates, back in mesh ones. The transpose
+// rather than the inverse-again: the field being differentiated is
+// d(q) = d(Aq) for A the matrix above, so grad_q = A^T grad_n.
+vec2 objectToMesh(vec4 rotation, vec2 v) {
+  return vec2(rotation.x * v.x + rotation.z * v.y, rotation.y * v.x + rotation.w * v.y);
+}
+
+// How far along its falloff a point sits, plus the gradient of that, in mesh
+// units: vec3(u, gradU.xy). u is 0 at the shape's deepest interior point and
+// 1 at its outline.
+//
+// The two branches agree exactly where they overlap. For a circle of radius R
+// the field is d = R - dist with its deepest point at R, so
+// u = 1 - (R - dist)/R = dist/R -- which is the shapeless branch verbatim.
+// An object with no shape and one shaped like a circle are the same object,
+// and stay the same object once turned: both branches read the same rotated
+// offset, so a rotation foreshortens the shapeless disc into the same ellipse
+// it foreshortens a drawn circle into.
+vec3 objectU(float row, float maxDepth, vec2 toPoint, float radius, vec4 rotation) {
+  vec2 n = objectToShape(rotation, toPoint / radius);
+  if (row < 0.0) {
+    float dist = length(n);
+    vec2 gradient = dist > 1e-4 ? objectToMesh(rotation, n / dist) : vec2(0.0);
+    return vec3(dist, gradient / radius);
+  }
+  vec3 depth = objectDepthAt(row, n);
+  // d is measured in normalized units, so its gradient converts to mesh units
+  // by dividing through by the same radius that normalized the position
+  return vec3(1.0 - depth.x / maxDepth, objectToMesh(rotation, -depth.yz / maxDepth) / radius);
+}
+
+vec2 objectProfile(float u, float falloff) {
   float s = max(1.0 - u * u, 0.0);
   float sSafe = max(s, 1e-4);
   float k = pow(sSafe, falloff);
@@ -85,48 +230,272 @@ vec2 peakProfile(float u, float falloff) {
   return vec2(k, dk);
 }
 
-vec3 peakField(vec2 p) {
+vec3 objectField(vec2 p) {
   vec3 field = vec3(0.0);
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
-    float elevation = u_peaks[i].w;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    vec2 shape = peakShapeAt(u_peakShapeRows[i], theta);
-    float radius = u_peaks[i].z * shape.x;
-    float u = dist / radius;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (objectBehindMask(u_objectOrders[i])) continue;
+    vec2 toPoint = p - u_objects[i].xy;
+    float elevation = u_objects[i].w;
+    vec3 profileU = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]);
+    float u = profileU.x;
     if (u >= 1.0) continue;
-    vec2 profile = peakProfile(u, u_peakFalloffs[i]);
+    vec2 profile = objectProfile(u, u_objectFalloffs[i]);
     field.z += elevation * profile.x;
-    if (dist > 1e-4) {
-      vec2 radial = toPoint / dist;
-      vec2 tangential = vec2(-radial.y, radial.x);
-      vec2 gradU = radial / radius - tangential * (shape.y / (u_peaks[i].z * shape.x * shape.x));
-      gradU = clamp(gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
-      field.xy = clamp(
-        field.xy + (elevation * profile.y) * gradU, -PEAK_GRADIENT_LIMIT, PEAK_GRADIENT_LIMIT);
-    }
+    vec2 gradU = clamp(profileU.yz, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
+    field.xy = clamp(
+      field.xy + (elevation * profile.y) * gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
   }
   return field;
 }
 
-vec2 peakSwell(vec2 p) {
+vec2 objectSwell(vec2 p) {
   vec2 swell = vec2(0.0);
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
-    float u = dist / radius;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    // Skipped for the same reason objectField skips it, and it has to be the
+    // same test in both: this displaces the vertices whose normals that one
+    // tilts, so an object contributing to one and not the other would light a
+    // surface that is not the surface being drawn. isActiveObject is the CPU
+    // twin of exactly this guard.
+    if (objectBehindMask(u_objectOrders[i])) continue;
+    vec2 toPoint = p - u_objects[i].xy;
+    float radius = u_objects[i].z;
+    float u = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, radius, u_objectRotations[i]).x;
     if (u >= 1.0) continue;
-    float height = u_peaks[i].w * peakProfile(u, u_peakFalloffs[i]).x;
+    float height = u_objects[i].w * objectProfile(u, u_objectFalloffs[i]).x;
     float coefficient = clamp(
-      MASK_PEAK_SWELL * height / radius, -MASK_PEAK_SWELL_LIMIT, MASK_PEAK_SWELL_LIMIT);
+      MASK_OBJECT_SWELL * height / radius, -MASK_OBJECT_SWELL_LIMIT, MASK_OBJECT_SWELL_LIMIT);
     swell += coefficient * toPoint;
   }
   return swell;
+}
+`;
+
+/**
+ * Sampling a light's silhouette, in the fragment stage only.
+ *
+ * A near-copy of the object block's tile reader rather than a shared one,
+ * because the two differ in the constant that decides where a slot lives --
+ * the atlas is 3x3 here and 4x4 there -- and GLSL ES 1.0 gives no way to
+ * parameterize that without passing the grid down through every call. Two
+ * short readers over one encoder is the cheaper of the two duplications.
+ *
+ * Fragment-only is the other difference, and it is why there is no
+ * supportsVertexTextures gate on any of this: an object's shape is read in the
+ * vertex stage to displace geometry, where WebGL1 does not promise a texture
+ * unit exists at all. A light only ever shades.
+ */
+const LIGHT_FIELD_GLSL = `
+#define MAX_LIGHT_SOURCES ${MAX_MASK_LIGHT_SOURCES}
+#define LIGHT_SDF_GRID ${glFloat(LIGHT_SDF_GRID)}
+#define LIGHT_SDF_ATLAS ${glFloat(LIGHT_SDF_ATLAS)}
+
+uniform mediump sampler2D u_lightShapes;
+uniform mediump float u_lightShapeRows[MAX_LIGHT_SOURCES];
+uniform mediump float u_lightShapeMaxDepth[MAX_LIGHT_SOURCES];
+
+vec3 lightShapeTexel(float row, vec2 texel) {
+  float col = mod(row, LIGHT_SDF_GRID);
+  float band = floor(row / LIGHT_SDF_GRID);
+  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
+  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / LIGHT_SDF_ATLAS;
+  vec4 stored = texture2D(u_lightShapes, uv);
+  return vec3(
+    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
+    stored.ba * 2.0 - 1.0);
+}
+
+// The signed distance at a point in the shape's own normalized space, positive
+// inside. Only the distance: nothing here lights from the gradient, so the two
+// components the object block renormalizes are left where they are.
+float lightDepthAt(float row, vec2 n) {
+  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
+  vec2 base = floor(local);
+  vec2 f = local - base;
+  float top = mix(lightShapeTexel(row, base).x, lightShapeTexel(row, base + vec2(1.0, 0.0)).x, f.x);
+  float bottom = mix(
+    lightShapeTexel(row, base + vec2(0.0, 1.0)).x,
+    lightShapeTexel(row, base + vec2(1.0, 1.0)).x,
+    f.x);
+  return mix(top, bottom, f.y);
+}
+
+/**
+ * How far along its falloff a point sits relative to one light, as
+ * vec2(u, beyond).
+ *
+ * The first is 0 at the silhouette's deepest interior point and 1 on the
+ * outline -- the same quantity objectU produces, and what the highlight ramps
+ * over. The second is how far past the outline the point is in mesh units, 0
+ * anywhere inside, and is what the shadow ramps over.
+ *
+ * Two numbers rather than one because the shadow reaches much further than the
+ * shape does. A light's falloff routinely runs several radii out, while the
+ * distance tile only covers OBJECT_SDF_MARGIN of one -- so past that edge the
+ * field has nothing left to say and a shadow ramped straight off it would
+ * flatten out early, at a hard ring the shape of the tile.
+ *
+ * What happens past the edge is therefore an extrapolation, and *which* one
+ * matters more than it looks. The sample is taken where the ray leaves the
+ * tile and then carried outward: stepping directly away from a shape increases
+ * the distance to it at a rate of one, so the overshoot is simply subtracted.
+ * That is exact along the ray the nearest point actually lies on, conservative
+ * elsewhere, and continuous at the boundary -- the overshoot is zero there, so
+ * there is no seam to see.
+ *
+ * It also keeps the shape's *direction*, which is the whole point. This used
+ * to fade over to the distance from the bounding circle instead, on the
+ * reasoning that far away any shape is roughly its own circle. That is true of
+ * a blob and badly false of anything with a bite out of it: for a crescent it
+ * lit the notch as though the shape filled it, put a bright ring around the
+ * bounding circle where the fade pulled the shadow back off, and left a dark
+ * band inside it where the real distance still showed through. A crescent
+ * lights like a crescent all the way out, or the shape may as well not be
+ * there.
+ *
+ * The shapeless branch is not an approximation of the shaped one, it is the
+ * same thing written out: a normalized circle has depth 1 - |n| with a maximum
+ * of 1, so u = |n| = dist/radius and beyond = dist - radius, which is what the
+ * lighting did before a light could be shaped at all. The extrapolation
+ * preserves that identity exactly rather than approximately -- carrying
+ * 1 - OBJECT_SDF_MARGIN outward by the overshoot lands back on 1 - |n| -- so a
+ * circular light and a shapeless one agree everywhere, not merely inside the
+ * tile. Both branches also agree with the two ramps the old code wrote
+ * directly in distance -- see drawMaskMesh -- so an unshaped light lights
+ * exactly as it always has.
+ */
+vec2 lightProfile(float row, float maxDepth, vec2 toPoint, float radius) {
+  float dist = length(toPoint);
+  if (row < 0.0) return vec2(dist / radius, max(dist - radius, 0.0));
+
+  vec2 n = toPoint / radius;
+  float reach = length(n);
+  float overshoot = max(reach - OBJECT_SDF_MARGIN, 0.0);
+  // Scaled rather than branched, and guarded rather than divided blind: the
+  // ratio is 1 anywhere inside the tile, and the reach is 0 at the exact
+  // centre of the shape, which is a point every light has.
+  vec2 sampled = n * min(1.0, OBJECT_SDF_MARGIN / max(reach, 1e-6));
+  float depth = lightDepthAt(row, sampled) - overshoot;
+
+  return vec2(1.0 - depth / maxDepth, max(-depth * radius, 0.0));
+}
+`;
+
+/**
+ * Carrying an object's pixels with it, in the fragment stage only.
+ *
+ * Every other object uniform describes where an object *is*; these describe
+ * where it *was*, and the whole feature is the difference between the two. An
+ * object the client has marked lifted and an effect is animating arrives with
+ * both poses -- the animated one in u_objects, the resting one here -- and this
+ * reads the base image back through the transform between them, so the picture
+ * inside the object travels with it instead of the relief sliding over a
+ * picture that stays put.
+ *
+ * The footprint it vacates has to be punched out by hand, because nothing about
+ * the mesh moves out of the way: an object's triangles are displaced radially by
+ * objectSwell and never translate, so the geometry over the old location is
+ * still there and still drawing. `hole` minus `body` is what is left of the rest
+ * footprint once the current one is subtracted back out, and that is the alpha
+ * the fragment gives up.
+ *
+ * Region tests read the undisplaced mesh position, the same space objectField
+ * and objectFill are asked about, while the sample point is derived from
+ * gl_FragCoord -- so an object whose rest pose is its current pose samples
+ * exactly the texel it samples today, and turning lift on changes nothing until
+ * something actually moves.
+ */
+const OBJECT_LIFT_GLSL = `
+uniform mediump vec4 u_objectLifts[MAX_MASK_OBJECTS];
+
+struct ObjectLift {
+  vec2 uv;
+  float body;
+  // The same two again for the objects stacked behind the mask, kept apart from
+  // the pair above because the two layers composite on opposite sides of the
+  // sheet -- see the fragment's main, where they are laid down in order.
+  vec2 underUv;
+  float under;
+  float hole;
+};
+
+// One pixel of feather at the outline, in the normalized units u is measured
+// in: u spans the radius, so a pixel is 1/radius of it. Analytic rather than
+// fwidth because this is called from inside a loop whose per-object guards are
+// not uniform control flow, where a derivative is undefined.
+float objectCoverage(float u, float radius) {
+  float width = 1.0 / max(radius, 1.0);
+  return 1.0 - smoothstep(1.0 - width, 1.0, u);
+}
+
+ObjectLift objectLift(vec2 meshPos) {
+  vec2 own = gl_FragCoord.xy / u_resolution;
+  ObjectLift lift = ObjectLift(own, 0.0, own, 0.0, 0.0);
+  float nearest = 1.0;
+  float bestOrder = -1e9;
+  float underNearest = 1.0;
+  float underBestOrder = -1e9;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (u_objectLifts[i].w < 0.5) continue;
+
+    vec2 center = u_objects[i].xy;
+    float radius = u_objects[i].z;
+    vec2 restCenter = u_objectLifts[i].xy;
+    float restRadius = max(u_objectLifts[i].z, 1.0);
+    float row = u_objectShapeRows[i];
+    float maxDepth = u_objectShapeMaxDepth[i];
+
+    // The same outline asked about twice. Normalizing by each pose's own radius
+    // is what makes the two agree: a point at u inside the rest footprint is at
+    // the same u inside the current one, whatever the scale between them -- and
+    // whatever the rotation, which is why only the current pose carries one.
+    // The footprint being vacated is the one the image was painted in, and that
+    // one was never turned.
+    float body = objectU(row, maxDepth, meshPos - center, radius, u_objectRotations[i]).x;
+    float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius, OBJECT_ROTATION_NONE).x;
+    float coverage = objectCoverage(body, radius);
+    // The hole is not split by side, and must not be: a footprint is vacated by
+    // the object leaving it whichever way the object then stacks, and an object
+    // behind the mask is carrying the mask's own pixels away from exactly the
+    // ground the mask is drawn on. Punching it is what makes the piece read as
+    // having detached rather than as a copy sliding out from under a whole one.
+    lift.hole = max(lift.hole, objectCoverage(rest, restRadius));
+
+    float scale = radius / restRadius;
+    vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+    // Reading the image back through the whole transform, not just the scale:
+    // the object got to where it is by being scaled and then turned, so the
+    // texel it is standing on is found by undoing both, in that order.
+    vec2 there = restCenter + objectToShape(u_objectRotations[i], here - center) / scale;
+    vec2 sampled = vec2(there.x, u_resolution.y - there.y) / u_resolution;
+
+    // The higher order takes the sample, and depth settles it only between
+    // objects of the same order -- which is what keeps two overlapping pieces
+    // reading one image each rather than averaging into a double exposure, the
+    // job depth alone used to do. Accumulated per side, so a piece behind the
+    // mask never wins the sample the layer in front of it is drawn from.
+    float order = u_objectOrders[i];
+    if (objectBehindMask(order)) {
+      lift.under = max(lift.under, coverage);
+      if (objectOutranks(order, underBestOrder, body, underNearest)) {
+        underBestOrder = order;
+        underNearest = body;
+        lift.underUv = sampled;
+      }
+    } else {
+      lift.body = max(lift.body, coverage);
+      if (objectOutranks(order, bestOrder, body, nearest)) {
+        bestOrder = order;
+        nearest = body;
+        lift.uv = sampled;
+      }
+    }
+  }
+  return lift;
 }
 `;
 
@@ -138,6 +507,7 @@ attribute vec3 a_barycentric;
 attribute vec2 a_uv;
 attribute vec2 a_centroid;
 attribute vec4 a_highlight;
+attribute vec4 a_fillOverlay;
 
 uniform mediump vec2 u_resolution;
 
@@ -146,10 +516,11 @@ varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying vec4 v_highlight;
+varying vec4 v_fillOverlay;
 varying vec2 v_meshPos;
-${PEAK_FIELD_GLSL}
+${OBJECT_FIELD_GLSL}
 void main() {
-  vec2 displaced = a_position + peakSwell(a_position);
+  vec2 displaced = a_position + objectSwell(a_position);
   vec2 zeroToOne = displaced / u_resolution;
   vec2 clipSpace = zeroToOne * 2.0 - 1.0;
   gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);
@@ -157,20 +528,23 @@ void main() {
   v_barycentric = a_barycentric;
   v_uv = a_uv;
   v_meshPos = a_position;
-  vec2 centroid = a_centroid + peakSwell(a_centroid);
+  vec2 centroid = a_centroid + objectSwell(a_centroid);
   v_lightSourcePos = vec2(centroid.x, u_resolution.y - centroid.y);
   v_highlight = a_highlight;
+  v_fillOverlay = a_fillOverlay;
 }
 `,
   fragment: `
 #extension GL_OES_standard_derivatives : enable
 precision mediump float;
-${PEAK_FIELD_GLSL}
+${OBJECT_FIELD_GLSL}
+${LIGHT_FIELD_GLSL}
 varying vec3 v_color;
 varying vec3 v_barycentric;
 varying vec2 v_uv;
 varying vec2 v_lightSourcePos;
 varying vec4 v_highlight;
+varying vec4 v_fillOverlay;
 varying vec2 v_meshPos;
 
 #define BUMP_STRENGTH ${glFloat(MASK_BUMP_STRENGTH)}
@@ -180,8 +554,6 @@ uniform vec2 u_resolution;
 
 const vec3 STROKE_COLOR = vec3(${MASK_STROKE_COLOR.slice(0, 3).map(glFloat).join(", ")});
 const float STROKE_ALPHA = ${glFloat(MASK_STROKE_COLOR[3])};
-
-#define MAX_LIGHT_SOURCES 8
 
 #define STROKE_WIDTH_PX ${glFloat(MASK_STROKE_WIDTH_PX)}
 #define HIGHLIGHT_STROKE_WIDTH_PX ${glFloat(MASK_HIGHLIGHT_STROKE_WIDTH_PX)}
@@ -201,43 +573,53 @@ uniform sampler2D u_mask;
 uniform float u_maskActive;
 uniform vec3 u_glowColor;
 
-uniform vec4 u_peakBlackPoints[MAX_MASK_PEAKS];
+// How far this pass is held back toward flat grey: 1 while the backing
+// sheet is drawn under a mask that is still streaming, 0 for the
+// triangles laid over it and for everything on a settled mask. The
+// caller draws the two in separate passes -- see drawMaskMesh.
+uniform float u_backingGrey;
+#define BACKING_GREY_LEVEL ${glFloat(MASK_BACKING_GREY_LEVEL)}
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
-#define BLACK_POINT_HALO_MAX ${glFloat(PEAK_BLACK_POINT_HALO_MAX)}
-#define BLACK_POINT_HALO_EASE ${glFloat(PEAK_BLACK_POINT_HALO_EASE)}
-#define BLACK_POINT_HALO_FADE ${glFloat(PEAK_BLACK_POINT_HALO_FADE)}
-#define BLACK_POINT_RELIEF_K ${glFloat(PEAK_BLACK_POINT_RELIEF_K)}
-#define PEAK_FALLOFF_MIN ${glFloat(MIN_MASK_PEAK_FALLOFF)}
-#define PEAK_FALLOFF_MAX ${glFloat(MAX_MASK_PEAK_FALLOFF)}
+uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
+${OBJECT_LIFT_GLSL}
 
-vec4 peakBlackPoint(vec2 p) {
-  vec3 color = vec3(0.0);
-  float total = 0.0;
-  float weight = 0.0;
-  for (int i = 0; i < MAX_MASK_PEAKS; i++) {
-    if (i >= u_peakCount) break;
-    vec2 toPoint = p - u_peaks[i].xy;
-    float dist = length(toPoint);
-    float theta = dist > 1e-4 ? atan(toPoint.y, toPoint.x) : 0.0;
-    float radius = u_peaks[i].z * peakShapeAt(u_peakShapeRows[i], theta).x;
-    float u = dist / radius;
-    float falloff = max(u_peakFalloffs[i], PEAK_FALLOFF_MIN);
-    float reliefEnd = sqrt(max(1.0 - pow(BLACK_POINT_RELIEF_K, 1.0 / falloff), 0.0));
-    float haloT = clamp((falloff - PEAK_FALLOFF_MIN) / (PEAK_FALLOFF_MAX - PEAK_FALLOFF_MIN), 0.0, 1.0);
-    float halo = BLACK_POINT_HALO_MAX * pow(haloT, BLACK_POINT_HALO_EASE);
-    if (u >= reliefEnd + halo) continue;
-    float t = clamp((u - reliefEnd) / max(halo, 1e-4), 0.0, 1.0);
-    float w = pow(1.0 - t, BLACK_POINT_HALO_FADE) * u_peakBlackPoints[i].a;
-    color += u_peakBlackPoints[i].rgb * w;
-    total += w;
-    weight = max(weight, w);
+// The flat fill an object's own color paints over its interior, as
+// vec4(rgb, alpha) -- read before any lighting is applied, so highlight,
+// shadow and bump shading all still land on top of it exactly as they would
+// on a textured object. Where two filled objects overlap the higher order
+// takes the sample and depth settles the rest, the same tie-break objectLift
+// uses -- and the same reason, to keep overlapping objects from blending into
+// each other.
+//
+// This fills the outline, which is a smoothed description of the region and
+// not the region itself, so it is not how a resting object is coloured -- the
+// caller paints those on their own triangles, through a_fillOverlay below,
+// and leaves their slots here at zero alpha. What is left for this is the
+// objects an effect is animating: a vertex attribute cannot travel, and their
+// colour has to arrive wherever the pose does.
+vec4 objectFill(vec2 p, bool behind) {
+  vec4 fill = vec4(0.0);
+  float nearest = 1.0;
+  float bestOrder = -1e9;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (u_objectFills[i].a <= 0.0) continue;
+    // One side at a time, because the two are painted into different layers:
+    // an animating object's colour has to arrive wherever its pose does, and
+    // for an object behind the mask that is underneath the mask's own pixels.
+    float order = u_objectOrders[i];
+    if (objectBehindMask(order) != behind) continue;
+    vec2 toPoint = p - u_objects[i].xy;
+    float u = objectU(
+      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
+    if (u >= 1.0) continue;
+    if (!objectOutranks(order, bestOrder, u, nearest)) continue;
+    bestOrder = order;
+    nearest = u;
+    fill = u_objectFills[i];
   }
-  return total > 0.0 ? vec4(color / total, weight) : vec4(0.0);
-}
-
-vec3 liftToBlackPoint(vec3 color, vec4 blackPoint) {
-  vec3 lifted = blackPoint.rgb + clamp(color, 0.0, 1.0) * (1.0 - blackPoint.rgb);
-  return mix(color, lifted, blackPoint.a);
+  return fill;
 }
 
 void main() {
@@ -247,10 +629,123 @@ void main() {
   vec3 highlightFactors = smoothstep(vec3(0.0), baryDeriv * HIGHLIGHT_STROKE_WIDTH_PX, v_barycentric);
   float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
 
-  vec2 screenUV = gl_FragCoord.xy / u_resolution;
-  vec3 base = u_hasTexture > 0.5 ? texture2D(u_texture, screenUV).rgb : v_color;
+  ObjectLift lift = objectLift(v_meshPos);
+  vec4 mask = texture2D(u_mask, v_uv);
 
-  vec3 field = peakField(v_meshPos);
+  // Three layers, composited back to front. Writing that down is the point of
+  // this block: the three things that used to live here were each a special
+  // case of it, and each of them was discovered by something looking wrong on
+  // screen.
+  //
+  // The resting layer is the mask as it sits -- the picture at this fragment's
+  // own position, seen through the silhouette, less whatever a lift has taken
+  // away from here. On either side of it sits a travelling layer: the piece a
+  // lifted object is carrying over this fragment, in front of the mask or
+  // behind it according to that object's order. Source-over throughout, in
+  // straight rather than premultiplied alpha, which is how the context is
+  // configured and how gl_FragColor is read.
+  //
+  // The layer behind is the whole of what an order below zero buys. The mask
+  // occludes it exactly as far as the mask is opaque, so a piece travelling
+  // under the sheet surfaces only through the transparency in it -- and since a
+  // negative order raises no relief either (see objectField), that is the only
+  // way such a piece is ever seen at all.
+  vec2 restingUv = gl_FragCoord.xy / u_resolution;
+  vec4 restingTexel = u_hasTexture > 0.5 ? texture2D(u_texture, restingUv) : vec4(v_color, 1.0);
+  vec4 carriedTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv) : vec4(v_color, 1.0);
+  vec4 underTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.underUv) : vec4(v_color, 1.0);
+
+  // What the travelling layer delivers: coverage of the object's outline times
+  // the source's own alpha at the texel being carried. An outline is a
+  // smoothed description of a region and reaches past it freely, so part of
+  // what a lift carries is routinely background rather than drawing -- and
+  // there is no colour under a transparent pixel. delia.png stores pure white
+  // beneath every one of them, which is what an exporter left rather than
+  // anything anyone drew, so those samples have to contribute nothing.
+  float carried = lift.body * carriedTexel.a;
+
+  // How much of the resting layer is here at all, before any lift.
+  //
+  // The source's own alpha when there is a source, because it is the exact
+  // answer and u_mask is an approximation of it: the curve is fit a pixel
+  // outside the drawing on purpose (see clip_silhouette) so that it can never
+  // shave anything off, which necessarily means it also covers ground the
+  // drawing does not, and it fills all of that at a hard 1. On delia that is
+  // 13,471 pixels of antialiased outline rendered fully opaque. The curve is
+  // still what answers this when no texture has loaded, which is what it was
+  // always for -- a mesh that stops at the silhouette needs something to say
+  // where the silhouette is.
+  //
+  // Nothing about the travelling layer belongs in this term. It used to be
+  // written "hole minus body", which let any lifted footprint cancel any hole:
+  // a second object passing over the first one's hole refilled it with the
+  // picture that had been taken away, and did so most visibly where its own
+  // texels were transparent and it was painting nothing at all. Whether a hole
+  // is covered is not a question this term should answer -- it is settled
+  // below, by covering it.
+  //
+  // Nor does the hole need weighting by what stood here, which was an attempt
+  // to say the same thing from the wrong end and got the sign of it backwards:
+  // multiplying the hole by the source alpha leaves 1 - alpha behind, so the
+  // softer the drawing's edge the *more* of it survived being carried away,
+  // and a lifted piece bordering transparency left a bright rim of itself
+  // standing exactly where it had been. With coverage read from the source to
+  // begin with, a hole is simply a hole and takes all of whatever was there.
+  float restingCoverage = u_hasTexture > 0.5 ? restingTexel.a : mix(1.0, mask.a, u_maskActive);
+  float restingAlpha = restingCoverage * (1.0 - lift.hole);
+
+  // What the layer behind the mask delivers, tinted by its own object's fill
+  // before anything above it is laid down. The fill rides on this layer rather
+  // than on 'base' below for the same reason the pixels do: a colour belonging
+  // to a piece behind the sheet has to be occluded by the sheet, and painting
+  // it into the composite would put it in front of the mask instead.
+  vec4 behindFill = objectFill(v_meshPos, true);
+  float under = lift.under * underTexel.a;
+  vec3 underRgb = mix(underTexel.rgb, behindFill.rgb, behindFill.a);
+
+  // The mask laid over what is behind it. Everything above reads this pair as
+  // one layer, which is what keeps the front travelling layer's own compositing
+  // -- and 'beneath' with it -- exactly the arithmetic it already was.
+  float lowerAlpha = restingAlpha + under * (1.0 - restingAlpha);
+  float safeLower = max(lowerAlpha, 1e-4);
+  vec3 lowerRgb =
+    (restingTexel.rgb * restingAlpha + underRgb * under * (1.0 - restingAlpha)) / safeLower;
+
+  float alpha = carried + lowerAlpha * (1.0 - carried);
+  // Guarded rather than branched: the numerator vanishes with the denominator,
+  // and at an alpha this low there is nothing to see either way.
+  float safeAlpha = max(alpha, 1e-4);
+  vec3 textured = (carriedTexel.rgb * carried + lowerRgb * lowerAlpha * (1.0 - carried)) / safeAlpha;
+
+  // The resting layer's share of the result, and so how much of the mask's own
+  // decoration still belongs to this fragment. Everything below that is
+  // synthesized rather than photographed -- a resting object's fill, the
+  // wireframe, the glow -- is scaled by it. That is what makes a lift read as
+  // a cut-out on a plane above the mask instead of something sliding along
+  // underneath its markings.
+  //
+  // Still the *resting* layer's share alone, and deliberately not the lower
+  // pair's: the layer behind the mask is occluded by the mask exactly where the
+  // mask has decoration to scale, so it takes nothing away from it. Reading
+  // lowerAlpha here instead would let a piece passing underneath brighten the
+  // wireframe and the glow it is supposed to be hidden behind.
+  float beneath = restingAlpha * (1.0 - carried) / safeAlpha;
+
+  vec4 fill = objectFill(v_meshPos, false);
+  vec3 base = mix(textured, fill.rgb, fill.a);
+  // The same fill, per-triangle: a mesh is what an object is made of, so its
+  // triangles are what its colour belongs to, and the shape test above can
+  // only reach the smoothed outline -- spilling colour past the triangles the
+  // object owns, stopping short of ones it does, and missing entirely a
+  // triangle toggled in or out of the object mid-review, which moves no
+  // outline. Every object the caller paints from a_fillOverlay has its own
+  // u_objectFills slot zeroed, so the two never double up.
+  // Scaled by beneath where the two meet: this is a *resting* object's
+  // colour, pinned to triangles that are not moving, and a piece travelling
+  // over one is in front of it.
+  base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a * beneath);
+
+  vec3 field = objectField(v_meshPos);
   vec3 normal = normalize(vec3(-field.xy, 1.0));
   vec3 surface = vec3(v_meshPos, field.z);
   float bumpLit = 0.0;
@@ -260,9 +755,17 @@ void main() {
   float leastShadow = 0.0;
   for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
     if (i >= u_lightSourceCount) break;
-    float dist = distance(v_lightSourcePos, u_lightSourceCenters[i]);
-    float highlight = 1.0 - smoothstep(u_lightSourceRadii[i] * 0.35, u_lightSourceRadii[i], dist);
-    float shadow = smoothstep(u_lightSourceRadii[i], u_lightSourceRadii[i] + u_lightSourceFalloffs[i], dist);
+    // Into the mesh's own orientation before the silhouette is asked anything.
+    // Centres and centroids are both held flipped for the bump light below,
+    // and flipping is y -> H - y, so the difference between two of them is the
+    // mesh-space offset with its y negated -- and a stored outline is measured
+    // in mesh space. Sampling with the flipped offset would mirror every
+    // asymmetric light about its own centre.
+    vec2 offset = v_lightSourcePos - u_lightSourceCenters[i];
+    vec2 profile = lightProfile(
+      u_lightShapeRows[i], u_lightShapeMaxDepth[i], vec2(offset.x, -offset.y), u_lightSourceRadii[i]);
+    float highlight = 1.0 - smoothstep(0.35, 1.0, profile.x);
+    float shadow = smoothstep(0.0, u_lightSourceFalloffs[i], profile.y);
     float shadowContribution = shadow * u_lightSourceDarknesses[i];
     bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i]);
     leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
@@ -278,18 +781,47 @@ void main() {
   }
 
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec4 blackPoint = peakBlackPoint(v_meshPos);
-  vec3 shaded = liftToBlackPoint(lit - leastShadow - bumpShade, blackPoint);
-  vec3 strokeColor = liftToBlackPoint(STROKE_COLOR - leastShadow - bumpShade, blackPoint);
-  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA);
+  vec3 shaded = lit - leastShadow - bumpShade;
+  vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
+  // The wireframe belongs to the triangle being rasterized, and under a
+  // travelling piece that triangle is behind it.
+  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA * beneath);
 
-  vec4 mask = texture2D(u_mask, v_uv);
-  vec3 withGlow = mix(withEdge, u_glowColor, mask.r * u_maskActive);
+  // The glow's own colour answers "what is a fragment out here worth when
+  // there is nothing to sample". Past the silhouette the mesh has stopped, so
+  // the only description of the edge left is the mean measure_glow averaged
+  // over it, and painting that outward is how a glowing or shadowed subject
+  // avoids coming out cut from paper.
+  //
+  // With a texture loaded there IS something to sample, and the mean is then
+  // strictly the worse answer: lift.uv lands on the source's own edge pixels
+  // and textured already holds them, at their real colour, one by one.
+  // Measured over delia's band those pixels have a standard deviation of ~29
+  // per channel and a quarter of them differ from the single synthesized
+  // colour by more than 40 -- so the mix was flattening a real, varied soft
+  // edge into one flat dark band, on top of the pixels it was averaged from.
+  //
+  // Scaled by beneath for the same reason as the layers above: the profile is
+  // measured from the resting silhouette and read at v_uv, the resting mesh's
+  // own coordinate, which knows nothing about what has moved. Without it a
+  // piece crossing an outline -- the outer one, or any of the interior holes
+  // the glow is stroked around too -- picks up a band of the glow's colour and
+  // reads as passing beneath a line that is not in the drawing at all.
+  float glowMix = mask.r * u_maskActive * beneath * (u_hasTexture > 0.5 ? 0.0 : 1.0);
+  vec3 withGlow = mix(withEdge, u_glowColor, glowMix);
 
-  float captureEdge = highlightEdge * v_highlight.a;
-  vec3 withCaptureStroke = mix(withGlow, v_highlight.rgb, captureEdge);
+  float lightEdge = highlightEdge * v_highlight.a;
+  vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
 
-  gl_FragColor = vec4(withCaptureStroke, mix(1.0, mask.a, u_maskActive));
+  // Last of all, so that it takes the picture and everything drawn on
+  // it together: the sheet is being held back as a whole, and a
+  // wireframe or a glow left at full colour on a greyed sheet would
+  // read as belonging to the triangles rather than to what is behind
+  // them.
+  float luma = dot(withLightStroke, LUMA);
+  vec3 greyed = mix(withLightStroke, vec3(luma * BACKING_GREY_LEVEL), u_backingGrey);
+
+  gl_FragColor = vec4(greyed, alpha);
 }
 `,
 };
@@ -333,12 +865,14 @@ export interface GLState {
   uvBuffer: WebGLBuffer;
   centroidBuffer: WebGLBuffer;
   highlightBuffer: WebGLBuffer;
+  fillOverlayBuffer: WebGLBuffer;
   positionLoc: number;
   colorLoc: number;
   barycentricLoc: number;
   uvLoc: number;
   centroidLoc: number;
   highlightLoc: number;
+  fillOverlayLoc: number;
   resolutionLoc: WebGLUniformLocation;
   lightSourceCentersLoc: WebGLUniformLocation;
   lightSourceRadiiLoc: WebGLUniformLocation;
@@ -346,15 +880,23 @@ export interface GLState {
   lightSourceIntensitiesLoc: WebGLUniformLocation;
   lightSourceDarknessesLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
-  peaksLoc: WebGLUniformLocation;
-  peakFalloffsLoc: WebGLUniformLocation;
-  peakCountLoc: WebGLUniformLocation;
-  peakShapesLoc: WebGLUniformLocation;
-  peakShapeRowsLoc: WebGLUniformLocation;
-  peakShapeSamplesLoc: WebGLUniformLocation;
-  peakBlackPointsLoc: WebGLUniformLocation;
-  peakShapeTexture: WebGLTexture;
-  peakShapeSignature: string;
+  objectsLoc: WebGLUniformLocation;
+  objectRotationsLoc: WebGLUniformLocation;
+  objectFalloffsLoc: WebGLUniformLocation;
+  objectOrdersLoc: WebGLUniformLocation;
+  objectCountLoc: WebGLUniformLocation;
+  objectShapesLoc: WebGLUniformLocation;
+  objectShapeRowsLoc: WebGLUniformLocation;
+  objectShapeMaxDepthLoc: WebGLUniformLocation;
+  objectFillsLoc: WebGLUniformLocation;
+  objectLiftsLoc: WebGLUniformLocation;
+  objectShapeTexture: WebGLTexture;
+  objectShapeSignature: string;
+  lightShapesLoc: WebGLUniformLocation;
+  lightShapeRowsLoc: WebGLUniformLocation;
+  lightShapeMaxDepthLoc: WebGLUniformLocation;
+  lightShapeTexture: WebGLTexture;
+  lightShapeSignature: string;
   supportsVertexTextures: boolean;
   textureMixLoc: WebGLUniformLocation;
   textureLoc: WebGLUniformLocation;
@@ -362,23 +904,51 @@ export interface GLState {
   maskLoc: WebGLUniformLocation;
   maskActiveLoc: WebGLUniformLocation;
   glowColorLoc: WebGLUniformLocation;
+  backingGreyLoc: WebGLUniformLocation;
 }
 
-export function encodePeakShapeTexture(shapes: (PeakShape | undefined)[], samples: number, rows: number): Uint8Array {
-  const data = new Uint8Array(samples * rows * 4);
-  shapes.forEach((shape, row) => {
-    if (!shape || row >= rows) return;
-    for (let i = 0; i < samples; i++) {
-      const offset = (row * samples + i) * 4;
-      const rho = Math.min(Math.max(shape.rho[i] ?? 1, 0), 1);
-      const slope = shape.rhoPrime[i] ?? 0;
-      const biased = Math.min(Math.max(slope / PEAK_SHAPE_SLOPE_RANGE, -1), 1) * 0.5 + 0.5;
-      const rhoScaled = rho * 255;
-      const slopeScaled = biased * 255;
-      data[offset] = Math.floor(rhoScaled);
-      data[offset + 1] = Math.round((rhoScaled - Math.floor(rhoScaled)) * 255);
-      data[offset + 2] = Math.floor(slopeScaled);
-      data[offset + 3] = Math.round((slopeScaled - Math.floor(slopeScaled)) * 255);
+/**
+ * Pack distance tiles into one atlas, laid out as a `grid` x `grid` grid of
+ * tiles in reading order, so a slot index is its tile index.
+ *
+ * `grid` is a parameter because objects and lights have different numbers of
+ * slots (16 and 8) and so different atlases, but identical tiles: the shapes
+ * come off the same builder at the same resolution, and only how many of them
+ * fit differs. The two shader-side readers take the grid as a constant each --
+ * see LIGHT_FIELD_GLSL.
+ *
+ * Per texel: the signed distance as a 16-bit big-endian-ish byte pair in
+ * red/green -- the same trick the angular table used, and read back by the
+ * same decodeObjectShape16 -- and the gradient's two components biased into
+ * blue/alpha a byte each. Eight bits of a unit vector component is about a
+ * third of a degree of direction, which the lighting cannot show.
+ *
+ * A shape whose own tile is smaller than OBJECT_SDF_TILE (the editor's draft
+ * resolution) is point-sampled up rather than rejected, so a drag preview
+ * uploads without a full-resolution rebuild first.
+ */
+export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[], grid = OBJECT_SDF_GRID): Uint8Array {
+  const atlas = grid * OBJECT_SDF_TILE;
+  const data = new Uint8Array(atlas * atlas * 4);
+  shapes.forEach((shape, slot) => {
+    if (!shape || slot >= grid * grid) return;
+    const tileCol = slot % grid;
+    const tileRow = Math.floor(slot / grid);
+    for (let row = 0; row < OBJECT_SDF_TILE; row++) {
+      for (let col = 0; col < OBJECT_SDF_TILE; col++) {
+        const sourceRow = Math.min(shape.tile - 1, Math.floor((row * shape.tile) / OBJECT_SDF_TILE));
+        const sourceCol = Math.min(shape.tile - 1, Math.floor((col * shape.tile) / OBJECT_SDF_TILE));
+        const source = sourceRow * shape.tile + sourceCol;
+
+        const biased = Math.min(Math.max(shape.sdf[source] / (2 * OBJECT_SDF_RANGE) + 0.5, 0), 1) * 255;
+        const x = tileCol * OBJECT_SDF_TILE + col;
+        const y = tileRow * OBJECT_SDF_TILE + row;
+        const offset = (y * atlas + x) * 4;
+        data[offset] = Math.floor(biased);
+        data[offset + 1] = Math.round((biased - Math.floor(biased)) * 255);
+        data[offset + 2] = Math.round(((shape.grad[source * 2] / 127) * 0.5 + 0.5) * 255);
+        data[offset + 3] = Math.round(((shape.grad[source * 2 + 1] / 127) * 0.5 + 0.5) * 255);
+      }
     }
   });
   return data;
@@ -397,7 +967,16 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvBuffer = gl.createBuffer();
   const centroidBuffer = gl.createBuffer();
   const highlightBuffer = gl.createBuffer();
-  if (!positionBuffer || !colorBuffer || !barycentricBuffer || !uvBuffer || !centroidBuffer || !highlightBuffer)
+  const fillOverlayBuffer = gl.createBuffer();
+  if (
+    !positionBuffer ||
+    !colorBuffer ||
+    !barycentricBuffer ||
+    !uvBuffer ||
+    !centroidBuffer ||
+    !highlightBuffer ||
+    !fillOverlayBuffer
+  )
     return undefined;
 
   const positionLoc = gl.getAttribLocation(program, "a_position");
@@ -406,13 +985,20 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const uvLoc = gl.getAttribLocation(program, "a_uv");
   const centroidLoc = gl.getAttribLocation(program, "a_centroid");
   const highlightLoc = gl.getAttribLocation(program, "a_highlight");
-  const peakShapeTexture = gl.createTexture();
-  if (!peakShapeTexture) return undefined;
-  gl.bindTexture(gl.TEXTURE_2D, peakShapeTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fillOverlayLoc = gl.getAttribLocation(program, "a_fillOverlay");
+  const objectShapeTexture = gl.createTexture();
+  const lightShapeTexture = gl.createTexture();
+  if (!objectShapeTexture || !lightShapeTexture) return undefined;
+  // NEAREST on both: the readers filter by hand out of four fetches, because
+  // WebGL1 makes no promise a vertex texture fetch filters at all and the two
+  // stages must not disagree about where a tile's edge is.
+  for (const texture of [objectShapeTexture, lightShapeTexture]) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
 
   const resolutionLoc = gl.getUniformLocation(program, "u_resolution");
   const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
@@ -421,19 +1007,26 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
   const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
-  const peaksLoc = gl.getUniformLocation(program, "u_peaks");
-  const peakFalloffsLoc = gl.getUniformLocation(program, "u_peakFalloffs");
-  const peakCountLoc = gl.getUniformLocation(program, "u_peakCount");
-  const peakShapesLoc = gl.getUniformLocation(program, "u_peakShapes");
-  const peakShapeRowsLoc = gl.getUniformLocation(program, "u_peakShapeRows");
-  const peakShapeSamplesLoc = gl.getUniformLocation(program, "u_peakShapeSamples");
-  const peakBlackPointsLoc = gl.getUniformLocation(program, "u_peakBlackPoints");
+  const objectsLoc = gl.getUniformLocation(program, "u_objects");
+  const objectRotationsLoc = gl.getUniformLocation(program, "u_objectRotations");
+  const objectFalloffsLoc = gl.getUniformLocation(program, "u_objectFalloffs");
+  const objectOrdersLoc = gl.getUniformLocation(program, "u_objectOrders");
+  const objectCountLoc = gl.getUniformLocation(program, "u_objectCount");
+  const objectShapesLoc = gl.getUniformLocation(program, "u_objectShapes");
+  const objectShapeRowsLoc = gl.getUniformLocation(program, "u_objectShapeRows");
+  const objectShapeMaxDepthLoc = gl.getUniformLocation(program, "u_objectShapeMaxDepth");
+  const lightShapesLoc = gl.getUniformLocation(program, "u_lightShapes");
+  const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
+  const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
+  const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
+  const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
   const textureLoc = gl.getUniformLocation(program, "u_texture");
   const hasTextureLoc = gl.getUniformLocation(program, "u_hasTexture");
   const maskLoc = gl.getUniformLocation(program, "u_mask");
   const maskActiveLoc = gl.getUniformLocation(program, "u_maskActive");
   const glowColorLoc = gl.getUniformLocation(program, "u_glowColor");
+  const backingGreyLoc = gl.getUniformLocation(program, "u_backingGrey");
   if (
     positionLoc < 0 ||
     colorLoc < 0 ||
@@ -441,6 +1034,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     uvLoc < 0 ||
     centroidLoc < 0 ||
     highlightLoc < 0 ||
+    fillOverlayLoc < 0 ||
     !resolutionLoc ||
     !lightSourceCentersLoc ||
     !lightSourceRadiiLoc ||
@@ -448,19 +1042,26 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceIntensitiesLoc ||
     !lightSourceDarknessesLoc ||
     !lightSourceCountLoc ||
-    !peaksLoc ||
-    !peakFalloffsLoc ||
-    !peakCountLoc ||
-    !peakShapesLoc ||
-    !peakShapeRowsLoc ||
-    !peakShapeSamplesLoc ||
-    !peakBlackPointsLoc ||
+    !objectsLoc ||
+    !objectRotationsLoc ||
+    !objectFalloffsLoc ||
+    !objectOrdersLoc ||
+    !objectCountLoc ||
+    !objectShapesLoc ||
+    !objectShapeRowsLoc ||
+    !objectShapeMaxDepthLoc ||
+    !lightShapesLoc ||
+    !lightShapeRowsLoc ||
+    !lightShapeMaxDepthLoc ||
+    !objectFillsLoc ||
+    !objectLiftsLoc ||
     !textureMixLoc ||
     !textureLoc ||
     !hasTextureLoc ||
     !maskLoc ||
     !maskActiveLoc ||
-    !glowColorLoc
+    !glowColorLoc ||
+    !backingGreyLoc
   )
     return undefined;
 
@@ -473,12 +1074,14 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     uvBuffer,
     centroidBuffer,
     highlightBuffer,
+    fillOverlayBuffer,
     positionLoc,
     colorLoc,
     barycentricLoc,
     uvLoc,
     centroidLoc,
     highlightLoc,
+    fillOverlayLoc,
     resolutionLoc,
     lightSourceCentersLoc,
     lightSourceRadiiLoc,
@@ -486,15 +1089,23 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceIntensitiesLoc,
     lightSourceDarknessesLoc,
     lightSourceCountLoc,
-    peaksLoc,
-    peakFalloffsLoc,
-    peakCountLoc,
-    peakShapesLoc,
-    peakShapeRowsLoc,
-    peakShapeSamplesLoc,
-    peakBlackPointsLoc,
-    peakShapeTexture,
-    peakShapeSignature: "",
+    objectsLoc,
+    objectRotationsLoc,
+    objectFalloffsLoc,
+    objectOrdersLoc,
+    objectCountLoc,
+    objectShapesLoc,
+    objectShapeRowsLoc,
+    objectShapeMaxDepthLoc,
+    objectFillsLoc,
+    objectLiftsLoc,
+    objectShapeTexture,
+    objectShapeSignature: "",
+    lightShapesLoc,
+    lightShapeRowsLoc,
+    lightShapeMaxDepthLoc,
+    lightShapeTexture,
+    lightShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
     textureMixLoc,
     textureLoc,
@@ -502,26 +1113,53 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     maskLoc,
     maskActiveLoc,
     glowColorLoc,
+    backingGreyLoc,
   };
 }
 
 export interface MaskLightSource {
+  /**
+   * The light's centre, in the flipped screen space the centroids are compared
+   * in. Kept flipped rather than in mesh space because it is also the light's
+   * position for the relief's own bump lighting, which works in that space --
+   * the silhouette flips back to mesh orientation at the point of sampling.
+   */
   x: number;
   y: number;
   radius: number;
   falloff: number;
   intensity: number;
   darkness: number;
+  /**
+   * The outline the light falls within, sampled as a distance tile, or
+   * undefined for one that has never been shaped. Undefined lights exactly as
+   * a disc of `radius` -- see lightProfile, where the two branches are the
+   * same formula.
+   */
+  shape?: ObjectShape;
 }
 
 export interface DrawMaskMeshOptions {
   vertexCount: number;
   lightSources: MaskLightSource[];
-  peaks: PeakGeometryInput[];
+  objects: ObjectGeometryInput[];
   textureMix: number;
   texture: WebGLTexture | undefined;
   maskTexture: WebGLTexture | undefined;
   glowColor: [number, number, number];
+  /**
+   * How many vertices at the front of the mesh are the backing sheet
+   * rather than mask triangles, and how far to hold that sheet back
+   * toward grey -- 0 for a settled mask, which is drawn as one pass.
+   *
+   * Taken as a count rather than a flag because the split is what
+   * makes the two passes possible at all: the sheet is laid down
+   * first and everything after it is the mesh, so one uniform can
+   * differ between the two without a per-vertex attribute to carry
+   * it. See MASK_BACKING_VERTEX_COUNT.
+   */
+  backingVertexCount?: number;
+  backingGrey?: number;
 }
 
 export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void {
@@ -558,61 +1196,120 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
   }
 
-  const activePeaks = options.peaks
-    .filter(isActivePeak)
-    .sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation))
-    .slice(0, MAX_MASK_PEAKS);
-  gl.uniform1i(state.peakCountLoc, activePeaks.length);
-  if (activePeaks.length > 0) {
-    const peaks = new Float32Array(activePeaks.length * 4);
-    const falloffs = new Float32Array(activePeaks.length);
-    const blackPoints = new Float32Array(activePeaks.length * 4);
-    activePeaks.forEach((peak, i) => {
-      peaks[i * 4] = peak.cx;
-      peaks[i * 4 + 1] = peak.cy;
-      peaks[i * 4 + 2] = Math.max(peak.radius, 1);
-      peaks[i * 4 + 3] = peak.elevation;
-      falloffs[i] = Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF);
-      blackPoints[i * 4] = peak.blackPoint?.r ?? 0;
-      blackPoints[i * 4 + 1] = peak.blackPoint?.g ?? 0;
-      blackPoints[i * 4 + 2] = peak.blackPoint?.b ?? 0;
-      blackPoints[i * 4 + 3] = peak.blackPoint?.a ?? 0;
+  // -1 is "no silhouette", which lightProfile reads as the disc every light was
+  // before one could be drawn. Filled for the whole array rather than for the
+  // lights in play, so a slot a light has just vacated cannot go on being
+  // sampled against the tile that light left behind.
+  const lightShapeRows = new Float32Array(MAX_MASK_LIGHT_SOURCES).fill(-1);
+  const lightShapeMaxDepth = new Float32Array(MAX_MASK_LIGHT_SOURCES).fill(1);
+  const lightShapes = activeLights.map((light) => light.shape);
+  if (lightShapes.some((shape) => shape !== undefined)) {
+    lightShapes.forEach((shape, i) => {
+      if (!shape) return;
+      lightShapeRows[i] = i;
+      lightShapeMaxDepth[i] = shape.maxDepth;
     });
-    gl.uniform4fv(state.peaksLoc, peaks);
-    gl.uniform1fv(state.peakFalloffsLoc, falloffs);
-    gl.uniform4fv(state.peakBlackPointsLoc, blackPoints);
-  }
-
-  const shapeRows = new Float32Array(MAX_MASK_PEAKS).fill(-1);
-  const shapes = activePeaks.map((peak) => peak.shape);
-  const usableShapes = state.supportsVertexTextures ? shapes : shapes.map(() => undefined);
-  const samples = usableShapes.find((shape) => shape !== undefined)?.rho.length;
-  if (samples !== undefined) {
-    usableShapes.forEach((shape, i) => {
-      if (shape) shapeRows[i] = i;
-    });
-    const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, state.peakShapeTexture);
-    if (signature !== state.peakShapeSignature) {
+    // Rebuilt only when the set of outlines actually changes: encoding eight
+    // tiles is real work, and the common frame changes nothing about them.
+    const signature = lightShapes.map((shape) => shape?.path ?? "").join("|");
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, state.lightShapeTexture);
+    if (signature !== state.lightShapeSignature) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
         gl.RGBA,
-        samples,
-        MAX_MASK_PEAKS,
+        LIGHT_SDF_ATLAS,
+        LIGHT_SDF_ATLAS,
         0,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        encodePeakShapeTexture(usableShapes, samples, MAX_MASK_PEAKS),
+        encodeObjectSdfAtlas(lightShapes, LIGHT_SDF_GRID),
       );
-      state.peakShapeSignature = signature;
+      state.lightShapeSignature = signature;
     }
-    gl.uniform1i(state.peakShapesLoc, 2);
-    gl.uniform1f(state.peakShapeSamplesLoc, samples);
+    gl.uniform1i(state.lightShapesLoc, 3);
   }
-  gl.uniform1fv(state.peakShapeRowsLoc, shapeRows);
+  gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
+  gl.uniform1fv(state.lightShapeMaxDepthLoc, lightShapeMaxDepth);
+
+  const activeObjects = drawnMaskObjects(options.objects);
+  gl.uniform1i(state.objectCountLoc, activeObjects.length);
+  if (activeObjects.length > 0) {
+    const objects = new Float32Array(activeObjects.length * 4);
+    const falloffs = new Float32Array(activeObjects.length);
+    const orders = new Float32Array(activeObjects.length);
+    const fills = new Float32Array(activeObjects.length * 4);
+    // Written for every slot in play on every draw, lifted or not: the w is
+    // the "is this one lifted" flag, and a slot left alone would go on being
+    // read against the pose whichever object held it last was animating from.
+    const lifts = new Float32Array(activeObjects.length * 4);
+    // Identity for the slots nothing is turning, for the same reason the lifts
+    // are written unconditionally: a slot carrying the matrix its last tenant
+    // spun by would sample every later object through that spin.
+    const rotations = new Float32Array(activeObjects.length * 4);
+    activeObjects.forEach((object, i) => {
+      objects[i * 4] = object.cx;
+      objects[i * 4 + 1] = object.cy;
+      objects[i * 4 + 2] = Math.max(object.radius, 1);
+      objects[i * 4 + 3] = object.elevation;
+      falloffs[i] = Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF);
+      orders[i] = object.order;
+      fills[i * 4] = object.fill?.r ?? 0;
+      fills[i * 4 + 1] = object.fill?.g ?? 0;
+      fills[i * 4 + 2] = object.fill?.b ?? 0;
+      fills[i * 4 + 3] = object.fill?.a ?? 0;
+      lifts[i * 4] = object.lift?.cx ?? object.cx;
+      lifts[i * 4 + 1] = object.lift?.cy ?? object.cy;
+      lifts[i * 4 + 2] = Math.max(object.lift?.radius ?? object.radius, 1);
+      lifts[i * 4 + 3] = object.lift ? 1 : 0;
+      const rotation = object.rotation?.inverse ?? OBJECT_ROTATION_NONE.inverse;
+      rotations[i * 4] = rotation[0];
+      rotations[i * 4 + 1] = rotation[1];
+      rotations[i * 4 + 2] = rotation[2];
+      rotations[i * 4 + 3] = rotation[3];
+    });
+    gl.uniform4fv(state.objectsLoc, objects);
+    gl.uniform4fv(state.objectRotationsLoc, rotations);
+    gl.uniform1fv(state.objectFalloffsLoc, falloffs);
+    gl.uniform1fv(state.objectOrdersLoc, orders);
+    gl.uniform4fv(state.objectFillsLoc, fills);
+    gl.uniform4fv(state.objectLiftsLoc, lifts);
+  }
+
+  const shapeRows = new Float32Array(MAX_MASK_OBJECTS).fill(-1);
+  const shapeMaxDepth = new Float32Array(MAX_MASK_OBJECTS).fill(1);
+  const shapes = activeObjects.map((object) => object.shape);
+  const usableShapes = state.supportsVertexTextures ? shapes : shapes.map(() => undefined);
+  if (usableShapes.some((shape) => shape !== undefined)) {
+    usableShapes.forEach((shape, i) => {
+      if (!shape) return;
+      shapeRows[i] = i;
+      shapeMaxDepth[i] = shape.maxDepth;
+    });
+    const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, state.objectShapeTexture);
+    if (signature !== state.objectShapeSignature) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        OBJECT_SDF_ATLAS,
+        OBJECT_SDF_ATLAS,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        encodeObjectSdfAtlas(usableShapes),
+      );
+      state.objectShapeSignature = signature;
+    }
+    gl.uniform1i(state.objectShapesLoc, 2);
+  }
+  gl.uniform1fv(state.objectShapeRowsLoc, shapeRows);
+  gl.uniform1fv(state.objectShapeMaxDepthLoc, shapeMaxDepth);
 
   gl.uniform1f(state.textureMixLoc, options.textureMix);
 
@@ -651,7 +1348,29 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.enableVertexAttribArray(state.highlightLoc);
   gl.vertexAttribPointer(state.highlightLoc, 4, gl.FLOAT, false, 0, 0);
 
-  gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
+  gl.bindBuffer(gl.ARRAY_BUFFER, state.fillOverlayBuffer);
+  gl.enableVertexAttribArray(state.fillOverlayLoc);
+  gl.vertexAttribPointer(state.fillOverlayLoc, 4, gl.FLOAT, false, 0, 0);
+
+  const backingGrey = options.backingGrey ?? 0;
+  const backingCount = Math.min(options.backingVertexCount ?? 0, options.vertexCount);
+  if (backingGrey <= 0 || backingCount === 0) {
+    gl.uniform1f(state.backingGreyLoc, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, options.vertexCount);
+    return;
+  }
+
+  // The sheet, then the mesh over it. Two passes rather than a
+  // vertex attribute saying which is which: the attribute would have
+  // to be kept in step with five other buffers on every triangle
+  // that arrives, to carry one value that is constant across each of
+  // the two runs. Nothing is blended (the context has no BLEND
+  // enabled), so a triangle simply takes the pixels it covers back
+  // to full colour.
+  gl.uniform1f(state.backingGreyLoc, backingGrey);
+  gl.drawArrays(gl.TRIANGLES, 0, backingCount);
+  gl.uniform1f(state.backingGreyLoc, 0);
+  gl.drawArrays(gl.TRIANGLES, backingCount, options.vertexCount - backingCount);
 }
 
 export function colorToRGB01(ctx: CanvasRenderingContext2D, color: string): [number, number, number] {
@@ -705,15 +1424,70 @@ export function uploadCurveMask(
   return texture;
 }
 
+/**
+ * Source images already fetched and decoded, by src.
+ *
+ * A mask draws the picture it was made from, so the first thing a
+ * drop needs is that picture -- at full size, which is not what the
+ * browser panel loaded (next/image serves it a resized one, under
+ * its own URL). Left to the drop, that fetch and decode is a cold
+ * one, and the canvas has nothing to show until it lands.
+ *
+ * Kept as decoded <img> elements rather than bitmaps because that is
+ * what texImage2D takes either way, and one element can be uploaded
+ * into as many contexts as ask for it -- the live preview and the
+ * settled mask that replaces it both want the same picture.
+ */
+const warmedImages = new Map<string, HTMLImageElement>();
+const WARMED_IMAGE_LIMIT = 4;
+
+function warmedImage(src: string): HTMLImageElement {
+  const held = warmedImages.get(src);
+  if (held) return held;
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.src = src;
+  warmedImages.set(src, image);
+  // Oldest first, which for this is also least recently armed: the
+  // cap is here to keep a session's worth of full-size pictures from
+  // being held forever, not to be clever about which one goes.
+  while (warmedImages.size > WARMED_IMAGE_LIMIT) {
+    const oldest = warmedImages.keys().next();
+    if (oldest.done || oldest.value === src) break;
+    warmedImages.delete(oldest.value);
+  }
+  return image;
+}
+
+/**
+ * Fetch and decode an image now, against a texture upload later.
+ *
+ * Called when an image is armed, so that the drop that follows finds
+ * it decoded and can upload it in the same frame the mask starts in.
+ * Costs nothing when it is not followed by a drop: the picture is one
+ * the browser would have fetched on the next drop anyway.
+ */
+export function warmImageTexture(src: string | undefined): void {
+  if (!src) return;
+  warmedImage(src);
+}
+
 export function loadImageTexture(
   gl: WebGLRenderingContext,
   src: string,
   onLoaded: (texture: WebGLTexture) => void,
   onError?: (error: unknown) => void,
 ): void {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.onload = () => {
+  let image = warmedImage(src);
+  // A held image whose fetch already failed has no event left to
+  // fire, so waiting on one would wait forever. Dropped and
+  // fetched again instead, which is what asking for it a second
+  // time means anyway.
+  if (image.complete && image.naturalWidth === 0) {
+    warmedImages.delete(src);
+    image = warmedImage(src);
+  }
+  const upload = () => {
     try {
       const texture = gl.createTexture();
       if (!texture) return;
@@ -729,10 +1503,27 @@ export function loadImageTexture(
       onError?.(error);
     }
   };
-  image.onerror = (error) => {
+  // Straight through when the picture is already here, which is the
+  // whole point of warming it: waiting for a load event that has
+  // already fired would put the upload a frame or more away, and on
+  // a warmed image there is no event left to wait for.
+  if (image.complete && image.naturalWidth > 0) {
+    upload();
+    return;
+  }
+  const onImageLoad = () => {
+    image.removeEventListener("error", onImageError);
+    upload();
+  };
+  const onImageError = (error: unknown) => {
+    image.removeEventListener("load", onImageLoad);
+    // Dropped rather than kept as a failure, so that a picture whose
+    // fetch failed once is tried again the next time it is asked for.
+    warmedImages.delete(src);
     onError?.(error);
   };
-  image.src = src;
+  image.addEventListener("load", onImageLoad, { once: true });
+  image.addEventListener("error", onImageError, { once: true });
 }
 
 export function parsePathPoints(d: string): [number, number][] {
@@ -818,51 +1609,222 @@ function assembleMaskMeshPositions(
   return { positions, uvs, centroids };
 }
 
-export interface PeakGeometryInput {
+/**
+ * The part of an object that answers "is this point inside it" -- its
+ * silhouette, its size and how it is turned, and nothing else.
+ *
+ * Every object is one of these; not everything that needs to ask is an object.
+ */
+export type ObjectOutline = Pick<ObjectGeometryInput, "cx" | "cy" | "radius" | "shape" | "rotation">;
+
+export interface ObjectGeometryInput {
   cx: number;
   cy: number;
   radius: number;
   elevation: number;
   falloff: number;
-  shape?: PeakShape;
-  blackPoint?: PeakBlackPoint_V1_0;
+  /**
+   * Where this object sits in the mask's stack -- see Object_V1_0.order, and
+   * u_objectOrders for the three things the shader does with it.
+   *
+   * Required rather than defaulted, unlike the four optional fields below it.
+   * A missing order would read as 0, and 0 is in front of the mask: an object
+   * meant to be behind it would silently render in front, which is the one
+   * mistake here that looks like nothing being wrong.
+   */
+  order: number;
+  shape?: ObjectShape;
+  fill?: ObjectFill_V1_0;
+  /**
+   * Where this object sits when nothing is animating it, for an object whose
+   * `lift` is on and which an effect is moving or scaling right now. Present
+   * means lifted: cx/cy/radius above are then the animated pose and these are
+   * the pose the source image was painted in, which is the pair objectLift
+   * needs to carry the image's own pixels along and leave a hole behind.
+   *
+   * Absent for every object at rest and for every unlifted one, and an object
+   * whose rest pose *is* its current pose renders identically either way --
+   * the transform between them is the identity and the hole is empty.
+   */
+  lift?: { cx: number; cy: number; radius: number };
+  /**
+   * How the object is turned right now, or absent for one sitting square --
+   * which is every object at rest, since a rotation is something an effect
+   * does to an object during playback and never part of what is stored.
+   */
+  rotation?: ObjectRotation;
 }
 
-export function isActivePeak(peak: PeakGeometryInput): boolean {
-  return peak.radius > 0 && peak.elevation !== 0;
+/**
+ * A rotate3d, as much of it as a flat relief can show.
+ *
+ * The object's outline lives in the z = 0 plane, so of the full 3x3 rotation
+ * only the upper-left 2x2 survives dropping z -- and that 2x2 is not merely
+ * the in-plane spin. Turning about x scales the shape down in y by cos(angle)
+ * and turning about y does the same in x, which is the foreshortening the DOM
+ * media types already get from CSS `rotate3d` with no `perspective` set. This
+ * is that same projection, arrived at the same way, so a mask object wired to
+ * the rotate unit tilts like an image wired to it.
+ *
+ * Stored inverted because sampling runs backwards: the shader has a mesh point
+ * and needs the point of the *unturned* shape that landed there, which is the
+ * inverse matrix applied to the offset. Row-major, `[a, b, c, d]` for
+ * `[[a, b], [c, d]]`.
+ */
+export interface ObjectRotation {
+  inverse: [number, number, number, number];
+  /**
+   * False once the turn has taken the shape edge-on, where the projected 2x2
+   * is singular: the outline has collapsed to a line with no area, there is no
+   * inverse, and there is nothing left to draw. Callers gate on
+   * `isActiveObject`, which folds this in, rather than testing it directly.
+   */
+  visible: boolean;
 }
 
-export function peakProfileK(u: number, falloff: number): number {
+export const OBJECT_ROTATION_NONE: ObjectRotation = { inverse: [1, 0, 0, 1], visible: true };
+
+// Below this the projected outline is thinner than a rounding error and the
+// inverse it would produce stretches the shape across the whole mesh, so
+// edge-on is called at the point the matrix stops being usable rather than at
+// exactly 90 degrees, which floating point never lands on anyway.
+const OBJECT_ROTATION_EDGE_ON = 1e-4;
+
+/**
+ * The projected rotation for one rotate3d, or undefined when there is nothing
+ * to turn -- a zero axis or a zero angle, both of which the rotate unit's
+ * defaults start at.
+ */
+export function objectRotation(x: number, y: number, z: number, angleDegrees: number): ObjectRotation | undefined {
+  const length = Math.hypot(x, y, z);
+  if (length === 0 || angleDegrees % 360 === 0) return undefined;
+  const angle = (angleDegrees * Math.PI) / 180;
+
+  // Rodrigues, but only the four entries that outlive the projection.
+  const [ax, ay, az] = [x / length, y / length, z / length];
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const t = 1 - cos;
+  const a = t * ax * ax + cos;
+  const b = t * ax * ay - sin * az;
+  const c = t * ax * ay + sin * az;
+  const d = t * ay * ay + cos;
+
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < OBJECT_ROTATION_EDGE_ON) return { inverse: [1, 0, 0, 1], visible: false };
+  return {
+    inverse: [d / determinant, -b / determinant, -c / determinant, a / determinant],
+    visible: true,
+  };
+}
+
+/** A mesh-space offset in the shape's own coordinates -- the shader's objectToShape. */
+export function objectToShape(rotation: ObjectRotation | undefined, x: number, y: number): [number, number] {
+  if (!rotation) return [x, y];
+  const [a, b, c, d] = rotation.inverse;
+  return [a * x + b * y, c * x + d * y];
+}
+
+/**
+ * Whether this object deforms the mesh -- the question the subdivision and the
+ * swelled hit-tests ask, and only that one.
+ *
+ * Elevation is what makes it true: objectSwell scales its displacement by
+ * `elevation * profile` and objectField accumulates `elevation * profile`, so a
+ * flat object moves no vertex and tilts no normal however large its radius.
+ * There is nothing to subdivide for and nothing to swell a hit-test against.
+ *
+ * An order behind the mask makes it false whatever the elevation, because both
+ * of those shader functions skip such an object outright -- a thing under a page
+ * does not emboss the page. This is the CPU twin of that guard and has to stay
+ * the same test: the mesh swell, the subdivision and the swelled hit-tests are
+ * all answers to "where did the geometry actually end up", and one of them
+ * disagreeing with the shader puts a light or a cursor somewhere the surface is
+ * not.
+ */
+export function isActiveObject(object: ObjectGeometryInput): boolean {
+  if (isBehindMask(object)) return false;
+  return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
+}
+
+/**
+ * Whether this object puts anything on screen -- the question the uniform
+ * upload asks, which is a strictly weaker one.
+ *
+ * Relief is not the only thing an object draws. objectFill fills its
+ * outline from centre, radius and rotation alone, with no reference to
+ * elevation at all, and objectLift carries the picture inside it from those
+ * same three. Both read `u_objects`, so both need the object in a slot -- and gating that upload
+ * on elevation, the way the deformation test does, is what made a flat object
+ * inert: never uploaded, so its color had nowhere to land and an effect
+ * animating its pose had no slot to write the new pose into, which is why a
+ * move, rotate or scale preview looked like it did nothing at all.
+ */
+export function isDrawnObject(object: ObjectGeometryInput): boolean {
+  if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  // Behind the mask, relief is not one of the things an object draws: the
+  // shader skips it, so elevation alone puts nothing on screen and would only
+  // cost a slot. What such an object can still show is what it carries and what
+  // it fills, both of which surface through the mask's own transparency.
+  if (isBehindMask(object)) return (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
+  return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
+}
+
+// Deepest relief first, since that is the one whose loss would show most if
+// there are more objects than the shader has slots for.
+function cappedByElevation<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return objects.sort((a, b) => Math.abs(b.elevation) - Math.abs(a.elevation)).slice(0, MAX_MASK_OBJECTS);
+}
+
+export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return cappedByElevation(objects.filter(isActiveObject));
+}
+
+export function drawnMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
+  return cappedByElevation(objects.filter(isDrawnObject));
+}
+
+export function objectProfileK(u: number, falloff: number): number {
   const s = Math.max(1 - u * u, 0);
   return Math.pow(Math.max(s, 1e-4), falloff);
 }
 
-export function peakShapeRhoAt(shape: PeakShape | undefined, theta: number): number {
-  if (!shape) return 1;
-  const samples = shape.rho.length;
-  const t = ((theta + Math.PI) / (2 * Math.PI)) * samples;
-  const index = Math.floor(t);
-  const lower = shape.rho[((index % samples) + samples) % samples];
-  const upper = shape.rho[(((index + 1) % samples) + samples) % samples];
-  return Math.max(lower + (upper - lower) * (t - index), PEAK_SHAPE_MIN_RHO);
+/**
+ * How far along its falloff a mesh-space point sits within one object -- the
+ * TypeScript twin of the shader's objectU, minus the gradient no CPU caller
+ * needs.
+ *
+ * 0 at the object's deepest interior point, 1 at its outline, above 1 outside
+ * it. Callers asking "is this point in the object" want `u < 1`, which is the
+ * same test the shader's early-out makes.
+ *
+ * Takes an outline rather than a whole object because that is all it reads, and
+ * because most of what asks it is not holding an object at all -- a hit-test
+ * and a membership sweep both build a bare silhouette to ask about, and neither
+ * has an elevation or a place in the stack to give.
+ */
+export function objectProfileUAt(object: ObjectOutline, point: [number, number]): number {
+  const [nx, ny] = objectToShape(
+    object.rotation,
+    (point[0] - object.cx) / object.radius,
+    (point[1] - object.cy) / object.radius,
+  );
+  if (!object.shape) return Math.hypot(nx, ny);
+  return objectShapeProfileU(object.shape, nx, ny);
 }
 
-export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[]): [number, number] {
+export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {
   let dx = 0;
   let dy = 0;
-  for (const peak of peaks) {
-    const toPointX = point[0] - peak.cx;
-    const toPointY = point[1] - peak.cy;
-    const dist = Math.hypot(toPointX, toPointY);
-    const radius = peak.shape
-      ? peak.radius * peakShapeRhoAt(peak.shape, dist > 1e-4 ? Math.atan2(toPointY, toPointX) : 0)
-      : peak.radius;
-    const u = dist / radius;
+  for (const object of objects) {
+    const toPointX = point[0] - object.cx;
+    const toPointY = point[1] - object.cy;
+    const u = objectProfileUAt(object, point);
     if (u >= 1) continue;
-    const height = peak.elevation * peakProfileK(u, Math.max(peak.falloff, MIN_MASK_PEAK_FALLOFF));
+    const height = object.elevation * objectProfileK(u, Math.max(object.falloff, MIN_MASK_OBJECT_FALLOFF));
     const coefficient = Math.min(
-      Math.max((MASK_PEAK_SWELL * height) / peak.radius, -MASK_PEAK_SWELL_LIMIT),
-      MASK_PEAK_SWELL_LIMIT,
+      Math.max((MASK_OBJECT_SWELL * height) / object.radius, -MASK_OBJECT_SWELL_LIMIT),
+      MASK_OBJECT_SWELL_LIMIT,
     );
     dx += coefficient * toPointX;
     dy += coefficient * toPointY;
@@ -872,13 +1834,13 @@ export function peakSwellAt(point: [number, number], peaks: PeakGeometryInput[])
 
 const MAX_EDGE_SUBDIVISION_POINTS = 6;
 
-function edgeSwellSag(a: [number, number], b: [number, number], peaks: PeakGeometryInput[]): number {
-  const swellA = peakSwellAt(a, peaks);
-  const swellB = peakSwellAt(b, peaks);
+function edgeSwellSag(a: [number, number], b: [number, number], objects: ObjectGeometryInput[]): number {
+  const swellA = objectSwellAt(a, objects);
+  const swellB = objectSwellAt(b, objects);
   let worst = 0;
   for (const t of [0.25, 0.5, 0.75]) {
     const at: [number, number] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    const swellAt = peakSwellAt(at, peaks);
+    const swellAt = objectSwellAt(at, objects);
     worst = Math.max(
       worst,
       Math.hypot(
@@ -890,10 +1852,10 @@ function edgeSwellSag(a: [number, number], b: [number, number], peaks: PeakGeome
   return worst;
 }
 
-function edgeSubdivisionCount(a: [number, number], b: [number, number], peaks: PeakGeometryInput[]): number {
-  const sag = edgeSwellSag(a, b, peaks);
-  if (!(sag > PEAK_SUBDIVISION_TOLERANCE_PX)) return 0;
-  return Math.min(Math.ceil(Math.sqrt(sag / PEAK_SUBDIVISION_TOLERANCE_PX)) - 1, MAX_EDGE_SUBDIVISION_POINTS);
+function edgeSubdivisionCount(a: [number, number], b: [number, number], objects: ObjectGeometryInput[]): number {
+  const sag = edgeSwellSag(a, b, objects);
+  if (!(sag > OBJECT_SUBDIVISION_TOLERANCE_PX)) return 0;
+  return Math.min(Math.ceil(Math.sqrt(sag / OBJECT_SUBDIVISION_TOLERANCE_PX)) - 1, MAX_EDGE_SUBDIVISION_POINTS);
 }
 
 function pointsAlongEdge(a: [number, number], b: [number, number], n: number): [number, number][] {
@@ -920,7 +1882,7 @@ function edgeKey(idA: number, idB: number): string {
 
 function computeEdgeSubdivisionCounts(
   triangles: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): { ids: Map<[number, number], number>; counts: Map<string, number> } {
   const ids = new Map<[number, number], number>();
   const counts = new Map<string, number>();
@@ -934,7 +1896,7 @@ function computeEdgeSubdivisionCounts(
       const a = tri[i];
       const b = tri[j];
       const key = edgeKey(pointId(a, ids), pointId(b, ids));
-      if (!counts.has(key)) counts.set(key, edgeSubdivisionCount(a, b, peaks));
+      if (!counts.has(key)) counts.set(key, edgeSubdivisionCount(a, b, objects));
     }
   }
   return { ids, counts };
@@ -973,18 +1935,18 @@ function isStrictlyInsideTriangle(point: [number, number], tri: [number, number]
 function fanTriangulate(
   loop: [number, number][],
   tri: [number, number][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): [number, number][][] {
   if (loop.length === 3) return [[loop[0], loop[1], loop[2]]];
 
   let anchor: [number, number] | undefined;
   let bestElevation = 0;
-  for (const peak of peaks) {
-    const epicenter: [number, number] = [peak.cx, peak.cy];
-    if (Math.abs(peak.elevation) <= bestElevation) continue;
+  for (const object of objects) {
+    const epicenter: [number, number] = [object.cx, object.cy];
+    if (Math.abs(object.elevation) <= bestElevation) continue;
     if (!isStrictlyInsideTriangle(epicenter, tri)) continue;
     anchor = epicenter;
-    bestElevation = Math.abs(peak.elevation);
+    bestElevation = Math.abs(object.elevation);
   }
   const center: [number, number] = anchor ?? [
     loop.reduce((sum, [x]) => sum + x, 0) / loop.length,
@@ -998,31 +1960,31 @@ function fanTriangulate(
   return triangles;
 }
 
-function subdivideForPeaks(
+function subdivideForObjects(
   triangles: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): { outputTriangles: [number, number][][]; outputCounts: number[] } {
-  const { ids, counts } = computeEdgeSubdivisionCounts(triangles, peaks);
+  const { ids, counts } = computeEdgeSubdivisionCounts(triangles, objects);
   const outputTriangles: [number, number][][] = [];
   const outputCounts: number[] = [];
   for (const tri of triangles) {
-    const fanned = fanTriangulate(boundaryLoopForTriangle(tri, ids, counts), tri, peaks);
+    const fanned = fanTriangulate(boundaryLoopForTriangle(tri, ids, counts), tri, objects);
     outputTriangles.push(...fanned);
     outputCounts.push(fanned.length);
   }
   return { outputTriangles, outputCounts };
 }
 
-export function subdivideMeshForPeaks(
+export function subdivideMeshForObjects(
   corners: [number, number][],
   polygonPointSets: [number, number][][],
-  peaks: PeakGeometryInput[],
+  objects: ObjectGeometryInput[],
 ): {
   corners: [number, number][];
   polygonPointSets: [number, number][][];
   polygonOutputCounts: number[];
 } {
-  const active = peaks.filter(isActivePeak);
+  const active = objects.filter(isActiveObject);
   if (active.length === 0) {
     return { corners, polygonPointSets, polygonOutputCounts: polygonPointSets.map(() => 1) };
   }
@@ -1030,7 +1992,7 @@ export function subdivideMeshForPeaks(
   const cornerTriangles: [number, number][][] = [];
   for (let i = 0; i + 3 <= corners.length; i += 3) cornerTriangles.push(corners.slice(i, i + 3));
 
-  const { outputTriangles, outputCounts } = subdivideForPeaks([...cornerTriangles, ...polygonPointSets], active);
+  const { outputTriangles, outputCounts } = subdivideForObjects([...cornerTriangles, ...polygonPointSets], active);
 
   const cornerOutputCount = outputCounts.slice(0, cornerTriangles.length).reduce((sum, n) => sum + n, 0);
   return {
@@ -1046,9 +2008,11 @@ export function buildStaticMaskMesh(
     height: number;
     polygons: { d: string; fill: string }[];
     curves: { d: string; fill: string }[];
-    peaks: PeakGeometryInput[];
+    objects: ObjectGeometryInput[];
   },
   colorCtx: CanvasRenderingContext2D,
+  precomputed?: { corners: [number, number][]; polygonPointSets: [number, number][][] },
+  precomputedColors?: [number, number, number][],
 ): {
   positions: number[];
   colors: number[];
@@ -1058,13 +2022,13 @@ export function buildStaticMaskMesh(
   vertexCount: number;
   vertexRanges: [number, number][];
 } {
-  const built = buildWeldedMaskPointGroups(maskData);
+  const built = precomputed ?? buildWeldedMaskPointGroups(maskData);
   let corners = built.corners;
   let polygonPointSets = built.polygonPointSets;
   let polygonOutputCounts = polygonPointSets.map(() => 1);
 
-  if (maskData.peaks.some(isActivePeak)) {
-    const subdivided = subdivideMeshForPeaks(corners, polygonPointSets, maskData.peaks);
+  if (maskData.objects.some(isActiveObject)) {
+    const subdivided = subdivideMeshForObjects(corners, polygonPointSets, maskData.objects);
     corners = subdivided.corners;
     polygonPointSets = subdivided.polygonPointSets;
     polygonOutputCounts = subdivided.polygonOutputCounts;
@@ -1085,7 +2049,7 @@ export function buildStaticMaskMesh(
   const vertexRanges: [number, number][] = [];
   let vertex = corners.length;
   maskData.polygons.forEach((polygon, i) => {
-    const [r, g, b] = colorToRGB01(colorCtx, polygon.fill);
+    const [r, g, b] = precomputedColors?.[i] ?? colorToRGB01(colorCtx, polygon.fill);
     const outputCount = polygonOutputCounts[i] ?? 1;
     for (let t = 0; t < outputCount; t++) {
       colors.push(r, g, b, r, g, b, r, g, b);
@@ -1125,4 +2089,5 @@ export type MaskMeshRefs = {
   dirtyRef: React.RefObject<boolean>;
   curvesRef: React.RefObject<MaskCurve_V1_0[]>;
   glowColorRef: React.RefObject<[number, number, number]>;
+  backingVertexCountRef: React.RefObject<number>;
 };

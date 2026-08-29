@@ -25,6 +25,7 @@ interface ParameterSliderY {
   disabled?: boolean;
   title?: string;
   liveTitleRef?: RefObject<HTMLDivElement | null>;
+  escapeOverflow?: boolean;
 }
 export function ParameterSliderY({
   resolution,
@@ -38,6 +39,7 @@ export function ParameterSliderY({
   onCursorMove,
   disabled,
   title,
+  escapeOverflow,
   liveTitleRef,
 }: ParameterSliderY) {
   const [dynamicSizes] = useState(() => {
@@ -139,6 +141,7 @@ export function ParameterSliderY({
               disabled={disabled}
               title={title}
               liveTitleRef={liveTitleRef}
+              escapeOverflow={escapeOverflow}
             />
           </div>
           <div

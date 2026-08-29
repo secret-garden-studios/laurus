@@ -23,6 +23,7 @@ import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { ProjectImg } from "./project-img";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
+import { toCanvasDelta, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 
 interface DraggableProjectImg {
   mediaKey: string;
@@ -118,6 +119,7 @@ export function DraggableProjectImg({
   }, [coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
 
   const sensors = useSensors(useSensor(PointerSensor));
+  const canvasZoom = useCanvasZoomValue();
 
   const lazyLoadImgElementsRef = () => {
     if (!imgElementsRef.current) {
@@ -458,7 +460,7 @@ export function DraggableProjectImg({
         onDragStart={beginBodyDragCursor}
         onDragEnd={(e) => {
           endBodyDragCursor();
-          const delta = e.delta;
+          const delta = toCanvasDelta(e.delta, canvasZoom);
           onNewImgPosition(delta.x, delta.y);
         }}
       >

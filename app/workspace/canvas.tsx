@@ -1,4 +1,4 @@
-import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "./workspace.client";
 import { v4 as newUUID } from "uuid";
 import {
@@ -13,14 +13,21 @@ import { LaurusTool, UIActionType } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
-import { captureTriangleIndicesInCircle } from "./canvas-media/light-source-capture";
+import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
+import { maskGeometry } from "./canvas-media/mask-geometry";
+import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
+/* The drawing canvas lives inside the zoom transform, so its client rect is the
+   zoomed one while its buffer stays in unzoomed canvas units. Going through that
+   ratio puts the drop where the cursor actually is at any zoom level. */
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width === 0 ? 1 : canvas.width / rect.width;
+  const scaleY = rect.height === 0 ? 1 : canvas.height / rect.height;
   const p = {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
   };
   return p;
 }
@@ -135,11 +142,10 @@ export default function Canvas() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
     useContext(HoverContext);
-  const { captureMeshSection, createPeak, ...mask } = useContext(MaskContext);
+  const { lightMeshSection, createObject, ...mask } = useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
-  const topologyMode = uiState.tool.type === "mask" ? uiState.tool.editingTopology : false;
 
   const [pendingMaskDrop, setPendingMaskDrop] = useState<
     { imgData: LaurusImgResult; frame: { width: number; height: number; top: number; left: number } } | undefined
@@ -217,8 +223,8 @@ export default function Canvas() {
         }
         case "mask": {
           if (
-            !uiState.tool.capturingMeshSection &&
-            !uiState.tool.editingTopology &&
+            !uiState.tool.lightingMeshSection &&
+            !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
             break;
@@ -251,8 +257,8 @@ export default function Canvas() {
         }
         case "mask": {
           if (
-            !uiState.tool.capturingMeshSection &&
-            !uiState.tool.editingTopology &&
+            !uiState.tool.lightingMeshSection &&
+            !uiState.tool.raisingObjects &&
             uiState.browserElement?.type !== "img"
           )
             break;
@@ -472,6 +478,21 @@ export default function Canvas() {
     ],
   );
 
+  /* An armed image is one drop away from being a mask, and a mask draws
+     the picture it was made from at its own full size -- which is not the
+     one the browser panel loaded, since next/image serves that resized
+     and under its own URL. Fetched and decoded here, while the marquee is
+     still being drawn, so the drop can upload it in the frame it starts
+     in rather than leaving an empty frame on the canvas until the picture
+     lands. */
+  useEffect(() => {
+    if (uiState.browserElement?.type === "img") warmImageTexture(uiState.browserElement.value.src);
+    // The other way into a mask: an image already on the canvas,
+    // picked up with the mask tool. Nothing was armed in the
+    // browser for that one, so it is warmed from the selection.
+    warmImageTexture(activeMaskImg?.imgData.src);
+  }, [uiState.browserElement, activeMaskImg]);
+
   const handleMaskDrop = useCallback(
     (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
       const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
@@ -497,8 +518,12 @@ export default function Canvas() {
     const maskRect = maskCanvasEl.getBoundingClientRect();
     if (maskRect.width === 0 || maskRect.height === 0) return undefined;
 
-    const localX = dropArea.cx + drawingRect.left - maskRect.left;
-    const localY = dropArea.cy + drawingRect.top - maskRect.top;
+    // The drop area is in canvas units; the two rects are both zoomed, so the
+    // circle has to be scaled back up before it can be compared against them.
+    if (drawingRect.width === 0) return undefined;
+    const zoomed = drawingRect.width / drawingCanvas.width;
+    const localX = dropArea.cx * zoomed + drawingRect.left - maskRect.left;
+    const localY = dropArea.cy * zoomed + drawingRect.top - maskRect.top;
 
     const scaleX = maskCanvasEl.width / maskRect.width;
     const scaleY = maskCanvasEl.height / maskRect.height;
@@ -506,11 +531,11 @@ export default function Canvas() {
     return {
       cx: localX * scaleX,
       cy: localY * scaleY,
-      radius: dropArea.radius * scaleX,
+      radius: dropArea.radius * zoomed * scaleX,
     };
   }
 
-  const handleLightSourceCapture = useCallback(
+  const handleLightDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
@@ -521,14 +546,14 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      const polygonIndices = captureTriangleIndicesInCircle(maskData.polygons, meshCircle);
+      const polygonIndices = indicesInCircleFromCentroids(maskGeometry(maskData).centroids, meshCircle);
       if (polygonIndices.size === 0) return;
-      captureMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
+      lightMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
-    [selectedMaskKeys, coreState.canvasMasks, captureMeshSection],
+    [selectedMaskKeys, coreState.canvasMasks, lightMeshSection],
   );
 
-  const handleTopologyCapture = useCallback(
+  const handleTopologyDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
@@ -539,12 +564,9 @@ export default function Canvas() {
       const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
       if (!meshCircle) return;
 
-      createPeak(maskKey, meshCircle, {
-        ...uiState.stagedPeak,
-        shape: topologyMode === "shape" ? uiState.stagedPeak.shape : "",
-      });
+      createObject(maskKey, meshCircle, { ...uiState.stagedObject });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createPeak, uiState.stagedPeak, topologyMode],
+    [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject],
   );
 
   const handleDuplicateDrop = useCallback(
@@ -749,13 +771,13 @@ export default function Canvas() {
           if (newRadius < minRadius) break;
           const dropArea: ProjectCircle = { cx: anchor.x, cy: anchor.y, radius: newRadius };
 
-          if (uiState.tool.capturingMeshSection) {
-            handleLightSourceCapture(dropArea);
+          if (uiState.tool.lightingMeshSection) {
+            handleLightDrop(dropArea);
             break;
           }
 
-          if (uiState.tool.editingTopology) {
-            handleTopologyCapture(dropArea);
+          if (uiState.tool.raisingObjects && selectedMaskKeys.size === 1) {
+            handleTopologyDrop(dropArea);
             break;
           }
 
@@ -781,8 +803,9 @@ export default function Canvas() {
       minRadius,
       coreState.project.imgs,
       coreState.project.svgs,
-      handleLightSourceCapture,
-      handleTopologyCapture,
+      handleLightDrop,
+      handleTopologyDrop,
+      selectedMaskKeys,
       selectedImgKeys,
       selectedSvgKeys,
       setSelectedImgKeys,

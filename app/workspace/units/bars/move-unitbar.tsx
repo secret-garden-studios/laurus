@@ -70,9 +70,9 @@ export default function MoveUnitbar({
         return polyline200();
       case "mask":
         return texture300();
-      case "capture":
+      case "light":
         return asterisk300();
-      case "peak":
+      case "object":
         return antigravity300();
     }
   }, [target]);

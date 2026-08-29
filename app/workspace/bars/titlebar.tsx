@@ -22,6 +22,8 @@ import {
 } from "@/app/svg-repo";
 import { UIActionType } from "../states/ui-state";
 import Maskbar from "./maskbar";
+import Penbar from "./penbar";
+import Zoombar from "./zoombar";
 import LightSourcebar from "./lightsourcebar";
 
 export default function Titlebar() {
@@ -220,6 +222,7 @@ export default function Titlebar() {
           ...dynamicSizes.stats.container,
         }}
       >
+        <Zoombar />
         <div
           onClick={() => {
             uiDispatch({
@@ -422,6 +425,8 @@ export function Subtitlebar() {
               return <Mixbar />;
             case "mask":
               return <Maskbar />;
+            case "pen":
+              return <Penbar />;
           }
         })()}
       </div>
