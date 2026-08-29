@@ -28,7 +28,7 @@ export const Z_INDEX = {
   INTERACTION_CANVAS: 1000,
   ITEMS_STACKING_OFFSET: 1001,
   CONTEXT_MENU_OFFSET: 2000,
-  OBJECT_REVIEW_PANEL: 3000,
+  FLOATINGBAR: 3000,
 } as const;
 
 export type WorkspaceResolution =

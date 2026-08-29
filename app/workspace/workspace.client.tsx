@@ -58,7 +58,7 @@ import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/pro
 import { useToolCursor } from "./hooks/useToolCursor";
 import { deleteMaskObjectEffects, parseMaskLightInputId, parseMaskObjectInputId } from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
-import ObjectReviewPanel from "./object-review-panel";
+import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
@@ -109,6 +109,7 @@ import {
   defaultUIState,
   ProjectMediaContextMenu,
   LaurusTool,
+  defaultPenTool,
 } from "./states/ui-state";
 import {
   CoreAction,
@@ -1568,7 +1569,7 @@ export default function Workspace({
   const handleRewindAll = useCallback(
     async (playbackRate: number) => {
       if (uiState.playbackMode.type !== "stopped" || !uiState.filledForwards) return;
-      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
       handleMixRestoration();
       closeContextMenus();
       uiDispatch({
@@ -1621,7 +1622,7 @@ export default function Workspace({
 
   const handlePlayAll = useCallback(async () => {
     if (uiState.playbackMode.type !== "stopped") return;
-    if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
+    if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
     handleMixRestoration();
     closeContextMenus();
     uiDispatch({
@@ -1699,7 +1700,7 @@ export default function Workspace({
   const handlePlayTarget = useCallback(
     async (target: AnimationTarget) => {
       if (uiState.playbackMode.type !== "stopped") return;
-      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
       handleMixRestoration();
       closeContextMenus();
       if (uiState.activeElement !== undefined) {
@@ -1785,7 +1786,7 @@ export default function Workspace({
   const handleFastForwardAll = useCallback(
     async (playbackRate: number) => {
       if (uiState.playbackMode.type !== "stopped") return;
-      if (!confirmEndingMaskEdit(uiState.maskEdit, "starting playback")) return;
+      if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
       handleMixRestoration();
       closeContextMenus();
       uiDispatch({
@@ -2013,11 +2014,6 @@ export default function Workspace({
         setSelectedSvgKeys(new Set<string>());
         setSelectedMaskKeys(new Set<string>());
         notifyMaskSelectionChanged(undefined);
-        // The line above takes every mask's cues down, so the selection itself
-        // has to go with them, or a bar goes on reading a light the canvas has
-        // already forgotten -- its parameters over a mesh with nothing lit.
-        // Clearing it is also what hands the light source bar and the armed pen
-        // back their greeting; see isAwaitingRegionPick.
         uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
         if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
           uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
@@ -2079,6 +2075,12 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "p" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "pen" ? { type: "none" } : defaultPenTool;
         if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
@@ -2237,7 +2239,6 @@ export default function Workspace({
                   >
                     <Titlebar />
                   </div>
-                  <ObjectReviewPanel />
                   <div
                     style={{
                       gridRow: "3",
@@ -2482,6 +2483,7 @@ export default function Workspace({
                       </div>
                     </div>
                   </div>
+                  <Floatingbar />
                   {uiState.showMediaBrowser && (
                     <div
                       style={{

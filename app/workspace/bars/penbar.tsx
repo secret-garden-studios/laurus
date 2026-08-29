@@ -1,29 +1,18 @@
-import { useContext, useRef, useState } from "react";
-import { MaskContext, UIContext } from "../workspace.client";
+import { useContext, useState } from "react";
+import { UIContext } from "../workspace.client";
 import { inkPen300, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import { UIActionType, editedRegion, isMaskEditLocked } from "../states/ui-state";
+import { UIActionType } from "../states/ui-state";
+import { useObjectReview } from "../hooks/useObjectReview";
 
 const GRIDLINES_OPTIONS = [
   { label: "dim", value: false },
   { label: "bright", value: true },
 ] as const;
 
-/**
- * The pen's controls.
- *
- * Shown for the whole of a session -- an object under review, or a light --
- * and while the pen is armed with nothing open on it at all, which is the
- * first thing this renders. The panel below is this bar's supplement rather
- * than a thing of its own, so the two come and go together; see openMaskEdit
- * and isPenArmed in ui-state.
- */
 export default function Penbar() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { notifyMaskRetouchRequested } = useContext(MaskContext);
-  // `action.minWidth` holds the retouch button at the width of the longer of
-  // its two labels, so swapping to the in-progress one does not shunt the rest
-  // of the bar sideways just as the reviewer is watching it.
+  const { session, isLocked, setEditingShape } = useObjectReview();
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -36,7 +25,6 @@ export default function Penbar() {
             translateX: 14,
           },
           segment: { fontSize: 12 },
-          action: { marginLeft: 20, marginRight: 20, fontSize: 13, padding: "4px 12px", minWidth: 108 },
         };
       case "midhigh":
         return {
@@ -48,7 +36,6 @@ export default function Penbar() {
             translateX: 12,
           },
           segment: { fontSize: 11 },
-          action: { marginLeft: 14, marginRight: 14, fontSize: 12, padding: "3px 10px", minWidth: 96 },
         };
       case "midlow":
       case "low":
@@ -61,7 +48,6 @@ export default function Penbar() {
             translateX: 11,
           },
           segment: { fontSize: 11 },
-          action: { marginLeft: 12, marginRight: 12, fontSize: 11, padding: "3px 10px", minWidth: 88 },
         };
     }
   });
@@ -69,58 +55,8 @@ export default function Penbar() {
   const isStitchOn = uiState.tool.type === "pen" && uiState.tool.stitch;
   const isAddAnchorOn = uiState.tool.type === "pen" && uiState.tool.addAnchor;
   const showAnchors = uiState.tool.type !== "pen" || uiState.tool.showAnchors;
-
-  // A lock rather than a debounce: the recut holds the main thread for a
-  // couple of hundred milliseconds, and a second one queued behind the first
-  // would recut the mesh the first one produced -- doing real work to no
-  // effect and doubling the wait. The ref is the lock and the state is what
-  // renders off it, because a click can land before React has committed the
-  // disabled attribute. Same pairing the review panel uses for its own
-  // in-flight decision.
-  const retouchingRef = useRef(false);
-  const [isRetouching, setIsRetouching] = useState(false);
-
-  const session = uiState.maskEdit;
-  // Whether the outline's handles are up. This bar now stands through the
-  // whole of a session rather than only the half of it spent reshaping -- the
-  // pen stays selected while the panel picks over triangles instead (see
-  // defaultPenTool) -- so the three controls below have to say when there is
-  // no curve under them to act on. Everything else here still applies: the
-  // outline is drawn either way, so gridlines mean something, and a retouch
-  // cuts against the stored curve whether or not anyone is holding it.
   const handlesUp = session !== undefined && session.editingShape;
 
-  // A retouch recuts the mesh against the outline, so there has to be an
-  // outline: a candidate detection found no shape for has nothing to cut to,
-  // and a decided candidate is not the reviewer's to change until they unlock
-  // it.
-  //
-  // A light always has one by the time this bar is on screen, even one that
-  // stores none. This bar only ever appears while the pen is open, and the pen
-  // seeds an unshaped light with the disc it has been lighting with (see
-  // lightRegion) -- so there is a curve on the canvas to cut to whatever the
-  // light itself still holds.
-  const outline = session?.editedShape?.path ?? (session && editedRegion(session)?.shape);
-  const hasOutline = !!outline || session?.subject === "light";
-  const canRetouch = session !== undefined && !isMaskEditLocked(session) && hasOutline && !isRetouching;
-  const isRetouched = session?.retouch !== undefined;
-
-  const retouch = async () => {
-    if (!session || retouchingRef.current) return;
-    retouchingRef.current = true;
-    setIsRetouching(true);
-    try {
-      await notifyMaskRetouchRequested(session.maskKey);
-    } finally {
-      retouchingRef.current = false;
-      setIsRetouching(false);
-    }
-  };
-
-  // Armed -- picked from the toolbar with nothing open on it. Every control
-  // below is aimed at a curve there is not one of yet, so what the bar has to
-  // say instead is the one thing that would give it one. The crosshair on the
-  // canvas is the other half of the same sentence; see isPenArmed.
   if (!session) {
     return (
       <div style={{ display: "flex", alignItems: "center", height: "100%", width: "100%", overflowX: "auto" }}>
@@ -132,12 +68,10 @@ export default function Penbar() {
           scaleToContaier={true}
         />
         <span
-          title="hovering a mask shows where its lights and objects are"
           style={{
             display: "flex",
             alignItems: "center",
             height: "100%",
-            opacity: 0.6,
             userSelect: "none",
             ...dynamicSizes.toggle.div,
           }}
@@ -166,12 +100,28 @@ export default function Penbar() {
         scaleToContaier={true}
       />
       <div
-        title={
-          handlesUp
-            ? "keep the anchors on the outline. turn them off and the curve is left exactly where it is, drawn " +
-              "but no longer handled -- which is how to see it against the mesh with nothing on top of it"
-            : "the handles are down -- press 'edit shape' on the panel to bring the outline up"
-        }
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          opacity: isLocked ? 0.4 : 1,
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span style={{ textShadow: handlesUp ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"edit shape"}</span>
+        <Toggle
+          value={handlesUp}
+          disabled={isLocked}
+          onClick={() => {
+            if (!session) return;
+            setEditingShape(!session.editingShape);
+          }}
+          trackStyles={{ ...dynamicSizes.toggle.track }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
+      </div>
+      <div
         style={{
           display: "flex",
           alignItems: "center",
@@ -191,11 +141,6 @@ export default function Penbar() {
             const next = !uiState.tool.showAnchors;
             uiDispatch({
               type: UIActionType.SetTool,
-              // both of the other two are only worth anything with anchors on
-              // screen -- stitching is done by clicking them, and an anchor
-              // added where none can be seen is one nobody can then take hold
-              // of. A toggle left on over a bare curve would be a mode the pen
-              // was not really in
               value: {
                 ...uiState.tool,
                 showAnchors: next,
@@ -210,15 +155,6 @@ export default function Penbar() {
         />
       </div>
       <div
-        title={
-          !handlesUp
-            ? "the handles are down -- press 'edit shape' on the panel to bring the outline up"
-            : showAnchors
-              ? "click two anchors on the outline to draw the shortest curve between them. " +
-                "whatever lay between them comes off: a run of two or more branches off as an island of its own, " +
-                "a single anchor is deleted, and two neighbours just pull straight"
-              : "stitching is done by clicking anchors -- turn 'show anchors' back on to reach them"
-        }
         style={{
           display: "flex",
           alignItems: "center",
@@ -236,10 +172,6 @@ export default function Penbar() {
             const next = !uiState.tool.stitch;
             uiDispatch({
               type: UIActionType.SetTool,
-              // one click, two meanings, is no way to run a pen: stitching
-              // reads a click on an anchor and adding reads one on the curve
-              // between anchors, and those targets sit close enough together
-              // that having both live at once would make every click a guess
               value: { ...uiState.tool, stitch: next, addAnchor: next ? false : uiState.tool.addAnchor },
             });
           }}
@@ -249,15 +181,6 @@ export default function Penbar() {
         />
       </div>
       <div
-        title={
-          !handlesUp
-            ? "the handles are down -- press 'edit shape' on the panel to bring the outline up"
-            : showAnchors
-              ? "click anywhere on the outline and a new anchor is put down there. the curve does not move -- " +
-                "the segment is split into the two halves it already traced -- so this only ever hands you " +
-                "somewhere else to take hold of a run that had nothing to grab"
-              : "an anchor added where none can be seen is one nobody can take hold of -- turn 'show anchors' back on"
-        }
         style={{
           display: "flex",
           alignItems: "center",
@@ -275,7 +198,6 @@ export default function Penbar() {
             const next = !uiState.tool.addAnchor;
             uiDispatch({
               type: UIActionType.SetTool,
-              // see the stitch toggle: the two read clicks on the same outline
               value: { ...uiState.tool, addAnchor: next, stitch: next ? false : uiState.tool.stitch },
             });
           }}
@@ -285,12 +207,11 @@ export default function Penbar() {
         />
       </div>
       <div
-        title="dim draws the outline and its highlight overlays faintly, bright draws them fully"
         style={{
           display: "flex",
           alignItems: "center",
           height: "100%",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          opacity: handlesUp ? 1 : 0.4,
           ...dynamicSizes.toggle.div,
         }}
       >
@@ -301,10 +222,13 @@ export default function Penbar() {
             return (
               <span
                 key={option.label}
-                onClick={() => uiDispatch({ type: UIActionType.SetGridlinesBright, value: option.value })}
+                onClick={() => {
+                  if (!handlesUp) return;
+                  uiDispatch({ type: UIActionType.SetGridlinesBright, value: option.value });
+                }}
                 style={{
-                  cursor: "pointer",
-                  color: isSelected ? "inherit" : "rgb(67,67,67)",
+                  cursor: !handlesUp ? "" : "pointer",
+                  color: !handlesUp ? "rgb(67,67,67)" : isSelected ? "inherit" : "rgb(67,67,67)",
                   textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                   padding: "4px 8px",
                   ...dynamicSizes.segment,
@@ -316,35 +240,6 @@ export default function Penbar() {
           })}
         </div>
       </div>
-      <button
-        type="button"
-        disabled={!canRetouch}
-        onClick={() => void retouch()}
-        title={
-          isRetouching
-            ? "recutting the mesh..."
-            : !canRetouch
-              ? "there is no outline to recut the mesh against"
-              : "recut the mesh along the outline, so the triangles near the curve follow it instead of straddling " +
-                "it. worth doing after a stitch, which moves the curve across triangles that were never cut for it. " +
-                "nothing is saved until this is accepted"
-        }
-        style={{
-          flexShrink: 0,
-          borderRadius: 4,
-          border: "1px solid rgba(255, 255, 255, 0.2)",
-          background: isRetouched && !isRetouching ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.05)",
-          boxShadow: isRetouched && !isRetouching ? "0 0 10px 0px rgba(255, 255, 255, 0.25)" : "none",
-          color: "inherit",
-          fontFamily: "inherit",
-          opacity: canRetouch ? 1 : 0.4,
-          cursor: isRetouching ? "progress" : canRetouch ? "pointer" : "default",
-          transition: "background 0.3s, box-shadow 0.3s",
-          ...dynamicSizes.action,
-        }}
-      >
-        {isRetouching ? "retouching..." : "retouch"}
-      </button>
     </div>
   );
 }

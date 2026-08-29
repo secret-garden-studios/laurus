@@ -2616,6 +2616,25 @@ export function inkPen300(
   };
 }
 
+export function inkPen200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "public/material-ui/thin/ink_pen_24dp_E3E3E3_FILL1_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="m557.92-458.69-93.07-94.08 163.3-163.08-32.84-32.84-213.62 213.61-28.31-26.77 242.7-242.69 60.38 60.39 55.92-55.93 93.85 93.85-248.31 247.54ZM258.46-160h-93.08v-93.08l270.16-270.38 94.08 93.08L258.46-160Z"/>`,
+    ),
+  };
+}
+
 export function asterisk200(
   fill: string = "rgba(227, 227, 227, 1)",
   width: number = 24,
