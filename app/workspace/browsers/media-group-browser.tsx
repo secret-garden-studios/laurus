@@ -59,7 +59,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     notifyMaskSelectionChanged,
     notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
-    deleteObject,
     restackMaskObjects,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -75,13 +74,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   } = useContext(HoverContext);
   const [adding, setAdding] = useState(false);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
-  /**
-   * Which masks are showing their object stack.
-   *
-   * Local and unpersisted on purpose: it is a way of looking at the group, not
-   * a property of it, and a mask whose objects were being reordered last session
-   * has nothing to say to this one.
-   */
+
   const [expandedMaskKeys, setExpandedMaskKeys] = useState<Set<string>>(new Set());
   const toggleMaskExpanded = useCallback((key: string) => {
     setExpandedMaskKeys((current) => {
@@ -116,10 +109,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         return mask ? { type: "mask" as const, key, mask, order: meta.order } : undefined;
       })
       .filter((entry): entry is { type: "mask"; key: string; mask: LaurusMaskResult; order: number } => Boolean(entry));
-    // Front of the canvas first. Order feeds z-index, so the largest is what
-    // everything else is drawn under -- and a stack of layers is read topmost
-    // first, which is also how a mask's expanded objects read (see
-    // frontToBackObjects). Storage stays ascending; this is a reading of it.
+
     return frontToBackMedia([...imgItems, ...svgItems, ...maskItems]).map((entry) =>
       entry.type === "img"
         ? { type: "img" as const, key: entry.key, img: entry.img }
@@ -477,17 +467,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged],
   );
 
-  /**
-   * Open an object's context menu from its row, the way every other row here
-   * opens its own.
-   *
-   * Two dispatches rather than one, because a mask's menu is one component
-   * showing whichever of three things is selected on it (see the ContextMenu
-   * the mask item renders): selecting the object is what makes it the object's
-   * menu, and showContextMenu on the *mask's* key is what puts it on screen.
-   * Selecting alone left the row looking inert -- it moved the bars and lit the
-   * mesh, but nothing opened.
-   */
   const onObjectContextMenuClick = useCallback(
     (maskKey: string, objectId: number) => {
       uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
@@ -499,40 +478,16 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged, notifyMaskSelectedLightChanged],
   );
 
-  const onObjectDeleteClick = useCallback(
-    async (maskKey: string, objectId: number) => {
-      const confirmed = confirm("are you sure you want to delete this object?");
-      if (!confirmed) return;
-      await deleteObject(maskKey, objectId);
-    },
-    [deleteObject],
-  );
-
-  /**
-   * The rows every expanded mask contributes, keyed by mask.
-   *
-   * Computed here rather than in the row so that the drag handler and the
-   * rendering read the same list -- they have to agree on both the sequence and
-   * where the plane sits in it, and deriving it twice is how they would stop
-   * agreeing.
-   */
   const expandedStacks = useMemo(() => {
     const stacks = new Map<string, StackRow[]>();
     groupItems.forEach((item) => {
       if (item.type !== "mask" || !expandedMaskKeys.has(item.key)) return;
-      // A mask with nothing on it contributes no rows at all rather than a lone
-      // plane -- reachable by deleting the last object while the stack is open,
-      // since the expand button is already stood down at zero.
       if (item.mask.objects.length === 0) return;
       stacks.set(item.key, stackRows(item.mask.objects));
     });
     return stacks;
   }, [groupItems, expandedMaskKeys]);
 
-  /**
-   * The row ids one drag is allowed to land on: the ids of whichever list the
-   * dragged row itself belongs to.
-   */
   const siblingRowIds = useCallback(
     (activeId: string): Set<string> => {
       for (const [maskKey, rows] of expandedStacks) {
@@ -544,23 +499,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [expandedStacks, groupItems],
   );
 
-  /**
-   * closestCenter, narrowed to the dragged row's own list.
-   *
-   * An expanded mask's rows are rendered *inside* that mask's own sortable
-   * node, so the mask stays droppable over a rect that wraps its whole stack --
-   * and the centre of that rect sits in the middle of the block, competing with
-   * the rows themselves. Dragging a row toward the middle therefore resolved
-   * `over` to the mask rather than to the row under the cursor, and the drop was
-   * refused for belonging to no list. It failed in one direction only, which is
-   * what made it look arbitrary: dragging the mask row down moves away from that
-   * centre and keeps winning, dragging it up moves straight onto it.
-   *
-   * Filtering the candidates is the fix rather than standing the mask's
-   * droppable down, because that droppable is what lets other media be dropped
-   * onto an open mask in the group's own list. A row can only ever land on a row
-   * it could actually be ordered against, and nothing else needs to know.
-   */
   const collisionDetection = useCallback<CollisionDetection>(
     (args) => {
       const allowed = siblingRowIds(String(args.active.id));
@@ -574,15 +512,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  /**
-   * A drop that landed on an expanded mask's rows, or nothing.
-   *
-   * Object rows and media rows share the group's one DndContext, so the first
-   * thing a drop has to answer is which of the two lists it belongs to. A row
-   * dragged out of its own stack and onto another list is refused rather than
-   * reinterpreted: the two lists order different things, and there is no
-   * sensible reading of an object dropped among the group's media.
-   */
   const onObjectDrop = useCallback(
     (activeId: string, overId: string): boolean => {
       for (const [maskKey, rows] of expandedStacks) {
@@ -590,8 +519,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         const fromIndex = ids.indexOf(activeId);
         if (fromIndex === -1) continue;
         const toIndex = ids.indexOf(overId);
-        // Belongs to this stack but was dropped outside it -- handled, in the
-        // sense that it is certainly not a media reorder, and refused.
         if (toIndex === -1) return true;
         const mask = coreState.canvasMasks.get(maskKey);
         if (mask) restackMaskObjects(maskKey, restackFromDrop(mask.objects, rows, fromIndex, toIndex));
@@ -610,9 +537,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
       const oldIndex = groupItems.findIndex((item) => item.key === active.id);
       const newIndex = groupItems.findIndex((item) => item.key === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
-      // groupItems reads front to back, and restackGroupWithinProject takes it
-      // in exactly that reading -- so the drop is handed over as it landed,
-      // with no turning it over here for anyone to get backwards.
       const groupFrontToBack = arrayMove(groupItems, oldIndex, newIndex).map((item) => item.key);
       const allItems: StackedMedia[] = [
         ...Array.from(coreState.project.imgs, ([key, meta]) => ({ type: "img" as const, key, order: meta.order })),
@@ -780,7 +704,6 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                     if (!guardSelection({ type: "object", key: item.key, objectId })) return;
                     onObjectContextMenuClick(item.key, objectId);
                   }}
-                  onObjectRemoveClick={(objectId) => onObjectDeleteClick(item.key, objectId)}
                   objectRows={expandedStacks.get(item.key)}
                 />
               ))}
@@ -859,48 +782,18 @@ function MaskGroupThumbnail({
   );
 }
 
-/**
- * The dnd id one object's row answers to.
- *
- * Scoped by mask key because two masks in one group can both be expanded, and
- * their object ids are only unique within a mask.
- *
- * The mask's own plane rides in the same list under MASK_PLANE_ROW, as a row
- * rather than a line drawn between two groups -- a row is something a drag can
- * cross, and crossing it is the only gesture that changes which side of the
- * mask an object is on. See restackFromDrop.
- */
 function objectRowId(maskKey: string, objectId: number): string {
   return `${maskKey}::object::${objectId}`;
 }
 
-/**
- * The dnd id a mask's plane row answers to.
- *
- * Scoped by mask key for the same reason an object row is, and it has to be:
- * every expanded mask contributes its rows to the one group-wide DndContext, so
- * two masks open at once would otherwise register the same plane id twice and
- * drags would land on whichever won.
- */
 function planeRowId(maskKey: string): string {
   return `${maskKey}::plane`;
 }
 
-/** One expanded mask's rows as the dnd ids they register under, in row order. */
 function stackRowIds(maskKey: string, rows: readonly StackRow[]): string[] {
   return rows.map((row) => (row === MASK_PLANE_ROW ? planeRowId(maskKey) : objectRowId(maskKey, row)));
 }
 
-/**
- * The thumbnail an object shows in a group row.
- *
- * Built the way unit-display builds one: the mask's own source image, dimmed
- * and blurred so it reads as ground rather than as content, with the same
- * antigravity glyph over it that marks an object everywhere else in the app. An
- * object has no picture of its own -- it is a region of the mask's -- so the
- * glyph is what identifies it and the blur is what keeps four object rows on
- * one mask from looking like four copies of the same photograph.
- */
 function ObjectGroupThumbnail({
   mask,
   object,
@@ -978,7 +871,6 @@ interface MaskObjectRow {
   filenameMargin: number;
   removeOverlaySize: number;
   onContextMenuClick: () => void;
-  onRemoveClick: () => void;
 }
 function MaskObjectRow({
   maskKey,
@@ -992,18 +884,12 @@ function MaskObjectRow({
   filenameMargin,
   removeOverlaySize,
   onContextMenuClick,
-  onRemoveClick,
 }: MaskObjectRow) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: objectRowId(maskKey, object.id),
   });
-  const [isItemHovered, setIsItemHovered] = useState(false);
   const [isRowHovered, setIsRowHovered] = useState(false);
   const behind = isBehindMask(object);
-  const coveredPolygonCount = useMemo(
-    () => mask.polygons.filter((p) => p.object_id === object.id).length,
-    [mask.polygons, object.id],
-  );
 
   return (
     <div
@@ -1038,8 +924,6 @@ function MaskObjectRow({
         {label}
       </div>
       <div
-        onMouseEnter={() => setIsItemHovered(true)}
-        onMouseLeave={() => setIsItemHovered(false)}
         style={{
           display: "grid",
           gridTemplateColumns: `min-content ${filenameMargin}px auto ${filenameMargin}px min-content`,
@@ -1066,36 +950,22 @@ function MaskObjectRow({
         <div style={{ overflowX: "auto" }}>
           <div
             style={{
-              whiteSpace: "normal",
               textAlign: "center",
+              whiteSpace: "nowrap",
               color: behind ? "rgba(220, 220, 220, 0.5)" : "rgb(220, 220, 220)",
               ...filenameStyle,
             }}
           >
             {object.description ? object.description : object.name ? object.name : `object ${object.id}`}
           </div>
-          <div
-            style={{
-              whiteSpace: "nowrap",
-              textAlign: "center",
-              color: "rgba(220, 220, 220, 0.35)",
-              fontSize: Math.max(filenameStyle.fontSize - 2, 7),
-              letterSpacing: 1,
-            }}
-          >
-            {`${coveredPolygonCount} ${coveredPolygonCount === 1 ? "polygon" : "polygons"}`}
-          </div>
         </div>
         <div />
         <div style={{ padding: 4, height: "100%", width: "min-content" }}>
           <SvgRepo
-            title={"delete object"}
-            svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
+            svg={circle("rgba(0,0,0,0)")}
             scale={0.9}
             scaleToContaier={true}
-            onContainerClick={onRemoveClick}
-            style={{ cursor: "pointer" }}
-            containerStyle={{ cursor: "pointer", width: removeOverlaySize, height: removeOverlaySize }}
+            containerStyle={{ width: removeOverlaySize, height: removeOverlaySize }}
           />
         </div>
       </div>
@@ -1126,9 +996,8 @@ function MaskPlaneRow({
       style={{
         width: "100%",
         display: "flex",
-        background: `rgba(255, 255, 255, ${(isEven ? 0.05 : 0.075) + (isRowHovered ? 0.02 : 0)})`,
-        borderTop: "1px solid rgba(255, 255, 255, 0.25)",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.25)",
+        background: `rgba(255, 255, 255, ${(isEven ? 0 : 0.025) + (isRowHovered ? 0.02 : 0)})`,
+        border: `1px solid ${isRowHovered ? "rgba(255, 255, 255, 0.4)" : "rgba(0, 0, 0, 0)"}`,
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
@@ -1169,12 +1038,6 @@ interface MediaGroupRow {
   onRemoveFromGroupClick: () => void;
   onContextMenuClick: () => void;
   onObjectContextMenuClick: (objectId: number) => void;
-  onObjectRemoveClick: (objectId: number) => void;
-  /**
-   * The rows this mask's stack contributes, or undefined when it is not a mask
-   * or is collapsed. Handed down rather than derived here so that this and the
-   * group's drag handler cannot disagree about the sequence.
-   */
   objectRows: StackRow[] | undefined;
 }
 function MediaGroupRow({
@@ -1188,7 +1051,6 @@ function MediaGroupRow({
   onRemoveFromGroupClick,
   onContextMenuClick,
   onObjectContextMenuClick,
-  onObjectRemoveClick,
   objectRows,
 }: MediaGroupRow) {
   const { uiState } = useContext(UIContext);
@@ -1196,9 +1058,6 @@ function MediaGroupRow({
   const stackOpen = item.type === "mask" && objectRows !== undefined;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.key,
-    // Draggable only while the stack is shut, for the reason stackOpen gives.
-    // Droppable throughout, so other media can still be dropped past an open
-    // mask -- a bare boolean here would disable both.
     disabled: { draggable: stackOpen, droppable: false },
   });
   const [dynamicSizes] = useState(() => {
@@ -1289,16 +1148,10 @@ function MediaGroupRow({
     () => (objectRows === undefined ? [] : stackRowIds(item.key, objectRows)),
     [objectRows, item.key],
   );
-  // Every object the mask holds, whether or not the stack is open -- the expand
-  // button reads it to decide if there is anything to show.
+
   const objectCount = item.type === "mask" ? item.mask.objects.length : 0;
-  // The plane sits in the row list but is not one of the objects, so a row's
-  // position among the objects is its index less the plane once it is past it.
   const planeRowIndex = objectRows === undefined ? -1 : objectRows.indexOf(MASK_PLANE_ROW);
 
-  // Everything to the right of the drag handle. Hoisted out of the return
-  // because a mask draws it in one of two places: its own row when the stack is
-  // shut, and the plane's row inside the stack when it is open.
   const rowContent = (() => {
     switch (item.type) {
       case "img": {
@@ -1423,8 +1276,8 @@ function MediaGroupRow({
             >
               <div
                 style={{
-                  whiteSpace: "normal",
                   textAlign: "center",
+                  whiteSpace: "nowrap",
                   color: "rgb(220, 220, 220)",
                   ...dynamicSizes.filename.filename,
                 }}
@@ -1492,8 +1345,8 @@ function MediaGroupRow({
             >
               <div
                 style={{
-                  whiteSpace: "normal",
                   textAlign: "center",
+                  whiteSpace: "nowrap",
                   color: "rgb(220, 220, 220)",
                   ...dynamicSizes.filename.filename,
                 }}
@@ -1529,13 +1382,6 @@ function MediaGroupRow({
                 }}
               />
               <SvgRepo
-                title={
-                  objectCount === 0
-                    ? "no objects on this mask"
-                    : expanded
-                      ? "hide this mask's objects"
-                      : `show this mask's ${objectCount} ${objectCount === 1 ? "object" : "objects"}`
-                }
                 svg={
                   objectCount === 0
                     ? arrowDropDown("rgb(45, 45, 45)")
@@ -1561,9 +1407,6 @@ function MediaGroupRow({
   })();
 
   return (
-    // The expanded object rows live inside the sortable node, not beside it, so
-    // that a mask dragged within its group carries its own stack with it and the
-    // list measures one block instead of a row with orphans under it.
     <div
       ref={setNodeRef}
       style={{
@@ -1638,7 +1481,6 @@ function MediaGroupRow({
                 filenameMargin={dynamicSizes.filename.margin}
                 removeOverlaySize={removeOverlaySize}
                 onContextMenuClick={() => onObjectContextMenuClick(object.id)}
-                onRemoveClick={() => onObjectRemoveClick(object.id)}
               />
             );
           })}
