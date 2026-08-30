@@ -1,5 +1,5 @@
 import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CoreContext, convertTime, HoverContext, UIContext } from "../workspace.client";
+import { CoreContext, convertTime, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import Dial from "../../components/dial";
 import Toggle from "../../components/toggle";
@@ -11,7 +11,7 @@ import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselInd
 import SkewUnitbar from "./bars/skew-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
-import { carouselEntryMathKey } from "../effects-utils";
+import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
 import { SvgRepo, updateCounterClockwise } from "@/app/svg-repo";
 
 export interface SkewUnitControls {
@@ -32,11 +32,9 @@ export const defaultSkewEquation: LaurusSkewEquation = {
   limit_factor: MIN_LIMIT_FACTOR,
 };
 
-const isSkewCarouselEntry = (entry: CarouselEntry) => entry.type !== "light" && entry.type !== "object";
+export type SkewUnitTarget = CarouselEntry["type"];
 
-export type SkewUnitTarget = "img" | "svg" | "mask";
-
-const SKEW_TARGET_ORDER: SkewUnitTarget[] = ["img", "svg", "mask"];
+const SKEW_TARGET_ORDER: SkewUnitTarget[] = ["img", "svg", "mask", "light", "object"];
 
 const toDialAngle = (v: number, counterClockwise: boolean): number => {
   const x = Math.round(v) % 360;
@@ -50,6 +48,8 @@ interface SkewUnit {
 }
 export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
   const { coreState, dispatch } = useContext(CoreContext);
+  const { notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged } =
+    useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const { carouselIndex, setLocalIndex } = useCarouselIndex(
@@ -57,10 +57,8 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
     uiState.carouselEntries,
     carouselIndexInit,
     skew.skew_id,
-    isSkewCarouselEntry,
   );
-  const entryType = uiState.carouselEntries[carouselIndex]?.type;
-  const target: SkewUnitTarget = entryType === "svg" || entryType === "mask" ? entryType : "img";
+  const target: SkewUnitTarget = uiState.carouselEntries[carouselIndex]?.type ?? "img";
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<SkewUnitControls>({
     ax: 0,
@@ -145,9 +143,13 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
         case "mask": {
           return coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0] ?? "";
         }
-        case "object":
         case "light": {
-          return "";
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskLightInputId(maskKey, carouselEntry.lightId) : "";
+        }
+        case "object": {
+          const maskKey = coreState.project.masks.entries().find((m) => m[0] == carouselEntry.key)?.[0];
+          return maskKey ? maskObjectInputId(maskKey, carouselEntry.objectId) : "";
         }
       }
     } else {
@@ -212,13 +214,49 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
           uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
           break;
         }
-        case "object":
         case "light": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "light",
+            locallyActivatedEffectKey: skew.skew_id,
+            lightId: carouselEntry.lightId,
+          };
+          uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "light", lightId: carouselEntry.lightId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedLightChanged(newActiveElement.key, carouselEntry.lightId);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, undefined);
+          break;
+        }
+        case "object": {
+          const newActiveElement: LaurusActiveElement = {
+            key: carouselEntry.key,
+            type: "object",
+            locallyActivatedEffectKey: skew.skew_id,
+            objectId: carouselEntry.objectId,
+          };
+          uiDispatch({ type: UIActionType.SetActiveElement, value: newActiveElement });
+          uiDispatch({
+            type: UIActionType.SetSelectedElement,
+            value: { key: carouselEntry.key, type: "object", objectId: carouselEntry.objectId },
+          });
+          notifyMaskSelectionChanged(newActiveElement.key);
+          notifyMaskSelectedObjectChanged(newActiveElement.key, carouselEntry.objectId);
+          notifyMaskSelectedLightChanged(newActiveElement.key, undefined);
           break;
         }
       }
     },
-    [skew.skew_id, uiDispatch],
+    [
+      skew.skew_id,
+      uiDispatch,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
+    ],
   );
 
   const setActiveElementIfNull = useCallback(() => {
@@ -370,12 +408,7 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
     >
       {mainControls ? (
         <>
-          <UnitDisplay
-            carouselIndex={carouselIndex}
-            effectKey={skew.skew_id}
-            onNewLocalIndex={setLocalIndex}
-            isEntryWireable={isSkewCarouselEntry}
-          />
+          <UnitDisplay carouselIndex={carouselIndex} effectKey={skew.skew_id} onNewLocalIndex={setLocalIndex} />
           <div style={{ ...dynamicSizes.param }}>
             <div
               style={{

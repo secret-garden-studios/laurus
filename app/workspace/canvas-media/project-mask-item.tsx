@@ -28,7 +28,7 @@ import {
   MaskLightSource,
   ObjectGeometryInput,
   ObjectRotation,
-  objectRotation,
+  objectTransform,
   TEXTURE_MIX_DEFAULT,
   uploadCurveMask,
   uploadStaticMaskMesh,
@@ -79,6 +79,7 @@ import {
   getLightSourceFrames,
   getMoveFrames,
   getRotateFrames,
+  getSkewFrames,
   getScaleFrames,
   LaurusLight,
   LaurusEffect,
@@ -987,9 +988,15 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale };
+          const wiredSkew = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "skew" }> =>
+              effect.type === "skew" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { lightId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredSkew };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale)
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredSkew)
         .map((t) => ({ ...t, restPosition: computeLightSourceRestPosition(t.lightId) }));
 
       const candidateObjectIds = playAll
@@ -1024,9 +1031,15 @@ export function ProjectMaskItem({
               effect.value.math.has(inputId) &&
               (effectKey === undefined || effect.key === effectKey),
           );
-          return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate };
+          const wiredSkew = coreState.effects.find(
+            (effect): effect is Extract<LaurusEffect, { type: "skew" }> =>
+              effect.type === "skew" &&
+              effect.value.math.has(inputId) &&
+              (effectKey === undefined || effect.key === effectKey),
+          );
+          return { objectId: id, inputId, wiredMove, wiredLightSource, wiredScale, wiredRotate, wiredSkew };
         })
-        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate);
+        .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew);
 
       if (targets.length === 0 && objectTargets.length === 0) return Promise.resolve(undefined);
 
@@ -1041,6 +1054,8 @@ export function ProjectMaskItem({
       const lightSourceFramesByObject = new Map<number, LaurusFrame[]>();
       const scaleFramesByObject = new Map<number, LaurusFrame[]>();
       const rotateFramesByObject = new Map<number, LaurusFrame[]>();
+      const skewFramesByObject = new Map<number, LaurusFrame[]>();
+      const skewFramesByLight = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
       if (objectTargets.length > 0) {
@@ -1103,7 +1118,8 @@ export function ProjectMaskItem({
         const timingValue = (objectTarget.wiredMove ??
           objectTarget.wiredLightSource ??
           objectTarget.wiredScale ??
-          objectTarget.wiredRotate)!.value;
+          objectTarget.wiredRotate ??
+          objectTarget.wiredSkew)!.value;
         fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
@@ -1152,10 +1168,22 @@ export function ProjectMaskItem({
             }),
           );
         }
+        if (objectTarget.wiredSkew) {
+          const wiredSkew = objectTarget.wiredSkew;
+          objectFetches.push(
+            fetchFramesCached(objectTarget.inputId, `skew:${objectTarget.inputId}`, () =>
+              getSkewFrames(coreState.apiOrigin, wiredSkew.key, objectTarget.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result)
+                skewFramesByObject.set(objectTarget.objectId, result);
+            }),
+          );
+        }
         ready = Promise.all(objectFetches).then(() => {});
       } else {
         const target = targets[0];
-        const timingValue = (target.wiredMove ?? target.wiredLightSource ?? target.wiredScale)!.value;
+        const timingValue = (target.wiredMove ?? target.wiredLightSource ?? target.wiredScale ?? target.wiredSkew)!
+          .value;
         fps = projectFps;
         totalFrames = Math.max(Math.round((timingValue.end - timingValue.start) * fps), 1);
         durationSeconds = totalFrames / fps;
@@ -1187,6 +1215,16 @@ export function ProjectMaskItem({
               getScaleFrames(coreState.apiOrigin, wiredScale.key, target.inputId),
             ).then((result) => {
               if (activePlaybackRef.current === session && result) scaleFramesByLight.set(target.lightId, result);
+            }),
+          );
+        }
+        if (target.wiredSkew) {
+          const wiredSkew = target.wiredSkew;
+          fetches.push(
+            fetchFramesCached(target.inputId, `skew:${target.inputId}`, () =>
+              getSkewFrames(coreState.apiOrigin, wiredSkew.key, target.inputId),
+            ).then((result) => {
+              if (activePlaybackRef.current === session && result) skewFramesByLight.set(target.lightId, result);
             }),
           );
         }
@@ -1227,6 +1265,7 @@ export function ProjectMaskItem({
                   const moveFrames = moveFramesByLight.get(t.lightId);
                   const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
                   const scaleFrames = scaleFramesByLight.get(t.lightId);
+                  const skewFrames = skewFramesByLight.get(t.lightId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
@@ -1244,6 +1283,11 @@ export function ProjectMaskItem({
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
                     : scaleFrames && scaleFrames.length > 0
                       ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
+                      : undefined;
+                  const skewPoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : skewFrames && skewFrames.length > 0
+                      ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
                       : undefined;
                   const restX = t.restPosition?.x ?? canvas.width / 2;
                   const restY = t.restPosition?.y ?? canvas.height / 2;
@@ -1267,6 +1311,9 @@ export function ProjectMaskItem({
                     falloff,
                     intensity,
                     darkness,
+                    transform: skewPoint
+                      ? objectTransform(undefined, { ax: skewPoint.ax, ay: skewPoint.ay })
+                      : undefined,
                   });
                 });
 
@@ -1278,6 +1325,7 @@ export function ProjectMaskItem({
                   const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
                   const scaleFrames = scaleFramesByObject.get(t.objectId);
                   const rotateFrames = rotateFramesByObject.get(t.objectId);
+                  const skewFrames = skewFramesByObject.get(t.objectId);
 
                   const movePoint = playAll
                     ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
@@ -1301,6 +1349,11 @@ export function ProjectMaskItem({
                     : rotateFrames && rotateFrames.length > 0
                       ? rotateFrames[Math.min(frameIndex, rotateFrames.length - 1)]
                       : undefined;
+                  const skewPoint = playAll
+                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+                    : skewFrames && skewFrames.length > 0
+                      ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
+                      : undefined;
                   const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
                   const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
                   const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
@@ -1316,9 +1369,17 @@ export function ProjectMaskItem({
                     radius: radius * scaleMultiplier,
                     falloff,
                     fill,
-                    rotation: rotatePoint
-                      ? objectRotation(rotatePoint.rx, rotatePoint.ry, rotatePoint.rz, rotatePoint.rangle)
-                      : undefined,
+                    rotation: objectTransform(
+                      rotatePoint
+                        ? {
+                            x: rotatePoint.rx,
+                            y: rotatePoint.ry,
+                            z: rotatePoint.rz,
+                            angleDegrees: rotatePoint.rangle,
+                          }
+                        : undefined,
+                      skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined,
+                    ),
                   });
                 });
                 render();

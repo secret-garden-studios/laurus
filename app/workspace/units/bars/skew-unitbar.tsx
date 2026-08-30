@@ -3,6 +3,8 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  antigravity300,
+  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
@@ -64,6 +66,10 @@ export default function SkewUnitbar({
         return polyline300();
       case "mask":
         return texture300();
+      case "light":
+        return asterisk300();
+      case "object":
+        return antigravity300();
     }
   }, [target]);
 
