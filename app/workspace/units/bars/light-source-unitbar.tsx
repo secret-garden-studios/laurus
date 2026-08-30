@@ -26,7 +26,7 @@ import {
   LaurusLoopType,
   updateLightSource,
 } from "../../workspace.server";
-import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
@@ -57,7 +57,54 @@ export default function LightSourceUnitbar({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
 
-  const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
+          paramButton: {
+            width: 20,
+            height: 20,
+          },
+        };
+      case "midhigh":
+        return {
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
+          paramButton: {
+            width: 14,
+            height: 14,
+          },
+        };
+      case "midlow":
+        return {
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
+          paramButton: {
+            width: Math.round(20 * uiState.resolution.factor),
+            height: Math.round(20 * uiState.resolution.factor),
+          },
+        };
+      case "low":
+        return {
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
+          paramButton: {
+            width: Math.round(20 * uiState.resolution.factor),
+            height: Math.round(20 * uiState.resolution.factor),
+          },
+        };
+    }
+  });
 
   const loopSvg = useMemo((): LaurusClientSvg => {
     const loopType = lightSource.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;

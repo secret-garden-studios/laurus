@@ -6,13 +6,14 @@ import Toggle from "../../components/toggle";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, LaurusSkewEquation, LaurusSkewResult, updateSkew } from "../workspace.server";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR } from "../workspace.config";
+import { MIN_LIMIT_FACTOR } from "../workspace.config";
 import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import SkewUnitbar from "./bars/skew-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { carouselEntryMathKey, maskLightInputId, maskObjectInputId } from "../effects-utils";
 import { SvgRepo, updateCounterClockwise } from "@/app/svg-repo";
+import { dmSans } from "@/app/fonts";
 
 export interface SkewUnitControls {
   ax: number;
@@ -68,9 +69,6 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
     limit_factor: defaultSkewEquation.limit_factor,
   });
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
-    const dial = Math.round(ds.paramButtonContainer.height * 2);
-    const panel = { height: ds.paramButtonContainer.height * 7 };
     const fill = { height: "100%" };
     const axesContainer = { padding: 0, width: "100%" };
     const axisLabelWidth = "2ch";
@@ -78,11 +76,25 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
-          panel,
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          paramFlex: {
+            gap: 30,
+            padding: "20px 0px 20px 20px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 45,
+            trackWidth: 1,
+            capWidth: 16,
+            capHeight: 16,
+            capBorderOffset: 0,
+          },
+          panel: { height: 252 },
           timeFlex: fill,
           axesContainer,
-          skewParam: { dial, rowGap: 20, colGap: 10, labelFontSize: 12, readoutFontSize: 24 },
+          skewParam: { dial: 72, mainGap: 36, secondGap: 10, labelFontSize: 14, readoutFontSize: 24 },
           axisLabel: { width: axisLabelWidth, gap: 6 },
           readout: { width: readoutWidth, letterSpacing: 1 },
           ccwRow: { gap: 8, paddingTop: 10 },
@@ -95,11 +107,25 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
         };
       case "midhigh":
         return {
-          ...ds,
-          panel,
+          param: {
+            padding: "0 30px 14px 14px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 40,
+            trackWidth: 1,
+            capWidth: 12,
+            capHeight: 12,
+            capBorderOffset: 0,
+          },
+          panel: { height: 168 },
           timeFlex: fill,
           axesContainer,
-          skewParam: { dial, rowGap: 14, colGap: 7, labelFontSize: 11, readoutFontSize: 18 },
+          skewParam: { dial: 60, mainGap: 40, secondGap: 10, labelFontSize: 11, readoutFontSize: 18 },
           axisLabel: { width: axisLabelWidth, gap: 5 },
           readout: { width: readoutWidth, letterSpacing: 1 },
           ccwRow: { gap: 6, paddingTop: 7 },
@@ -113,11 +139,31 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
       case "low":
       case "midlow":
         return {
-          ...ds,
-          panel,
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 20,
+            trackWidth: 1,
+            capWidth: 10,
+            capHeight: 10,
+            capBorderOffset: 0,
+          },
+          panel: { height: Math.round(36 * uiState.resolution.factor) * 7 },
           timeFlex: fill,
           axesContainer,
-          skewParam: { dial, rowGap: 12, colGap: 6, labelFontSize: 10, readoutFontSize: 15 },
+          skewParam: {
+            dial: 64,
+            mainGap: 30,
+            secondGap: 6,
+            labelFontSize: 10,
+            readoutFontSize: 15,
+          },
           axisLabel: { width: axisLabelWidth, gap: 4 },
           readout: { width: readoutWidth, letterSpacing: 1 },
           ccwRow: { gap: 5, paddingTop: 6 },
@@ -471,7 +517,7 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
               <div
                 style={{
                   display: "flex",
-                  gap: dynamicSizes.skewParam.rowGap,
+                  gap: dynamicSizes.skewParam.mainGap,
                   alignItems: "center",
                   ...dynamicSizes.axesContainer,
                 }}
@@ -482,27 +528,36 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
                     style={{
                       display: "grid",
                       justifyItems: "center",
-                      gap: dynamicSizes.skewParam.colGap,
+                      gap: dynamicSizes.skewParam.secondGap,
                     }}
                   >
                     <div
                       style={{
-                        color: "rgb(220, 220, 220)",
-                        fontWeight: "bold",
-                        fontSize: dynamicSizes.skewParam.labelFontSize,
-                        userSelect: "none",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        textAlign: "center",
                         ...dynamicSizes.axisLabel,
                       }}
                     >
-                      <div>{axis}</div>
+                      <div
+                        className={dmSans.className}
+                        style={{
+                          fontSize: dynamicSizes.skewParam.labelFontSize,
+                          color: "rgb(220, 220, 220)",
+                          textShadow: "2px 2px 3px rgba(10,10,10,1)",
+                          fontWeight: "bold",
+                          textAlign: "center",
+                          whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                          userSelect: "none",
+                        }}
+                      >
+                        {axis}
+                      </div>
                       <div
                         ref={readoutRef}
                         style={{
-                          color: title ? "rgb(220, 220, 220)" : "rgb(90, 90, 90)",
+                          color: title ? "rgba(255, 255, 255, 0.7)" : "rgb(90, 90, 90)",
                           fontSize: dynamicSizes.skewParam.readoutFontSize,
                           textAlign: "center",
                           whiteSpace: "nowrap",

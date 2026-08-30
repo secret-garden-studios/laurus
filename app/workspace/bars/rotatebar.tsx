@@ -58,7 +58,7 @@ export default function Rotatebar() {
             containerWidth: 170,
             containerHeight: 36,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 0,
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
           },
@@ -87,7 +87,7 @@ export default function Rotatebar() {
             containerWidth: 170,
             containerHeight: 36,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 0,
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
           },
@@ -109,7 +109,6 @@ export default function Rotatebar() {
     }
   });
 
-  // param 1
   const xTrackRef = useRef<HTMLDivElement | null>(null);
   const [xCursor, setXCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getXValue, getTrackCursor: getXCursor } = useTrackpadState(
@@ -117,7 +116,6 @@ export default function Rotatebar() {
     1,
   );
 
-  // param 2
   const yTrackRef = useRef<HTMLDivElement | null>(null);
   const [yCursor, setYCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getYValue, getTrackCursor: getYCursor } = useTrackpadState(
@@ -125,7 +123,6 @@ export default function Rotatebar() {
     1,
   );
 
-  // param 3
   const zTrackRef = useRef<HTMLDivElement | null>(null);
   const [zCursor, setZCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getZValue, getTrackCursor: getZCursor } = useTrackpadState(

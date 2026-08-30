@@ -3,7 +3,6 @@ import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
-import { getDynamicUnitSizes } from "../workspace.config";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
@@ -188,7 +187,86 @@ export default function UnitDisplay({
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
-  const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          display: {
+            width: 400,
+            height: 450,
+            padding: 0,
+          },
+          displayImg: {
+            width: 280,
+            height: 280,
+          },
+          displaySvg: {
+            width: 200,
+            height: 200,
+          },
+        };
+      case "midhigh":
+        return {
+          param: {
+            padding: "0 22px 14px 14px",
+          },
+          display: {
+            width: 280,
+            height: 315,
+            padding: 0,
+          },
+          displayImg: {
+            width: 196,
+            height: 196,
+          },
+          displaySvg: {
+            width: 140,
+            height: 140,
+          },
+        };
+      case "midlow":
+        return {
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          display: {
+            width: Math.round(400 * uiState.resolution.factor),
+            height: Math.round(450 * uiState.resolution.factor),
+            padding: 0,
+          },
+          displayImg: {
+            width: Math.round(280 * uiState.resolution.factor),
+            height: Math.round(280 * uiState.resolution.factor),
+          },
+          displaySvg: {
+            width: Math.round(200 * uiState.resolution.factor),
+            height: Math.round(200 * uiState.resolution.factor),
+          },
+        };
+      case "low":
+        return {
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          display: {
+            width: Math.round(400 * uiState.resolution.factor),
+            height: Math.round(450 * uiState.resolution.factor),
+            padding: 0,
+          },
+          displayImg: {
+            width: Math.round(280 * uiState.resolution.factor),
+            height: Math.round(280 * uiState.resolution.factor),
+          },
+          displaySvg: {
+            width: Math.round(200 * uiState.resolution.factor),
+            height: Math.round(200 * uiState.resolution.factor),
+          },
+        };
+    }
+  });
   const guardSelection = useSelectionGuard();
   const setActiveElement = useCallback(
     (newCarouselIndex: number) => {
@@ -585,7 +663,54 @@ export default function UnitDisplay({
 
 export function DeepControls() {
   const { uiState } = useContext(UIContext);
-  const [dynamicSizes] = useState(() => getDynamicUnitSizes(uiState.resolution));
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          display: {
+            width: 400,
+            height: 450,
+            padding: 0,
+          },
+        };
+      case "midhigh":
+        return {
+          param: {
+            padding: "0 22px 14px 14px",
+          },
+          display: {
+            width: 280,
+            height: 315,
+            padding: 0,
+          },
+        };
+      case "midlow":
+        return {
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          display: {
+            width: Math.round(400 * uiState.resolution.factor),
+            height: Math.round(450 * uiState.resolution.factor),
+            padding: 0,
+          },
+        };
+      case "low":
+        return {
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          display: {
+            width: Math.round(400 * uiState.resolution.factor),
+            height: Math.round(450 * uiState.resolution.factor),
+            padding: 0,
+          },
+        };
+    }
+  });
   return (
     <>
       <div

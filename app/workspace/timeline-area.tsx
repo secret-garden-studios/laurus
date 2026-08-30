@@ -150,10 +150,10 @@ export default function TimelineArea() {
       case "high":
         return { width: 1000 };
       case "midhigh":
-        return { width: 740 };
+        return { width: 754 };
       case "midlow":
       case "low":
-        return { width: 580 };
+        return { width: 600 };
     }
   });
 
