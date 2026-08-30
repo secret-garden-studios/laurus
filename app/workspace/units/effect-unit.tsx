@@ -7,15 +7,18 @@ import {
   LaurusMoveResult,
   LaurusRotateResult,
   LaurusScaleResult,
+  LaurusSkewResult,
   updateLightSource,
   updateMove,
   updateRotate,
   updateScale,
+  updateSkew,
 } from "../workspace.server";
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import MoveUnit from "../units/move-unit";
 import TimelineSlider from "../../components/timeline-slider";
 import RotateUnit from "../units/rotate-unit";
+import SkewUnit from "../units/skew-unit";
 import LightSourceUnit from "../units/light-source-unit";
 import { dellaRespira } from "../../fonts";
 import useDebounce from "../../hooks/useDebounce";
@@ -34,6 +37,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
   const [moveCarouselIndex, setMoveCarouselIndex] = useState(0);
   const [scaleCarouselIndex, setScaleCarouselIndex] = useState(0);
   const [rotateCarouselIndex, setRotateCarouselIndex] = useState(0);
+  const [skewCarouselIndex, setSkewCarouselIndex] = useState(0);
   const [lightSourceCarouselIndex, setLightSourceCarouselIndex] = useState(0);
   const [showUnitControls, setShowUnitControls] = useState(() => {
     const keys = uiState.carouselEntries;
@@ -51,6 +55,13 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
         const k = keys.findIndex((k) => eqKeys.includes(carouselEntryMathKey(k)));
         const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
         setRotateCarouselIndex(newIndex);
+        break;
+      }
+      case "skew": {
+        const eqKeys = Array.from(effect.value.math.keys());
+        const k = keys.findIndex((k) => eqKeys.includes(carouselEntryMathKey(k)));
+        const newIndex = k > -1 ? k : activeElementIndex > -1 ? activeElementIndex : 0;
+        setSkewCarouselIndex(newIndex);
         break;
       }
       case "scale": {
@@ -252,6 +263,15 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
             coreState.accessToken,
             effect.key,
             effect.value as LaurusRotateResult,
+          );
+          break;
+        }
+        case "skew": {
+          updated = await updateSkew(
+            coreState.apiOrigin,
+            coreState.accessToken,
+            effect.key,
+            effect.value as LaurusSkewResult,
           );
           break;
         }
@@ -543,6 +563,9 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
               case "rotate": {
                 return <RotateUnit rotate={effect.value} carouselIndexInit={rotateCarouselIndex} />;
               }
+              case "skew": {
+                return <SkewUnit skew={effect.value} carouselIndexInit={skewCarouselIndex} />;
+              }
               case "light_source": {
                 return <LightSourceUnit lightSource={effect.value} carouselIndexInit={lightSourceCarouselIndex} />;
               }
@@ -556,6 +579,7 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
         setShowUnitControls={setShowUnitControls}
         setMoveCarouselIndex={setMoveCarouselIndex}
         setRotateCarouselIndex={setRotateCarouselIndex}
+        setSkewCarouselIndex={setSkewCarouselIndex}
         setScaleCarouselIndex={setScaleCarouselIndex}
         setLightSourceCarouselIndex={setLightSourceCarouselIndex}
       />
@@ -650,6 +674,25 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
             }
             break;
           }
+          case "skew": {
+            const newSkew: LaurusSkewResult = {
+              ...effect.value,
+              description: effectDescriptionHook,
+            };
+            const updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, effect.key, newSkew);
+            if (updated) {
+              const newEffect: LaurusEffect = {
+                ...effect,
+                value: {
+                  ...newSkew,
+                },
+              };
+              dispatch({ type: CoreActionType.SetEffect, value: newEffect, preserveCache: true });
+            } else {
+              effectDescriptionInputRef.current.value = effectDescriptionSnapshot;
+            }
+            break;
+          }
           case "light_source": {
             const newLightSource: LaurusLightSourceResult = {
               ...effect.value,
@@ -705,6 +748,15 @@ function EffectDescription({ effectKey, effectDescriptionInit }: EffectDescripti
         }
         case "rotate": {
           const newEffect: LaurusRotateResult = {
+            ...effect.value,
+            description: e.target.value,
+          };
+          dependenciesRef.current = { ...effect, value: { ...newEffect } };
+          setEffectDescription(e.target.value);
+          break;
+        }
+        case "skew": {
+          const newEffect: LaurusSkewResult = {
             ...effect.value,
             description: e.target.value,
           };

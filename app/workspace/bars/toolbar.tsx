@@ -17,6 +17,7 @@ import {
   texture200,
   asterisk200,
   inkPen300,
+  skew300,
 } from "../../svg-repo";
 import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, LaurusTool, UIActionType } from "../states/ui-state";
 import { useToolSwitch } from "../hooks/useMaskEditExit";
@@ -349,6 +350,23 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
             resolution={{ ...uiState.resolution }}
             title="rotate tool"
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "skew"}
+            svg={{
+              svg: skew300(),
+              scale: 0.55,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              const next: LaurusTool = uiState.tool.type == "skew" ? { type: "none" } : { type: "skew" };
+              if (!switchTool(next)) return;
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            title="skew tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "light_source"}

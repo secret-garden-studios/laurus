@@ -1,4 +1,5 @@
 import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectMask } from "../../projects/projects.server";
+import { toCssSkewAngle } from "../skew-angle.ts";
 
 interface Point2D {
   x: number;
@@ -14,20 +15,44 @@ function calculate3DTravelWithPerspective(
   meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask,
   perspective: number = Infinity,
 ): CornerTravel {
-  const { width, height, scale_x, scale_y, rotate_x: rx, rotate_y: ry, rotate_z: rz, rotate_angle } = meta;
+  const {
+    width,
+    height,
+    scale_x,
+    scale_y,
+    rotate_x: rx,
+    rotate_y: ry,
+    rotate_z: rz,
+    rotate_angle,
+    skew_ax,
+    skew_ay,
+  } = meta;
   const theta = rotate_angle * (Math.PI / 180);
   const cosT = Math.cos(theta);
   const sinT = Math.sin(theta);
   const omc = 1 - cosT;
 
+  const tanAx = Math.tan(toCssSkewAngle(skew_ax) * (Math.PI / 180));
+  const tanAy = Math.tan(toCssSkewAngle(skew_ay) * (Math.PI / 180));
+  const scaledW0 = width * scale_x;
+  const scaledH0 = height * scale_y;
+
+  const skewed = (x: number, y: number): Point2D => ({
+    x: x + tanAx * y,
+    y: y + tanAy * x,
+  });
+
   const len = Math.sqrt(rx * rx + ry * ry + rz * rz);
   if (len === 0) {
-    const zero = { x: 0, y: 0 };
+    const travelOf = (x: number, y: number): Point2D => {
+      const s = skewed(x, y);
+      return { x: s.x - x, y: s.y - y };
+    };
     return {
-      topLeft: zero,
-      topRight: zero,
-      bottomLeft: zero,
-      bottomRight: zero,
+      topLeft: travelOf(0, 0),
+      topRight: travelOf(scaledW0, 0),
+      bottomLeft: travelOf(0, scaledH0),
+      bottomRight: travelOf(scaledW0, scaledH0),
     };
   }
 
@@ -47,9 +72,10 @@ function calculate3DTravelWithPerspective(
   const scaledH = height * scale_y;
 
   const getTravel = (origX: number, origY: number, origZ: number): Point2D => {
-    const rotX = r11 * origX + r12 * origY + r13 * origZ;
-    const rotY = r21 * origX + r22 * origY + r23 * origZ;
-    const rotZ = r31 * origX + r32 * origY + r33 * origZ;
+    const { x: skewX, y: skewY } = skewed(origX, origY);
+    const rotX = r11 * skewX + r12 * skewY + r13 * origZ;
+    const rotY = r21 * skewX + r22 * skewY + r23 * origZ;
+    const rotZ = r31 * skewX + r32 * skewY + r33 * origZ;
     const f = perspective === Infinity ? 1 : perspective / (perspective - rotZ);
     const projX = rotX * f;
     const projY = rotY * f;

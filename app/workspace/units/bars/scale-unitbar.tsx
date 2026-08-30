@@ -9,16 +9,16 @@ import {
   cancelCircle,
   contentPaste,
   fileCopy,
-  image200,
   link,
   linkOff,
   playArrow,
-  polyline200,
   remove,
   antigravity300,
   syncAlt,
   texture300,
   updateDisabled,
+  image400,
+  polyline300,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
@@ -31,7 +31,7 @@ import {
   updateScale,
 } from "../../workspace.server";
 import { ScaleUnitControls, ScaleUnitTarget, defaultScaleEquation, targetHasScaleHeight } from "../scale-unit";
-import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
+import { LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
@@ -63,26 +63,53 @@ export default function ScaleUnitbar({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
+          paramButton: {
+            width: 20,
+            height: 20,
+          },
           angleParam: { padding: 15 },
         };
       case "midhigh":
         return {
-          ...ds,
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
+          paramButton: {
+            width: 14,
+            height: 14,
+          },
           angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
       case "midlow":
         return {
-          ...ds,
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
+          paramButton: {
+            width: Math.round(20 * uiState.resolution.factor),
+            height: Math.round(20 * uiState.resolution.factor),
+          },
           angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
       case "low":
         return {
-          ...ds,
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
+          paramButton: {
+            width: Math.round(20 * uiState.resolution.factor),
+            height: Math.round(20 * uiState.resolution.factor),
+          },
           angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
     }
@@ -93,9 +120,9 @@ export default function ScaleUnitbar({
   const targetSvg = useMemo((): LaurusClientSvg => {
     switch (target) {
       case "img":
-        return image200();
+        return image400();
       case "svg":
-        return polyline200();
+        return polyline300();
       case "mask":
         return texture300();
       case "light":

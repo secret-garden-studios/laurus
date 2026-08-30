@@ -67,7 +67,10 @@ function initReducer({
 
   const newEffectsMetadata: Map<string, number> = projectDependencies
     ? new Map(
-        projectDependencies.map((x) => [x.project.project_id, x.scales.length + x.moves.length + x.rotates.length]),
+        projectDependencies.map((x) => [
+          x.project.project_id,
+          x.scales.length + x.moves.length + x.rotates.length + x.skews.length,
+        ]),
       )
     : new Map();
 
@@ -158,7 +161,6 @@ export default function Projects({ apiOrigin, projectDependencies, resolution: r
       >
         <UIContext value={uiContextValue}>
           <CoreContext value={coreContextValue}>
-            {/* menubar */}
             <div
               style={{
                 gridRow: "1",
@@ -193,7 +195,6 @@ export default function Projects({ apiOrigin, projectDependencies, resolution: r
             >
               <Subtitlebar />
             </div>
-            {/* left panel */}
             <div
               style={{
                 gridColumn: "1",
@@ -203,7 +204,6 @@ export default function Projects({ apiOrigin, projectDependencies, resolution: r
                 background: "rgba(255, 255, 255, 0.05)",
               }}
             />
-            {/*main content area*/}
             <div
               className={
                 styles[`${resolutionInit.type == "high" ? "noisy-background-20-3" : "noisy-background-20-3-low-res"}`]
@@ -430,7 +430,6 @@ function ProjectsBody() {
 
   return (
     <div style={{ position: "relative" }}>
-      {/* input bar */}
       <div
         style={{
           position: "absolute",
@@ -456,7 +455,6 @@ function ProjectsBody() {
           }
         })()}
       </div>
-      {/* items */}
       <div
         style={{
           position: "absolute",

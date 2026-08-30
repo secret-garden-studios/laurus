@@ -5,7 +5,7 @@ import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import { LaurusLoopType, LaurusRotateEquation, LaurusRotateResult, updateRotate } from "../workspace.server";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
+import { MIN_LIMIT_FACTOR, ROTATE_AXIS_MAX } from "../workspace.config";
 import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import RotateUnitbar from "./bars/rotate-unitbar";
 import { CarouselEntry, LaurusActiveElement, UIActionType } from "../states/ui-state";
@@ -71,11 +71,28 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
     limit_factor: defaultRotateEquation.limit_factor,
   });
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          paramFlex: {
+            gap: 30,
+            padding: 20,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 45,
+            trackWidth: 1,
+            capWidth: 16,
+            capHeight: 16,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
           angleParam: { padding: 15 },
           angleTitle: {
             top: 10,
@@ -86,7 +103,25 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
         };
       case "midhigh":
         return {
-          ...ds,
+          param: {
+            padding: "0 30px 14px 14px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: 16,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 40,
+            trackWidth: 1,
+            capWidth: 12,
+            capHeight: 12,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
           angleParam: { padding: 11 },
           angleTitle: {
             top: 8,
@@ -98,7 +133,25 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
       case "low":
       case "midlow":
         return {
-          ...ds,
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: 16,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 20,
+            trackWidth: 1,
+            capWidth: 10,
+            capHeight: 10,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
           angleParam: { padding: 8 },
           angleTitle: {
             top: 8,
@@ -601,6 +654,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                     disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />

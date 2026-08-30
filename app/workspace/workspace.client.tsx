@@ -63,6 +63,7 @@ import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExi
 import TimelineArea from "./timeline-area";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
+import { toCssSkewAngle } from "./skew-angle.ts";
 import { BrowserDependencies } from "./page";
 import Toolbar from "./bars/toolbar";
 import { useMaskPreview, UseMaskPreview, MASK_RESOLUTION_DEFAULT } from "./hooks/useMaskPreview";
@@ -185,12 +186,14 @@ export function toKeyframes(laurusFrames: LaurusFrame[], firstFrame: boolean): K
           translate: `${f.x}px ${f.y}px 0px`,
           scale: `${f.sx} ${f.sy}`,
           rotate: `${f.rx} ${f.ry} ${f.rz} ${f.rangle}deg`,
+          transform: `skew(${toCssSkewAngle(f.ax)}deg, ${toCssSkewAngle(f.ay)}deg)`,
           easing: "step-end",
         }
       : {
           translate: `${f.x}px ${f.y}px 0px`,
           scale: `${f.sx} ${f.sy}`,
           rotate: `${f.rx} ${f.ry} ${f.rz} ${f.rangle}deg`,
+          transform: `skew(${toCssSkewAngle(f.ax)}deg, ${toCssSkewAngle(f.ay)}deg)`,
         };
   });
   return keyframes;
@@ -533,6 +536,17 @@ function initReducer({
       newEffects.push({
         type: "rotate",
         key: e.rotate_id,
+        value: {
+          ...e,
+          locked: e.locked,
+          mixState: e.mix ? LaurusMixState.Active : LaurusMixState.None,
+        },
+      });
+    });
+    projectDependencies?.skews.forEach((e) => {
+      newEffects.push({
+        type: "skew",
+        key: e.skew_id,
         value: {
           ...e,
           locked: e.locked,
@@ -1049,7 +1063,11 @@ export default function Workspace({
               eligibleItems.add(inputKey);
               globalLimit = Math.max(globalLimit, e.value.end);
             } else if (
-              (e.type === "move" || e.type === "light_source" || e.type === "scale" || e.type === "rotate") &&
+              (e.type === "move" ||
+                e.type === "light_source" ||
+                e.type === "scale" ||
+                e.type === "rotate" ||
+                e.type === "skew") &&
               coreState.project.masks.has(parseMaskLightInputId(inputKey).maskKey)
             ) {
               eligibleItems.add(inputKey);
@@ -1160,8 +1178,6 @@ export default function Workspace({
       handles.forEach((h) => h.setSelectedHighlighted(maskKey === key)),
     );
   }, []);
-  // Quiet every mask's selection and edit cues without disturbing what is selected -- for a colour
-  // being picked against the mesh, where the highlight is the thing in the way.
   const notifyMaskHighlightSuppressed = useCallback((suppressed: boolean) => {
     maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.setHighlightSuppressed(suppressed)));
   }, []);
@@ -1226,19 +1242,9 @@ export default function Workspace({
   const notifyMaskPendingTopologySet = useCallback((maskKey: string, edit: PendingTopologyEdit) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingTopology(edit));
   }, []);
-  // Only the first handle for the key does the work: a retouch is a change to
-  // the mask itself, not to one view of it, so every other view picks it up
-  // through the mask update the recut dispatches.
   const notifyMaskRetouchRequested = useCallback(async (maskKey: string) => {
     const handle = maskHandlesRef.current?.get(maskKey)?.values().next().value;
     if (!handle) return;
-    // Two frames before the work, not zero, and not one. The recut blocks the
-    // main thread for long enough to be felt, so whatever the caller changed
-    // to say it had started -- a disabled button, a label -- has to reach the
-    // screen first or it never appears at all: React would commit it and the
-    // recut would hold the frame until the recut's own result overwrote it.
-    // One rAF is not enough, because a rAF callback runs *before* the paint it
-    // is scheduled against; the second is the first moment the pixels are up.
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     handle.retouchObjectMesh();
   }, []);
@@ -1264,16 +1270,6 @@ export default function Workspace({
       });
       notifyMaskPendingLightSet(maskKey, new Set(polygonIndices), lightId);
 
-      // Born with a silhouette, exactly as a dropped object is: the disc it
-      // would have lit with anyway, written down rather than re-derived. A
-      // light whose shape is only implied is a light the pen has to invent one
-      // for the first time it opens, and inventing it later means the outline
-      // and the triangles start out disagreeing about where the light is.
-      //
-      // The centre is the same one resolveRestingLightSources derives for an
-      // unshaped light, and the radius the same size / 2, so a light created
-      // this way looks identical to one created before it could be shaped --
-      // it just now says so.
       const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, new Set(polygonIndices));
       const updated = await sendMaskLightUpdate(
         maskData.mask_media_id,
@@ -1340,11 +1336,6 @@ export default function Workspace({
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
       const shape = unitCirclePath();
       const geometry = maskGeometry(maskData);
-      // The disc the drag swept, minus whatever an object already on this mesh
-      // has a claim to. A triangle carries one object_id, so an overlap is the
-      // newcomer taking triangles off its neighbour rather than sharing them:
-      // the object already placed keeps its own, and this one is raised over
-      // what is left, with a lane of unclaimed mesh between the two.
       const membership = dropIndicesClaimedByObjects(
         indicesInObjectFromCentroids(geometry.centroids, { cx: circle.cx, cy: circle.cy, radius, shape }),
         geometry,
@@ -1363,9 +1354,6 @@ export default function Workspace({
         falloff: seed.falloff,
         shape,
         fill: seed.fill,
-        // Carried rather than left to be re-derived from the outline: the
-        // preview would otherwise light up the triangles this just gave away,
-        // then drop them again the moment the server's delta lands.
         polygonIndices: membership,
       };
 
@@ -1382,9 +1370,6 @@ export default function Workspace({
           falloff: seed.falloff,
           shape,
           ...toObjectFillFields(seed.fill),
-          // In front of everything already on the mask: what "I just drew this
-          // here" means, and what keeps a new object from appearing underneath
-          // one it happens to overlap.
           order: frontObjectOrder(maskData.objects),
           polygon_indices: polygonIndices,
         }),
@@ -1416,36 +1401,11 @@ export default function Workspace({
     ],
   );
 
-  /**
-   * Writes down a set of new orders, one object at a time.
-   *
-   * A reorder is not one edit. Ranking is dense around the mask's own plane, so
-   * moving one object renumbers its neighbours too -- and on a mask whose
-   * objects have never been ordered, the first change numbers all of them at
-   * once (see reorderObjects). Each change is a full-replace of that object, so they
-   * go one at a time down the same socket every other object edit uses, each
-   * patched onto the mask before the next is built: the deltas come back
-   * carrying polygon tagging as well, and building the second send from a mask
-   * that had not yet absorbed the first would send stale tags back up.
-   *
-   * `polygon_indices` is re-derived per object rather than carried, for the
-   * same reason -- membership lives on the mask's polygons, and a full-replace
-   * that omitted it would clear the object's triangles as a side effect of
-   * moving it up one slot.
-   */
   const applyObjectOrders = useCallback(
     async (maskKey: string, changes: ObjectOrderChange[]) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData || changes.length === 0) return;
 
-      // Drawn before anything is sent. A reorder is several full-replace round
-      // trips down the object socket -- one per object the renumber touched --
-      // and until the first of them lands there is nothing in state to redraw
-      // the stack from. A drag that ends here would therefore let go, snap back
-      // to where it started, and only jump to its new place once the last ack
-      // arrived. The project's own media reorder has never had that problem
-      // because it dispatches first and rolls back on failure (see
-      // onGroupDragEnd); this is the same bargain for objects.
       const optimisticOrders = new Map(changes.map((change) => [change.id, change.order]));
       const optimistic: LaurusMaskResult = {
         ...maskData,
@@ -1457,9 +1417,6 @@ export default function Workspace({
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: optimistic });
       notifyMaskObjectsUpdated(maskKey, optimistic);
 
-      // Reconciled from what was actually stored, not from the guess above, so
-      // that a run which fails part-way settles on the orders the server really
-      // holds rather than on the ones the drag asked for.
       let patched = maskData;
       for (const change of changes) {
         const object = patched.objects.find((o) => o.id === change.id);
@@ -1472,24 +1429,15 @@ export default function Workspace({
           patched.mask_media_id,
           toObjectUpdate(object, { order: change.order, polygon_indices: polygonIndices }),
         );
-        // A failure part-way leaves the mask ranked inconsistently, which the
-        // stacking order still reads without complaint -- ties break by id, and
-        // the next reorder renumbers from whatever is actually stored. Stopping
-        // is better than pressing on: the sends left are renumbers of objects
-        // whose new places assumed the one that just failed.
         if (!updated) break;
         patched = applyObjectDelta(patched, updated);
       }
-      // Always dispatched, even when nothing landed: the optimistic stack is on
-      // screen by now, and this is what takes it back off again if the sends
-      // did not go through.
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
       notifyMaskObjectsUpdated(maskKey, patched);
     },
     [coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated],
   );
 
-  /** One object stepped through its mask's stack -- see the context menu. */
   const reorderObject = useCallback(
     async (maskKey: string, objectId: number, direction: ObjectOrderDirection) => {
       const maskData = coreState.canvasMasks.get(maskKey);
@@ -1499,11 +1447,6 @@ export default function Workspace({
     [coreState.canvasMasks, applyObjectOrders],
   );
 
-  /**
-   * A whole stack rewritten at once, from orders a drag settled on -- see the
-   * media group browser's expanded mask rows, where restackFromDrop turns the
-   * drop into this list.
-   */
   const restackMaskObjects = useCallback(
     async (maskKey: string, changes: ObjectOrderChange[]) => {
       await applyObjectOrders(maskKey, changes);
@@ -1726,7 +1669,8 @@ export default function Workspace({
           (effect.type === "move" ||
             effect.type === "light_source" ||
             effect.type === "scale" ||
-            effect.type === "rotate") &&
+            effect.type === "rotate" ||
+            effect.type === "skew") &&
           (parseMaskLightInputId(target.inputKey).lightId !== undefined || targetObjectId !== undefined),
       );
       const lightSourceFinished: Promise<void>[] = [];
@@ -2047,6 +1991,12 @@ export default function Workspace({
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "r" && !isInput && uiState.playbackMode.type === "stopped") {
         const newTool: LaurusTool = uiState.tool.type === "rotate" ? { type: "none" } : { type: "rotate" };
+        if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
+        uiDispatch({ type: UIActionType.SetTool, value: newTool });
+        notifyMaskToolChanged(newTool.type);
+        uiDispatch({ type: UIActionType.CloseAllContextMenus });
+      } else if (event.key.toLowerCase() === "k" && !isInput && uiState.playbackMode.type === "stopped") {
+        const newTool: LaurusTool = uiState.tool.type === "skew" ? { type: "none" } : { type: "skew" };
         if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);

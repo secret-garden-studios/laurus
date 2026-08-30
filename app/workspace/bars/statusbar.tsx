@@ -15,6 +15,7 @@ import {
   lassoSelect,
   SvgRepo,
   cycle400,
+  skew300,
   polyline200,
   asterisk200,
   asterisk300,
@@ -143,6 +144,8 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                           return earthquake();
                         case "rotate":
                           return cycle400();
+                        case "skew":
+                          return skew300();
                         case "light_source":
                           return asterisk300();
                       }
@@ -256,6 +259,8 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
                   return allOut();
                 case "rotate":
                   return cycle400();
+                case "skew":
+                  return skew300();
                 case "mix":
                   return experiment();
                 case "mask":

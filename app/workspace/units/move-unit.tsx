@@ -6,7 +6,6 @@ import Dial from "../../components/dial";
 import { ParameterSliderY } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
 import {
-  getDynamicUnitSizes,
   MIN_LIMIT_FACTOR,
   MOVE_AMPLITUDE_MAX,
   MOVE_DISTANCE_MAX,
@@ -72,11 +71,28 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
     time: 0,
   });
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          paramFlex: {
+            gap: 30,
+            padding: 20,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 45,
+            trackWidth: 1,
+            capWidth: 16,
+            capHeight: 16,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
           angleParam: { padding: 15 },
           angleTitle: {
             top: 10,
@@ -87,7 +103,25 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
         };
       case "midhigh":
         return {
-          ...ds,
+          param: {
+            padding: "0 30px 14px 14px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: 16,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 40,
+            trackWidth: 1,
+            capWidth: 12,
+            capHeight: 12,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
           angleParam: { padding: 11 },
           angleTitle: {
             top: 8,
@@ -99,7 +133,25 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
       case "low":
       case "midlow":
         return {
-          ...ds,
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: 16,
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 20,
+            trackWidth: 1,
+            capWidth: 10,
+            capHeight: 10,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
           angleParam: { padding: 8 },
           angleTitle: {
             top: 8,
@@ -490,6 +542,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={amplitudeTitle}
                     liveTitleRef={amplitudeRef}
+                    escapeOverflow={true}
                   />
                   <ParameterSliderY
                     resolution={{ ...uiState.resolution }}
@@ -528,6 +581,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={frequencyTitle}
                     liveTitleRef={frequencyRef}
+                    escapeOverflow={true}
                   />
                   {shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse && (
                     <ParameterSliderY
@@ -570,6 +624,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={wavelengthTitle}
                       liveTitleRef={wavelengthRef}
+                      escapeOverflow={true}
                     />
                   )}
                   {shapeType != LaurusShapeType.circle && (
@@ -610,6 +665,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={distanceTitle}
                       liveTitleRef={distanceRef}
+                      escapeOverflow={true}
                     />
                   )}
                   <ParameterSliderY
@@ -650,6 +706,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />

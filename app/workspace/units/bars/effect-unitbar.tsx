@@ -7,6 +7,7 @@ import {
   lock,
   lockOpenRight,
   cycle400,
+  skew400,
   tune,
   asterisk300,
 } from "@/app/svg-repo";
@@ -16,12 +17,14 @@ import {
   deleteLightSource,
   deleteMove,
   deleteRotate,
+  deleteSkew,
   deleteScale,
   LaurusEffect,
   LaurusMixState,
   LaurusMoveResult,
   LaurusRotateResult,
   LaurusScaleResult,
+  LaurusSkewResult,
 } from "../../workspace.server";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../../states/core-state";
@@ -32,6 +35,7 @@ interface EffectUnitbar {
   setShowUnitControls: Dispatch<SetStateAction<boolean>>;
   setMoveCarouselIndex: Dispatch<SetStateAction<number>>;
   setRotateCarouselIndex: Dispatch<SetStateAction<number>>;
+  setSkewCarouselIndex: Dispatch<SetStateAction<number>>;
   setScaleCarouselIndex: Dispatch<SetStateAction<number>>;
   setLightSourceCarouselIndex: Dispatch<SetStateAction<number>>;
   saveEffect: (effect: LaurusEffect, rollback: LaurusEffect) => Promise<void>;
@@ -43,6 +47,7 @@ export default function EffectUnitbar({
   saveEffect,
   setMoveCarouselIndex,
   setRotateCarouselIndex,
+  setSkewCarouselIndex,
   setScaleCarouselIndex,
   setLightSourceCarouselIndex,
 }: EffectUnitbar) {
@@ -100,6 +105,13 @@ export default function EffectUnitbar({
           }
           break;
         }
+        case "skew": {
+          const deleted = await deleteSkew(coreState.apiOrigin, coreState.accessToken, effect.value.skew_id);
+          if (deleted) {
+            dispatch({ type: CoreActionType.DeleteEffect, key: effect.key });
+          }
+          break;
+        }
         case "scale": {
           const deleted = await deleteScale(coreState.apiOrigin, coreState.accessToken, effect.value.scale_id);
           if (deleted) {
@@ -142,6 +154,8 @@ export default function EffectUnitbar({
               return earthquake();
             case "rotate":
               return cycle400();
+            case "skew":
+              return skew400();
             case "light_source":
               return asterisk300();
           }
@@ -149,6 +163,8 @@ export default function EffectUnitbar({
         scale={(() => {
           switch (effect.type) {
             case "rotate":
+              return 0.5;
+            case "skew":
               return 0.5;
             default:
               return 0.6;
@@ -188,6 +204,14 @@ export default function EffectUnitbar({
                   setRotateCarouselIndex(newIndex);
                   break;
                 }
+                case "skew": {
+                  const eqKeys = Array.from(effect.value.math.keys());
+                  const carouselKeys = uiState.carouselEntries;
+                  const k = carouselKeys.findIndex((k) => eqKeys.includes(k.key));
+                  const newIndex = k > -1 ? k : 0;
+                  setSkewCarouselIndex(newIndex);
+                  break;
+                }
                 case "scale": {
                   const moveEqautionKeys = Array.from(effect.value.math.keys());
                   const keys = uiState.carouselEntries;
@@ -212,6 +236,7 @@ export default function EffectUnitbar({
                 setScaleCarouselIndex(initialIndex);
                 setMoveCarouselIndex(initialIndex);
                 setRotateCarouselIndex(initialIndex);
+                setSkewCarouselIndex(initialIndex);
                 setLightSourceCarouselIndex(initialIndex);
               }
             }
@@ -304,6 +329,14 @@ export default function EffectUnitbar({
                                 mixState: newMixUiState,
                               } as LaurusRotateResult,
                             };
+                          case "skew":
+                            return {
+                              ...e,
+                              value: {
+                                ...e.value,
+                                mixState: newMixUiState,
+                              } as LaurusSkewResult,
+                            };
                           case "scale":
                             return {
                               ...e,
@@ -354,6 +387,12 @@ export default function EffectUnitbar({
                 value: { ...effect.value, locked: !effect.value.locked },
               };
               break;
+            case "skew":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, locked: !effect.value.locked },
+              };
+              break;
             case "light_source":
               newEffect = {
                 ...effect,
@@ -395,6 +434,12 @@ export default function EffectUnitbar({
               };
               break;
             case "rotate":
+              newEffect = {
+                ...effect,
+                value: { ...effect.value, disabled: !effect.value.disabled },
+              };
+              break;
+            case "skew":
               newEffect = {
                 ...effect,
                 value: { ...effect.value, disabled: !effect.value.disabled },

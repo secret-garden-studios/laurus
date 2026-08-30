@@ -1,49 +1,51 @@
+import { dmSans } from "@/app/fonts";
 import {
   LaurusClientSvg,
   SvgRepo,
   add2,
+  antigravity300,
   asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
+  image400,
   playArrow,
+  polyline300,
   remove,
-  antigravity300,
   syncAlt,
+  texture300,
   updateDisabled,
 } from "@/app/svg-repo";
-import { dmSans } from "@/app/fonts";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
-import { LightSourceUnitControls, LightSourceUnitTarget, defaultLightSourceEquation } from "../light-source-unit";
+import { SkewUnitControls, SkewUnitTarget, defaultSkewEquation } from "../skew-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
-  getLightSourceFrames,
+  getSkewFrames,
   LaurusEffect,
-  LaurusLightSourceEquation,
-  LaurusLightSourceResult,
   LaurusLoopType,
-  updateLightSource,
+  LaurusSkewEquation,
+  LaurusSkewResult,
+  updateSkew,
 } from "../../workspace.server";
 import { LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
-interface LightSourceUnitbar {
-  lightSource: LaurusLightSourceResult;
+interface SkewUnitbar {
+  skew: LaurusSkewResult;
   carouselEntryKey: string;
-  saveNewEquation: (rollback: LaurusLightSourceResult, newEquation: LaurusLightSourceEquation) => Promise<void>;
-  updateTrackpads: (newControls: LightSourceUnitControls) => void;
-  currentControls: LightSourceUnitControls;
-  setCurrentControls: Dispatch<SetStateAction<LightSourceUnitControls>>;
-  target: LightSourceUnitTarget;
+  saveNewEquation: (rollback: LaurusSkewResult, newEquation: LaurusSkewEquation) => Promise<void>;
+  updateTrackpads: (newControls: SkewUnitControls) => void;
+  currentControls: SkewUnitControls;
+  setCurrentControls: Dispatch<SetStateAction<SkewUnitControls>>;
+  target: SkewUnitTarget;
   onToggleTarget: () => void;
-  newEquationSeed: LaurusLightSourceEquation;
 }
 
-export default function LightSourceUnitbar({
-  lightSource,
+export default function SkewUnitbar({
+  skew,
   carouselEntryKey,
   saveNewEquation,
   updateTrackpads,
@@ -51,11 +53,25 @@ export default function LightSourceUnitbar({
   setCurrentControls,
   target,
   onToggleTarget,
-  newEquationSeed,
-}: LightSourceUnitbar) {
+}: SkewUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image400();
+      case "svg":
+        return polyline300();
+      case "mask":
+        return texture300();
+      case "light":
+        return asterisk300();
+      case "object":
+        return antigravity300();
+    }
+  }, [target]);
 
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -69,6 +85,7 @@ export default function LightSourceUnitbar({
             width: 20,
             height: 20,
           },
+          angleParam: { padding: 15 },
         };
       case "midhigh":
         return {
@@ -80,6 +97,7 @@ export default function LightSourceUnitbar({
             width: 14,
             height: 14,
           },
+          angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
       case "midlow":
         return {
@@ -91,6 +109,7 @@ export default function LightSourceUnitbar({
             width: Math.round(20 * uiState.resolution.factor),
             height: Math.round(20 * uiState.resolution.factor),
           },
+          angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
       case "low":
         return {
@@ -102,13 +121,14 @@ export default function LightSourceUnitbar({
             width: Math.round(20 * uiState.resolution.factor),
             height: Math.round(20 * uiState.resolution.factor),
           },
+          angleParam: { padding: Math.round(15 * uiState.resolution.factor) },
         };
     }
   });
 
   const loopSvg = useMemo((): LaurusClientSvg => {
-    const loopType = lightSource.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-    const enabled = lightSource.math.has(carouselEntryKey) ? true : false;
+    const loopType = skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+    const enabled = skew.math.has(carouselEntryKey) ? true : false;
     switch (loopType) {
       default:
       case LaurusLoopType.none: {
@@ -124,24 +144,24 @@ export default function LightSourceUnitbar({
         return enabled ? autorenew() : autorenew("rgb(62,62,62)");
       }
     }
-  }, [carouselEntryKey, lightSource.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const loopSvgScale = useMemo((): number => {
-    const loopType = lightSource.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+    const loopType = skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
     switch (loopType) {
       case LaurusLoopType.none:
         return 0.85;
       default:
         return 0.9;
     }
-  }, [carouselEntryKey, lightSource.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const loopType = useMemo((): LaurusLoopType => {
-    return lightSource.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-  }, [carouselEntryKey, lightSource.math]);
+    return skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+  }, [carouselEntryKey, skew.math]);
 
   const getNextLoopType = useCallback((): LaurusLoopType => {
-    const currentLoop = lightSource.math.get(carouselEntryKey)?.loop;
+    const currentLoop = skew.math.get(carouselEntryKey)?.loop;
     switch (currentLoop) {
       case LaurusLoopType.loop:
       case LaurusLoopType.none: {
@@ -158,28 +178,24 @@ export default function LightSourceUnitbar({
         return LaurusLoopType.none;
       }
     }
-  }, [carouselEntryKey, lightSource.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const decrementLimitFactor = useCallback((): number => {
-    const currentFactor =
-      lightSource.math.get(carouselEntryKey)?.limit_factor ?? defaultLightSourceEquation.limit_factor;
+    const currentFactor = skew.math.get(carouselEntryKey)?.limit_factor ?? defaultSkewEquation.limit_factor;
     return Math.max(MIN_LIMIT_FACTOR, Math.round((currentFactor - LIMIT_FACTOR_STEP) * 100) / 100);
-  }, [carouselEntryKey, lightSource.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const incrementLimitFactor = useCallback((): number => {
-    const currentFactor =
-      lightSource.math.get(carouselEntryKey)?.limit_factor ?? defaultLightSourceEquation.limit_factor;
+    const currentFactor = skew.math.get(carouselEntryKey)?.limit_factor ?? defaultSkewEquation.limit_factor;
     return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
-  }, [carouselEntryKey, lightSource.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const mediaGroupId = useMemo(() => {
     const imgMeta = coreState.project.imgs.get(carouselEntryKey);
     if (imgMeta) return imgMeta.media_group_id;
     const svgMeta = coreState.project.svgs.get(carouselEntryKey);
-    if (svgMeta) return svgMeta.media_group_id;
-    const maskMeta = coreState.project.masks.get(carouselEntryKey);
-    return maskMeta?.media_group_id ?? "";
-  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
+    return svgMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
 
   const otherGroupKeys = useMemo(() => {
     if (!mediaGroupId) return [];
@@ -189,31 +205,28 @@ export default function LightSourceUnitbar({
     const svgKeys = Array.from(coreState.project.svgs.entries())
       .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
       .map(([key]) => key);
-    const maskKeys = Array.from(coreState.project.masks.entries())
-      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
-      .map(([key]) => key);
-    return [...imgKeys, ...svgKeys, ...maskKeys];
-  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
+    return [...imgKeys, ...svgKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
 
   const onPasteToGroupClick = useCallback(async () => {
     if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
     if (otherGroupKeys.length === 0) return;
-    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "light_source") return;
+    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "skew") return;
     const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
     if (!clipboardEquation) return;
-    const snapshot: LaurusLightSourceResult = { ...lightSource };
+    const snapshot: LaurusSkewResult = { ...skew };
     const newMath = new Map(snapshot.math);
     otherGroupKeys.forEach((key) => {
       newMath.set(key, { ...clipboardEquation, input_id: key });
     });
-    const newLightSource: LaurusLightSourceResult = { ...snapshot, math: newMath };
-    const updated = await updateLightSource(coreState.apiOrigin, coreState.accessToken, snapshot.light_source_id, {
-      ...newLightSource,
+    const newSkew: LaurusSkewResult = { ...snapshot, math: newMath };
+    const updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, snapshot.skew_id, {
+      ...newSkew,
     });
     if (updated) {
       dispatch({
         type: CoreActionType.SetEffect,
-        value: { type: "light_source", value: { ...newLightSource }, key: newLightSource.light_source_id },
+        value: { type: "skew", value: { ...newSkew }, key: newSkew.skew_id },
       });
     }
   }, [
@@ -221,7 +234,7 @@ export default function LightSourceUnitbar({
     uiState.playbackMode.type,
     uiState.effectClipboard,
     otherGroupKeys,
-    lightSource,
+    skew,
     dispatch,
     coreState.apiOrigin,
     coreState.accessToken,
@@ -242,11 +255,7 @@ export default function LightSourceUnitbar({
         }}
       >
         <div
-          title={
-            target === "object"
-              ? "targeting objects -- double-click for lights"
-              : "targeting lights -- double-click for objects"
-          }
+          title={`targeting ${target} -- double-click for the next kind of media`}
           onDoubleClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             onToggleTarget();
@@ -259,8 +268,8 @@ export default function LightSourceUnitbar({
           }}
         >
           <SvgRepo
-            title={target === "object" ? "object" : "light"}
-            svg={target === "object" ? antigravity300() : asterisk300()}
+            title={target}
+            svg={targetSvg}
             containerStyle={{
               cursor: isAltKeyPressed ? "crosshair" : uiState.playbackMode.type !== "stopped" ? "" : "pointer",
               ...dynamicSizes.paramButton,
@@ -272,11 +281,11 @@ export default function LightSourceUnitbar({
         <div
           title="loop"
           onDoubleClick={() => {
-            if (lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            if (skew.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey) {
               const nextLoop = getNextLoopType();
-              const snapshot: LaurusLightSourceResult = { ...lightSource };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
                 ? {
@@ -284,7 +293,7 @@ export default function LightSourceUnitbar({
                     loop: nextLoop,
                   }
                 : {
-                    ...newEquationSeed,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     loop: nextLoop,
                   };
@@ -305,9 +314,9 @@ export default function LightSourceUnitbar({
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.locked || uiState.playbackMode.type !== "stopped"
+                : skew.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
-                  : lightSource.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "pointer"
                     : "",
               ...dynamicSizes.paramButton,
@@ -346,8 +355,8 @@ export default function LightSourceUnitbar({
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             handlePlayTarget({
               inputKey: carouselEntryKey,
-              getFrames: (apiOrigin) => getLightSourceFrames(apiOrigin, lightSource.light_source_id, carouselEntryKey),
-              effectKey: lightSource.light_source_id,
+              getFrames: (apiOrigin) => getSkewFrames(apiOrigin, skew.skew_id, carouselEntryKey),
+              effectKey: skew.skew_id,
             });
           }}
           style={{
@@ -359,16 +368,16 @@ export default function LightSourceUnitbar({
           <SvgRepo
             title="preview"
             svg={
-              lightSource.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
+              skew.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
                 ? playArrow()
                 : playArrow("rgb(62, 62, 62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
                   ? "pointer"
-                  : lightSource.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "progress"
                     : "",
               ...dynamicSizes.paramButton,
@@ -382,16 +391,15 @@ export default function LightSourceUnitbar({
           onClick={() => {
             if (
               isAltKeyPressed ||
-              lightSource.locked ||
+              skew.locked ||
               uiState.playbackMode.type !== "stopped" ||
-              (lightSource.math.has(carouselEntryKey) &&
-                lightSource.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
+              (skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
             )
               return;
             const activeKey = carouselEntryKey;
-            if (activeKey && lightSource.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const nextFactor = incrementLimitFactor();
-              const snapshot: LaurusLightSourceResult = { ...lightSource };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
                 ? {
@@ -399,7 +407,7 @@ export default function LightSourceUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...newEquationSeed,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -416,15 +424,14 @@ export default function LightSourceUnitbar({
           <SvgRepo
             title="increase limits"
             svg={
-              lightSource.math.has(carouselEntryKey) &&
-              lightSource.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR
+              skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR
                 ? add2()
                 : add2("rgb(62, 62, 62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -438,16 +445,15 @@ export default function LightSourceUnitbar({
           onClick={() => {
             if (
               isAltKeyPressed ||
-              lightSource.locked ||
+              skew.locked ||
               uiState.playbackMode.type !== "stopped" ||
-              (lightSource.math.has(carouselEntryKey) &&
-                lightSource.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
+              (skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
             )
               return;
             const activeKey = carouselEntryKey;
-            if (activeKey && lightSource.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const nextFactor = decrementLimitFactor();
-              const snapshot: LaurusLightSourceResult = { ...lightSource };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
                 ? {
@@ -455,7 +461,7 @@ export default function LightSourceUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...newEquationSeed,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -472,15 +478,14 @@ export default function LightSourceUnitbar({
           <SvgRepo
             title="decrease limits"
             svg={
-              lightSource.math.has(carouselEntryKey) &&
-              lightSource.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR
+              skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR
                 ? remove()
                 : remove("rgb(62,62,62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -493,23 +498,22 @@ export default function LightSourceUnitbar({
           title="copy"
           onClick={() => {
             if (isAltKeyPressed) return;
-            let clipboardData: LightSourceUnitControls = { ...currentControls };
-            const activeEquation = lightSource.math.get(carouselEntryKey);
+            let clipboardData: SkewUnitControls = { ...currentControls };
+            const activeEquation = skew.math.get(carouselEntryKey);
             if (activeEquation) {
               clipboardData = { ...activeEquation };
             }
-            const currentEq: LaurusLightSourceEquation = {
-              ...defaultLightSourceEquation,
+            const currentEq: LaurusSkewEquation = {
               ...clipboardData,
               input_id: "clipboard",
-              solution: defaultLightSourceEquation.solution,
+              solution: defaultSkewEquation.solution,
             };
-            const newMath: Map<string, LaurusLightSourceEquation> = new Map();
+            const newMath: Map<string, LaurusSkewEquation> = new Map();
             newMath.set("clipboard", currentEq);
             const newClipboardEffect: LaurusEffect = {
-              type: "light_source",
-              key: lightSource.light_source_id,
-              value: { ...lightSource, math: newMath },
+              type: "skew",
+              key: skew.skew_id,
+              value: { ...skew, math: newMath },
             };
             uiDispatch({
               type: UIActionType.SetEffectClipboard,
@@ -524,9 +528,9 @@ export default function LightSourceUnitbar({
         >
           <SvgRepo
             title="copy"
-            svg={lightSource.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
+            svg={skew.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : lightSource.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed ? "crosshair" : skew.math.has(carouselEntryKey) ? "pointer" : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.8}
@@ -537,19 +541,19 @@ export default function LightSourceUnitbar({
           title="paste"
           onClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
-            if (uiState.effectClipboard && uiState.effectClipboard.type == "light_source") {
+            if (uiState.effectClipboard && uiState.effectClipboard.type == "skew") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
-              const snapshot: LaurusLightSourceResult = { ...lightSource };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeKey = carouselEntryKey;
-              const newEquation: LaurusLightSourceEquation = {
+              const newEquation: LaurusSkewEquation = {
                 ...clipboardEquation,
               };
-              const newControls: LightSourceUnitControls = { ...newEquation };
+              const newControls: SkewUnitControls = { ...newEquation };
               setCurrentControls(newControls);
               updateTrackpads(newControls);
               if (activeKey) {
-                const newMath: LaurusLightSourceEquation = {
+                const newMath: LaurusSkewEquation = {
                   ...newEquation,
                   input_id: activeKey,
                 };
@@ -565,11 +569,11 @@ export default function LightSourceUnitbar({
         >
           <SvgRepo
             title="paste"
-            svg={uiState.effectClipboard?.type == "light_source" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
+            svg={uiState.effectClipboard?.type == "skew" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -590,7 +594,7 @@ export default function LightSourceUnitbar({
           <SvgRepo
             title="paste to group"
             svg={
-              uiState.effectClipboard?.type == "light_source" && otherGroupKeys.length > 0
+              uiState.effectClipboard?.type == "skew" && otherGroupKeys.length > 0
                 ? bookmarkStacks300()
                 : bookmarkStacks300("rgb(67, 67, 67)")
             }
@@ -609,20 +613,20 @@ export default function LightSourceUnitbar({
         <div
           title="clear"
           onClick={async () => {
-            if (isAltKeyPressed || lightSource.locked || uiState.playbackMode.type !== "stopped") return;
+            if (isAltKeyPressed || skew.locked || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
-            if (activeKey && lightSource.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const confirmed = confirm("are you sure you want to clear this equation?");
               if (!confirmed) return;
-              const snapshot: LaurusLightSourceResult = { ...lightSource };
+              const snapshot: LaurusSkewResult = { ...skew };
               const newMath = new Map(snapshot.math);
               newMath.delete(activeKey);
-              const newLightSource: LaurusLightSourceResult = {
+              const newSkew: LaurusSkewResult = {
                 ...snapshot,
                 math: newMath,
               };
-              const defaultControls: LightSourceUnitControls = {
-                ...newEquationSeed,
+              const defaultControls: SkewUnitControls = {
+                ...defaultSkewEquation,
                 time: 0,
               };
               setCurrentControls(defaultControls);
@@ -630,26 +634,21 @@ export default function LightSourceUnitbar({
               dispatch({
                 type: CoreActionType.SetEffect,
                 value: {
-                  type: "light_source",
-                  value: { ...newLightSource },
-                  key: newLightSource.light_source_id,
+                  type: "skew",
+                  value: { ...newSkew },
+                  key: newSkew.skew_id,
                 },
               });
-              const updated = await updateLightSource(
-                coreState.apiOrigin,
-                coreState.accessToken,
-                snapshot.light_source_id,
-                {
-                  ...newLightSource,
-                },
-              );
+              const updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, snapshot.skew_id, {
+                ...newSkew,
+              });
               if (!updated) {
                 dispatch({
                   type: CoreActionType.SetEffect,
                   value: {
-                    type: "light_source",
+                    type: "skew",
                     value: { ...snapshot },
-                    key: snapshot.light_source_id,
+                    key: snapshot.skew_id,
                   },
                 });
               }
@@ -663,13 +662,13 @@ export default function LightSourceUnitbar({
         >
           <SvgRepo
             title="clear"
-            svg={lightSource.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
+            svg={skew.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : lightSource.locked || uiState.playbackMode.type !== "stopped"
+                : skew.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
-                  : lightSource.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "pointer"
                     : "",
               ...dynamicSizes.paramButton,

@@ -6,6 +6,7 @@ import { UIContext, CoreContext } from "../workspace.client";
 import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import Mixbar from "./mixbar";
 import Rotatebar from "./rotatebar";
+import Skewbar from "./skewbar";
 import Scalebar from "./scalebar";
 import Marqueebar from "./marqueebar";
 import Viewportbar from "./viewportbar";
@@ -419,6 +420,8 @@ export function Subtitlebar() {
               return <Scalebar />;
             case "rotate":
               return <Rotatebar />;
+            case "skew":
+              return <Skewbar />;
             case "light_source":
               return <LightSourcebar />;
             case "mix":

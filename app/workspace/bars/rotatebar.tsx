@@ -6,21 +6,19 @@ import { SvgRepo, cycle400 } from "@/app/svg-repo";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { UIContext, CoreContext, HoverContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
+import { mediaArm } from "../states/ui-state";
+import ToolGreeting from "./tool-greeting";
 
 export default function Rotatebar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const target = useMemo(() => {
-    return selectedImgKeys.size > 0
-      ? { key: Array.from(selectedImgKeys)[0], type: "img" as const }
-      : selectedSvgKeys.size > 0
-        ? { key: Array.from(selectedSvgKeys)[0], type: "svg" as const }
-        : selectedMaskKeys.size > 0
-          ? { key: Array.from(selectedMaskKeys)[0], type: "mask" as const }
-          : null;
-  }, [selectedImgKeys, selectedSvgKeys, selectedMaskKeys]);
+  const target = useMemo(
+    () => mediaArm(uiState, "rotate", selectedImgKeys, selectedSvgKeys, selectedMaskKeys),
+    [uiState, selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
+  );
   const [angle, setAngle] = useState<number>(0);
+  const [isSaving, setIsSaving] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -41,6 +39,7 @@ export default function Rotatebar() {
             height: 20,
           },
           unitFontSize: 11,
+          greeting: { paddingLeft: 20, paddingRight: 20, gap: 12, fontSize: 13 },
           input: {
             fontSize: 13,
             width: "4ch",
@@ -59,7 +58,7 @@ export default function Rotatebar() {
             containerWidth: 170,
             containerHeight: 36,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 0,
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
           },
@@ -68,6 +67,7 @@ export default function Rotatebar() {
             height: 18,
           },
           unitFontSize: 10,
+          greeting: { paddingLeft: 14, paddingRight: 14, gap: 8, fontSize: 12 },
           input: {
             fontSize: 11,
             width: "4ch",
@@ -87,7 +87,7 @@ export default function Rotatebar() {
             containerWidth: 170,
             containerHeight: 36,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 0,
             tickLeft: 1,
             svgSize: { width: 20, height: 20 },
           },
@@ -96,6 +96,7 @@ export default function Rotatebar() {
             height: 20,
           },
           unitFontSize: 11,
+          greeting: { paddingLeft: 12, paddingRight: 12, gap: 8, fontSize: 11 },
           input: {
             fontSize: 13,
             width: "4ch",
@@ -108,7 +109,6 @@ export default function Rotatebar() {
     }
   });
 
-  // param 1
   const xTrackRef = useRef<HTMLDivElement | null>(null);
   const [xCursor, setXCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getXValue, getTrackCursor: getXCursor } = useTrackpadState(
@@ -116,7 +116,6 @@ export default function Rotatebar() {
     1,
   );
 
-  // param 2
   const yTrackRef = useRef<HTMLDivElement | null>(null);
   const [yCursor, setYCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getYValue, getTrackCursor: getYCursor } = useTrackpadState(
@@ -124,7 +123,6 @@ export default function Rotatebar() {
     1,
   );
 
-  // param 3
   const zTrackRef = useRef<HTMLDivElement | null>(null);
   const [zCursor, setZCursor] = useState({ x: 0, y: 0 });
   const { getTrackValue: getZValue, getTrackCursor: getZCursor } = useTrackpadState(
@@ -165,119 +163,125 @@ export default function Rotatebar() {
       rZ: number | undefined,
       rAngle: number | undefined,
     ) => {
-      const snapshot: LaurusProjectResult = { ...coreState.project };
-      switch (elementType) {
-        case "svg": {
-          const newSvg = snapshot.svgs.get(key);
-          if (newSvg) {
-            const rollbackSvgs = new Map(snapshot.svgs);
-            const newSvgs = new Map(snapshot.svgs);
-            newSvgs.set(key, {
-              ...newSvg,
-              ...(rX !== undefined && { rotate_x: rX }),
-              ...(rY !== undefined && { rotate_y: rY }),
-              ...(rZ !== undefined && { rotate_z: rZ }),
-              ...(rAngle !== undefined && { rotate_angle: rAngle }),
-            });
-            const newProject: LaurusProjectResult = {
-              ...snapshot,
-              svgs: newSvgs,
-            };
-            const saved = await updateProject(
-              coreState.apiOrigin,
-              coreState.accessToken,
-              newProject.project_id,
-              newProject,
-            );
-            if (saved) {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...newProject },
+      if (isSaving) return;
+      setIsSaving(true);
+      try {
+        const snapshot: LaurusProjectResult = { ...coreState.project };
+        switch (elementType) {
+          case "svg": {
+            const newSvg = snapshot.svgs.get(key);
+            if (newSvg) {
+              const rollbackSvgs = new Map(snapshot.svgs);
+              const newSvgs = new Map(snapshot.svgs);
+              newSvgs.set(key, {
+                ...newSvg,
+                ...(rX !== undefined && { rotate_x: rX }),
+                ...(rY !== undefined && { rotate_y: rY }),
+                ...(rZ !== undefined && { rotate_z: rZ }),
+                ...(rAngle !== undefined && { rotate_angle: rAngle }),
               });
-            } else {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...snapshot, svgs: rollbackSvgs },
-              });
+              const newProject: LaurusProjectResult = {
+                ...snapshot,
+                svgs: newSvgs,
+              };
+              const saved = await updateProject(
+                coreState.apiOrigin,
+                coreState.accessToken,
+                newProject.project_id,
+                newProject,
+              );
+              if (saved) {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...newProject },
+                });
+              } else {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...snapshot, svgs: rollbackSvgs },
+                });
+              }
             }
+            break;
           }
-          break;
-        }
-        case "img": {
-          const newImg = snapshot.imgs.get(key);
-          if (newImg) {
-            const rollbackImgs = new Map(snapshot.imgs);
-            const newImgs = new Map(snapshot.imgs);
-            newImgs.set(key, {
-              ...newImg,
-              ...(rX !== undefined && { rotate_x: rX }),
-              ...(rY !== undefined && { rotate_y: rY }),
-              ...(rZ !== undefined && { rotate_z: rZ }),
-              ...(rAngle !== undefined && { rotate_angle: rAngle }),
-            });
-            const newProject: LaurusProjectResult = {
-              ...snapshot,
-              imgs: newImgs,
-            };
-            const saved = await updateProject(
-              coreState.apiOrigin,
-              coreState.accessToken,
-              newProject.project_id,
-              newProject,
-            );
-            if (saved) {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...newProject },
+          case "img": {
+            const newImg = snapshot.imgs.get(key);
+            if (newImg) {
+              const rollbackImgs = new Map(snapshot.imgs);
+              const newImgs = new Map(snapshot.imgs);
+              newImgs.set(key, {
+                ...newImg,
+                ...(rX !== undefined && { rotate_x: rX }),
+                ...(rY !== undefined && { rotate_y: rY }),
+                ...(rZ !== undefined && { rotate_z: rZ }),
+                ...(rAngle !== undefined && { rotate_angle: rAngle }),
               });
-            } else {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...snapshot, imgs: rollbackImgs },
-              });
+              const newProject: LaurusProjectResult = {
+                ...snapshot,
+                imgs: newImgs,
+              };
+              const saved = await updateProject(
+                coreState.apiOrigin,
+                coreState.accessToken,
+                newProject.project_id,
+                newProject,
+              );
+              if (saved) {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...newProject },
+                });
+              } else {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...snapshot, imgs: rollbackImgs },
+                });
+              }
             }
+            break;
           }
-          break;
-        }
-        case "mask": {
-          const newMask = snapshot.masks.get(key);
-          if (newMask) {
-            const rollbackMasks = new Map(snapshot.masks);
-            const newMasks = new Map(snapshot.masks);
-            newMasks.set(key, {
-              ...newMask,
-              ...(rX !== undefined && { rotate_x: rX }),
-              ...(rY !== undefined && { rotate_y: rY }),
-              ...(rZ !== undefined && { rotate_z: rZ }),
-              ...(rAngle !== undefined && { rotate_angle: rAngle }),
-            });
-            const newProject: LaurusProjectResult = {
-              ...snapshot,
-              masks: newMasks,
-            };
-            const saved = await updateProject(
-              coreState.apiOrigin,
-              coreState.accessToken,
-              newProject.project_id,
-              newProject,
-            );
-            if (saved) {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...newProject },
+          case "mask": {
+            const newMask = snapshot.masks.get(key);
+            if (newMask) {
+              const rollbackMasks = new Map(snapshot.masks);
+              const newMasks = new Map(snapshot.masks);
+              newMasks.set(key, {
+                ...newMask,
+                ...(rX !== undefined && { rotate_x: rX }),
+                ...(rY !== undefined && { rotate_y: rY }),
+                ...(rZ !== undefined && { rotate_z: rZ }),
+                ...(rAngle !== undefined && { rotate_angle: rAngle }),
               });
-            } else {
-              dispatch({
-                type: CoreActionType.SetProject,
-                value: { ...snapshot, masks: rollbackMasks },
-              });
+              const newProject: LaurusProjectResult = {
+                ...snapshot,
+                masks: newMasks,
+              };
+              const saved = await updateProject(
+                coreState.apiOrigin,
+                coreState.accessToken,
+                newProject.project_id,
+                newProject,
+              );
+              if (saved) {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...newProject },
+                });
+              } else {
+                dispatch({
+                  type: CoreActionType.SetProject,
+                  value: { ...snapshot, masks: rollbackMasks },
+                });
+              }
             }
+            break;
           }
-          break;
         }
+      } finally {
+        setIsSaving(false);
       }
     },
-    [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch],
+    [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch, isSaving],
   );
 
   useEffect(() => {
@@ -301,6 +305,14 @@ export default function Rotatebar() {
       }
     })();
   }, [getActiveRotate, getXCursor, getYCursor, getZCursor]);
+
+  if (!target) {
+    return (
+      <ToolGreeting title="rotate" svg={cycle400()} svgSize={dynamicSizes.svgSize} textStyle={dynamicSizes.greeting}>
+        {"click an image, an svg or a mask on the canvas to rotate it"}
+      </ToolGreeting>
+    );
+  }
 
   return (
     <>
@@ -329,7 +341,7 @@ export default function Rotatebar() {
         <div style={{ paddingLeft: 4 }}>{"x"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${target?.key ?? "rotatebar"}|rotatex`}
+          hash={`${target.key}|rotatex`}
           size={dynamicSizes.paramSize}
           containerRef={xTrackRef}
           cursor={xCursor}
@@ -337,14 +349,14 @@ export default function Rotatebar() {
             setXCursor({ ...newCursor, y: 0 });
             if (!xTrackRef.current) return;
             const newX = getXValue(newCursor.x, xTrackRef.current.clientWidth, 0);
-            saveRotate(target?.key ?? "", target?.type ?? "", newX, undefined, undefined, undefined);
+            saveRotate(target.key, target.type, newX, undefined, undefined, undefined);
           }}
-          disabled={target == undefined}
+          disabled={isSaving}
         />
         <div>{"y"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${target?.key ?? "rotatebar"}|rotatey`}
+          hash={`${target.key}|rotatey`}
           size={dynamicSizes.paramSize}
           containerRef={yTrackRef}
           cursor={yCursor}
@@ -352,14 +364,14 @@ export default function Rotatebar() {
             setYCursor({ ...newCursor, y: 0 });
             if (!yTrackRef.current) return;
             const newY = getYValue(newCursor.x, yTrackRef.current.clientWidth, 0);
-            saveRotate(target?.key ?? "", target?.type ?? "", undefined, newY, undefined, undefined);
+            saveRotate(target.key, target.type, undefined, newY, undefined, undefined);
           }}
-          disabled={target == undefined}
+          disabled={isSaving}
         />
         <div>{"z"}</div>
         <ParameterSliderX
           resolution={{ ...uiState.resolution }}
-          hash={`${target?.key ?? "rotatebar"}|rotatez`}
+          hash={`${target.key}|rotatez`}
           size={dynamicSizes.paramSize}
           containerRef={zTrackRef}
           cursor={zCursor}
@@ -367,12 +379,11 @@ export default function Rotatebar() {
             setZCursor({ ...newCursor, y: 0 });
             if (!zTrackRef.current) return;
             const newZ = getZValue(newCursor.x, zTrackRef.current.clientWidth, 0);
-            saveRotate(target?.key ?? "", target?.type ?? "", undefined, undefined, newZ, undefined);
+            saveRotate(target.key, target.type, undefined, undefined, newZ, undefined);
           }}
-          disabled={target == undefined}
+          disabled={isSaving}
         />
         <div style={{}}>
-          {/* todo: the main tick mark on this mini dial is not rendered properly */}
           <Dial
             resolution={{ ...uiState.resolution }}
             ids={{
@@ -393,22 +404,22 @@ export default function Rotatebar() {
                 const x = Math.round(v) % 360;
                 return x < 0 ? x + 360 : x;
               })(v);
-              saveRotate(target?.key ?? "", target?.type ?? "", undefined, undefined, undefined, newAngle);
+              saveRotate(target.key, target.type, undefined, undefined, undefined, newAngle);
               setAngle(newAngle);
             }}
             size={{
-              container: 90 * 0.45,
-              gauge: 90 * 0.45,
-              gaugeTick: 7 * 0.45,
-              dial: 80 * 0.45,
-              dialTick: 11 * 0.45,
+              container: 90 * 0.4,
+              gauge: 90 * 0.4,
+              gaugeTick: 7 * 0.4,
+              dial: 80 * 0.4,
+              dialTick: 11 * 0.4,
             }}
-            disabled={target == undefined}
+            disabled={isSaving}
           />
         </div>
         <div style={{}}>
           <input
-            id={`${target?.key ?? "rotatebar"}|rotateangle`}
+            id={`${target.key}|rotateangle`}
             disabled
             ref={angleRef}
             type="text"

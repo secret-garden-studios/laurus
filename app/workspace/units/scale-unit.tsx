@@ -6,7 +6,7 @@ import { ComplexTrackpadOptions, useComplexTrackpadState } from "../../hooks/use
 import { useTrackpadState } from "../../hooks/useTrackpadState";
 import { ParameterSliderY, ParameterSliderXPlusMinus } from "../../components/parameter-slider";
 import UnitDisplay, { DeepControls } from "./unit-display";
-import { getDynamicUnitSizes, MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
+import { MIN_LIMIT_FACTOR, SCALE_MAX } from "../workspace.config";
 import { LaurusProjectResult } from "../../projects/projects.server";
 import { nearestNavigableIndex, useCarouselIndex } from "../hooks/useCarouselIndex";
 import ScaleUnitbar from "./bars/scale-unitbar";
@@ -69,11 +69,28 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
     limit_factor: defaultScaleEquation.limit_factor,
   });
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          paramFlex: {
+            gap: 30,
+            padding: "20px 0px 20px 20px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 45,
+            trackWidth: 1,
+            capWidth: 16,
+            capHeight: 16,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
           scaleParam: {
             capWidth: 21,
             capHeight: 21,
@@ -98,7 +115,25 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
         };
       case "midhigh":
         return {
-          ...ds,
+          param: {
+            padding: "0 30px 14px 14px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 40,
+            trackWidth: 1,
+            capWidth: 12,
+            capHeight: 12,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
           scaleParam: {
             capWidth: 15,
             capHeight: 15,
@@ -124,7 +159,25 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
       case "midlow":
       case "low":
         return {
-          ...ds,
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 20,
+            trackWidth: 1,
+            capWidth: 10,
+            capHeight: 10,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
           scaleParam: {
             capWidth: 13,
             capHeight: 13,
@@ -531,6 +584,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={timeTitle}
                   liveTitleRef={timeRef}
+                  escapeOverflow={true}
                 />
               </div>
               <div />

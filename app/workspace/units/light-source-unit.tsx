@@ -18,13 +18,7 @@ import {
   toObjectFillEquationFields,
   updateLightSource,
 } from "../workspace.server";
-import {
-  getDynamicUnitSizes,
-  MIN_LIMIT_FACTOR,
-  LIGHT_DARKNESS_MAX,
-  LIGHT_FALLOFF_MAX,
-  LIGHT_INTENSITY_MAX,
-} from "../workspace.config";
+import { MIN_LIMIT_FACTOR, LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
 import {
   MAX_MASK_OBJECT_ELEVATION,
   MAX_MASK_OBJECT_FALLOFF,
@@ -104,7 +98,6 @@ interface LightSourceParam {
   disabled?: boolean;
   title?: string;
   first?: boolean;
-  /** true when the param has an identity inside its range, so −/+ mean something in both directions */
   signed?: boolean;
 }
 function LightSourceParam({
@@ -226,11 +219,28 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     limit_factor: defaultLightSourceEquation.limit_factor,
   });
   const [dynamicSizes] = useState(() => {
-    const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
       case "high":
         return {
-          ...ds,
+          param: {
+            padding: "0 20px 20px 20px",
+          },
+          paramFlex: {
+            gap: 30,
+            padding: "20px 0px 20px 20px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 45,
+            trackWidth: 1,
+            capWidth: 16,
+            capHeight: 16,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 36,
+            height: 36,
+          },
           lightParam: {
             capWidth: 15,
             capHeight: 15,
@@ -248,7 +258,25 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         };
       case "midhigh":
         return {
-          ...ds,
+          param: {
+            padding: "0 30px 14px 14px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 40,
+            trackWidth: 1,
+            capWidth: 12,
+            capHeight: 12,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: 24,
+            height: 24,
+          },
           lightParam: {
             capWidth: 11,
             capHeight: 11,
@@ -267,7 +295,25 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       case "midlow":
       case "low":
         return {
-          ...ds,
+          param: {
+            padding: "0 18px 10px 10px",
+          },
+          paramFlex: {
+            gap: 26,
+            padding: "16px 0px 16px 16px",
+          },
+          paramSlider: {
+            containerHeight: "100%",
+            containerWidth: 20,
+            trackWidth: 1,
+            capWidth: 10,
+            capHeight: 10,
+            capBorderOffset: 0,
+          },
+          paramButtonContainer: {
+            width: Math.round(36 * uiState.resolution.factor),
+            height: Math.round(36 * uiState.resolution.factor),
+          },
           lightParam: {
             capWidth: 10,
             capHeight: 10,
@@ -322,9 +368,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
     return activeObjectMaskData?.objects.find((p) => p.id === activeObjectEntry.objectId);
   }, [activeObjectEntry, activeObjectMaskData]);
 
-  // the resting state the animation departs from. every track is anchored on a constant identity
-  // rather than on this, so editing a resting value in the bar can no longer drag a cap; this is
-  // only where the caps start before any math exists, and what seeds a brand-new equation.
   const restingControls = useMemo((): LightSourceUnitControls => {
     const base: LightSourceUnitControls = {
       light_intensity: defaultLightSourceEquation.light_intensity,
@@ -431,9 +474,6 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   }, [carouselEntryKey, lightSource.math]);
   const elevationRef = useRef<HTMLInputElement | null>(null);
 
-  // the fill is picked as one colour rather than four channels. its identity is rgba(0,0,0,0),
-  // where the mix leaves the texture untouched, so there is no track to anchor - only where the
-  // swatch starts before any math exists.
   const restingFill = useMemo(
     (): LaurusColor => ({
       r: restingControls.object_fill_r,
@@ -831,6 +871,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                     disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />
