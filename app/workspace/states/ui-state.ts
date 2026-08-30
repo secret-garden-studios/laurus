@@ -44,6 +44,7 @@ export type LaurusTool =
   | { type: "move" }
   | { type: "scale" }
   | { type: "rotate" }
+  | { type: "skew" }
   | { type: "mix" }
   | { type: "mask"; lightingMeshSection: boolean; raisingObjects: boolean }
   | { type: "light_source" }
@@ -64,22 +65,6 @@ export const defaultMaskTool: LaurusTool = {
   raisingObjects: false,
 };
 
-/**
- * The pen reaches the toolbar two ways, and they meet in the same place.
- *
- * It is what the toolbar shows for the whole of a session, so opening one --
- * from the context menu's edit button, the light source bar's, or a mask
- * review -- selects the pen, and it stays selected until the session is over.
- * And it can be picked from the toolbar directly, which selects it with
- * nothing open under it: see isPenArmed for what it does while it waits.
- * Either way, what is selected is this, and the bar it shows is the same bar.
- *
- * So the pen is the one tool a session can be open under. The review panel is
- * the pen's own supplement rather than a thing of its own, which makes leaving
- * the pen the same act as leaving the session: openMaskEdit is the half of
- * that invariant which holds, and useObjectReview's tool watch is the half
- * that tears down.
- */
 export const defaultPenTool: LaurusTool = {
   type: "pen",
   stitch: false,
@@ -114,7 +99,6 @@ export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "
 
 export type ObjectReviewMode = "review" | "edit";
 
-/** A reshaped outline together with the geometry that keeps it where it was drawn. */
 export interface ObjectShapeEdit {
   path: string;
   cx: number;
@@ -122,44 +106,12 @@ export interface ObjectShapeEdit {
   radius: number;
 }
 
-/**
- * A mesh recut against the current candidate's outline, and the mesh it was
- * recut from.
- *
- * Held on the review session rather than written straight into the mask
- * because a retouch is uncommitted, exactly like a reshape: the reviewer may
- * still reject the candidate, step away from it, or shut the pen. What the
- * canvas draws is the recut mesh -- there would be no point recutting
- * otherwise -- so `restore` is what puts the mask back when any of those
- * happen, and it is the array that was there before, not a copy of it.
- *
- * `added` is how many entries the recut appended. The recut is append-only so
- * that no index anyone is holding moves (see object-retouch), which means the
- * appended entries are exactly the tail: everything from `polygons.length -
- * added` on. That is what the accept sends, and it is why nothing here needs
- * to record *which* entries are new.
- */
 export interface ObjectRetouch {
   polygons: LaurusPolygonPath[];
   restore: LaurusPolygonPath[];
   added: number;
 }
 
-/**
- * The fields every shapeable thing on a mask has in common.
- *
- * An object and a light are different in almost every way that matters --
- * one raises relief, the other casts light -- but the pen does not care about
- * any of that. It needs somewhere to draw, something to name, and somewhere to
- * put the result, and both have exactly those. Naming that overlap once is
- * what lets a single pen, a single overlay and a single session serve both
- * instead of two of each drifting apart.
- *
- * `cx`/`cy`/`radius` are not decoration on `shape`: a stored path is
- * normalized to unit extent and scaled by the radius, so the four are one
- * value in four fields and pairing a path with another region's geometry
- * renders it at the wrong size and place.
- */
 export interface EditableRegion {
   id: number;
   name: string;
@@ -170,70 +122,13 @@ export interface EditableRegion {
   shape: string;
 }
 
-/**
- * The state the pen keeps, whatever it happens to be open on.
- *
- * Split out from the two session kinds below rather than repeated in each,
- * because every one of these is read and written by machinery that genuinely
- * does not know which kind it has: the overlay, the retouch, the toolbar
- * hand-off, the revert. A field that appeared on only one of them would be a
- * field that silently does nothing half the time.
- */
 interface MaskEditSessionBase {
   maskMediaId: string;
   maskKey: string;
-  /** Which of the mask's triangles the thing being edited currently claims. */
   currentIndices: Set<number>;
-  /**
-   * The outline the editor has redrawn, or undefined while it is still the one
-   * that was there when the session opened. Held here rather than written
-   * straight through because it is a diff against something that is never
-   * mutated -- the same way currentIndices is -- and because the edit may still
-   * be abandoned.
-   *
-   * The geometry travels with the path and is not optional. A stored outline
-   * is normalized to unit extent and scaled by `radius`, so pulling an anchor
-   * outward is recorded as a wider radius rather than a larger path; saving
-   * the path without it would render the edit scaled back to where it started.
-   */
   editedShape: ObjectShapeEdit | undefined;
-  /**
-   * Whether the outline's handles are up.
-   *
-   * Which half of the session a click on the mesh belongs to, and nothing
-   * beyond that: with the handles up every click is the outline's, and what
-   * the region covers is changed with them down. See ToggleMaskEditPolygon,
-   * which refuses either way round.
-   *
-   * Not a question of which tool is selected. The pen is selected for the
-   * whole of a session however this sits, so putting the handles down leaves
-   * the penbar exactly where it was -- what changes is which of its controls
-   * still have something to act on. See defaultPenTool.
-   */
   editingShape: boolean;
-  /**
-   * A standing request to shut this session down, raised from somewhere that
-   * cannot shut it down itself.
-   *
-   * Ending a session is mostly not state -- the relief a reshape was
-   * previewing has to come down, and the mask has to be handed back the mesh
-   * it was triangulated with -- so useObjectReview is the only thing that can
-   * actually do it, and only the review panel mounts that. Everywhere else
-   * that has to end one, having asked the editor first, raises this instead
-   * and lets the one place that knows how do the work.
-   *
-   * On the session rather than beside it so it cannot outlive the thing it is
-   * a request about: no session, nothing requested.
-   */
   endRequested: boolean;
-  /**
-   * The recut mesh the editor has asked for, or undefined while the mesh is
-   * still the one the mask was triangulated with.
-   *
-   * Dropped on every move to another candidate for the same reason editedShape
-   * is: it is a diff against one region, and carrying it to the next would
-   * recut a mesh against an outline that is no longer on screen.
-   */
   retouch: ObjectRetouch | undefined;
 }
 
@@ -246,64 +141,18 @@ export interface ObjectReviewSession extends MaskEditSessionBase {
   redoRequested: boolean;
 }
 
-/**
- * The pen open on one light.
- *
- * There is no `mode` and no `decisions` because there is nothing to review: a
- * light is not proposed by detection the way an object is, so the only thing
- * anyone ever does to one is edit it. That is also why the light rides on the
- * session directly rather than as a one-element candidate list -- a list of
- * one, with an index that can only be zero, would be pretending a light can be
- * stepped through.
- *
- * The light held here is the one the session opened on, and it stays that way.
- * Like a review candidate it is a fixed thing that `editedShape` is a diff
- * against, not a running copy of what the mask holds.
- */
 export interface LightEditSession extends MaskEditSessionBase {
   subject: "light";
   light: LaurusLight;
 }
 
-/**
- * Whatever the pen is currently open on -- at most one thing, ever.
- *
- * One session rather than one per kind, because the things that would have to
- * be duplicated are the things that must not disagree: which tool the toolbar
- * shows, which overlay is mounted, and which mesh the mask is drawing. Two
- * sessions could both be open, and then two of those three would be wrong.
- */
 export type MaskEditSession = ObjectReviewSession | LightEditSession;
 
-/**
- * The region the pen is open on, whichever kind of session it belongs to.
- *
- * Undefined only for a review whose candidate index has gone stale, which the
- * callers already have to handle.
- *
- * Note this is the region the session *opened* on -- the candidate as detected,
- * or the light as stored. Where an edit has since been accepted onto the mask,
- * what is on screen is the mask's copy, not this one; resolving that is the
- * canvas's business because only it holds the mask (see reviewShape).
- */
 export function editedRegion(session: MaskEditSession): EditableRegion | undefined {
   if (session.subject === "light") return session.light;
   return session.candidates[session.currentIndex]?.object;
 }
 
-/**
- * Whether this entry is the very thing the pen has open.
- *
- * The question every control that selects something has to ask before it acts:
- * moving the selection off what is being edited abandons the session, so the
- * one target that is not a move away is the subject itself. Read through
- * editedRegion rather than off the session, because a review's subject is
- * whichever candidate it currently stands on.
- *
- * A mask is never the subject, not even the mask the session is on. The pen is
- * open on one region of it, and selecting the whole thing points every bar at
- * something else.
- */
 export function isMaskEditSubject(session: MaskEditSession, entry: CarouselEntry): boolean {
   if (entry.key !== session.maskKey) return false;
   if (entry.type === "light") return session.subject === "light" && entry.lightId === session.light.id;
@@ -311,61 +160,33 @@ export function isMaskEditSubject(session: MaskEditSession, entry: CarouselEntry
   return false;
 }
 
-/**
- * Open the pen on something, which is the same act as selecting it.
- *
- * The panel is the pen's supplement rather than a thing of its own, so there
- * is no reaching the left half of this without the right: every session starts
- * here, and none of the four openers is trusted to remember the tool for
- * itself. The way back out is the mirror of it -- a session ends by clearing
- * `maskEdit` and leaving the pen exactly where it is, armed and waiting for
- * whatever is clicked next (see isPenArmed).
- *
- * A fresh pen rather than the one already selected, which matters on the way
- * in from an armed one: stitch and add-anchor read clicks on an outline that
- * did not exist when they were switched on, and carrying them over would open
- * the session in a mode nobody asked this outline for.
- */
 function openMaskEdit(state: UIState, session: MaskEditSession): UIState {
   return { ...state, tool: defaultPenTool, maskEdit: session };
 }
 
-/**
- * Whether the pen is selected with nothing open under it.
- *
- * The state the toolbar button leaves behind when it is pressed cold. There is
- * nothing to draw yet, so what the pen does instead is wait to be told what:
- * the canvas turns to a crosshair, and the next light or object clicked on a
- * mask is opened for editing there and then (see the canvas click handler).
- *
- * No flag of its own, because there is nothing one could say that these two
- * do not -- the pen is the tool, and no session is open beneath it. A flag
- * would be a third thing to keep in step with the two that already decide it.
- */
 export function isPenArmed(state: UIState): boolean {
   return state.tool.type === "pen" && state.maskEdit === undefined;
 }
 
-/**
- * Whether the bar on screen is waiting to be pointed at a light or an object
- * instead of showing anything about one.
- *
- * True of the armed pen, and of the light source tool with nothing picked and
- * no preview running. Both bars say so in the same sentence, and both want the
- * same thing from the canvas: hovering a mask brings up the dim cues for every
- * light and object on it, so what there is to click can be seen rather than
- * hunted for. Named here because the canvas is what has to answer it, and it
- * has to answer both the same way.
- *
- * The light source bar's own greeting is the narrower one -- it knows which of
- * its two submenus is showing, which nothing outside it does. The gap is only
- * ever a submenu greeting while something of the other kind is selected, and
- * that selection is already lighting its own mask up.
- */
 export function isAwaitingRegionPick(state: UIState): boolean {
   if (isPenArmed(state)) return true;
   if (state.tool.type !== "light_source" || state.lightSourcePreview) return false;
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
+}
+
+export type SkewArm = { key: string; type: "img" | "svg" | "mask" };
+
+export function skewArm(
+  state: UIState,
+  selectedImgKeys: Set<string>,
+  selectedSvgKeys: Set<string>,
+  selectedMaskKeys: Set<string>,
+): SkewArm | undefined {
+  if (state.tool.type !== "skew") return undefined;
+  if (selectedImgKeys.size > 0) return { key: Array.from(selectedImgKeys)[0], type: "img" };
+  if (selectedSvgKeys.size > 0) return { key: Array.from(selectedSvgKeys)[0], type: "svg" };
+  if (selectedMaskKeys.size > 0) return { key: Array.from(selectedMaskKeys)[0], type: "mask" };
+  return undefined;
 }
 
 export type MaskArm = { type: "img"; img: LaurusImgResult } | { type: "mask"; maskKey: string };
@@ -377,15 +198,6 @@ export function maskArm(state: UIState, selectedMaskKey: string | undefined): Ma
   return undefined;
 }
 
-/**
- * Whether the session refuses edits because its subject has already been
- * decided.
- *
- * Only ever true of a review. A light edit has no decision to be locked by,
- * and neither does an object opened straight from the context menu -- both are
- * someone deliberately choosing to change one thing, which is the same gesture
- * that unlocks a decided candidate.
- */
 export function isMaskEditLocked(session: MaskEditSession): boolean {
   if (session.subject !== "object") return false;
   if (session.mode !== "review" || session.redoRequested) return false;
@@ -420,9 +232,7 @@ export interface UIState {
   lightSourcePreview: boolean;
   canvasZoom: number;
   stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
-  /** Whatever the pen is open on, or undefined when it is open on nothing. */
   maskEdit: MaskEditSession | undefined;
-  /** dim (0.5 alpha) vs bright (1 alpha) for the pen's outline/highlight overlays. */
   gridlinesBright: boolean;
 }
 
@@ -508,8 +318,6 @@ export enum UIActionType {
   RequestObjectReviewRedo,
   RecordObjectReviewDecision,
   ResumeObjectReview,
-  // Shared by both kinds of session -- these are the pen's own actions, and
-  // the pen does not know or care whether it is open on an object or a light.
   ToggleMaskEditPolygon,
   SetMaskEditShape,
   SetMaskEditShapeEditing,
@@ -845,10 +653,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.StartObjectReview: {
       if (action.candidates.length === 0) return state;
-      // Handles down, but the pen selected all the same: a candidate is
-      // reviewed before it is redrawn, so the first thing to do with one is
-      // pick over the triangles it claims. The panel's own button raises the
-      // handles when there turns out to be something to redraw.
       return openMaskEdit(state, {
         subject: "object",
         mode: "review",
@@ -865,11 +669,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         retouch: undefined,
       });
     }
-    // Both of these open with the handles already up, unlike a review.
-    // Editing an outline is the whole of what they are for -- there is no
-    // reviewing to do first, the way there is for a detected candidate -- so
-    // the panel's button was one click standing between asking to edit a shape
-    // and being able to.
     case UIActionType.StartObjectEdit: {
       return openMaskEdit(state, {
         subject: "object",
@@ -902,11 +701,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.ToggleMaskEditPolygon: {
       const session = state.maskEdit;
-      // Membership is not the pen's to change: while its handles are up the
-      // clicks on the mesh are the outline's, and the canvas already refuses
-      // to raise this then. Refused here as well because it is the invariant
-      // rather than the gesture -- what a region covers is edited with the pen
-      // shut, whoever asks.
       if (!session || isMaskEditLocked(session) || session.editingShape) return state;
       const currentIndices = new Set(session.currentIndices);
       if (currentIndices.has(action.index)) {
@@ -918,15 +712,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetObjectReviewIndex: {
       const review = state.maskEdit;
-      // Stepping between candidates is a review's own gesture: a light edit has
-      // exactly one subject, so there is nowhere for an index to point.
       if (review?.subject !== "object") return state;
       const index = Math.min(review.candidates.length - 1, Math.max(0, action.index));
       if (index === review.currentIndex) return state;
-      // Handles down on the way in, the same as the review opened: the next
-      // candidate is another thing to look over before it is anything to
-      // redraw, and leaving them up would have them come up around an outline
-      // nobody has yet decided is wrong. The pen stays selected either way.
       return {
         ...state,
         maskEdit: {
@@ -955,18 +743,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       if (!session || isMaskEditLocked(session)) return state;
       if (!action.retouch) return { ...state, maskEdit: { ...session, retouch: undefined } };
 
-      // A second retouch recuts the mesh the first one produced, so the two
-      // have to compose into one -- what is held here is always the whole
-      // distance from the mask as it was found to the mask as it now is,
-      // because that is what reverting undoes and what accepting sends.
-      //
-      // `restore` is therefore the *first* one's, or a revert would put the
-      // mask back to a mesh that had already been cut once. And `added` is
-      // the running total, not the last recut's own: retouchDelta reads the
-      // appended entries off the tail as `polygons.length - added`, so
-      // carrying only the second count would put that boundary a whole recut
-      // too late and report entries the server has never seen as edits to
-      // entries it has.
       const previous = session.retouch;
       return {
         ...state,
@@ -983,9 +759,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetMaskEditShapeEditing: {
       const session = state.maskEdit;
       if (!session) return state;
-      // Only the handles. The pen was selected when the session opened and
-      // stays selected until it ends, so this no longer moves the toolbar --
-      // see the field's own note.
       return { ...state, maskEdit: { ...session, editingShape: action.editing } };
     }
     case UIActionType.RequestObjectReviewRedo: {
@@ -1004,9 +777,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       decisions.set(candidate.object.id, action.decision);
 
       const next = advanceObjectReview(review, decisions);
-      // The pen is left selected and armed on the way out, not handed back to
-      // some tool the session was opened over -- deciding the last candidate
-      // is the end of one outline, not of the standing intention to edit them.
       if (next.done) return { ...state, maskEdit: undefined };
       return {
         ...state,
@@ -1027,7 +797,6 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, maskEdit: { ...session, endRequested: true } };
     }
     case UIActionType.EndMaskEdit: {
-      // The pen stays where it is, armed -- see openMaskEdit.
       return { ...state, maskEdit: undefined };
     }
     case UIActionType.ResumeObjectReview: {

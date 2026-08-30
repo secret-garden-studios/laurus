@@ -136,7 +136,15 @@ const MOVE_UP_TITLE = "move this object forward in its mask -- alt to put it in 
 const MOVE_DOWN_TITLE = "move this object back in its mask -- past the mask itself, it renders behind it";
 
 function projectSvgIsTransformed(svg: LaurusProjectSvg) {
-  if (svg.scale_x == 1 && svg.scale_y == 1 && svg.rotate_x == 0 && svg.rotate_y == 0 && svg.rotate_z == 0) {
+  if (
+    svg.scale_x == 1 &&
+    svg.scale_y == 1 &&
+    svg.rotate_x == 0 &&
+    svg.rotate_y == 0 &&
+    svg.rotate_z == 0 &&
+    svg.skew_ax == 0 &&
+    svg.skew_ay == 0
+  ) {
     return false;
   } else {
     return true;
@@ -144,7 +152,15 @@ function projectSvgIsTransformed(svg: LaurusProjectSvg) {
 }
 
 function projectImgIsTransformed(img: LaurusProjectImg) {
-  if (img.scale_x == 1 && img.scale_y == 1 && img.rotate_x == 0 && img.rotate_y == 0 && img.rotate_z == 0) {
+  if (
+    img.scale_x == 1 &&
+    img.scale_y == 1 &&
+    img.rotate_x == 0 &&
+    img.rotate_y == 0 &&
+    img.rotate_z == 0 &&
+    img.skew_ax == 0 &&
+    img.skew_ay == 0
+  ) {
     return false;
   } else {
     return true;
@@ -152,7 +168,15 @@ function projectImgIsTransformed(img: LaurusProjectImg) {
 }
 
 function projectMaskIsTransformed(mask: LaurusProjectMask) {
-  if (mask.scale_x == 1 && mask.scale_y == 1 && mask.rotate_x == 0 && mask.rotate_y == 0 && mask.rotate_z == 0) {
+  if (
+    mask.scale_x == 1 &&
+    mask.scale_y == 1 &&
+    mask.rotate_x == 0 &&
+    mask.rotate_y == 0 &&
+    mask.rotate_z == 0 &&
+    mask.skew_ax == 0 &&
+    mask.skew_ay == 0
+  ) {
     return false;
   } else {
     return true;
@@ -781,25 +805,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     [coreState.project, coreState.apiOrigin, coreState.accessToken, media.key, dispatch],
   );
 
-  /**
-   * True while a reorder is in flight, and what stands the two buttons down.
-   *
-   * A single object reorder is several sends -- ranking is dense, so moving one
-   * object renumbers its neighbours, and each is a full-replace down the object
-   * socket. A second click landing mid-run would build its own step from a mask
-   * that has absorbed only some of the first one's deltas and write a stacking
-   * neither click asked for. Locking rather than debouncing, because the thing
-   * to wait for is the acknowledgement, not a quiet interval: every click still
-   * lands, just never on top of its own commit.
-   */
   const [reordering, setReordering] = useState(false);
 
   const moveInStack = useCallback(
     async (direction: ObjectOrderDirection) => {
-      // An object's stack is its parent mask; everything else's is the project.
-      // Same four gestures, two different things being ordered -- and before
-      // objects had an order of their own, these buttons on an object's menu
-      // silently reordered the whole mask it belongs to.
       if (media.type !== "object") {
         await updateMediaOrder(direction);
         return;
@@ -864,6 +873,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             rotate_y: 0,
             rotate_z: 0,
             rotate_angle: 0,
+            skew_ax: 0,
+            skew_ay: 0,
           };
           newImgs.set(media.key, newImg);
         }
@@ -881,6 +892,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             rotate_y: 0,
             rotate_z: 0,
             rotate_angle: 0,
+            skew_ax: 0,
+            skew_ay: 0,
           };
           newSvgs.set(media.key, newSvg);
         }
@@ -900,6 +913,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             rotate_y: 0,
             rotate_z: 0,
             rotate_angle: 0,
+            skew_ax: 0,
+            skew_ay: 0,
           };
           newMasks.set(media.key, newMask);
         }
@@ -973,7 +988,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
   }, [coreState.canvasMasks, media]);
 
-  // TODO: refactor
   const reviewFetchedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!reviewMaskMediaId) return;

@@ -18,9 +18,6 @@ import { maskGeometry } from "./canvas-media/mask-geometry";
 import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 
-/* The drawing canvas lives inside the zoom transform, so its client rect is the
-   zoomed one while its buffer stays in unzoomed canvas units. Going through that
-   ratio puts the drop where the cursor actually is at any zoom level. */
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = rect.width === 0 ? 1 : canvas.width / rect.width;
@@ -302,6 +299,8 @@ export default function Canvas() {
         rotate_y: 0,
         rotate_z: 0,
         rotate_angle: 0,
+        skew_ax: 0,
+        skew_ay: 0,
         scale_x: 1,
         scale_y: 1,
         description: "",
@@ -402,6 +401,8 @@ export default function Canvas() {
         rotate_y: 0,
         rotate_z: 0,
         rotate_angle: 0,
+        skew_ax: 0,
+        skew_ay: 0,
         scale_x: 1,
         scale_y: 1,
         description: "",
@@ -478,18 +479,8 @@ export default function Canvas() {
     ],
   );
 
-  /* An armed image is one drop away from being a mask, and a mask draws
-     the picture it was made from at its own full size -- which is not the
-     one the browser panel loaded, since next/image serves that resized
-     and under its own URL. Fetched and decoded here, while the marquee is
-     still being drawn, so the drop can upload it in the frame it starts
-     in rather than leaving an empty frame on the canvas until the picture
-     lands. */
   useEffect(() => {
     if (uiState.browserElement?.type === "img") warmImageTexture(uiState.browserElement.value.src);
-    // The other way into a mask: an image already on the canvas,
-    // picked up with the mask tool. Nothing was armed in the
-    // browser for that one, so it is warmed from the selection.
     warmImageTexture(activeMaskImg?.imgData.src);
   }, [uiState.browserElement, activeMaskImg]);
 
@@ -518,8 +509,6 @@ export default function Canvas() {
     const maskRect = maskCanvasEl.getBoundingClientRect();
     if (maskRect.width === 0 || maskRect.height === 0) return undefined;
 
-    // The drop area is in canvas units; the two rects are both zoomed, so the
-    // circle has to be scaled back up before it can be compared against them.
     if (drawingRect.width === 0) return undefined;
     const zoomed = drawingRect.width / drawingCanvas.width;
     const localX = dropArea.cx * zoomed + drawingRect.left - maskRect.left;

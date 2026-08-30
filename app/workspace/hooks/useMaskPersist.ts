@@ -45,6 +45,8 @@ export function useMaskPersist() {
         rotate_y: 0,
         rotate_z: 0,
         rotate_angle: 0,
+        skew_ax: 0,
+        skew_ay: 0,
         light_preview_size: mask.lightSize,
         light_preview_intensity: mask.lightIntensity,
         light_preview_falloff: mask.lightFalloff,

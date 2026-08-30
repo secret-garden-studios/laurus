@@ -17,13 +17,12 @@ const onNotOk = (status: number, message?: string) => {
 
 const getOnNotOkMessage = (
   action: "creating" | "updating" | "deleting",
-  type: "scale" | "move" | "rotate" | "light_source" | "effect_group" | "media_group" | "svg" | "mask",
+  type: "scale" | "move" | "rotate" | "skew" | "light_source" | "effect_group" | "media_group" | "svg" | "mask",
   description?: string,
 ) => {
   return description?.trim() ? `This occurred while ${action} the ${type} described as "${description}".` : undefined;
 };
 
-/* /discover */
 interface ImgPageSearch_V1_0 {
   exlusions: string[];
   size: number;
@@ -122,8 +121,6 @@ export async function searchSvgs(baseUrl: string | undefined, search: SvgPageSea
   }
 }
 
-/* /media/img */
-
 export interface ImgMedia_V1_0 {
   media_uri: string;
   media_key: string;
@@ -185,8 +182,6 @@ export async function createImg(baseUrl: string | undefined, accessToken: string
     return undefined;
   }
 }
-
-/* /media/svg */
 
 export interface SvgMedia_V1_0 {
   media_uri: string;
@@ -287,8 +282,6 @@ export async function deleteSvg(
   }
 }
 
-/* /media/masks */
-
 export interface PolygonPath_V1_0 {
   d: string;
   fill: string;
@@ -299,29 +292,6 @@ export interface PolygonPath_V1_0 {
 }
 export type LaurusPolygonPath = PolygonPath_V1_0;
 
-/**
- * One named subsection of a mask's mesh, together with the light it casts.
- *
- * `cx`/`cy`/`radius`/`shape` are this light's own silhouette and mean exactly
- * what the same four fields mean on Object_V1_0: an epicenter in mesh space,
- * the distance the falloff reaches, and an optional normalized outline
- * generalizing that single distance into an arbitrary one. An empty `shape` is
- * the disc of that radius exactly rather than a separate case, which is what
- * makes it safe for a light to have no outline at all.
- *
- * A light drawn today is born with all four set -- the disc it would have lit
- * with anyway, written down rather than left implied (see lightMeshSection).
- * They are still defaulted, and zero is still the *unset* state rather than a
- * usable one, because every light written before lights could be shaped is
- * stored that way: one with `radius <= 0` lights from the centroid of its own
- * tagged triangles at `size / 2`, exactly as it always did, and the pen seeds
- * all four from that same derivation the first time it opens on it.
- *
- * Geometry and outline travel together and must keep travelling together: a
- * stored path is normalized to unit extent and scaled by `radius`, so pairing
- * one light's path with another's radius renders it at the wrong size. Same
- * pairing rule the object review documents at length.
- */
 export interface Light_V1_0 {
   id: number;
   name: string;
@@ -350,47 +320,11 @@ export interface Object_V1_0 {
   fill_g: number;
   fill_b: number;
   fill_a: number;
-  /**
-   * The hue and saturation the picker was holding when this fill was chosen.
-   * rgb stays authoritative for rendering; these two are consulted only where
-   * rgb carries no answer -- black has neither, grey has no hue -- so that
-   * reopening the picker on a black fill does not snap it back to red.
-   */
   fill_h: number;
   fill_s: number;
   description: string;
   reviewed: boolean;
-  /**
-   * Carry the source image's own pixels with this object while an effect
-   * animates it, instead of letting the relief slide over an image that stays
-   * put. Only the renderer reads it -- see objectLift in mask-gl.ts -- and only
-   * while a move or a scale is actually playing, which is why it is safe for an
-   * object to be lifted and look no different at rest.
-   */
   lift: boolean;
-  /**
-   * Where this object sits in its parent mask's stack -- relative to that mask
-   * and scoped no further, so two objects on different masks say nothing to
-   * each other through it.
-   *
-   * Zero is the mask's own plane rather than an object slot. Positive puts the
-   * object in front of the mask, negative behind it, and the magnitude ranks it
-   * against the mask's other objects on the same side. A mask holding three
-   * ordered objects therefore reads -1, 1, 2: no 0 in it, because 0 is the
-   * sheet they are stacked around.
-   *
-   * What it decides is occlusion during playback -- an object behind the mask
-   * shows only where the mask is transparent, and where two travelling objects
-   * meet the higher order takes the pixel. A negative order also raises no
-   * relief at all, since an object behind the sheet cannot emboss it. All three
-   * rules live in mask-gl.ts.
-   *
-   * 0 is the *unranked* state rather than a broken one: normalizeObject leaves
-   * it there for every object stored before this field existed, and the
-   * stacking order resolves a run of them by object id (see stackedObjects), so
-   * such a mask keeps the stacking it already had. The first reorder anyone
-   * performs numbers the whole mask.
-   */
   order: number;
 }
 export type LaurusObject = Object_V1_0;
@@ -400,7 +334,6 @@ export interface ObjectFill_V1_0 {
   g: number;
   b: number;
   a: number;
-  /** see Object_V1_0.fill_h -- what the picker remembered, for colours rgb cannot describe */
   h: number;
   s: number;
 }
@@ -605,8 +538,6 @@ export function nextObjectId(objects: Object_V1_0[]): number {
   return 1 + objects.reduce((max, p) => Math.max(max, p.id), 0);
 }
 
-/* /media/masks/mask (websocket) */
-
 export interface MaskRequest_V1_0 {
   img_media_id: string;
   max_triangle_area?: number;
@@ -737,16 +668,6 @@ export function maskImage(
   return socket;
 }
 
-/* /media/masks/{mask_media_id}/lights (websocket) */
-
-/**
- * One full-replace edit of a single light.
- *
- * Every field of the light is rewritten from this payload, exactly like
- * MaskObjectUpdateRequest_V1_0 -- a caller that leaves one out erases it. That
- * is why the silhouette fields are required rather than optional: an edit that
- * is not about the shape still has to say what the shape is.
- */
 export interface MaskLightUpdateRequest_V1_0 {
   light_id: number;
   name: string;
@@ -781,18 +702,6 @@ export interface LightUpdateDelta_V1_0 extends MaskEditDelta_V1_0 {
   removed: boolean;
 }
 
-/**
- * A light with nothing set on it yet.
- *
- * The blank a caller fills in, and the stand-in for a light that was expected
- * to be found and was not. Zero across the board is the resting "off" state
- * everywhere -- no light, no falloff, and no silhouette.
- *
- * Not by itself a light worth saving. The one place that creates lights fills
- * in the appearance and the silhouette on top of this (see lightMeshSection),
- * and the one place that deletes one sends it through untouched -- which is
- * exactly what a light with no triangles and nothing set on it means.
- */
 export function newLight(id: number, name: string): Light_V1_0 {
   return {
     id,
@@ -809,28 +718,6 @@ export function newLight(id: number, name: string): Light_V1_0 {
   };
 }
 
-/**
- * Build one light edit from the light as it stands, changing only what is
- * named.
- *
- * The single place that knows every field of a light update, so a caller
- * meaning to change one cannot silently drop another. A light edit is a
- * full-replace -- the server rewrites every field of the light from this
- * payload -- which makes an omitted field indistinguishable from a deliberate
- * reset, and makes a field added *after* a call site was written invisible at
- * it: nothing errors, nothing type-checks differently, and the loss shows up
- * in a feature nobody was touching.
- *
- * That is not hypothetical. It is exactly what happened to `object_id` when
- * the server's light update rebuilt each polygon by hand and was written
- * before object tagging existed; `repolygon` is the fix one layer down, and
- * this is the same fix at the same seam. Route every light write through here
- * and a new field is a one-line change in this file.
- *
- * `polygon_indices` is required rather than defaulted because it is the one
- * field a light has no resting value for -- membership lives on the mask's
- * polygons, not on the light -- so there is nothing here to carry forward.
- */
 export function toLightUpdate(
   light: Light_V1_0,
   changes: Partial<Omit<MaskLightUpdateRequest_V1_0, "light_id">> & { polygon_indices: number[] },
@@ -861,8 +748,6 @@ export function toMaskLightSocketUrl(baseUrl: string, maskMediaId: string, acces
   return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/lights?token=${encodeURIComponent(accessToken)}`;
 }
 
-/* /media/masks/{mask_media_id}/objects (websocket) */
-
 export interface MaskObjectUpdateRequest_V1_0 {
   object_id: number;
   name: string;
@@ -887,18 +772,6 @@ export interface MaskObjectUpdateRequest_V1_0 {
   retouch?: RetouchedMesh_V1_0;
 }
 
-/**
- * An object with nothing placed on it yet -- the blank a caller drawing a new
- * one fills in.
- *
- * The twin of newLight, and here for the same reason: an object edit is a
- * full-replace, so the fields a *creating* caller does not care about still
- * have to be spelled out, and spelling them out at the call site is what makes
- * a field added later invisible there. Geometry is the caller's to supply --
- * an object with no radius is not one the server will keep (see
- * update_mask_object_in_redis, which reads `radius <= 0` as a removal) -- and
- * everything else rests at the value an untouched object has.
- */
 export function newObject(id: number, name: string): Object_V1_0 {
   return {
     id,
@@ -917,28 +790,6 @@ export function newObject(id: number, name: string): Object_V1_0 {
   };
 }
 
-/**
- * Build one object edit from the object as it stands, changing only what is
- * named.
- *
- * The exact twin of toLightUpdate, written for the exact reason that one was.
- * An object edit is a full-replace -- the server rewrites every field from this
- * payload -- so an omitted field is indistinguishable from a deliberate reset,
- * and a field added *after* a call site was written is invisible at it: nothing
- * errors, nothing type-checks differently, and the loss surfaces in a feature
- * nobody was touching.
- *
- * That already happened once here, to `object_id` on the polygons (see
- * repolygon on the server). This side had four call sites hand-building the
- * request instead -- a drawn object, a deleted one, a reviewed one, and the
- * light-source bar's queue -- which is four places for the next field to go
- * missing. Route every object write through here and a new field is a one-line
- * change in this file.
- *
- * `polygon_indices` is required rather than defaulted for the same reason it is
- * on toLightUpdate: membership lives on the mask's polygons, not on the object,
- * so there is nothing here to carry forward.
- */
 export function toObjectUpdate(
   object: Object_V1_0,
   changes: Partial<Omit<MaskObjectUpdateRequest_V1_0, "object_id">> & { polygon_indices: number[] },
@@ -982,27 +833,12 @@ export function toMaskObjectSocketUrl(baseUrl: string, maskMediaId: string, acce
   return `${toWebSocketUrl(baseUrl)}/media/masks/${maskMediaId}/objects?token=${encodeURIComponent(accessToken)}`;
 }
 
-/* /media/masks/{mask_media_id}/object-review */
-
 export interface ObjectReviewCandidate_V1_0 {
   object: Object_V1_0;
   polygon_indices: number[];
 }
 export type LaurusObjectReviewCandidate = ObjectReviewCandidate_V1_0;
 
-/**
- * A mesh recut along an object's outline, as the change it makes rather than
- * as the mesh it produced -- see retouchDelta.
- *
- * `replaced` names slots that already existed and whose geometry moved;
- * `added` are appended, in this order, and the sender has already numbered its
- * own copy on the assumption that they land at the end in exactly it.
- *
- * Append-only is the whole contract. Polygon indices are positional and are
- * held by every other object, every light, every review candidate and every
- * recorded decision, so a recut that inserted or removed entries would
- * silently renumber all of them.
- */
 export interface RetouchedMesh_V1_0 {
   replaced: { index: number; d: string }[];
   added: PolygonPath_V1_0[];
@@ -1049,14 +885,7 @@ export async function postObjectReviewDecision(
       description,
       added_polygon_indices: addedPolygonIndices ?? [],
       removed_polygon_indices: removedPolygonIndices ?? [],
-      // omitted rather than null when untouched: the server reads absent as
-      // "keep the candidate's own outline", and the candidate is never mutated.
-      // cx/cy/radius ride along because a reshaped outline moves them -- the
-      // path is renormalized to unit extent, so the growth lives in the radius
       ...(shape === undefined ? {} : { shape: shape.path, cx: shape.cx, cy: shape.cy, radius: shape.radius }),
-      // omitted rather than empty when the reviewer did not retouch, so the
-      // server can tell "no recut" from "a recut that changed nothing" without
-      // having to inspect the lists
       ...(retouch === undefined ? {} : { retouch }),
     });
     let response: Response | undefined = undefined;
@@ -1102,8 +931,6 @@ export async function getObjectReview(
     return undefined;
   }
 }
-
-/* /media/groups */
 
 interface MediaGroup_V1_0 {
   project_id: string;
@@ -1246,8 +1073,6 @@ export async function deleteMediaGroup(
   }
 }
 
-/* /effects */
-
 export async function getEffects(baseUrl: string | undefined) {
   try {
     const url = `${baseUrl}/effects`;
@@ -1267,8 +1092,6 @@ export async function getEffects(baseUrl: string | undefined) {
     return undefined;
   }
 }
-
-/* /effects/groups */
 
 export interface EffectGroup_V1_0 {
   project_id: string;
@@ -1409,17 +1232,12 @@ export async function deleteEffectGroup(
   }
 }
 
-/* /scales */
-
 export interface ScaleSolution_V1_0 {
   x: number;
   y: number;
 }
 export interface ScaleEquation_V1_0 {
   input_id: string;
-  /**
-   * ms
-   */
   time: number;
   scale_x: number;
   scale_y: number;
@@ -1428,13 +1246,7 @@ export interface ScaleEquation_V1_0 {
   limit_factor: number;
 }
 export interface Scale_V1_0 {
-  /**
-   * s
-   */
   start: number;
-  /**
-   * s
-   */
   end: number;
   project_id: string;
   effect_group_id: string;
@@ -1449,13 +1261,7 @@ export interface ScaleResult_V1_0 {
   timestamp: string;
   last_active: string;
   scale_id: string;
-  /**
-   * s
-   */
   start: number;
-  /**
-   * s
-   */
   end: number;
   project_id: string;
   effect_group_id: string;
@@ -1613,8 +1419,6 @@ export async function deleteScale(
     return false;
   }
 }
-
-/* /moves */
 
 export interface MoveEquation_V1_0 {
   input_id: string;
@@ -1805,8 +1609,6 @@ export async function deleteMove(
   }
 }
 
-/* /rotates */
-
 export interface RotateEquation_V1_0 {
   input_id: string;
   x: number;
@@ -1993,7 +1795,189 @@ export async function deleteRotate(
   }
 }
 
-/* /light_sources */
+export interface SkewEquation_V1_0 {
+  input_id: string;
+  ax: number;
+  ay: number;
+  time: number;
+  loop: LaurusLoopType;
+  solution: { ax: number; ay: number }[];
+  limit_factor: number;
+}
+export interface Skew_V1_0 {
+  start: number;
+  end: number;
+  project_id: string;
+  effect_group_id: string;
+  order: number;
+  locked: boolean;
+  disabled: boolean;
+  description: string;
+  mix: boolean;
+  math: Map<string, SkewEquation_V1_0>;
+}
+export interface SkewResult_V1_0 {
+  timestamp: string;
+  last_active: string;
+  skew_id: string;
+  start: number;
+  end: number;
+  project_id: string;
+  effect_group_id: string;
+  order: number;
+  locked: boolean;
+  disabled: boolean;
+  description: string;
+  mix: boolean;
+  math: Map<string, SkewEquation_V1_0>;
+  creator: string;
+  last_editor: string;
+}
+export type LaurusSkewEquation = SkewEquation_V1_0;
+export interface LaurusSkew extends Skew_V1_0 {
+  math: Map<string, LaurusSkewEquation>;
+}
+export interface LaurusSkewResult extends SkewResult_V1_0 {
+  math: Map<string, LaurusSkewEquation>;
+  mixState: LaurusMixState;
+}
+export async function getSkews(baseUrl: string | undefined, projectId: string) {
+  try {
+    const url = `${baseUrl}/skews?project_id=${projectId}`;
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: SkewResult_V1_0[] = await raw_response.json();
+    return response.map((r) => {
+      return {
+        ...r,
+        math: new Map(Object.entries(r.math)),
+      };
+    });
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function getSkew(baseUrl: string | undefined, skewId: string, inputId: string | undefined) {
+  try {
+    let url = `${baseUrl}/skews/${skewId}`;
+    if (inputId) {
+      url += `?input_id=${inputId}`;
+    }
+    const raw_response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!raw_response.ok) {
+      return undefined;
+    }
+    const response: SkewResult_V1_0 = await raw_response.json();
+    return {
+      ...response,
+      math: new Map(Object.entries(response.math)),
+    };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function createSkew(baseUrl: string | undefined, accessToken: string | undefined, skew: Skew_V1_0) {
+  try {
+    const url = `${baseUrl}/skews`;
+    const body = JSON.stringify({
+      ...skew,
+      math: Object.fromEntries(skew.math),
+    });
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "POST");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "POST");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("creating", "skew", skew.description));
+      return undefined;
+    }
+
+    const result: SkewResult_V1_0 = await response.json();
+    return {
+      ...result,
+      math: new Map(Object.entries(result.math)),
+    };
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+export async function updateSkew(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  skewId: string,
+  skew: Skew_V1_0,
+): Promise<boolean> {
+  try {
+    const body = JSON.stringify({
+      ...skew,
+      math: Object.fromEntries(skew.math),
+    });
+    const url = `${baseUrl}/skews/${skewId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "skew", skew.description));
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const result: SkewResult_V1_0 = await response.json();
+    return true;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
+export async function deleteSkew(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  skewId: string,
+  description?: string,
+): Promise<boolean> {
+  try {
+    const url = `${baseUrl}/skews/${skewId}`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "DELETE");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "DELETE");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("deleting", "skew", description));
+    }
+    return response.ok;
+  } catch (error) {
+    console.log({ error });
+    return false;
+  }
+}
 
 export interface LightSourceSolution_V1_0 {
   light_intensity: number;
@@ -2008,9 +1992,6 @@ export interface LightSourceSolution_V1_0 {
 }
 export interface LightSourceEquation_V1_0 {
   input_id: string;
-  /**
-   * ms
-   */
   time: number;
   light_intensity: number;
   light_falloff: number;
@@ -2043,10 +2024,6 @@ export function toEquationObjectFill(fields: {
   object_fill_g: number;
   object_fill_b: number;
   object_fill_a: number;
-  /**
-   * Absent on a solved frame, which nobody authored -- 0/0 reads as "nothing
-   * remembered", which is exactly what a computed colour has to say.
-   */
   object_fill_h?: number;
   object_fill_s?: number;
 }): ObjectFill_V1_0 {
@@ -2061,13 +2038,7 @@ export function toEquationObjectFill(fields: {
 }
 
 export interface LightSource_V1_0 {
-  /**
-   * s
-   */
   start: number;
-  /**
-   * s
-   */
   end: number;
   project_id: string;
   effect_group_id: string;
@@ -2082,13 +2053,7 @@ export interface LightSourceResult_V1_0 {
   timestamp: string;
   last_active: string;
   light_source_id: string;
-  /**
-   * s
-   */
   start: number;
-  /**
-   * s
-   */
   end: number;
   project_id: string;
   effect_group_id: string;
@@ -2251,7 +2216,6 @@ export async function deleteLightSource(
   }
 }
 
-/* /frames */
 export type LaurusFrame = Frame_V1_0;
 interface Frame_V1_0 {
   x: number;
@@ -2262,6 +2226,8 @@ interface Frame_V1_0 {
   ry: number;
   rz: number;
   rangle: number;
+  ax: number;
+  ay: number;
   light_intensity: number;
   light_falloff: number;
   light_darkness: number;
@@ -2273,6 +2239,11 @@ interface Frame_V1_0 {
   object_fill_a: number;
   input_id: string;
 }
+
+const NEUTRAL_SKEW_FRAME = {
+  ax: 0,
+  ay: 0,
+};
 
 const NEUTRAL_OBJECT_FRAME = {
   object_elevation: 0,
@@ -2300,6 +2271,7 @@ export async function getScaleFrames(
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
+    ...NEUTRAL_SKEW_FRAME,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
@@ -2324,6 +2296,7 @@ export async function getMoveFrames(
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
+    ...NEUTRAL_SKEW_FRAME,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));
@@ -2346,6 +2319,34 @@ export async function getRotateFrames(
     y: 0,
     sx: 1,
     sy: 1,
+    light_intensity: 0,
+    light_falloff: 0,
+    light_darkness: 0,
+    ...NEUTRAL_SKEW_FRAME,
+    ...NEUTRAL_OBJECT_FRAME,
+    input_id: inputId,
+  }));
+}
+export async function getSkewFrames(
+  baseUrl: string | undefined,
+  skewId: string,
+  inputId: string,
+): Promise<LaurusFrame[] | undefined> {
+  const skewResult = await getSkew(baseUrl, skewId, inputId);
+  if (!skewResult) return undefined;
+  const eq: SkewEquation_V1_0 | undefined = skewResult.math.get(inputId);
+  if (!eq) return undefined;
+  return eq.solution.map((frame) => ({
+    ax: frame.ax,
+    ay: frame.ay,
+    x: 0,
+    y: 0,
+    sx: 1,
+    sy: 1,
+    rangle: 0,
+    rx: 0,
+    ry: 0,
+    rz: 0,
     light_intensity: 0,
     light_falloff: 0,
     light_darkness: 0,
@@ -2372,6 +2373,7 @@ export async function getLightSourceFrames(
     rx: 0,
     ry: 0,
     rz: 0,
+    ...NEUTRAL_SKEW_FRAME,
     input_id: inputId,
   }));
 }
@@ -2416,6 +2418,7 @@ export type LaurusEffect =
   | { type: "scale"; key: string; value: LaurusScaleResult }
   | { type: "move"; key: string; value: LaurusMoveResult }
   | { type: "rotate"; key: string; value: LaurusRotateResult }
+  | { type: "skew"; key: string; value: LaurusSkewResult }
   | { type: "light_source"; key: string; value: LaurusLightSourceResult };
 
 export enum LaurusLoopType {

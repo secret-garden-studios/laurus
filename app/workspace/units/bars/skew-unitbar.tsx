@@ -3,65 +3,70 @@ import {
   LaurusClientSvg,
   SvgRepo,
   add2,
-  asterisk300,
   autorenew,
   bookmarkStacks300,
   cancelCircle,
   contentPaste,
   fileCopy,
-  link,
-  linkOff,
+  image400,
   playArrow,
+  polyline300,
   remove,
-  antigravity300,
   syncAlt,
   texture300,
   updateDisabled,
-  image400,
-  polyline300,
 } from "@/app/svg-repo";
 import { Dispatch, SetStateAction, useCallback, useContext, useMemo, useState } from "react";
+import { SkewUnitControls, SkewUnitTarget, defaultSkewEquation } from "../skew-unit";
 import { CoreContext, HoverContext, UIContext } from "../../workspace.client";
 import {
-  getScaleFrames,
+  getSkewFrames,
   LaurusEffect,
   LaurusLoopType,
-  LaurusScaleEquation,
-  LaurusScaleResult,
-  updateScale,
+  LaurusSkewEquation,
+  LaurusSkewResult,
+  updateSkew,
 } from "../../workspace.server";
-import { ScaleUnitControls, ScaleUnitTarget, defaultScaleEquation, targetHasScaleHeight } from "../scale-unit";
 import { getDynamicUnitSizes, LIMIT_FACTOR_STEP, MAX_LIMIT_FACTOR, MIN_LIMIT_FACTOR } from "../../workspace.config";
 import { UIActionType } from "../../states/ui-state";
 import { CoreActionType } from "../../states/core-state";
 
-interface ScaleUnitbar {
-  scale: LaurusScaleResult;
+interface SkewUnitbar {
+  skew: LaurusSkewResult;
   carouselEntryKey: string;
-  unlockAspectRatio: boolean;
-  updateTrackpads: (newControls: ScaleUnitControls) => void;
-  currentControls: ScaleUnitControls;
-  setCurrentControls: Dispatch<SetStateAction<ScaleUnitControls>>;
-  saveNewEquation: (rollback: LaurusScaleResult, newEquation: LaurusScaleEquation) => Promise<void>;
-  setUnlockAspectRatio: Dispatch<SetStateAction<boolean>>;
-  target: ScaleUnitTarget;
+  saveNewEquation: (rollback: LaurusSkewResult, newEquation: LaurusSkewEquation) => Promise<void>;
+  updateTrackpads: (newControls: SkewUnitControls) => void;
+  currentControls: SkewUnitControls;
+  setCurrentControls: Dispatch<SetStateAction<SkewUnitControls>>;
+  target: SkewUnitTarget;
   onToggleTarget: () => void;
 }
-export default function ScaleUnitbar({
-  scale,
+
+export default function SkewUnitbar({
+  skew,
   carouselEntryKey,
-  unlockAspectRatio,
+  saveNewEquation,
   updateTrackpads,
   currentControls,
   setCurrentControls,
-  saveNewEquation,
-  setUnlockAspectRatio,
   target,
   onToggleTarget,
-}: ScaleUnitbar) {
+}: SkewUnitbar) {
   const { coreState, dispatch, handlePlayTarget } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  const targetSvg = useMemo((): LaurusClientSvg => {
+    switch (target) {
+      case "img":
+        return image400();
+      case "svg":
+        return polyline300();
+      case "mask":
+        return texture300();
+    }
+  }, [target]);
+
   const [dynamicSizes] = useState(() => {
     const ds = getDynamicUnitSizes(uiState.resolution);
     switch (uiState.resolution.type) {
@@ -88,26 +93,9 @@ export default function ScaleUnitbar({
     }
   });
 
-  const hasHeight = targetHasScaleHeight(target);
-
-  const targetSvg = useMemo((): LaurusClientSvg => {
-    switch (target) {
-      case "img":
-        return image400();
-      case "svg":
-        return polyline300();
-      case "mask":
-        return texture300();
-      case "light":
-        return asterisk300();
-      case "object":
-        return antigravity300();
-    }
-  }, [target]);
-
   const loopSvg = useMemo((): LaurusClientSvg => {
-    const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-    const enabled = scale.math.has(carouselEntryKey) ? true : false;
+    const loopType = skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+    const enabled = skew.math.has(carouselEntryKey) ? true : false;
     switch (loopType) {
       default:
       case LaurusLoopType.none: {
@@ -123,24 +111,24 @@ export default function ScaleUnitbar({
         return enabled ? autorenew() : autorenew("rgb(62,62,62)");
       }
     }
-  }, [carouselEntryKey, scale.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const loopSvgScale = useMemo((): number => {
-    const loopType = scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+    const loopType = skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
     switch (loopType) {
       case LaurusLoopType.none:
         return 0.85;
       default:
         return 0.9;
     }
-  }, [carouselEntryKey, scale.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const loopType = useMemo((): LaurusLoopType => {
-    return scale.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
-  }, [carouselEntryKey, scale.math]);
+    return skew.math.get(carouselEntryKey)?.loop ?? LaurusLoopType.none;
+  }, [carouselEntryKey, skew.math]);
 
   const getNextLoopType = useCallback((): LaurusLoopType => {
-    const currentLoop = scale.math.get(carouselEntryKey)?.loop;
+    const currentLoop = skew.math.get(carouselEntryKey)?.loop;
     switch (currentLoop) {
       case LaurusLoopType.loop:
       case LaurusLoopType.none: {
@@ -157,26 +145,24 @@ export default function ScaleUnitbar({
         return LaurusLoopType.none;
       }
     }
-  }, [carouselEntryKey, scale.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const decrementLimitFactor = useCallback((): number => {
-    const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
+    const currentFactor = skew.math.get(carouselEntryKey)?.limit_factor ?? defaultSkewEquation.limit_factor;
     return Math.max(MIN_LIMIT_FACTOR, Math.round((currentFactor - LIMIT_FACTOR_STEP) * 100) / 100);
-  }, [carouselEntryKey, scale.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const incrementLimitFactor = useCallback((): number => {
-    const currentFactor = scale.math.get(carouselEntryKey)?.limit_factor ?? defaultScaleEquation.limit_factor;
+    const currentFactor = skew.math.get(carouselEntryKey)?.limit_factor ?? defaultSkewEquation.limit_factor;
     return Math.min(MAX_LIMIT_FACTOR, Math.round((currentFactor + LIMIT_FACTOR_STEP) * 100) / 100);
-  }, [carouselEntryKey, scale.math]);
+  }, [carouselEntryKey, skew.math]);
 
   const mediaGroupId = useMemo(() => {
     const imgMeta = coreState.project.imgs.get(carouselEntryKey);
     if (imgMeta) return imgMeta.media_group_id;
     const svgMeta = coreState.project.svgs.get(carouselEntryKey);
-    if (svgMeta) return svgMeta.media_group_id;
-    const maskMeta = coreState.project.masks.get(carouselEntryKey);
-    return maskMeta?.media_group_id ?? "";
-  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
+    return svgMeta?.media_group_id ?? "";
+  }, [carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
 
   const otherGroupKeys = useMemo(() => {
     if (!mediaGroupId) return [];
@@ -186,29 +172,28 @@ export default function ScaleUnitbar({
     const svgKeys = Array.from(coreState.project.svgs.entries())
       .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
       .map(([key]) => key);
-    const maskKeys = Array.from(coreState.project.masks.entries())
-      .filter(([key, meta]) => key !== carouselEntryKey && meta.media_group_id === mediaGroupId)
-      .map(([key]) => key);
-    return [...imgKeys, ...svgKeys, ...maskKeys];
-  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs, coreState.project.masks]);
+    return [...imgKeys, ...svgKeys];
+  }, [mediaGroupId, carouselEntryKey, coreState.project.imgs, coreState.project.svgs]);
 
   const onPasteToGroupClick = useCallback(async () => {
     if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
     if (otherGroupKeys.length === 0) return;
-    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "scale") return;
+    if (!uiState.effectClipboard || uiState.effectClipboard.type !== "skew") return;
     const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
     if (!clipboardEquation) return;
-    const snapshot: LaurusScaleResult = { ...scale };
+    const snapshot: LaurusSkewResult = { ...skew };
     const newMath = new Map(snapshot.math);
     otherGroupKeys.forEach((key) => {
       newMath.set(key, { ...clipboardEquation, input_id: key });
     });
-    const newScale: LaurusScaleResult = { ...snapshot, math: newMath };
-    const updated = await updateScale(coreState.apiOrigin, coreState.accessToken, snapshot.scale_id, { ...newScale });
-    if (!updated) {
+    const newSkew: LaurusSkewResult = { ...snapshot, math: newMath };
+    const updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, snapshot.skew_id, {
+      ...newSkew,
+    });
+    if (updated) {
       dispatch({
         type: CoreActionType.SetEffect,
-        value: { type: "scale", value: { ...newScale }, key: newScale.scale_id },
+        value: { type: "skew", value: { ...newSkew }, key: newSkew.skew_id },
       });
     }
   }, [
@@ -216,7 +201,7 @@ export default function ScaleUnitbar({
     uiState.playbackMode.type,
     uiState.effectClipboard,
     otherGroupKeys,
-    scale,
+    skew,
     dispatch,
     coreState.apiOrigin,
     coreState.accessToken,
@@ -261,18 +246,21 @@ export default function ScaleUnitbar({
           />
         </div>
         <div
-          title={"loop"}
+          title="loop"
           onDoubleClick={() => {
-            if (scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
+            if (skew.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
             if (activeKey) {
               const nextLoop = getNextLoopType();
-              const snapshot: LaurusScaleResult = { ...scale };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
-                ? { ...activeEquation, loop: nextLoop }
+                ? {
+                    ...activeEquation,
+                    loop: nextLoop,
+                  }
                 : {
-                    ...defaultScaleEquation,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     loop: nextLoop,
                   };
@@ -288,14 +276,14 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"loop"}
+            title="loop"
             svg={loopSvg}
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.locked || uiState.playbackMode.type !== "stopped"
+                : skew.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
-                  : scale.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "pointer"
                     : "",
               ...dynamicSizes.paramButton,
@@ -329,13 +317,13 @@ export default function ScaleUnitbar({
           )}
         </div>
         <div
-          title={"preview"}
+          title="preview"
           onClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
             handlePlayTarget({
               inputKey: carouselEntryKey,
-              getFrames: (apiOrigin) => getScaleFrames(apiOrigin, scale.scale_id, carouselEntryKey),
-              effectKey: scale.scale_id,
+              getFrames: (apiOrigin) => getSkewFrames(apiOrigin, skew.skew_id, carouselEntryKey),
+              effectKey: skew.skew_id,
             });
           }}
           style={{
@@ -345,18 +333,18 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"preview"}
+            title="preview"
             svg={
-              scale.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
+              skew.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
                 ? playArrow()
                 : playArrow("rgb(62, 62, 62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type === "stopped"
                   ? "pointer"
-                  : scale.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "progress"
                     : "",
               ...dynamicSizes.paramButton,
@@ -366,19 +354,19 @@ export default function ScaleUnitbar({
           />
         </div>
         <div
-          title={"increase limits"}
+          title="increase limits"
           onClick={() => {
             if (
               isAltKeyPressed ||
-              scale.locked ||
+              skew.locked ||
               uiState.playbackMode.type !== "stopped" ||
-              (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
+              (skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor == MAX_LIMIT_FACTOR)
             )
               return;
             const activeKey = carouselEntryKey;
-            if (activeKey && scale.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const nextFactor = incrementLimitFactor();
-              const snapshot: LaurusScaleResult = { ...scale };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
                 ? {
@@ -386,7 +374,7 @@ export default function ScaleUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...defaultScaleEquation,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -401,16 +389,16 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"increase limits"}
+            title="increase limits"
             svg={
-              scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR
+              skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor != MAX_LIMIT_FACTOR
                 ? add2()
                 : add2("rgb(62, 62, 62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -420,19 +408,19 @@ export default function ScaleUnitbar({
           />
         </div>
         <div
-          title={"decrease limits"}
+          title="decrease limits"
           onClick={() => {
             if (
               isAltKeyPressed ||
-              scale.locked ||
+              skew.locked ||
               uiState.playbackMode.type !== "stopped" ||
-              (scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
+              (skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor == MIN_LIMIT_FACTOR)
             )
               return;
             const activeKey = carouselEntryKey;
-            if (activeKey && scale.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const nextFactor = decrementLimitFactor();
-              const snapshot: LaurusScaleResult = { ...scale };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeEquation = snapshot.math.get(activeKey);
               const newEquation = activeEquation
                 ? {
@@ -440,7 +428,7 @@ export default function ScaleUnitbar({
                     limit_factor: nextFactor,
                   }
                 : {
-                    ...defaultScaleEquation,
+                    ...defaultSkewEquation,
                     input_id: activeKey,
                     limit_factor: nextFactor,
                   };
@@ -455,16 +443,16 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"decrease limits"}
+            title="decrease limits"
             svg={
-              scale.math.has(carouselEntryKey) && scale.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR
+              skew.math.has(carouselEntryKey) && skew.math.get(carouselEntryKey)!.limit_factor != MIN_LIMIT_FACTOR
                 ? remove()
                 : remove("rgb(62,62,62)")
             }
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -474,59 +462,25 @@ export default function ScaleUnitbar({
           />
         </div>
         <div
-          title={"link width and height"}
-          onClick={() => {
-            if (isAltKeyPressed || scale.locked || !hasHeight) return;
-            const activeKey = carouselEntryKey;
-            if (activeKey && scale.math.has(activeKey)) {
-              setUnlockAspectRatio((v) => !v);
-            }
-          }}
-          style={{
-            display: "grid",
-            placeContent: "center",
-            ...dynamicSizes.paramButtonContainer,
-          }}
-        >
-          <SvgRepo
-            title={"link width and height"}
-            svg={
-              scale.math.has(carouselEntryKey) && hasHeight
-                ? unlockAspectRatio
-                  ? linkOff()
-                  : link()
-                : unlockAspectRatio
-                  ? linkOff("rgb(62, 62, 62)")
-                  : link("rgb(62, 62, 62)")
-            }
-            containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) && hasHeight ? "pointer" : "",
-              ...dynamicSizes.paramButton,
-            }}
-            scale={1}
-            scaleToContaier={true}
-          />
-        </div>
-        <div
-          title={"copy"}
+          title="copy"
           onClick={() => {
             if (isAltKeyPressed) return;
-            let clipboardData: ScaleUnitControls = { ...currentControls };
-            const activeEquation = scale.math.get(carouselEntryKey);
+            let clipboardData: SkewUnitControls = { ...currentControls };
+            const activeEquation = skew.math.get(carouselEntryKey);
             if (activeEquation) {
               clipboardData = { ...activeEquation };
             }
-            const currentEq: LaurusScaleEquation = {
+            const currentEq: LaurusSkewEquation = {
               ...clipboardData,
               input_id: "clipboard",
-              solution: defaultScaleEquation.solution,
+              solution: defaultSkewEquation.solution,
             };
-            const newMath: Map<string, LaurusScaleEquation> = new Map();
+            const newMath: Map<string, LaurusSkewEquation> = new Map();
             newMath.set("clipboard", currentEq);
             const newClipboardEffect: LaurusEffect = {
-              type: "scale",
-              key: scale.scale_id,
-              value: { ...scale, math: newMath },
+              type: "skew",
+              key: skew.skew_id,
+              value: { ...skew, math: newMath },
             };
             uiDispatch({
               type: UIActionType.SetEffectClipboard,
@@ -540,10 +494,10 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"copy"}
-            svg={scale.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
+            title="copy"
+            svg={skew.math.has(carouselEntryKey) ? fileCopy() : fileCopy("rgb(62, 62, 62)")}
             containerStyle={{
-              cursor: isAltKeyPressed ? "crosshair" : scale.math.has(carouselEntryKey) ? "pointer" : "",
+              cursor: isAltKeyPressed ? "crosshair" : skew.math.has(carouselEntryKey) ? "pointer" : "",
               ...dynamicSizes.paramButton,
             }}
             scale={0.8}
@@ -551,20 +505,22 @@ export default function ScaleUnitbar({
           />
         </div>
         <div
-          title={"paste"}
+          title="paste"
           onClick={() => {
             if (isAltKeyPressed || uiState.playbackMode.type !== "stopped") return;
-            if (uiState.effectClipboard && uiState.effectClipboard.type == "scale") {
+            if (uiState.effectClipboard && uiState.effectClipboard.type == "skew") {
               const clipboardEquation = uiState.effectClipboard.value.math.get("clipboard");
               if (!clipboardEquation) return;
-              const snapshot: LaurusScaleResult = { ...scale };
+              const snapshot: LaurusSkewResult = { ...skew };
               const activeKey = carouselEntryKey;
-              const newEquation: LaurusScaleEquation = { ...clipboardEquation };
-              const newControls: ScaleUnitControls = { ...newEquation };
+              const newEquation: LaurusSkewEquation = {
+                ...clipboardEquation,
+              };
+              const newControls: SkewUnitControls = { ...newEquation };
               setCurrentControls(newControls);
               updateTrackpads(newControls);
               if (activeKey) {
-                const newMath: LaurusScaleEquation = {
+                const newMath: LaurusSkewEquation = {
                   ...newEquation,
                   input_id: activeKey,
                 };
@@ -579,12 +535,12 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"paste"}
-            svg={uiState.effectClipboard?.type == "scale" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
+            title="paste"
+            svg={uiState.effectClipboard?.type == "skew" ? contentPaste() : contentPaste("rgb(62, 62, 62)")}
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
+                : skew.math.has(carouselEntryKey) && uiState.playbackMode.type == "stopped"
                   ? "pointer"
                   : "",
               ...dynamicSizes.paramButton,
@@ -603,9 +559,9 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"paste to group"}
+            title="paste to group"
             svg={
-              uiState.effectClipboard?.type == "scale" && otherGroupKeys.length > 0
+              uiState.effectClipboard?.type == "skew" && otherGroupKeys.length > 0
                 ? bookmarkStacks300()
                 : bookmarkStacks300("rgb(67, 67, 67)")
             }
@@ -617,27 +573,27 @@ export default function ScaleUnitbar({
                   : "",
               ...dynamicSizes.paramButton,
             }}
-            scale={1}
+            scale={0.9}
             scaleToContaier={true}
           />
         </div>
         <div
-          title={"clear"}
+          title="clear"
           onClick={async () => {
-            if (isAltKeyPressed || scale.locked || uiState.playbackMode.type !== "stopped") return;
+            if (isAltKeyPressed || skew.locked || uiState.playbackMode.type !== "stopped") return;
             const activeKey = carouselEntryKey;
-            if (activeKey && scale.math.has(activeKey)) {
+            if (activeKey && skew.math.has(activeKey)) {
               const confirmed = confirm("are you sure you want to clear this equation?");
               if (!confirmed) return;
-              const snapshot: LaurusScaleResult = { ...scale };
+              const snapshot: LaurusSkewResult = { ...skew };
               const newMath = new Map(snapshot.math);
               newMath.delete(activeKey);
-              const newScale: LaurusScaleResult = {
+              const newSkew: LaurusSkewResult = {
                 ...snapshot,
                 math: newMath,
               };
-              const defaultControls: ScaleUnitControls = {
-                ...defaultScaleEquation,
+              const defaultControls: SkewUnitControls = {
+                ...defaultSkewEquation,
                 time: 0,
               };
               setCurrentControls(defaultControls);
@@ -645,21 +601,21 @@ export default function ScaleUnitbar({
               dispatch({
                 type: CoreActionType.SetEffect,
                 value: {
-                  type: "scale",
-                  value: { ...newScale },
-                  key: newScale.scale_id,
+                  type: "skew",
+                  value: { ...newSkew },
+                  key: newSkew.skew_id,
                 },
               });
-              const updated = await updateScale(coreState.apiOrigin, coreState.accessToken, snapshot.scale_id, {
-                ...newScale,
+              const updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, snapshot.skew_id, {
+                ...newSkew,
               });
               if (!updated) {
                 dispatch({
                   type: CoreActionType.SetEffect,
                   value: {
-                    type: "scale",
+                    type: "skew",
                     value: { ...snapshot },
-                    key: snapshot.scale_id,
+                    key: snapshot.skew_id,
                   },
                 });
               }
@@ -672,14 +628,14 @@ export default function ScaleUnitbar({
           }}
         >
           <SvgRepo
-            title={"clear"}
-            svg={scale.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
+            title="clear"
+            svg={skew.math.has(carouselEntryKey) ? cancelCircle() : cancelCircle("rgb(62, 62, 62)")}
             containerStyle={{
               cursor: isAltKeyPressed
                 ? "crosshair"
-                : scale.locked || uiState.playbackMode.type !== "stopped"
+                : skew.locked || uiState.playbackMode.type !== "stopped"
                   ? ""
-                  : scale.math.has(carouselEntryKey)
+                  : skew.math.has(carouselEntryKey)
                     ? "pointer"
                     : "",
               ...dynamicSizes.paramButton,

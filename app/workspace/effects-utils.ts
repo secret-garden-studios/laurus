@@ -3,12 +3,14 @@ import {
   updateScale,
   updateMove,
   updateRotate,
+  updateSkew,
   updateLightSource,
   LaurusEffect,
   LaurusLightSourceResult,
   LaurusMoveResult,
   LaurusRotateResult,
   LaurusScaleResult,
+  LaurusSkewResult,
 } from "./workspace.server";
 import { CoreAction, CoreActionType } from "./states/core-state";
 import { CarouselEntry } from "./states/ui-state";
@@ -111,6 +113,24 @@ async function deleteMathEntries(
           dispatch({
             type: CoreActionType.SetEffect,
             value: { type: "rotate", key: effect.key, value: { ...newRotate } },
+          });
+        }
+        break;
+      }
+      case "skew": {
+        const newMath = new Map(effect.value.math);
+        keysToDelete.forEach((key) => newMath.delete(key));
+        const newSkew: LaurusSkewResult = {
+          ...effect.value,
+          math: newMath,
+        };
+        const updated = await updateSkew(apiOrigin, accessToken, effect.key, {
+          ...newSkew,
+        });
+        if (updated) {
+          dispatch({
+            type: CoreActionType.SetEffect,
+            value: { type: "skew", key: effect.key, value: { ...newSkew } },
           });
         }
         break;

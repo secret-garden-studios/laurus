@@ -21,6 +21,7 @@ import { LaurusFrame } from "../workspace.server";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
+import { toCssSkewAngle } from "../skew-angle.ts";
 import { ProjectSvg } from "./project-svg";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 import { toCanvasDelta, useCanvasZoomValue } from "../hooks/useCanvasZoom";
@@ -87,7 +88,7 @@ export function DraggableProjectSvg({
         perspective: 750,
         width: meta.width * meta.scale_x,
         height: meta.height * meta.scale_y,
-        transform: `rotate3d(${meta.rotate_x},${meta.rotate_y},${meta.rotate_z},${meta.rotate_angle}deg)`,
+        transform: `rotate3d(${meta.rotate_x},${meta.rotate_y},${meta.rotate_z},${meta.rotate_angle}deg) skew(${toCssSkewAngle(meta.skew_ax)}deg, ${toCssSkewAngle(meta.skew_ay)}deg)`,
         transition: "transform 0.25s ease-out",
         transformOrigin: "top left",
       },
@@ -99,6 +100,8 @@ export function DraggableProjectSvg({
     meta.rotate_x,
     meta.rotate_y,
     meta.rotate_z,
+    meta.skew_ax,
+    meta.skew_ay,
     meta.scale_x,
     meta.scale_y,
     meta.width,
@@ -400,6 +403,7 @@ export function DraggableProjectSvg({
             uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
             break;
           }
+          case "skew":
           case "rotate": {
             setSelectedSvgKeys((prev) => {
               const next = new Set(prev);

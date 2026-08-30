@@ -26,6 +26,8 @@ export interface ProjectImg_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
+  skew_ax: number;
+  skew_ay: number;
   description: string;
 }
 export interface ProjectSvg_V1_0 {
@@ -43,6 +45,8 @@ export interface ProjectSvg_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
+  skew_ax: number;
+  skew_ay: number;
   viewbox: string;
   fill: string;
   stroke: string;
@@ -63,6 +67,8 @@ export interface ProjectMask_V1_0 {
   rotate_y: number;
   rotate_z: number;
   rotate_angle: number;
+  skew_ax: number;
+  skew_ay: number;
   light_preview_size: number;
   light_preview_intensity: number;
   light_preview_falloff: number;

@@ -9,9 +9,9 @@ import {
   cancelCircle,
   contentPaste,
   fileCopy,
-  image200,
+  image400,
   playArrow,
-  polyline200,
+  polyline300,
   remove,
   syncAlt,
   texture300,
@@ -65,9 +65,9 @@ export default function RotateUnitbar({
   const targetSvg = useMemo((): LaurusClientSvg => {
     switch (target) {
       case "img":
-        return image200();
+        return image400();
       case "svg":
-        return polyline200();
+        return polyline300();
       case "mask":
         return texture300();
       case "object":

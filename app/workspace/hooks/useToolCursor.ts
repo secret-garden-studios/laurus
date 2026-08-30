@@ -25,6 +25,7 @@ export function getToolCursorRule(toolType: LaurusTool["type"], penArmed = false
   switch (toolType) {
     case "scale":
     case "rotate":
+    case "skew":
       return {
         targetKinds: ALL_MEDIA,
         hoverOnlyTargetKinds: NO_MEDIA,
@@ -70,17 +71,6 @@ export function getToolCursorRule(toolType: LaurusTool["type"], penArmed = false
         forcesContextMenuCursor: false,
       };
     case "pen":
-      // Armed, the pen has nothing open and is waiting to be pointed at a
-      // light or an object. The crosshair is the whole of how it says so, and
-      // it has to reach past the masks to the canvas itself: a crosshair only
-      // over the masks would be the invitation to aim showing up only once the
-      // cursor was already on top of the thing to aim at.
-      //
-      // Open, it claims nothing at all. The mask it is open on decides its own
-      // cursor -- crosshair while the triangles are pickable, and the overlay's
-      // own while the handles are up -- and every other mask on the canvas is
-      // one this pen can do nothing to, so a cue there would be an offer that
-      // goes nowhere.
       if (penArmed) {
         return {
           targetKinds: MASK_ONLY,
@@ -153,13 +143,6 @@ export function dragFallbackCursor({
   return dragDisabled ? "" : isDragging ? "grabbing" : "grab";
 }
 
-// Set for the duration of any dnd-kit drag anywhere in the app (dial, trackpad,
-// camera, canvas media, timeline/group reordering). dnd-kit tracks drag deltas via
-// document-level listeners rather than pointer capture, so the browser keeps
-// dispatching real mouseenter/mousemove/mouseleave to whatever sits under the
-// cursor as it sweeps across other units mid-drag. Hover handlers should check
-// this before touching HoverContext so an in-progress drag can't spuriously
-// highlight/select things the cursor merely passed over.
 let isAnyDragActiveFlag = false;
 
 export function isAnyDragActive(): boolean {

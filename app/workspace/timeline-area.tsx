@@ -15,6 +15,7 @@ import {
   stopIcon,
   SvgRepo,
   cycle400,
+  skew300,
   asterisk300,
 } from "../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "./workspace.client";
@@ -23,6 +24,7 @@ import {
   createLightSource,
   createMove,
   createRotate,
+  createSkew,
   createScale,
   deleteEffectGroup,
   LaurusEffect,
@@ -32,11 +34,13 @@ import {
   LaurusMixState,
   LaurusMove,
   LaurusRotate,
+  LaurusSkew,
   LaurusScale,
   updateEffectGroup,
   updateLightSource,
   updateMove,
   updateRotate,
+  updateSkew,
   updateScale,
 } from "./workspace.server";
 import EffectUnit from "./units/effect-unit";
@@ -120,6 +124,11 @@ async function persistReindexedEffects(
       case "rotate": {
         const updatedRotate = await updateRotate(apiOrigin, accessToken, effect.key, effect.value);
         if (updatedRotate) updateCount++;
+        break;
+      }
+      case "skew": {
+        const updatedSkew = await updateSkew(apiOrigin, accessToken, effect.key, effect.value);
+        if (updatedSkew) updateCount++;
         break;
       }
       case "light_source": {
@@ -1333,6 +1342,35 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
           }
           break;
         }
+        case "skew": {
+          const newSkew: LaurusSkew = {
+            math: new Map(),
+            start: 0,
+            end: 0,
+            project_id: newProjectIdAck,
+            effect_group_id: newEffectGroupIdAck,
+            locked: false,
+            order: newOrder,
+            mix: false,
+            description: "",
+            disabled: false,
+          };
+          const created = await createSkew(coreState.apiOrigin, coreState.accessToken, newSkew);
+          if (created) {
+            const newEffect: LaurusEffect = {
+              type: "skew",
+              key: created.skew_id,
+              value: { ...created, mixState: LaurusMixState.None },
+            };
+            const reindexed = reindexEffects([...effectsSnapshot, newEffect], effectGroupsSnapshot);
+            await persistReindexedEffects(coreState.apiOrigin, coreState.accessToken, reindexed, [
+              ...effectsSnapshot,
+              newEffect,
+            ]);
+            dispatch({ type: CoreActionType.SetEffects, value: reindexed, preserveCache: true });
+          }
+          break;
+        }
         case "light_source": {
           const newLightSource: LaurusLightSource = {
             math: new Map(),
@@ -1422,6 +1460,8 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                     return earthquake();
                   case "rotate":
                     return cycle400();
+                  case "skew":
+                    return skew300();
                   case "light_source":
                     return asterisk300();
                   default:
@@ -1436,6 +1476,8 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                 switch (effectName) {
                   case "rotate":
                     return 0.6;
+                  case "skew":
+                    return 0.65;
                   case "light_source":
                     return 0.75;
                   default:

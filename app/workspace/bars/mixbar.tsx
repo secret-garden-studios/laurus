@@ -1,5 +1,15 @@
 import { geistMono } from "@/app/fonts";
-import { SvgRepo, allOut, arrowDownwardAlt, check, circle, earthquake, experiment, cycle400 } from "@/app/svg-repo";
+import {
+  SvgRepo,
+  allOut,
+  arrowDownwardAlt,
+  check,
+  circle,
+  earthquake,
+  experiment,
+  cycle400,
+  skew300,
+} from "@/app/svg-repo";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { UIContext, CoreContext, MaskContext } from "../workspace.client";
 import styles from "@/app/app.module.css";
@@ -9,9 +19,11 @@ import {
   LaurusMixState,
   LaurusMoveResult,
   LaurusRotateResult,
+  LaurusSkewResult,
   LaurusScaleResult,
   updateMove,
   updateRotate,
+  updateSkew,
   updateScale,
 } from "../workspace.server";
 import { UIActionType } from "../states/ui-state";
@@ -336,6 +348,15 @@ export default function Mixbar() {
                                   mix: newMix,
                                 },
                               } as LaurusEffect;
+                            case "skew":
+                              return {
+                                ...e,
+                                value: {
+                                  ...e.value,
+                                  mixState: newMixState,
+                                  mix: newMix,
+                                },
+                              } as LaurusEffect;
                             case "scale":
                               return {
                                 ...e,
@@ -363,6 +384,12 @@ export default function Mixbar() {
                             }
                             case "rotate": {
                               updated = await updateRotate(coreState.apiOrigin, coreState.accessToken, e.key, {
+                                ...e.value,
+                              });
+                              break;
+                            }
+                            case "skew": {
+                              updated = await updateSkew(coreState.apiOrigin, coreState.accessToken, e.key, {
                                 ...e.value,
                               });
                               break;
@@ -532,6 +559,14 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                               mixState: newMixState,
                             } as LaurusRotateResult,
                           };
+                        case "skew":
+                          return {
+                            ...e,
+                            value: {
+                              ...e.value,
+                              mixState: newMixState,
+                            } as LaurusSkewResult,
+                          };
                         case "scale":
                           return {
                             ...e,
@@ -596,6 +631,8 @@ function SelectionMenu({ selectHeader, setSelectedEffectType, setSnapshot }: Sel
                           : earthquake("rgb(67,67,67)");
                       case "rotate":
                         return uiState.mixableEffects.includes(selectOption) ? cycle400() : cycle400("rgb(67,67,67)");
+                      case "skew":
+                        return uiState.mixableEffects.includes(selectOption) ? skew300() : skew300("rgb(67,67,67)");
                       default:
                         return circle("rgba(0,0,0,0)");
                     }

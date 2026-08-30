@@ -11,6 +11,7 @@ import {
   experiment200,
   keyboardCommandKey200,
   cycle200,
+  skew200,
   lassoSelect300,
   browse,
   bookmarkStacks200,
@@ -349,6 +350,23 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
             resolution={{ ...uiState.resolution }}
             title="rotate tool"
+          />
+          <ToolbarButton
+            selected={uiState.tool.type == "skew"}
+            svg={{
+              svg: skew200(),
+              scale: 0.6,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
+            }}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              const next: LaurusTool = uiState.tool.type == "skew" ? { type: "none" } : { type: "skew" };
+              if (!switchTool(next)) return;
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            title="skew tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "light_source"}
