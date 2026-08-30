@@ -11,13 +11,13 @@ import {
   experiment200,
   keyboardCommandKey200,
   cycle200,
-  skew200,
   lassoSelect300,
   browse,
   bookmarkStacks200,
   texture200,
   asterisk200,
   inkPen300,
+  skew300,
 } from "../../svg-repo";
 import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, LaurusTool, UIActionType } from "../states/ui-state";
 import { useToolSwitch } from "../hooks/useMaskEditExit";
@@ -354,8 +354,8 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
           <ToolbarButton
             selected={uiState.tool.type == "skew"}
             svg={{
-              svg: skew200(),
-              scale: 0.6,
+              svg: skew300(),
+              scale: 0.55,
               cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
             }}
             onClick={() => {

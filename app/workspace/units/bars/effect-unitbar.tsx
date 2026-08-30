@@ -7,7 +7,7 @@ import {
   lock,
   lockOpenRight,
   cycle400,
-  skew300,
+  skew400,
   tune,
   asterisk300,
 } from "@/app/svg-repo";
@@ -155,7 +155,7 @@ export default function EffectUnitbar({
             case "rotate":
               return cycle400();
             case "skew":
-              return skew300();
+              return skew400();
             case "light_source":
               return asterisk300();
           }
@@ -163,6 +163,8 @@ export default function EffectUnitbar({
         scale={(() => {
           switch (effect.type) {
             case "rotate":
+              return 0.5;
+            case "skew":
               return 0.5;
             default:
               return 0.6;

@@ -2174,6 +2174,25 @@ export function skew300(
   };
 }
 
+export function skew400(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "public/skew_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M 136.42463,-230.53079 23.575366,-870.53079 823.57537,-729.46921 936.42463,-89.469208 Z M 202.31848,-296.42463 842.31848,-183.57537 757.68152,-663.57537 117.68152,-776.42463 Z M 202.31848,-296.42463 117.68152,-776.42463 Z"/>`,
+    ),
+  };
+}
+
 export function cycle400(
   fill: string = "rgba(227, 227, 227, 1)",
   width: number = 24,

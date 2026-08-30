@@ -15,8 +15,8 @@ import {
   stopIcon,
   SvgRepo,
   cycle400,
-  skew300,
   asterisk300,
+  skew400,
 } from "../svg-repo";
 import { CoreContext, HoverContext, UIContext } from "./workspace.client";
 import {
@@ -1463,7 +1463,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
                   case "rotate":
                     return cycle400();
                   case "skew":
-                    return skew300();
+                    return skew400();
                   case "light_source":
                     return asterisk300();
                   default:
