@@ -531,6 +531,7 @@ export default function ScaleUnit({ scale, carouselIndexInit }: ScaleUnit) {
                   disabled={scale.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={timeTitle}
                   liveTitleRef={timeRef}
+                  escapeOverflow={true}
                 />
               </div>
               <div />

@@ -831,6 +831,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                     disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />

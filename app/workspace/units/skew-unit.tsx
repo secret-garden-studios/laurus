@@ -464,6 +464,7 @@ export default function SkewUnit({ skew, carouselIndexInit }: SkewUnit) {
                   disabled={skew.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                   title={timeTitle}
                   liveTitleRef={timeRef}
+                  escapeOverflow={true}
                 />
               </div>
               <div />

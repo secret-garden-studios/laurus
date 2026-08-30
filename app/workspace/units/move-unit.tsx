@@ -490,6 +490,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={amplitudeTitle}
                     liveTitleRef={amplitudeRef}
+                    escapeOverflow={true}
                   />
                   <ParameterSliderY
                     resolution={{ ...uiState.resolution }}
@@ -528,6 +529,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={frequencyTitle}
                     liveTitleRef={frequencyRef}
+                    escapeOverflow={true}
                   />
                   {shapeType != LaurusShapeType.circle && shapeType != LaurusShapeType.ellipse && (
                     <ParameterSliderY
@@ -570,6 +572,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={wavelengthTitle}
                       liveTitleRef={wavelengthRef}
+                      escapeOverflow={true}
                     />
                   )}
                   {shapeType != LaurusShapeType.circle && (
@@ -610,6 +613,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                       disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                       title={distanceTitle}
                       liveTitleRef={distanceRef}
+                      escapeOverflow={true}
                     />
                   )}
                   <ParameterSliderY
@@ -650,6 +654,7 @@ export default function MoveUnit({ move, carouselIndexInit }: MoveUnit) {
                     disabled={move.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />

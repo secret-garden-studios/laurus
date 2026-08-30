@@ -601,6 +601,7 @@ export default function RotateUnit({ rotate, carouselIndexInit }: RotateUnit) {
                     disabled={rotate.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
                     title={timeTitle}
                     liveTitleRef={timeRef}
+                    escapeOverflow={true}
                   />
                 </div>
                 <div />
