@@ -199,6 +199,7 @@ export default function TimelineArea() {
         />
         <div
           style={{
+            overflowX: "hidden",
             overflowY: "auto",
             gridRow: "2",
             gridColumn: "1",
@@ -1422,6 +1423,7 @@ function EffectsBrowser({ effect_group_id, onAddClick }: EffectsBrowser) {
         borderRight: "1px solid rgba(255, 255, 255, 0.05)",
         height: effectBrowserSize.height,
         overflowY: "auto",
+        overflowX: "hidden",
         borderBottomLeftRadius: 10,
         borderBottomRightRadius: 10,
       }}
