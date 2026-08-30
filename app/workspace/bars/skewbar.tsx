@@ -5,7 +5,8 @@ import { SvgRepo, skew300, updateCounterClockwise } from "@/app/svg-repo";
 import { useCallback, useContext, useRef, useState } from "react";
 import { UIContext, CoreContext, HoverContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
-import { skewArm } from "../states/ui-state";
+import { mediaArm } from "../states/ui-state";
+import ToolGreeting from "./tool-greeting";
 import { dellaRespira } from "@/app/fonts";
 
 function toDialAngle(v: number, counterClockwise: boolean): number {
@@ -18,7 +19,7 @@ export default function Skewbar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const arm = skewArm(uiState, selectedImgKeys, selectedSvgKeys, selectedMaskKeys);
+  const arm = mediaArm(uiState, "skew", selectedImgKeys, selectedSvgKeys, selectedMaskKeys);
   const [saving, setSaving] = useState(false);
   const [dynamicSizes] = useState(() => {
     const fill = { width: "100%", height: "100%" };
@@ -186,26 +187,15 @@ export default function Skewbar() {
 
   if (!arm) {
     return (
-      <div style={{ display: "flex", alignItems: "center", overflowX: "auto", ...dynamicSizes.container }}>
-        <SvgRepo
-          title="skew"
-          svg={skew300()}
-          containerStyle={{ ...dynamicSizes.svgSize }}
-          scale={1}
-          scaleToContaier={true}
-        />
-        <span
-          style={{
-            display: "flex",
-            alignItems: "center",
-            userSelect: "none",
-            ...dynamicSizes.greeting,
-            ...dynamicSizes.group,
-          }}
-        >
-          {"click an image, an svg or a mask on the canvas to skew it"}
-        </span>
-      </div>
+      <ToolGreeting
+        title="skew"
+        svg={skew300()}
+        svgSize={dynamicSizes.svgSize}
+        textStyle={dynamicSizes.group}
+        containerStyle={dynamicSizes.container}
+      >
+        {"click an image, an svg or a mask on the canvas to skew it"}
+      </ToolGreeting>
     );
   }
 

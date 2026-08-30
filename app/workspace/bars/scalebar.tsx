@@ -8,26 +8,23 @@ import {
 } from "@/app/projects/projects.server";
 import { updateProject } from "@/app/projects/projects.server";
 import { SvgRepo, allOut, link, linkOff } from "@/app/svg-repo";
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { CoreContext, HoverContext, UIContext } from "../workspace.client";
 import { SCALE_MAX } from "../workspace.config";
 import Toggle from "@/app/components/toggle";
 import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
+import { mediaArm } from "../states/ui-state";
+import ToolGreeting from "./tool-greeting";
 
 export default function Scalebar() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
-  const target = useMemo(() => {
-    return selectedImgKeys.size > 0
-      ? { key: Array.from(selectedImgKeys)[0], type: "img" as const }
-      : selectedSvgKeys.size > 0
-        ? { key: Array.from(selectedSvgKeys)[0], type: "svg" as const }
-        : selectedMaskKeys.size > 0
-          ? { key: Array.from(selectedMaskKeys)[0], type: "mask" as const }
-          : null;
-  }, [selectedImgKeys, selectedSvgKeys, selectedMaskKeys]);
+  const target = useMemo(
+    () => mediaArm(uiState, "scale", selectedImgKeys, selectedSvgKeys, selectedMaskKeys),
+    [uiState, selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
+  );
   const isMultiSelect = useMemo(
     () => selectedImgKeys.size + selectedSvgKeys.size + selectedMaskKeys.size > 1,
     [selectedImgKeys, selectedSvgKeys, selectedMaskKeys],
@@ -58,17 +55,16 @@ export default function Scalebar() {
       case "high":
         return {
           paramSize: {
-            containerHeight: "100%",
-            containerWidth: "100%",
-            capWidth: 17,
-            capHeight: 17,
+            capWidth: 15,
+            capHeight: 15,
             capBorderOffset: 0,
+            containerWidth: 200,
+            containerHeight: 22,
             trackHeight: 1,
-            tickHeight: 22,
+            tickHeight: 20,
             tickLeft: 0,
             svgSize: { width: 24, height: 24 },
           },
-          sliderRatio: 0.8,
           svgSize: {
             width: 20,
             height: 20,
@@ -77,6 +73,7 @@ export default function Scalebar() {
             width: "6ch",
             fontSize: 12,
           },
+          greeting: { paddingLeft: 20, paddingRight: 20, gap: 12, fontSize: 13 },
           input: {
             fontSize: 13,
             width: "6ch",
@@ -109,17 +106,16 @@ export default function Scalebar() {
       case "midhigh":
         return {
           paramSize: {
-            capWidth: 15,
-            capHeight: 15,
+            capWidth: 13,
+            capHeight: 13,
             capBorderOffset: 0,
-            containerWidth: "100%",
-            containerHeight: "100%",
+            containerWidth: 180,
+            containerHeight: 18,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 16,
             tickLeft: 0,
-            svgSize: { width: 20, height: 20 },
+            svgSize: { width: 12, height: 12 },
           },
-          sliderRatio: 0.8,
           svgSize: {
             width: 18,
             height: 18,
@@ -128,6 +124,7 @@ export default function Scalebar() {
             width: "6ch",
             fontSize: 10,
           },
+          greeting: { paddingLeft: 14, paddingRight: 14, gap: 8, fontSize: 12 },
           input: {
             fontSize: 11,
             width: "6ch",
@@ -161,17 +158,16 @@ export default function Scalebar() {
       case "low":
         return {
           paramSize: {
-            capWidth: 14,
-            capHeight: 14,
+            capWidth: 13,
+            capHeight: 13,
             capBorderOffset: 0,
-            containerWidth: "100%",
-            containerHeight: "100%",
+            containerWidth: 160,
+            containerHeight: 18,
             trackHeight: 1,
-            tickHeight: 20,
+            tickHeight: 16,
             tickLeft: 0,
-            svgSize: { width: 20, height: 20 },
+            svgSize: { width: 12, height: 12 },
           },
-          sliderRatio: 0.75,
           svgSize: {
             width: 20,
             height: 20,
@@ -180,6 +176,7 @@ export default function Scalebar() {
             width: "6ch",
             fontSize: 11,
           },
+          greeting: { paddingLeft: 12, paddingRight: 12, gap: 8, fontSize: 11 },
           input: {
             fontSize: 13,
             width: "6ch",
@@ -387,18 +384,6 @@ export default function Scalebar() {
     }
   }, [coreState.project, target, isMultiSelect, relativeScaleX, relativeScaleY]);
 
-  const sliderXContainerRef = useRef<HTMLDivElement | null>(null);
-  const sliderYContainerRef = useRef<HTMLDivElement | null>(null);
-  const [sliderColumnSize, setSliderColumnSize] = useState(0);
-  useLayoutEffect(() => {
-    (() => {
-      if (sliderXContainerRef.current && sliderColumnSize <= 0) {
-        const newSize = sliderXContainerRef.current.clientWidth * dynamicSizes.sliderRatio;
-        setSliderColumnSize(newSize);
-      }
-    })();
-  }, [dynamicSizes.sliderRatio, sliderColumnSize]);
-
   useEffect(() => {
     (() => {
       const scaleInit = getActiveScale();
@@ -409,11 +394,13 @@ export default function Scalebar() {
           complexTrackpadOptions,
         );
         setScaleXCursor({ x: newScaleCursor, y: 0 });
-      } else if (sliderColumnSize > 0) {
-        const newScaleCursor = getScaleXCursor(scaleInit[0], sliderColumnSize, complexTrackpadOptions);
-        setScaleXCursor({ x: newScaleCursor, y: 0 });
       } else {
-        setScaleXCursor({ x: 0, y: 0 });
+        const newScaleCursor = getScaleXCursor(
+          scaleInit[0],
+          dynamicSizes.paramSize.containerWidth,
+          complexTrackpadOptions,
+        );
+        setScaleXCursor({ x: newScaleCursor, y: 0 });
       }
 
       if (scaleYTrackRef.current && scaleYTrackRef.current.clientWidth > 0) {
@@ -423,11 +410,13 @@ export default function Scalebar() {
           complexTrackpadOptions,
         );
         setScaleYCursor({ x: newScaleYCursor, y: 0 });
-      } else if (sliderColumnSize > 0) {
-        const newScaleYCursor = getScaleYCursor(scaleInit[1], sliderColumnSize, complexTrackpadOptions);
-        setScaleYCursor({ x: newScaleYCursor, y: 0 });
       } else {
-        setScaleYCursor({ x: 0, y: 0 });
+        const newScaleYCursor = getScaleYCursor(
+          scaleInit[1],
+          dynamicSizes.paramSize.containerWidth,
+          complexTrackpadOptions,
+        );
+        setScaleYCursor({ x: newScaleYCursor, y: 0 });
       }
 
       if (widthRef.current && heightRef.current) {
@@ -444,21 +433,29 @@ export default function Scalebar() {
     getActiveScale,
     getScaleXCursor,
     getScaleYCursor,
-    sliderColumnSize,
+    dynamicSizes.paramSize.containerWidth,
     isMultiSelect,
   ]);
 
   const scaleXTitle = useMemo(() => {
     const scaleX = getActiveScale()[0];
     const decimalPlaces = scaleX >= 10 ? 2 : 3;
-    return isSelectionEmpty ? "" : scaleX.toFixed(decimalPlaces) + "x";
-  }, [isSelectionEmpty, getActiveScale]);
+    return scaleX.toFixed(decimalPlaces) + "x";
+  }, [getActiveScale]);
 
   const scaleYTitle = useMemo(() => {
     const scaleY = getActiveScale()[1];
     const decimalPlaces = scaleY >= 10 ? 2 : 3;
-    return isSelectionEmpty ? "" : scaleY.toFixed(decimalPlaces) + "x";
-  }, [isSelectionEmpty, getActiveScale]);
+    return scaleY.toFixed(decimalPlaces) + "x";
+  }, [getActiveScale]);
+
+  if (isSelectionEmpty) {
+    return (
+      <ToolGreeting title="scale" svg={allOut()} svgSize={dynamicSizes.svgSize} textStyle={dynamicSizes.greeting}>
+        {"click one or more images, svgs or masks on the canvas to scale them"}
+      </ToolGreeting>
+    );
+  }
 
   return (
     <>
@@ -467,7 +464,6 @@ export default function Scalebar() {
           display: "flex",
           alignItems: "center",
           height: "100%",
-          width: "100%",
           overflowX: "auto",
         }}
       >
@@ -481,13 +477,12 @@ export default function Scalebar() {
           scaleToContaier={true}
         />
         <div
-          ref={sliderXContainerRef}
           style={{
             width: "90%",
             height: "100%",
             display: "grid",
             gridTemplateRows: "auto",
-            gridTemplateColumns: `${sliderColumnSize}px min-content min-content`,
+            gridTemplateColumns: "min-content min-content min-content",
             alignItems: "center",
             justifyContent: "center",
             borderLeft: "1px solid rgba(255, 255, 255, 0)",
@@ -496,7 +491,7 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            hash={`${target?.key ?? "scalebar"}|scalex`}
+            hash={`${target?.key}|scalex`}
             size={dynamicSizes.paramSize}
             containerRef={scaleXTrackRef}
             cursor={scaleXCursor}
@@ -535,7 +530,7 @@ export default function Scalebar() {
                 saveActiveScale(newXValue, undefined);
               }
             }}
-            disabled={isSelectionEmpty}
+            disabled={isSaving}
             title={scaleXTitle}
             liveTitleRef={scaleXLiveTitleRef}
           />
@@ -544,7 +539,7 @@ export default function Scalebar() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: isSelectionEmpty ? "rgb(67, 67, 67)" : "rgb(227, 227, 227)",
+              color: "rgb(227, 227, 227)",
               ...dynamicSizes.inputLabel,
             }}
           >
@@ -552,14 +547,14 @@ export default function Scalebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${target?.key ?? "scalebar"}|input|scalex`}
+            id={`${target?.key}|input|scalex`}
             disabled
             ref={widthRef}
             type="text"
             style={{
               textAlign: "center",
               background: "none",
-              color: isSelectionEmpty ? "rgb(67, 67, 67)" : "rgb(227, 227, 227)",
+              color: "rgb(227, 227, 227)",
               outline: "none",
               border: "none",
               display: "inline-block",
@@ -569,13 +564,12 @@ export default function Scalebar() {
           />
         </div>
         <div
-          ref={sliderYContainerRef}
           style={{
             width: "100%",
             height: "100%",
             display: "grid",
             gridTemplateRows: "auto",
-            gridTemplateColumns: `${sliderColumnSize}px min-content min-content`,
+            gridTemplateColumns: "min-content min-content min-content",
             alignItems: "center",
             justifyContent: "center",
             borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
@@ -584,7 +578,7 @@ export default function Scalebar() {
         >
           <ParameterSliderXPlusMinus
             resolution={{ ...uiState.resolution }}
-            hash={`${target?.key ?? "scalebar"}|scaley`}
+            hash={`${target?.key}|scaley`}
             size={dynamicSizes.paramSize}
             containerRef={scaleYTrackRef}
             cursor={scaleYCursor}
@@ -623,7 +617,7 @@ export default function Scalebar() {
                 saveActiveScale(undefined, newYValue);
               }
             }}
-            disabled={isSelectionEmpty}
+            disabled={isSaving}
             title={scaleYTitle}
             liveTitleRef={scaleYLiveTitleRef}
           />
@@ -632,7 +626,7 @@ export default function Scalebar() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: isSelectionEmpty ? "rgb(67, 67, 67)" : "rgb(227, 227, 227)",
+              color: "rgb(227, 227, 227)",
               ...dynamicSizes.inputLabel,
             }}
           >
@@ -640,14 +634,14 @@ export default function Scalebar() {
           </div>
           <input
             className={styles["numberInput"]}
-            id={`${target?.key ?? "scalebar"}|input|scaley`}
+            id={`${target?.key}|input|scaley`}
             disabled
             ref={heightRef}
             type="text"
             style={{
               textAlign: "center",
               background: "none",
-              color: isSelectionEmpty ? "rgb(67, 67, 67)" : "rgb(227, 227, 227)",
+              color: "rgb(227, 227, 227)",
               outline: "none",
               border: "none",
               display: "inline-block",

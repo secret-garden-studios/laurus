@@ -174,15 +174,16 @@ export function isAwaitingRegionPick(state: UIState): boolean {
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
 }
 
-export type SkewArm = { key: string; type: "img" | "svg" | "mask" };
+export type MediaArm = { key: string; type: "img" | "svg" | "mask" };
 
-export function skewArm(
+export function mediaArm(
   state: UIState,
+  toolType: LaurusTool["type"],
   selectedImgKeys: Set<string>,
   selectedSvgKeys: Set<string>,
   selectedMaskKeys: Set<string>,
-): SkewArm | undefined {
-  if (state.tool.type !== "skew") return undefined;
+): MediaArm | undefined {
+  if (state.tool.type !== toolType) return undefined;
   if (selectedImgKeys.size > 0) return { key: Array.from(selectedImgKeys)[0], type: "img" };
   if (selectedSvgKeys.size > 0) return { key: Array.from(selectedSvgKeys)[0], type: "svg" };
   if (selectedMaskKeys.size > 0) return { key: Array.from(selectedMaskKeys)[0], type: "mask" };
