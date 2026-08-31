@@ -52,16 +52,12 @@ interface ColorPickerProps {
   hash: string;
   size: ColorPickerSize;
   color: LaurusColor;
-  /** committed on release, the way a slider's onNewCursor saves */
   onNewColor: (color: LaurusColor) => void;
-  /** live during a drag, for callers that mirror the value into their own display */
   onColorMove?: (color: LaurusColor) => void;
   disabled?: boolean;
 }
 
 export function ColorPicker({ resolution, hash, size, color, onNewColor, onColorMove, disabled }: ColorPickerProps) {
-  // the hue a black or grey fill cannot report for itself rides along on the colour, so the picker
-  // holds no memory of its own - what it emits is what it will be handed back.
   const hsv: LaurusHsv = resolveHsv(color);
   const alpha = color.a;
 
@@ -81,11 +77,6 @@ export function ColorPicker({ resolution, hash, size, color, onNewColor, onColor
   );
   const { getTrackValue: getHueValue, getTrackCursor: getHueCursor } = useTrackpadState(size.capSize, 360);
 
-  // cursors follow committed state only. dnd-kit moves a cap by adding the drag's accumulated delta
-  // to the position it was handed, so re-deriving that position mid-drag would count the same travel
-  // twice and send the cap off the plane. during a drag the cap moves by transform and the handlers
-  // below repaint the gradients directly; a caller previewing its own live colour back to us is
-  // therefore safe, because this effect declines to act on it until the drag ends.
   const draggingRef = useRef(false);
   useLayoutEffect(() => {
     if (draggingRef.current) return;
@@ -282,10 +273,9 @@ interface ColorPickerButtonProps {
   readoutFontSize: number;
   color: LaurusColor;
   onNewColor: (color: LaurusColor) => void;
-  /** live during a drag, for callers that preview the colour somewhere else while it is chosen */
   onColorMove?: (color: LaurusColor) => void;
-  /** raised while the panel is up, for callers that need to quieten something behind it */
   onOpenChange?: (open: boolean) => void;
+  canOpen?: () => boolean;
   disabled?: boolean;
 }
 export function ColorPickerButton({
@@ -299,23 +289,16 @@ export function ColorPickerButton({
   onNewColor,
   onColorMove,
   onOpenChange,
+  canOpen,
   disabled,
 }: ColorPickerButtonProps) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState({ top: 0, left: 0 });
-  // the swatch follows the drag before the parent has committed anything. it must never be handed
-  // back to the picker as its colour: the picker derives its cap positions from the colour it is
-  // given, and dnd-kit moves a cap by adding the drag's accumulated delta to that position. a
-  // colour that moved mid-drag would shift the position the delta is measured from, so every
-  // pointermove would count the same travel twice and the cap would race off the plane.
   const [live, setLive] = useState<LaurusColor | null>(null);
   const shown = live ?? color;
 
-  // raised as a subscription rather than alongside each setOpen: this way it also lowers when the
-  // control is disabled out from under an open panel, and when the button unmounts entirely -- a
-  // caller that quietens something while the panel is up must always get its turn to restore it.
   const visible = open && !disabled;
   useEffect(() => {
     if (!visible || !onOpenChange) return;
@@ -368,6 +351,7 @@ export function ColorPickerButton({
         ref={anchorRef}
         onClick={() => {
           if (disabled) return;
+          if (!open && canOpen && !canOpen()) return;
           place();
           setOpen((v) => !v);
         }}

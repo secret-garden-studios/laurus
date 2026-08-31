@@ -8,6 +8,7 @@ import { ParameterSliderX, ParameterSliderXPlusMinus } from "@/app/components/pa
 import { ColorPickerButton } from "../../components/color-picker";
 import { LaurusColor } from "../../components/color-utils";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
+import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
 import { MAX_MASK_OBJECT_ELEVATION, MAX_MASK_OBJECT_FALLOFF, MIN_MASK_OBJECT_FALLOFF } from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "../canvas-media/mask-geometry";
@@ -220,6 +221,7 @@ export default function LightSourcebar() {
   const targetMaskKey = selectedLightMaskKey ?? mostRecentlyHoveredMaskKey ?? selectedMaskKey;
   const targetMaskMeta = targetMaskKey !== undefined ? coreState.project.masks.get(targetMaskKey) : undefined;
   const isPreviewControlsDisabled = !(targetMaskKey !== undefined || hasMesh);
+  const isGuest = !coreState.accessToken;
   const selectedLightMaskData =
     selectedLightMaskKey !== undefined ? coreState.canvasMasks.get(selectedLightMaskKey) : undefined;
   const selectedLight =
@@ -237,9 +239,6 @@ export default function LightSourcebar() {
   const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectParamDisabled = !selectedObject && !isRaisingObjects;
 
-  // Same eligibility the context menu's edit button computes: the pen is one
-  // overlay on one canvas, so a mask-edit already in progress blocks starting
-  // another one until it finishes.
   const editableLight = useMemo(() => {
     if (uiState.maskEdit !== undefined) return undefined;
     if (!selectedLight || selectedLightMaskKey === undefined || !selectedLightMaskData) return undefined;
@@ -280,7 +279,7 @@ export default function LightSourcebar() {
   const [prevSelectedSubElement, setPrevSelectedSubElement] = useState<string | undefined>(undefined);
   const [pendingLift, setPendingLift] = useState<boolean | undefined>(undefined);
 
-  // beta: render-phase state adjustment pattern
+  // BETA: render-phase state adjustment pattern
   if (selectedSubElement !== prevSelectedSubElement) {
     setPrevSelectedSubElement(selectedSubElement);
     setPendingLift(undefined);
@@ -289,15 +288,7 @@ export default function LightSourcebar() {
     }
   }
 
-  // Lift is read straight back off the object and the object only changes once
-  // the save lands, so the toggle locks until the queue settles rather than
-  // debouncing: a second click while one is still in flight would race its own
-  // commit and settle on whichever reply happened to arrive last. Released in
-  // persistObjectQueue's finally, so a rejected save unlocks it too -- and
-  // falls back to the stored value, which is what a rejected save left there.
   const liftValue = pendingLift ?? selectedObject?.lift ?? true;
-  // Unlike every slider beside it, lift has nowhere to be staged: a raise mints
-  // a lifted object and there is no lift to preview until one exists.
   const isLiftDisabled = !selectedObject || pendingLift !== undefined;
 
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
@@ -344,10 +335,12 @@ export default function LightSourcebar() {
         },
       });
 
+      if (isGuest) return;
+
       pendingPreviewSaveRef.current = newProject;
       void persistPreviewQueue();
     },
-    [targetMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistPreviewQueue],
+    [isGuest, targetMaskKey, coreState.project, dispatch, notifyMaskAppearanceChanged, persistPreviewQueue],
   );
 
   const previewSizeValue = targetMaskMeta ? targetMaskMeta.light_preview_size : mask.lightSize;
@@ -395,9 +388,6 @@ export default function LightSourcebar() {
     [targetMaskMeta, savePreviewField, mask],
   );
 
-  // The light itself rather than a copy of five of its fields: a light edit is
-  // a full-replace, so the queue has to hand toLightUpdate everything the light
-  // has -- including the silhouette this bar never touches.
   interface PendingLightSave {
     maskKey: string;
     maskMediaId: string;
@@ -434,6 +424,11 @@ export default function LightSourcebar() {
   const saveLightField = useCallback(
     (field: "intensity" | "falloff" | "darkness", value: number) => {
       if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
+
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
       const patched = { ...selectedLight, [field]: value };
       const newLights = selectedLightMaskData.lights.map((c) => (c.id === selectedLight.id ? patched : c));
       const newMaskData: LaurusMaskResult = { ...selectedLightMaskData, lights: newLights };
@@ -451,7 +446,15 @@ export default function LightSourcebar() {
       };
       void persistLightQueue();
     },
-    [selectedLightMaskKey, selectedLight, selectedLightMaskData, dispatch, notifyMaskLightUpdated, persistLightQueue],
+    [
+      isGuest,
+      selectedLightMaskKey,
+      selectedLight,
+      selectedLightMaskData,
+      dispatch,
+      notifyMaskLightUpdated,
+      persistLightQueue,
+    ],
   );
 
   const lightIntensityValue = selectedLight?.intensity ?? 0;
@@ -480,16 +483,6 @@ export default function LightSourcebar() {
     [],
   );
 
-  /**
-   * The object this bar is about to write, as the object itself rather than as
-   * a field-by-field copy of one.
-   *
-   * It used to be the copy, and that is precisely the shape toObjectUpdate
-   * exists to retire: an object is a full-replace, so every field it has had to
-   * be restated here and then restated again at the send, and a field added to
-   * an object later went missing at both. Carrying the object means a new field
-   * rides along on the spread below without this file having to hear about it.
-   */
   interface PendingObjectSave {
     maskKey: string;
     maskMediaId: string;
@@ -550,14 +543,18 @@ export default function LightSourcebar() {
   );
 
   const saveObjectField = useCallback(
-    (patch: ObjectPatch) => {
+    (patch: ObjectPatch): boolean => {
       const edit = mergeObjectPatch(patch);
       if (!edit) {
         uiDispatch({ type: UIActionType.SetStagedObject, value: toStagedObjectPatch(patch) });
-        return;
+        return true;
+      }
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return false;
       }
       const maskData = coreState.canvasMasks.get(edit.maskKey);
-      if (!maskData) return;
+      if (!maskData) return false;
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(edit.maskKey, edit);
@@ -565,19 +562,11 @@ export default function LightSourcebar() {
       const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
       const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
-      // Every patch this bar makes -- elevation, falloff, fill -- leaves cx/cy/
-      // radius/shape alone, so the object still owns exactly the triangles it owns now.
-      // Reshaping lives in the shape editor, which recuts the region itself.
       const polygonIndices = maskData.polygons.reduce<number[]>((indices, p, i) => {
         if (p.object_id === edit.objectId) indices.push(i);
         return indices;
       }, []);
 
-      // The object as it stands, with only what this bar touched laid over it --
-      // so order, description, reviewed and everything added to an object later
-      // carry forward without being named. An object the mask does not hold yet
-      // starts from a blank, whose lift is stood down: this bar's own toggle is
-      // the only thing that turns it on for one being staged.
       const base: LaurusObject = existingObject ?? { ...newObject(edit.objectId, objectName), lift: false };
       pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
@@ -597,8 +586,10 @@ export default function LightSourcebar() {
         polygonIndices,
       };
       void persistObjectQueue();
+      return true;
     },
     [
+      isGuest,
       mergeObjectPatch,
       coreState.canvasMasks,
       dispatch,
@@ -743,22 +734,6 @@ export default function LightSourcebar() {
   };
   const lightDarknessTitle = lightDarknessValue.toFixed(2);
   const lightDarknessRef = useRef<HTMLDivElement | null>(null);
-
-  /**
-   * Nothing picked, so nothing for the bar to be about.
-   *
-   * Both submenus reach this and both say the same thing, because the parameters
-   * they would otherwise show are all a selected light's or a selected object's
-   * own -- a row of dead sliders reads as a bar that is broken rather than one
-   * that is waiting. The same greeting the pen shows, for the same reason, and
-   * the canvas answers it the same way: hovering a mask brings up the dim cues
-   * for what there is to click. See isAwaitingRegionPick.
-   *
-   * The light preview is the exception, and it is not one really: its controls
-   * belong to the hovered mask rather than to anything selected, so while it is
-   * running the bar has plenty to be about. Its toggle stays up either way --
-   * it is the way back out of the greeting as much as into the preview.
-   */
   const isLightGreeting = !uiState.lightSourcePreview && !selectedLight;
   const isObjectGreeting = isObjectParamDisabled;
   const greeting = (
@@ -1254,8 +1229,8 @@ export default function LightSourcebar() {
               disabled={isLiftDisabled}
               onClick={() => {
                 const next = !liftValue;
+                if (!saveObjectField({ lift: next })) return;
                 setPendingLift(next);
-                saveObjectField({ lift: next });
               }}
               trackStyles={{ ...dynamicSizes.toggle.track }}
               buttonStyles={{ ...dynamicSizes.toggle.button }}
@@ -1362,6 +1337,11 @@ export default function LightSourcebar() {
               onOpenChange={notifyMaskHighlightSuppressed}
               onColorMove={(fill: LaurusColor) => previewObjectChange({ fill })}
               onNewColor={(fill: LaurusColor) => saveObjectField({ fill })}
+              canOpen={() => {
+                if (!isGuest) return true;
+                alert(UNAUTHORIZED_EDIT);
+                return false;
+              }}
               disabled={isObjectParamDisabled}
             />
           </div>
