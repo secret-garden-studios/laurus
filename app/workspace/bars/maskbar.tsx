@@ -541,7 +541,7 @@ function MaskGenerationControls({ img }: MaskGenerationControls) {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none", textWrap: "nowrap" }}>
           {"generate objects"}
         </span>
         <Toggle
@@ -644,7 +644,9 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add light"}</span>
+        <span style={{ textShadow: isLightOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none", textWrap: "nowrap" }}>
+          {"add light"}
+        </span>
         <Toggle
           value={isLightOn}
           onClick={() => {
@@ -669,7 +671,9 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
           ...dynamicSizes.toggle.div,
         }}
       >
-        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"add object"}</span>
+        <span style={{ textShadow: isObjectsOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none", textWrap: "nowrap" }}>
+          {"add object"}
+        </span>
         <Toggle
           value={isObjectsOn}
           onClick={() => {
