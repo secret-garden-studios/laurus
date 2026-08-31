@@ -21,6 +21,7 @@ export default function Skewbar() {
   const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
   const arm = mediaArm(uiState, "skew", selectedImgKeys, selectedSvgKeys, selectedMaskKeys);
   const [saving, setSaving] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [dynamicSizes] = useState(() => {
     const fill = { width: "100%", height: "100%" };
     const inputWidth = "4ch";
@@ -102,7 +103,7 @@ export default function Skewbar() {
   })();
 
   const saveSkew = useCallback(
-    async (key: string, elementType: string, sAx: number | undefined, sAy: number | undefined) => {
+    async (key: string, elementType: string, sAx: number | undefined, sAy: number | undefined): Promise<boolean> => {
       const snapshot: LaurusProjectResult = { ...coreState.project };
       switch (elementType) {
         case "svg": {
@@ -124,11 +125,11 @@ export default function Skewbar() {
             );
             if (saved) {
               dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
-            } else {
-              dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, svgs: rollbackSvgs } });
+              return true;
             }
+            dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, svgs: rollbackSvgs } });
           }
-          break;
+          return false;
         }
         case "img": {
           const newImg = snapshot.imgs.get(key);
@@ -149,11 +150,11 @@ export default function Skewbar() {
             );
             if (saved) {
               dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
-            } else {
-              dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, imgs: rollbackImgs } });
+              return true;
             }
+            dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, imgs: rollbackImgs } });
           }
-          break;
+          return false;
         }
         case "mask": {
           const newMask = snapshot.masks.get(key);
@@ -174,13 +175,14 @@ export default function Skewbar() {
             );
             if (saved) {
               dispatch({ type: CoreActionType.SetProject, value: { ...newProject } });
-            } else {
-              dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, masks: rollbackMasks } });
+              return true;
             }
+            dispatch({ type: CoreActionType.SetProject, value: { ...snapshot, masks: rollbackMasks } });
           }
-          break;
+          return false;
         }
       }
+      return false;
     },
     [coreState.accessToken, coreState.apiOrigin, coreState.project, dispatch],
   );
@@ -213,13 +215,19 @@ export default function Skewbar() {
         scale={1}
         scaleToContaier={true}
       />
-      {axes.map(({ axis, value, inputRef }) => {
+      {axes.map(({ axis, value, inputRef }, i) => {
         const counterClockwise = value < 0;
         const write = async (next: number) => {
           if (saving) return;
           setSaving(true);
           try {
-            await saveSkew(arm.key, arm.type, axis === "ax" ? next : undefined, axis === "ay" ? next : undefined);
+            const saved = await saveSkew(
+              arm.key,
+              arm.type,
+              axis === "ax" ? next : undefined,
+              axis === "ay" ? next : undefined,
+            );
+            if (!saved) setRevision((r) => r + 1);
           } finally {
             setSaving(false);
           }
@@ -230,6 +238,7 @@ export default function Skewbar() {
             style={{
               display: "flex",
               alignItems: "center",
+              borderLeft: i > 0 ? "1px solid rgba(255, 255, 255, 0.1)" : "none",
               ...dynamicSizes.axisGroup,
               ...dynamicSizes.group,
             }}
@@ -238,7 +247,7 @@ export default function Skewbar() {
               <span style={{ userSelect: "none" }}>{axis}</span>
               <input
                 className={dellaRespira.className}
-                key={`${arm.key}|skew${axis}|${value}`}
+                key={`${arm.key}|skew${axis}|${value}|${revision}`}
                 id={`${arm.key}|skew${axis}`}
                 disabled
                 ref={inputRef}
@@ -257,6 +266,7 @@ export default function Skewbar() {
               />
             </div>
             <Dial
+              key={revision}
               resolution={{ ...uiState.resolution }}
               ids={{
                 contextId: `${arm.key}|skew${axis}|c1`,
