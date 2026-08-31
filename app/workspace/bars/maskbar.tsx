@@ -6,6 +6,7 @@ import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { maskArm, UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
+import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
 import { LaurusImgResult } from "../workspace.server";
 import { WorkspaceResolution } from "../workspace.config";
 import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
@@ -574,6 +575,7 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
   const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
 
   const maskMeta = coreState.project.masks.get(maskKey);
+  const isGuest = !coreState.accessToken;
   const isLightOn = uiState.tool.type === "mask" && uiState.tool.lightingMeshSection;
   const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
@@ -601,6 +603,10 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
   const saveGridlinesField = useCallback(
     (value: number) => {
       if (!maskMeta) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
       const newMasks = new Map(coreState.project.masks);
       const newMaskMeta: LaurusProjectMask = { ...maskMeta, texture: value };
       newMasks.set(maskKey, newMaskMeta);
@@ -610,7 +616,7 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
       pendingGridlinesSaveRef.current = newProject;
       void persistGridlinesQueue();
     },
-    [maskKey, maskMeta, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
+    [isGuest, maskKey, maskMeta, coreState.project, dispatch, notifyMaskAppearanceChanged, persistGridlinesQueue],
   );
 
   return (

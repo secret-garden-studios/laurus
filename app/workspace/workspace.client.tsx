@@ -99,6 +99,7 @@ import {
   LaurusProjectMask,
 } from "../projects/projects.server";
 import { MeDependencies, ProjectDependencies } from "../page";
+import { UNAUTHORIZED_EDIT } from "../landing.server";
 import {
   uiContextReducer,
   CarouselEntry,
@@ -862,6 +863,7 @@ export default function Workspace({
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
   const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
+  const isGuest = !coreState.accessToken;
   const { sendLightUpdate: sendMaskLightUpdate, closeSocket: closeMaskLightSocket } = useMaskLightSockets(
     coreState.apiOrigin,
     coreState.accessToken,
@@ -1258,6 +1260,10 @@ export default function Workspace({
 
   const lightMeshSection = useCallback(
     async (maskKey: string, polygonIndices: number[], size: number) => {
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
       const maskMeta = coreState.project.masks.get(maskKey);
@@ -1308,6 +1314,7 @@ export default function Workspace({
       notifyMaskToolChanged("mask");
     },
     [
+      isGuest,
       coreState.canvasMasks,
       coreState.project.masks,
       sendMaskLightUpdate,
@@ -1330,6 +1337,10 @@ export default function Workspace({
       circle: { cx: number; cy: number; radius: number },
       seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
     ) => {
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
@@ -1388,6 +1399,7 @@ export default function Workspace({
       notifyMaskPendingTopologyCleared(maskKey);
     },
     [
+      isGuest,
       coreState.canvasMasks,
       sendMaskObjectUpdate,
       dispatch,
