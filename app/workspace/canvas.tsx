@@ -492,8 +492,8 @@ export default function Canvas() {
         return;
       }
       const frame = { width: newFrame.width, height: newFrame.height, top: newFrame.y, left: newFrame.x };
+      if (!triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 })) return;
       setPendingMaskDrop({ imgData, frame });
-      triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 });
     },
     [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
   );

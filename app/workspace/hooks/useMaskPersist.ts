@@ -10,6 +10,7 @@ import {
   createProject,
   updateProject,
 } from "@/app/projects/projects.server";
+import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
 import { LaurusImgResult, LaurusMaskResult } from "../workspace.server";
 
 export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" | "left" | "scale_x" | "scale_y">;
@@ -125,9 +126,15 @@ export function useMaskPersist() {
   const isMaskBusy = mask.status === "connecting" || mask.status === "streaming";
   const wantsEdgeObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
+  const isGuest = !coreState.accessToken;
+
   const triggerMask = useCallback(
-    (img: LaurusImgResult, sourceFrame: MaskSourceFrame) => {
-      if (isMaskBusy) return;
+    (img: LaurusImgResult, sourceFrame: MaskSourceFrame): boolean => {
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return false;
+      }
+      if (isMaskBusy) return false;
       const initialTextureMix = mask.textureMix;
       mask.start(
         img,
@@ -137,9 +144,18 @@ export function useMaskPersist() {
           : undefined,
       );
       mask.setTextureMix(initialTextureMix);
+      return true;
     },
-    [isMaskBusy, mask, persistMask, wantsEdgeObjects, uiState.stagedObject.elevation, uiState.stagedObject.falloff],
+    [
+      isGuest,
+      isMaskBusy,
+      mask,
+      persistMask,
+      wantsEdgeObjects,
+      uiState.stagedObject.elevation,
+      uiState.stagedObject.falloff,
+    ],
   );
 
-  return { triggerMask, isMaskBusy };
+  return { triggerMask, isMaskBusy, isGuest };
 }
