@@ -158,7 +158,8 @@ export default function Canvas() {
   }, [uiState.tool.type, selectedImgKeys, coreState.project.imgs, coreState.canvasImgs, mask.status]);
 
   const activeBrowserMaskDrop = useMemo(() => {
-    if (uiState.tool.type !== "mask" || mask.status === "done" || activeMaskImg) return undefined;
+    if (mask.status === "done" || mask.status === "idle") return undefined;
+    if (uiState.tool.type !== "mask" || activeMaskImg) return undefined;
     return pendingMaskDrop;
   }, [uiState.tool.type, mask.status, activeMaskImg, pendingMaskDrop]);
 
