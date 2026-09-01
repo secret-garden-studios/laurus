@@ -2,34 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { LIGHT_SOURCE_SHADER } from "./mask-gl.ts";
 
-/**
- * The one GLSL ES 1.00 restriction this shader keeps tripping over, checked on
- * the source rather than by compiling it.
- *
- * Appendix A of the spec limits what may index a uniform array to a
- * "constant-index-expression": a literal, a constant, or a loop index. A
- * function parameter is none of those, however plainly every call site passes a
- * loop index into it -- the restriction is on the expression written inside the
- * function, and it does not look through the call.
- *
- * It is worth a test rather than a note because compiling the shader offline
- * does not catch it. headless-gl's ANGLE build accepts the illegal form
- * silently; browsers reject it, and the whole mask then fails to draw with
- * nothing but a console line to say why. So the only place this can be caught
- * before a browser sees it is here.
- *
- * The rule enforced is narrower than the spec and deliberately so: a uniform
- * array may not be indexed by a name that is a parameter of the function doing
- * the indexing. That is exactly the shape the mistake takes -- a helper written
- * to take a slot, because taking a slot reads more naturally than taking the
- * six values that live in it -- and a narrow rule that never misfires is worth
- * more here than a general one that needs a GLSL parser behind it.
- */
-
-/** Every `name(params) {` in one source, paired with the body's byte range. */
 function functions(source: string): { params: string[]; body: string }[] {
   const found: { params: string[]; body: string }[] = [];
-  // a return type, a name, a parenthesized parameter list, then an open brace
   const signature = /\b(?:void|bool|int|float|vec[234]|mat[234]|[A-Z]\w*)\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
   let match: RegExpExecArray | null;
   while ((match = signature.exec(source)) !== null) {
@@ -37,7 +11,6 @@ function functions(source: string): { params: string[]; body: string }[] {
       .split(",")
       .map((p) => p.trim().split(/\s+/).pop() ?? "")
       .filter((p) => p.length > 0 && p !== "void");
-    // walk to the matching close brace, so a nested block cannot end the body early
     let depth = 1;
     let i = signature.lastIndex;
     while (i < source.length && depth > 0) {
@@ -50,7 +23,6 @@ function functions(source: string): { params: string[]; body: string }[] {
   return found;
 }
 
-/** Uniform arrays indexed by one of the enclosing function's own parameters. */
 function illegalUniformIndexing(source: string): string[] {
   const offences: string[] = [];
   for (const { params, body } of functions(source)) {
@@ -98,5 +70,116 @@ vec3 objectField(vec2 p) {
   it("reads a parameter list with qualifiers, so a qualified slot is still caught", () => {
     const bad = `bool pick(const in int slot) { return u_objects[slot].x < 0.0; }`;
     assert.deepEqual(illegalUniformIndexing(bad), ["u_objects[slot]"]);
+  });
+});
+
+const RESERVED = new Set([
+  "asm",
+  "class",
+  "union",
+  "enum",
+  "typedef",
+  "template",
+  "this",
+  "packed",
+  "goto",
+  "switch",
+  "default",
+  "inline",
+  "noinline",
+  "volatile",
+  "public",
+  "static",
+  "extern",
+  "external",
+  "interface",
+  "flat",
+  "long",
+  "short",
+  "double",
+  "half",
+  "fixed",
+  "unsigned",
+  "superp",
+  "input",
+  "output",
+  "hvec2",
+  "hvec3",
+  "hvec4",
+  "dvec2",
+  "dvec3",
+  "dvec4",
+  "fvec2",
+  "fvec3",
+  "fvec4",
+  "sampler1D",
+  "sampler3D",
+  "sampler1DShadow",
+  "sampler2DShadow",
+  "sampler2DRect",
+  "sampler3DRect",
+  "sampler2DRectShadow",
+  "sizeof",
+  "cast",
+  "namespace",
+  "using",
+]);
+
+const TYPES = /\b(?:void|bool|int|float|vec[234]|ivec[234]|bvec[234]|mat[234]|sampler2D|samplerCube)\b/;
+
+function reservedDeclarations(source: string): string[] {
+  const found: string[] = [];
+  const declaration = new RegExp(`${TYPES.source}\\s+(\\w+)`, "g");
+  let match: RegExpExecArray | null;
+  while ((match = declaration.exec(source)) !== null) {
+    if (RESERVED.has(match[1])) found.push(match[1]);
+  }
+  return found;
+}
+
+function callsBeforeDeclaration(source: string): string[] {
+  const declaredAt = new Map<string, number>();
+  const signature = new RegExp(`${TYPES.source}\\s+(\\w+)\\s*\\([^)]*\\)\\s*\\{`, "g");
+  let match: RegExpExecArray | null;
+  while ((match = signature.exec(source)) !== null) {
+    if (!declaredAt.has(match[1])) declaredAt.set(match[1], match.index);
+  }
+  const offences: string[] = [];
+  for (const [name, declaration] of declaredAt) {
+    const call = new RegExp(`\\b${name}\\s*\\(`, "g");
+    let site: RegExpExecArray | null;
+    while ((site = call.exec(source)) !== null) {
+      if (site.index < declaration) offences.push(name);
+    }
+  }
+  return [...new Set(offences)];
+}
+
+describe("the mask shader's identifiers and declaration order", () => {
+  for (const [stage, source] of [
+    ["vertex", LIGHT_SOURCE_SHADER.vertex],
+    ["fragment", LIGHT_SOURCE_SHADER.fragment],
+  ] as const) {
+    it(`declares nothing by a reserved word, in the ${stage} stage`, () => {
+      assert.deepEqual(reservedDeclarations(source), [], "GLSL ES 1.00 reserves these against a later revision");
+    });
+
+    it(`calls no function above its definition, in the ${stage} stage`, () => {
+      assert.deepEqual(callsBeforeDeclaration(source), [], "GLSL has no implicit declarations");
+    });
+  }
+
+  it("catches a reserved word used as a local", () => {
+    assert.deepEqual(reservedDeclarations("void main() { float cast = 1.0; }"), ["cast"]);
+  });
+
+  it("catches a call written above its definition", () => {
+    const bad = "void main() { helper(); }\nvoid helper() { }";
+    assert.deepEqual(callsBeforeDeclaration(bad), ["helper"]);
+  });
+
+  it("leaves a call below its definition alone", () => {
+    const fine = "float helper() { return 1.0; }\nvoid main() { helper(); }";
+    assert.deepEqual(callsBeforeDeclaration(fine), []);
   });
 });

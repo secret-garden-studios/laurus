@@ -193,6 +193,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         radius: 0,
         shape: "",
         description: "",
+        order: 0,
       },
       removed: false,
       tagged_polygon_indices: [],

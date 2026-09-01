@@ -1,5 +1,5 @@
 import type { MaskCurve_V1_0, ObjectFill_V1_0 } from "./workspace.server";
-import { isBehindMask } from "./canvas-media/object-order.ts";
+import { isBehindMask, MASK_ORDER_EPSILON, occludes } from "./canvas-media/mask-order.ts";
 import { toCssSkewAngle } from "./skew-angle.ts";
 import {
   OBJECT_SDF_MARGIN,
@@ -31,6 +31,8 @@ export const LIGHT_SDF_GRID = 3;
 export const LIGHT_SDF_ATLAS = LIGHT_SDF_GRID * OBJECT_SDF_TILE;
 export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
 export const OBJECT_GRADIENT_LIMIT = 32.0;
+export const MASK_SHADOW_STEPS = 16;
+export const MASK_SHADOW_NEAR = 0.5;
 export const MASK_BUMP_STRENGTH = 0.85;
 export const MASK_LIGHT_HEIGHT_SCALE = 1.0;
 export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
@@ -78,9 +80,9 @@ uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
 uniform mediump int u_objectCount;
 
 uniform mediump float u_objectOrders[MAX_MASK_OBJECTS];
-#define OBJECT_ORDER_EPSILON 0.5
+#define OBJECT_ORDER_EPSILON ${glFloat(MASK_ORDER_EPSILON)}
 
-bool objectBehindMask(float order) {
+bool behindMask(float order) {
   return order < 0.0;
 }
 
@@ -157,7 +159,7 @@ vec3 objectField(vec2 p) {
   vec3 field = vec3(0.0);
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
-    if (objectBehindMask(u_objectOrders[i])) continue;
+    if (behindMask(u_objectOrders[i])) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float elevation = u_objects[i].w;
     vec3 profileU = objectU(
@@ -177,7 +179,7 @@ vec2 objectSwell(vec2 p) {
   vec2 swell = vec2(0.0);
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
-    if (objectBehindMask(u_objectOrders[i])) continue;
+    if (behindMask(u_objectOrders[i])) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float radius = u_objects[i].z;
     float u = objectU(
@@ -200,6 +202,7 @@ const LIGHT_FIELD_GLSL = `
 uniform mediump sampler2D u_lightShapes;
 uniform mediump float u_lightShapeRows[MAX_LIGHT_SOURCES];
 uniform mediump float u_lightShapeMaxDepth[MAX_LIGHT_SOURCES];
+uniform mediump float u_lightOrders[MAX_LIGHT_SOURCES];
 
 vec3 lightShapeTexel(float row, vec2 texel) {
   float col = mod(row, LIGHT_SDF_GRID);
@@ -254,6 +257,69 @@ float objectCoverage(float u, float radius) {
   return 1.0 - smoothstep(1.0 - width, 1.0, u);
 }
 
+#define MASK_SHADOW_STEPS ${MASK_SHADOW_STEPS}
+#define MASK_SHADOW_NEAR ${glFloat(MASK_SHADOW_NEAR)}
+
+float objectDistance(float row, vec2 toPoint, float radius, vec4 rotation) {
+  vec2 n = objectToShape(rotation, toPoint / radius);
+  float reach = length(n);
+  if (row < 0.0) return (reach - 1.0) * radius;
+  float overshoot = max(reach - OBJECT_SDF_MARGIN, 0.0);
+  vec2 sampled = n * min(1.0, OBJECT_SDF_MARGIN / max(reach, 1e-6));
+  return (overshoot - objectDepthAt(row, sampled).x) * radius;
+}
+
+float objectReach(float radius, vec4 rotation) {
+  float determinant = abs(rotation.x * rotation.w - rotation.y * rotation.z);
+  return radius * OBJECT_SDF_MARGIN * length(rotation) / max(determinant, 1e-3);
+}
+
+float objectShadow(
+  float row, vec2 center, float radius, vec4 rotation,
+  vec2 p, vec2 towards, float span, float sharpness
+) {
+  float bound = objectReach(radius, rotation);
+  float along = clamp(dot(center - p, towards), 0.0, span);
+  if (distance(p + towards * along, center) > bound) return 1.0;
+
+  float entry = max(along - bound, 0.0);
+  float leave = min(along + bound, span);
+  float stride = (leave - entry) / float(MASK_SHADOW_STEPS - 1);
+
+  float reach = 1.0;
+  for (int s = 0; s < MASK_SHADOW_STEPS; s++) {
+    float t = entry + stride * float(s);
+    float h = objectDistance(row, p + towards * t - center, radius, rotation);
+
+    if (h <= 0.0) return 0.0;
+    reach = min(reach, sharpness * h / max(t, MASK_SHADOW_NEAR));
+  }
+  reach = clamp(reach, 0.0, 1.0);
+
+  return reach * reach * (3.0 - 2.0 * reach);
+}
+
+float lightReach(vec2 p, vec2 lightPos, float lightRadius, float lightOrder) {
+  if (abs(lightOrder) < OBJECT_ORDER_EPSILON) return 1.0;
+  vec2 towards = lightPos - p;
+  float span = length(towards);
+  if (span < MASK_SHADOW_NEAR) return 1.0;
+  towards /= span;
+  float sharpness = span / max(lightRadius, 1.0);
+
+  float reach = 1.0;
+  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
+    if (i >= u_objectCount) break;
+    if (u_objectOrders[i] < lightOrder + OBJECT_ORDER_EPSILON) continue;
+    reach = min(reach, objectShadow(
+      u_objectShapeRows[i], u_objects[i].xy, u_objects[i].z, u_objectRotations[i],
+      p, towards, span, sharpness));
+
+    if (reach <= 0.0) return 0.0;
+  }
+  return reach;
+}
+
 ObjectLift objectLift(vec2 meshPos) {
   vec2 own = gl_FragCoord.xy / u_resolution;
   ObjectLift lift = ObjectLift(own, 0.0, own, 0.0, 0.0);
@@ -283,16 +349,17 @@ ObjectLift objectLift(vec2 meshPos) {
     vec2 sampled = vec2(there.x, u_resolution.y - there.y) / u_resolution;
 
     float order = u_objectOrders[i];
-    if (objectBehindMask(order)) {
+    bool inside = body < 1.0;
+    if (behindMask(order)) {
       lift.under = max(lift.under, coverage);
-      if (objectOutranks(order, underBestOrder, body, underNearest)) {
+      if (inside && objectOutranks(order, underBestOrder, body, underNearest)) {
         underBestOrder = order;
         underNearest = body;
         lift.underUv = sampled;
       }
     } else {
       lift.body = max(lift.body, coverage);
-      if (objectOutranks(order, bestOrder, body, nearest)) {
+      if (inside && objectOutranks(order, bestOrder, body, nearest)) {
         bestOrder = order;
         nearest = body;
         lift.uv = sampled;
@@ -393,7 +460,7 @@ vec4 objectFill(vec2 p, bool behind) {
     if (i >= u_objectCount) break;
     if (u_objectFills[i].a <= 0.0) continue;
     float order = u_objectOrders[i];
-    if (objectBehindMask(order) != behind) continue;
+    if (behindMask(order) != behind) continue;
     vec2 toPoint = p - u_objects[i].xy;
     float u = objectU(
       u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
@@ -461,16 +528,23 @@ void main() {
       u_lightShapeRows[i], u_lightShapeMaxDepth[i], shaped, u_lightSourceRadii[i]);
     float highlight = 1.0 - smoothstep(0.35, 1.0, profile.x);
     float shadow = smoothstep(0.0, u_lightSourceFalloffs[i], profile.y);
-    float shadowContribution = shadow * u_lightSourceDarknesses[i];
-    bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i]);
-    leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
 
+    float rank = u_lightOrders[i];
     vec3 lightPos = vec3(u_lightSourceCenters[i].x,
                          u_resolution.y - u_lightSourceCenters[i].y,
                          u_lightSourceRadii[i] * LIGHT_HEIGHT_SCALE);
+    float sheet = behindMask(rank) ? restingAlpha : 0.0;
+    float arriving = lightReach(v_meshPos, lightPos.xy, u_lightSourceRadii[i], rank);
+    float hidden = max(1.0 - arriving, sheet);
+    float reachable = 1.0 - hidden;
+
+    float shadowContribution = mix(shadow, 1.0, hidden) * u_lightSourceDarknesses[i];
+    bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i] * reachable);
+    leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
+
     vec3 lightDir = normalize(lightPos - surface);
     float bump = dot(normal, lightDir) - lightDir.z;
-    float reach = 1.0 - shadow;
+    float reach = (1.0 - shadow) * reachable;
     bumpLit = max(bumpLit, max(bump, 0.0) * reach * BUMP_STRENGTH);
     bumpShade = max(bumpShade, max(-bump, 0.0) * reach * BUMP_STRENGTH);
   }
@@ -564,6 +638,7 @@ export interface GLState {
   lightShapesLoc: WebGLUniformLocation;
   lightShapeRowsLoc: WebGLUniformLocation;
   lightShapeMaxDepthLoc: WebGLUniformLocation;
+  lightOrdersLoc: WebGLUniformLocation;
   lightShapeTexture: WebGLTexture;
   lightShapeSignature: string;
   supportsVertexTextures: boolean;
@@ -665,6 +740,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightShapesLoc = gl.getUniformLocation(program, "u_lightShapes");
   const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
   const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
+  const lightOrdersLoc = gl.getUniformLocation(program, "u_lightOrders");
   const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
   const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
@@ -701,6 +777,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightShapesLoc ||
     !lightShapeRowsLoc ||
     !lightShapeMaxDepthLoc ||
+    !lightOrdersLoc ||
     !objectFillsLoc ||
     !objectLiftsLoc ||
     !textureMixLoc ||
@@ -753,6 +830,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightShapesLoc,
     lightShapeRowsLoc,
     lightShapeMaxDepthLoc,
+    lightOrdersLoc,
     lightShapeTexture,
     lightShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
@@ -773,6 +851,7 @@ export interface MaskLightSource {
   falloff: number;
   intensity: number;
   darkness: number;
+  order: number;
   shape?: ObjectShape;
   transform?: ObjectRotation;
 }
@@ -808,6 +887,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     const falloffs = new Float32Array(activeLights.length);
     const intensities = new Float32Array(activeLights.length);
     const darknesses = new Float32Array(activeLights.length);
+    const orders = new Float32Array(activeLights.length);
     activeLights.forEach((light, i) => {
       centers[i * 2] = light.x;
       centers[i * 2 + 1] = light.y;
@@ -815,12 +895,14 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       falloffs[i] = Math.max(light.falloff, 1);
       intensities[i] = light.intensity;
       darknesses[i] = light.darkness;
+      orders[i] = light.order;
     });
     gl.uniform2fv(state.lightSourceCentersLoc, centers);
     gl.uniform1fv(state.lightSourceRadiiLoc, radii);
     gl.uniform1fv(state.lightSourceFalloffsLoc, falloffs);
     gl.uniform1fv(state.lightSourceIntensitiesLoc, intensities);
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
+    gl.uniform1fv(state.lightOrdersLoc, orders);
   }
 
   const lightTransforms = new Float32Array(MAX_MASK_LIGHT_SOURCES * 4);
@@ -865,7 +947,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
   gl.uniform1fv(state.lightShapeMaxDepthLoc, lightShapeMaxDepth);
 
-  const activeObjects = drawnMaskObjects(options.objects);
+  const activeObjects = drawnMaskObjects(options.objects, activeLights);
   gl.uniform1i(state.objectCountLoc, activeObjects.length);
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
@@ -1280,8 +1362,9 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
   return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
 }
 
-export function isDrawnObject(object: ObjectGeometryInput): boolean {
+export function isDrawnObject(object: ObjectGeometryInput, lights: readonly { order: number }[] = []): boolean {
   if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  if (lights.some((light) => occludes(object.order, light.order))) return true;
   if (isBehindMask(object)) return (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
   return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
 }
@@ -1294,8 +1377,11 @@ export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): 
   return cappedByElevation(objects.filter(isActiveObject));
 }
 
-export function drawnMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
-  return cappedByElevation(objects.filter(isDrawnObject));
+export function drawnMaskObjects<T extends ObjectGeometryInput>(
+  objects: T[],
+  lights: readonly { order: number }[] = [],
+): T[] {
+  return cappedByElevation(objects.filter((object) => isDrawnObject(object, lights)));
 }
 
 export function objectProfileK(u: number, falloff: number): number {
@@ -1311,6 +1397,28 @@ export function objectProfileUAt(object: ObjectOutline, point: [number, number])
   );
   if (!object.shape) return Math.hypot(nx, ny);
   return objectShapeProfileU(object.shape, nx, ny);
+}
+
+export function liftSourceAt<T extends ObjectGeometryInput>(
+  objects: readonly T[],
+  point: [number, number],
+  behind = false,
+): T | undefined {
+  let winner: T | undefined;
+  let bestOrder = -Infinity;
+  let nearest = 1;
+  for (const object of objects) {
+    if (object.lift === undefined) continue;
+    if (isBehindMask(object) !== behind) continue;
+    const u = objectProfileUAt(object, point);
+    if (u >= 1) continue;
+    if (object.order < bestOrder - MASK_ORDER_EPSILON) continue;
+    if (object.order <= bestOrder + MASK_ORDER_EPSILON && u >= nearest) continue;
+    bestOrder = object.order;
+    nearest = u;
+    winner = object;
+  }
+  return winner;
 }
 
 export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {

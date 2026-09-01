@@ -42,11 +42,13 @@ import {
   toObjectUpdate,
 } from "./workspace.server";
 import {
-  frontObjectOrder,
-  reorderObjects,
-  type ObjectOrderChange,
-  type ObjectOrderDirection,
-} from "./canvas-media/object-order";
+  frontElementOrder,
+  maskStack,
+  reorderElements,
+  type StackChange,
+  type StackDirection,
+  type StackRef,
+} from "./canvas-media/mask-order";
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
@@ -74,7 +76,7 @@ import {
   indicesInObjectFromCentroids,
   lightCenterFromCentroids,
 } from "./canvas-media/light-geometry";
-import { maskGeometry } from "./canvas-media/mask-geometry";
+import { maskGeometry, polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
@@ -284,8 +286,8 @@ export interface MaskNotifyValue {
     seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
   ) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
-  reorderObject: (maskKey: string, objectId: number, direction: ObjectOrderDirection) => Promise<void>;
-  restackMaskObjects: (maskKey: string, changes: ObjectOrderChange[]) => Promise<void>;
+  reorderElement: (maskKey: string, target: StackRef, direction: StackDirection) => Promise<void>;
+  restackMaskStack: (maskKey: string, changes: StackChange[]) => Promise<void>;
   notifyMaskToolChanged: (toolType: string) => void;
   notifyMaskSelectionChanged: (key: string | undefined) => void;
   notifyMaskHighlightSuppressed: (suppressed: boolean) => void;
@@ -362,8 +364,8 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   lightMeshSection: async () => {},
   createObject: async () => {},
   deleteObject: async () => {},
-  reorderObject: async () => {},
-  restackMaskObjects: async () => {},
+  reorderElement: async () => {},
+  restackMaskStack: async () => {},
   notifyMaskToolChanged: () => {},
   notifyMaskSelectionChanged: () => {},
   notifyMaskHighlightSuppressed: () => {},
@@ -1281,6 +1283,7 @@ export default function Workspace({
         maskData.mask_media_id,
         toLightUpdate(newLight(lightId, name), {
           polygon_indices: polygonIndices,
+          order: frontElementOrder(maskStack(maskData)),
           size,
           intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
           darkness: maskMeta?.light_preview_darkness ?? LIGHT_DARKNESS_DEFAULT,
@@ -1381,7 +1384,7 @@ export default function Workspace({
           falloff: seed.falloff,
           shape,
           ...toObjectFillFields(seed.fill),
-          order: frontObjectOrder(maskData.objects),
+          order: frontElementOrder(maskStack(maskData)),
           polygon_indices: polygonIndices,
         }),
       );
@@ -1413,57 +1416,91 @@ export default function Workspace({
     ],
   );
 
-  const applyObjectOrders = useCallback(
-    async (maskKey: string, changes: ObjectOrderChange[]) => {
+  const applyStackOrders = useCallback(
+    async (maskKey: string, changes: StackChange[]) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData || changes.length === 0) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
 
-      const optimisticOrders = new Map(changes.map((change) => [change.id, change.order]));
+      const ordered = (kind: StackRef["kind"]) =>
+        new Map(changes.filter((change) => change.kind === kind).map((change) => [change.id, change.order]));
+      const objectOrders = ordered("object");
+      const lightOrders = ordered("light");
       const optimistic: LaurusMaskResult = {
         ...maskData,
         objects: maskData.objects.map((object) => {
-          const order = optimisticOrders.get(object.id);
+          const order = objectOrders.get(object.id);
           return order === undefined ? object : { ...object, order };
+        }),
+        lights: maskData.lights.map((light) => {
+          const order = lightOrders.get(light.id);
+          return order === undefined ? light : { ...light, order };
         }),
       };
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: optimistic });
       notifyMaskObjectsUpdated(maskKey, optimistic);
+      notifyMaskLightUpdated(maskKey, optimistic);
 
       let patched = maskData;
       for (const change of changes) {
-        const object = patched.objects.find((o) => o.id === change.id);
-        if (!object) continue;
-        const polygonIndices = patched.polygons.reduce<number[]>((indices, polygon, index) => {
-          if (polygon.object_id === object.id) indices.push(index);
-          return indices;
-        }, []);
-        const updated = await sendMaskObjectUpdate(
-          patched.mask_media_id,
-          toObjectUpdate(object, { order: change.order, polygon_indices: polygonIndices }),
-        );
-        if (!updated) break;
-        patched = applyObjectDelta(patched, updated);
+        if (change.kind === "object") {
+          const object = patched.objects.find((o) => o.id === change.id);
+          if (!object) continue;
+          const updated = await sendMaskObjectUpdate(
+            patched.mask_media_id,
+            toObjectUpdate(object, {
+              order: change.order,
+              polygon_indices: polygonIndicesForObject(patched.polygons, object.id),
+            }),
+          );
+          if (!updated) break;
+          patched = applyObjectDelta(patched, updated);
+        } else {
+          const light = patched.lights.find((l) => l.id === change.id);
+          if (!light) continue;
+          const updated = await sendMaskLightUpdate(
+            patched.mask_media_id,
+            toLightUpdate(light, {
+              order: change.order,
+              polygon_indices: polygonIndicesForLight(patched.polygons, light.id),
+            }),
+          );
+          if (!updated) break;
+          patched = applyLightDelta(patched, updated);
+        }
       }
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
       notifyMaskObjectsUpdated(maskKey, patched);
+      notifyMaskLightUpdated(maskKey, patched);
     },
-    [coreState.canvasMasks, sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated],
+    [
+      isGuest,
+      coreState.canvasMasks,
+      sendMaskObjectUpdate,
+      sendMaskLightUpdate,
+      dispatch,
+      notifyMaskObjectsUpdated,
+      notifyMaskLightUpdated,
+    ],
   );
 
-  const reorderObject = useCallback(
-    async (maskKey: string, objectId: number, direction: ObjectOrderDirection) => {
+  const reorderElement = useCallback(
+    async (maskKey: string, target: StackRef, direction: StackDirection) => {
       const maskData = coreState.canvasMasks.get(maskKey);
       if (!maskData) return;
-      await applyObjectOrders(maskKey, reorderObjects(maskData.objects, objectId, direction));
+      await applyStackOrders(maskKey, reorderElements(maskStack(maskData), target, direction));
     },
-    [coreState.canvasMasks, applyObjectOrders],
+    [coreState.canvasMasks, applyStackOrders],
   );
 
-  const restackMaskObjects = useCallback(
-    async (maskKey: string, changes: ObjectOrderChange[]) => {
-      await applyObjectOrders(maskKey, changes);
+  const restackMaskStack = useCallback(
+    async (maskKey: string, changes: StackChange[]) => {
+      await applyStackOrders(maskKey, changes);
     },
-    [applyObjectOrders],
+    [applyStackOrders],
   );
 
   const deleteObject = useCallback(
@@ -1879,8 +1916,8 @@ export default function Workspace({
       lightMeshSection,
       createObject,
       deleteObject,
-      reorderObject,
-      restackMaskObjects,
+      reorderElement,
+      restackMaskStack,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskHighlightSuppressed,
@@ -1902,8 +1939,8 @@ export default function Workspace({
       lightMeshSection,
       createObject,
       deleteObject,
-      reorderObject,
-      restackMaskObjects,
+      reorderElement,
+      restackMaskStack,
       notifyMaskToolChanged,
       notifyMaskSelectionChanged,
       notifyMaskHighlightSuppressed,

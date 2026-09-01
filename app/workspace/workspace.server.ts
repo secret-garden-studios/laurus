@@ -1,5 +1,5 @@
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
-import { OBJECT_ORDER_UNRANKED } from "./canvas-media/object-order.ts";
+import { MASK_ORDER_UNRANKED } from "./canvas-media/mask-order.ts";
 
 const onNotOk = (status: number, message?: string) => {
   const suffix = message ? ` ${message}` : "";
@@ -304,6 +304,7 @@ export interface Light_V1_0 {
   radius: number;
   shape: string;
   description: string;
+  order: number;
 }
 export type LaurusLight = Light_V1_0;
 
@@ -413,7 +414,11 @@ type RawObject_V1_0 = Omit<
   lift?: boolean;
   order?: number;
 };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
+type RawLight_V1_0 = Omit<Light_V1_0, "order"> & { order?: number };
+type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights"> & {
+  objects?: RawObject_V1_0[];
+  lights?: RawLight_V1_0[];
+};
 
 export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
   return {
@@ -430,14 +435,19 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
     lift: object.lift ?? true,
-    order: object.order ?? OBJECT_ORDER_UNRANKED,
+    order: object.order ?? MASK_ORDER_UNRANKED,
   };
+}
+
+export function normalizeLight(light: RawLight_V1_0): Light_V1_0 {
+  return { ...light, order: light.order ?? MASK_ORDER_UNRANKED };
 }
 
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
     objects: (mask.objects ?? []).map(normalizeObject),
+    lights: (mask.lights ?? []).map(normalizeLight),
   };
 }
 
@@ -681,6 +691,7 @@ export interface MaskLightUpdateRequest_V1_0 {
   radius: number;
   shape: string;
   description: string;
+  order: number;
   retouch?: RetouchedMesh_V1_0;
 }
 export interface MaskEditDelta_V1_0 {
@@ -715,6 +726,7 @@ export function newLight(id: number, name: string): Light_V1_0 {
     radius: 0,
     shape: "",
     description: "",
+    order: MASK_ORDER_UNRANKED,
   };
 }
 
@@ -734,6 +746,7 @@ export function toLightUpdate(
     radius: light.radius,
     shape: light.shape,
     description: light.description,
+    order: light.order,
     ...changes,
   };
 }
@@ -786,7 +799,7 @@ export function newObject(id: number, name: string): Object_V1_0 {
     description: "",
     reviewed: false,
     lift: true,
-    order: OBJECT_ORDER_UNRANKED,
+    order: MASK_ORDER_UNRANKED,
   };
 }
 

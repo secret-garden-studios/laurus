@@ -39,7 +39,7 @@ import {
 } from "./workspace.server";
 import { applyLightDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
-import type { ObjectOrderDirection } from "./canvas-media/object-order";
+import type { StackDirection, StackRef } from "./canvas-media/mask-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -132,8 +132,14 @@ function cleanUpBrowserElement(
   }
 }
 
-const MOVE_UP_TITLE = "move this object forward in its mask -- alt to put it in front of everything";
-const MOVE_DOWN_TITLE = "move this object back in its mask -- past the mask itself, it renders behind it";
+const MOVE_UP_TITLE = {
+  object: "move this object forward in its mask -- alt to put it in front of everything",
+  light: "move this light forward in its mask -- alt to put it in front of everything",
+};
+const MOVE_DOWN_TITLE = {
+  object: "move this object back in its mask -- past the mask itself, it renders behind it",
+  light: "move this light back in its mask -- past the mask itself, it only reaches the mask's gaps",
+};
 
 function projectSvgIsTransformed(svg: LaurusProjectSvg) {
   if (
@@ -209,7 +215,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     notifyMaskLightUpdated,
     notifyMaskObjectReviewPreview,
     deleteObject,
-    reorderObject,
+    reorderElement,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
@@ -808,30 +814,27 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const [reordering, setReordering] = useState(false);
 
   const moveInStack = useCallback(
-    async (direction: ObjectOrderDirection) => {
-      if (media.type !== "object") {
+    async (direction: StackDirection) => {
+      const target: StackRef | undefined =
+        media.type === "object"
+          ? { kind: "object", id: media.objectId }
+          : media.type === "light"
+            ? { kind: "light", id: media.lightId }
+            : undefined;
+      if (!target) {
         await updateMediaOrder(direction);
         return;
       }
       if (reordering) return;
       setReordering(true);
       try {
-        await reorderObject(media.key, media.objectId, direction);
+        await reorderElement(media.key, target, direction);
       } finally {
         setReordering(false);
       }
     },
-    [media, reordering, reorderObject, updateMediaOrder],
+    [media, reordering, reorderElement, updateMediaOrder],
   );
-
-  const reorderEnabled = useMemo(() => {
-    switch (media.type) {
-      case "light":
-        return false;
-      default:
-        return true;
-    }
-  }, [media.type]);
 
   const revertEnabled = useMemo(() => {
     switch (media.type) {
@@ -1391,31 +1394,25 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   )}
                   <div
                     style={{
-                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      color: reordering ? "rgba(127,127,127, 1)" : "inherit",
                       ...cellStyle,
-                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                      cursor: "pointer",
                     }}
-                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
-                    title={media.type === "object" ? MOVE_UP_TITLE : undefined}
-                    onClick={() => {
-                      if (!reorderEnabled) return;
-                      moveInStack(isAltPressed ? "top" : "increment");
-                    }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={isLightOrObject ? MOVE_UP_TITLE[media.type] : undefined}
+                    onClick={() => moveInStack(isAltPressed ? "top" : "increment")}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
                     style={{
-                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      color: reordering ? "rgba(127,127,127, 1)" : "inherit",
                       ...cellStyle,
-                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                      cursor: "pointer",
                     }}
-                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
-                    title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
-                    onClick={() => {
-                      if (!reorderEnabled) return;
-                      moveInStack(isAltPressed ? "bottom" : "decrement");
-                    }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={isLightOrObject ? MOVE_DOWN_TITLE[media.type] : undefined}
+                    onClick={() => moveInStack(isAltPressed ? "bottom" : "decrement")}
                   >
                     {isAltPressed ? "move to bottom" : "move down"}
                   </div>
