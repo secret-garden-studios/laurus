@@ -495,6 +495,15 @@ export function ProjectMaskItem({
     [mediaKey],
   );
 
+  const lightLowpoly = useCallback(
+    (lightId: number, stored: boolean): boolean => {
+      const edit = latestRef.current.uiState.maskEdit;
+      if (edit?.subject !== "light" || edit.maskKey !== mediaKey || edit.light.id !== lightId) return stored;
+      return edit.lowpoly;
+    },
+    [mediaKey],
+  );
+
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
@@ -512,6 +521,7 @@ export function ProjectMaskItem({
         darkness: meta.darkness,
         order: meta.order,
         gridlines: lightGridlinesMix(lightId),
+        lowpoly: lightLowpoly(lightId, meta.lowpoly),
       };
 
       if (shaped) {
@@ -536,7 +546,7 @@ export function ProjectMaskItem({
       });
     });
     return lights;
-  }, [resolveLightSilhouette, lightGridlinesMix]);
+  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -764,6 +774,7 @@ export function ProjectMaskItem({
         ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, light]) => ({
             ...light,
             gridlines: lightGridlinesMix(lightId),
+            lowpoly: lightLowpoly(lightId, light.lowpoly ?? false),
           }))
         : [
             {
@@ -786,7 +797,7 @@ export function ProjectMaskItem({
       backingVertexCount: backingVertexCountRef.current,
       backingGrey: backingGreyRef.current,
     });
-  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix]);
+  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix, lightLowpoly]);
   renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
@@ -1337,6 +1348,7 @@ export function ProjectMaskItem({
                   const shapedMeta = resolveLightSilhouette(t.lightId);
                   playbackLightSourcesRef.current.set(t.lightId, {
                     order: lightMeta?.order ?? MASK_ORDER_UNRANKED,
+                    lowpoly: lightMeta?.lowpoly ?? false,
                     x: bufferX,
                     y: canvas.height - bufferY,
                     radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
@@ -1497,6 +1509,11 @@ export function ProjectMaskItem({
   useEffect(() => {
     render();
   }, [uiState.lightGridlines, render]);
+
+  const editedLightLowpoly = uiState.maskEdit?.subject === "light" ? uiState.maskEdit.lowpoly : undefined;
+  useEffect(() => {
+    render();
+  }, [editedLightLowpoly, render]);
 
   const pickHover = source.kind === "static" && isHovered && isAwaitingRegionPick(uiState);
   useEffect(() => {

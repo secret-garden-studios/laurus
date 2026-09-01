@@ -195,6 +195,7 @@ describe("mask deltas -- patching only what an edit touched", () => {
         shape: "",
         description: "",
         order: 0,
+        lowpoly: true,
       },
       removed: false,
       tagged_polygon_indices: [],

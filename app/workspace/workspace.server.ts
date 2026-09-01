@@ -305,6 +305,7 @@ export interface Light_V1_0 {
   shape: string;
   description: string;
   order: number;
+  lowpoly: boolean;
 }
 export type LaurusLight = Light_V1_0;
 
@@ -415,7 +416,7 @@ type RawObject_V1_0 = Omit<
   lift?: boolean;
   order?: number;
 };
-type RawLight_V1_0 = Omit<Light_V1_0, "order"> & { order?: number };
+type RawLight_V1_0 = Omit<Light_V1_0, "order" | "lowpoly"> & { order?: number; lowpoly?: boolean };
 type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights" | "description"> & {
   objects?: RawObject_V1_0[];
   lights?: RawLight_V1_0[];
@@ -442,7 +443,7 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
 }
 
 export function normalizeLight(light: RawLight_V1_0): Light_V1_0 {
-  return { ...light, order: light.order ?? MASK_ORDER_UNRANKED };
+  return { ...light, order: light.order ?? MASK_ORDER_UNRANKED, lowpoly: light.lowpoly ?? false };
 }
 
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
@@ -736,6 +737,7 @@ export interface MaskLightUpdateRequest_V1_0 {
   shape: string;
   description: string;
   order: number;
+  lowpoly: boolean;
   retouch?: RetouchedMesh_V1_0;
 }
 export interface MaskEditDelta_V1_0 {
@@ -771,6 +773,7 @@ export function newLight(id: number, name: string): Light_V1_0 {
     shape: "",
     description: "",
     order: MASK_ORDER_UNRANKED,
+    lowpoly: false,
   };
 }
 
@@ -791,6 +794,7 @@ export function toLightUpdate(
     shape: light.shape,
     description: light.description,
     order: light.order,
+    lowpoly: light.lowpoly,
     ...changes,
   };
 }

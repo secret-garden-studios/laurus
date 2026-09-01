@@ -144,6 +144,7 @@ export interface ObjectReviewSession extends MaskEditSessionBase {
 export interface LightEditSession extends MaskEditSessionBase {
   subject: "light";
   light: LaurusLight;
+  lowpoly: boolean;
 }
 
 export type MaskEditSession = ObjectReviewSession | LightEditSession;
@@ -325,6 +326,7 @@ export enum UIActionType {
   ToggleMaskEditPolygon,
   SetMaskEditShape,
   SetMaskEditShapeEditing,
+  SetMaskEditLowpoly,
   SetMaskEditIndices,
   SetMaskEditRetouch,
   RequestMaskEditEnd,
@@ -415,6 +417,7 @@ export type UIAction =
   | { type: UIActionType.SetMaskEditIndices; indices: Set<number> }
   | { type: UIActionType.SetMaskEditRetouch; retouch: ObjectRetouch | undefined }
   | { type: UIActionType.SetMaskEditShapeEditing; editing: boolean }
+  | { type: UIActionType.SetMaskEditLowpoly; lowpoly: boolean }
   | {
       type: UIActionType.RecordObjectReviewDecision;
       decision: "accepted" | "rejected";
@@ -708,6 +711,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         maskMediaId: action.maskMediaId,
         maskKey: action.maskKey,
         light: action.light,
+        lowpoly: action.light.lowpoly,
         currentIndices: new Set(action.polygonIndices),
         editedShape: undefined,
         editingShape: true,
@@ -776,6 +780,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const session = state.maskEdit;
       if (!session) return state;
       return { ...state, maskEdit: { ...session, editingShape: action.editing } };
+    }
+    case UIActionType.SetMaskEditLowpoly: {
+      const session = state.maskEdit;
+      if (session?.subject !== "light" || isMaskEditLocked(session)) return state;
+      return { ...state, maskEdit: { ...session, lowpoly: action.lowpoly } };
     }
     case UIActionType.RequestObjectReviewRedo: {
       const review = state.maskEdit;

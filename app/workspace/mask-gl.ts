@@ -440,6 +440,7 @@ uniform float u_lightSourceIntensities[MAX_LIGHT_SOURCES];
 uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
 uniform mediump vec4 u_lightTransforms[MAX_LIGHT_SOURCES];
 uniform float u_lightGridlines[MAX_LIGHT_SOURCES];
+uniform float u_lightLowpoly[MAX_LIGHT_SOURCES];
 uniform int u_lightSourceCount;
 
 uniform float u_textureMix;
@@ -542,7 +543,8 @@ void main() {
   float gridlinesMix = 0.0;
   for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
     if (i >= u_lightSourceCount) break;
-    vec2 offset = v_lightSourcePos - u_lightSourceCenters[i];
+    vec2 sampledAt = mix(gl_FragCoord.xy, v_lightSourcePos, u_lightLowpoly[i]);
+    vec2 offset = sampledAt - u_lightSourceCenters[i];
     vec2 shaped = objectToShape(u_lightTransforms[i], vec2(offset.x, -offset.y));
     vec2 profile = lightProfile(
       u_lightShapeRows[i], u_lightShapeMaxDepth[i], shaped, u_lightSourceRadii[i]);
@@ -664,6 +666,7 @@ export interface GLState {
   lightShapeMaxDepthLoc: WebGLUniformLocation;
   lightOrdersLoc: WebGLUniformLocation;
   lightGridlinesLoc: WebGLUniformLocation;
+  lightLowpolyLoc: WebGLUniformLocation;
   lightShapeTexture: WebGLTexture;
   lightShapeSignature: string;
   supportsVertexTextures: boolean;
@@ -767,6 +770,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
   const lightOrdersLoc = gl.getUniformLocation(program, "u_lightOrders");
   const lightGridlinesLoc = gl.getUniformLocation(program, "u_lightGridlines");
+  const lightLowpolyLoc = gl.getUniformLocation(program, "u_lightLowpoly");
   const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
   const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
@@ -805,6 +809,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightShapeMaxDepthLoc ||
     !lightOrdersLoc ||
     !lightGridlinesLoc ||
+    !lightLowpolyLoc ||
     !objectFillsLoc ||
     !objectLiftsLoc ||
     !textureMixLoc ||
@@ -859,6 +864,7 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightShapeMaxDepthLoc,
     lightOrdersLoc,
     lightGridlinesLoc,
+    lightLowpolyLoc,
     lightShapeTexture,
     lightShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
@@ -883,6 +889,7 @@ export interface MaskLightSource {
   shape?: ObjectShape;
   transform?: ObjectRotation;
   gridlines?: number;
+  lowpoly?: boolean;
 }
 
 export interface DrawMaskMeshOptions {
@@ -918,6 +925,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     const darknesses = new Float32Array(activeLights.length);
     const orders = new Float32Array(activeLights.length);
     const gridlines = new Float32Array(activeLights.length);
+    const lowpoly = new Float32Array(activeLights.length);
     activeLights.forEach((light, i) => {
       centers[i * 2] = light.x;
       centers[i * 2 + 1] = light.y;
@@ -927,6 +935,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       darknesses[i] = light.darkness;
       orders[i] = light.order;
       gridlines[i] = light.gridlines ?? 0;
+      lowpoly[i] = light.lowpoly ? 1 : 0;
     });
     gl.uniform2fv(state.lightSourceCentersLoc, centers);
     gl.uniform1fv(state.lightSourceRadiiLoc, radii);
@@ -935,6 +944,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
     gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
     gl.uniform1fv(state.lightOrdersLoc, orders);
     gl.uniform1fv(state.lightGridlinesLoc, gridlines);
+    gl.uniform1fv(state.lightLowpolyLoc, lowpoly);
   }
 
   const lightTransforms = new Float32Array(MAX_MASK_LIGHT_SOURCES * 4);
