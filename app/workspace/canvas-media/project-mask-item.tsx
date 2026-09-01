@@ -1488,8 +1488,7 @@ export function ProjectMaskItem({
   useEffect(() => {
     const next = maskEditSubjectFor(uiState.maskEdit, mediaKey);
     const previous = maskEditSubjectRef.current;
-    const editingShapeNext =
-      uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.subject === "object" && uiState.maskEdit.editingShape;
+    const editingShapeNext = uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.editingShape;
     if (
       next?.subject === previous?.subject &&
       next?.id === previous?.id &&
