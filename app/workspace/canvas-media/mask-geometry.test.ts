@@ -17,6 +17,7 @@ function maskWith(polygons: LaurusPolygonPath[]): LaurusMaskResult {
     width: 100,
     height: 100,
     order: 1,
+    description: "",
     categories: [],
     polygons,
     curves: [],

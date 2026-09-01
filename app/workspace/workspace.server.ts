@@ -379,6 +379,7 @@ export interface MaskMediaResult_V1_0 {
   width: number;
   height: number;
   order: number;
+  description: string;
   categories: string[];
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
@@ -415,9 +416,10 @@ type RawObject_V1_0 = Omit<
   order?: number;
 };
 type RawLight_V1_0 = Omit<Light_V1_0, "order"> & { order?: number };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights"> & {
+type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights" | "description"> & {
   objects?: RawObject_V1_0[];
   lights?: RawLight_V1_0[];
+  description?: string;
 };
 
 export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
@@ -446,6 +448,7 @@ export function normalizeLight(light: RawLight_V1_0): Light_V1_0 {
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
+    description: mask.description ?? "",
     objects: (mask.objects ?? []).map(normalizeObject),
     lights: (mask.lights ?? []).map(normalizeLight),
   };
@@ -538,6 +541,47 @@ export async function deleteMask(
     console.log({ error });
     return false;
   }
+}
+
+export async function updateMaskDescription(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  description: string,
+): Promise<MaskMediaResult_V1_0 | undefined> {
+  try {
+    const body = JSON.stringify({ description });
+    const url = `${baseUrl}/media/masks/${maskMediaId}/description`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "mask", description));
+      return undefined;
+    }
+    const result: MaskMediaResult_V1_0 = await response.json();
+    return normalizeMaskResult(result);
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+export function maskLabel(
+  mask: MaskMediaResult_V1_0,
+  canvasImgs: Map<string, ImgMediaResult_V1_0>,
+  fallback: string,
+): string {
+  if (mask.description) return mask.description;
+  for (const img of canvasImgs.values()) {
+    if (img.img_media_id === mask.source_img_media_id) return img.media_key;
+  }
+  return fallback;
 }
 
 export function nextLightId(lights: Light_V1_0[]): number {

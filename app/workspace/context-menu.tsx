@@ -34,8 +34,10 @@ import {
   LaurusSvgResult,
   deleteMask,
   getObjectReview,
+  maskLabel,
   newLight,
   toLightUpdate,
+  updateMaskDescription,
 } from "./workspace.server";
 import { applyLightDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
@@ -54,6 +56,7 @@ import {
   resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
+import { UNAUTHORIZED_EDIT } from "../landing.server";
 import { deleteEffects, deleteMaskLightEffects } from "./effects-utils";
 
 function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
@@ -1073,15 +1076,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       case "svg":
         return media.meta.media_key;
       case "mask": {
-        let filename = media.key;
         const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return filename;
-        coreState.canvasImgs.forEach((i) => {
-          if (i.img_media_id == mask.source_img_media_id) {
-            filename = i.media_key;
-          }
-        });
-        return filename;
+        if (!mask) return media.key;
+        return maskLabel(mask, coreState.canvasImgs, media.key);
       }
       case "object": {
         const mask = coreState.canvasMasks.get(media.key);
@@ -1099,6 +1096,52 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       }
     }
   }, [coreState.canvasImgs, coreState.canvasMasks, media]);
+
+  const describableMask = media.type === "mask" ? coreState.canvasMasks.get(media.key) : undefined;
+  const [descriptionDraft, setDescriptionDraft] = useState<string | undefined>(undefined);
+  const descriptionDraftRef = useRef<string | undefined>(undefined);
+  const editDescription = useCallback((draft: string | undefined) => {
+    descriptionDraftRef.current = draft;
+    setDescriptionDraft(draft);
+  }, []);
+
+  const [committingDescription, setCommittingDescription] = useState<string | undefined>(undefined);
+
+  const openDescriptionEdit = useCallback(() => {
+    if (!describableMask || descriptionDraftRef.current !== undefined) return;
+    if (committingDescription !== undefined) return;
+    if (!coreState.accessToken) {
+      alert(UNAUTHORIZED_EDIT);
+      return;
+    }
+    editDescription(describableMask.description);
+  }, [describableMask, committingDescription, coreState.accessToken, editDescription]);
+
+  const commitDescription = useCallback(async () => {
+    const draft = descriptionDraftRef.current;
+    editDescription(undefined);
+    if (draft === undefined || !describableMask) return;
+    const description = draft.trim();
+    if (description === describableMask.description) return;
+    setCommittingDescription(description);
+    const updated = await updateMaskDescription(
+      coreState.apiOrigin,
+      coreState.accessToken,
+      describableMask.mask_media_id,
+      description,
+    );
+
+    setCommittingDescription(undefined);
+    if (!updated) return;
+    dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+  }, [describableMask, coreState.apiOrigin, coreState.accessToken, dispatch, media.key, editDescription]);
+
+  const shownHeader = useMemo(() => {
+    if (committingDescription === undefined) return header;
+    if (committingDescription) return committingDescription;
+    if (!describableMask) return header;
+    return maskLabel({ ...describableMask, description: "" }, coreState.canvasImgs, media.key);
+  }, [committingDescription, header, describableMask, coreState.canvasImgs, media.key]);
 
   const subheader = useMemo(() => {
     switch (media.type) {
@@ -1184,6 +1227,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 overflowX: "hidden",
                 whiteSpace: "nowrap",
                 textWrap: "nowrap",
+                ...(committingDescription !== undefined && { cursor: "wait" }),
                 padding: leftSide ? dynamicSizes.clipPathDivIsLeftPadding : dynamicSizes.clipPathDivPadding,
                 left: leftSide ? dynamicSizes.clipPathDivIsLeftLeft : dynamicSizes.clipPathDivLeft,
                 width: contextMenuWidth - dynamicSizes.clipPathDivSizeOffset.width,
@@ -1200,13 +1244,52 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 }}
               >
                 <div
+                  title={
+                    committingDescription !== undefined
+                      ? "saving the description..."
+                      : describableMask
+                        ? "double click to describe this mask"
+                        : undefined
+                  }
+                  onDoubleClick={openDescriptionEdit}
                   style={{
                     overflowX: "auto",
                     fontWeight: "bold",
+                    ...(committingDescription !== undefined && { cursor: "wait" }),
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {header}
+                  {descriptionDraft === undefined ? (
+                    shownHeader
+                  ) : (
+                    <input
+                      autoFocus
+                      type="text"
+                      value={descriptionDraft}
+                      placeholder="describe me..."
+                      autoComplete="off"
+                      onChange={(e) => editDescription(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      onBlur={() => void commitDescription()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          editDescription(undefined);
+                        }
+                      }}
+                      style={{
+                        font: "inherit",
+                        fontWeight: "bold",
+                        letterSpacing: "inherit",
+                        background: "none",
+                        color: "inherit",
+                        border: "none",
+                        outline: "none",
+                        padding: 0,
+                        width: "100%",
+                      }}
+                    />
+                  )}
                 </div>
                 <div style={{ display: "flex", ...dynamicSizes.h2 }}>{subheader}</div>
                 <div

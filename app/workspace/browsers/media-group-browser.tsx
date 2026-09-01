@@ -23,6 +23,7 @@ import {
   LaurusMediaGroupResult,
   LaurusObject,
   LaurusSvgResult,
+  maskLabel,
   updateMediaGroup,
 } from "../workspace.server";
 import {
@@ -1164,17 +1165,8 @@ function MediaGroupRow({
   });
   const [isItemHovered, setIsItemHovered] = useState<boolean>(false);
   const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
-  const maskSourceFilename = useCallback(
-    (mask: LaurusMaskResult) => {
-      let filename = mask.source_img_media_id;
-      if (!mask) return filename;
-      coreState.canvasImgs.forEach((i) => {
-        if (i.img_media_id == mask.source_img_media_id) {
-          filename = i.media_key;
-        }
-      });
-      return filename;
-    },
+  const maskName = useCallback(
+    (mask: LaurusMaskResult) => maskLabel(mask, coreState.canvasImgs, mask.source_img_media_id),
     [coreState.canvasImgs],
   );
 
@@ -1405,7 +1397,7 @@ function MediaGroupRow({
                   ...dynamicSizes.filename.filename,
                 }}
               >
-                {maskSourceFilename(item.mask)}
+                {maskName(item.mask)}
               </div>
             </div>
             <div />
