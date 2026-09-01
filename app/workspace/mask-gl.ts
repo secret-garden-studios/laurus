@@ -247,8 +247,12 @@ uniform mediump vec4 u_objectLifts[MAX_MASK_OBJECTS];
 struct ObjectLift {
   vec2 uv;
   float body;
+  float order;
+  float cover;
   vec2 underUv;
   float under;
+  float underOrder;
+  float underCover;
   float hole;
 };
 
@@ -322,11 +326,9 @@ float lightReach(vec2 p, vec2 lightPos, float lightRadius, float lightOrder) {
 
 ObjectLift objectLift(vec2 meshPos) {
   vec2 own = gl_FragCoord.xy / u_resolution;
-  ObjectLift lift = ObjectLift(own, 0.0, own, 0.0, 0.0);
+  ObjectLift lift = ObjectLift(own, 0.0, -1e9, 0.0, own, 0.0, -1e9, 0.0, 0.0);
   float nearest = 1.0;
-  float bestOrder = -1e9;
   float underNearest = 1.0;
-  float underBestOrder = -1e9;
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     if (u_objectLifts[i].w < 0.5) continue;
@@ -352,16 +354,18 @@ ObjectLift objectLift(vec2 meshPos) {
     bool inside = body < 1.0;
     if (behindMask(order)) {
       lift.under = max(lift.under, coverage);
-      if (inside && objectOutranks(order, underBestOrder, body, underNearest)) {
-        underBestOrder = order;
+      if (inside && objectOutranks(order, lift.underOrder, body, underNearest)) {
+        lift.underOrder = order;
         underNearest = body;
+        lift.underCover = coverage;
         lift.underUv = sampled;
       }
     } else {
       lift.body = max(lift.body, coverage);
-      if (inside && objectOutranks(order, bestOrder, body, nearest)) {
-        bestOrder = order;
+      if (inside && objectOutranks(order, lift.order, body, nearest)) {
+        lift.order = order;
         nearest = body;
+        lift.cover = coverage;
         lift.uv = sampled;
       }
     }
@@ -453,10 +457,14 @@ const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
 ${OBJECT_LIFT_GLSL}
 
-vec4 objectFill(vec2 p, bool behind) {
-  vec4 fill = vec4(0.0);
-  float nearest = 1.0;
-  float bestOrder = -1e9;
+struct ObjectFill {
+  vec4 color;
+  float order;
+  float nearest;
+};
+
+ObjectFill objectFill(vec2 p, bool behind) {
+  ObjectFill fill = ObjectFill(vec4(0.0), -1e9, 1.0);
   for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
     if (i >= u_objectCount) break;
     if (u_objectFills[i].a <= 0.0) continue;
@@ -466,12 +474,18 @@ vec4 objectFill(vec2 p, bool behind) {
     float u = objectU(
       u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
     if (u >= 1.0) continue;
-    if (!objectOutranks(order, bestOrder, u, nearest)) continue;
-    bestOrder = order;
-    nearest = u;
-    fill = u_objectFills[i];
+    if (!objectOutranks(order, fill.order, u, fill.nearest)) continue;
+    fill.order = order;
+    fill.nearest = u;
+    fill.color = u_objectFills[i];
   }
   return fill;
+}
+
+float fillOver(float liftOrder, float liftCover, ObjectFill fill) {
+  if (fill.color.a <= 0.0) return 1.0;
+  if (liftOrder < fill.order + OBJECT_ORDER_EPSILON) return 1.0;
+  return 1.0 - liftCover;
 }
 
 void main() {
@@ -494,23 +508,27 @@ void main() {
   float restingCoverage = u_hasTexture > 0.5 ? restingTexel.a : mix(1.0, mask.a, u_maskActive);
   float restingAlpha = restingCoverage * (1.0 - lift.hole);
 
-  vec4 behindFill = objectFill(v_meshPos, true);
+  ObjectFill behindFill = objectFill(v_meshPos, true);
+  float behindOver = fillOver(lift.underOrder, lift.underCover, behindFill);
   float under = lift.under * underTexel.a;
-  vec3 underRgb = mix(underTexel.rgb, behindFill.rgb, behindFill.a);
+  vec3 underRgb = mix(underTexel.rgb, behindFill.color.rgb, behindFill.color.a * behindOver);
 
   float lowerAlpha = restingAlpha + under * (1.0 - restingAlpha);
   float safeLower = max(lowerAlpha, 1e-4);
   vec3 lowerRgb =
     (restingTexel.rgb * restingAlpha + underRgb * under * (1.0 - restingAlpha)) / safeLower;
 
+  ObjectFill fill = objectFill(v_meshPos, false);
+  float over = fillOver(lift.order, lift.cover, fill);
+  vec3 lowerShown = mix(lowerRgb, fill.color.rgb, fill.color.a * (1.0 - over));
+
   float alpha = carried + lowerAlpha * (1.0 - carried);
   float safeAlpha = max(alpha, 1e-4);
-  vec3 textured = (carriedTexel.rgb * carried + lowerRgb * lowerAlpha * (1.0 - carried)) / safeAlpha;
+  vec3 textured = (carriedTexel.rgb * carried + lowerShown * lowerAlpha * (1.0 - carried)) / safeAlpha;
 
   float beneath = restingAlpha * (1.0 - carried) / safeAlpha;
 
-  vec4 fill = objectFill(v_meshPos, false);
-  vec3 base = mix(textured, fill.rgb, fill.a);
+  vec3 base = mix(textured, fill.color.rgb, fill.color.a * over);
   base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a * beneath);
 
   vec3 field = objectField(v_meshPos);
