@@ -552,7 +552,12 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, activeElement: action.value };
     }
     case UIActionType.SetSelectedElement: {
-      return { ...state, selectedElement: action.value };
+      const endsPreview = action.value?.type === "light" || action.value?.type === "object";
+      return {
+        ...state,
+        selectedElement: action.value,
+        lightSourcePreview: endsPreview ? false : state.lightSourcePreview,
+      };
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };

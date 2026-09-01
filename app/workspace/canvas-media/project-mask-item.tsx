@@ -1951,7 +1951,6 @@ export function ProjectMaskItem({
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
                 if ((selected.type === "light" || selected.type === "object") && uiState.lightSourcePreview) {
-                  uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                   notifyMaskLightSourcePreviewToggled(false);
                 }
                 notifyMaskSelectionChanged(mediaKey);

@@ -41,9 +41,6 @@ export default function LightSourcebar() {
   const {
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
-    notifyMaskSelectionChanged,
-    notifyMaskSelectedLightChanged,
-    notifyMaskSelectedObjectChanged,
     notifyMaskLightUpdated,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
@@ -734,7 +731,8 @@ export default function LightSourcebar() {
   };
   const lightDarknessTitle = lightDarknessValue.toFixed(2);
   const lightDarknessRef = useRef<HTMLDivElement | null>(null);
-  const isLightGreeting = !uiState.lightSourcePreview && !selectedLight;
+  const isLightGreeting = !selectedLight;
+  const isPreviewAvailable = !selectedLight && !selectedObject;
   const isObjectGreeting = isObjectParamDisabled;
   const greeting = (
     <span
@@ -743,7 +741,6 @@ export default function LightSourcebar() {
         display: "flex",
         alignItems: "center",
         height: "100%",
-        opacity: 0.6,
         userSelect: "none",
         ...dynamicSizes.toggle.div,
       }}
@@ -821,47 +818,43 @@ export default function LightSourcebar() {
               {"edit"}
             </div>
           )}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              title={
-                uiState.lightSourcePreview
-                  ? "mouse over a mask to preview the light source there -- turn off to edit the selected light's own starting parameters"
-                  : "editing the selected light's own starting parameters -- turn on to preview the light source by hovering a mask"
-              }
+          {isPreviewAvailable ? (
+            <div
               style={{
-                textShadow: uiState.lightSourcePreview ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-                userSelect: "none",
+                display: "flex",
+                alignItems: "center",
+                height: "100%",
+                borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                ...dynamicSizes.toggle.div,
               }}
             >
-              {"preview"}
-            </span>
-            <Toggle
-              value={uiState.lightSourcePreview}
-              onClick={() => {
-                const next = !uiState.lightSourcePreview;
-                uiDispatch({ type: UIActionType.SetLightSourcePreview, value: next });
-                notifyMaskLightSourcePreviewToggled(next);
-                if (next && (selectedElement?.type === "light" || selectedElement?.type === "object")) {
-                  uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
-                  notifyMaskSelectionChanged(selectedElement.key);
-                  notifyMaskSelectedLightChanged(selectedElement.key, undefined);
-                  notifyMaskSelectedObjectChanged(selectedElement.key, undefined);
+              <span
+                title={
+                  uiState.lightSourcePreview
+                    ? "mouse over a mask to preview the light source there -- turn off to leave the masks as they are"
+                    : "turn on to preview the light source by hovering a mask"
                 }
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-            />
-          </div>
-          {uiState.lightSourcePreview ? (
+                style={{
+                  textShadow: uiState.lightSourcePreview ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                  userSelect: "none",
+                }}
+              >
+                {"preview"}
+              </span>
+              <Toggle
+                value={uiState.lightSourcePreview}
+                onClick={() => {
+                  const next = !uiState.lightSourcePreview;
+                  uiDispatch({ type: UIActionType.SetLightSourcePreview, value: next });
+                  notifyMaskLightSourcePreviewToggled(next);
+                }}
+                trackStyles={{ ...dynamicSizes.toggle.track }}
+                buttonStyles={{ ...dynamicSizes.toggle.button }}
+                translateX={dynamicSizes.toggle.translateX}
+              />
+            </div>
+          ) : null}
+          {isPreviewAvailable && uiState.lightSourcePreview ? (
             <>
               <div
                 style={{
@@ -1046,6 +1039,7 @@ export default function LightSourcebar() {
                   display: "flex",
                   alignItems: "center",
                   height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
                   ...dynamicSizes.toggle.div,
                 }}
               >
