@@ -26,6 +26,12 @@ import {
 import Toggle from "@/app/components/toggle";
 import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
 
+const GRIDLINES_OPTIONS = [
+  { label: "off", value: 0 },
+  { label: "dim", value: 0.5 },
+  { label: "bright", value: 1 },
+] as const;
+
 const LIGHT_PREVIEW_SIZE_MIN = 10;
 const LIGHT_PREVIEW_SIZE_MAX = 300;
 const LIGHT_PREVIEW_FALLOFF_MIN = 20;
@@ -102,6 +108,7 @@ export default function LightSourcebar() {
           colorPickerPanel: { width: 250, padding: 10 },
           colorPickerSwatch: 20,
           colorPickerReadout: 13,
+          segment: { fontSize: 12 },
         };
       case "midhigh":
         return {
@@ -154,6 +161,7 @@ export default function LightSourcebar() {
           colorPickerPanel: { width: 195, padding: 8 },
           colorPickerSwatch: 16,
           colorPickerReadout: 11,
+          segment: { fontSize: 11 },
         };
       case "low":
       case "midlow":
@@ -207,6 +215,7 @@ export default function LightSourcebar() {
           colorPickerPanel: { width: 175, padding: 7 },
           colorPickerSwatch: 15,
           colorPickerReadout: 10,
+          segment: { fontSize: 11 },
         };
     }
   });
@@ -731,6 +740,12 @@ export default function LightSourcebar() {
   };
   const lightDarknessTitle = lightDarknessValue.toFixed(2);
   const lightDarknessRef = useRef<HTMLDivElement | null>(null);
+  const lightGridlinesValue =
+    uiState.lightGridlines &&
+    uiState.lightGridlines.key === selectedLightMaskKey &&
+    uiState.lightGridlines.lightId === selectedLight?.id
+      ? uiState.lightGridlines.value
+      : 0;
   const isLightGreeting = !selectedLight;
   const isPreviewAvailable = !selectedLight && !selectedObject;
   const isObjectGreeting = isObjectParamDisabled;
@@ -1153,6 +1168,52 @@ export default function LightSourcebar() {
                   title={lightDarknessTitle}
                   liveTitleRef={lightDarknessRef}
                 />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title="draw the mesh gridlines inside this light's own polygons -- they stay up through playback"
+                  style={{ userSelect: "none" }}
+                >
+                  {"gridlines"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
+                  {GRIDLINES_OPTIONS.map((option) => {
+                    const isSelected = lightGridlinesValue === option.value;
+                    return (
+                      <span
+                        key={option.label}
+                        onClick={() => {
+                          if (!selectedLight || selectedLightMaskKey === undefined) return;
+                          uiDispatch({
+                            type: UIActionType.SetLightGridlines,
+                            value:
+                              option.value === 0
+                                ? undefined
+                                : { key: selectedLightMaskKey, lightId: selectedLight.id, value: option.value },
+                          });
+                        }}
+                        style={{
+                          cursor: "pointer",
+                          color: isSelected ? "inherit" : "rgb(67,67,67)",
+                          textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                          padding: "4px 8px",
+                          userSelect: "none",
+                          ...dynamicSizes.segment,
+                        }}
+                      >
+                        {option.label}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}

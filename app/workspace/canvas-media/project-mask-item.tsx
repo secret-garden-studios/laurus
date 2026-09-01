@@ -487,6 +487,14 @@ export function ProjectMaskItem({
     [source, resolveTargetLightId, resolveLightSilhouette],
   );
 
+  const lightGridlinesMix = useCallback(
+    (lightId: number): number => {
+      const gridlines = latestRef.current.uiState.lightGridlines;
+      return gridlines && gridlines.key === mediaKey && gridlines.lightId === lightId ? gridlines.value : 0;
+    },
+    [mediaKey],
+  );
+
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
@@ -503,6 +511,7 @@ export function ProjectMaskItem({
         intensity: meta.intensity,
         darkness: meta.darkness,
         order: meta.order,
+        gridlines: lightGridlinesMix(lightId),
       };
 
       if (shaped) {
@@ -527,7 +536,7 @@ export function ProjectMaskItem({
       });
     });
     return lights;
-  }, [resolveLightSilhouette]);
+  }, [resolveLightSilhouette, lightGridlinesMix]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -752,7 +761,10 @@ export function ProjectMaskItem({
 
     const lightSources: MaskLightSource[] = [
       ...(wiredMoveRef.current
-        ? Array.from(playbackLightSourcesRef.current.values())
+        ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, light]) => ({
+            ...light,
+            gridlines: lightGridlinesMix(lightId),
+          }))
         : [
             {
               ...lightSourceRef.current,
@@ -774,7 +786,7 @@ export function ProjectMaskItem({
       backingVertexCount: backingVertexCountRef.current,
       backingGrey: backingGreyRef.current,
     });
-  }, [resolveObjectUniforms, resolveRestingLightSources]);
+  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix]);
   renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
@@ -1467,6 +1479,10 @@ export function ProjectMaskItem({
   useEffect(() => {
     recolorHighlight();
   }, [uiState.gridlinesBright, recolorHighlight]);
+
+  useEffect(() => {
+    render();
+  }, [uiState.lightGridlines, render]);
 
   const pickHover = source.kind === "static" && isHovered && isAwaitingRegionPick(uiState);
   useEffect(() => {

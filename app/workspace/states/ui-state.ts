@@ -235,6 +235,7 @@ export interface UIState {
   stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
   maskEdit: MaskEditSession | undefined;
   gridlinesBright: boolean;
+  lightGridlines: { key: string; lightId: number; value: number } | undefined;
 }
 
 export const defaultUIState: UIState = {
@@ -274,6 +275,7 @@ export const defaultUIState: UIState = {
   },
   maskEdit: undefined,
   gridlinesBright: false,
+  lightGridlines: undefined,
 };
 
 export enum UIActionType {
@@ -292,6 +294,7 @@ export enum UIActionType {
   SetSelectedElement,
   SetLightFrameBackground,
   SetGridlinesBright,
+  SetLightGridlines,
   SetEffectClipboard,
   SetRecordingLight,
   AddCarouselEntry,
@@ -353,6 +356,10 @@ export type UIAction =
     }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
   | { type: UIActionType.SetGridlinesBright; value: boolean }
+  | {
+      type: UIActionType.SetLightGridlines;
+      value: { key: string; lightId: number; value: number } | undefined;
+    }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
@@ -561,6 +568,9 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };
+    }
+    case UIActionType.SetLightGridlines: {
+      return { ...state, lightGridlines: action.value };
     }
     case UIActionType.SetGridlinesBright: {
       return { ...state, gridlinesBright: action.value };
