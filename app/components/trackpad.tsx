@@ -50,6 +50,12 @@ export function Trackpad({
   escapeOverflow,
 }: TrackpadProps) {
   const sensors = useSensors(useSensor(PointerSensor));
+  const [dragOrigin, setDragOrigin] = useState<{ x: number; y: number } | null>(null);
+  const origin = dragOrigin ?? value;
+  const positionFromDelta = (delta: { x: number; y: number }) => ({
+    x: Math.round(origin.x + delta.x),
+    y: Math.round(origin.y + delta.y),
+  });
 
   return (
     <>
@@ -65,32 +71,28 @@ export function Trackpad({
           sensors={sensors}
           autoScroll={false}
           onDragStart={() => {
+            setDragOrigin(value);
             beginBodyDragCursor();
           }}
           onDragMove={(e) => {
             if (!onMove) return;
-            const delta = e.delta;
-            const newPosition = {
-              x: Math.round(value.x + delta.x),
-              y: Math.round(value.y + delta.y),
-            };
-            onMove(newPosition);
+            onMove(positionFromDelta(e.delta));
           }}
           onDragEnd={(e) => {
             endBodyDragCursor();
-            const delta = e.delta;
-            const newPosition = {
-              x: Math.round(value.x + delta.x),
-              y: Math.round(value.y + delta.y),
-            };
-            onNewValue(newPosition);
+            onNewValue(positionFromDelta(e.delta));
+            setDragOrigin(null);
+          }}
+          onDragCancel={() => {
+            endBodyDragCursor();
+            setDragOrigin(null);
           }}
           modifiers={[restrictToParentElement]}
         >
           <CoarsePointer
             resolution={resolution}
             id={ids.draggableId}
-            coords={value}
+            coords={origin}
             width={coarsePointer.width}
             height={coarsePointer.height}
             pointerStyle={coarsePointer.pointerStyle}
@@ -185,11 +187,6 @@ function CoarsePointer({
   });
   const [isHovered, setIsHovered] = useState(false);
   const isActive = isDragging || isHovered;
-  // An escaping title is portalled to the body and positioned in viewport coordinates, which means
-  // measuring the pointer after layout. That measurement is not state: routing it through React
-  // would re-render the pointer on every scroll event of a drag to move a tooltip the browser can
-  // be told about directly. Writing the two offsets onto the node is what an effect is for, and it
-  // keeps a dragging cap off the render path entirely.
   const fixedTitleElRef = useRef<HTMLDivElement | null>(null);
   const setTitleRefs = useCallback(
     (node: HTMLDivElement | null) => {
@@ -239,7 +236,6 @@ function CoarsePointer({
   };
   const fixedTooltipCss: CSSProperties = {
     position: "fixed",
-    // top and left are written by the layout effect above, in viewport coordinates
     transform: pointerStyle === PointerStyle.BlurryBottomTitle ? "translate(-50%, -50%)" : "translateY(-50%)",
     color: "rgb(227,227,227)",
     fontWeight: "bold",

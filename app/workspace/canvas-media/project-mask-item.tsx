@@ -946,6 +946,20 @@ export function ProjectMaskItem({
     render();
   }, [render]);
 
+  const recolorFrameRef = useRef<number | undefined>(undefined);
+  const scheduleRecolorHighlight = useCallback(() => {
+    if (recolorFrameRef.current !== undefined) return;
+    recolorFrameRef.current = requestAnimationFrame(() => {
+      recolorFrameRef.current = undefined;
+      recolorHighlight();
+    });
+  }, [recolorHighlight]);
+  const cancelScheduledRecolorHighlight = useCallback(() => {
+    if (recolorFrameRef.current === undefined) return;
+    cancelAnimationFrame(recolorFrameRef.current);
+    recolorFrameRef.current = undefined;
+  }, []);
+
   const applyDefaultLightValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
@@ -1682,9 +1696,10 @@ export function ProjectMaskItem({
           retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
-            recolorHighlight();
+            scheduleRecolorHighlight();
           },
           clearPendingTopology: () => {
+            cancelScheduledRecolorHighlight();
             pendingTopologyRef.current = undefined;
             pendingLightShapeRef.current = undefined;
             recolorHighlight();

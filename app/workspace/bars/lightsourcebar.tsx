@@ -413,14 +413,16 @@ export default function LightSourcebar() {
           toSave.maskMediaId,
           toLightUpdate(toSave.light, { polygon_indices: toSave.polygonIndices }),
         );
-        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
-        if (updated && maskData) {
-          const patched = applyLightDelta(maskData, updated);
-          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
-          notifyMaskLightUpdated(toSave.maskKey, patched);
-        } else {
+        if (!updated) {
           console.error("failed to save light change", { light_id: toSave.light.id });
+          continue;
         }
+        if (pendingLightSaveRef.current) continue;
+        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
+        if (!maskData) continue;
+        const patched = applyLightDelta(maskData, updated);
+        dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
+        notifyMaskLightUpdated(toSave.maskKey, patched);
       }
     } finally {
       isPersistingLightRef.current = false;
@@ -511,14 +513,16 @@ export default function LightSourcebar() {
           toSave.maskMediaId,
           toObjectUpdate(toSave.object, { polygon_indices: toSave.polygonIndices }),
         );
-        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
-        if (updated && maskData) {
-          const patched = applyObjectDelta(maskData, updated);
-          dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
-          notifyMaskObjectsUpdated(toSave.maskKey, patched);
-        } else {
+        if (!updated) {
           console.error("failed to save object change", { object_id: toSave.object.id });
+          continue;
         }
+        if (pendingObjectSaveRef.current) continue;
+        const maskData = latestCanvasMasksRef.current.get(toSave.maskKey);
+        if (!maskData) continue;
+        const patched = applyObjectDelta(maskData, updated);
+        dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
+        notifyMaskObjectsUpdated(toSave.maskKey, patched);
       }
     } finally {
       isPersistingObjectRef.current = false;
@@ -529,6 +533,14 @@ export default function LightSourcebar() {
       }
     }
   }, [sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, notifyMaskPendingTopologyCleared]);
+
+  const selectedObjectPolygonIndices = useMemo(
+    () =>
+      selectedObject && selectedObjectMaskData
+        ? new Set(polygonIndicesForObject(selectedObjectMaskData.polygons, selectedObject.id))
+        : undefined,
+    [selectedObject, selectedObjectMaskData],
+  );
 
   const mergeObjectPatch = useCallback(
     (patch: ObjectPatch): PendingTopologyEdit | undefined => {
@@ -543,9 +555,10 @@ export default function LightSourcebar() {
         falloff: patch.falloff ?? selectedObject.falloff,
         shape: selectedObject.shape,
         fill: patch.fill ?? toObjectFill(selectedObject),
+        polygonIndices: selectedObjectPolygonIndices,
       };
     },
-    [selectedObjectMaskKey, selectedObject],
+    [selectedObjectMaskKey, selectedObject, selectedObjectPolygonIndices],
   );
 
   const saveObjectField = useCallback(
@@ -1390,7 +1403,6 @@ export default function LightSourcebar() {
               readoutFontSize={dynamicSizes.colorPickerReadout}
               color={fillValue}
               onOpenChange={notifyMaskHighlightSuppressed}
-              onColorMove={(fill: LaurusColor) => previewObjectChange({ fill })}
               onNewColor={(fill: LaurusColor) => saveObjectField({ fill })}
               canOpen={() => {
                 if (!isGuest) return true;

@@ -243,8 +243,9 @@ interface ColorSwatchProps {
   color: LaurusColor;
   size: number;
   label: string;
+  fillRef?: RefObject<HTMLDivElement | null>;
 }
-function ColorSwatch({ color, size, label }: ColorSwatchProps) {
+function ColorSwatch({ color, size, label, fillRef }: ColorSwatchProps) {
   return (
     <div
       title={label}
@@ -259,7 +260,7 @@ function ColorSwatch({ color, size, label }: ColorSwatchProps) {
         backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0",
       }}
     >
-      <div style={{ width: "100%", height: "100%", background: rgbaToCss(color) }} />
+      <div ref={fillRef} style={{ width: "100%", height: "100%", background: rgbaToCss(color) }} />
     </div>
   );
 }
@@ -298,6 +299,20 @@ export function ColorPickerButton({
   const [placement, setPlacement] = useState({ top: 0, left: 0 });
   const [live, setLive] = useState<LaurusColor | null>(null);
   const shown = live ?? color;
+  const swatchFillRef = useRef<HTMLDivElement | null>(null);
+  const readoutRef = useRef<HTMLDivElement | null>(null);
+
+  const paintLive = useCallback((next: LaurusColor) => {
+    const css = rgbaToCss(next);
+    if (swatchFillRef.current) swatchFillRef.current.style.background = css;
+    if (readoutRef.current) readoutRef.current.textContent = css;
+  }, []);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setLive(null);
+    paintLive(color);
+  }, [color, paintLive]);
 
   const visible = open && !disabled;
   useEffect(() => {
@@ -320,10 +335,6 @@ export function ColorPickerButton({
 
   useEffect(() => {
     if (!open) return;
-    const close = () => {
-      setOpen(false);
-      setLive(null);
-    };
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
@@ -343,7 +354,7 @@ export function ColorPickerButton({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, place]);
+  }, [open, place, close]);
 
   return (
     <>
@@ -351,13 +362,17 @@ export function ColorPickerButton({
         ref={anchorRef}
         onClick={() => {
           if (disabled) return;
-          if (!open && canOpen && !canOpen()) return;
+          if (open) {
+            close();
+            return;
+          }
+          if (canOpen && !canOpen()) return;
           place();
-          setOpen((v) => !v);
+          setOpen(true);
         }}
         style={{ display: "flex", alignItems: "center", cursor: disabled ? "" : "pointer" }}
       >
-        <ColorSwatch color={shown} size={swatchSize} label="fill" />
+        <ColorSwatch color={shown} size={swatchSize} label="fill" fillRef={swatchFillRef} />
       </div>
       {visible &&
         createPortal(
@@ -384,7 +399,7 @@ export function ColorPickerButton({
               size={size}
               color={color}
               onColorMove={(next) => {
-                setLive(next);
+                paintLive(next);
                 if (onColorMove) onColorMove(next);
               }}
               onNewColor={(next) => {
@@ -393,6 +408,7 @@ export function ColorPickerButton({
               }}
             />
             <div
+              ref={readoutRef}
               style={{
                 textAlign: "center",
                 color: "rgba(255, 255, 255, 0.7)",
