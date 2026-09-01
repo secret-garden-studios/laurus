@@ -37,9 +37,10 @@ import {
   maskLabel,
   newLight,
   toLightUpdate,
+  toObjectUpdate,
   updateMaskDescription,
 } from "./workspace.server";
-import { applyLightDelta } from "./canvas-media/mask-delta";
+import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
 import type { StackDirection, StackRef } from "./canvas-media/mask-order";
 import styles from "../app.module.css";
@@ -210,12 +211,14 @@ interface ContextMenu {
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskLightUpdate, closeMaskLightSocket, closeMaskObjectSocket } = useContext(SocketContext);
+  const { sendMaskLightUpdate, sendMaskObjectUpdate, closeMaskLightSocket, closeMaskObjectSocket } =
+    useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
     notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
     notifyMaskLightUpdated,
+    notifyMaskObjectsUpdated,
     notifyMaskObjectReviewPreview,
     deleteObject,
     reorderElement,
@@ -1097,7 +1100,32 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   }, [coreState.canvasImgs, coreState.canvasMasks, media]);
 
-  const describableMask = media.type === "mask" ? coreState.canvasMasks.get(media.key) : undefined;
+  const describable = useMemo(() => {
+    const maskData = coreState.canvasMasks.get(media.key);
+    if (!maskData) return undefined;
+    switch (media.type) {
+      case "mask":
+        return {
+          description: maskData.description,
+          fallback: maskLabel({ ...maskData, description: "" }, coreState.canvasImgs, media.key),
+        };
+      case "light": {
+        if (uiState.maskEdit !== undefined) return undefined;
+        const light = maskData.lights.find((l) => l.id === media.lightId);
+        if (!light) return undefined;
+        return { description: light.description, fallback: light.name ? light.name : "" };
+      }
+      case "object": {
+        if (uiState.maskEdit !== undefined) return undefined;
+        const object = maskData.objects.find((o) => o.id === media.objectId);
+        if (!object) return undefined;
+        return { description: object.description, fallback: object.name ? object.name : "" };
+      }
+      default:
+        return undefined;
+    }
+  }, [media, coreState.canvasMasks, coreState.canvasImgs, uiState.maskEdit]);
+
   const [descriptionDraft, setDescriptionDraft] = useState<string | undefined>(undefined);
   const descriptionDraftRef = useRef<string | undefined>(undefined);
   const editDescription = useCallback((draft: string | undefined) => {
@@ -1108,40 +1136,96 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const [committingDescription, setCommittingDescription] = useState<string | undefined>(undefined);
 
   const openDescriptionEdit = useCallback(() => {
-    if (!describableMask || descriptionDraftRef.current !== undefined) return;
+    if (!describable || descriptionDraftRef.current !== undefined) return;
     if (committingDescription !== undefined) return;
     if (!coreState.accessToken) {
       alert(UNAUTHORIZED_EDIT);
       return;
     }
-    editDescription(describableMask.description);
-  }, [describableMask, committingDescription, coreState.accessToken, editDescription]);
+    editDescription(describable.description);
+  }, [describable, committingDescription, coreState.accessToken, editDescription]);
+
+  const saveDescription = useCallback(
+    async (description: string) => {
+      const maskData = coreState.canvasMasks.get(media.key);
+      if (!maskData) return;
+      switch (media.type) {
+        case "mask": {
+          const updated = await updateMaskDescription(
+            coreState.apiOrigin,
+            coreState.accessToken,
+            maskData.mask_media_id,
+            description,
+          );
+          if (!updated) return;
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+          return;
+        }
+        case "light": {
+          const light = maskData.lights.find((l) => l.id === media.lightId);
+          if (!light) return;
+          const updated = await sendMaskLightUpdate(
+            maskData.mask_media_id,
+            toLightUpdate(light, {
+              description,
+              polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
+            }),
+          );
+          if (!updated) return;
+          const patched = applyLightDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patched });
+          notifyMaskLightUpdated(media.key, patched);
+          return;
+        }
+        case "object": {
+          const object = maskData.objects.find((o) => o.id === media.objectId);
+          if (!object) return;
+          const updated = await sendMaskObjectUpdate(
+            maskData.mask_media_id,
+            toObjectUpdate(object, {
+              description,
+              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
+            }),
+          );
+          if (!updated) return;
+          const patched = applyObjectDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patched });
+          notifyMaskObjectsUpdated(media.key, patched);
+          return;
+        }
+        default:
+          return;
+      }
+    },
+    [
+      media,
+      coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      sendMaskLightUpdate,
+      sendMaskObjectUpdate,
+      notifyMaskLightUpdated,
+      notifyMaskObjectsUpdated,
+    ],
+  );
 
   const commitDescription = useCallback(async () => {
     const draft = descriptionDraftRef.current;
     editDescription(undefined);
-    if (draft === undefined || !describableMask) return;
+    if (draft === undefined || !describable) return;
     const description = draft.trim();
-    if (description === describableMask.description) return;
+    if (description === describable.description) return;
     setCommittingDescription(description);
-    const updated = await updateMaskDescription(
-      coreState.apiOrigin,
-      coreState.accessToken,
-      describableMask.mask_media_id,
-      description,
-    );
-
+    await saveDescription(description);
     setCommittingDescription(undefined);
-    if (!updated) return;
-    dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
-  }, [describableMask, coreState.apiOrigin, coreState.accessToken, dispatch, media.key, editDescription]);
+  }, [describable, saveDescription, editDescription]);
 
   const shownHeader = useMemo(() => {
     if (committingDescription === undefined) return header;
     if (committingDescription) return committingDescription;
-    if (!describableMask) return header;
-    return maskLabel({ ...describableMask, description: "" }, coreState.canvasImgs, media.key);
-  }, [committingDescription, header, describableMask, coreState.canvasImgs, media.key]);
+    return describable ? describable.fallback : header;
+  }, [committingDescription, header, describable]);
 
   const subheader = useMemo(() => {
     switch (media.type) {
@@ -1247,8 +1331,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   title={
                     committingDescription !== undefined
                       ? "saving the description..."
-                      : describableMask
-                        ? "double click to describe this mask"
+                      : describable
+                        ? `double click to describe this ${media.type}`
                         : undefined
                   }
                   onDoubleClick={openDescriptionEdit}
