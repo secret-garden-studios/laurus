@@ -132,6 +132,10 @@ export function encodeObjectSdfAtlas(shapes: (ObjectShape | undefined)[], grid =
   return data;
 }
 
+export function objectShapeAtlasSignature(shapes: readonly (ObjectShape | undefined)[]): string {
+  return shapes.map((shape) => (shape ? `${shape.tile}:${shape.path}` : "")).join("|");
+}
+
 export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const gl = canvas.getContext("webgl", { premultipliedAlpha: false });
   if (!gl) return undefined;
@@ -399,7 +403,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       lightShapeRows[i] = i;
       lightShapeMaxDepth[i] = shape.maxDepth;
     });
-    const signature = lightShapes.map((shape) => shape?.path ?? "").join("|");
+    const signature = objectShapeAtlasSignature(lightShapes);
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, state.lightShapeTexture);
     if (signature !== state.lightShapeSignature) {
@@ -470,7 +474,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       shapeRows[i] = i;
       shapeMaxDepth[i] = shape.maxDepth;
     });
-    const signature = usableShapes.map((shape) => shape?.path ?? "").join("|");
+    const signature = objectShapeAtlasSignature(usableShapes);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, state.objectShapeTexture);
     if (signature !== state.objectShapeSignature) {

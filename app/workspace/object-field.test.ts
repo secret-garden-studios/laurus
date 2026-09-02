@@ -21,10 +21,11 @@ import {
   drawnMaskObjects,
   liftSourceAt,
   encodeObjectSdfAtlas,
+  objectShapeAtlasSignature,
   objectProfileUAt,
 } from "./mask-gl.ts";
 import type { ObjectGeometryInput } from "./mask-gl.ts";
-import { OBJECT_SDF_TILE, buildObjectShapeFromRings } from "./canvas-media/object-shape.ts";
+import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, buildObjectShapeFromRings } from "./canvas-media/object-shape.ts";
 import { MASK_ORDER_UNRANKED } from "./canvas-media/mask-order.ts";
 
 const FALLOFFS = [1, 2, 4, 6];
@@ -533,6 +534,57 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
     const data = encodeObjectSdfAtlas([built.shape]);
     const middle = OBJECT_SDF_TILE / 2;
     assert.ok(decodeDistance(data, at(0, middle, middle)) > 0, "a 64-tile shape still fills its 128 slot");
+  });
+});
+
+describe("objectShapeAtlasSignature -- what makes the atlas upload again", () => {
+  const rings = (half: number): [number, number][][] => [
+    [
+      [-half, -half],
+      [half, -half],
+      [half, half],
+      [-half, half],
+    ],
+  ];
+
+  const shapeOf = (half: number, tile?: number) => {
+    const built = buildObjectShapeFromRings(rings(half), tile);
+    assert.ok(built.ok);
+    return built.shape;
+  };
+
+  it("holds still for the same shapes, so an unchanged frame costs no upload", () => {
+    assert.equal(objectShapeAtlasSignature([shapeOf(1)]), objectShapeAtlasSignature([shapeOf(1)]));
+  });
+
+  it("separates the draft a drag leaves behind from the shape committed after it", () => {
+    const draft = shapeOf(1, OBJECT_SDF_DRAFT_TILE);
+    const committed = shapeOf(1);
+    assert.equal(draft.path, committed.path, "the commit re-renders the very same rings");
+    assert.notEqual(
+      objectShapeAtlasSignature([draft]),
+      objectShapeAtlasSignature([committed]),
+      "the full-resolution field has to reach the atlas, or the edge stays stair-stepped",
+    );
+  });
+
+  it("still separates two different outlines at the same resolution", () => {
+    const wide = buildObjectShapeFromRings([
+      [
+        [-1, -0.4],
+        [1, -0.4],
+        [1, 0.4],
+        [-1, 0.4],
+      ],
+    ]);
+    assert.ok(wide.ok);
+    assert.notEqual(objectShapeAtlasSignature([shapeOf(1)]), objectShapeAtlasSignature([wide.shape]));
+  });
+
+  it("keeps a circle slot distinct from a shaped one, and tracks its position", () => {
+    const shape = shapeOf(1);
+    assert.notEqual(objectShapeAtlasSignature([undefined]), objectShapeAtlasSignature([shape]));
+    assert.notEqual(objectShapeAtlasSignature([shape, undefined]), objectShapeAtlasSignature([undefined, shape]));
   });
 });
 
