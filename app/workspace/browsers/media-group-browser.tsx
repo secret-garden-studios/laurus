@@ -536,21 +536,34 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
+  const [restackingMaskKey, setRestackingMaskKey] = useState<string | undefined>(undefined);
+  const restackingMaskRef = useRef<string | undefined>(undefined);
+  const holdRestack = useCallback((maskKey: string | undefined) => {
+    restackingMaskRef.current = maskKey;
+    setRestackingMaskKey(maskKey);
+  }, []);
+
   const onStackDrop = useCallback(
     (activeId: string, overId: string): boolean => {
       for (const [maskKey, rows] of expandedStacks) {
         const ids = stackRowIds(maskKey, rows);
         const fromIndex = ids.indexOf(activeId);
         if (fromIndex === -1) continue;
+        if (restackingMaskRef.current !== undefined) return true;
         const toIndex = ids.indexOf(overId);
         if (toIndex === -1) return true;
         const mask = coreState.canvasMasks.get(maskKey);
-        if (mask) restackMaskStack(maskKey, restackFromDrop(maskStack(mask), rows, fromIndex, toIndex));
+        if (mask) {
+          holdRestack(maskKey);
+          restackMaskStack(maskKey, restackFromDrop(maskStack(mask), rows, fromIndex, toIndex)).finally(() =>
+            holdRestack(undefined),
+          );
+        }
         return true;
       }
       return false;
     },
-    [expandedStacks, coreState.canvasMasks, restackMaskStack],
+    [expandedStacks, coreState.canvasMasks, restackMaskStack, holdRestack],
   );
 
   const onGroupDragEnd = useCallback(
@@ -734,6 +747,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                     onLightContextMenuClick(item.key, ref.id);
                   }}
                   stack={expandedStacks.get(item.key)}
+                  restacking={restackingMaskKey === item.key}
                 />
               ))}
             </SortableContext>
@@ -928,6 +942,7 @@ interface MaskElementRow {
   filenameMargin: number;
   removeOverlaySize: number;
   onContextMenuClick: () => void;
+  restacking: boolean;
 }
 function MaskElementRow({
   maskKey,
@@ -941,9 +956,11 @@ function MaskElementRow({
   filenameMargin,
   removeOverlaySize,
   onContextMenuClick,
+  restacking,
 }: MaskElementRow) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: elementRowId(maskKey, element.ref),
+    disabled: restacking,
   });
   const [isRowHovered, setIsRowHovered] = useState(false);
   const behind = isBehindMask(element);
@@ -972,7 +989,7 @@ function MaskElementRow({
           background: "rgba(22, 22, 22, 0.9)",
           display: "grid",
           placeContent: "center",
-          cursor: "grab",
+          cursor: restacking ? "progress" : "grab",
           touchAction: "none",
           width: indexColumnStyle.width,
           fontSize: indexColumnStyle.fontSize,
@@ -1097,6 +1114,7 @@ interface MediaGroupRow {
   onContextMenuClick: () => void;
   onElementContextMenuClick: (ref: StackRef) => void;
   stack: StackRow[] | undefined;
+  restacking: boolean;
 }
 function MediaGroupRow({
   item,
@@ -1110,6 +1128,7 @@ function MediaGroupRow({
   onContextMenuClick,
   onElementContextMenuClick,
   stack,
+  restacking,
 }: MediaGroupRow) {
   const { uiState } = useContext(UIContext);
   const { coreState } = useContext(CoreContext);
@@ -1527,6 +1546,7 @@ function MediaGroupRow({
                 filenameMargin={dynamicSizes.filename.margin}
                 removeOverlaySize={removeOverlaySize}
                 onContextMenuClick={() => onElementContextMenuClick(element.ref)}
+                restacking={restacking}
               />
             );
           })}

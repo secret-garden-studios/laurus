@@ -1449,34 +1449,33 @@ export default function Workspace({
       notifyMaskObjectsUpdated(maskKey, optimistic);
       notifyMaskLightUpdated(maskKey, optimistic);
 
-      let patched = maskData;
-      for (const change of changes) {
+      const sent = changes.map((change) => {
         if (change.kind === "object") {
-          const object = patched.objects.find((o) => o.id === change.id);
-          if (!object) continue;
-          const updated = await sendMaskObjectUpdate(
-            patched.mask_media_id,
+          const object = maskData.objects.find((o) => o.id === change.id);
+          if (!object) return undefined;
+          return sendMaskObjectUpdate(
+            maskData.mask_media_id,
             toObjectUpdate(object, {
               order: change.order,
-              polygon_indices: polygonIndicesForObject(patched.polygons, object.id),
+              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
             }),
-          );
-          if (!updated) break;
-          patched = applyObjectDelta(patched, updated);
-        } else {
-          const light = patched.lights.find((l) => l.id === change.id);
-          if (!light) continue;
-          const updated = await sendMaskLightUpdate(
-            patched.mask_media_id,
-            toLightUpdate(light, {
-              order: change.order,
-              polygon_indices: polygonIndicesForLight(patched.polygons, light.id),
-            }),
-          );
-          if (!updated) break;
-          patched = applyLightDelta(patched, updated);
+          ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyObjectDelta(mask, updated) : undefined));
         }
-      }
+        const light = maskData.lights.find((l) => l.id === change.id);
+        if (!light) return undefined;
+        return sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(light, {
+            order: change.order,
+            polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
+          }),
+        ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyLightDelta(mask, updated) : undefined));
+      });
+
+      const patched = (await Promise.all(sent)).reduce<LaurusMaskResult>(
+        (mask, fold) => (fold ? fold(mask) : mask),
+        maskData,
+      );
       dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
       notifyMaskObjectsUpdated(maskKey, patched);
       notifyMaskLightUpdated(maskKey, patched);
