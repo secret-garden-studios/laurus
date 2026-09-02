@@ -8,10 +8,10 @@ import { updateProject, LaurusProjectResult } from "../../projects/projects.serv
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
 
-export interface SelectionControlPanel {
+export interface MediaGroupSelectionPanel {
   containerStyle?: CSSProperties;
 }
-export default function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
+export default function MediaGroupSelectionPanel({ containerStyle }: MediaGroupSelectionPanel) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { notifyMaskToolChanged } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -160,7 +160,7 @@ export default function SelectionControlPanel({ containerStyle }: SelectionContr
       <div title={"effect selection count"} style={{ display: "flex", gap: dynamicSizes.selectedInputGap }}>
         <input
           className={dellaRespira.className + " " + styles["numberInput"]}
-          id={`fps-input`}
+          id={`MediaGroupSelectionPanel-fps-input`}
           type="text"
           disabled
           autoComplete="off"

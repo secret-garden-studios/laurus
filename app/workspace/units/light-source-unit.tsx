@@ -141,6 +141,7 @@ function LightSourceParam({
           {label}
         </div>
         <input
+          id={`LightSourceParam-${hash}`}
           className={dellaRespira.className}
           disabled
           ref={valueRef}

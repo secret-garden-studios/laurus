@@ -185,7 +185,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 9,
           },
           removeOverlay: {
-            size: 16,
+            size: 14,
           },
         };
       case "midhigh":
@@ -233,7 +233,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 18,
+            size: 14,
           },
         };
       case "midlow":
@@ -282,7 +282,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 16,
+            size: 12,
           },
         };
     }
@@ -1460,8 +1460,8 @@ function MediaGroupRow({
                 style={{ cursor: stackCount === 0 ? "default" : "pointer" }}
                 containerStyle={{
                   cursor: stackCount === 0 ? "default" : "pointer",
-                  width: removeOverlaySize,
-                  height: removeOverlaySize,
+                  width: removeOverlaySize * 1.25,
+                  height: removeOverlaySize * 1.25,
                 }}
               />
             </div>

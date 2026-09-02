@@ -374,9 +374,6 @@ export function EditPanel() {
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
-      case "midhigh":
-      case "midlow":
-      case "low":
         return {
           container: { gap: 12, width: 320 },
           header: { gap: 10 },
@@ -391,6 +388,42 @@ export function EditPanel() {
             button: { width: 8, height: 8 },
             translateX: 14,
           },
+          subjectIcon: { width: 18, height: 18 },
+        };
+      case "midhigh":
+      case "midlow":
+        return {
+          container: { gap: 12, width: 300 },
+          header: { gap: 10 },
+          dragHandle: { width: 16, height: 16 },
+          close: { width: 16, height: 16 },
+          message: { fontSize: 11, letterSpacing: 2 },
+          textarea: { padding: "6px 8px", borderRadius: 4, fontSize: 12 },
+          saveButton: { padding: "8px 0", borderRadius: 4, letterSpacing: 2, fontSize: 12 },
+          lowpoly: { fontSize: 11, letterSpacing: 1, gap: 6 },
+          toggle: {
+            track: { width: 26, height: 12, borderRadius: 10, padding: 1 },
+            button: { width: 8, height: 8 },
+            translateX: 14,
+          },
+          subjectIcon: { width: 16, height: 16 },
+        };
+      case "low":
+        return {
+          container: { gap: 12, width: 280 },
+          header: { gap: 10 },
+          dragHandle: { width: 14, height: 14 },
+          close: { width: 14, height: 14 },
+          message: { fontSize: 10, letterSpacing: 2 },
+          textarea: { padding: "6px 8px", borderRadius: 4, fontSize: 11 },
+          saveButton: { padding: "8px 0", borderRadius: 4, letterSpacing: 2, fontSize: 11 },
+          lowpoly: { fontSize: 10, letterSpacing: 1, gap: 6 },
+          toggle: {
+            track: { width: 26, height: 12, borderRadius: 10, padding: 1 },
+            button: { width: 8, height: 8 },
+            translateX: 14,
+          },
+          subjectIcon: { width: 14, height: 14 },
         };
     }
   });
@@ -496,7 +529,7 @@ export function EditPanel() {
             ...dynamicSizes.lowpoly,
           }}
         >
-          <SvgRepo svg={asterisk200()} scale={1} containerStyle={{ width: 18, height: 18 }} />
+          <SvgRepo svg={asterisk200()} scale={1} containerStyle={{ ...dynamicSizes.subjectIcon }} />
           <span
             title={
               session.lowpoly

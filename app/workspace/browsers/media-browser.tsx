@@ -22,7 +22,7 @@ import MediaGroupBrowser, { MediaGroupSkeleton } from "./media-group-browser";
 import ImgBrowser from "./img-browser";
 import SvgBrowser from "./svg-browser";
 import FrameBrowser from "./frame-browser";
-import SelectionControlPanel from "./selection-control-panel";
+import MediaGroupSelectionPanel from "./selection-control-panel";
 
 export type MediaSortValue =
   "last_active_123" | "last_active_321" | "timestamp_123" | "timestamp_321" | "name_az" | "name_za" | "ai" | "none";
@@ -201,7 +201,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
           },
           mediaGroup: {
             container: {
-              padding: 30,
+              padding: 20,
               gap: 30,
             },
           },
@@ -244,7 +244,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
           },
           mediaGroup: {
             container: {
-              padding: 30,
+              padding: 20,
               gap: 30,
             },
           },
@@ -739,7 +739,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                     background: "rgba(23, 23, 23, 1)",
                   }}
                 >
-                  <SelectionControlPanel />
+                  <MediaGroupSelectionPanel />
                 </div>
               </>
             );
