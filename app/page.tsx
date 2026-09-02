@@ -127,7 +127,7 @@ export async function fetchProject(
     }
     const objectReviews: ObjectReviewState_V1_0[] = [];
     if (fetchMedia && token) {
-      for (const maskResult of canvasMasks) {
+      for (const maskResult of canvasMasks.filter((m) => m.has_object_review)) {
         const review = await getObjectReview(laurusApi, token, maskResult.mask_media_id);
         if (review) objectReviews.push(review);
       }

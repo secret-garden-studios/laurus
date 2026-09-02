@@ -388,6 +388,7 @@ export interface MaskMediaResult_V1_0 {
   curves: CurvePath_V1_0[];
   lights: Light_V1_0[];
   objects: Object_V1_0[];
+  has_object_review: boolean;
   creator: string;
   last_editor: string;
 }
@@ -423,10 +424,14 @@ type RawLight_V1_0 = Omit<Light_V1_0, "order" | "lowpoly" | "cast"> & {
   lowpoly?: boolean;
   cast?: number;
 };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights" | "description"> & {
+type RawMaskMediaResult_V1_0 = Omit<
+  MaskMediaResult_V1_0,
+  "objects" | "lights" | "description" | "has_object_review"
+> & {
   objects?: RawObject_V1_0[];
   lights?: RawLight_V1_0[];
   description?: string;
+  has_object_review?: boolean;
 };
 
 export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
@@ -463,6 +468,7 @@ export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaRes
     description: mask.description ?? "",
     objects: (mask.objects ?? []).map(normalizeObject),
     lights: (mask.lights ?? []).map(normalizeLight),
+    has_object_review: mask.has_object_review ?? false,
   };
 }
 

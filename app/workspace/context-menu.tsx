@@ -974,7 +974,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const reviewMaskMediaId = useMemo(() => {
     if (media.type !== "mask") return undefined;
-    return coreState.canvasMasks.get(media.key)?.mask_media_id;
+    const maskData = coreState.canvasMasks.get(media.key);
+    return maskData?.has_object_review ? maskData.mask_media_id : undefined;
   }, [coreState.canvasMasks, media]);
 
   const maskObjectCount = useMemo(() => {
