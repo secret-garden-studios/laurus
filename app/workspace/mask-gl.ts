@@ -70,9 +70,10 @@ export interface GLState {
   lightSourceCentersLoc: WebGLUniformLocation;
   lightSourceRadiiLoc: WebGLUniformLocation;
   lightTransformsLoc: WebGLUniformLocation;
-  lightSourceFalloffsLoc: WebGLUniformLocation;
+  lightSourceSpreadsLoc: WebGLUniformLocation;
   lightSourceIntensitiesLoc: WebGLUniformLocation;
-  lightSourceDarknessesLoc: WebGLUniformLocation;
+  lightSourceShadowsLoc: WebGLUniformLocation;
+  lightSourceCastsLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
   objectsLoc: WebGLUniformLocation;
   objectRotationsLoc: WebGLUniformLocation;
@@ -178,9 +179,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
   const lightSourceRadiiLoc = gl.getUniformLocation(program, "u_lightSourceRadii");
   const lightTransformsLoc = gl.getUniformLocation(program, "u_lightTransforms");
-  const lightSourceFalloffsLoc = gl.getUniformLocation(program, "u_lightSourceFalloffs");
+  const lightSourceSpreadsLoc = gl.getUniformLocation(program, "u_lightSourceSpreads");
   const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
-  const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
+  const lightSourceShadowsLoc = gl.getUniformLocation(program, "u_lightSourceShadows");
+  const lightSourceCastsLoc = gl.getUniformLocation(program, "u_lightSourceCasts");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
   const objectsLoc = gl.getUniformLocation(program, "u_objects");
   const objectRotationsLoc = gl.getUniformLocation(program, "u_objectRotations");
@@ -217,9 +219,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceCentersLoc ||
     !lightSourceRadiiLoc ||
     !lightTransformsLoc ||
-    !lightSourceFalloffsLoc ||
+    !lightSourceSpreadsLoc ||
     !lightSourceIntensitiesLoc ||
-    !lightSourceDarknessesLoc ||
+    !lightSourceShadowsLoc ||
+    !lightSourceCastsLoc ||
     !lightSourceCountLoc ||
     !objectsLoc ||
     !objectRotationsLoc ||
@@ -268,9 +271,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceCentersLoc,
     lightSourceRadiiLoc,
     lightTransformsLoc,
-    lightSourceFalloffsLoc,
+    lightSourceSpreadsLoc,
     lightSourceIntensitiesLoc,
-    lightSourceDarknessesLoc,
+    lightSourceShadowsLoc,
+    lightSourceCastsLoc,
     lightSourceCountLoc,
     objectsLoc,
     objectRotationsLoc,
@@ -307,9 +311,10 @@ export interface MaskLightSource {
   x: number;
   y: number;
   radius: number;
-  falloff: number;
+  spread: number;
   intensity: number;
-  darkness: number;
+  shadow: number;
+  cast: number;
   order: number;
   shape?: ObjectShape;
   transform?: ObjectRotation;
@@ -345,9 +350,10 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   if (activeLights.length > 0) {
     const centers = new Float32Array(activeLights.length * 2);
     const radii = new Float32Array(activeLights.length);
-    const falloffs = new Float32Array(activeLights.length);
+    const spreads = new Float32Array(activeLights.length);
     const intensities = new Float32Array(activeLights.length);
-    const darknesses = new Float32Array(activeLights.length);
+    const shadows = new Float32Array(activeLights.length);
+    const casts = new Float32Array(activeLights.length);
     const orders = new Float32Array(activeLights.length);
     const gridlines = new Float32Array(activeLights.length);
     const lowpoly = new Float32Array(activeLights.length);
@@ -355,18 +361,20 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
       centers[i * 2] = light.x;
       centers[i * 2 + 1] = light.y;
       radii[i] = Math.max(light.radius, 1);
-      falloffs[i] = Math.max(light.falloff, 1);
+      spreads[i] = Math.max(light.spread, 1);
       intensities[i] = light.intensity;
-      darknesses[i] = light.darkness;
+      shadows[i] = light.shadow;
+      casts[i] = light.cast;
       orders[i] = light.order;
       gridlines[i] = light.gridlines ?? 0;
       lowpoly[i] = light.lowpoly ? 1 : 0;
     });
     gl.uniform2fv(state.lightSourceCentersLoc, centers);
     gl.uniform1fv(state.lightSourceRadiiLoc, radii);
-    gl.uniform1fv(state.lightSourceFalloffsLoc, falloffs);
+    gl.uniform1fv(state.lightSourceSpreadsLoc, spreads);
     gl.uniform1fv(state.lightSourceIntensitiesLoc, intensities);
-    gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
+    gl.uniform1fv(state.lightSourceShadowsLoc, shadows);
+    gl.uniform1fv(state.lightSourceCastsLoc, casts);
     gl.uniform1fv(state.lightOrdersLoc, orders);
     gl.uniform1fv(state.lightGridlinesLoc, gridlines);
     gl.uniform1fv(state.lightLowpolyLoc, lowpoly);

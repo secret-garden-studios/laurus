@@ -17,9 +17,10 @@ uniform vec2 u_resolution;
 
 uniform vec2 u_lightSourceCenters[MAX_LIGHT_SOURCES];
 uniform float u_lightSourceRadii[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceFalloffs[MAX_LIGHT_SOURCES];
+uniform float u_lightSourceSpreads[MAX_LIGHT_SOURCES];
 uniform float u_lightSourceIntensities[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
+uniform float u_lightSourceShadows[MAX_LIGHT_SOURCES];
+uniform float u_lightSourceCasts[MAX_LIGHT_SOURCES];
 uniform mediump vec4 u_lightTransforms[MAX_LIGHT_SOURCES];
 uniform float u_lightGridlines[MAX_LIGHT_SOURCES];
 uniform float u_lightLowpoly[MAX_LIGHT_SOURCES];
@@ -121,7 +122,8 @@ void main() {
   float bumpShade = 0.0;
 
   float bestHighlight = 0.0;
-  float leastShadow = 0.0;
+  float darkest = 0.0;
+  float brightest = 0.0;
   float gridlinesMix = 0.0;
   for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
     if (i >= u_lightSourceCount) break;
@@ -134,7 +136,7 @@ void main() {
     gridlinesMix = max(gridlinesMix, u_lightGridlines[i] * (1.0 - step(1.0, profile.x)));
 
     float highlight = 1.0 - smoothstep(0.35, 1.0, profile.x);
-    float shadow = smoothstep(0.0, u_lightSourceFalloffs[i], profile.y);
+    float unlit = smoothstep(0.0, u_lightSourceSpreads[i], profile.y);
 
     float rank = u_lightOrders[i];
     vec3 lightPos = vec3(u_lightSourceCenters[i].x,
@@ -144,26 +146,33 @@ void main() {
     float covered = max(lift.overCover * step(rank + OBJECT_ORDER_EPSILON, lift.over), sheet);
 
     float hidden = covered;
-    if (covered < 1.0 && shadow < 1.0) {
+    if (covered < 1.0 && unlit < 1.0) {
       hidden = max(
         hidden, 1.0 - lightReach(v_meshPos, lightPos.xy, u_lightSourceRadii[i], rank));
     }
     float reachable = 1.0 - hidden;
 
-    float shadowContribution = mix(shadow, 1.0, hidden) * u_lightSourceDarknesses[i];
+    float tail =
+      u_lightSourceSpreads[i] * u_lightSourceCasts[i] * (1.0 + u_lightSourceIntensities[i]);
+    float beyond = max(profile.y - u_lightSourceSpreads[i], 0.0);
+    float carry = tail > 0.0 ? 1.0 - smoothstep(0.0, tail, beyond) : 1.0;
+
     bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i] * (1.0 - covered));
-    leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
+    darkest = max(darkest, u_lightSourceShadows[i] * carry);
+    brightest = max(brightest, (1.0 - unlit) * reachable);
 
     vec3 lightDir = normalize(lightPos - surface);
     float bump = dot(normal, lightDir) - lightDir.z;
-    float reach = (1.0 - shadow) * reachable;
+    float reach = (1.0 - unlit) * reachable;
     bumpLit = max(bumpLit, max(bump, 0.0) * reach * BUMP_STRENGTH);
     bumpShade = max(bumpShade, max(-bump, 0.0) * reach * BUMP_STRENGTH);
   }
 
+  float shade = darkest * (1.0 - brightest);
+
   vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec3 shaded = lit - leastShadow - bumpShade;
-  vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
+  vec3 shaded = lit - shade - bumpShade;
+  vec3 strokeColor = STROKE_COLOR - shade - bumpShade;
   float strokeMix = max(u_textureMix, gridlinesMix);
   vec3 withEdge = mix(shaded, strokeColor, edge * strokeMix * STROKE_ALPHA * beneath);
 

@@ -2,9 +2,16 @@ import { OBJECT_SDF_MARGIN, OBJECT_SDF_TILE } from "./canvas-media/object-shape.
 
 export const LIGHT_SIZE_CSS_PX_DEFAULT = 150;
 export const LIGHT_INTENSITY_DEFAULT = 0.05;
-export const LIGHT_FALLOFF_CSS_PX_DEFAULT = 350;
-export const LIGHT_DARKNESS_DEFAULT = 0.2;
-export const LIGHT_FALLOFF_TO_SIZE_RATIO = LIGHT_FALLOFF_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
+export const LIGHT_SPREAD_CSS_PX_DEFAULT = 350;
+export const LIGHT_SHADOW_DEFAULT = 0.2;
+export const LIGHT_CAST_ENDLESS = 0;
+export const LIGHT_CAST_DEFAULT = 2;
+export const LIGHT_CAST_OPTIONS = [
+  { label: "1x", value: 1 },
+  { label: "2x", value: 2 },
+  { label: "\u221e", value: LIGHT_CAST_ENDLESS },
+] as const;
+export const LIGHT_SPREAD_TO_SIZE_RATIO = LIGHT_SPREAD_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
 export const TEXTURE_MIX_DEFAULT = 1.0;
 export const MAX_MASK_LIGHT_SOURCES = 8;
 export const MAX_MASK_OBJECTS = 16;

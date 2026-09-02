@@ -11,24 +11,27 @@ import {
 } from "../workspace.server";
 import { defaultProject } from "@/app/projects/states/core-state";
 import {
-  LIGHT_DARKNESS_DEFAULT,
-  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_SHADOW_DEFAULT,
+  LIGHT_SPREAD_CSS_PX_DEFAULT,
   LIGHT_INTENSITY_DEFAULT,
+  LIGHT_CAST_DEFAULT,
   LIGHT_SIZE_CSS_PX_DEFAULT,
 } from "../mask-gl";
 
 export interface LightValue {
   size: number;
   intensity: number;
-  falloff: number;
-  darkness: number;
+  spread: number;
+  shadow: number;
+  cast: number;
 }
 
 export const DEFAULT_LIGHT_VALUE: LightValue = {
   size: LIGHT_SIZE_CSS_PX_DEFAULT,
   intensity: LIGHT_INTENSITY_DEFAULT,
-  falloff: LIGHT_FALLOFF_CSS_PX_DEFAULT,
-  darkness: LIGHT_DARKNESS_DEFAULT,
+  spread: LIGHT_SPREAD_CSS_PX_DEFAULT,
+  shadow: LIGHT_SHADOW_DEFAULT,
+  cast: LIGHT_CAST_DEFAULT,
 };
 
 export interface PendingLight {
@@ -48,12 +51,6 @@ export interface PendingTopologyEdit {
   shape: string;
   fill: LaurusObjectFill;
   polygonIndices?: Set<number>;
-  /**
-   * Set while a gesture is still in flight, so the renderer can rasterize the
-   * shape at draft resolution. A drag mints a new path every frame and every
-   * frame is a cache miss, which at full resolution is ~58ms of rebuild before
-   * anything is drawn (see cachedObjectShape).
-   */
   draft?: boolean;
 }
 

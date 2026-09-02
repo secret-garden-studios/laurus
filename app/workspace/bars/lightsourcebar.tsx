@@ -9,7 +9,13 @@ import { ColorPickerButton } from "../../components/color-picker";
 import { LaurusColor } from "../../components/color-utils";
 import { useTrackpadState } from "@/app/hooks/useTrackpadState";
 import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
-import { MAX_MASK_OBJECT_ELEVATION, MAX_MASK_OBJECT_FALLOFF, MIN_MASK_OBJECT_FALLOFF } from "../mask-gl";
+import {
+  LIGHT_CAST_ENDLESS,
+  LIGHT_CAST_OPTIONS,
+  MAX_MASK_OBJECT_ELEVATION,
+  MAX_MASK_OBJECT_FALLOFF,
+  MIN_MASK_OBJECT_FALLOFF,
+} from "../mask-gl";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "../canvas-media/mask-geometry";
 import {
@@ -24,7 +30,8 @@ import {
   toObjectUpdate,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
-import { LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
+import { LIGHT_SHADOW_MAX, LIGHT_SPREAD_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
+import { dellaRespira, italiana } from "@/app/fonts";
 
 const GRIDLINES_OPTIONS = [
   { label: "off", value: 0 },
@@ -34,8 +41,8 @@ const GRIDLINES_OPTIONS = [
 
 const LIGHT_PREVIEW_SIZE_MIN = 10;
 const LIGHT_PREVIEW_SIZE_MAX = 300;
-const LIGHT_PREVIEW_FALLOFF_MIN = 20;
-const LIGHT_PREVIEW_FALLOFF_MAX = 1000;
+const LIGHT_PREVIEW_SPREAD_MIN = 20;
+const LIGHT_PREVIEW_SPREAD_MAX = 1000;
 
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -109,6 +116,7 @@ export default function LightSourcebar() {
           colorPickerSwatch: 20,
           colorPickerReadout: 13,
           segment: { fontSize: 12 },
+          symbolSegment: { fontSize: 16 },
         };
       case "midhigh":
         return {
@@ -162,6 +170,7 @@ export default function LightSourcebar() {
           colorPickerSwatch: 16,
           colorPickerReadout: 11,
           segment: { fontSize: 11 },
+          symbolSegment: { fontSize: 13 },
         };
       case "low":
       case "midlow":
@@ -216,6 +225,7 @@ export default function LightSourcebar() {
           colorPickerSwatch: 15,
           colorPickerReadout: 10,
           segment: { fontSize: 11 },
+          symbolSegment: { fontSize: 13 },
         };
     }
   });
@@ -320,7 +330,12 @@ export default function LightSourcebar() {
 
   const savePreviewField = useCallback(
     (
-      field: "light_preview_size" | "light_preview_intensity" | "light_preview_falloff" | "light_preview_darkness",
+      field:
+        | "light_preview_size"
+        | "light_preview_intensity"
+        | "light_preview_spread"
+        | "light_preview_shadow"
+        | "light_preview_cast",
       value: number,
     ) => {
       if (targetMaskKey === undefined) return;
@@ -336,8 +351,9 @@ export default function LightSourcebar() {
         light: {
           size: newMaskMeta.light_preview_size,
           intensity: newMaskMeta.light_preview_intensity,
-          falloff: newMaskMeta.light_preview_falloff,
-          darkness: newMaskMeta.light_preview_darkness,
+          spread: newMaskMeta.light_preview_spread,
+          shadow: newMaskMeta.light_preview_shadow,
+          cast: newMaskMeta.light_preview_cast,
         },
       });
 
@@ -371,24 +387,35 @@ export default function LightSourcebar() {
     },
     [targetMaskMeta, savePreviewField, mask],
   );
-  const previewFalloffValue = targetMaskMeta ? targetMaskMeta.light_preview_falloff : mask.lightFalloff;
-  const handlePreviewFalloffChange = useCallback(
+  const previewSpreadValue = targetMaskMeta ? targetMaskMeta.light_preview_spread : mask.lightSpread;
+  const handlePreviewSpreadChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("light_preview_falloff", value);
+        savePreviewField("light_preview_spread", value);
       } else {
-        mask.setLightFalloff(value);
+        mask.setLightSpread(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
   );
-  const previewDarknessValue = targetMaskMeta ? targetMaskMeta.light_preview_darkness : mask.lightDarkness;
-  const handlePreviewDarknessChange = useCallback(
+  const previewShadowValue = targetMaskMeta ? targetMaskMeta.light_preview_shadow : mask.lightShadow;
+  const handlePreviewShadowChange = useCallback(
     (value: number) => {
       if (targetMaskMeta) {
-        savePreviewField("light_preview_darkness", value);
+        savePreviewField("light_preview_shadow", value);
       } else {
-        mask.setLightDarkness(value);
+        mask.setLightShadow(value);
+      }
+    },
+    [targetMaskMeta, savePreviewField, mask],
+  );
+  const previewCastValue = targetMaskMeta ? targetMaskMeta.light_preview_cast : mask.lightCast;
+  const handlePreviewCastChange = useCallback(
+    (value: number) => {
+      if (targetMaskMeta) {
+        savePreviewField("light_preview_cast", value);
+      } else {
+        mask.setLightCast(value);
       }
     },
     [targetMaskMeta, savePreviewField, mask],
@@ -430,7 +457,7 @@ export default function LightSourcebar() {
   }, [sendMaskLightUpdate, dispatch, notifyMaskLightUpdated]);
 
   const saveLightField = useCallback(
-    (field: "intensity" | "falloff" | "darkness", value: number) => {
+    (field: "intensity" | "spread" | "shadow" | "cast", value: number) => {
       if (selectedLightMaskKey === undefined || !selectedLight || !selectedLightMaskData) return;
 
       if (isGuest) {
@@ -470,10 +497,12 @@ export default function LightSourcebar() {
     (value: number) => saveLightField("intensity", value),
     [saveLightField],
   );
-  const lightFalloffValue = selectedLight?.falloff ?? 0;
-  const handleLightFalloffChange = useCallback((value: number) => saveLightField("falloff", value), [saveLightField]);
-  const lightDarknessValue = selectedLight?.darkness ?? 0;
-  const handleLightDarknessChange = useCallback((value: number) => saveLightField("darkness", value), [saveLightField]);
+  const lightSpreadValue = selectedLight?.spread ?? 0;
+  const handleLightSpreadChange = useCallback((value: number) => saveLightField("spread", value), [saveLightField]);
+  const lightShadowValue = selectedLight?.shadow ?? 0;
+  const handleLightShadowChange = useCallback((value: number) => saveLightField("shadow", value), [saveLightField]);
+  const lightCastValue = selectedLight?.cast ?? LIGHT_CAST_ENDLESS;
+  const handleLightCastChange = useCallback((value: number) => saveLightField("cast", value), [saveLightField]);
 
   type ObjectPatch = {
     elevation?: number;
@@ -691,29 +720,29 @@ export default function LightSourcebar() {
   const previewIntensityTitle = previewIntensityValue.toFixed(2);
   const previewIntensityRef = useRef<HTMLDivElement | null>(null);
 
-  const previewFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getPreviewFalloffValue, getTrackCursor: getPreviewFalloffCursor } = useTrackpadState(
+  const previewSpreadTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getPreviewSpreadValue, getTrackCursor: getPreviewSpreadCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    LIGHT_PREVIEW_FALLOFF_MAX - LIGHT_PREVIEW_FALLOFF_MIN,
+    LIGHT_PREVIEW_SPREAD_MAX - LIGHT_PREVIEW_SPREAD_MIN,
   );
-  const previewFalloffCursor = {
-    x: getPreviewFalloffCursor(previewFalloffValue - LIGHT_PREVIEW_FALLOFF_MIN, dynamicSizes.paramSize.containerWidth),
+  const previewSpreadCursor = {
+    x: getPreviewSpreadCursor(previewSpreadValue - LIGHT_PREVIEW_SPREAD_MIN, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const previewFalloffTitle = previewFalloffValue.toFixed(1);
-  const previewFalloffRef = useRef<HTMLDivElement | null>(null);
+  const previewSpreadTitle = previewSpreadValue.toFixed(1);
+  const previewSpreadRef = useRef<HTMLDivElement | null>(null);
 
-  const previewDarknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getPreviewDarknessValue, getTrackCursor: getPreviewDarknessCursor } = useTrackpadState(
+  const previewShadowTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getPreviewShadowValue, getTrackCursor: getPreviewShadowCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
     1,
   );
-  const previewDarknessCursor = {
-    x: getPreviewDarknessCursor(previewDarknessValue, dynamicSizes.paramSize.containerWidth),
+  const previewShadowCursor = {
+    x: getPreviewShadowCursor(previewShadowValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const previewDarknessTitle = previewDarknessValue.toFixed(2);
-  const previewDarknessRef = useRef<HTMLDivElement | null>(null);
+  const previewShadowTitle = previewShadowValue.toFixed(2);
+  const previewShadowRef = useRef<HTMLDivElement | null>(null);
 
   const lightIntensityTrackRef = useRef<HTMLDivElement | null>(null);
   const { getTrackValue: getLightIntensityValue, getTrackCursor: getLightIntensityCursor } = useTrackpadState(
@@ -727,32 +756,32 @@ export default function LightSourcebar() {
   const lightIntensityTitle = lightIntensityValue.toFixed(2);
   const lightIntensityRef = useRef<HTMLDivElement | null>(null);
 
-  const lightFalloffMax = selectedLightMaskData
+  const lightSpreadMax = selectedLightMaskData
     ? Math.min(selectedLightMaskData.width, selectedLightMaskData.height)
-    : LIGHT_FALLOFF_MAX;
-  const lightFalloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getLightFalloffValue, getTrackCursor: getLightFalloffCursor } = useTrackpadState(
+    : LIGHT_SPREAD_MAX;
+  const lightSpreadTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightSpreadValue, getTrackCursor: getLightSpreadCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    lightFalloffMax,
+    lightSpreadMax,
   );
-  const lightFalloffCursor = {
-    x: getLightFalloffCursor(lightFalloffValue, dynamicSizes.paramSize.containerWidth),
+  const lightSpreadCursor = {
+    x: getLightSpreadCursor(lightSpreadValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const lightFalloffTitle = lightFalloffValue.toFixed(1);
-  const lightFalloffRef = useRef<HTMLDivElement | null>(null);
+  const lightSpreadTitle = lightSpreadValue.toFixed(1);
+  const lightSpreadRef = useRef<HTMLDivElement | null>(null);
 
-  const lightDarknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const { getTrackValue: getLightDarknessValue, getTrackCursor: getLightDarknessCursor } = useTrackpadState(
+  const lightShadowTrackRef = useRef<HTMLDivElement | null>(null);
+  const { getTrackValue: getLightShadowValue, getTrackCursor: getLightShadowCursor } = useTrackpadState(
     dynamicSizes.paramSize.capWidth - dynamicSizes.paramSize.capBorderOffset,
-    LIGHT_DARKNESS_MAX,
+    LIGHT_SHADOW_MAX,
   );
-  const lightDarknessCursor = {
-    x: getLightDarknessCursor(lightDarknessValue, dynamicSizes.paramSize.containerWidth),
+  const lightShadowCursor = {
+    x: getLightShadowCursor(lightShadowValue, dynamicSizes.paramSize.containerWidth),
     y: 0,
   };
-  const lightDarknessTitle = lightDarknessValue.toFixed(2);
-  const lightDarknessRef = useRef<HTMLDivElement | null>(null);
+  const lightShadowTitle = lightShadowValue.toFixed(2);
+  const lightShadowRef = useRef<HTMLDivElement | null>(null);
   const lightGridlinesValue =
     uiState.lightGridlines &&
     uiState.lightGridlines.key === selectedLightMaskKey &&
@@ -983,36 +1012,36 @@ export default function LightSourcebar() {
                 <span
                   title={
                     isPreviewControlsDisabled
-                      ? "select or generate a mesh to set how far its darkening falloffs out beyond the core"
-                      : "distance the darkening takes to falloff out beyond the core, in on-screen pixels -- independent of canvas size"
+                      ? "select or generate a mesh to set how far its light spreads out beyond the core"
+                      : "distance the light spreads out beyond the core, in on-screen pixels -- independent of canvas size"
                   }
                   style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
-                  {"falloff"}
+                  {"spread"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
                   hash={`${targetMaskKey ?? "lightsourcebar"}|preview-falloff`}
                   size={dynamicSizes.paramSize}
-                  containerRef={previewFalloffTrackRef}
-                  cursor={previewFalloffCursor}
+                  containerRef={previewSpreadTrackRef}
+                  cursor={previewSpreadCursor}
                   onCursorMove={(newCursor) => {
-                    if (!previewFalloffTrackRef.current || !previewFalloffRef.current) return;
+                    if (!previewSpreadTrackRef.current || !previewSpreadRef.current) return;
                     const val =
-                      getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
-                      LIGHT_PREVIEW_FALLOFF_MIN;
-                    previewFalloffRef.current.innerHTML = val.toFixed(1);
+                      getPreviewSpreadValue(newCursor.x, previewSpreadTrackRef.current.clientWidth, 0) +
+                      LIGHT_PREVIEW_SPREAD_MIN;
+                    previewSpreadRef.current.innerHTML = val.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!previewFalloffTrackRef.current) return;
+                    if (!previewSpreadTrackRef.current) return;
                     const newValue =
-                      getPreviewFalloffValue(newCursor.x, previewFalloffTrackRef.current.clientWidth, 0) +
-                      LIGHT_PREVIEW_FALLOFF_MIN;
-                    handlePreviewFalloffChange(newValue);
+                      getPreviewSpreadValue(newCursor.x, previewSpreadTrackRef.current.clientWidth, 0) +
+                      LIGHT_PREVIEW_SPREAD_MIN;
+                    handlePreviewSpreadChange(newValue);
                   }}
                   disabled={isPreviewControlsDisabled}
-                  title={previewFalloffTitle}
-                  liveTitleRef={previewFalloffRef}
+                  title={previewSpreadTitle}
+                  liveTitleRef={previewSpreadRef}
                 />
               </div>
               <div
@@ -1027,37 +1056,77 @@ export default function LightSourcebar() {
                 <span
                   title={
                     isPreviewControlsDisabled
-                      ? "select or generate a mesh to set the strength of its darkening at the far edge of the falloff"
-                      : "strength of the darkening at the far edge of the falloff -- 100% drives it fully to black"
+                      ? "select or generate a mesh to set the strength of its shadow at the far edge of the spread"
+                      : "strength of the shadow at the far edge of the spread -- 100% drives it fully to black"
                   }
                   style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
-                  {"darkness"}
+                  {"shadow"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
                   hash={`${targetMaskKey ?? "lightsourcebar"}|preview-darkness`}
                   size={dynamicSizes.paramSize}
-                  containerRef={previewDarknessTrackRef}
-                  cursor={previewDarknessCursor}
+                  containerRef={previewShadowTrackRef}
+                  cursor={previewShadowCursor}
                   onCursorMove={(newCursor) => {
-                    if (!previewDarknessTrackRef.current || !previewDarknessRef.current) return;
-                    const val = getPreviewDarknessValue(newCursor.x, previewDarknessTrackRef.current.clientWidth, 0);
-                    previewDarknessRef.current.innerHTML = val.toFixed(2);
+                    if (!previewShadowTrackRef.current || !previewShadowRef.current) return;
+                    const val = getPreviewShadowValue(newCursor.x, previewShadowTrackRef.current.clientWidth, 0);
+                    previewShadowRef.current.innerHTML = val.toFixed(2);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!previewDarknessTrackRef.current) return;
-                    const newValue = getPreviewDarknessValue(
-                      newCursor.x,
-                      previewDarknessTrackRef.current.clientWidth,
-                      0,
-                    );
-                    handlePreviewDarknessChange(newValue);
+                    if (!previewShadowTrackRef.current) return;
+                    const newValue = getPreviewShadowValue(newCursor.x, previewShadowTrackRef.current.clientWidth, 0);
+                    handlePreviewShadowChange(newValue);
                   }}
                   disabled={isPreviewControlsDisabled}
-                  title={previewDarknessTitle}
-                  liveTitleRef={previewDarknessRef}
+                  title={previewShadowTitle}
+                  liveTitleRef={previewShadowRef}
                 />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isPreviewControlsDisabled
+                      ? "select or generate a mesh to set how far its shadow casts past the spread"
+                      : "how far the shadow casts past the spread, as a multiple of it -- \u221e never fades it out"
+                  }
+                  style={{ opacity: isPreviewControlsDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"cast"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
+                  {LIGHT_CAST_OPTIONS.map((option) => {
+                    const isSelected = previewCastValue === option.value;
+                    return (
+                      <span
+                        key={option.label}
+                        onClick={() => {
+                          if (isPreviewControlsDisabled) return;
+                          handlePreviewCastChange(option.value);
+                        }}
+                        style={{
+                          cursor: isPreviewControlsDisabled ? "default" : "pointer",
+                          color: isSelected ? "inherit" : "rgb(67,67,67)",
+                          textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                          padding: "4px 8px",
+                          userSelect: "none",
+                          ...dynamicSizes.segment,
+                        }}
+                      >
+                        {option.label}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </>
           ) : isLightGreeting ? null : (
@@ -1114,32 +1183,32 @@ export default function LightSourcebar() {
                 <span
                   title={
                     isLightParamDisabled
-                      ? "select a light on the mesh to set how far its own darkening falloffs out beyond the core"
-                      : "distance this light's own darkening takes to falloff out beyond the core, in on-screen pixels"
+                      ? "select a light on the mesh to set how far its own light spreads out beyond its core"
+                      : "distance this light spreads out beyond its own core, in on-screen pixels"
                   }
                   style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
-                  {"falloff"}
+                  {"spread"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
                   hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-falloff|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={lightFalloffTrackRef}
-                  cursor={lightFalloffCursor}
+                  containerRef={lightSpreadTrackRef}
+                  cursor={lightSpreadCursor}
                   onCursorMove={(newCursor) => {
-                    if (!lightFalloffTrackRef.current || !lightFalloffRef.current) return;
-                    const val = getLightFalloffValue(newCursor.x, lightFalloffTrackRef.current.clientWidth, 0);
-                    lightFalloffRef.current.innerHTML = val.toFixed(1);
+                    if (!lightSpreadTrackRef.current || !lightSpreadRef.current) return;
+                    const val = getLightSpreadValue(newCursor.x, lightSpreadTrackRef.current.clientWidth, 0);
+                    lightSpreadRef.current.innerHTML = val.toFixed(1);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!lightFalloffTrackRef.current) return;
-                    const newValue = getLightFalloffValue(newCursor.x, lightFalloffTrackRef.current.clientWidth, 0);
-                    handleLightFalloffChange(newValue);
+                    if (!lightSpreadTrackRef.current) return;
+                    const newValue = getLightSpreadValue(newCursor.x, lightSpreadTrackRef.current.clientWidth, 0);
+                    handleLightSpreadChange(newValue);
                   }}
                   disabled={isLightParamDisabled}
-                  title={lightFalloffTitle}
-                  liveTitleRef={lightFalloffRef}
+                  title={lightSpreadTitle}
+                  liveTitleRef={lightSpreadRef}
                 />
               </div>
               <div
@@ -1154,33 +1223,79 @@ export default function LightSourcebar() {
                 <span
                   title={
                     isLightParamDisabled
-                      ? "select a light on the mesh to set the strength of its own darkening at the far edge of the falloff"
-                      : "strength of this light's own darkening at the far edge of the falloff -- 100% drives it fully to black"
+                      ? "select a light on the mesh to set the strength of its own shadow at the far edge of its spread"
+                      : "strength of this light's own shadow at the far edge of its spread -- 100% drives it fully to black"
                   }
                   style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
-                  {"darkness"}
+                  {"shadow"}
                 </span>
                 <ParameterSliderX
                   resolution={{ ...uiState.resolution }}
                   hash={`${selectedLightMaskKey ?? "lightsourcebar"}|light-darkness|${selectedLight?.id ?? "none"}`}
                   size={dynamicSizes.paramSize}
-                  containerRef={lightDarknessTrackRef}
-                  cursor={lightDarknessCursor}
+                  containerRef={lightShadowTrackRef}
+                  cursor={lightShadowCursor}
                   onCursorMove={(newCursor) => {
-                    if (!lightDarknessTrackRef.current || !lightDarknessRef.current) return;
-                    const val = getLightDarknessValue(newCursor.x, lightDarknessTrackRef.current.clientWidth, 0);
-                    lightDarknessRef.current.innerHTML = val.toFixed(2);
+                    if (!lightShadowTrackRef.current || !lightShadowRef.current) return;
+                    const val = getLightShadowValue(newCursor.x, lightShadowTrackRef.current.clientWidth, 0);
+                    lightShadowRef.current.innerHTML = val.toFixed(2);
                   }}
                   onNewCursor={(newCursor) => {
-                    if (!lightDarknessTrackRef.current) return;
-                    const newValue = getLightDarknessValue(newCursor.x, lightDarknessTrackRef.current.clientWidth, 0);
-                    handleLightDarknessChange(newValue);
+                    if (!lightShadowTrackRef.current) return;
+                    const newValue = getLightShadowValue(newCursor.x, lightShadowTrackRef.current.clientWidth, 0);
+                    handleLightShadowChange(newValue);
                   }}
                   disabled={isLightParamDisabled}
-                  title={lightDarknessTitle}
-                  liveTitleRef={lightDarknessRef}
+                  title={lightShadowTitle}
+                  liveTitleRef={lightShadowRef}
                 />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: "100%",
+                  ...dynamicSizes.toggle.div,
+                }}
+              >
+                <span
+                  title={
+                    isLightParamDisabled
+                      ? "select a light on the mesh to set how far its own shadow casts past its spread"
+                      : "how far this light's own shadow casts past its spread, as a multiple of it -- \u221e never fades it out"
+                  }
+                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                >
+                  {"cast"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", letterSpacing: 2 }}>
+                  {LIGHT_CAST_OPTIONS.map((option) => {
+                    const isSelected = lightCastValue === option.value;
+                    return (
+                      <span
+                        className={option.value === 0 ? italiana.className : dellaRespira.className}
+                        key={option.label}
+                        onClick={() => {
+                          if (isLightParamDisabled) return;
+                          handleLightCastChange(option.value);
+                        }}
+                        style={{
+                          cursor: isLightParamDisabled ? "default" : "pointer",
+                          color: isSelected ? "inherit" : "rgb(67,67,67)",
+                          textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+                          padding: "4px 8px",
+                          userSelect: "none",
+                          fontWeight: option.value === 0 ? "bold" : "normal",
+                          fontSize:
+                            option.value === 0 ? dynamicSizes.symbolSegment.fontSize : dynamicSizes.segment.fontSize,
+                        }}
+                      >
+                        {option.label}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
               <div
                 style={{

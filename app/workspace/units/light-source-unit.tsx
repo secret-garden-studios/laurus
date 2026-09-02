@@ -18,7 +18,7 @@ import {
   toObjectFillEquationFields,
   updateLightSource,
 } from "../workspace.server";
-import { MIN_LIMIT_FACTOR, LIGHT_DARKNESS_MAX, LIGHT_FALLOFF_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
+import { MIN_LIMIT_FACTOR, LIGHT_SHADOW_MAX, LIGHT_SPREAD_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
 import {
   MAX_MASK_OBJECT_ELEVATION,
   MAX_MASK_OBJECT_FALLOFF,
@@ -36,8 +36,8 @@ export type LightSourceUnitTarget = "light" | "object";
 
 export interface LightSourceUnitControls {
   light_intensity: number;
-  light_falloff: number;
-  light_darkness: number;
+  light_spread: number;
+  light_shadow: number;
   object_elevation: number;
   object_falloff: number;
   object_fill_r: number;
@@ -57,8 +57,8 @@ export const defaultLightSourceEquation: LaurusLightSourceEquation = {
   loop: LaurusLoopType.none,
   solution: [],
   light_intensity: 0,
-  light_falloff: 0,
-  light_darkness: 0,
+  light_spread: 0,
+  light_shadow: 0,
   object_elevation: 0,
   object_falloff: NEUTRAL_MASK_OBJECT_FALLOFF,
   ...toObjectFillEquationFields(OBJECT_FILL_DEFAULT),
@@ -204,8 +204,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const [mainControls] = useState(true);
   const [currentControls, setCurrentControls] = useState<LightSourceUnitControls>({
     light_intensity: 0,
-    light_falloff: 0,
-    light_darkness: 0,
+    light_spread: 0,
+    light_shadow: 0,
     object_elevation: defaultLightSourceEquation.object_elevation,
     object_falloff: defaultLightSourceEquation.object_falloff,
     object_fill_r: defaultLightSourceEquation.object_fill_r,
@@ -371,8 +371,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   const restingControls = useMemo((): LightSourceUnitControls => {
     const base: LightSourceUnitControls = {
       light_intensity: defaultLightSourceEquation.light_intensity,
-      light_falloff: defaultLightSourceEquation.light_falloff,
-      light_darkness: defaultLightSourceEquation.light_darkness,
+      light_spread: defaultLightSourceEquation.light_spread,
+      light_shadow: defaultLightSourceEquation.light_shadow,
       object_elevation: defaultLightSourceEquation.object_elevation,
       object_falloff: defaultLightSourceEquation.object_falloff,
       object_fill_r: defaultLightSourceEquation.object_fill_r,
@@ -397,8 +397,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       return {
         ...base,
         light_intensity: activeLight.intensity,
-        light_falloff: activeLight.falloff,
-        light_darkness: activeLight.darkness,
+        light_spread: activeLight.spread,
+        light_shadow: activeLight.shadow,
       };
     }
     return base;
@@ -419,34 +419,34 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
   }, [carouselEntryKey, lightSource.math]);
   const intensityRef = useRef<HTMLInputElement | null>(null);
 
-  const lightFalloffMax = activeLightMaskData
+  const lightSpreadMax = activeLightMaskData
     ? Math.min(activeLightMaskData.width, activeLightMaskData.height)
-    : LIGHT_FALLOFF_MAX;
-  const falloffTrackRef = useRef<HTMLDivElement | null>(null);
-  const [falloffCursor, setFalloffCursor] = useState({ x: 0, y: 0 });
-  const { getTrackValue: getFalloffValue, getTrackCursor: getFalloffCursor } = useTrackpadState(
+    : LIGHT_SPREAD_MAX;
+  const spreadTrackRef = useRef<HTMLDivElement | null>(null);
+  const [spreadCursor, setSpreadCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getSpreadValue, getTrackCursor: getSpreadCursor } = useTrackpadState(
     trackOffset,
-    lightFalloffMax,
+    lightSpreadMax,
   );
-  const falloffTitle = useMemo(() => {
+  const spreadTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_falloff.toFixed(1)
+      ? lightSource.math.get(carouselEntryKey)!.light_spread.toFixed(1)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
-  const falloffRef = useRef<HTMLInputElement | null>(null);
+  const spreadRef = useRef<HTMLInputElement | null>(null);
 
-  const darknessTrackRef = useRef<HTMLDivElement | null>(null);
-  const [darknessCursor, setDarknessCursor] = useState({ x: 0, y: 0 });
-  const { getTrackValue: getDarknessValue, getTrackCursor: getDarknessCursor } = useTrackpadState(
+  const shadowTrackRef = useRef<HTMLDivElement | null>(null);
+  const [shadowCursor, setShadowCursor] = useState({ x: 0, y: 0 });
+  const { getTrackValue: getShadowValue, getTrackCursor: getShadowCursor } = useTrackpadState(
     trackOffset,
-    LIGHT_DARKNESS_MAX,
+    LIGHT_SHADOW_MAX,
   );
-  const darknessTitle = useMemo(() => {
+  const shadowTitle = useMemo(() => {
     return lightSource.math.has(carouselEntryKey)
-      ? lightSource.math.get(carouselEntryKey)!.light_darkness.toFixed(2)
+      ? lightSource.math.get(carouselEntryKey)!.light_shadow.toFixed(2)
       : undefined;
   }, [carouselEntryKey, lightSource.math]);
-  const darknessRef = useRef<HTMLInputElement | null>(null);
+  const shadowRef = useRef<HTMLInputElement | null>(null);
 
   const objectFalloffTrackRef = useRef<HTMLDivElement | null>(null);
   const [objectFalloffCursor, setObjectFalloffCursor] = useState({ x: 0, y: 0 });
@@ -668,15 +668,15 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
           y: 0,
         });
       }
-      if (falloffTrackRef.current) {
-        setFalloffCursor({
-          x: getFalloffCursor(newControls.light_falloff, falloffTrackRef.current.clientWidth),
+      if (spreadTrackRef.current) {
+        setSpreadCursor({
+          x: getSpreadCursor(newControls.light_spread, spreadTrackRef.current.clientWidth),
           y: 0,
         });
       }
-      if (darknessTrackRef.current) {
-        setDarknessCursor({
-          x: getDarknessCursor(newControls.light_darkness, darknessTrackRef.current.clientWidth),
+      if (shadowTrackRef.current) {
+        setShadowCursor({
+          x: getShadowCursor(newControls.light_shadow, shadowTrackRef.current.clientWidth),
           y: 0,
         });
       }
@@ -698,11 +698,11 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       if (intensityRef.current) {
         intensityRef.current.value = newControls.light_intensity.toFixed(2);
       }
-      if (falloffRef.current) {
-        falloffRef.current.value = newControls.light_falloff.toFixed(1);
+      if (spreadRef.current) {
+        spreadRef.current.value = newControls.light_spread.toFixed(1);
       }
-      if (darknessRef.current) {
-        darknessRef.current.value = newControls.light_darkness.toFixed(2);
+      if (shadowRef.current) {
+        shadowRef.current.value = newControls.light_shadow.toFixed(2);
       }
       if (objectFalloffRef.current) {
         objectFalloffRef.current.value = newControls.object_falloff.toFixed(2);
@@ -711,14 +711,7 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         elevationRef.current.value = newControls.object_elevation.toFixed(0);
       }
     },
-    [
-      getIntensityCursor,
-      getFalloffCursor,
-      getDarknessCursor,
-      getTimeCursor,
-      getObjectFalloffCursor,
-      getElevationCursor,
-    ],
+    [getIntensityCursor, getSpreadCursor, getShadowCursor, getTimeCursor, getObjectFalloffCursor, getElevationCursor],
   );
 
   const newEquationSeed = useMemo((): LaurusLightSourceEquation => {
@@ -754,8 +747,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
       const initControls: LightSourceUnitControls = { ...currentControls };
       if (activeEquation) {
         initControls.light_intensity = activeEquation.light_intensity;
-        initControls.light_falloff = activeEquation.light_falloff;
-        initControls.light_darkness = activeEquation.light_darkness;
+        initControls.light_spread = activeEquation.light_spread;
+        initControls.light_shadow = activeEquation.light_shadow;
         initControls.object_elevation = activeEquation.object_elevation;
         initControls.object_falloff = activeEquation.object_falloff;
         initControls.object_fill_r = activeEquation.object_fill_r;
@@ -769,8 +762,8 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
         initControls.limit_factor = activeEquation.limit_factor;
       } else if (activeKey) {
         initControls.light_intensity = restingControls.light_intensity;
-        initControls.light_falloff = restingControls.light_falloff;
-        initControls.light_darkness = restingControls.light_darkness;
+        initControls.light_spread = restingControls.light_spread;
+        initControls.light_shadow = restingControls.light_shadow;
         initControls.object_elevation = restingControls.object_elevation;
         initControls.object_falloff = restingControls.object_falloff;
         initControls.object_fill_r = restingControls.object_fill_r;
@@ -1002,51 +995,51 @@ export default function LightSourceUnit({ lightSource, carouselIndexInit }: Ligh
                       />
                       <LightSourceParam
                         resolution={{ ...uiState.resolution }}
-                        label={"falloff"}
+                        label={"spread"}
                         hash={`${lightSource.light_source_id}|p3`}
                         size={dynamicSizes.lightParam}
                         display={dynamicSizes.lightParamDisplay}
-                        containerRef={falloffTrackRef}
-                        valueRef={falloffRef}
-                        cursor={falloffCursor}
+                        containerRef={spreadTrackRef}
+                        valueRef={spreadRef}
+                        cursor={spreadCursor}
                         onNewCursor={(newCursor) => {
-                          setFalloffCursor({ ...newCursor, y: 0 });
-                          if (!falloffTrackRef.current) return;
-                          const newVal = getFalloffValue(newCursor.x, falloffTrackRef.current.clientWidth, 0);
-                          setCurrentControls((v) => ({ ...v, light_falloff: newVal }));
-                          saveLightSourceFields({ light_falloff: newVal });
+                          setSpreadCursor({ ...newCursor, y: 0 });
+                          if (!spreadTrackRef.current) return;
+                          const newVal = getSpreadValue(newCursor.x, spreadTrackRef.current.clientWidth, 0);
+                          setCurrentControls((v) => ({ ...v, light_spread: newVal }));
+                          saveLightSourceFields({ light_spread: newVal });
                         }}
                         onCursorMove={(c) => {
-                          if (!falloffTrackRef.current || !falloffRef.current) return;
-                          const val = getFalloffValue(c.x, falloffTrackRef.current.clientWidth, 0);
-                          falloffRef.current.value = val.toFixed(1);
+                          if (!spreadTrackRef.current || !spreadRef.current) return;
+                          const val = getSpreadValue(c.x, spreadTrackRef.current.clientWidth, 0);
+                          spreadRef.current.value = val.toFixed(1);
                         }}
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                        title={falloffTitle}
+                        title={spreadTitle}
                       />
                       <LightSourceParam
                         resolution={{ ...uiState.resolution }}
-                        label={"darkness"}
+                        label={"shadow"}
                         hash={`${lightSource.light_source_id}|p4`}
                         size={dynamicSizes.lightParam}
                         display={dynamicSizes.lightParamDisplay}
-                        containerRef={darknessTrackRef}
-                        valueRef={darknessRef}
-                        cursor={darknessCursor}
+                        containerRef={shadowTrackRef}
+                        valueRef={shadowRef}
+                        cursor={shadowCursor}
                         onNewCursor={(newCursor) => {
-                          setDarknessCursor({ ...newCursor, y: 0 });
-                          if (!darknessTrackRef.current) return;
-                          const newVal = getDarknessValue(newCursor.x, darknessTrackRef.current.clientWidth, 0);
-                          setCurrentControls((v) => ({ ...v, light_darkness: newVal }));
-                          saveLightSourceFields({ light_darkness: newVal });
+                          setShadowCursor({ ...newCursor, y: 0 });
+                          if (!shadowTrackRef.current) return;
+                          const newVal = getShadowValue(newCursor.x, shadowTrackRef.current.clientWidth, 0);
+                          setCurrentControls((v) => ({ ...v, light_shadow: newVal }));
+                          saveLightSourceFields({ light_shadow: newVal });
                         }}
                         onCursorMove={(c) => {
-                          if (!darknessTrackRef.current || !darknessRef.current) return;
-                          const val = getDarknessValue(c.x, darknessTrackRef.current.clientWidth, 0);
-                          darknessRef.current.value = val.toFixed(2);
+                          if (!shadowTrackRef.current || !shadowRef.current) return;
+                          const val = getShadowValue(c.x, shadowTrackRef.current.clientWidth, 0);
+                          shadowRef.current.value = val.toFixed(2);
                         }}
                         disabled={lightSource.locked || isAltKeyPressed || uiState.playbackMode.type !== "stopped"}
-                        title={darknessTitle}
+                        title={shadowTitle}
                       />
                     </>
                   )}

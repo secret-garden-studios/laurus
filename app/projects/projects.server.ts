@@ -71,8 +71,9 @@ export interface ProjectMask_V1_0 {
   skew_ay: number;
   light_preview_size: number;
   light_preview_intensity: number;
-  light_preview_falloff: number;
-  light_preview_darkness: number;
+  light_preview_spread: number;
+  light_preview_shadow: number;
+  light_preview_cast: number;
   texture: number;
   description: string;
 }
