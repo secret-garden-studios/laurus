@@ -19,11 +19,13 @@ import {
   OBJECT_SDF_RANGE,
   activeMaskObjects,
   drawnMaskObjects,
+  liftSourceAt,
   encodeObjectSdfAtlas,
   objectProfileUAt,
 } from "./mask-gl.ts";
 import type { ObjectGeometryInput } from "./mask-gl.ts";
 import { OBJECT_SDF_TILE, buildObjectShapeFromRings } from "./canvas-media/object-shape.ts";
+import { MASK_ORDER_UNRANKED } from "./canvas-media/mask-order.ts";
 
 const FALLOFFS = [1, 2, 4, 6];
 
@@ -262,10 +264,6 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
   });
 
   it("uses no GLSL ES reserved word as an identifier", () => {
-    // The whole list from the GLSL ES 1.00 spec, because this is the one class
-    // of shader bug no other test here can reach: everything else in this
-    // suite reads the generated source as text, and text is perfectly happy
-    // with `vec4 packed = ...` right up until a driver refuses to compile it.
     const RESERVED = [
       "asm",
       "class",
@@ -318,7 +316,6 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
       "using",
     ];
     for (const [stage, src] of stages) {
-      // strip comments first -- prose is allowed to say "packed"
       const code = src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
       for (const word of RESERVED) {
         assert.doesNotMatch(
@@ -332,8 +329,6 @@ describe("LIGHT_SOURCE_SHADER -- structural checks on the generated GLSL", () =>
 
   it("filters the tile by hand, because a vertex texture fetch may not", () => {
     for (const [stage, src] of stages) {
-      // four corner fetches and two mixes -- hardware filtering is not
-      // promised in the vertex stage this runs in
       assert.equal(src.split("objectShapeTexel(row,").length - 1, 4, `${stage}: corner fetches`);
     }
   });
@@ -352,8 +347,6 @@ describe("objectProfileUAt -- the shape lookup's TypeScript twin", () => {
   };
 
   it("agrees with the shapeless case for a circular shape, at every angle", () => {
-    // the claim the whole encoding rests on: an object with no shape and one
-    // shaped like a circle are the same object
     const shape = circle();
     const shaped = object({ shape });
     const plain = object();
@@ -466,7 +459,6 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
     [-half, half],
   ];
 
-  // where slot `s`'s texel (col, row) lands in the atlas
   const at = (slot: number, col: number, row: number) => {
     const x = (slot % OBJECT_SDF_GRID) * OBJECT_SDF_TILE + col;
     const y = Math.floor(slot / OBJECT_SDF_GRID) * OBJECT_SDF_TILE + row;
@@ -528,14 +520,13 @@ describe("encodeObjectSdfAtlas -- the tile packing", () => {
 
   it("lays tiles out in reading order across the grid", () => {
     const shape = shapeOf([square(1)]);
-    const slot = OBJECT_SDF_GRID + 2; // second band, third column
+    const slot = OBJECT_SDF_GRID + 2;
     const data = encodeObjectSdfAtlas([...Array(slot).fill(undefined), shape]);
     const middle = OBJECT_SDF_TILE / 2;
     assert.ok(decodeDistance(data, at(slot, middle, middle)) > 0);
   });
 
   it("scales a draft-resolution tile up rather than refusing it", () => {
-    // the editor rasterizes at a smaller tile while a handle is being dragged
     const built = buildObjectShapeFromRings([square(1)], 64);
     assert.ok(built.ok);
     assert.equal(built.shape.tile, 64);
@@ -595,6 +586,20 @@ describe("isDrawnObject -- the 'worth uploading' predicate", () => {
     );
   });
 
+  it("uploads a silhouette that draws nothing but stands in a light's way", () => {
+    const silhouette = object({ elevation: 0, order: 2 });
+    assert.equal(isDrawnObject(silhouette), false, "nothing to draw and no light to block");
+    assert.equal(isDrawnObject(silhouette, [{ order: 1 }]), true, "outranks the light, so it blocks it");
+    assert.equal(isDrawnObject(silhouette, [{ order: 3 }]), false, "the light is in front of it");
+    assert.equal(isDrawnObject(silhouette, [{ order: 0 }]), false, "an unranked light is never blocked");
+  });
+
+  it("blocks light from behind the mask too, where a light ranks further back still", () => {
+    const behind = object({ elevation: 0, order: -1 });
+    assert.equal(isDrawnObject(behind, [{ order: -2 }]), true, "in front of the light, both behind the sheet");
+    assert.equal(isDrawnObject(behind, [{ order: 1 }]), false, "the light is in front of the sheet");
+  });
+
   it("is a strict superset of isActiveObject, so nothing that deforms goes unuploaded", () => {
     const candidates = [
       object(),
@@ -621,11 +626,71 @@ describe("drawnMaskObjects -- the uploaded set", () => {
     assert.deepEqual(drawnMaskObjects([flat, raised, inert]), [raised, flat], "the flat tint is uploaded too");
   });
 
+  it("carries a mask's pure occluders, which are otherwise dropped entirely", () => {
+    const mountains = object({ cx: 10, elevation: 0, order: 2 });
+    const boat = object({ cx: 20, elevation: 0, order: 3 });
+    const sun = { order: 1 };
+
+    assert.deepEqual(drawnMaskObjects([mountains, boat]), [], "nothing drawn is nothing uploaded");
+    assert.deepEqual(
+      drawnMaskObjects([mountains, boat], [sun]).map((o) => o.cx),
+      [10, 20],
+      "both outrank the sun, so both reach the shader to block it",
+    );
+  });
+
   it("never exceeds the shader's slot count", () => {
     const many = Array.from({ length: MAX_MASK_OBJECTS * 2 }, (_, i) =>
       object({ cx: i, elevation: 0, fill: opaqueRed }),
     );
     assert.equal(drawnMaskObjects(many).length, MAX_MASK_OBJECTS);
+  });
+});
+
+describe("liftSourceAt -- whose content a point draws", () => {
+  const lifted = (over: Partial<ObjectGeometryInput> = {}) => object({ lift: restPose, ...over });
+
+  it("gives a point to the object it is inside, not to the mask's highest-ranked one", () => {
+    const near = lifted({ cx: 100, order: 1 });
+    const far = lifted({ cx: 300, order: 5 });
+    assert.equal(liftSourceAt([near, far], [300, 100]), far, "inside the ranked-up one");
+    assert.equal(
+      liftSourceAt([near, far], [100, 100]),
+      near,
+      "inside the ranked-down one -- rank must not reach across empty canvas and take it",
+    );
+  });
+
+  it("lets rank settle a point both objects cover", () => {
+    const under = lifted({ cx: 100, order: 1 });
+    const over = lifted({ cx: 130, order: 5 });
+    assert.equal(liftSourceAt([under, over], [115, 100]), over, "the front one takes the overlap");
+    assert.equal(liftSourceAt([over, under], [115, 100]), over, "and the list order does not matter");
+  });
+
+  it("leaves a point no object covers to the mask itself", () => {
+    assert.equal(liftSourceAt([lifted({ cx: 100 }), lifted({ cx: 300 })], [200, 100]), undefined);
+  });
+
+  it("ignores objects that are not lifted, however they rank", () => {
+    const still = object({ cx: 100, order: 9 });
+    const moving = lifted({ cx: 100, order: 1 });
+    assert.equal(liftSourceAt([still, moving], [100, 100]), moving);
+    assert.equal(liftSourceAt([still], [100, 100]), undefined, "nothing lifted, nothing carried");
+  });
+
+  it("keeps the two sides of the sheet as separate stacks", () => {
+    const front = lifted({ cx: 100, order: 2 });
+    const back = lifted({ cx: 100, order: -2 });
+    assert.equal(liftSourceAt([front, back], [100, 100], false), front, "in front of the mask");
+    assert.equal(liftSourceAt([front, back], [100, 100], true), back, "behind it");
+  });
+
+  it("breaks a shared rank by which object the point sits deeper inside", () => {
+    const left = lifted({ cx: 100, order: MASK_ORDER_UNRANKED });
+    const right = lifted({ cx: 130, order: MASK_ORDER_UNRANKED });
+    assert.equal(liftSourceAt([left, right], [105, 100]), left);
+    assert.equal(liftSourceAt([left, right], [125, 100]), right);
   });
 });
 
@@ -646,8 +711,6 @@ describe("objectRotation -- rotate3d, projected onto the plane a relief lives in
   it("turns a point about z by exactly the angle asked for", () => {
     for (const angle of [30, 45, 120, 200, 330]) {
       const radians = (angle * Math.PI) / 180;
-      // The stored matrix is the inverse, so asking it where a mesh point came
-      // from is asking for the turn undone -- hence the sign.
       const [nx, ny] = objectToShape(rotationOf(0, 0, 1, angle), 1, 0);
       assert.ok(Math.abs(nx - Math.cos(radians)) < 1e-9, `x at ${angle}deg: ${nx}`);
       assert.ok(Math.abs(ny + Math.sin(radians)) < 1e-9, `y at ${angle}deg: ${ny}`);
@@ -657,14 +720,10 @@ describe("objectRotation -- rotate3d, projected onto the plane a relief lives in
   it("foreshortens by the cosine when the turn is about x or y, as CSS does", () => {
     for (const angle of [30, 45, 60]) {
       const cos = Math.cos((angle * Math.PI) / 180);
-      // A shape squashed to `cos` of its height means a mesh offset of 1 reads
-      // back as 1/cos in the shape's own coordinates -- further out, so the
-      // outline is met sooner.
       const [, aboutX] = objectToShape(rotationOf(1, 0, 0, angle), 0, 1);
       assert.ok(Math.abs(aboutX - 1 / cos) < 1e-9, `about x at ${angle}deg: ${aboutX}`);
       const [aboutY] = objectToShape(rotationOf(0, 1, 0, angle), 1, 0);
       assert.ok(Math.abs(aboutY - 1 / cos) < 1e-9, `about y at ${angle}deg: ${aboutY}`);
-      // and leaves the axis it turns about alone
       const [alongX] = objectToShape(rotationOf(1, 0, 0, angle), 1, 0);
       assert.ok(Math.abs(alongX - 1) < 1e-9, `along x at ${angle}deg: ${alongX}`);
     }
@@ -684,7 +743,6 @@ describe("objectRotation -- rotate3d, projected onto the plane a relief lives in
   });
 
   it("mirrors rather than vanishes once the shape is past edge-on", () => {
-    // 180 about x is a vertical flip: y comes back negated, x untouched
     const [nx, ny] = objectToShape(rotationOf(1, 0, 0, 180), 1, 1);
     assert.ok(Math.abs(nx - 1) < 1e-9, `x: ${nx}`);
     assert.ok(Math.abs(ny + 1) < 1e-9, `y: ${ny}`);
@@ -698,8 +756,6 @@ describe("objectRotation -- rotate3d, projected onto the plane a relief lives in
 
 describe("a rotated object's field", () => {
   it("leaves a shapeless object's profile alone when the turn is in the plane", () => {
-    // a disc is its own rotation about z, and this is the invariant that keeps
-    // a shapeless object and a circular one the same object once turned
     const spun = object({ rotation: objectRotation(0, 0, 1, 37) });
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
       for (const d of [10, 25, 49]) {
@@ -713,8 +769,6 @@ describe("a rotated object's field", () => {
   });
 
   it("pulls a shapeless object's rim in along the foreshortened axis", () => {
-    // turned 60 degrees about x the disc is half as tall, so the rim sits at
-    // half the radius above the centre and still at the radius beside it
     const tilted = object({ rotation: objectRotation(1, 0, 0, 60) });
     assert.ok(Math.abs(objectProfileUAt(tilted, [tilted.cx + tilted.radius, tilted.cy]) - 1) < 1e-9, "across");
     assert.ok(Math.abs(objectProfileUAt(tilted, [tilted.cx, tilted.cy + tilted.radius / 2]) - 1) < 1e-9, "up");
@@ -728,8 +782,6 @@ describe("a rotated object's field", () => {
   });
 
   it("turns a drawn shape with it", () => {
-    // a wide, short rectangle: upright it reaches further across than up, and a
-    // quarter turn about z has to swap which of those is which
     const built = buildObjectShapeFromRings([
       [
         [-1, -0.25],

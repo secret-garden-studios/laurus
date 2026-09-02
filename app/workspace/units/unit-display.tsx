@@ -97,7 +97,7 @@ function ObjectOrLightThumbnail({
           display: "grid",
           flexDirection: "column",
           alignContent: "space-between",
-          justifyContent: "center",
+          justifyItems: "center",
           pointerEvents: "none",
           userSelect: "none",
         }}
@@ -105,11 +105,10 @@ function ObjectOrLightThumbnail({
         <div
           style={{
             textShadow: "0px 0px 1px rgba(255, 255, 255, 0.9)",
-            maxWidth: "100%",
+            maxWidth: "90%",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            textAlign: "center",
           }}
         >
           {`${name}`}

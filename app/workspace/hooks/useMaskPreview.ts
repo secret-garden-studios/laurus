@@ -12,9 +12,10 @@ import {
 } from "../workspace.server";
 import {
   colorToRGB01,
-  LIGHT_DARKNESS_DEFAULT,
-  LIGHT_FALLOFF_CSS_PX_DEFAULT,
+  LIGHT_SHADOW_DEFAULT,
+  LIGHT_SPREAD_CSS_PX_DEFAULT,
   LIGHT_INTENSITY_DEFAULT,
+  LIGHT_CAST_DEFAULT,
   LIGHT_SIZE_CSS_PX_DEFAULT,
   MASK_BACKING_VERTEX_COUNT,
   TEXTURE_MIX_DEFAULT,
@@ -92,20 +93,28 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setLightIntensityState(value);
   }, []);
 
-  const [lightFalloff, setLightFalloffState] = useState(LIGHT_FALLOFF_CSS_PX_DEFAULT);
-  const lightFalloffRef = useRef(LIGHT_FALLOFF_CSS_PX_DEFAULT);
+  const [lightSpread, setLightSpreadState] = useState(LIGHT_SPREAD_CSS_PX_DEFAULT);
+  const lightSpreadRef = useRef(LIGHT_SPREAD_CSS_PX_DEFAULT);
 
-  const setLightFalloff = useCallback((value: number) => {
-    lightFalloffRef.current = value;
-    setLightFalloffState(value);
+  const setLightSpread = useCallback((value: number) => {
+    lightSpreadRef.current = value;
+    setLightSpreadState(value);
   }, []);
 
-  const [lightDarkness, setLightDarknessState] = useState(LIGHT_DARKNESS_DEFAULT);
-  const lightDarknessRef = useRef(LIGHT_DARKNESS_DEFAULT);
+  const [lightShadow, setLightShadowState] = useState(LIGHT_SHADOW_DEFAULT);
+  const lightShadowRef = useRef(LIGHT_SHADOW_DEFAULT);
 
-  const setLightDarkness = useCallback((value: number) => {
-    lightDarknessRef.current = value;
-    setLightDarknessState(value);
+  const setLightShadow = useCallback((value: number) => {
+    lightShadowRef.current = value;
+    setLightShadowState(value);
+  }, []);
+
+  const [lightCast, setLightCastState] = useState(LIGHT_CAST_DEFAULT);
+  const lightCastRef = useRef(LIGHT_CAST_DEFAULT);
+
+  const setLightCast = useCallback((value: number) => {
+    lightCastRef.current = value;
+    setLightCastState(value);
   }, []);
 
   const [resolution, setResolutionState] = useState<MaskResolutionFactor>(MASK_RESOLUTION_DEFAULT);
@@ -184,11 +193,12 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setTextureMix(TEXTURE_MIX_DEFAULT);
     setLightSize(LIGHT_SIZE_CSS_PX_DEFAULT);
     setLightIntensity(LIGHT_INTENSITY_DEFAULT);
-    setLightFalloff(LIGHT_FALLOFF_CSS_PX_DEFAULT);
-    setLightDarkness(LIGHT_DARKNESS_DEFAULT);
+    setLightSpread(LIGHT_SPREAD_CSS_PX_DEFAULT);
+    setLightShadow(LIGHT_SHADOW_DEFAULT);
+    setLightCast(LIGHT_CAST_DEFAULT);
     setPosition({ value: false, x: undefined, y: undefined });
     setSize({ value: false, width: undefined, height: undefined });
-  }, [setStatus, setTextureMix, setLightSize, setLightIntensity, setLightFalloff, setLightDarkness]);
+  }, [setStatus, setTextureMix, setLightSize, setLightIntensity, setLightSpread, setLightShadow, setLightCast]);
 
   const start = useCallback(
     (img: LaurusImgResult, onComplete?: (result: LaurusMaskResult) => void, objectSeed?: EdgeObjectSeed) => {
@@ -210,8 +220,9 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       setTextureMix(TEXTURE_MIX_DEFAULT);
       setLightSize(LIGHT_SIZE_CSS_PX_DEFAULT);
       setLightIntensity(LIGHT_INTENSITY_DEFAULT);
-      setLightFalloff(LIGHT_FALLOFF_CSS_PX_DEFAULT);
-      setLightDarkness(LIGHT_DARKNESS_DEFAULT);
+      setLightSpread(LIGHT_SPREAD_CSS_PX_DEFAULT);
+      setLightShadow(LIGHT_SHADOW_DEFAULT);
+      setLightCast(LIGHT_CAST_DEFAULT);
 
       const resolutionFactor = resolutionRef.current;
       socketRef.current?.close();
@@ -296,8 +307,9 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       setTextureMix,
       setLightSize,
       setLightIntensity,
-      setLightFalloff,
-      setLightDarkness,
+      setLightSpread,
+      setLightShadow,
+      setLightCast,
     ],
   );
 
@@ -317,12 +329,15 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     lightIntensity,
     setLightIntensity,
     lightIntensityRef,
-    lightFalloff,
-    setLightFalloff,
-    lightFalloffRef,
-    lightDarkness,
-    setLightDarkness,
-    lightDarknessRef,
+    lightSpread,
+    setLightSpread,
+    lightSpreadRef,
+    lightShadow,
+    setLightShadow,
+    lightShadowRef,
+    lightCast,
+    setLightCast,
+    lightCastRef,
     position,
     setPosition,
     size,

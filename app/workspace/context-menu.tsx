@@ -34,12 +34,15 @@ import {
   LaurusSvgResult,
   deleteMask,
   getObjectReview,
+  maskLabel,
   newLight,
   toLightUpdate,
+  toObjectUpdate,
+  updateMaskDescription,
 } from "./workspace.server";
-import { applyLightDelta } from "./canvas-media/mask-delta";
+import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
-import type { ObjectOrderDirection } from "./canvas-media/object-order";
+import type { StackDirection, StackRef } from "./canvas-media/mask-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
 import Toggle from "../components/toggle";
@@ -54,6 +57,7 @@ import {
   resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
+import { UNAUTHORIZED_EDIT } from "../landing.server";
 import { deleteEffects, deleteMaskLightEffects } from "./effects-utils";
 
 function cleanUpCanvasMedia(mediaType: "img" | "svg" | "mask", mediaKey: string, dispatch: Dispatch<CoreAction>) {
@@ -132,8 +136,14 @@ function cleanUpBrowserElement(
   }
 }
 
-const MOVE_UP_TITLE = "move this object forward in its mask -- alt to put it in front of everything";
-const MOVE_DOWN_TITLE = "move this object back in its mask -- past the mask itself, it renders behind it";
+const MOVE_UP_TITLE = {
+  object: "move this object forward in its mask -- alt to put it in front of everything",
+  light: "move this light forward in its mask -- alt to put it in front of everything",
+};
+const MOVE_DOWN_TITLE = {
+  object: "move this object back in its mask -- past the mask itself, it renders behind it",
+  light: "move this light back in its mask -- past the mask itself, it only reaches the mask's gaps",
+};
 
 function projectSvgIsTransformed(svg: LaurusProjectSvg) {
   if (
@@ -201,15 +211,17 @@ interface ContextMenu {
 }
 export default function ContextMenu({ media, framesCacheRef, transform }: ContextMenu) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { sendMaskLightUpdate, closeMaskLightSocket, closeMaskObjectSocket } = useContext(SocketContext);
+  const { sendMaskLightUpdate, sendMaskObjectUpdate, closeMaskLightSocket, closeMaskObjectSocket } =
+    useContext(SocketContext);
   const {
     notifyMaskSelectionChanged,
     notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
     notifyMaskLightUpdated,
+    notifyMaskObjectsUpdated,
     notifyMaskObjectReviewPreview,
     deleteObject,
-    reorderObject,
+    reorderElement,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
@@ -808,30 +820,27 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const [reordering, setReordering] = useState(false);
 
   const moveInStack = useCallback(
-    async (direction: ObjectOrderDirection) => {
-      if (media.type !== "object") {
+    async (direction: StackDirection) => {
+      const target: StackRef | undefined =
+        media.type === "object"
+          ? { kind: "object", id: media.objectId }
+          : media.type === "light"
+            ? { kind: "light", id: media.lightId }
+            : undefined;
+      if (!target) {
         await updateMediaOrder(direction);
         return;
       }
       if (reordering) return;
       setReordering(true);
       try {
-        await reorderObject(media.key, media.objectId, direction);
+        await reorderElement(media.key, target, direction);
       } finally {
         setReordering(false);
       }
     },
-    [media, reordering, reorderObject, updateMediaOrder],
+    [media, reordering, reorderElement, updateMediaOrder],
   );
-
-  const reorderEnabled = useMemo(() => {
-    switch (media.type) {
-      case "light":
-        return false;
-      default:
-        return true;
-    }
-  }, [media.type]);
 
   const revertEnabled = useMemo(() => {
     switch (media.type) {
@@ -1070,15 +1079,9 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       case "svg":
         return media.meta.media_key;
       case "mask": {
-        let filename = media.key;
         const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return filename;
-        coreState.canvasImgs.forEach((i) => {
-          if (i.img_media_id == mask.source_img_media_id) {
-            filename = i.media_key;
-          }
-        });
-        return filename;
+        if (!mask) return media.key;
+        return maskLabel(mask, coreState.canvasImgs, media.key);
       }
       case "object": {
         const mask = coreState.canvasMasks.get(media.key);
@@ -1096,6 +1099,133 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       }
     }
   }, [coreState.canvasImgs, coreState.canvasMasks, media]);
+
+  const describable = useMemo(() => {
+    const maskData = coreState.canvasMasks.get(media.key);
+    if (!maskData) return undefined;
+    switch (media.type) {
+      case "mask":
+        return {
+          description: maskData.description,
+          fallback: maskLabel({ ...maskData, description: "" }, coreState.canvasImgs, media.key),
+        };
+      case "light": {
+        if (uiState.maskEdit !== undefined) return undefined;
+        const light = maskData.lights.find((l) => l.id === media.lightId);
+        if (!light) return undefined;
+        return { description: light.description, fallback: light.name ? light.name : "" };
+      }
+      case "object": {
+        if (uiState.maskEdit !== undefined) return undefined;
+        const object = maskData.objects.find((o) => o.id === media.objectId);
+        if (!object) return undefined;
+        return { description: object.description, fallback: object.name ? object.name : "" };
+      }
+      default:
+        return undefined;
+    }
+  }, [media, coreState.canvasMasks, coreState.canvasImgs, uiState.maskEdit]);
+
+  const [descriptionDraft, setDescriptionDraft] = useState<string | undefined>(undefined);
+  const descriptionDraftRef = useRef<string | undefined>(undefined);
+  const editDescription = useCallback((draft: string | undefined) => {
+    descriptionDraftRef.current = draft;
+    setDescriptionDraft(draft);
+  }, []);
+
+  const [committingDescription, setCommittingDescription] = useState<string | undefined>(undefined);
+
+  const openDescriptionEdit = useCallback(() => {
+    if (!describable || descriptionDraftRef.current !== undefined) return;
+    if (committingDescription !== undefined) return;
+    if (!coreState.accessToken) {
+      alert(UNAUTHORIZED_EDIT);
+      return;
+    }
+    editDescription(describable.description);
+  }, [describable, committingDescription, coreState.accessToken, editDescription]);
+
+  const saveDescription = useCallback(
+    async (description: string) => {
+      const maskData = coreState.canvasMasks.get(media.key);
+      if (!maskData) return;
+      switch (media.type) {
+        case "mask": {
+          const updated = await updateMaskDescription(
+            coreState.apiOrigin,
+            coreState.accessToken,
+            maskData.mask_media_id,
+            description,
+          );
+          if (!updated) return;
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: updated });
+          return;
+        }
+        case "light": {
+          const light = maskData.lights.find((l) => l.id === media.lightId);
+          if (!light) return;
+          const updated = await sendMaskLightUpdate(
+            maskData.mask_media_id,
+            toLightUpdate(light, {
+              description,
+              polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
+            }),
+          );
+          if (!updated) return;
+          const patched = applyLightDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patched });
+          notifyMaskLightUpdated(media.key, patched);
+          return;
+        }
+        case "object": {
+          const object = maskData.objects.find((o) => o.id === media.objectId);
+          if (!object) return;
+          const updated = await sendMaskObjectUpdate(
+            maskData.mask_media_id,
+            toObjectUpdate(object, {
+              description,
+              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
+            }),
+          );
+          if (!updated) return;
+          const patched = applyObjectDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: media.key, value: patched });
+          notifyMaskObjectsUpdated(media.key, patched);
+          return;
+        }
+        default:
+          return;
+      }
+    },
+    [
+      media,
+      coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      dispatch,
+      sendMaskLightUpdate,
+      sendMaskObjectUpdate,
+      notifyMaskLightUpdated,
+      notifyMaskObjectsUpdated,
+    ],
+  );
+
+  const commitDescription = useCallback(async () => {
+    const draft = descriptionDraftRef.current;
+    editDescription(undefined);
+    if (draft === undefined || !describable) return;
+    const description = draft.trim();
+    if (description === describable.description) return;
+    setCommittingDescription(description);
+    await saveDescription(description);
+    setCommittingDescription(undefined);
+  }, [describable, saveDescription, editDescription]);
+
+  const shownHeader = useMemo(() => {
+    if (committingDescription === undefined) return header;
+    if (committingDescription) return committingDescription;
+    return describable ? describable.fallback : header;
+  }, [committingDescription, header, describable]);
 
   const subheader = useMemo(() => {
     switch (media.type) {
@@ -1181,6 +1311,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 overflowX: "hidden",
                 whiteSpace: "nowrap",
                 textWrap: "nowrap",
+                ...(committingDescription !== undefined && { cursor: "wait" }),
                 padding: leftSide ? dynamicSizes.clipPathDivIsLeftPadding : dynamicSizes.clipPathDivPadding,
                 left: leftSide ? dynamicSizes.clipPathDivIsLeftLeft : dynamicSizes.clipPathDivLeft,
                 width: contextMenuWidth - dynamicSizes.clipPathDivSizeOffset.width,
@@ -1197,13 +1328,52 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                 }}
               >
                 <div
+                  title={
+                    committingDescription !== undefined
+                      ? "saving the description..."
+                      : describable
+                        ? `double click to describe this ${media.type}`
+                        : undefined
+                  }
+                  onDoubleClick={openDescriptionEdit}
                   style={{
                     overflowX: "auto",
                     fontWeight: "bold",
+                    ...(committingDescription !== undefined && { cursor: "wait" }),
                     ...dynamicSizes.h1,
                   }}
                 >
-                  {header}
+                  {descriptionDraft === undefined ? (
+                    shownHeader
+                  ) : (
+                    <input
+                      autoFocus
+                      type="text"
+                      value={descriptionDraft}
+                      placeholder="describe me..."
+                      autoComplete="off"
+                      onChange={(e) => editDescription(e.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      onBlur={() => void commitDescription()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") {
+                          editDescription(undefined);
+                        }
+                      }}
+                      style={{
+                        font: "inherit",
+                        fontWeight: "bold",
+                        letterSpacing: "inherit",
+                        background: "none",
+                        color: "inherit",
+                        border: "none",
+                        outline: "none",
+                        padding: 0,
+                        width: "100%",
+                      }}
+                    />
+                  )}
                 </div>
                 <div style={{ display: "flex", ...dynamicSizes.h2 }}>{subheader}</div>
                 <div
@@ -1391,31 +1561,25 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                   )}
                   <div
                     style={{
-                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      color: reordering ? "rgba(127,127,127, 1)" : "inherit",
                       ...cellStyle,
-                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                      cursor: "pointer",
                     }}
-                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
-                    title={media.type === "object" ? MOVE_UP_TITLE : undefined}
-                    onClick={() => {
-                      if (!reorderEnabled) return;
-                      moveInStack(isAltPressed ? "top" : "increment");
-                    }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={isLightOrObject ? MOVE_UP_TITLE[media.type] : undefined}
+                    onClick={() => moveInStack(isAltPressed ? "top" : "increment")}
                   >
                     {isAltPressed ? "move to top" : "move up"}
                   </div>
                   <div
                     style={{
-                      color: reordering || !reorderEnabled ? "rgba(127,127,127, 1)" : "inherit",
+                      color: reordering ? "rgba(127,127,127, 1)" : "inherit",
                       ...cellStyle,
-                      cursor: reorderEnabled ? "pointer" : "not-allowed",
+                      cursor: "pointer",
                     }}
-                    className={reordering || !reorderEnabled ? "" : styles["animated-nav-dark"]}
-                    title={media.type === "object" ? MOVE_DOWN_TITLE : undefined}
-                    onClick={() => {
-                      if (!reorderEnabled) return;
-                      moveInStack(isAltPressed ? "bottom" : "decrement");
-                    }}
+                    className={reordering ? "" : styles["animated-nav-dark"]}
+                    title={isLightOrObject ? MOVE_DOWN_TITLE[media.type] : undefined}
+                    onClick={() => moveInStack(isAltPressed ? "bottom" : "decrement")}
                   >
                     {isAltPressed ? "move to bottom" : "move down"}
                   </div>

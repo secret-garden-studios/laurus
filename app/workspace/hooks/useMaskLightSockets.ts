@@ -3,6 +3,7 @@ import {
   LightUpdateDelta_V1_0,
   MaskLightSocketMessage_V1_0,
   MaskLightUpdateRequest_V1_0,
+  normalizeLight,
   toMaskLightSocketUrl,
 } from "../workspace.server";
 
@@ -51,7 +52,10 @@ export function useMaskLightSockets(apiOrigin: string | undefined, accessToken: 
           return;
         }
         if (message.type === "light_update_complete") {
-          resolveNext(message.delta);
+          resolveNext({
+            ...message.delta,
+            light: message.delta.light ? normalizeLight(message.delta.light) : null,
+          });
         } else {
           console.log({ error: message.message });
           resolveNext(undefined);

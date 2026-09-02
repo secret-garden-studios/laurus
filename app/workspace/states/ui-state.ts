@@ -144,6 +144,7 @@ export interface ObjectReviewSession extends MaskEditSessionBase {
 export interface LightEditSession extends MaskEditSessionBase {
   subject: "light";
   light: LaurusLight;
+  lowpoly: boolean;
 }
 
 export type MaskEditSession = ObjectReviewSession | LightEditSession;
@@ -235,6 +236,7 @@ export interface UIState {
   stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
   maskEdit: MaskEditSession | undefined;
   gridlinesBright: boolean;
+  lightGridlines: { key: string; lightId: number; value: number } | undefined;
 }
 
 export const defaultUIState: UIState = {
@@ -274,6 +276,7 @@ export const defaultUIState: UIState = {
   },
   maskEdit: undefined,
   gridlinesBright: false,
+  lightGridlines: undefined,
 };
 
 export enum UIActionType {
@@ -292,6 +295,7 @@ export enum UIActionType {
   SetSelectedElement,
   SetLightFrameBackground,
   SetGridlinesBright,
+  SetLightGridlines,
   SetEffectClipboard,
   SetRecordingLight,
   AddCarouselEntry,
@@ -322,6 +326,7 @@ export enum UIActionType {
   ToggleMaskEditPolygon,
   SetMaskEditShape,
   SetMaskEditShapeEditing,
+  SetMaskEditLowpoly,
   SetMaskEditIndices,
   SetMaskEditRetouch,
   RequestMaskEditEnd,
@@ -353,6 +358,10 @@ export type UIAction =
     }
   | { type: UIActionType.SetLightFrameBackground; value: boolean }
   | { type: UIActionType.SetGridlinesBright; value: boolean }
+  | {
+      type: UIActionType.SetLightGridlines;
+      value: { key: string; lightId: number; value: number } | undefined;
+    }
   | { type: UIActionType.SetEffectClipboard; value: LaurusEffect }
   | { type: UIActionType.SetRecordingLight; value: boolean }
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
@@ -408,6 +417,7 @@ export type UIAction =
   | { type: UIActionType.SetMaskEditIndices; indices: Set<number> }
   | { type: UIActionType.SetMaskEditRetouch; retouch: ObjectRetouch | undefined }
   | { type: UIActionType.SetMaskEditShapeEditing; editing: boolean }
+  | { type: UIActionType.SetMaskEditLowpoly; lowpoly: boolean }
   | {
       type: UIActionType.RecordObjectReviewDecision;
       decision: "accepted" | "rejected";
@@ -552,10 +562,18 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, activeElement: action.value };
     }
     case UIActionType.SetSelectedElement: {
-      return { ...state, selectedElement: action.value };
+      const endsPreview = action.value?.type === "light" || action.value?.type === "object";
+      return {
+        ...state,
+        selectedElement: action.value,
+        lightSourcePreview: endsPreview ? false : state.lightSourcePreview,
+      };
     }
     case UIActionType.SetLightFrameBackground: {
       return { ...state, lightFrameBackground: action.value };
+    }
+    case UIActionType.SetLightGridlines: {
+      return { ...state, lightGridlines: action.value };
     }
     case UIActionType.SetGridlinesBright: {
       return { ...state, gridlinesBright: action.value };
@@ -693,6 +711,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
         maskMediaId: action.maskMediaId,
         maskKey: action.maskKey,
         light: action.light,
+        lowpoly: action.light.lowpoly,
         currentIndices: new Set(action.polygonIndices),
         editedShape: undefined,
         editingShape: true,
@@ -761,6 +780,11 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       const session = state.maskEdit;
       if (!session) return state;
       return { ...state, maskEdit: { ...session, editingShape: action.editing } };
+    }
+    case UIActionType.SetMaskEditLowpoly: {
+      const session = state.maskEdit;
+      if (session?.subject !== "light" || isMaskEditLocked(session)) return state;
+      return { ...state, maskEdit: { ...session, lowpoly: action.lowpoly } };
     }
     case UIActionType.RequestObjectReviewRedo: {
       const review = state.maskEdit;

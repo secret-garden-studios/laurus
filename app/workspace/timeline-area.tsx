@@ -252,7 +252,7 @@ export default function TimelineArea() {
           }}
         >
           {selectionPanelVisible ? (
-            <SelectionControlPanel />
+            <SelectionPanel />
           ) : (
             <ControlPanel onSwitchViews={() => setShowSelectionPanel(true)} />
           )}
@@ -1635,7 +1635,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
         <input
           ref={fpsInputRef}
           className={dellaRespira.className + " " + styles["numberInput"]}
-          id={`fps-input`}
+          id={`ControlPanel-fps-input`}
           type="text"
           autoComplete="off"
           disabled={uiState.playbackMode.type !== "stopped" ? true : false}
@@ -1802,10 +1802,10 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
   );
 }
 
-interface SelectionControlPanel {
+interface SelectionPanel {
   containerStyle?: CSSProperties;
 }
-function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
+function SelectionPanel({ containerStyle }: SelectionPanel) {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
   const { selectedEffectUnitKeys, setSelectedEffectUnitKeys } = useContext(HoverContext);
@@ -1934,7 +1934,7 @@ function SelectionControlPanel({ containerStyle }: SelectionControlPanel) {
       <div title={"effect selection count"} style={{ display: "flex", gap: dynamicSizes.selectedInputGap }}>
         <input
           className={dellaRespira.className + " " + styles["numberInput"]}
-          id={`fps-input`}
+          id={`SelectionPanel-fps-input`}
           type="text"
           disabled
           autoComplete="off"

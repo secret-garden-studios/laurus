@@ -8,21 +8,33 @@ import {
   antigravity200,
   arrowDropDown,
   arrowDropUp,
+  asterisk200,
   checkCircle,
   circle,
   closeIcon,
   SvgRepo,
+  type LaurusClientSvg,
 } from "../../svg-repo";
 import {
   deleteMediaGroup,
   LaurusImgResult,
+  LaurusLight,
   LaurusMaskResult,
   LaurusMediaGroupResult,
   LaurusObject,
   LaurusSvgResult,
+  maskLabel,
   updateMediaGroup,
 } from "../workspace.server";
-import { isBehindMask, MASK_PLANE_ROW, restackFromDrop, stackRows, type StackRow } from "../canvas-media/object-order";
+import {
+  isBehindMask,
+  MASK_PLANE_ROW,
+  maskStack,
+  restackFromDrop,
+  stackRows,
+  type StackRef,
+  type StackRow,
+} from "../canvas-media/mask-order";
 import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "./media-stack";
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
@@ -59,7 +71,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     notifyMaskSelectionChanged,
     notifyMaskSelectedLightChanged,
     notifyMaskSelectedObjectChanged,
-    restackMaskObjects,
+    restackMaskStack,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const guardSelection = useSelectionGuard();
@@ -173,7 +185,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 9,
           },
           removeOverlay: {
-            size: 16,
+            size: 14,
           },
         };
       case "midhigh":
@@ -221,7 +233,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 18,
+            size: 14,
           },
         };
       case "midlow":
@@ -270,7 +282,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 16,
+            size: 12,
           },
         };
     }
@@ -478,12 +490,24 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedObjectChanged, notifyMaskSelectedLightChanged],
   );
 
+  const onLightContextMenuClick = useCallback(
+    (maskKey: string, lightId: number) => {
+      uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "light", lightId } });
+      notifyMaskSelectionChanged(maskKey);
+      notifyMaskSelectedLightChanged(maskKey, lightId);
+      notifyMaskSelectedObjectChanged(maskKey, undefined);
+      uiDispatch({ type: UIActionType.SetProjectContextMenu, key: maskKey, showContextMenu: true });
+    },
+    [uiDispatch, notifyMaskSelectionChanged, notifyMaskSelectedLightChanged, notifyMaskSelectedObjectChanged],
+  );
+
   const expandedStacks = useMemo(() => {
     const stacks = new Map<string, StackRow[]>();
     groupItems.forEach((item) => {
       if (item.type !== "mask" || !expandedMaskKeys.has(item.key)) return;
-      if (item.mask.objects.length === 0) return;
-      stacks.set(item.key, stackRows(item.mask.objects));
+      const stack = maskStack(item.mask);
+      if (stack.length === 0) return;
+      stacks.set(item.key, stackRows(stack));
     });
     return stacks;
   }, [groupItems, expandedMaskKeys]);
@@ -512,28 +536,41 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const onObjectDrop = useCallback(
+  const [restackingMaskKey, setRestackingMaskKey] = useState<string | undefined>(undefined);
+  const restackingMaskRef = useRef<string | undefined>(undefined);
+  const holdRestack = useCallback((maskKey: string | undefined) => {
+    restackingMaskRef.current = maskKey;
+    setRestackingMaskKey(maskKey);
+  }, []);
+
+  const onStackDrop = useCallback(
     (activeId: string, overId: string): boolean => {
       for (const [maskKey, rows] of expandedStacks) {
         const ids = stackRowIds(maskKey, rows);
         const fromIndex = ids.indexOf(activeId);
         if (fromIndex === -1) continue;
+        if (restackingMaskRef.current !== undefined) return true;
         const toIndex = ids.indexOf(overId);
         if (toIndex === -1) return true;
         const mask = coreState.canvasMasks.get(maskKey);
-        if (mask) restackMaskObjects(maskKey, restackFromDrop(mask.objects, rows, fromIndex, toIndex));
+        if (mask) {
+          holdRestack(maskKey);
+          restackMaskStack(maskKey, restackFromDrop(maskStack(mask), rows, fromIndex, toIndex)).finally(() =>
+            holdRestack(undefined),
+          );
+        }
         return true;
       }
       return false;
     },
-    [expandedStacks, coreState.canvasMasks, restackMaskObjects],
+    [expandedStacks, coreState.canvasMasks, restackMaskStack, holdRestack],
   );
 
   const onGroupDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id || !coreState.project.project_id) return;
-      if (onObjectDrop(String(active.id), String(over.id))) return;
+      if (onStackDrop(String(active.id), String(over.id))) return;
       const oldIndex = groupItems.findIndex((item) => item.key === active.id);
       const newIndex = groupItems.findIndex((item) => item.key === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
@@ -575,7 +612,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         },
       );
     },
-    [groupItems, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, onObjectDrop],
+    [groupItems, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, onStackDrop],
   );
 
   useEffect(() => {
@@ -700,11 +737,17 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                   }}
                   expanded={expandedMaskKeys.has(item.key)}
                   onExpandClick={() => toggleMaskExpanded(item.key)}
-                  onObjectContextMenuClick={(objectId) => {
-                    if (!guardSelection({ type: "object", key: item.key, objectId })) return;
-                    onObjectContextMenuClick(item.key, objectId);
+                  onElementContextMenuClick={(ref) => {
+                    if (ref.kind === "object") {
+                      if (!guardSelection({ type: "object", key: item.key, objectId: ref.id })) return;
+                      onObjectContextMenuClick(item.key, ref.id);
+                      return;
+                    }
+                    if (!guardSelection({ type: "light", key: item.key, lightId: ref.id })) return;
+                    onLightContextMenuClick(item.key, ref.id);
                   }}
-                  objectRows={expandedStacks.get(item.key)}
+                  stack={expandedStacks.get(item.key)}
+                  restacking={restackingMaskKey === item.key}
                 />
               ))}
             </SortableContext>
@@ -782,8 +825,34 @@ function MaskGroupThumbnail({
   );
 }
 
-function objectRowId(maskKey: string, objectId: number): string {
-  return `${maskKey}::object::${objectId}`;
+interface StackedRowElement {
+  ref: StackRef;
+  name: string;
+  description: string;
+  order: number;
+}
+
+function refKey(ref: StackRef): string {
+  return `${ref.kind}:${ref.id}`;
+}
+
+function rowElements(mask: LaurusMaskResult): Map<string, StackedRowElement> {
+  const rows = new Map<string, StackedRowElement>();
+  const add = (ref: StackRef, element: LaurusObject | LaurusLight) => {
+    rows.set(refKey(ref), {
+      ref,
+      name: element.name ? element.name : `${ref.kind} ${ref.id}`,
+      description: element.description,
+      order: element.order,
+    });
+  };
+  mask.objects.forEach((object) => add({ kind: "object", id: object.id }, object));
+  mask.lights.forEach((light) => add({ kind: "light", id: light.id }, light));
+  return rows;
+}
+
+function elementRowId(maskKey: string, ref: StackRef): string {
+  return `${maskKey}::${refKey(ref)}`;
 }
 
 function planeRowId(maskKey: string): string {
@@ -791,18 +860,20 @@ function planeRowId(maskKey: string): string {
 }
 
 function stackRowIds(maskKey: string, rows: readonly StackRow[]): string[] {
-  return rows.map((row) => (row === MASK_PLANE_ROW ? planeRowId(maskKey) : objectRowId(maskKey, row)));
+  return rows.map((row) => (row === MASK_PLANE_ROW ? planeRowId(maskKey) : elementRowId(maskKey, row)));
 }
 
-function ObjectGroupThumbnail({
+function StackElementThumbnail({
   mask,
-  object,
+  label,
+  glyph,
   size,
   behind,
   onClick,
 }: {
   mask: LaurusMaskResult;
-  object: LaurusObject;
+  label: string;
+  glyph: (fill: string) => LaurusClientSvg;
   size: number;
   behind: boolean;
   onClick: () => void;
@@ -835,7 +906,7 @@ function ObjectGroupThumbnail({
         backgroundColor: "rgb(60, 60, 60)",
       }}
     >
-      <LaurusImage draggable={false} alt={object.name} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+      <LaurusImage draggable={false} alt={label} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
       <div
         style={{
           position: "absolute",
@@ -845,7 +916,7 @@ function ObjectGroupThumbnail({
         }}
       />
       <SvgRepo
-        svg={antigravity200(behind ? "rgba(255, 255, 255, 0.45)" : "rgb(255, 255, 255)")}
+        svg={glyph(behind ? "rgba(255, 255, 255, 0.45)" : "rgb(255, 255, 255)")}
         scale={1}
         scaleToContaier
         containerStyle={{
@@ -859,10 +930,10 @@ function ObjectGroupThumbnail({
   );
 }
 
-interface MaskObjectRow {
+interface MaskElementRow {
   maskKey: string;
   mask: LaurusMaskResult;
-  object: LaurusObject;
+  element: StackedRowElement;
   label: string;
   isEven: boolean;
   indexColumnStyle: { width: string; fontSize: number };
@@ -871,11 +942,12 @@ interface MaskObjectRow {
   filenameMargin: number;
   removeOverlaySize: number;
   onContextMenuClick: () => void;
+  restacking: boolean;
 }
-function MaskObjectRow({
+function MaskElementRow({
   maskKey,
   mask,
-  object,
+  element,
   label,
   isEven,
   indexColumnStyle,
@@ -884,12 +956,14 @@ function MaskObjectRow({
   filenameMargin,
   removeOverlaySize,
   onContextMenuClick,
-}: MaskObjectRow) {
+  restacking,
+}: MaskElementRow) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: objectRowId(maskKey, object.id),
+    id: elementRowId(maskKey, element.ref),
+    disabled: restacking,
   });
   const [isRowHovered, setIsRowHovered] = useState(false);
-  const behind = isBehindMask(object);
+  const behind = isBehindMask(element);
 
   return (
     <div
@@ -915,7 +989,7 @@ function MaskObjectRow({
           background: "rgba(22, 22, 22, 0.9)",
           display: "grid",
           placeContent: "center",
-          cursor: "grab",
+          cursor: restacking ? "progress" : "grab",
           touchAction: "none",
           width: indexColumnStyle.width,
           fontSize: indexColumnStyle.fontSize,
@@ -938,9 +1012,10 @@ function MaskObjectRow({
           className={styles["transparent-checkerboard-background"]}
           style={{ width: rowHeight - 10, height: rowHeight - 10 }}
         >
-          <ObjectGroupThumbnail
+          <StackElementThumbnail
             mask={mask}
-            object={object}
+            label={element.name}
+            glyph={element.ref.kind === "object" ? antigravity200 : asterisk200}
             size={rowHeight - 10}
             behind={behind}
             onClick={onContextMenuClick}
@@ -956,7 +1031,7 @@ function MaskObjectRow({
               ...filenameStyle,
             }}
           >
-            {object.description ? object.description : object.name ? object.name : `object ${object.id}`}
+            {element.description ? element.description : element.name}
           </div>
         </div>
         <div />
@@ -1037,8 +1112,9 @@ interface MediaGroupRow {
   onExpandClick: () => void;
   onRemoveFromGroupClick: () => void;
   onContextMenuClick: () => void;
-  onObjectContextMenuClick: (objectId: number) => void;
-  objectRows: StackRow[] | undefined;
+  onElementContextMenuClick: (ref: StackRef) => void;
+  stack: StackRow[] | undefined;
+  restacking: boolean;
 }
 function MediaGroupRow({
   item,
@@ -1050,12 +1126,13 @@ function MediaGroupRow({
   onExpandClick,
   onRemoveFromGroupClick,
   onContextMenuClick,
-  onObjectContextMenuClick,
-  objectRows,
+  onElementContextMenuClick,
+  stack,
+  restacking,
 }: MediaGroupRow) {
   const { uiState } = useContext(UIContext);
   const { coreState } = useContext(CoreContext);
-  const stackOpen = item.type === "mask" && objectRows !== undefined;
+  const stackOpen = item.type === "mask" && stack !== undefined;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.key,
     disabled: { draggable: stackOpen, droppable: false },
@@ -1107,17 +1184,8 @@ function MediaGroupRow({
   });
   const [isItemHovered, setIsItemHovered] = useState<boolean>(false);
   const [isRowHovered, setIsRowHovered] = useState<boolean>(false);
-  const maskSourceFilename = useCallback(
-    (mask: LaurusMaskResult) => {
-      let filename = mask.source_img_media_id;
-      if (!mask) return filename;
-      coreState.canvasImgs.forEach((i) => {
-        if (i.img_media_id == mask.source_img_media_id) {
-          filename = i.media_key;
-        }
-      });
-      return filename;
-    },
+  const maskName = useCallback(
+    (mask: LaurusMaskResult) => maskLabel(mask, coreState.canvasImgs, mask.source_img_media_id),
     [coreState.canvasImgs],
   );
 
@@ -1140,17 +1208,14 @@ function MediaGroupRow({
     return { isSquareish, displayWidth, displayHeight };
   }, [dynamicSizes.groupItem.height, item]);
 
-  const objectsById = useMemo(
-    () => new Map(item.type === "mask" ? item.mask.objects.map((object) => [object.id, object]) : []),
+  const elementsByRow = useMemo(
+    () => (item.type === "mask" ? rowElements(item.mask) : new Map<string, StackedRowElement>()),
     [item],
   );
-  const objectRowIds = useMemo(
-    () => (objectRows === undefined ? [] : stackRowIds(item.key, objectRows)),
-    [objectRows, item.key],
-  );
+  const stackRowIdList = useMemo(() => (stack === undefined ? [] : stackRowIds(item.key, stack)), [stack, item.key]);
 
-  const objectCount = item.type === "mask" ? item.mask.objects.length : 0;
-  const planeRowIndex = objectRows === undefined ? -1 : objectRows.indexOf(MASK_PLANE_ROW);
+  const stackCount = item.type === "mask" ? item.mask.objects.length + item.mask.lights.length : 0;
+  const planeRowIndex = stack === undefined ? -1 : stack.indexOf(MASK_PLANE_ROW);
 
   const rowContent = (() => {
     switch (item.type) {
@@ -1351,7 +1416,7 @@ function MediaGroupRow({
                   ...dynamicSizes.filename.filename,
                 }}
               >
-                {maskSourceFilename(item.mask)}
+                {maskName(item.mask)}
               </div>
             </div>
             <div />
@@ -1383,7 +1448,7 @@ function MediaGroupRow({
               />
               <SvgRepo
                 svg={
-                  objectCount === 0
+                  stackCount === 0
                     ? arrowDropDown("rgb(45, 45, 45)")
                     : expanded
                       ? arrowDropUp(isItemHovered ? "rgba(227,227,227,1)" : "rgb(110, 110, 110)")
@@ -1391,12 +1456,12 @@ function MediaGroupRow({
                 }
                 scale={1.1}
                 scaleToContaier={true}
-                onContainerClick={objectCount === 0 ? undefined : onExpandClick}
-                style={{ cursor: objectCount === 0 ? "default" : "pointer" }}
+                onContainerClick={stackCount === 0 ? undefined : onExpandClick}
+                style={{ cursor: stackCount === 0 ? "default" : "pointer" }}
                 containerStyle={{
-                  cursor: objectCount === 0 ? "default" : "pointer",
-                  width: removeOverlaySize,
-                  height: removeOverlaySize,
+                  cursor: stackCount === 0 ? "default" : "pointer",
+                  width: removeOverlaySize * 1.25,
+                  height: removeOverlaySize * 1.25,
                 }}
               />
             </div>
@@ -1449,9 +1514,9 @@ function MediaGroupRow({
           {rowContent}
         </div>
       )}
-      {stackOpen && item.type === "mask" && objectRows !== undefined && (
-        <SortableContext items={objectRowIds} strategy={verticalListSortingStrategy}>
-          {objectRows.map((row, i) => {
+      {stackOpen && item.type === "mask" && stack !== undefined && (
+        <SortableContext items={stackRowIdList} strategy={verticalListSortingStrategy}>
+          {stack.map((row, i) => {
             if (row === MASK_PLANE_ROW) {
               return (
                 <MaskPlaneRow
@@ -1465,14 +1530,14 @@ function MediaGroupRow({
                 </MaskPlaneRow>
               );
             }
-            const object = objectsById.get(row);
-            if (!object) return null;
+            const element = elementsByRow.get(refKey(row));
+            if (!element) return null;
             return (
-              <MaskObjectRow
-                key={objectRowId(item.key, row)}
+              <MaskElementRow
+                key={elementRowId(item.key, row)}
                 maskKey={item.key}
                 mask={item.mask}
-                object={object}
+                element={element}
                 label={`${index + 1}.${(i < planeRowIndex ? i : i - 1) + 1}`}
                 isEven={i % 2 === 0}
                 indexColumnStyle={indexColumnStyle}
@@ -1480,7 +1545,8 @@ function MediaGroupRow({
                 filenameStyle={dynamicSizes.filename.filename}
                 filenameMargin={dynamicSizes.filename.margin}
                 removeOverlaySize={removeOverlaySize}
-                onContextMenuClick={() => onObjectContextMenuClick(object.id)}
+                onContextMenuClick={() => onElementContextMenuClick(element.ref)}
+                restacking={restacking}
               />
             );
           })}

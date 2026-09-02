@@ -1,5 +1,6 @@
 import { authFetch, FORBIDDEN_ACTION, UNAUTHORIZED_EDIT } from "../landing.server";
-import { OBJECT_ORDER_UNRANKED } from "./canvas-media/object-order.ts";
+import { MASK_ORDER_UNRANKED } from "./canvas-media/mask-order.ts";
+import { LIGHT_CAST_DEFAULT, LIGHT_CAST_ENDLESS } from "./mask-constants.ts";
 
 const onNotOk = (status: number, message?: string) => {
   const suffix = message ? ` ${message}` : "";
@@ -297,13 +298,16 @@ export interface Light_V1_0 {
   name: string;
   size: number;
   intensity: number;
-  falloff: number;
-  darkness: number;
+  spread: number;
+  shadow: number;
   cx: number;
   cy: number;
   radius: number;
   shape: string;
   description: string;
+  order: number;
+  lowpoly: boolean;
+  cast: number;
 }
 export type LaurusLight = Light_V1_0;
 
@@ -378,6 +382,7 @@ export interface MaskMediaResult_V1_0 {
   width: number;
   height: number;
   order: number;
+  description: string;
   categories: string[];
   polygons: PolygonPath_V1_0[];
   curves: CurvePath_V1_0[];
@@ -413,7 +418,16 @@ type RawObject_V1_0 = Omit<
   lift?: boolean;
   order?: number;
 };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects"> & { objects?: RawObject_V1_0[] };
+type RawLight_V1_0 = Omit<Light_V1_0, "order" | "lowpoly" | "cast"> & {
+  order?: number;
+  lowpoly?: boolean;
+  cast?: number;
+};
+type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights" | "description"> & {
+  objects?: RawObject_V1_0[];
+  lights?: RawLight_V1_0[];
+  description?: string;
+};
 
 export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
   return {
@@ -430,14 +444,25 @@ export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
     description: object.description ?? "",
     reviewed: object.reviewed ?? false,
     lift: object.lift ?? true,
-    order: object.order ?? OBJECT_ORDER_UNRANKED,
+    order: object.order ?? MASK_ORDER_UNRANKED,
+  };
+}
+
+export function normalizeLight(light: RawLight_V1_0): Light_V1_0 {
+  return {
+    ...light,
+    order: light.order ?? MASK_ORDER_UNRANKED,
+    lowpoly: light.lowpoly ?? false,
+    cast: light.cast ?? LIGHT_CAST_ENDLESS,
   };
 }
 
 export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaResult_V1_0 {
   return {
     ...mask,
+    description: mask.description ?? "",
     objects: (mask.objects ?? []).map(normalizeObject),
+    lights: (mask.lights ?? []).map(normalizeLight),
   };
 }
 
@@ -528,6 +553,47 @@ export async function deleteMask(
     console.log({ error });
     return false;
   }
+}
+
+export async function updateMaskDescription(
+  baseUrl: string | undefined,
+  accessToken: string | undefined,
+  maskMediaId: string,
+  description: string,
+): Promise<MaskMediaResult_V1_0 | undefined> {
+  try {
+    const body = JSON.stringify({ description });
+    const url = `${baseUrl}/media/masks/${maskMediaId}/description`;
+    let response: Response | undefined = undefined;
+    const authResponse = await authFetch(baseUrl, accessToken, body, url, "PUT");
+    if (authResponse.newToken) {
+      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, body, url, "PUT");
+      response = authResponse2.response;
+    } else {
+      response = authResponse.response;
+    }
+    if (!response.ok) {
+      onNotOk(response.status, getOnNotOkMessage("updating", "mask", description));
+      return undefined;
+    }
+    const result: MaskMediaResult_V1_0 = await response.json();
+    return normalizeMaskResult(result);
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
+export function maskLabel(
+  mask: MaskMediaResult_V1_0,
+  canvasImgs: Map<string, ImgMediaResult_V1_0>,
+  fallback: string,
+): string {
+  if (mask.description) return mask.description;
+  for (const img of canvasImgs.values()) {
+    if (img.img_media_id === mask.source_img_media_id) return img.media_key;
+  }
+  return fallback;
 }
 
 export function nextLightId(lights: Light_V1_0[]): number {
@@ -674,13 +740,16 @@ export interface MaskLightUpdateRequest_V1_0 {
   polygon_indices: number[];
   size: number;
   intensity: number;
-  falloff: number;
-  darkness: number;
+  spread: number;
+  shadow: number;
   cx: number;
   cy: number;
   radius: number;
   shape: string;
   description: string;
+  order: number;
+  lowpoly: boolean;
+  cast: number;
   retouch?: RetouchedMesh_V1_0;
 }
 export interface MaskEditDelta_V1_0 {
@@ -708,13 +777,16 @@ export function newLight(id: number, name: string): Light_V1_0 {
     name,
     size: 0,
     intensity: 0,
-    falloff: 0,
-    darkness: 0,
+    spread: 0,
+    shadow: 0,
     cx: 0,
     cy: 0,
     radius: 0,
     shape: "",
     description: "",
+    order: MASK_ORDER_UNRANKED,
+    lowpoly: false,
+    cast: LIGHT_CAST_DEFAULT,
   };
 }
 
@@ -727,13 +799,16 @@ export function toLightUpdate(
     name: light.name,
     size: light.size,
     intensity: light.intensity,
-    falloff: light.falloff,
-    darkness: light.darkness,
+    spread: light.spread,
+    shadow: light.shadow,
     cx: light.cx,
     cy: light.cy,
     radius: light.radius,
     shape: light.shape,
     description: light.description,
+    order: light.order,
+    lowpoly: light.lowpoly,
+    cast: light.cast,
     ...changes,
   };
 }
@@ -786,7 +861,7 @@ export function newObject(id: number, name: string): Object_V1_0 {
     description: "",
     reviewed: false,
     lift: true,
-    order: OBJECT_ORDER_UNRANKED,
+    order: MASK_ORDER_UNRANKED,
   };
 }
 
@@ -1981,8 +2056,8 @@ export async function deleteSkew(
 
 export interface LightSourceSolution_V1_0 {
   light_intensity: number;
-  light_falloff: number;
-  light_darkness: number;
+  light_spread: number;
+  light_shadow: number;
   object_elevation: number;
   object_falloff: number;
   object_fill_r: number;
@@ -1994,8 +2069,8 @@ export interface LightSourceEquation_V1_0 {
   input_id: string;
   time: number;
   light_intensity: number;
-  light_falloff: number;
-  light_darkness: number;
+  light_spread: number;
+  light_shadow: number;
   object_elevation: number;
   object_falloff: number;
   object_fill_r: number;
@@ -2229,8 +2304,8 @@ interface Frame_V1_0 {
   ax: number;
   ay: number;
   light_intensity: number;
-  light_falloff: number;
-  light_darkness: number;
+  light_spread: number;
+  light_shadow: number;
   object_elevation: number;
   object_falloff: number;
   object_fill_r: number;
@@ -2269,8 +2344,8 @@ export async function getScaleFrames(
     ry: 0,
     rz: 0,
     light_intensity: 0,
-    light_falloff: 0,
-    light_darkness: 0,
+    light_spread: 0,
+    light_shadow: 0,
     ...NEUTRAL_SKEW_FRAME,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
@@ -2294,8 +2369,8 @@ export async function getMoveFrames(
     ry: 0,
     rz: 0,
     light_intensity: 0,
-    light_falloff: 0,
-    light_darkness: 0,
+    light_spread: 0,
+    light_shadow: 0,
     ...NEUTRAL_SKEW_FRAME,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
@@ -2320,8 +2395,8 @@ export async function getRotateFrames(
     sx: 1,
     sy: 1,
     light_intensity: 0,
-    light_falloff: 0,
-    light_darkness: 0,
+    light_spread: 0,
+    light_shadow: 0,
     ...NEUTRAL_SKEW_FRAME,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
@@ -2348,8 +2423,8 @@ export async function getSkewFrames(
     ry: 0,
     rz: 0,
     light_intensity: 0,
-    light_falloff: 0,
-    light_darkness: 0,
+    light_spread: 0,
+    light_shadow: 0,
     ...NEUTRAL_OBJECT_FRAME,
     input_id: inputId,
   }));

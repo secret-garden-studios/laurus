@@ -1,6 +1,6 @@
 import { useContext, useMemo, useRef, useState } from "react";
 import { useObjectReview } from "./hooks/useObjectReview";
-import { SvgRepo, checkCircle, chevronLeft, chevronRight, closeIcon, dragIndicator } from "../svg-repo";
+import { SvgRepo, asterisk200, checkCircle, chevronLeft, chevronRight, closeIcon, dragIndicator } from "../svg-repo";
 import { MAX_MASK_OBJECTS } from "./mask-gl";
 import { acceptedObjectCount, editedRegion, type EditableRegion, type MaskEditSession } from "./states/ui-state";
 import { buildObjectShapeFromRings, cachedObjectShape, flattenPathData } from "./canvas-media/object-shape";
@@ -9,6 +9,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { FLOATINGBAR_DND_ID } from "./bars/floatingbar";
 import { dellaRespira } from "../fonts";
 import { MaskContext, UIContext } from "./workspace.client";
+import Toggle from "../components/toggle";
 
 const DECISION_COLOR = {
   none: "rgb(67, 67, 67)",
@@ -373,9 +374,6 @@ export function EditPanel() {
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
-      case "midhigh":
-      case "midlow":
-      case "low":
         return {
           container: { gap: 12, width: 320 },
           header: { gap: 10 },
@@ -384,11 +382,53 @@ export function EditPanel() {
           message: { fontSize: 12, letterSpacing: 2 },
           textarea: { padding: "6px 8px", borderRadius: 4, fontSize: 13 },
           saveButton: { padding: "8px 0", borderRadius: 4, letterSpacing: 2, fontSize: 13 },
+          lowpoly: { fontSize: 12, letterSpacing: 1, gap: 6 },
+          toggle: {
+            track: { width: 26, height: 12, borderRadius: 10, padding: 1 },
+            button: { width: 8, height: 8 },
+            translateX: 14,
+          },
+          subjectIcon: { width: 18, height: 18 },
+        };
+      case "midhigh":
+      case "midlow":
+        return {
+          container: { gap: 12, width: 300 },
+          header: { gap: 10 },
+          dragHandle: { width: 16, height: 16 },
+          close: { width: 16, height: 16 },
+          message: { fontSize: 11, letterSpacing: 2 },
+          textarea: { padding: "6px 8px", borderRadius: 4, fontSize: 12 },
+          saveButton: { padding: "8px 0", borderRadius: 4, letterSpacing: 2, fontSize: 12 },
+          lowpoly: { fontSize: 11, letterSpacing: 1, gap: 6 },
+          toggle: {
+            track: { width: 26, height: 12, borderRadius: 10, padding: 1 },
+            button: { width: 8, height: 8 },
+            translateX: 14,
+          },
+          subjectIcon: { width: 16, height: 16 },
+        };
+      case "low":
+        return {
+          container: { gap: 12, width: 280 },
+          header: { gap: 10 },
+          dragHandle: { width: 14, height: 14 },
+          close: { width: 14, height: 14 },
+          message: { fontSize: 10, letterSpacing: 2 },
+          textarea: { padding: "6px 8px", borderRadius: 4, fontSize: 11 },
+          saveButton: { padding: "8px 0", borderRadius: 4, letterSpacing: 2, fontSize: 11 },
+          lowpoly: { fontSize: 10, letterSpacing: 1, gap: 6 },
+          toggle: {
+            track: { width: 26, height: 12, borderRadius: 10, padding: 1 },
+            button: { width: 8, height: 8 },
+            translateX: 14,
+          },
+          subjectIcon: { width: 14, height: 14 },
         };
     }
   });
 
-  const { session, isDeciding, isLocked, saveEditedObject, saveEditedLight, revertShape, endReview } =
+  const { session, isDeciding, isLocked, saveEditedObject, saveEditedLight, setLowpoly, revertShape, endReview } =
     useObjectReview();
 
   const edited = session?.editedShape?.path;
@@ -480,6 +520,40 @@ export function EditPanel() {
               : `click polygons to reform this ${session.subject}`}
         </div>
       </div>
+      {session.subject === "light" ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            ...dynamicSizes.lowpoly,
+          }}
+        >
+          <SvgRepo svg={asterisk200()} scale={1} containerStyle={{ ...dynamicSizes.subjectIcon }} />
+          <span
+            title={
+              session.lowpoly
+                ? "this light is read once per polygon, so its highlight and falloff step from triangle to triangle -- turn off to read it per pixel from its shape alone"
+                : "this light is read per pixel from its shape alone, so it ignores the mesh underneath it -- turn on to go back to reading it once per polygon"
+            }
+            style={{
+              textShadow: session.lowpoly ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              userSelect: "none",
+              textWrap: "nowrap",
+            }}
+          >
+            {"low-poly"}
+          </span>
+          <Toggle
+            value={session.lowpoly}
+            disabled={isLocked}
+            onClick={() => setLowpoly(!session.lowpoly)}
+            trackStyles={{ ...dynamicSizes.toggle.track }}
+            buttonStyles={{ ...dynamicSizes.toggle.button }}
+            translateX={dynamicSizes.toggle.translateX}
+          />
+        </div>
+      ) : null}
       <RetouchRevert session={session} region={region} isLocked={isLocked} revertShape={revertShape} />
       <textarea
         rows={3}

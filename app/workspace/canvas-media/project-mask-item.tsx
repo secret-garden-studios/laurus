@@ -25,6 +25,7 @@ import {
   HIGHLIGHT_SIBLING_COLOR,
   highlightObjectReviewAddedColor,
   highlightShapeEditColor,
+  LIGHT_CAST_ENDLESS,
   MaskLightSource,
   ObjectGeometryInput,
   ObjectRotation,
@@ -69,7 +70,7 @@ import {
 import { applyLightDelta } from "./mask-delta";
 import { OBJECT_SDF_DRAFT_TILE, OBJECT_SDF_TILE, cachedObjectShape } from "./object-shape";
 import { shapeOutline } from "./object-clip";
-import { frontObjectOrder, isBehindMask } from "./object-order";
+import { frontElementOrder, isBehindMask, MASK_ORDER_UNRANKED, maskStack } from "./mask-order";
 import { retouchMesh } from "./object-retouch";
 import { unitCirclePath } from "./object-path";
 import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
@@ -212,7 +213,7 @@ export interface MaskImperativeHandle {
 
 export interface MaskAppearanceOverride {
   textureMix?: number;
-  light?: { size: number; intensity: number; falloff: number; darkness: number };
+  light?: { size: number; intensity: number; spread: number; shadow: number; cast: number };
 }
 
 interface ProjectMaskItem {
@@ -271,8 +272,9 @@ export function ProjectMaskItem({
   const textureMixRef = useRef(TEXTURE_MIX_DEFAULT);
   const lightSizeRef = useRef(DEFAULT_LIGHT_VALUE.size);
   const lightIntensityRef = useRef(DEFAULT_LIGHT_VALUE.intensity);
-  const lightFalloffRef = useRef(DEFAULT_LIGHT_VALUE.falloff);
-  const lightDarknessRef = useRef(DEFAULT_LIGHT_VALUE.darkness);
+  const lightSpreadRef = useRef(DEFAULT_LIGHT_VALUE.spread);
+  const lightShadowRef = useRef(DEFAULT_LIGHT_VALUE.shadow);
+  const lightCastRef = useRef(DEFAULT_LIGHT_VALUE.cast);
   const glowColorRef = useRef<[number, number, number]>([1, 1, 1]);
   const vertexCountRef = useRef(0);
   const vertexRangesRef = useRef<[number, number][]>([]);
@@ -280,11 +282,12 @@ export function ProjectMaskItem({
   const backingGreyRef = useRef(0);
   const rafRef = useRef<number | undefined>(undefined);
   const lastCurveCountRef = useRef(0);
-  const lightSourceRef = useRef<{ x: number; y: number; radius: number; falloff: number }>({
+  const lightSourceRef = useRef<{ x: number; y: number; radius: number; spread: number; order: number }>({
     x: 0,
     y: 0,
     radius: 0,
-    falloff: 0,
+    spread: 0,
+    order: MASK_ORDER_UNRANKED,
   });
   const wiredMoveRef = useRef(false);
   const playbackLightSourcesRef = useRef<Map<number, MaskLightSource>>(new Map());
@@ -443,7 +446,7 @@ export function ProjectMaskItem({
         radius: pending.radius,
         elevation: pending.elevation,
         falloff: pending.falloff,
-        order: frontObjectOrder(objectsRef.current),
+        order: frontElementOrder([...objectsRef.current, ...lightsMetaRef.current.values()]),
         shape: pendingShape,
         fill: pending.fill,
       };
@@ -486,6 +489,23 @@ export function ProjectMaskItem({
     [source, resolveTargetLightId, resolveLightSilhouette],
   );
 
+  const lightGridlinesMix = useCallback(
+    (lightId: number): number => {
+      const gridlines = latestRef.current.uiState.lightGridlines;
+      return gridlines && gridlines.key === mediaKey && gridlines.lightId === lightId ? gridlines.value : 0;
+    },
+    [mediaKey],
+  );
+
+  const lightLowpoly = useCallback(
+    (lightId: number, stored: boolean): boolean => {
+      const edit = latestRef.current.uiState.maskEdit;
+      if (edit?.subject !== "light" || edit.maskKey !== mediaKey || edit.light.id !== lightId) return stored;
+      return edit.lowpoly;
+    },
+    [mediaKey],
+  );
+
   const resolveRestingLightSources = useCallback((): MaskLightSource[] => {
     const canvas = canvasRef.current;
     if (!canvas) return [];
@@ -497,7 +517,15 @@ export function ProjectMaskItem({
       if (!meta) return;
 
       const shaped = resolveLightSilhouette(lightId);
-      const appearance = { falloff: meta.falloff, intensity: meta.intensity, darkness: meta.darkness };
+      const appearance = {
+        spread: meta.spread,
+        intensity: meta.intensity,
+        shadow: meta.shadow,
+        cast: meta.cast,
+        order: meta.order,
+        gridlines: lightGridlinesMix(lightId),
+        lowpoly: lightLowpoly(lightId, meta.lowpoly),
+      };
 
       if (shaped) {
         lights.push({
@@ -521,7 +549,7 @@ export function ProjectMaskItem({
       });
     });
     return lights;
-  }, [resolveLightSilhouette]);
+  }, [resolveLightSilhouette, lightGridlinesMix, lightLowpoly]);
 
   const dragDisabled = useMemo(() => {
     return source.kind === "live" || uiState.tool.type != "move";
@@ -746,12 +774,17 @@ export function ProjectMaskItem({
 
     const lightSources: MaskLightSource[] = [
       ...(wiredMoveRef.current
-        ? Array.from(playbackLightSourcesRef.current.values())
+        ? Array.from(playbackLightSourcesRef.current.entries()).map(([lightId, light]) => ({
+            ...light,
+            gridlines: lightGridlinesMix(lightId),
+            lowpoly: lightLowpoly(lightId, light.lowpoly ?? false),
+          }))
         : [
             {
               ...lightSourceRef.current,
               intensity: lightIntensityRef.current,
-              darkness: lightDarknessRef.current,
+              shadow: lightShadowRef.current,
+              cast: lightCastRef.current,
             },
           ]),
       ...resolveRestingLightSources(),
@@ -768,7 +801,7 @@ export function ProjectMaskItem({
       backingVertexCount: backingVertexCountRef.current,
       backingGrey: backingGreyRef.current,
     });
-  }, [resolveObjectUniforms, resolveRestingLightSources]);
+  }, [resolveObjectUniforms, resolveRestingLightSources, lightGridlinesMix, lightLowpoly]);
   renderRef.current = render;
 
   const recolorHighlight = useCallback(() => {
@@ -928,13 +961,28 @@ export function ProjectMaskItem({
     render();
   }, [render]);
 
+  const recolorFrameRef = useRef<number | undefined>(undefined);
+  const scheduleRecolorHighlight = useCallback(() => {
+    if (recolorFrameRef.current !== undefined) return;
+    recolorFrameRef.current = requestAnimationFrame(() => {
+      recolorFrameRef.current = undefined;
+      recolorHighlight();
+    });
+  }, [recolorHighlight]);
+  const cancelScheduledRecolorHighlight = useCallback(() => {
+    if (recolorFrameRef.current === undefined) return;
+    cancelAnimationFrame(recolorFrameRef.current);
+    recolorFrameRef.current = undefined;
+  }, []);
+
   const applyDefaultLightValue = useCallback(() => {
     if (source.kind !== "static") return;
     const maskMeta = coreState.project.masks.get(mediaKey);
     lightSizeRef.current = maskMeta?.light_preview_size ?? DEFAULT_LIGHT_VALUE.size;
     lightIntensityRef.current = maskMeta?.light_preview_intensity ?? DEFAULT_LIGHT_VALUE.intensity;
-    lightFalloffRef.current = maskMeta?.light_preview_falloff ?? DEFAULT_LIGHT_VALUE.falloff;
-    lightDarknessRef.current = maskMeta?.light_preview_darkness ?? DEFAULT_LIGHT_VALUE.darkness;
+    lightSpreadRef.current = maskMeta?.light_preview_spread ?? DEFAULT_LIGHT_VALUE.spread;
+    lightShadowRef.current = maskMeta?.light_preview_shadow ?? DEFAULT_LIGHT_VALUE.shadow;
+    lightCastRef.current = maskMeta?.light_preview_cast ?? LIGHT_CAST_ENDLESS;
   }, [source, coreState.project.masks, mediaKey]);
 
   const stopLightSourceAnimation = useCallback(() => {
@@ -949,7 +997,7 @@ export function ProjectMaskItem({
     playbackObjectsRef.current = new Map();
     const wasAnimating = playingObjectIdsRef.current.size > 0;
     playingObjectIdsRef.current = new Set();
-    lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+    lightSourceRef.current = { x: 0, y: 0, radius: 0, spread: 0, order: MASK_ORDER_UNRANKED };
     applyDefaultLightValue();
     render();
     if (wasAnimating) recolorHighlight();
@@ -1298,19 +1346,22 @@ export function ProjectMaskItem({
                   const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
                   const size = lightMeta?.size ?? lightSizeRef.current;
                   const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
-                  const falloff = lightPoint?.light_falloff ?? lightMeta?.falloff ?? lightFalloffRef.current;
-                  const darkness = lightPoint?.light_darkness ?? lightMeta?.darkness ?? lightDarknessRef.current;
+                  const spread = lightPoint?.light_spread ?? lightMeta?.spread ?? lightSpreadRef.current;
+                  const shadow = lightPoint?.light_shadow ?? lightMeta?.shadow ?? lightShadowRef.current;
                   const scaleMultiplier = scalePoint?.sx ?? 1;
 
                   const shapedMeta = resolveLightSilhouette(t.lightId);
                   playbackLightSourcesRef.current.set(t.lightId, {
+                    order: lightMeta?.order ?? MASK_ORDER_UNRANKED,
+                    lowpoly: lightMeta?.lowpoly ?? false,
                     x: bufferX,
                     y: canvas.height - bufferY,
                     radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
                     shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
-                    falloff,
+                    spread,
                     intensity,
-                    darkness,
+                    shadow,
+                    cast: lightMeta?.cast ?? lightCastRef.current,
                     transform: skewPoint
                       ? objectTransform(undefined, { ax: skewPoint.ax, ay: skewPoint.ay })
                       : undefined,
@@ -1443,8 +1494,7 @@ export function ProjectMaskItem({
   useEffect(() => {
     const next = maskEditSubjectFor(uiState.maskEdit, mediaKey);
     const previous = maskEditSubjectRef.current;
-    const editingShapeNext =
-      uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.subject === "object" && uiState.maskEdit.editingShape;
+    const editingShapeNext = uiState.maskEdit?.maskKey === mediaKey && uiState.maskEdit.editingShape;
     if (
       next?.subject === previous?.subject &&
       next?.id === previous?.id &&
@@ -1460,6 +1510,15 @@ export function ProjectMaskItem({
   useEffect(() => {
     recolorHighlight();
   }, [uiState.gridlinesBright, recolorHighlight]);
+
+  useEffect(() => {
+    render();
+  }, [uiState.lightGridlines, render]);
+
+  const editedLightLowpoly = uiState.maskEdit?.subject === "light" ? uiState.maskEdit.lowpoly : undefined;
+  useEffect(() => {
+    render();
+  }, [editedLightLowpoly, render]);
 
   const pickHover = source.kind === "static" && isHovered && isAwaitingRegionPick(uiState);
   useEffect(() => {
@@ -1557,7 +1616,7 @@ export function ProjectMaskItem({
           });
         }
 
-        lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+        lightSourceRef.current = { x: 0, y: 0, radius: 0, spread: 0, order: MASK_ORDER_UNRANKED };
         const pendingLight = coreState.pendingLight?.maskKey === mediaKey ? coreState.pendingLight : undefined;
         pendingLightRef.current = pendingLight ? new Set(pendingLight.polygonIndices) : undefined;
         pendingLightIdRef.current = pendingLight?.lightId;
@@ -1594,8 +1653,9 @@ export function ProjectMaskItem({
           if (override?.light) {
             lightSizeRef.current = override.light.size;
             lightIntensityRef.current = override.light.intensity;
-            lightFalloffRef.current = override.light.falloff;
-            lightDarknessRef.current = override.light.darkness;
+            lightSpreadRef.current = override.light.spread;
+            lightShadowRef.current = override.light.shadow;
+            lightCastRef.current = override.light.cast;
           } else {
             latest.applyDefaultLightValue();
           }
@@ -1659,9 +1719,10 @@ export function ProjectMaskItem({
           retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
-            recolorHighlight();
+            scheduleRecolorHighlight();
           },
           clearPendingTopology: () => {
+            cancelScheduledRecolorHighlight();
             pendingTopologyRef.current = undefined;
             pendingLightShapeRef.current = undefined;
             recolorHighlight();
@@ -1702,7 +1763,7 @@ export function ProjectMaskItem({
           applyMaskAppearanceDefaults,
           onLightSourcePreviewToggled: (enabled) => {
             if (enabled || wiredMoveRef.current) return;
-            lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+            lightSourceRef.current = { x: 0, y: 0, radius: 0, spread: 0, order: MASK_ORDER_UNRANKED };
             render();
           },
         };
@@ -1812,8 +1873,9 @@ export function ProjectMaskItem({
         textureMixRef.current = mask.textureMixRef.current;
         lightSizeRef.current = mask.lightSizeRef.current;
         lightIntensityRef.current = mask.lightIntensityRef.current;
-        lightFalloffRef.current = mask.lightFalloffRef.current;
-        lightDarknessRef.current = mask.lightDarknessRef.current;
+        lightSpreadRef.current = mask.lightSpreadRef.current;
+        lightShadowRef.current = mask.lightShadowRef.current;
+        lightCastRef.current = mask.lightCastRef.current;
 
         render();
         rafRef.current = requestAnimationFrame(loop);
@@ -1944,7 +2006,6 @@ export function ProjectMaskItem({
               const select = (selected: LaurusSelectedElement) => {
                 uiDispatch({ type: UIActionType.SetSelectedElement, value: selected });
                 if ((selected.type === "light" || selected.type === "object") && uiState.lightSourcePreview) {
-                  uiDispatch({ type: UIActionType.SetLightSourcePreview, value: false });
                   notifyMaskLightSourcePreviewToggled(false);
                 }
                 notifyMaskSelectionChanged(mediaKey);
@@ -2182,6 +2243,7 @@ export function ProjectMaskItem({
                 toLightUpdate(existingLight ?? newLight(lightId, lightName), {
                   name: lightName,
                   polygon_indices: [...finalIndices],
+                  ...(existingLight ? {} : { order: frontElementOrder(maskStack(source.maskData)) }),
                   ...(existingLight && existingLight.radius > 0
                     ? { cx: drag.originalRegion.cx + dx, cy: drag.originalRegion.cy + dy }
                     : {}),
@@ -2239,14 +2301,15 @@ export function ProjectMaskItem({
                 x: bufferX,
                 y: canvas.height - bufferY,
                 radius: (lightSizeRef.current / 2) * bufferScaleX,
-                falloff: lightFalloffRef.current * bufferScaleX,
+                spread: lightSpreadRef.current * bufferScaleX,
+                order: MASK_ORDER_UNRANKED,
               };
               render();
             }}
             onMouseLeave={() => {
               setIsHovered(false);
               if (wiredMoveRef.current) return;
-              lightSourceRef.current = { x: 0, y: 0, radius: 0, falloff: 0 };
+              lightSourceRef.current = { x: 0, y: 0, radius: 0, spread: 0, order: MASK_ORDER_UNRANKED };
               render();
             }}
             style={{

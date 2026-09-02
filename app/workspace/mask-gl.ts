@@ -1,499 +1,24 @@
 import type { MaskCurve_V1_0, ObjectFill_V1_0 } from "./workspace.server";
-import { isBehindMask } from "./canvas-media/object-order.ts";
+import { isBehindMask, MASK_ORDER_EPSILON, occludes } from "./canvas-media/mask-order.ts";
 import { toCssSkewAngle } from "./skew-angle.ts";
+import { OBJECT_SDF_TILE, objectShapeProfileU, type ObjectShape } from "./canvas-media/object-shape.ts";
 import {
-  OBJECT_SDF_MARGIN,
-  OBJECT_SDF_TILE,
-  objectShapeProfileU,
-  type ObjectShape,
-} from "./canvas-media/object-shape.ts";
-
-export const LIGHT_SIZE_CSS_PX_DEFAULT = 150;
-export const LIGHT_INTENSITY_DEFAULT = 0.05;
-export const LIGHT_FALLOFF_CSS_PX_DEFAULT = 350;
-export const LIGHT_DARKNESS_DEFAULT = 0.2;
-export const LIGHT_FALLOFF_TO_SIZE_RATIO = LIGHT_FALLOFF_CSS_PX_DEFAULT / LIGHT_SIZE_CSS_PX_DEFAULT;
-export const TEXTURE_MIX_DEFAULT = 1.0;
-export const MAX_MASK_LIGHT_SOURCES = 8;
-export const MAX_MASK_OBJECTS = 16;
-export const OBJECT_ELEVATION_DEFAULT = 0;
-export const MAX_MASK_OBJECT_ELEVATION = 300;
-export const MIN_MASK_OBJECT_FALLOFF = 1.0;
-export const MAX_MASK_OBJECT_FALLOFF = 6.0;
-export const NEUTRAL_MASK_OBJECT_FALLOFF = 2.0;
-export const MIN_MASK_OBJECT_RADIUS_PX = 8;
-export const MASK_OBJECT_COLLISION_BUFFER_PX = 1;
-export const MASK_OBJECT_SWELL = 0.5;
-export const MASK_OBJECT_SWELL_LIMIT = 0.9;
-export const OBJECT_SDF_GRID = 4;
-export const OBJECT_SDF_ATLAS = OBJECT_SDF_GRID * OBJECT_SDF_TILE;
-export const LIGHT_SDF_GRID = 3;
-export const LIGHT_SDF_ATLAS = LIGHT_SDF_GRID * OBJECT_SDF_TILE;
-export const OBJECT_SDF_RANGE = OBJECT_SDF_MARGIN * Math.SQRT2;
-export const OBJECT_GRADIENT_LIMIT = 32.0;
-export const MASK_BUMP_STRENGTH = 0.85;
-export const MASK_LIGHT_HEIGHT_SCALE = 1.0;
-export const OBJECT_SUBDIVISION_TOLERANCE_PX = 0.75;
-export const MASK_STROKE_WIDTH_PX = 1.0;
-export const MASK_HIGHLIGHT_STROKE_WIDTH_PX = 3.0;
-export const MASK_STROKE_COLOR: [number, number, number, number] = [1.0, 1.0, 1.0, 0.2];
-export const HIGHLIGHT_SELECTED_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 1.0];
-export const HIGHLIGHT_SIBLING_COLOR: [number, number, number, number] = [0.258824, 0.521569, 0.956863, 0.35];
-export const HIGHLIGHT_MOVING_COLOR: [number, number, number, number] = [1, 1, 1, 0.15];
-export const GRIDLINES_DIM_ALPHA = 0.5;
-export const GRIDLINES_BRIGHT_ALPHA = 1;
-export const MASK_BACKING_VERTEX_COUNT = 6;
-export const MASK_BACKING_GREY_LEVEL = 0.55;
-
-export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
-  return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
-}
-export function highlightObjectReviewAddedColor(bright: boolean): [number, number, number, number] {
-  return [0.984314, 0.65098, 0.152941, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
-}
-
-function glFloat(n: number): string {
-  return n.toFixed(6);
-}
-
-export interface Shader {
-  vertex: string;
-  fragment: string;
-}
-
-const OBJECT_FIELD_GLSL = `
-#define MAX_MASK_OBJECTS ${MAX_MASK_OBJECTS}
-#define MASK_OBJECT_SWELL ${glFloat(MASK_OBJECT_SWELL)}
-#define MASK_OBJECT_SWELL_LIMIT ${glFloat(MASK_OBJECT_SWELL_LIMIT)}
-#define OBJECT_SDF_TILE ${glFloat(OBJECT_SDF_TILE)}
-#define OBJECT_SDF_GRID ${glFloat(OBJECT_SDF_GRID)}
-#define OBJECT_SDF_ATLAS ${glFloat(OBJECT_SDF_ATLAS)}
-#define OBJECT_SDF_MARGIN ${glFloat(OBJECT_SDF_MARGIN)}
-#define OBJECT_SDF_RANGE ${glFloat(OBJECT_SDF_RANGE)}
-#define OBJECT_GRADIENT_LIMIT ${glFloat(OBJECT_GRADIENT_LIMIT)}
-#define OBJECT_FIELD_PI 3.141592653589793
-
-uniform mediump vec4 u_objects[MAX_MASK_OBJECTS];
-uniform mediump float u_objectFalloffs[MAX_MASK_OBJECTS];
-uniform mediump int u_objectCount;
-
-uniform mediump float u_objectOrders[MAX_MASK_OBJECTS];
-#define OBJECT_ORDER_EPSILON 0.5
-
-bool objectBehindMask(float order) {
-  return order < 0.0;
-}
-
-bool objectOutranks(float order, float bestOrder, float u, float nearest) {
-  if (order > bestOrder + OBJECT_ORDER_EPSILON) return true;
-  if (order < bestOrder - OBJECT_ORDER_EPSILON) return false;
-  return u < nearest;
-}
-
-uniform mediump vec4 u_objectRotations[MAX_MASK_OBJECTS];
-#define OBJECT_ROTATION_NONE vec4(1.0, 0.0, 0.0, 1.0)
-
-uniform mediump sampler2D u_objectShapes;
-uniform mediump float u_objectShapeRows[MAX_MASK_OBJECTS];
-uniform mediump float u_objectShapeMaxDepth[MAX_MASK_OBJECTS];
-
-float decodeObjectShape16(vec2 bytes) {
-  return bytes.x + bytes.y * (1.0 / 255.0);
-}
-
-vec3 objectShapeTexel(float row, vec2 texel) {
-  float col = mod(row, OBJECT_SDF_GRID);
-  float band = floor(row / OBJECT_SDF_GRID);
-  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
-  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / OBJECT_SDF_ATLAS;
-  vec4 stored = texture2D(u_objectShapes, uv);
-  return vec3(
-    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
-    stored.ba * 2.0 - 1.0);
-}
-
-vec3 objectDepthAt(float row, vec2 n) {
-  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
-  vec2 base = floor(local);
-  vec2 f = local - base;
-  vec3 top = mix(objectShapeTexel(row, base), objectShapeTexel(row, base + vec2(1.0, 0.0)), f.x);
-  vec3 bottom = mix(
-    objectShapeTexel(row, base + vec2(0.0, 1.0)),
-    objectShapeTexel(row, base + vec2(1.0, 1.0)),
-    f.x);
-  vec3 sampled = mix(top, bottom, f.y);
-  float reach = length(sampled.yz);
-  return vec3(sampled.x, reach > 1e-4 ? sampled.yz / reach : vec2(0.0));
-}
-
-vec2 objectToShape(vec4 rotation, vec2 v) {
-  return vec2(rotation.x * v.x + rotation.y * v.y, rotation.z * v.x + rotation.w * v.y);
-}
-
-vec2 objectToMesh(vec4 rotation, vec2 v) {
-  return vec2(rotation.x * v.x + rotation.z * v.y, rotation.y * v.x + rotation.w * v.y);
-}
-
-vec3 objectU(float row, float maxDepth, vec2 toPoint, float radius, vec4 rotation) {
-  vec2 n = objectToShape(rotation, toPoint / radius);
-  if (row < 0.0) {
-    float dist = length(n);
-    vec2 gradient = dist > 1e-4 ? objectToMesh(rotation, n / dist) : vec2(0.0);
-    return vec3(dist, gradient / radius);
-  }
-  vec3 depth = objectDepthAt(row, n);
-  return vec3(1.0 - depth.x / maxDepth, objectToMesh(rotation, -depth.yz / maxDepth) / radius);
-}
-
-vec2 objectProfile(float u, float falloff) {
-  float s = max(1.0 - u * u, 0.0);
-  float sSafe = max(s, 1e-4);
-  float k = pow(sSafe, falloff);
-  float dk = -2.0 * falloff * u * pow(sSafe, falloff - 1.0);
-  return vec2(k, dk);
-}
-
-vec3 objectField(vec2 p) {
-  vec3 field = vec3(0.0);
-  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
-    if (i >= u_objectCount) break;
-    if (objectBehindMask(u_objectOrders[i])) continue;
-    vec2 toPoint = p - u_objects[i].xy;
-    float elevation = u_objects[i].w;
-    vec3 profileU = objectU(
-      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]);
-    float u = profileU.x;
-    if (u >= 1.0) continue;
-    vec2 profile = objectProfile(u, u_objectFalloffs[i]);
-    field.z += elevation * profile.x;
-    vec2 gradU = clamp(profileU.yz, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
-    field.xy = clamp(
-      field.xy + (elevation * profile.y) * gradU, -OBJECT_GRADIENT_LIMIT, OBJECT_GRADIENT_LIMIT);
-  }
-  return field;
-}
-
-vec2 objectSwell(vec2 p) {
-  vec2 swell = vec2(0.0);
-  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
-    if (i >= u_objectCount) break;
-    if (objectBehindMask(u_objectOrders[i])) continue;
-    vec2 toPoint = p - u_objects[i].xy;
-    float radius = u_objects[i].z;
-    float u = objectU(
-      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, radius, u_objectRotations[i]).x;
-    if (u >= 1.0) continue;
-    float height = u_objects[i].w * objectProfile(u, u_objectFalloffs[i]).x;
-    float coefficient = clamp(
-      MASK_OBJECT_SWELL * height / radius, -MASK_OBJECT_SWELL_LIMIT, MASK_OBJECT_SWELL_LIMIT);
-    swell += coefficient * toPoint;
-  }
-  return swell;
-}
-`;
-
-const LIGHT_FIELD_GLSL = `
-#define MAX_LIGHT_SOURCES ${MAX_MASK_LIGHT_SOURCES}
-#define LIGHT_SDF_GRID ${glFloat(LIGHT_SDF_GRID)}
-#define LIGHT_SDF_ATLAS ${glFloat(LIGHT_SDF_ATLAS)}
-
-uniform mediump sampler2D u_lightShapes;
-uniform mediump float u_lightShapeRows[MAX_LIGHT_SOURCES];
-uniform mediump float u_lightShapeMaxDepth[MAX_LIGHT_SOURCES];
-
-vec3 lightShapeTexel(float row, vec2 texel) {
-  float col = mod(row, LIGHT_SDF_GRID);
-  float band = floor(row / LIGHT_SDF_GRID);
-  vec2 held = clamp(texel, vec2(0.0), vec2(OBJECT_SDF_TILE - 1.0));
-  vec2 uv = (vec2(col, band) * OBJECT_SDF_TILE + held + 0.5) / LIGHT_SDF_ATLAS;
-  vec4 stored = texture2D(u_lightShapes, uv);
-  return vec3(
-    (decodeObjectShape16(stored.rg) - 0.5) * 2.0 * OBJECT_SDF_RANGE,
-    stored.ba * 2.0 - 1.0);
-}
-
-float lightDepthAt(float row, vec2 n) {
-  vec2 local = (n + OBJECT_SDF_MARGIN) / (2.0 * OBJECT_SDF_MARGIN) * OBJECT_SDF_TILE - 0.5;
-  vec2 base = floor(local);
-  vec2 f = local - base;
-  float top = mix(lightShapeTexel(row, base).x, lightShapeTexel(row, base + vec2(1.0, 0.0)).x, f.x);
-  float bottom = mix(
-    lightShapeTexel(row, base + vec2(0.0, 1.0)).x,
-    lightShapeTexel(row, base + vec2(1.0, 1.0)).x,
-    f.x);
-  return mix(top, bottom, f.y);
-}
-
-vec2 lightProfile(float row, float maxDepth, vec2 toPoint, float radius) {
-  float dist = length(toPoint);
-  if (row < 0.0) return vec2(dist / radius, max(dist - radius, 0.0));
-
-  vec2 n = toPoint / radius;
-  float reach = length(n);
-  float overshoot = max(reach - OBJECT_SDF_MARGIN, 0.0);
-  vec2 sampled = n * min(1.0, OBJECT_SDF_MARGIN / max(reach, 1e-6));
-  float depth = lightDepthAt(row, sampled) - overshoot;
-
-  return vec2(1.0 - depth / maxDepth, max(-depth * radius, 0.0));
-}
-`;
-
-const OBJECT_LIFT_GLSL = `
-uniform mediump vec4 u_objectLifts[MAX_MASK_OBJECTS];
-
-struct ObjectLift {
-  vec2 uv;
-  float body;
-  vec2 underUv;
-  float under;
-  float hole;
-};
-
-float objectCoverage(float u, float radius) {
-  float width = 1.0 / max(radius, 1.0);
-  return 1.0 - smoothstep(1.0 - width, 1.0, u);
-}
-
-ObjectLift objectLift(vec2 meshPos) {
-  vec2 own = gl_FragCoord.xy / u_resolution;
-  ObjectLift lift = ObjectLift(own, 0.0, own, 0.0, 0.0);
-  float nearest = 1.0;
-  float bestOrder = -1e9;
-  float underNearest = 1.0;
-  float underBestOrder = -1e9;
-  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
-    if (i >= u_objectCount) break;
-    if (u_objectLifts[i].w < 0.5) continue;
-
-    vec2 center = u_objects[i].xy;
-    float radius = u_objects[i].z;
-    vec2 restCenter = u_objectLifts[i].xy;
-    float restRadius = max(u_objectLifts[i].z, 1.0);
-    float row = u_objectShapeRows[i];
-    float maxDepth = u_objectShapeMaxDepth[i];
-
-    float body = objectU(row, maxDepth, meshPos - center, radius, u_objectRotations[i]).x;
-    float rest = objectU(row, maxDepth, meshPos - restCenter, restRadius, OBJECT_ROTATION_NONE).x;
-    float coverage = objectCoverage(body, radius);
-    lift.hole = max(lift.hole, objectCoverage(rest, restRadius));
-
-    float scale = radius / restRadius;
-    vec2 here = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
-    vec2 there = restCenter + objectToShape(u_objectRotations[i], here - center) / scale;
-    vec2 sampled = vec2(there.x, u_resolution.y - there.y) / u_resolution;
-
-    float order = u_objectOrders[i];
-    if (objectBehindMask(order)) {
-      lift.under = max(lift.under, coverage);
-      if (objectOutranks(order, underBestOrder, body, underNearest)) {
-        underBestOrder = order;
-        underNearest = body;
-        lift.underUv = sampled;
-      }
-    } else {
-      lift.body = max(lift.body, coverage);
-      if (objectOutranks(order, bestOrder, body, nearest)) {
-        bestOrder = order;
-        nearest = body;
-        lift.uv = sampled;
-      }
-    }
-  }
-  return lift;
-}
-`;
-
-export const LIGHT_SOURCE_SHADER: Shader = {
-  vertex: `
-attribute vec2 a_position;
-attribute vec3 a_color;
-attribute vec3 a_barycentric;
-attribute vec2 a_uv;
-attribute vec2 a_centroid;
-attribute vec4 a_highlight;
-attribute vec4 a_fillOverlay;
-
-uniform mediump vec2 u_resolution;
-
-varying vec3 v_color;
-varying vec3 v_barycentric;
-varying vec2 v_uv;
-varying vec2 v_lightSourcePos;
-varying vec4 v_highlight;
-varying vec4 v_fillOverlay;
-varying vec2 v_meshPos;
-${OBJECT_FIELD_GLSL}
-void main() {
-  vec2 displaced = a_position + objectSwell(a_position);
-  vec2 zeroToOne = displaced / u_resolution;
-  vec2 clipSpace = zeroToOne * 2.0 - 1.0;
-  gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);
-  v_color = a_color;
-  v_barycentric = a_barycentric;
-  v_uv = a_uv;
-  v_meshPos = a_position;
-  vec2 centroid = a_centroid + objectSwell(a_centroid);
-  v_lightSourcePos = vec2(centroid.x, u_resolution.y - centroid.y);
-  v_highlight = a_highlight;
-  v_fillOverlay = a_fillOverlay;
-}
-`,
-  fragment: `
-#extension GL_OES_standard_derivatives : enable
-precision mediump float;
-${OBJECT_FIELD_GLSL}
-${LIGHT_FIELD_GLSL}
-varying vec3 v_color;
-varying vec3 v_barycentric;
-varying vec2 v_uv;
-varying vec2 v_lightSourcePos;
-varying vec4 v_highlight;
-varying vec4 v_fillOverlay;
-varying vec2 v_meshPos;
-
-#define BUMP_STRENGTH ${glFloat(MASK_BUMP_STRENGTH)}
-#define LIGHT_HEIGHT_SCALE ${glFloat(MASK_LIGHT_HEIGHT_SCALE)}
-
-uniform vec2 u_resolution;
-
-const vec3 STROKE_COLOR = vec3(${MASK_STROKE_COLOR.slice(0, 3).map(glFloat).join(", ")});
-const float STROKE_ALPHA = ${glFloat(MASK_STROKE_COLOR[3])};
-
-#define STROKE_WIDTH_PX ${glFloat(MASK_STROKE_WIDTH_PX)}
-#define HIGHLIGHT_STROKE_WIDTH_PX ${glFloat(MASK_HIGHLIGHT_STROKE_WIDTH_PX)}
-
-uniform vec2 u_lightSourceCenters[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceRadii[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceFalloffs[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceIntensities[MAX_LIGHT_SOURCES];
-uniform float u_lightSourceDarknesses[MAX_LIGHT_SOURCES];
-uniform mediump vec4 u_lightTransforms[MAX_LIGHT_SOURCES];
-uniform int u_lightSourceCount;
-
-uniform float u_textureMix;
-uniform sampler2D u_texture;
-uniform float u_hasTexture;
-
-uniform sampler2D u_mask;
-uniform float u_maskActive;
-uniform vec3 u_glowColor;
-
-uniform float u_backingGrey;
-#define BACKING_GREY_LEVEL ${glFloat(MASK_BACKING_GREY_LEVEL)}
-const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
-
-uniform vec4 u_objectFills[MAX_MASK_OBJECTS];
-${OBJECT_LIFT_GLSL}
-
-vec4 objectFill(vec2 p, bool behind) {
-  vec4 fill = vec4(0.0);
-  float nearest = 1.0;
-  float bestOrder = -1e9;
-  for (int i = 0; i < MAX_MASK_OBJECTS; i++) {
-    if (i >= u_objectCount) break;
-    if (u_objectFills[i].a <= 0.0) continue;
-    float order = u_objectOrders[i];
-    if (objectBehindMask(order) != behind) continue;
-    vec2 toPoint = p - u_objects[i].xy;
-    float u = objectU(
-      u_objectShapeRows[i], u_objectShapeMaxDepth[i], toPoint, u_objects[i].z, u_objectRotations[i]).x;
-    if (u >= 1.0) continue;
-    if (!objectOutranks(order, bestOrder, u, nearest)) continue;
-    bestOrder = order;
-    nearest = u;
-    fill = u_objectFills[i];
-  }
-  return fill;
-}
-
-void main() {
-  vec3 baryDeriv = fwidth(v_barycentric);
-  vec3 edgeFactors = smoothstep(vec3(0.0), baryDeriv * STROKE_WIDTH_PX, v_barycentric);
-  float edge = 1.0 - min(min(edgeFactors.x, edgeFactors.y), edgeFactors.z);
-  vec3 highlightFactors = smoothstep(vec3(0.0), baryDeriv * HIGHLIGHT_STROKE_WIDTH_PX, v_barycentric);
-  float highlightEdge = 1.0 - min(min(highlightFactors.x, highlightFactors.y), highlightFactors.z);
-
-  ObjectLift lift = objectLift(v_meshPos);
-  vec4 mask = texture2D(u_mask, v_uv);
-
-  vec2 restingUv = gl_FragCoord.xy / u_resolution;
-  vec4 restingTexel = u_hasTexture > 0.5 ? texture2D(u_texture, restingUv) : vec4(v_color, 1.0);
-  vec4 carriedTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.uv) : vec4(v_color, 1.0);
-  vec4 underTexel = u_hasTexture > 0.5 ? texture2D(u_texture, lift.underUv) : vec4(v_color, 1.0);
-
-  float carried = lift.body * carriedTexel.a;
-
-  float restingCoverage = u_hasTexture > 0.5 ? restingTexel.a : mix(1.0, mask.a, u_maskActive);
-  float restingAlpha = restingCoverage * (1.0 - lift.hole);
-
-  vec4 behindFill = objectFill(v_meshPos, true);
-  float under = lift.under * underTexel.a;
-  vec3 underRgb = mix(underTexel.rgb, behindFill.rgb, behindFill.a);
-
-  float lowerAlpha = restingAlpha + under * (1.0 - restingAlpha);
-  float safeLower = max(lowerAlpha, 1e-4);
-  vec3 lowerRgb =
-    (restingTexel.rgb * restingAlpha + underRgb * under * (1.0 - restingAlpha)) / safeLower;
-
-  float alpha = carried + lowerAlpha * (1.0 - carried);
-  float safeAlpha = max(alpha, 1e-4);
-  vec3 textured = (carriedTexel.rgb * carried + lowerRgb * lowerAlpha * (1.0 - carried)) / safeAlpha;
-
-  float beneath = restingAlpha * (1.0 - carried) / safeAlpha;
-
-  vec4 fill = objectFill(v_meshPos, false);
-  vec3 base = mix(textured, fill.rgb, fill.a);
-  base = mix(base, v_fillOverlay.rgb, v_fillOverlay.a * beneath);
-
-  vec3 field = objectField(v_meshPos);
-  vec3 normal = normalize(vec3(-field.xy, 1.0));
-  vec3 surface = vec3(v_meshPos, field.z);
-  float bumpLit = 0.0;
-  float bumpShade = 0.0;
-
-  float bestHighlight = 0.0;
-  float leastShadow = 0.0;
-  for (int i = 0; i < MAX_LIGHT_SOURCES; i++) {
-    if (i >= u_lightSourceCount) break;
-    vec2 offset = v_lightSourcePos - u_lightSourceCenters[i];
-    vec2 shaped = objectToShape(u_lightTransforms[i], vec2(offset.x, -offset.y));
-    vec2 profile = lightProfile(
-      u_lightShapeRows[i], u_lightShapeMaxDepth[i], shaped, u_lightSourceRadii[i]);
-    float highlight = 1.0 - smoothstep(0.35, 1.0, profile.x);
-    float shadow = smoothstep(0.0, u_lightSourceFalloffs[i], profile.y);
-    float shadowContribution = shadow * u_lightSourceDarknesses[i];
-    bestHighlight = max(bestHighlight, highlight * u_lightSourceIntensities[i]);
-    leastShadow = i == 0 ? shadowContribution : min(leastShadow, shadowContribution);
-
-    vec3 lightPos = vec3(u_lightSourceCenters[i].x,
-                         u_resolution.y - u_lightSourceCenters[i].y,
-                         u_lightSourceRadii[i] * LIGHT_HEIGHT_SCALE);
-    vec3 lightDir = normalize(lightPos - surface);
-    float bump = dot(normal, lightDir) - lightDir.z;
-    float reach = 1.0 - shadow;
-    bumpLit = max(bumpLit, max(bump, 0.0) * reach * BUMP_STRENGTH);
-    bumpShade = max(bumpShade, max(-bump, 0.0) * reach * BUMP_STRENGTH);
-  }
-
-  vec3 lit = mix(base, vec3(1.0), min(bestHighlight + bumpLit, 1.0));
-  vec3 shaded = lit - leastShadow - bumpShade;
-  vec3 strokeColor = STROKE_COLOR - leastShadow - bumpShade;
-  vec3 withEdge = mix(shaded, strokeColor, edge * u_textureMix * STROKE_ALPHA * beneath);
-
-  float glowMix = mask.r * u_maskActive * beneath * (u_hasTexture > 0.5 ? 0.0 : 1.0);
-  vec3 withGlow = mix(withEdge, u_glowColor, glowMix);
-
-  float lightEdge = highlightEdge * v_highlight.a;
-  vec3 withLightStroke = mix(withGlow, v_highlight.rgb, lightEdge);
-
-  float luma = dot(withLightStroke, LUMA);
-  vec3 greyed = mix(withLightStroke, vec3(luma * BACKING_GREY_LEVEL), u_backingGrey);
-
-  gl_FragColor = vec4(greyed, alpha);
-}
-`,
-};
-
+  LIGHT_SDF_ATLAS,
+  LIGHT_SDF_GRID,
+  MASK_OBJECT_SWELL,
+  MASK_OBJECT_SWELL_LIMIT,
+  MAX_MASK_LIGHT_SOURCES,
+  MAX_MASK_OBJECTS,
+  MIN_MASK_OBJECT_FALLOFF,
+  OBJECT_SDF_ATLAS,
+  OBJECT_SDF_GRID,
+  OBJECT_SDF_RANGE,
+  OBJECT_SUBDIVISION_TOLERANCE_PX,
+} from "./mask-constants.ts";
+import { LIGHT_SOURCE_SHADER, type Shader } from "./shaders/index.ts";
+
+export * from "./mask-constants.ts";
+export { LIGHT_SOURCE_SHADER, type Shader } from "./shaders/index.ts";
 export function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | undefined {
   const shader = gl.createShader(type);
   if (!shader) return undefined;
@@ -545,9 +70,10 @@ export interface GLState {
   lightSourceCentersLoc: WebGLUniformLocation;
   lightSourceRadiiLoc: WebGLUniformLocation;
   lightTransformsLoc: WebGLUniformLocation;
-  lightSourceFalloffsLoc: WebGLUniformLocation;
+  lightSourceSpreadsLoc: WebGLUniformLocation;
   lightSourceIntensitiesLoc: WebGLUniformLocation;
-  lightSourceDarknessesLoc: WebGLUniformLocation;
+  lightSourceShadowsLoc: WebGLUniformLocation;
+  lightSourceCastsLoc: WebGLUniformLocation;
   lightSourceCountLoc: WebGLUniformLocation;
   objectsLoc: WebGLUniformLocation;
   objectRotationsLoc: WebGLUniformLocation;
@@ -564,6 +90,9 @@ export interface GLState {
   lightShapesLoc: WebGLUniformLocation;
   lightShapeRowsLoc: WebGLUniformLocation;
   lightShapeMaxDepthLoc: WebGLUniformLocation;
+  lightOrdersLoc: WebGLUniformLocation;
+  lightGridlinesLoc: WebGLUniformLocation;
+  lightLowpolyLoc: WebGLUniformLocation;
   lightShapeTexture: WebGLTexture;
   lightShapeSignature: string;
   supportsVertexTextures: boolean;
@@ -650,9 +179,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightSourceCentersLoc = gl.getUniformLocation(program, "u_lightSourceCenters");
   const lightSourceRadiiLoc = gl.getUniformLocation(program, "u_lightSourceRadii");
   const lightTransformsLoc = gl.getUniformLocation(program, "u_lightTransforms");
-  const lightSourceFalloffsLoc = gl.getUniformLocation(program, "u_lightSourceFalloffs");
+  const lightSourceSpreadsLoc = gl.getUniformLocation(program, "u_lightSourceSpreads");
   const lightSourceIntensitiesLoc = gl.getUniformLocation(program, "u_lightSourceIntensities");
-  const lightSourceDarknessesLoc = gl.getUniformLocation(program, "u_lightSourceDarknesses");
+  const lightSourceShadowsLoc = gl.getUniformLocation(program, "u_lightSourceShadows");
+  const lightSourceCastsLoc = gl.getUniformLocation(program, "u_lightSourceCasts");
   const lightSourceCountLoc = gl.getUniformLocation(program, "u_lightSourceCount");
   const objectsLoc = gl.getUniformLocation(program, "u_objects");
   const objectRotationsLoc = gl.getUniformLocation(program, "u_objectRotations");
@@ -665,6 +195,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
   const lightShapesLoc = gl.getUniformLocation(program, "u_lightShapes");
   const lightShapeRowsLoc = gl.getUniformLocation(program, "u_lightShapeRows");
   const lightShapeMaxDepthLoc = gl.getUniformLocation(program, "u_lightShapeMaxDepth");
+  const lightOrdersLoc = gl.getUniformLocation(program, "u_lightOrders");
+  const lightGridlinesLoc = gl.getUniformLocation(program, "u_lightGridlines");
+  const lightLowpolyLoc = gl.getUniformLocation(program, "u_lightLowpoly");
   const objectFillsLoc = gl.getUniformLocation(program, "u_objectFills");
   const objectLiftsLoc = gl.getUniformLocation(program, "u_objectLifts");
   const textureMixLoc = gl.getUniformLocation(program, "u_textureMix");
@@ -686,9 +219,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightSourceCentersLoc ||
     !lightSourceRadiiLoc ||
     !lightTransformsLoc ||
-    !lightSourceFalloffsLoc ||
+    !lightSourceSpreadsLoc ||
     !lightSourceIntensitiesLoc ||
-    !lightSourceDarknessesLoc ||
+    !lightSourceShadowsLoc ||
+    !lightSourceCastsLoc ||
     !lightSourceCountLoc ||
     !objectsLoc ||
     !objectRotationsLoc ||
@@ -701,6 +235,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     !lightShapesLoc ||
     !lightShapeRowsLoc ||
     !lightShapeMaxDepthLoc ||
+    !lightOrdersLoc ||
+    !lightGridlinesLoc ||
+    !lightLowpolyLoc ||
     !objectFillsLoc ||
     !objectLiftsLoc ||
     !textureMixLoc ||
@@ -734,9 +271,10 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightSourceCentersLoc,
     lightSourceRadiiLoc,
     lightTransformsLoc,
-    lightSourceFalloffsLoc,
+    lightSourceSpreadsLoc,
     lightSourceIntensitiesLoc,
-    lightSourceDarknessesLoc,
+    lightSourceShadowsLoc,
+    lightSourceCastsLoc,
     lightSourceCountLoc,
     objectsLoc,
     objectRotationsLoc,
@@ -753,6 +291,9 @@ export function initGLState(canvas: HTMLCanvasElement): GLState | undefined {
     lightShapesLoc,
     lightShapeRowsLoc,
     lightShapeMaxDepthLoc,
+    lightOrdersLoc,
+    lightGridlinesLoc,
+    lightLowpolyLoc,
     lightShapeTexture,
     lightShapeSignature: "",
     supportsVertexTextures: gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) > 0,
@@ -770,11 +311,15 @@ export interface MaskLightSource {
   x: number;
   y: number;
   radius: number;
-  falloff: number;
+  spread: number;
   intensity: number;
-  darkness: number;
+  shadow: number;
+  cast: number;
+  order: number;
   shape?: ObjectShape;
   transform?: ObjectRotation;
+  gridlines?: number;
+  lowpoly?: boolean;
 }
 
 export interface DrawMaskMeshOptions {
@@ -805,22 +350,34 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   if (activeLights.length > 0) {
     const centers = new Float32Array(activeLights.length * 2);
     const radii = new Float32Array(activeLights.length);
-    const falloffs = new Float32Array(activeLights.length);
+    const spreads = new Float32Array(activeLights.length);
     const intensities = new Float32Array(activeLights.length);
-    const darknesses = new Float32Array(activeLights.length);
+    const shadows = new Float32Array(activeLights.length);
+    const casts = new Float32Array(activeLights.length);
+    const orders = new Float32Array(activeLights.length);
+    const gridlines = new Float32Array(activeLights.length);
+    const lowpoly = new Float32Array(activeLights.length);
     activeLights.forEach((light, i) => {
       centers[i * 2] = light.x;
       centers[i * 2 + 1] = light.y;
       radii[i] = Math.max(light.radius, 1);
-      falloffs[i] = Math.max(light.falloff, 1);
+      spreads[i] = Math.max(light.spread, 1);
       intensities[i] = light.intensity;
-      darknesses[i] = light.darkness;
+      shadows[i] = light.shadow;
+      casts[i] = light.cast;
+      orders[i] = light.order;
+      gridlines[i] = light.gridlines ?? 0;
+      lowpoly[i] = light.lowpoly ? 1 : 0;
     });
     gl.uniform2fv(state.lightSourceCentersLoc, centers);
     gl.uniform1fv(state.lightSourceRadiiLoc, radii);
-    gl.uniform1fv(state.lightSourceFalloffsLoc, falloffs);
+    gl.uniform1fv(state.lightSourceSpreadsLoc, spreads);
     gl.uniform1fv(state.lightSourceIntensitiesLoc, intensities);
-    gl.uniform1fv(state.lightSourceDarknessesLoc, darknesses);
+    gl.uniform1fv(state.lightSourceShadowsLoc, shadows);
+    gl.uniform1fv(state.lightSourceCastsLoc, casts);
+    gl.uniform1fv(state.lightOrdersLoc, orders);
+    gl.uniform1fv(state.lightGridlinesLoc, gridlines);
+    gl.uniform1fv(state.lightLowpolyLoc, lowpoly);
   }
 
   const lightTransforms = new Float32Array(MAX_MASK_LIGHT_SOURCES * 4);
@@ -865,7 +422,7 @@ export function drawMaskMesh(state: GLState, options: DrawMaskMeshOptions): void
   gl.uniform1fv(state.lightShapeRowsLoc, lightShapeRows);
   gl.uniform1fv(state.lightShapeMaxDepthLoc, lightShapeMaxDepth);
 
-  const activeObjects = drawnMaskObjects(options.objects);
+  const activeObjects = drawnMaskObjects(options.objects, activeLights);
   gl.uniform1i(state.objectCountLoc, activeObjects.length);
   if (activeObjects.length > 0) {
     const objects = new Float32Array(activeObjects.length * 4);
@@ -1280,8 +837,9 @@ export function isActiveObject(object: ObjectGeometryInput): boolean {
   return object.radius > 0 && object.elevation !== 0 && (object.rotation?.visible ?? true);
 }
 
-export function isDrawnObject(object: ObjectGeometryInput): boolean {
+export function isDrawnObject(object: ObjectGeometryInput, lights: readonly { order: number }[] = []): boolean {
   if (object.radius <= 0 || !(object.rotation?.visible ?? true)) return false;
+  if (lights.some((light) => occludes(object.order, light.order))) return true;
   if (isBehindMask(object)) return (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
   return object.elevation !== 0 || (object.fill?.a ?? 0) > 0 || object.lift !== undefined;
 }
@@ -1294,8 +852,11 @@ export function activeMaskObjects<T extends ObjectGeometryInput>(objects: T[]): 
   return cappedByElevation(objects.filter(isActiveObject));
 }
 
-export function drawnMaskObjects<T extends ObjectGeometryInput>(objects: T[]): T[] {
-  return cappedByElevation(objects.filter(isDrawnObject));
+export function drawnMaskObjects<T extends ObjectGeometryInput>(
+  objects: T[],
+  lights: readonly { order: number }[] = [],
+): T[] {
+  return cappedByElevation(objects.filter((object) => isDrawnObject(object, lights)));
 }
 
 export function objectProfileK(u: number, falloff: number): number {
@@ -1311,6 +872,28 @@ export function objectProfileUAt(object: ObjectOutline, point: [number, number])
   );
   if (!object.shape) return Math.hypot(nx, ny);
   return objectShapeProfileU(object.shape, nx, ny);
+}
+
+export function liftSourceAt<T extends ObjectGeometryInput>(
+  objects: readonly T[],
+  point: [number, number],
+  behind = false,
+): T | undefined {
+  let winner: T | undefined;
+  let bestOrder = -Infinity;
+  let nearest = 1;
+  for (const object of objects) {
+    if (object.lift === undefined) continue;
+    if (isBehindMask(object) !== behind) continue;
+    const u = objectProfileUAt(object, point);
+    if (u >= 1) continue;
+    if (object.order < bestOrder - MASK_ORDER_EPSILON) continue;
+    if (object.order <= bestOrder + MASK_ORDER_EPSILON && u >= nearest) continue;
+    bestOrder = object.order;
+    nearest = u;
+    winner = object;
+  }
+  return winner;
 }
 
 export function objectSwellAt(point: [number, number], objects: ObjectGeometryInput[]): [number, number] {

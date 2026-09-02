@@ -321,6 +321,7 @@ export function useObjectReview() {
             cy: session.editedShape?.cy ?? light.cy,
             radius: session.editedShape?.radius ?? light.radius,
             shape: session.editedShape?.path ?? light.shape,
+            lowpoly: session.lowpoly,
             description,
             polygon_indices: [...session.currentIndices].sort((a, b) => a - b),
             ...(session.retouch ? { retouch: retouchDelta(session.retouch) } : {}),
@@ -341,6 +342,13 @@ export function useObjectReview() {
     [isGuest, session, coreState.canvasMasks, sendMaskLightUpdate, dispatch, notifyMaskLightUpdated, closeReview],
   );
 
+  const setLowpoly = useCallback(
+    (lowpoly: boolean) => {
+      uiDispatch({ type: UIActionType.SetMaskEditLowpoly, lowpoly });
+    },
+    [uiDispatch],
+  );
+
   return {
     session,
     review,
@@ -352,6 +360,7 @@ export function useObjectReview() {
     decideCurrentObject,
     saveEditedObject,
     saveEditedLight,
+    setLowpoly,
     togglePolygon,
     clearShapePreview,
     revertShape,
