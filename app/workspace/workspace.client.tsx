@@ -42,6 +42,8 @@ import {
   toObjectFill,
   toObjectFillFields,
   toObjectUpdate,
+  POLYGONS_UNCHANGED,
+  polygonsReplacedWith,
 } from "./workspace.server";
 import {
   frontElementOrder,
@@ -83,7 +85,7 @@ import {
   indicesInObjectFromCentroids,
   lightCenterFromCentroids,
 } from "./canvas-media/light-geometry";
-import { maskGeometry, polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
+import { maskGeometry, polygonIndicesForLight } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
@@ -1301,8 +1303,7 @@ export default function Workspace({
       const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, new Set(polygonIndices));
       const updated = await sendMaskLightUpdate(
         maskData.mask_media_id,
-        toLightUpdate(newLight(lightId, name), {
-          polygon_indices: polygonIndices,
+        toLightUpdate(newLight(lightId, name), polygonsReplacedWith(polygonIndices), {
           order: frontElementOrder(maskStack(maskData)),
           size,
           intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
@@ -1415,7 +1416,7 @@ export default function Workspace({
 
       const updated = await sendMaskObjectUpdate(
         maskData.mask_media_id,
-        toObjectUpdate(newObject(objectId, `object ${objectId}`), {
+        toObjectUpdate(newObject(objectId, `object ${objectId}`), polygonsReplacedWith(polygonIndices), {
           cx: circle.cx,
           cy: circle.cy,
           radius,
@@ -1425,7 +1426,6 @@ export default function Workspace({
           lift: seed.lift,
           ...toObjectFillFields(seed.fill),
           order: frontElementOrder(maskStack(maskData)),
-          polygon_indices: polygonIndices,
         }),
       );
       if (updated) {
@@ -1519,8 +1519,7 @@ export default function Workspace({
 
         const updated = await sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(newLight(copyId, `light ${copyId}`), {
-            polygon_indices: polygonIndices,
+          toLightUpdate(newLight(copyId, `light ${copyId}`), polygonsReplacedWith(polygonIndices), {
             order: frontElementOrder(maskStack(maskData)),
             cx: region.cx,
             cy: region.cy,
@@ -1600,7 +1599,7 @@ export default function Workspace({
 
         const created = await sendMaskObjectUpdate(
           maskData.mask_media_id,
-          toObjectUpdate(newObject(objectId, `object ${objectId}`), {
+          toObjectUpdate(newObject(objectId, `object ${objectId}`), polygonsReplacedWith([...membership]), {
             cx: outline.cx,
             cy: outline.cy,
             radius,
@@ -1609,7 +1608,6 @@ export default function Workspace({
             falloff: uiState.stagedObject.falloff,
             ...toObjectFillFields(uiState.stagedObject.fill),
             order: frontElementOrder(maskStack(maskData)),
-            polygon_indices: [...membership],
           }),
         );
         if (!created) return;
@@ -1617,7 +1615,7 @@ export default function Workspace({
 
         const removed = await sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(light, { polygon_indices: [] }),
+          toLightUpdate(light, POLYGONS_UNCHANGED, { remove: true }),
         );
         if (removed) patched = applyLightDelta(patched, removed);
 
@@ -1711,8 +1709,7 @@ export default function Workspace({
 
         const created = await sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(newLight(lightId, `light ${lightId}`), {
-            polygon_indices: [...membership],
+          toLightUpdate(newLight(lightId, `light ${lightId}`), polygonsReplacedWith([...membership]), {
             order: frontElementOrder(maskStack(maskData)),
             cx: outline.cx,
             cy: outline.cy,
@@ -1730,7 +1727,7 @@ export default function Workspace({
 
         const removed = await sendMaskObjectUpdate(
           maskData.mask_media_id,
-          toObjectUpdate(object, { remove: true, polygon_indices: [] }),
+          toObjectUpdate(object, POLYGONS_UNCHANGED, { remove: true }),
         );
         if (removed) patched = applyObjectDelta(patched, removed);
 
@@ -1824,20 +1821,14 @@ export default function Workspace({
           if (!object) return undefined;
           return sendMaskObjectUpdate(
             maskData.mask_media_id,
-            toObjectUpdate(object, {
-              order: change.order,
-              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
-            }),
+            toObjectUpdate(object, POLYGONS_UNCHANGED, { order: change.order }),
           ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyObjectDelta(mask, updated) : undefined));
         }
         const light = maskData.lights.find((l) => l.id === change.id);
         if (!light) return undefined;
         return sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(light, {
-            order: change.order,
-            polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
-          }),
+          toLightUpdate(light, POLYGONS_UNCHANGED, { order: change.order }),
         ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyLightDelta(mask, updated) : undefined));
       });
 
@@ -1884,7 +1875,7 @@ export default function Workspace({
 
       const updated = await sendMaskObjectUpdate(
         maskData.mask_media_id,
-        toObjectUpdate(object, { remove: true, polygon_indices: [] }),
+        toObjectUpdate(object, POLYGONS_UNCHANGED, { remove: true }),
       );
       if (!updated) return;
 

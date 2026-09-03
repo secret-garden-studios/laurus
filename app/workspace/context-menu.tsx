@@ -40,6 +40,7 @@ import {
   toLightUpdate,
   toObjectUpdate,
   updateMaskDescription,
+  POLYGONS_UNCHANGED,
 } from "./workspace.server";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
@@ -1179,10 +1180,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (!light) return;
           const updated = await sendMaskLightUpdate(
             maskData.mask_media_id,
-            toLightUpdate(light, {
-              description,
-              polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
-            }),
+            toLightUpdate(light, POLYGONS_UNCHANGED, { description }),
           );
           if (!updated) return;
           const patched = applyLightDelta(maskData, updated);
@@ -1195,10 +1193,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (!object) return;
           const updated = await sendMaskObjectUpdate(
             maskData.mask_media_id,
-            toObjectUpdate(object, {
-              description,
-              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
-            }),
+            toObjectUpdate(object, POLYGONS_UNCHANGED, { description }),
           );
           if (!updated) return;
           const patched = applyObjectDelta(maskData, updated);
@@ -1644,7 +1639,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         case "light": {
                           const updated: LightUpdateDelta_V1_0 | undefined = await sendMaskLightUpdate(
                             media.meta.media_id,
-                            toLightUpdate(newLight(media.lightId, ""), { polygon_indices: [] }),
+                            toLightUpdate(newLight(media.lightId, ""), POLYGONS_UNCHANGED, { remove: true }),
                           );
                           const lightMaskData = coreState.canvasMasks.get(media.key);
                           if (!updated || !lightMaskData) break;

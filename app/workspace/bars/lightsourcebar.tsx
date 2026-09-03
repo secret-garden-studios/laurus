@@ -28,6 +28,7 @@ import {
   toObjectFill,
   toObjectFillFields,
   toObjectUpdate,
+  POLYGONS_UNCHANGED,
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
 import { LIGHT_SHADOW_MAX, LIGHT_SPREAD_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
@@ -432,7 +433,6 @@ export default function LightSourcebar() {
     maskKey: string;
     maskMediaId: string;
     light: LaurusLight;
-    polygonIndices: number[];
   }
   const pendingLightSaveRef = useRef<PendingLightSave | null>(null);
   const isPersistingLightRef = useRef(false);
@@ -443,10 +443,7 @@ export default function LightSourcebar() {
       while (pendingLightSaveRef.current) {
         const toSave = pendingLightSaveRef.current;
         pendingLightSaveRef.current = null;
-        const updated = await sendMaskLightUpdate(
-          toSave.maskMediaId,
-          toLightUpdate(toSave.light, { polygon_indices: toSave.polygonIndices }),
-        );
+        const updated = await sendMaskLightUpdate(toSave.maskMediaId, toLightUpdate(toSave.light, POLYGONS_UNCHANGED));
         if (!updated) {
           console.error("failed to save light change", { light_id: toSave.light.id });
           continue;
@@ -476,15 +473,10 @@ export default function LightSourcebar() {
       const newMaskData: LaurusMaskResult = { ...selectedLightMaskData, lights: newLights };
       dispatch({ type: CoreActionType.SetCanvasMask, key: selectedLightMaskKey, value: newMaskData });
       notifyMaskLightUpdated(selectedLightMaskKey, newMaskData);
-      const polygonIndices = selectedLightMaskData.polygons.reduce<number[]>((acc, p, i) => {
-        if (p.light_id === selectedLight.id) acc.push(i);
-        return acc;
-      }, []);
       pendingLightSaveRef.current = {
         maskKey: selectedLightMaskKey,
         maskMediaId: selectedLightMaskData.mask_media_id,
         light: patched,
-        polygonIndices,
       };
       void persistLightQueue();
     },
@@ -531,7 +523,6 @@ export default function LightSourcebar() {
     maskKey: string;
     maskMediaId: string;
     object: LaurusObject;
-    polygonIndices: number[];
   }
 
   const pendingObjectSaveRef = useRef<PendingObjectSave | null>(null);
@@ -547,7 +538,7 @@ export default function LightSourcebar() {
         settledMaskKey = toSave.maskKey;
         const updated = await sendMaskObjectUpdate(
           toSave.maskMediaId,
-          toObjectUpdate(toSave.object, { polygon_indices: toSave.polygonIndices }),
+          toObjectUpdate(toSave.object, POLYGONS_UNCHANGED),
         );
         if (!updated) {
           console.error("failed to save object change", { object_id: toSave.object.id });
@@ -617,11 +608,6 @@ export default function LightSourcebar() {
       const existingObject = maskData.objects.find((p) => p.id === edit.objectId);
       const objectName = existingObject?.name ?? `object ${edit.objectId}`;
 
-      const polygonIndices = maskData.polygons.reduce<number[]>((indices, p, i) => {
-        if (p.object_id === edit.objectId) indices.push(i);
-        return indices;
-      }, []);
-
       const base: LaurusObject = existingObject ?? { ...newObject(edit.objectId, objectName), lift: false };
       pendingObjectSaveRef.current = {
         maskKey: edit.maskKey,
@@ -638,7 +624,6 @@ export default function LightSourcebar() {
           ...toObjectFillFields(edit.fill),
           lift: patch.lift ?? base.lift,
         },
-        polygonIndices,
       };
       void persistObjectQueue();
       return true;

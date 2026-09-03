@@ -95,6 +95,7 @@ import {
   toEquationObjectFill,
   toLightUpdate,
   toObjectFill,
+  polygonsReplacedWith,
 } from "../workspace.server";
 import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
@@ -2244,9 +2245,8 @@ export function ProjectMaskItem({
               lightCommitInFlightRef.current.add(lightId);
               sendMaskLightUpdate(
                 source.maskData.mask_media_id,
-                toLightUpdate(existingLight ?? newLight(lightId, lightName), {
+                toLightUpdate(existingLight ?? newLight(lightId, lightName), polygonsReplacedWith([...finalIndices]), {
                   name: lightName,
-                  polygon_indices: [...finalIndices],
                   ...(existingLight ? {} : { order: frontElementOrder(maskStack(source.maskData)) }),
                   ...(existingLight && existingLight.radius > 0
                     ? { cx: drag.originalRegion.cx + dx, cy: drag.originalRegion.cy + dy }
