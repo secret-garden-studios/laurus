@@ -19,6 +19,7 @@ import {
 } from "../projects/projects.server";
 import {
   CoreContext,
+  HoverContext,
   LaurusTransform,
   MaskContext,
   SocketContext,
@@ -54,6 +55,7 @@ import {
   UIAction,
   UIActionType,
   defaultUIState,
+  isMaskDropZoneArmed,
   resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
@@ -224,8 +226,10 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     reorderElement,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { isAltKeyPressed, isMetaKeyPressed } = useContext(HoverContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
+  const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
   const active = useMemo<boolean>(() => {
     if (uiState.activeElement?.key !== media.key) return false;
     if (media.type === "light") {
@@ -1269,6 +1273,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         <div
           style={{
             position: "absolute",
+            pointerEvents: dropZoneArmed ? "auto" : undefined,
             ...(contextMenuConfig.position.toLowerCase().endsWith("right") && {
               left: "100%",
             }),

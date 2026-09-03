@@ -17,6 +17,7 @@ import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
 import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
+import { Z_INDEX } from "./workspace.config";
 
 function calcMousePosition(canvas: HTMLCanvasElement, event: React.MouseEvent<HTMLElement>) {
   const rect = canvas.getBoundingClientRect();
@@ -137,9 +138,16 @@ export default function Canvas() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedImgKeys, setSelectedSvgKeys } =
-    useContext(HoverContext);
-  const { lightMeshSection, createObject, ...mask } = useContext(MaskContext);
+  const {
+    selectedImgKeys,
+    selectedSvgKeys,
+    selectedMaskKeys,
+    setSelectedImgKeys,
+    setSelectedSvgKeys,
+    isAltKeyPressed,
+    isMetaKeyPressed,
+  } = useContext(HoverContext);
+  const { lightMeshSection, createObject, copyObject, copyLight, ...mask } = useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
@@ -232,6 +240,14 @@ export default function Canvas() {
           setAnchor({ x: p.x, y: p.y });
           break;
         }
+        case "light_source": {
+          if (!uiState.tool.copy) break;
+          const canvas = drawingCanvasRef.current;
+          if (!canvas) return;
+          const p = calcMousePosition(canvas, event);
+          setAnchor({ x: p.x, y: p.y });
+          break;
+        }
       }
     },
     [uiState.tool, uiState.browserElement],
@@ -260,6 +276,15 @@ export default function Canvas() {
             uiState.browserElement?.type !== "img"
           )
             break;
+          const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.arc(anchor.x, anchor.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
+        case "light_source": {
+          if (!uiState.tool.copy) break;
           const radius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.beginPath();
@@ -559,6 +584,26 @@ export default function Canvas() {
     [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject],
   );
 
+  const handleCopyDrop = useCallback(
+    (dropArea: ProjectCircle) => {
+      const selected = uiState.selectedElement;
+      if (selected?.type !== "light" && selected?.type !== "object") return;
+      const maskKey = selected.key;
+      const drawingCanvas = drawingCanvasRef.current;
+      if (!coreState.canvasMasks.has(maskKey) || !drawingCanvas) return;
+
+      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
+      if (!meshCircle) return;
+
+      if (selected.type === "object") {
+        void copyObject(maskKey, selected.objectId, meshCircle);
+      } else {
+        void copyLight(maskKey, selected.lightId, meshCircle);
+      }
+    },
+    [uiState.selectedElement, coreState.canvasMasks, copyObject, copyLight],
+  );
+
   const handleDuplicateDrop = useCallback(
     async (dropArea: ProjectCircle) => {
       const snapshot = coreState.project;
@@ -780,6 +825,13 @@ export default function Canvas() {
           }
           break;
         }
+        case "light_source": {
+          if (!uiState.tool.copy) break;
+          const newRadius = caclRadius(anchor.x, anchor.y, canvas, event, ctx.lineWidth);
+          if (newRadius < minRadius) break;
+          handleCopyDrop({ cx: anchor.x, cy: anchor.y, radius: newRadius });
+          break;
+        }
       }
       setAnchor(undefined);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -795,6 +847,7 @@ export default function Canvas() {
       coreState.project.svgs,
       handleLightDrop,
       handleTopologyDrop,
+      handleCopyDrop,
       selectedMaskKeys,
       selectedImgKeys,
       selectedSvgKeys,
@@ -809,7 +862,31 @@ export default function Canvas() {
   );
 
   return (
-    <>
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "min-content",
+        height: "min-content",
+        zIndex: isMetaKeyPressed
+          ? Z_INDEX.META_KEY_CANVAS
+          : anchor
+            ? Z_INDEX.DROP_ZONE_DRAW
+            : Z_INDEX.INTERACTION_CANVAS,
+        pointerEvents:
+          uiState.maskEdit !== undefined
+            ? "none"
+            : uiState.tool.type === "mask" &&
+                !uiState.tool.lightingMeshSection &&
+                !uiState.tool.raisingObjects &&
+                uiState.browserElement?.type !== "img"
+              ? "none"
+              : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
+                ? "none"
+                : "auto",
+      }}
+    >
       <div
         style={{
           width: coreState.project.canvas_width,
@@ -837,6 +914,6 @@ export default function Canvas() {
           source={liveMaskSource}
         />
       )}
-    </>
+    </div>
   );
 }

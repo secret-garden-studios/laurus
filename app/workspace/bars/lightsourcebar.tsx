@@ -59,9 +59,12 @@ export default function LightSourcebar() {
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
     notifyMaskHighlightSuppressed,
+    convertLightToObject,
+    convertObjectToLight,
     ...mask
   } = useContext(MaskContext);
   const [target, setTarget] = useState<"light" | "object">("light");
+  const [isConverting, setIsConverting] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -254,6 +257,10 @@ export default function LightSourcebar() {
       : undefined;
   const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectParamDisabled = !selectedObject && !isRaisingObjects;
+  const isCopying = uiState.tool.type === "light_source" && uiState.tool.copy;
+  const isBusy = isCopying || isConverting;
+  const isLightControlsDisabled = isLightParamDisabled || isBusy;
+  const isObjectControlsDisabled = isObjectParamDisabled || isBusy;
 
   const editableLight = useMemo(() => {
     if (uiState.maskEdit !== undefined) return undefined;
@@ -305,7 +312,7 @@ export default function LightSourcebar() {
   }
 
   const liftValue = pendingLift ?? selectedObject?.lift ?? true;
-  const isLiftDisabled = !selectedObject || pendingLift !== undefined;
+  const isLiftDisabled = !selectedObject || pendingLift !== undefined || isBusy;
 
   const pendingPreviewSaveRef = useRef<LaurusProjectResult | null>(null);
   const isPersistingPreviewRef = useRef(false);
@@ -791,6 +798,77 @@ export default function LightSourcebar() {
   const isLightGreeting = !selectedLight;
   const isPreviewAvailable = !selectedLight && !selectedObject;
   const isObjectGreeting = isObjectParamDisabled;
+  const setCopying = (next: boolean) => {
+    if (uiState.tool.type !== "light_source") return;
+    uiDispatch({ type: UIActionType.SetTool, value: { type: "light_source", copy: next } });
+  };
+  const convert = async (subject: "light" | "object") => {
+    if (isConverting || isCopying) return;
+    setIsConverting(true);
+    try {
+      if (subject === "light") {
+        if (!selectedLight || selectedLightMaskKey === undefined) return;
+        await convertLightToObject(selectedLightMaskKey, selectedLight.id);
+      } else {
+        if (!selectedObject || selectedObjectMaskKey === undefined) return;
+        await convertObjectToLight(selectedObjectMaskKey, selectedObject.id);
+      }
+    } finally {
+      setIsConverting(false);
+    }
+  };
+  const convertButton = (subject: "light" | "object") => {
+    const enabled = !isCopying && !isConverting && (subject === "light" ? !!selectedLight : !!selectedObject);
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+          cursor: isConverting ? "progress" : enabled ? "pointer" : "default",
+          opacity: enabled ? 1 : 0.3,
+          userSelect: "none",
+          ...dynamicSizes.toggle.div,
+        }}
+        onClick={() => {
+          if (!enabled) return;
+          void convert(subject);
+        }}
+      >
+        {"convert"}
+      </div>
+    );
+  };
+  const copyToggle = () => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
+        ...dynamicSizes.toggle.div,
+      }}
+    >
+      <span
+        style={{
+          textShadow: isCopying ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+          opacity: isConverting ? 0.3 : 1,
+          userSelect: "none",
+        }}
+      >
+        {"copy"}
+      </span>
+      <Toggle
+        value={isCopying}
+        disabled={isConverting}
+        onClick={() => setCopying(!isCopying)}
+        trackStyles={{ ...dynamicSizes.toggle.track }}
+        buttonStyles={{ ...dynamicSizes.toggle.button }}
+        translateX={dynamicSizes.toggle.translateX}
+      />
+    </div>
+  );
   const greeting = (
     <span
       title="hovering a mask shows where its lights and objects are"
@@ -823,9 +901,15 @@ export default function LightSourcebar() {
             : "targeting objects -- double-click for lights"
         }
         onDoubleClick={() => {
+          if (isBusy) return;
           setTarget(target === "light" ? "object" : "light");
         }}
-        style={{ display: "grid", placeContent: "center", cursor: "pointer" }}
+        style={{
+          display: "grid",
+          placeContent: "center",
+          cursor: isBusy ? "default" : "pointer",
+          opacity: isBusy ? 0.3 : 1,
+        }}
       >
         <SvgRepo
           svg={target === "light" ? asterisk300() : antigravity300()}
@@ -854,13 +938,13 @@ export default function LightSourcebar() {
                 display: "flex",
                 alignItems: "center",
                 height: "100%",
-                cursor: editableLight ? "pointer" : "default",
-                opacity: editableLight ? 1 : 0.3,
+                cursor: editableLight && !isBusy ? "pointer" : "default",
+                opacity: editableLight && !isBusy ? 1 : 0.3,
                 userSelect: "none",
                 ...dynamicSizes.toggle.div,
               }}
               onClick={() => {
-                if (!editableLight || selectedLightMaskKey === undefined) return;
+                if (isBusy || !editableLight || selectedLightMaskKey === undefined) return;
                 uiDispatch({
                   type: UIActionType.StartLightEdit,
                   maskMediaId: editableLight.maskMediaId,
@@ -875,6 +959,8 @@ export default function LightSourcebar() {
               {"edit"}
             </div>
           )}
+          {isLightGreeting ? null : copyToggle()}
+          {isLightGreeting ? null : convertButton("light")}
           {isPreviewAvailable ? (
             <div
               style={{
@@ -1146,7 +1232,7 @@ export default function LightSourcebar() {
                       ? "select a light on the mesh to set the brightness of its own epicenter's core"
                       : "brightness of this light's own epicenter core -- 100% is pure white"
                   }
-                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"intensity"}
                 </span>
@@ -1166,7 +1252,7 @@ export default function LightSourcebar() {
                     const newValue = getLightIntensityValue(newCursor.x, lightIntensityTrackRef.current.clientWidth, 0);
                     handleLightIntensityChange(newValue);
                   }}
-                  disabled={isLightParamDisabled}
+                  disabled={isLightControlsDisabled}
                   title={lightIntensityTitle}
                   liveTitleRef={lightIntensityRef}
                 />
@@ -1186,7 +1272,7 @@ export default function LightSourcebar() {
                       ? "select a light on the mesh to set how far its own light spreads out beyond its core"
                       : "distance this light spreads out beyond its own core, in on-screen pixels"
                   }
-                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"spread"}
                 </span>
@@ -1206,7 +1292,7 @@ export default function LightSourcebar() {
                     const newValue = getLightSpreadValue(newCursor.x, lightSpreadTrackRef.current.clientWidth, 0);
                     handleLightSpreadChange(newValue);
                   }}
-                  disabled={isLightParamDisabled}
+                  disabled={isLightControlsDisabled}
                   title={lightSpreadTitle}
                   liveTitleRef={lightSpreadRef}
                 />
@@ -1226,7 +1312,7 @@ export default function LightSourcebar() {
                       ? "select a light on the mesh to set the strength of its own shadow at the far edge of its spread"
                       : "strength of this light's own shadow at the far edge of its spread -- 100% drives it fully to black"
                   }
-                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"shadow"}
                 </span>
@@ -1246,7 +1332,7 @@ export default function LightSourcebar() {
                     const newValue = getLightShadowValue(newCursor.x, lightShadowTrackRef.current.clientWidth, 0);
                     handleLightShadowChange(newValue);
                   }}
-                  disabled={isLightParamDisabled}
+                  disabled={isLightControlsDisabled}
                   title={lightShadowTitle}
                   liveTitleRef={lightShadowRef}
                 />
@@ -1265,7 +1351,7 @@ export default function LightSourcebar() {
                       ? "select a light on the mesh to set how far its own shadow casts past its spread"
                       : "how far this light's own shadow casts past its spread, as a multiple of it -- \u221e never fades it out"
                   }
-                  style={{ opacity: isLightParamDisabled ? 0.3 : 1, userSelect: "none" }}
+                  style={{ opacity: isLightControlsDisabled ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"cast"}
                 </span>
@@ -1277,11 +1363,11 @@ export default function LightSourcebar() {
                         className={option.value === 0 ? italiana.className : dellaRespira.className}
                         key={option.label}
                         onClick={() => {
-                          if (isLightParamDisabled) return;
+                          if (isLightControlsDisabled) return;
                           handleLightCastChange(option.value);
                         }}
                         style={{
-                          cursor: isLightParamDisabled ? "default" : "pointer",
+                          cursor: isLightControlsDisabled ? "default" : "pointer",
                           color: isSelected ? "inherit" : "rgb(67,67,67)",
                           textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                           padding: "4px 8px",
@@ -1308,7 +1394,7 @@ export default function LightSourcebar() {
               >
                 <span
                   title="draw the mesh gridlines inside this light's own polygons -- they stay up through playback"
-                  style={{ userSelect: "none" }}
+                  style={{ opacity: isBusy ? 0.3 : 1, userSelect: "none" }}
                 >
                   {"gridlines"}
                 </span>
@@ -1319,7 +1405,7 @@ export default function LightSourcebar() {
                       <span
                         key={option.label}
                         onClick={() => {
-                          if (!selectedLight || selectedLightMaskKey === undefined) return;
+                          if (isBusy || !selectedLight || selectedLightMaskKey === undefined) return;
                           uiDispatch({
                             type: UIActionType.SetLightGridlines,
                             value:
@@ -1329,8 +1415,9 @@ export default function LightSourcebar() {
                           });
                         }}
                         style={{
-                          cursor: "pointer",
+                          cursor: isBusy ? "default" : "pointer",
                           color: isSelected ? "inherit" : "rgb(67,67,67)",
+                          opacity: isBusy ? 0.3 : 1,
                           textShadow: isSelected ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                           padding: "4px 8px",
                           userSelect: "none",
@@ -1362,13 +1449,13 @@ export default function LightSourcebar() {
               display: "flex",
               alignItems: "center",
               height: "100%",
-              cursor: editableObject ? "pointer" : "default",
-              opacity: editableObject ? 1 : 0.3,
+              cursor: editableObject && !isBusy ? "pointer" : "default",
+              opacity: editableObject && !isBusy ? 1 : 0.3,
               userSelect: "none",
               ...dynamicSizes.toggle.div,
             }}
             onClick={() => {
-              if (!editableObject || selectedObjectMaskKey === undefined) return;
+              if (isBusy || !editableObject || selectedObjectMaskKey === undefined) return;
               uiDispatch({
                 type: UIActionType.StartObjectEdit,
                 maskMediaId: editableObject.maskMediaId,
@@ -1382,6 +1469,8 @@ export default function LightSourcebar() {
           >
             {"edit"}
           </div>
+          {copyToggle()}
+          {convertButton("object")}
           <div
             style={{
               display: "flex",
@@ -1400,7 +1489,7 @@ export default function LightSourcebar() {
                     : "only this object's relief animates, over an image that stays put -- turn on to carry the image's own pixels with it"
               }
               style={{
-                opacity: !selectedObject ? 0.3 : 1,
+                opacity: !selectedObject || isBusy ? 0.3 : 1,
                 textShadow: liftValue ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
                 userSelect: "none",
               }}
@@ -1429,7 +1518,7 @@ export default function LightSourcebar() {
               ...dynamicSizes.toggle.div,
             }}
           >
-            <span style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}>{"elevation"}</span>
+            <span style={{ opacity: isObjectControlsDisabled ? 0.3 : 1, userSelect: "none" }}>{"elevation"}</span>
             <ParameterSliderXPlusMinus
               resolution={{ ...uiState.resolution }}
               hash={`${selectedObjectMaskKey ?? "lightsourcebar"}|elevation|${selectedObject?.id ?? "staged"}`}
@@ -1448,7 +1537,7 @@ export default function LightSourcebar() {
                   elevation: elevationFromTrack(newCursor.x, elevationTrackRef.current.clientWidth),
                 });
               }}
-              disabled={isObjectParamDisabled}
+              disabled={isObjectControlsDisabled}
               title={elevationTitle}
               liveTitleRef={elevationRef}
             />
@@ -1464,7 +1553,7 @@ export default function LightSourcebar() {
           >
             <span
               title={"the selected object's own profile - low is a broad dome with a visible rim, high is a needle"}
-              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              style={{ opacity: isObjectControlsDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"falloff"}
             </span>
@@ -1489,7 +1578,7 @@ export default function LightSourcebar() {
                   getObjectFalloffValue(newCursor.x, objectFalloffTrackRef.current.clientWidth, 0);
                 saveObjectField({ falloff: newValue });
               }}
-              disabled={isObjectParamDisabled}
+              disabled={isObjectControlsDisabled}
               title={objectFalloffTitle}
               liveTitleRef={objectFalloffRef}
             />
@@ -1505,7 +1594,7 @@ export default function LightSourcebar() {
           >
             <span
               title={"the selected object's flat fill color"}
-              style={{ opacity: isObjectParamDisabled ? 0.3 : 1, userSelect: "none" }}
+              style={{ opacity: isObjectControlsDisabled ? 0.3 : 1, userSelect: "none" }}
             >
               {"fill"}
             </span>
@@ -1524,7 +1613,7 @@ export default function LightSourcebar() {
                 alert(UNAUTHORIZED_EDIT);
                 return false;
               }}
-              disabled={isObjectParamDisabled}
+              disabled={isObjectControlsDisabled}
             />
           </div>
         </>

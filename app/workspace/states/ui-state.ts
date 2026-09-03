@@ -47,7 +47,7 @@ export type LaurusTool =
   | { type: "skew" }
   | { type: "mix" }
   | { type: "mask"; lightingMeshSection: boolean; raisingObjects: boolean }
-  | { type: "light_source" }
+  | { type: "light_source"; copy: boolean }
   | { type: "pen"; stitch: boolean; addAnchor: boolean; showAnchors: boolean };
 
 export const defaultMarqueeTool: LaurusTool = {
@@ -57,6 +57,11 @@ export const defaultMarqueeTool: LaurusTool = {
   position: { value: false, x: undefined, y: undefined },
   select: false,
   duplicate: false,
+};
+
+export const defaultLightSourceTool: LaurusTool = {
+  type: "light_source",
+  copy: false,
 };
 
 export const defaultMaskTool: LaurusTool = {
@@ -173,6 +178,13 @@ export function isAwaitingRegionPick(state: UIState): boolean {
   if (isPenArmed(state)) return true;
   if (state.tool.type !== "light_source" || state.lightSourcePreview) return false;
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
+}
+
+export function isMaskDropZoneArmed(state: UIState, modifiers: { meta: boolean; alt: boolean }): boolean {
+  if (state.maskEdit !== undefined || modifiers.meta) return false;
+  if (state.tool.type === "light_source") return state.tool.copy;
+  if (state.tool.type !== "mask" || modifiers.alt) return false;
+  return state.tool.lightingMeshSection || state.tool.raisingObjects || state.browserElement?.type === "img";
 }
 
 export type MediaArm = { key: string; type: "img" | "svg" | "mask" };
@@ -562,11 +574,13 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, activeElement: action.value };
     }
     case UIActionType.SetSelectedElement: {
-      const endsPreview = action.value?.type === "light" || action.value?.type === "object";
+      const isRegion = action.value?.type === "light" || action.value?.type === "object";
+      const disarmsCopy = !isRegion && state.tool.type === "light_source" && state.tool.copy;
       return {
         ...state,
         selectedElement: action.value,
-        lightSourcePreview: endsPreview ? false : state.lightSourcePreview,
+        lightSourcePreview: isRegion ? false : state.lightSourcePreview,
+        tool: disarmsCopy ? defaultLightSourceTool : state.tool,
       };
     }
     case UIActionType.SetLightFrameBackground: {

@@ -22,6 +22,7 @@ import {
   LaurusMediaGroupResult,
   LaurusMixState,
   LaurusSvgResult,
+  LaurusLight,
   LaurusMaskResult,
   LaurusObjectReview,
   searchImgs,
@@ -38,6 +39,7 @@ import {
   newLight,
   newObject,
   toLightUpdate,
+  toObjectFill,
   toObjectFillFields,
   toObjectUpdate,
 } from "./workspace.server";
@@ -58,7 +60,12 @@ import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
-import { deleteMaskObjectEffects, parseMaskLightInputId, parseMaskObjectInputId } from "./effects-utils";
+import {
+  deleteMaskLightEffects,
+  deleteMaskObjectEffects,
+  parseMaskLightInputId,
+  parseMaskObjectInputId,
+} from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
@@ -109,6 +116,7 @@ import {
   UIAction,
   UIActionType,
   UIState,
+  defaultLightSourceTool,
   defaultMarqueeTool,
   defaultMaskTool,
   defaultUIState,
@@ -286,6 +294,10 @@ export interface MaskNotifyValue {
     circle: { cx: number; cy: number; radius: number },
     seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
   ) => Promise<void>;
+  copyObject: (maskKey: string, objectId: number, circle: { cx: number; cy: number; radius: number }) => Promise<void>;
+  copyLight: (maskKey: string, lightId: number, circle: { cx: number; cy: number; radius: number }) => Promise<void>;
+  convertLightToObject: (maskKey: string, lightId: number) => Promise<void>;
+  convertObjectToLight: (maskKey: string, objectId: number) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   reorderElement: (maskKey: string, target: StackRef, direction: StackDirection) => Promise<void>;
   restackMaskStack: (maskKey: string, changes: StackChange[]) => Promise<void>;
@@ -367,6 +379,10 @@ const defaultMaskPreview: UseMaskPreview = {
 const defaultMaskNotifyValue: MaskNotifyValue = {
   lightMeshSection: async () => {},
   createObject: async () => {},
+  copyObject: async () => {},
+  copyLight: async () => {},
+  convertLightToObject: async () => {},
+  convertObjectToLight: async () => {},
   deleteObject: async () => {},
   reorderElement: async () => {},
   restackMaskStack: async () => {},
@@ -1339,11 +1355,29 @@ export default function Workspace({
     ],
   );
 
-  const createObject = useCallback(
+  const copyInFlightRef = useRef(false);
+
+  const lightOutline = useCallback(
+    (maskData: LaurusMaskResult, light: LaurusLight): { cx: number; cy: number; radius: number; shape: string } => {
+      if (light.radius > 0) return { cx: light.cx, cy: light.cy, radius: light.radius, shape: light.shape };
+      const held = new Set(polygonIndicesForLight(maskData.polygons, light.id));
+      const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, held);
+      return {
+        cx: center?.[0] ?? light.cx,
+        cy: center?.[1] ?? light.cy,
+        radius: light.size / 2,
+        shape: light.shape,
+      };
+    },
+    [],
+  );
+
+  const placeObject = useCallback(
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
+      seed: { elevation: number; falloff: number; fill: LaurusObjectFill; shape: string; lift: boolean },
+      options: { select: boolean },
     ) => {
       if (isGuest) {
         alert(UNAUTHORIZED_EDIT);
@@ -1353,7 +1387,7 @@ export default function Workspace({
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
-      const shape = unitCirclePath();
+      const shape = seed.shape;
       const geometry = maskGeometry(maskData);
       const membership = dropIndicesClaimedByObjects(
         indicesInObjectFromCentroids(geometry.centroids, { cx: circle.cx, cy: circle.cy, radius, shape }),
@@ -1388,6 +1422,7 @@ export default function Workspace({
           elevation: seed.elevation,
           falloff: seed.falloff,
           shape,
+          lift: seed.lift,
           ...toObjectFillFields(seed.fill),
           order: frontElementOrder(maskStack(maskData)),
           polygon_indices: polygonIndices,
@@ -1398,10 +1433,12 @@ export default function Workspace({
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
         notifyMaskObjectsUpdated(maskKey, patched);
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "object", key: maskKey, objectId } });
-        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
-        notifyMaskSelectionChanged(maskKey);
-        notifyMaskSelectedObjectChanged(maskKey, objectId);
-        notifyMaskSelectedLightChanged(maskKey, undefined);
+        if (options.select) {
+          uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
+          notifyMaskSelectionChanged(maskKey);
+          notifyMaskSelectedObjectChanged(maskKey, objectId);
+          notifyMaskSelectedLightChanged(maskKey, undefined);
+        }
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
       notifyMaskPendingTopologyCleared(maskKey);
@@ -1418,6 +1455,338 @@ export default function Workspace({
       notifyMaskSelectionChanged,
       notifyMaskSelectedObjectChanged,
       notifyMaskSelectedLightChanged,
+    ],
+  );
+
+  const createObject = useCallback(
+    (
+      maskKey: string,
+      circle: { cx: number; cy: number; radius: number },
+      seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
+    ) => placeObject(maskKey, circle, { ...seed, shape: unitCirclePath(), lift: true }, { select: true }),
+    [placeObject],
+  );
+
+  const copyObject = useCallback(
+    async (maskKey: string, objectId: number, circle: { cx: number; cy: number; radius: number }) => {
+      if (copyInFlightRef.current) return;
+      const source = coreState.canvasMasks.get(maskKey)?.objects.find((o) => o.id === objectId);
+      if (!source) return;
+      copyInFlightRef.current = true;
+      try {
+        await placeObject(
+          maskKey,
+          circle,
+          {
+            elevation: source.elevation,
+            falloff: source.falloff,
+            fill: toObjectFill(source),
+            shape: source.shape,
+            lift: source.lift,
+          },
+          { select: false },
+        );
+      } finally {
+        copyInFlightRef.current = false;
+      }
+    },
+    [coreState.canvasMasks, placeObject],
+  );
+
+  const copyLight = useCallback(
+    async (maskKey: string, lightId: number, circle: { cx: number; cy: number; radius: number }) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const source = maskData?.lights.find((l) => l.id === lightId);
+      if (!maskData || !source) return;
+
+      const sourceRadius = lightOutline(maskData, source).radius;
+      const scale = sourceRadius > 0 ? circle.radius / sourceRadius : 1;
+
+      const copyId = nextLightId(maskData.lights);
+      const region = { cx: circle.cx, cy: circle.cy, radius: circle.radius, shape: source.shape };
+      const polygonIndices = [...indicesInObjectFromCentroids(maskGeometry(maskData).centroids, region)];
+      if (polygonIndices.length === 0) return;
+
+      copyInFlightRef.current = true;
+      try {
+        dispatch({ type: CoreActionType.SetPendingLight, value: { maskKey, lightId: copyId, polygonIndices } });
+        notifyMaskPendingLightSet(maskKey, new Set(polygonIndices), copyId);
+
+        const updated = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(newLight(copyId, `light ${copyId}`), {
+            polygon_indices: polygonIndices,
+            order: frontElementOrder(maskStack(maskData)),
+            cx: region.cx,
+            cy: region.cy,
+            radius: region.radius,
+            shape: region.shape,
+            size: source.size * scale,
+            spread: Math.min(source.spread * scale, Math.min(maskData.width, maskData.height)),
+            intensity: source.intensity,
+            shadow: source.shadow,
+            cast: source.cast,
+            lowpoly: source.lowpoly,
+          }),
+        );
+        if (updated) {
+          const patched = applyLightDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+          notifyMaskLightUpdated(maskKey, patched);
+          uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "light", key: maskKey, lightId: copyId } });
+        }
+        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+        notifyMaskPendingLightCleared(maskKey);
+      } finally {
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      sendMaskLightUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+      lightOutline,
+    ],
+  );
+
+  const convertLightToObject = useCallback(
+    async (maskKey: string, lightId: number) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const light = maskData?.lights.find((l) => l.id === lightId);
+      if (!maskData || !light) return;
+
+      const outline = lightOutline(maskData, light);
+      const radius = Math.max(outline.radius, MIN_MASK_OBJECT_RADIUS_PX);
+      const objectId = nextObjectId(maskData.objects);
+      const geometry = maskGeometry(maskData);
+      const membership = dropIndicesClaimedByObjects(
+        indicesInObjectFromCentroids(geometry.centroids, { ...outline, radius }),
+        geometry,
+        maskData.polygons,
+      );
+      if (membership.size === 0) return;
+
+      copyInFlightRef.current = true;
+      try {
+        const edit: PendingTopologyEdit = {
+          maskKey,
+          objectId,
+          cx: outline.cx,
+          cy: outline.cy,
+          radius,
+          elevation: uiState.stagedObject.elevation,
+          falloff: uiState.stagedObject.falloff,
+          shape: outline.shape,
+          fill: uiState.stagedObject.fill,
+          polygonIndices: membership,
+        };
+        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+        notifyMaskPendingTopologySet(maskKey, edit);
+
+        const created = await sendMaskObjectUpdate(
+          maskData.mask_media_id,
+          toObjectUpdate(newObject(objectId, `object ${objectId}`), {
+            cx: outline.cx,
+            cy: outline.cy,
+            radius,
+            shape: outline.shape,
+            elevation: uiState.stagedObject.elevation,
+            falloff: uiState.stagedObject.falloff,
+            ...toObjectFillFields(uiState.stagedObject.fill),
+            order: frontElementOrder(maskStack(maskData)),
+            polygon_indices: [...membership],
+          }),
+        );
+        if (!created) return;
+        let patched = applyObjectDelta(maskData, created);
+
+        const removed = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(light, { polygon_indices: [] }),
+        );
+        if (removed) patched = applyLightDelta(patched, removed);
+
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskObjectsUpdated(maskKey, patched);
+        notifyMaskLightUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "object", key: maskKey, objectId } });
+
+        if (removed) {
+          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, lightId });
+          if (uiState.lightGridlines?.key === maskKey && uiState.lightGridlines.lightId === lightId) {
+            uiDispatch({ type: UIActionType.SetLightGridlines, value: undefined });
+          }
+          if (
+            uiState.activeElement?.key === maskKey &&
+            uiState.activeElement.type === "light" &&
+            uiState.activeElement.lightId === lightId
+          ) {
+            uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+          }
+          await deleteMaskLightEffects(
+            maskKey,
+            lightId,
+            coreState.apiOrigin,
+            coreState.accessToken,
+            coreState.effects,
+            dispatch,
+          );
+        }
+
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedObjectChanged(maskKey, objectId);
+        notifyMaskSelectedLightChanged(maskKey, undefined);
+      } finally {
+        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+        notifyMaskPendingTopologyCleared(maskKey);
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
+      uiState.stagedObject,
+      uiState.lightGridlines,
+      uiState.activeElement,
+      lightOutline,
+      sendMaskObjectUpdate,
+      sendMaskLightUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskObjectsUpdated,
+      notifyMaskLightUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedObjectChanged,
+      notifyMaskSelectedLightChanged,
+    ],
+  );
+
+  const convertObjectToLight = useCallback(
+    async (maskKey: string, objectId: number) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const object = maskData?.objects.find((o) => o.id === objectId);
+      if (!maskData || !object) return;
+
+      const outline = { cx: object.cx, cy: object.cy, radius: object.radius, shape: object.shape };
+      const lightId = nextLightId(maskData.lights);
+      const membership = indicesInObjectFromCentroids(maskGeometry(maskData).centroids, outline);
+      if (membership.size === 0) return;
+
+      const maskMeta = coreState.project.masks.get(maskKey);
+      const size = outline.radius * 2;
+
+      copyInFlightRef.current = true;
+      try {
+        dispatch({
+          type: CoreActionType.SetPendingLight,
+          value: { maskKey, lightId, polygonIndices: [...membership] },
+        });
+        notifyMaskPendingLightSet(maskKey, membership, lightId);
+
+        const created = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(newLight(lightId, `light ${lightId}`), {
+            polygon_indices: [...membership],
+            order: frontElementOrder(maskStack(maskData)),
+            cx: outline.cx,
+            cy: outline.cy,
+            radius: outline.radius,
+            shape: outline.shape,
+            size,
+            spread: Math.min(size * LIGHT_SPREAD_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
+            intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
+            shadow: maskMeta?.light_preview_shadow ?? LIGHT_SHADOW_DEFAULT,
+            cast: maskMeta?.light_preview_cast ?? LIGHT_CAST_DEFAULT,
+          }),
+        );
+        if (!created) return;
+        let patched = applyLightDelta(maskData, created);
+
+        const removed = await sendMaskObjectUpdate(
+          maskData.mask_media_id,
+          toObjectUpdate(object, { remove: true, polygon_indices: [] }),
+        );
+        if (removed) patched = applyObjectDelta(patched, removed);
+
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskLightUpdated(maskKey, patched);
+        notifyMaskObjectsUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "light", key: maskKey, lightId } });
+
+        if (removed) {
+          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, objectId });
+          if (
+            uiState.activeElement?.key === maskKey &&
+            uiState.activeElement.type === "object" &&
+            uiState.activeElement.objectId === objectId
+          ) {
+            uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+          }
+          await deleteMaskObjectEffects(
+            maskKey,
+            objectId,
+            coreState.apiOrigin,
+            coreState.accessToken,
+            coreState.effects,
+            dispatch,
+          );
+        }
+
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "light", lightId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedLightChanged(maskKey, lightId);
+        notifyMaskSelectedObjectChanged(maskKey, undefined);
+      } finally {
+        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+        notifyMaskPendingLightCleared(maskKey);
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      coreState.project.masks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
+      uiState.activeElement,
+      sendMaskLightUpdate,
+      sendMaskObjectUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+      notifyMaskObjectsUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -1919,6 +2288,10 @@ export default function Workspace({
     () => ({
       lightMeshSection,
       createObject,
+      copyObject,
+      copyLight,
+      convertLightToObject,
+      convertObjectToLight,
       deleteObject,
       reorderElement,
       restackMaskStack,
@@ -1942,6 +2315,10 @@ export default function Workspace({
     [
       lightMeshSection,
       createObject,
+      copyObject,
+      copyLight,
+      convertLightToObject,
+      convertObjectToLight,
       deleteObject,
       reorderElement,
       restackMaskStack,
@@ -2084,7 +2461,7 @@ export default function Workspace({
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
-        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
+        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : defaultLightSourceTool;
         if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
@@ -2310,31 +2687,9 @@ export default function Workspace({
                             zIndex: Z_INDEX.CANVAS_BG,
                           }}
                         />
-                        {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              width: "min-content",
-                              height: "min-content",
-                              zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                              pointerEvents:
-                                uiState.maskEdit !== undefined
-                                  ? "none"
-                                  : uiState.tool.type === "mask" &&
-                                      !uiState.tool.lightingMeshSection &&
-                                      !uiState.tool.raisingObjects &&
-                                      uiState.browserElement?.type !== "img"
-                                    ? "none"
-                                    : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
-                                      ? "none"
-                                      : "auto",
-                            }}
-                          >
-                            <Canvas />
-                          </div>
-                        )}
+                        {(uiState.tool.type === "marquee" ||
+                          uiState.tool.type === "mask" ||
+                          (uiState.tool.type === "light_source" && uiState.tool.copy)) && <Canvas />}
                         <DraggableCamera
                           contextId={"draggable-camera-context-id"}
                           nodeId={"draggable-camera-node-id"}

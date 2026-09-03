@@ -43,6 +43,7 @@ import {
   UIActionType,
   editedRegion,
   isAwaitingRegionPick,
+  isMaskDropZoneArmed,
   isMaskEditLocked,
   isPenArmed,
 } from "../states/ui-state";
@@ -262,7 +263,7 @@ export function ProjectMaskItem({
     notifyMaskObjectReviewPreview,
     notifyMaskLightSourcePreviewToggled,
   } = useContext(MaskContext);
-  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
+  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, isMetaKeyPressed, setMostRecentlyHoveredMaskKey } =
     useContext(HoverContext);
   const [isHovered, setIsHovered] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1938,6 +1939,7 @@ export function ProjectMaskItem({
 
   const showContextMenu =
     source.kind === "static" && (uiState.projectContextMenus.get(mediaKey)?.showContextMenu ?? false);
+  const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
   const maskMeta = source.kind === "static" ? coreState.project.masks.get(mediaKey) : undefined;
 
   return (
@@ -1948,6 +1950,11 @@ export function ProjectMaskItem({
         position: "absolute",
         ...containerSize,
         zIndex: showContextMenu && maxZIndex !== undefined ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
+        // Every descendant inherits this, so the whole item goes transparent to
+        // the drag in one move -- wrappers included, which are hit targets of
+        // their own however invisible they look. The context menu's panel takes
+        // its own events back so the menu itself stays usable.
+        pointerEvents: dropZoneArmed ? "none" : undefined,
       }}
     >
       <div>

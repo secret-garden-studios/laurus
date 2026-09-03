@@ -19,7 +19,14 @@ import {
   inkPen300,
   skew300,
 } from "../../svg-repo";
-import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, LaurusTool, UIActionType } from "../states/ui-state";
+import {
+  defaultLightSourceTool,
+  defaultMarqueeTool,
+  defaultMaskTool,
+  defaultPenTool,
+  LaurusTool,
+  UIActionType,
+} from "../states/ui-state";
 import { useToolSwitch } from "../hooks/useMaskEditExit";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
@@ -378,8 +385,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             onClick={() => {
               if (uiState.playbackMode.type !== "stopped") return;
               handleMixRestoration();
-              const next: LaurusTool =
-                uiState.tool.type == "light_source" ? { type: "none" } : { type: "light_source" };
+              const next: LaurusTool = uiState.tool.type == "light_source" ? { type: "none" } : defaultLightSourceTool;
               if (!switchTool(next)) return;
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
