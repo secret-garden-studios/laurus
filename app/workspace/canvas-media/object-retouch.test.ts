@@ -15,6 +15,8 @@ import type { LaurusPolygonPath } from "../workspace.server";
 
 const SQUARE = "M -1,-1 L 1,-1 L 1,1 L -1,1 Z";
 const ANNULUS = `${SQUARE} M -0.4,-0.4 L -0.4,0.4 L 0.4,0.4 L 0.4,-0.4 Z`;
+const CIRCLE =
+  "M 1,0 C 1,0.5523 0.5523,1 0,1 C -0.5523,1 -1,0.5523 -1,0 C -1,-0.5523 -0.5523,-1 0,-1 C 0.5523,-1 1,-0.5523 1,0 Z";
 
 const tri = (a: Point, b: Point, c: Point): Point[] => [a, b, c];
 
@@ -349,6 +351,40 @@ describe("retouchMesh", () => {
     assert.equal(result.polygons[0], polygons[0], "the needle was rebuilt for nothing");
   });
 
+  it("costs the same the second time a shape is cut from the mesh it was found with", () => {
+    const curve = shapeOutline(CIRCLE, { cx: 10, cy: 10, radius: 6 })!;
+    const first = retouchMesh(mesh.polygons, mesh.points, curve);
+    assert.ok(first.added > 0, "nothing was cut, so this proves nothing -- pick another fixture");
+
+    const again = retouchMesh(mesh.polygons, mesh.points, curve);
+    assert.equal(again.added, first.added);
+    assert.deepEqual(
+      again.polygons.map((p) => p.d),
+      first.polygons.map((p) => p.d),
+      "a retouch is not a pure function of the mesh and the shape",
+    );
+  });
+
+  it("buys almost no coverage when a cut mesh is cut again, which is why callers recut the original", () => {
+    const curve = shapeOutline(CIRCLE, { cx: 10, cy: 10, radius: 6 })!;
+    const first = retouchMesh(mesh.polygons, mesh.points, curve);
+    const layered = retouchMesh(
+      first.polygons,
+      first.polygons.map((p) => pointsOf(p.d)),
+      curve,
+    );
+
+    assert.ok(
+      layered.added > 0,
+      "cutting a cut mesh no longer compounds -- retouchObjectMesh need not hold on to the mesh it was found with",
+    );
+
+    const covered = (result: { polygons: LaurusPolygonPath[]; indices: Set<number> }): number =>
+      [...result.indices].reduce((sum, index) => sum + area(pointsOf(result.polygons[index].d)), 0);
+    const gained = (covered(layered) - covered(first)) / covered(first);
+    assert.ok(gained < 0.01, `a second cut moved coverage by ${(gained * 100).toFixed(1)}%, so it was worth making`);
+  });
+
   it("carries a neighbouring object's tag onto the fragments it cut from it", () => {
     const tagged = mesh.polygons.map((p, i) => (i === 0 ? { ...p, object_id: 7 } : p));
     const before = tagged.filter((p) => p.object_id === 7).length;
@@ -399,10 +435,8 @@ describe("retouchDelta", () => {
 
   it("measures a second recut from the mesh the mask was found with", () => {
     const original = [polygon("a"), polygon("b")];
-    const first = [original[0], polygon("b1"), polygon("x")];
     const second = [original[0], polygon("b2"), polygon("x2"), polygon("y")];
-
-    const delta = retouchDelta({ polygons: second, restore: original, added: 1 + 1 });
+    const delta = retouchDelta({ polygons: second, restore: original, added: 2 });
 
     for (const { index } of delta.replaced) {
       assert.ok(index < original.length, `named slot ${index}, but the server's mesh ends at ${original.length}`);
@@ -412,6 +446,5 @@ describe("retouchDelta", () => {
       delta.added.map((p) => p.d),
       ["x2", "y"],
     );
-    assert.equal(first.length, 3, "the intermediate mesh is what the second recut was measured against");
   });
 });

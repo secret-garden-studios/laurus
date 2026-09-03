@@ -734,16 +734,17 @@ export function ProjectMaskItem({
     const maskData = coreState.canvasMasks.get(mediaKey);
     if (!outline || !maskData) return;
 
-    const geometry = maskGeometry(maskData);
-    const result = retouchMesh(maskData.polygons, geometry.points, outline);
-    if (result.added === 0) return;
+    const found = { ...maskData, polygons: session.retouch?.restore ?? maskData.polygons };
+    const geometry = maskGeometry(found);
+    const result = retouchMesh(found.polygons, geometry.points, outline);
+    if (result.added === 0 && !session.retouch) return;
 
     const patched = { ...maskData, polygons: result.polygons };
     const indices = withoutNeighbouringObjects(result.indices, session, maskGeometry(patched), result.polygons);
     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
     uiDispatch({
       type: UIActionType.SetMaskEditRetouch,
-      retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
+      retouch: { polygons: result.polygons, restore: found.polygons, added: result.added },
     });
     uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
     notifyMaskObjectsUpdated(mediaKey, patched);
@@ -1950,10 +1951,6 @@ export function ProjectMaskItem({
         position: "absolute",
         ...containerSize,
         zIndex: showContextMenu && maxZIndex !== undefined ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
-        // Every descendant inherits this, so the whole item goes transparent to
-        // the drag in one move -- wrappers included, which are hit targets of
-        // their own however invisible they look. The context menu's panel takes
-        // its own events back so the menu itself stays usable.
         pointerEvents: dropZoneArmed ? "none" : undefined,
       }}
     >

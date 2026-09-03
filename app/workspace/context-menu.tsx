@@ -56,6 +56,7 @@ import {
   UIActionType,
   defaultUIState,
   isMaskDropZoneArmed,
+  isMaskEditSubject,
   resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
@@ -992,15 +993,22 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return coreState.canvasMasks.get(media.key)?.lights.length;
   }, [coreState.canvasMasks, media]);
 
+  const editedPolygonCount = useMemo(() => {
+    const session = uiState.maskEdit;
+    return session && isMaskEditSubject(session, media) ? session.currentIndices.size : undefined;
+  }, [uiState.maskEdit, media]);
+
   const objectPolygonCount = useMemo(() => {
     if (media.type !== "object") return undefined;
+    if (editedPolygonCount !== undefined) return editedPolygonCount;
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.object_id === media.objectId).length;
-  }, [coreState.canvasMasks, media]);
+  }, [coreState.canvasMasks, media, editedPolygonCount]);
 
   const lightPolygonCount = useMemo(() => {
     if (media.type !== "light") return undefined;
+    if (editedPolygonCount !== undefined) return editedPolygonCount;
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
-  }, [coreState.canvasMasks, media]);
+  }, [coreState.canvasMasks, media, editedPolygonCount]);
 
   const reviewFetchedRef = useRef(new Set<string>());
   useEffect(() => {

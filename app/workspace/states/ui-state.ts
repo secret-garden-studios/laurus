@@ -785,7 +785,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           retouch: {
             polygons: action.retouch.polygons,
             restore: previous?.restore ?? action.retouch.restore,
-            added: (previous?.added ?? 0) + action.retouch.added,
+            added: action.retouch.added,
           },
         },
       };
