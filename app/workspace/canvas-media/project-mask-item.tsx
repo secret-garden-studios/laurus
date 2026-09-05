@@ -23,6 +23,7 @@ import {
   HIGHLIGHT_MOVING_COLOR,
   HIGHLIGHT_SELECTED_COLOR,
   HIGHLIGHT_SIBLING_COLOR,
+  highlightCss,
   highlightObjectReviewAddedColor,
   highlightShapeEditColor,
   LIGHT_CAST_ENDLESS,
@@ -43,6 +44,7 @@ import {
   UIActionType,
   editedRegion,
   isAwaitingRegionPick,
+  isMaskDropZoneArmed,
   isMaskEditLocked,
   isPenArmed,
 } from "../states/ui-state";
@@ -73,7 +75,7 @@ import { shapeOutline } from "./object-clip";
 import { frontElementOrder, isBehindMask, MASK_ORDER_UNRANKED, maskStack } from "./mask-order";
 import { retouchMesh } from "./object-retouch";
 import { unitCirclePath } from "./object-path";
-import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
+import ObjectShapeEditor, { ShapeOutlines, type ShapeEdit, type ShapeOutline } from "./object-shape-editor";
 import {
   getFrames,
   getImg,
@@ -94,6 +96,7 @@ import {
   toEquationObjectFill,
   toLightUpdate,
   toObjectFill,
+  polygonsReplacedWith,
 } from "../workspace.server";
 import { maskLightInputId, maskObjectInputId } from "../effects-utils";
 
@@ -262,7 +265,7 @@ export function ProjectMaskItem({
     notifyMaskObjectReviewPreview,
     notifyMaskLightSourcePreviewToggled,
   } = useContext(MaskContext);
-  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, setMostRecentlyHoveredMaskKey } =
+  const { selectedMaskKeys, setSelectedMaskKeys, isAltKeyPressed, isMetaKeyPressed, setMostRecentlyHoveredMaskKey } =
     useContext(HoverContext);
   const [isHovered, setIsHovered] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -337,6 +340,7 @@ export function ProjectMaskItem({
   const selectedHighlightRef = useRef(false);
   const pickHoverRef = useRef(false);
   const highlightSuppressedRef = useRef(false);
+  const [highlightSuppressed, setHighlightSuppressed] = useState(false);
   const lightsRef = useRef<Map<number, Set<number>>>(new Map());
   const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
   const pendingLightShapeRef = useRef<
@@ -733,16 +737,17 @@ export function ProjectMaskItem({
     const maskData = coreState.canvasMasks.get(mediaKey);
     if (!outline || !maskData) return;
 
-    const geometry = maskGeometry(maskData);
-    const result = retouchMesh(maskData.polygons, geometry.points, outline);
-    if (result.added === 0) return;
+    const found = { ...maskData, polygons: session.retouch?.restore ?? maskData.polygons };
+    const geometry = maskGeometry(found);
+    const result = retouchMesh(found.polygons, geometry.points, outline);
+    if (result.added === 0 && !session.retouch) return;
 
     const patched = { ...maskData, polygons: result.polygons };
     const indices = withoutNeighbouringObjects(result.indices, session, maskGeometry(patched), result.polygons);
     dispatch({ type: CoreActionType.SetCanvasMask, key: mediaKey, value: patched });
     uiDispatch({
       type: UIActionType.SetMaskEditRetouch,
-      retouch: { polygons: result.polygons, restore: maskData.polygons, added: result.added },
+      retouch: { polygons: result.polygons, restore: found.polygons, added: result.added },
     });
     uiDispatch({ type: UIActionType.SetMaskEditIndices, indices });
     notifyMaskObjectsUpdated(mediaKey, patched);
@@ -848,16 +853,6 @@ export function ProjectMaskItem({
 
     const pendingLight = pendingLightRef.current;
     const maskEditSubject = maskEditSubjectRef.current;
-    const editingLightId =
-      (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
-      (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
-    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
-      const activeLightId = selectedLightIdRef.current;
-      lightsRef.current.forEach((indices, lightId) => {
-        if (lightId === editingLightId) return;
-        paint(indices, lightId === activeLightId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
-      });
-    }
     if (pendingLight && pendingLight.size > 0 && !suppressed) {
       paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
@@ -1527,6 +1522,44 @@ export function ProjectMaskItem({
     recolorHighlight();
   }, [pickHover, recolorHighlight]);
 
+  const editedRegionKey = useMemo(() => {
+    const edited = maskEditSubjectFor(uiState.maskEdit, mediaKey);
+    return edited && `${edited.subject}:${edited.id}`;
+  }, [uiState.maskEdit, mediaKey]);
+
+  const tracedRegions = useMemo((): ShapeOutline[] => {
+    if (source.kind !== "static") return [];
+    if (highlightSuppressed) return [];
+    const selected = uiState.selectedElement?.key === mediaKey ? uiState.selectedElement : undefined;
+    if (!selected && !pickHover) return [];
+    const maskData = coreState.canvasMasks.get(mediaKey) ?? source.maskData;
+    const selectedLightId = selected?.type === "light" ? selected.lightId : undefined;
+    const selectedObjectId = selected?.type === "object" ? selected.objectId : undefined;
+    const color = (isSelected: boolean) =>
+      highlightCss(isSelected ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
+    return [
+      ...maskData.lights.map((light) => ({
+        id: `light:${light.id}`,
+        region: lightRegion(light, new Set(polygonIndicesForLight(maskData.polygons, light.id))),
+        color: color(light.id === selectedLightId),
+      })),
+      ...maskData.objects.map((object) => ({
+        id: `object:${object.id}`,
+        region: object,
+        color: color(object.id === selectedObjectId),
+      })),
+    ].filter(({ id }) => id !== editedRegionKey);
+  }, [
+    source,
+    uiState.selectedElement,
+    editedRegionKey,
+    highlightSuppressed,
+    pickHover,
+    mediaKey,
+    coreState.canvasMasks,
+    lightRegion,
+  ]);
+
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
     (canvas: HTMLCanvasElement | null) => {
@@ -1678,6 +1711,7 @@ export function ProjectMaskItem({
           setHighlightSuppressed: (suppressed) => {
             if (highlightSuppressedRef.current === suppressed) return;
             highlightSuppressedRef.current = suppressed;
+            setHighlightSuppressed(suppressed);
             recolorHighlight();
           },
           setSelectedHighlighted: (active) => {
@@ -1938,6 +1972,7 @@ export function ProjectMaskItem({
 
   const showContextMenu =
     source.kind === "static" && (uiState.projectContextMenus.get(mediaKey)?.showContextMenu ?? false);
+  const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
   const maskMeta = source.kind === "static" ? coreState.project.masks.get(mediaKey) : undefined;
 
   return (
@@ -1948,6 +1983,7 @@ export function ProjectMaskItem({
         position: "absolute",
         ...containerSize,
         zIndex: showContextMenu && maxZIndex !== undefined ? Z_INDEX.CONTEXT_MENU_OFFSET + maxZIndex + zIndex : zIndex,
+        pointerEvents: dropZoneArmed ? "none" : undefined,
       }}
     >
       <div>
@@ -2055,18 +2091,19 @@ export function ProjectMaskItem({
                     select({ key: mediaKey, type: "mask" });
                   }
                 }
+                const takesSelection = !selectedMaskKeys.has(mediaKey);
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
                     next.delete(mediaKey);
                   } else {
                     next.add(mediaKey);
-                    if (source.maskData.lights.length > 0) {
-                      select({ key: mediaKey, type: "mask" });
-                    }
                   }
                   return next;
                 });
+                if (takesSelection && source.maskData.lights.length > 0) {
+                  select({ key: mediaKey, type: "mask" });
+                }
                 return;
               }
               if ((uiState.tool.type === "rotate" || uiState.tool.type === "skew") && !e.metaKey) {
@@ -2240,9 +2277,8 @@ export function ProjectMaskItem({
               lightCommitInFlightRef.current.add(lightId);
               sendMaskLightUpdate(
                 source.maskData.mask_media_id,
-                toLightUpdate(existingLight ?? newLight(lightId, lightName), {
+                toLightUpdate(existingLight ?? newLight(lightId, lightName), polygonsReplacedWith([...finalIndices]), {
                   name: lightName,
-                  polygon_indices: [...finalIndices],
                   ...(existingLight ? {} : { order: frontElementOrder(maskStack(source.maskData)) }),
                   ...(existingLight && existingLight.radius > 0
                     ? { cx: drag.originalRegion.cx + dx, cy: drag.originalRegion.cy + dy }
@@ -2342,6 +2378,14 @@ export function ProjectMaskItem({
               gridlinesBright={uiState.gridlinesBright}
             />
           )}
+          <ShapeOutlines
+            outlines={tracedRegions}
+            bufferWidth={canvasSize.width}
+            bufferHeight={canvasSize.height}
+            cssWidth={containerSize.width}
+            cssHeight={containerSize.height}
+            canvasZoom={canvasZoom}
+          />
         </div>
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu

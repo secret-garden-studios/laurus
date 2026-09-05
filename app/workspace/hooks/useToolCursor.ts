@@ -1,6 +1,7 @@
 import { useContext, useMemo } from "react";
-import { HoverContext, UIContext } from "../workspace.client";
+import { HoverContext } from "../workspace.client";
 import { isPenArmed, LaurusTool } from "../states/ui-state";
+import { useUIFilledForwards, useUIMaskEdit, useUITool } from "../states/ui-store";
 
 export type MediaKind = "img" | "svg" | "mask";
 export type CursorTarget = MediaKind | "canvas";
@@ -98,11 +99,12 @@ interface UseToolCursorParams {
 }
 
 export function useToolCursor({ target, dragDisabled, isDragging, isStackable }: UseToolCursorParams): CursorValue {
-  const { uiState } = useContext(UIContext);
   const { isAltKeyPressed, isMetaKeyPressed } = useContext(HoverContext);
-  const toolType = uiState.tool.type;
-  const filledForwards = uiState.filledForwards;
-  const penArmed = isPenArmed(uiState);
+  const tool = useUITool();
+  const maskEdit = useUIMaskEdit();
+  const filledForwards = useUIFilledForwards();
+  const toolType = tool.type;
+  const penArmed = isPenArmed({ tool, maskEdit });
 
   return useMemo((): CursorValue => {
     if (isAltKeyPressed && toolType !== "marquee") return "crosshair";

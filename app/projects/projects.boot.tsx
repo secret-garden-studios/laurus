@@ -7,6 +7,7 @@ import Projects from "./projects.client";
 import { ProjectsResolution } from "./projects-resolution";
 import { MeDependencies, ProjectDependencies } from "../page";
 import { LaurusPinResult } from "./projects.server";
+import { useAccessToken } from "../hooks/useAccessToken";
 
 interface ProjectsBoot {
   laurusApi: string | undefined;
@@ -16,6 +17,7 @@ interface ProjectsBoot {
 }
 export default function ProjectsBoot({ laurusApi, projectDependenciesPromise, mePromise, pinsPromise }: ProjectsBoot) {
   const me = use(mePromise);
+  useAccessToken(laurusApi, me.accessToken);
   const projectDependencies = use(projectDependenciesPromise);
   const pins = use(pinsPromise);
   const [resolution, setResolution] = useState<ProjectsResolution | undefined>(undefined);

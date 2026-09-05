@@ -19,6 +19,7 @@ import {
 } from "../projects/projects.server";
 import {
   CoreContext,
+  HoverContext,
   LaurusTransform,
   MaskContext,
   SocketContext,
@@ -39,6 +40,7 @@ import {
   toLightUpdate,
   toObjectUpdate,
   updateMaskDescription,
+  POLYGONS_UNCHANGED,
 } from "./workspace.server";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
@@ -54,6 +56,8 @@ import {
   UIAction,
   UIActionType,
   defaultUIState,
+  isMaskDropZoneArmed,
+  isMaskEditSubject,
   resumeObjectReview,
 } from "./states/ui-state";
 import { CoreAction, CoreActionType } from "./states/core-state";
@@ -224,8 +228,11 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     reorderElement,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
+  const { isAltKeyPressed, isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } =
+    useContext(HoverContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
+  const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
   const active = useMemo<boolean>(() => {
     if (uiState.activeElement?.key !== media.key) return false;
     if (media.type === "light") {
@@ -488,6 +495,29 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   });
 
+  const dropSelectedKey = useCallback(
+    (mediaType: ContextMenu["media"]["type"], mediaKey: string) => {
+      const without = (keys: Set<string>) => {
+        if (!keys.has(mediaKey)) return keys;
+        const next = new Set(keys);
+        next.delete(mediaKey);
+        return next;
+      };
+      switch (mediaType) {
+        case "img":
+          setSelectedImgKeys(without);
+          break;
+        case "svg":
+          setSelectedSvgKeys(without);
+          break;
+        case "mask":
+          setSelectedMaskKeys(without);
+          break;
+      }
+    },
+    [setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys],
+  );
+
   const deleteProjectMedia = useCallback(
     async (
       snapshot: LaurusProjectResult,
@@ -523,6 +553,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             });
             notifyMaskSelectionChanged(undefined);
           }
+          dropSelectedKey(media.type, media.key);
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
             key: media.key,
@@ -558,6 +589,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       uiDispatch,
       framesCacheRef,
       notifyMaskSelectionChanged,
+      dropSelectedKey,
     ],
   );
 
@@ -974,7 +1006,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
 
   const reviewMaskMediaId = useMemo(() => {
     if (media.type !== "mask") return undefined;
-    return coreState.canvasMasks.get(media.key)?.mask_media_id;
+    const maskData = coreState.canvasMasks.get(media.key);
+    return maskData?.has_object_review ? maskData.mask_media_id : undefined;
   }, [coreState.canvasMasks, media]);
 
   const maskObjectCount = useMemo(() => {
@@ -987,15 +1020,22 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     return coreState.canvasMasks.get(media.key)?.lights.length;
   }, [coreState.canvasMasks, media]);
 
+  const editedPolygonCount = useMemo(() => {
+    const session = uiState.maskEdit;
+    return session && isMaskEditSubject(session, media) ? session.currentIndices.size : undefined;
+  }, [uiState.maskEdit, media]);
+
   const objectPolygonCount = useMemo(() => {
     if (media.type !== "object") return undefined;
+    if (editedPolygonCount !== undefined) return editedPolygonCount;
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.object_id === media.objectId).length;
-  }, [coreState.canvasMasks, media]);
+  }, [coreState.canvasMasks, media, editedPolygonCount]);
 
   const lightPolygonCount = useMemo(() => {
     if (media.type !== "light") return undefined;
+    if (editedPolygonCount !== undefined) return editedPolygonCount;
     return coreState.canvasMasks.get(media.key)?.polygons.filter((p) => p.light_id === media.lightId).length;
-  }, [coreState.canvasMasks, media]);
+  }, [coreState.canvasMasks, media, editedPolygonCount]);
 
   const reviewFetchedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -1166,10 +1206,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (!light) return;
           const updated = await sendMaskLightUpdate(
             maskData.mask_media_id,
-            toLightUpdate(light, {
-              description,
-              polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
-            }),
+            toLightUpdate(light, POLYGONS_UNCHANGED, { description }),
           );
           if (!updated) return;
           const patched = applyLightDelta(maskData, updated);
@@ -1182,10 +1219,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           if (!object) return;
           const updated = await sendMaskObjectUpdate(
             maskData.mask_media_id,
-            toObjectUpdate(object, {
-              description,
-              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
-            }),
+            toObjectUpdate(object, POLYGONS_UNCHANGED, { description }),
           );
           if (!updated) return;
           const patched = applyObjectDelta(maskData, updated);
@@ -1268,6 +1302,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
         <div
           style={{
             position: "absolute",
+            pointerEvents: dropZoneArmed ? "auto" : undefined,
             ...(contextMenuConfig.position.toLowerCase().endsWith("right") && {
               left: "100%",
             }),
@@ -1630,7 +1665,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
                         case "light": {
                           const updated: LightUpdateDelta_V1_0 | undefined = await sendMaskLightUpdate(
                             media.meta.media_id,
-                            toLightUpdate(newLight(media.lightId, ""), { polygon_indices: [] }),
+                            toLightUpdate(newLight(media.lightId, ""), POLYGONS_UNCHANGED, { remove: true }),
                           );
                           const lightMaskData = coreState.canvasMasks.get(media.key);
                           if (!updated || !lightMaskData) break;

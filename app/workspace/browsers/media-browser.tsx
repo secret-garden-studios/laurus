@@ -252,6 +252,42 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
     }
   });
   const [mediaSort, setMediaSort] = useState<MediaSortValue>("none");
+
+  const imgItems = useMemo(() => {
+    const maskSourceImgIds = getMaskSourceImgIds(coreState.project.masks, coreState.canvasMasks);
+    const projectImgIds = new Set(Array.from(coreState.project.imgs.values()).map((img) => img.img_media_id));
+    return sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
+      const img = media as LaurusImgResult;
+      const publicImg = !projectImgIds.has(img.img_media_id) && !maskSourceImgIds.has(img.img_media_id);
+      if (publicImg && !coreState.project.browse_public_imgs) return;
+      return (
+        <div key={i}>
+          <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
+        </div>
+      );
+    });
+  }, [
+    uiState.browserImgs,
+    mediaSort,
+    coreState.project.masks,
+    coreState.project.imgs,
+    coreState.project.browse_public_imgs,
+    coreState.canvasMasks,
+    framesCacheRef,
+  ]);
+
+  const svgItems = useMemo(() => {
+    const projectSvgIds = new Set(Array.from(coreState.project.svgs.values()).map((svg) => svg.svg_media_id));
+    return sortBrowserMedia(uiState.browserSvgs, mediaSort).map((media, i) => {
+      const svg = media as LaurusSvgResult;
+      if (!projectSvgIds.has(svg.svg_media_id) && !coreState.project.browse_public_svgs) return;
+      return (
+        <div key={i}>
+          <SvgBrowser svg={svg} framesCacheRef={framesCacheRef} />
+        </div>
+      );
+    });
+  }, [uiState.browserSvgs, mediaSort, coreState.project.svgs, coreState.project.browse_public_svgs, framesCacheRef]);
   const [mediaUploading, setMediaUploading] = useState<boolean>(false);
 
   const handleUpload = useCallback(
@@ -629,22 +665,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                       color: "rgba(220, 220, 220, 1)",
                     }}
                   >
-                    {(() => {
-                      const maskSourceImgIds = getMaskSourceImgIds(coreState.project.masks, coreState.canvasMasks);
-                      return sortBrowserMedia(uiState.browserImgs, mediaSort).map((media, i) => {
-                        const img = media as LaurusImgResult;
-                        const isProjectImg = Array.from(coreState.project.imgs.values())
-                          .flatMap((i) => i.img_media_id)
-                          .includes(img.img_media_id);
-                        const publicImg: boolean = !isProjectImg && !maskSourceImgIds.has(img.img_media_id);
-                        if (publicImg && !coreState.project.browse_public_imgs) return;
-                        return (
-                          <div key={i}>
-                            <ImgBrowser img={img} framesCacheRef={framesCacheRef} />
-                          </div>
-                        );
-                      });
-                    })()}
+                    {imgItems}
                   </div>
                 </>
               );
@@ -661,18 +682,7 @@ export default function MediaBrowser({ framesCacheRef, refreshIconRef, onNextPag
                       color: "rgba(220, 220, 220, 1)",
                     }}
                   >
-                    {sortBrowserMedia(uiState.browserSvgs, mediaSort).map((media, i) => {
-                      const svg: LaurusSvgResult = media as LaurusSvgResult;
-                      const publicSvg: boolean = !Array.from(coreState.project.svgs.values())
-                        .flatMap((i) => i.svg_media_id)
-                        .includes(svg.svg_media_id);
-                      if (publicSvg && !coreState.project.browse_public_svgs) return;
-                      return (
-                        <div key={i}>
-                          <SvgBrowser svg={svg} framesCacheRef={framesCacheRef} />
-                        </div>
-                      );
-                    })}
+                    {svgItems}
                   </div>
                 </>
               );

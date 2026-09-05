@@ -11,6 +11,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import styles from "../app.module.css";
 import {
@@ -38,8 +39,11 @@ import {
   newLight,
   newObject,
   toLightUpdate,
+  toObjectFill,
   toObjectFillFields,
   toObjectUpdate,
+  POLYGONS_UNCHANGED,
+  polygonsReplacedWith,
 } from "./workspace.server";
 import {
   frontElementOrder,
@@ -58,7 +62,12 @@ import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
 import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
-import { deleteMaskObjectEffects, parseMaskLightInputId, parseMaskObjectInputId } from "./effects-utils";
+import {
+  deleteMaskLightEffects,
+  deleteMaskObjectEffects,
+  parseMaskLightInputId,
+  parseMaskObjectInputId,
+} from "./effects-utils";
 import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
@@ -75,8 +84,11 @@ import {
   dropIndicesClaimedByObjects,
   indicesInObjectFromCentroids,
   lightCenterFromCentroids,
+  lightOutline,
+  lightsStrippedBy,
+  objectOutline,
 } from "./canvas-media/light-geometry";
-import { maskGeometry, polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
+import { maskGeometry } from "./canvas-media/mask-geometry";
 import { unitCirclePath } from "./canvas-media/object-path";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import {
@@ -103,12 +115,13 @@ import {
 } from "../projects/projects.server";
 import { MeDependencies, ProjectDependencies } from "../page";
 import { UNAUTHORIZED_EDIT } from "../landing.server";
+import { useAccessToken } from "../hooks/useAccessToken";
 import {
-  uiContextReducer,
   CarouselEntry,
   UIAction,
   UIActionType,
   UIState,
+  defaultLightSourceTool,
   defaultMarqueeTool,
   defaultMaskTool,
   defaultUIState,
@@ -116,6 +129,7 @@ import {
   LaurusTool,
   defaultPenTool,
 } from "./states/ui-state";
+import { UIStoreContext, createUIStore, type UIStore } from "./states/ui-store";
 import {
   CoreAction,
   CoreActionType,
@@ -279,6 +293,61 @@ export const SocketContext = createContext<SocketContextProps>({
   closeMaskObjectSocket: () => {},
 });
 
+export interface MaskRegion {
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
+function confirmStrippedLights(maskData: LaurusMaskResult, taken: Set<number>): boolean {
+  const stripped = lightsStrippedBy(maskData.polygons, maskData.lights, taken);
+  if (stripped.length === 0) return true;
+  const names = stripped.map((light) => light.name).join(", ");
+  return confirm(
+    stripped.length === 1
+      ? `this drop takes every polygon from ${names}, leaving it with nothing to light. drop anyway?`
+      : `this drop takes every polygon from ${names}, leaving them with nothing to light. drop anyway?`,
+  );
+}
+
+export interface MaskNotifiers {
+  notifyMaskToolChanged: MaskNotifyValue["notifyMaskToolChanged"];
+  notifyMaskSelectionChanged: MaskNotifyValue["notifyMaskSelectionChanged"];
+  notifyMaskHighlightSuppressed: MaskNotifyValue["notifyMaskHighlightSuppressed"];
+  notifyMaskSelectedLightChanged: MaskNotifyValue["notifyMaskSelectedLightChanged"];
+  notifyMaskSelectedObjectChanged: MaskNotifyValue["notifyMaskSelectedObjectChanged"];
+  notifyMaskPendingLightSet: MaskNotifyValue["notifyMaskPendingLightSet"];
+  notifyMaskPendingLightCleared: MaskNotifyValue["notifyMaskPendingLightCleared"];
+  notifyMaskLightUpdated: MaskNotifyValue["notifyMaskLightUpdated"];
+  notifyMaskAppearanceChanged: MaskNotifyValue["notifyMaskAppearanceChanged"];
+  notifyMaskLightSourcePreviewToggled: MaskNotifyValue["notifyMaskLightSourcePreviewToggled"];
+  notifyMaskPendingTopologySet: MaskNotifyValue["notifyMaskPendingTopologySet"];
+  notifyMaskPendingTopologyCleared: MaskNotifyValue["notifyMaskPendingTopologyCleared"];
+  notifyMaskRetouchRequested: MaskNotifyValue["notifyMaskRetouchRequested"];
+  notifyMaskObjectReviewPreview: MaskNotifyValue["notifyMaskObjectReviewPreview"];
+  notifyCanvasZoomChanged: MaskNotifyValue["notifyCanvasZoomChanged"];
+  notifyMaskObjectsUpdated: MaskNotifyValue["notifyMaskObjectsUpdated"];
+}
+
+export const MaskNotifyContext = createContext<MaskNotifiers>({
+  notifyMaskToolChanged: () => {},
+  notifyMaskSelectionChanged: () => {},
+  notifyMaskHighlightSuppressed: () => {},
+  notifyMaskSelectedLightChanged: () => {},
+  notifyMaskSelectedObjectChanged: () => {},
+  notifyMaskPendingLightSet: () => {},
+  notifyMaskPendingLightCleared: () => {},
+  notifyMaskLightUpdated: () => {},
+  notifyMaskAppearanceChanged: () => {},
+  notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskPendingTopologySet: () => {},
+  notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskObjectReviewPreview: () => {},
+  notifyCanvasZoomChanged: () => {},
+  notifyMaskObjectsUpdated: () => {},
+  notifyMaskRetouchRequested: async () => {},
+});
+
 export interface MaskNotifyValue {
   lightMeshSection: (maskKey: string, polygonIndices: number[], size: number) => Promise<void>;
   createObject: (
@@ -286,6 +355,10 @@ export interface MaskNotifyValue {
     circle: { cx: number; cy: number; radius: number },
     seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
   ) => Promise<void>;
+  copyObject: (maskKey: string, objectId: number, circle: { cx: number; cy: number; radius: number }) => Promise<void>;
+  copyLight: (maskKey: string, lightId: number, circle: { cx: number; cy: number; radius: number }) => Promise<void>;
+  convertLightToObject: (maskKey: string, lightId: number, region?: MaskRegion) => Promise<void>;
+  convertObjectToLight: (maskKey: string, objectId: number, region?: MaskRegion) => Promise<void>;
   deleteObject: (maskKey: string, objectId: number) => Promise<void>;
   reorderElement: (maskKey: string, target: StackRef, direction: StackDirection) => Promise<void>;
   restackMaskStack: (maskKey: string, changes: StackChange[]) => Promise<void>;
@@ -317,6 +390,30 @@ export const UIContext = createContext<UIContextProps>({
   uiDispatch: () => {},
 });
 
+function UIProviders({ store, value, children }: { store: UIStore; value: UIContextProps; children: React.ReactNode }) {
+  return (
+    <UIStoreContext value={store}>
+      <UIContext value={value}>{children}</UIContext>
+    </UIStoreContext>
+  );
+}
+
+function MaskProviders({
+  notifiers,
+  value,
+  children,
+}: {
+  notifiers: MaskNotifiers;
+  value: MaskNotifyValue & UseMaskPreview;
+  children: React.ReactNode;
+}) {
+  return (
+    <MaskNotifyContext value={notifiers}>
+      <MaskContext value={value}>{children}</MaskContext>
+    </MaskNotifyContext>
+  );
+}
+
 const defaultMaskPreview: UseMaskPreview = {
   status: "idle",
   statusRef: { current: "idle" },
@@ -342,10 +439,6 @@ const defaultMaskPreview: UseMaskPreview = {
   lightCast: LIGHT_CAST_DEFAULT,
   setLightCast: () => {},
   lightCastRef: { current: LIGHT_CAST_DEFAULT },
-  position: { value: false, x: undefined, y: undefined },
-  setPosition: () => {},
-  size: { value: false, width: undefined, height: undefined },
-  setSize: () => {},
   resolution: MASK_RESOLUTION_DEFAULT,
   setResolution: () => {},
   start: () => {},
@@ -367,6 +460,10 @@ const defaultMaskPreview: UseMaskPreview = {
 const defaultMaskNotifyValue: MaskNotifyValue = {
   lightMeshSection: async () => {},
   createObject: async () => {},
+  copyObject: async () => {},
+  copyLight: async () => {},
+  convertLightToObject: async () => {},
+  convertObjectToLight: async () => {},
   deleteObject: async () => {},
   reorderElement: async () => {},
   restackMaskStack: async () => {},
@@ -868,15 +965,18 @@ export default function Workspace({
     });
   });
   const [coreState, dispatch] = useReducer(coreContextReducer, coreInit);
-  const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);
+  const [uiStore] = useState(() => createUIStore(uiInit));
+  const uiState = useSyncExternalStore(uiStore.subscribe, uiStore.getState, uiStore.getState);
+  const uiDispatch = uiStore.dispatch;
   const isGuest = !coreState.accessToken;
+  const liveAccessToken = useAccessToken(coreState.apiOrigin, coreState.accessToken);
   const { sendLightUpdate: sendMaskLightUpdate, closeSocket: closeMaskLightSocket } = useMaskLightSockets(
     coreState.apiOrigin,
-    coreState.accessToken,
+    liveAccessToken,
   );
   const { sendObjectUpdate: sendMaskObjectUpdate, closeSocket: closeMaskObjectSocket } = useMaskObjectSockets(
     coreState.apiOrigin,
-    coreState.accessToken,
+    liveAccessToken,
   );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -963,7 +1063,7 @@ export default function Workspace({
       stopRefreshAnimation();
       return false;
     }
-  }, [coreState.apiOrigin, mediaPageSize, uiState.browserImgs]);
+  }, [coreState.apiOrigin, mediaPageSize, uiDispatch, uiState.browserImgs]);
 
   const handleSvgPageRequest = useCallback(async () => {
     const mediaArray = Array.from(uiState.browserSvgs.values());
@@ -987,7 +1087,7 @@ export default function Workspace({
       stopRefreshAnimation();
       return false;
     }
-  }, [coreState.apiOrigin, mediaPageSize, uiState.browserSvgs]);
+  }, [coreState.apiOrigin, mediaPageSize, uiDispatch, uiState.browserSvgs]);
 
   const handleMixRestoration = useCallback(() => {
     if (uiState.tool.type === "mix") {
@@ -1167,6 +1267,7 @@ export default function Workspace({
       coreState.project.masks,
       coreState.project.project_id,
       coreState.project.svgs,
+      uiDispatch,
     ],
   );
 
@@ -1285,8 +1386,7 @@ export default function Workspace({
       const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, new Set(polygonIndices));
       const updated = await sendMaskLightUpdate(
         maskData.mask_media_id,
-        toLightUpdate(newLight(lightId, name), {
-          polygon_indices: polygonIndices,
+        toLightUpdate(newLight(lightId, name), polygonsReplacedWith(polygonIndices), {
           order: frontElementOrder(maskStack(maskData)),
           size,
           intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
@@ -1339,11 +1439,14 @@ export default function Workspace({
     ],
   );
 
-  const createObject = useCallback(
+  const copyInFlightRef = useRef(false);
+
+  const placeObject = useCallback(
     async (
       maskKey: string,
       circle: { cx: number; cy: number; radius: number },
-      seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
+      seed: { elevation: number; falloff: number; fill: LaurusObjectFill; shape: string; lift: boolean },
+      options: { select: boolean },
     ) => {
       if (isGuest) {
         alert(UNAUTHORIZED_EDIT);
@@ -1353,7 +1456,7 @@ export default function Workspace({
       if (!maskData) return;
       const objectId = nextObjectId(maskData.objects);
       const radius = Math.max(circle.radius, MIN_MASK_OBJECT_RADIUS_PX);
-      const shape = unitCirclePath();
+      const shape = seed.shape;
       const geometry = maskGeometry(maskData);
       const membership = dropIndicesClaimedByObjects(
         indicesInObjectFromCentroids(geometry.centroids, { cx: circle.cx, cy: circle.cy, radius, shape }),
@@ -1381,16 +1484,16 @@ export default function Workspace({
 
       const updated = await sendMaskObjectUpdate(
         maskData.mask_media_id,
-        toObjectUpdate(newObject(objectId, `object ${objectId}`), {
+        toObjectUpdate(newObject(objectId, `object ${objectId}`), polygonsReplacedWith(polygonIndices), {
           cx: circle.cx,
           cy: circle.cy,
           radius,
           elevation: seed.elevation,
           falloff: seed.falloff,
           shape,
+          lift: seed.lift,
           ...toObjectFillFields(seed.fill),
           order: frontElementOrder(maskStack(maskData)),
-          polygon_indices: polygonIndices,
         }),
       );
       if (updated) {
@@ -1398,10 +1501,12 @@ export default function Workspace({
         dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
         notifyMaskObjectsUpdated(maskKey, patched);
         uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "object", key: maskKey, objectId } });
-        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
-        notifyMaskSelectionChanged(maskKey);
-        notifyMaskSelectedObjectChanged(maskKey, objectId);
-        notifyMaskSelectedLightChanged(maskKey, undefined);
+        if (options.select) {
+          uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
+          notifyMaskSelectionChanged(maskKey);
+          notifyMaskSelectedObjectChanged(maskKey, objectId);
+          notifyMaskSelectedLightChanged(maskKey, undefined);
+        }
       }
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
       notifyMaskPendingTopologyCleared(maskKey);
@@ -1418,6 +1523,336 @@ export default function Workspace({
       notifyMaskSelectionChanged,
       notifyMaskSelectedObjectChanged,
       notifyMaskSelectedLightChanged,
+    ],
+  );
+
+  const createObject = useCallback(
+    (
+      maskKey: string,
+      circle: { cx: number; cy: number; radius: number },
+      seed: { elevation: number; falloff: number; fill: LaurusObjectFill },
+    ) => placeObject(maskKey, circle, { ...seed, shape: unitCirclePath(), lift: true }, { select: true }),
+    [placeObject],
+  );
+
+  const copyObject = useCallback(
+    async (maskKey: string, objectId: number, circle: { cx: number; cy: number; radius: number }) => {
+      if (copyInFlightRef.current) return;
+      const source = coreState.canvasMasks.get(maskKey)?.objects.find((o) => o.id === objectId);
+      if (!source) return;
+      copyInFlightRef.current = true;
+      try {
+        await placeObject(
+          maskKey,
+          circle,
+          {
+            elevation: source.elevation,
+            falloff: source.falloff,
+            fill: toObjectFill(source),
+            shape: source.shape,
+            lift: source.lift,
+          },
+          { select: false },
+        );
+      } finally {
+        copyInFlightRef.current = false;
+      }
+    },
+    [coreState.canvasMasks, placeObject],
+  );
+
+  const copyLight = useCallback(
+    async (maskKey: string, lightId: number, circle: { cx: number; cy: number; radius: number }) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const source = maskData?.lights.find((l) => l.id === lightId);
+      if (!maskData || !source) return;
+
+      const sourceRadius = lightOutline(maskData, source).radius;
+      const scale = sourceRadius > 0 ? circle.radius / sourceRadius : 1;
+
+      const copyId = nextLightId(maskData.lights);
+      const region = { cx: circle.cx, cy: circle.cy, radius: circle.radius, shape: source.shape };
+      const membership = indicesInObjectFromCentroids(maskGeometry(maskData).centroids, region);
+      const polygonIndices = [...membership];
+      if (polygonIndices.length === 0) return;
+      if (!confirmStrippedLights(maskData, membership)) return;
+
+      copyInFlightRef.current = true;
+      try {
+        dispatch({ type: CoreActionType.SetPendingLight, value: { maskKey, lightId: copyId, polygonIndices } });
+        notifyMaskPendingLightSet(maskKey, new Set(polygonIndices), copyId);
+
+        const updated = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(newLight(copyId, `light ${copyId}`), polygonsReplacedWith(polygonIndices), {
+            order: frontElementOrder(maskStack(maskData)),
+            cx: region.cx,
+            cy: region.cy,
+            radius: region.radius,
+            shape: region.shape,
+            size: source.size * scale,
+            spread: Math.min(source.spread * scale, Math.min(maskData.width, maskData.height)),
+            intensity: source.intensity,
+            shadow: source.shadow,
+            cast: source.cast,
+            lowpoly: source.lowpoly,
+          }),
+        );
+        if (updated) {
+          const patched = applyLightDelta(maskData, updated);
+          dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+          notifyMaskLightUpdated(maskKey, patched);
+          uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "light", key: maskKey, lightId: copyId } });
+        }
+        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+        notifyMaskPendingLightCleared(maskKey);
+      } finally {
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      sendMaskLightUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+    ],
+  );
+
+  const convertLightToObject = useCallback(
+    async (maskKey: string, lightId: number, region?: MaskRegion) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const light = maskData?.lights.find((l) => l.id === lightId);
+      if (!maskData || !light) return;
+
+      const outline = { ...lightOutline(maskData, light), ...region };
+      const radius = Math.max(outline.radius, MIN_MASK_OBJECT_RADIUS_PX);
+      const objectId = nextObjectId(maskData.objects);
+      const geometry = maskGeometry(maskData);
+      const membership = dropIndicesClaimedByObjects(
+        indicesInObjectFromCentroids(geometry.centroids, { ...outline, radius }),
+        geometry,
+        maskData.polygons,
+      );
+      if (membership.size === 0) return;
+
+      copyInFlightRef.current = true;
+      try {
+        const edit: PendingTopologyEdit = {
+          maskKey,
+          objectId,
+          cx: outline.cx,
+          cy: outline.cy,
+          radius,
+          elevation: uiState.stagedObject.elevation,
+          falloff: uiState.stagedObject.falloff,
+          shape: outline.shape,
+          fill: uiState.stagedObject.fill,
+          polygonIndices: membership,
+        };
+        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
+        notifyMaskPendingTopologySet(maskKey, edit);
+
+        const created = await sendMaskObjectUpdate(
+          maskData.mask_media_id,
+          toObjectUpdate(newObject(objectId, `object ${objectId}`), polygonsReplacedWith([...membership]), {
+            cx: outline.cx,
+            cy: outline.cy,
+            radius,
+            shape: outline.shape,
+            elevation: uiState.stagedObject.elevation,
+            falloff: uiState.stagedObject.falloff,
+            ...toObjectFillFields(uiState.stagedObject.fill),
+            order: frontElementOrder(maskStack(maskData)),
+          }),
+        );
+        if (!created) return;
+        let patched = applyObjectDelta(maskData, created);
+
+        const removed = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(light, POLYGONS_UNCHANGED, { remove: true }),
+        );
+        if (removed) patched = applyLightDelta(patched, removed);
+
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskObjectsUpdated(maskKey, patched);
+        notifyMaskLightUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "object", key: maskKey, objectId } });
+
+        if (removed) {
+          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, lightId });
+          if (uiState.lightGridlines?.key === maskKey && uiState.lightGridlines.lightId === lightId) {
+            uiDispatch({ type: UIActionType.SetLightGridlines, value: undefined });
+          }
+          if (
+            uiState.activeElement?.key === maskKey &&
+            uiState.activeElement.type === "light" &&
+            uiState.activeElement.lightId === lightId
+          ) {
+            uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+          }
+          await deleteMaskLightEffects(
+            maskKey,
+            lightId,
+            coreState.apiOrigin,
+            coreState.accessToken,
+            coreState.effects,
+            dispatch,
+          );
+        }
+
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "object", objectId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedObjectChanged(maskKey, objectId);
+        notifyMaskSelectedLightChanged(maskKey, undefined);
+      } finally {
+        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+        notifyMaskPendingTopologyCleared(maskKey);
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
+      uiState.stagedObject,
+      uiState.lightGridlines,
+      uiState.activeElement,
+      sendMaskObjectUpdate,
+      sendMaskLightUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskObjectsUpdated,
+      notifyMaskLightUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedObjectChanged,
+      notifyMaskSelectedLightChanged,
+    ],
+  );
+
+  const convertObjectToLight = useCallback(
+    async (maskKey: string, objectId: number, region?: MaskRegion) => {
+      if (copyInFlightRef.current) return;
+      if (isGuest) {
+        alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      const maskData = coreState.canvasMasks.get(maskKey);
+      const object = maskData?.objects.find((o) => o.id === objectId);
+      if (!maskData || !object) return;
+
+      const outline = { ...objectOutline(maskData, object), ...region };
+      const lightId = nextLightId(maskData.lights);
+      const membership = indicesInObjectFromCentroids(maskGeometry(maskData).centroids, outline);
+      if (membership.size === 0) return;
+      if (!confirmStrippedLights(maskData, membership)) return;
+
+      const maskMeta = coreState.project.masks.get(maskKey);
+      const size = outline.radius * 2;
+
+      copyInFlightRef.current = true;
+      try {
+        dispatch({
+          type: CoreActionType.SetPendingLight,
+          value: { maskKey, lightId, polygonIndices: [...membership] },
+        });
+        notifyMaskPendingLightSet(maskKey, membership, lightId);
+
+        const created = await sendMaskLightUpdate(
+          maskData.mask_media_id,
+          toLightUpdate(newLight(lightId, `light ${lightId}`), polygonsReplacedWith([...membership]), {
+            order: frontElementOrder(maskStack(maskData)),
+            cx: outline.cx,
+            cy: outline.cy,
+            radius: outline.radius,
+            shape: outline.shape,
+            size,
+            spread: Math.min(size * LIGHT_SPREAD_TO_SIZE_RATIO, Math.min(maskData.width, maskData.height)),
+            intensity: maskMeta?.light_preview_intensity ?? LIGHT_INTENSITY_DEFAULT,
+            shadow: maskMeta?.light_preview_shadow ?? LIGHT_SHADOW_DEFAULT,
+            cast: maskMeta?.light_preview_cast ?? LIGHT_CAST_DEFAULT,
+          }),
+        );
+        if (!created) return;
+        let patched = applyLightDelta(maskData, created);
+
+        const removed = await sendMaskObjectUpdate(
+          maskData.mask_media_id,
+          toObjectUpdate(object, POLYGONS_UNCHANGED, { remove: true }),
+        );
+        if (removed) patched = applyObjectDelta(patched, removed);
+
+        dispatch({ type: CoreActionType.SetCanvasMask, key: maskKey, value: patched });
+        notifyMaskLightUpdated(maskKey, patched);
+        notifyMaskObjectsUpdated(maskKey, patched);
+        uiDispatch({ type: UIActionType.AddCarouselEntry, value: { type: "light", key: maskKey, lightId } });
+
+        if (removed) {
+          uiDispatch({ type: UIActionType.DeleteCarouselEntry, key: maskKey, objectId });
+          if (
+            uiState.activeElement?.key === maskKey &&
+            uiState.activeElement.type === "object" &&
+            uiState.activeElement.objectId === objectId
+          ) {
+            uiDispatch({ type: UIActionType.SetActiveElement, value: { key: maskKey, type: "mask" } });
+          }
+          await deleteMaskObjectEffects(
+            maskKey,
+            objectId,
+            coreState.apiOrigin,
+            coreState.accessToken,
+            coreState.effects,
+            dispatch,
+          );
+        }
+
+        uiDispatch({ type: UIActionType.SetSelectedElement, value: { key: maskKey, type: "light", lightId } });
+        notifyMaskSelectionChanged(maskKey);
+        notifyMaskSelectedLightChanged(maskKey, lightId);
+        notifyMaskSelectedObjectChanged(maskKey, undefined);
+      } finally {
+        dispatch({ type: CoreActionType.SetPendingLight, value: undefined });
+        notifyMaskPendingLightCleared(maskKey);
+        copyInFlightRef.current = false;
+      }
+    },
+    [
+      isGuest,
+      coreState.canvasMasks,
+      coreState.project.masks,
+      coreState.apiOrigin,
+      coreState.accessToken,
+      coreState.effects,
+      uiState.activeElement,
+      sendMaskLightUpdate,
+      sendMaskObjectUpdate,
+      dispatch,
+      uiDispatch,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+      notifyMaskObjectsUpdated,
+      notifyMaskSelectionChanged,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
     ],
   );
 
@@ -1455,20 +1890,14 @@ export default function Workspace({
           if (!object) return undefined;
           return sendMaskObjectUpdate(
             maskData.mask_media_id,
-            toObjectUpdate(object, {
-              order: change.order,
-              polygon_indices: polygonIndicesForObject(maskData.polygons, object.id),
-            }),
+            toObjectUpdate(object, POLYGONS_UNCHANGED, { order: change.order }),
           ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyObjectDelta(mask, updated) : undefined));
         }
         const light = maskData.lights.find((l) => l.id === change.id);
         if (!light) return undefined;
         return sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(light, {
-            order: change.order,
-            polygon_indices: polygonIndicesForLight(maskData.polygons, light.id),
-          }),
+          toLightUpdate(light, POLYGONS_UNCHANGED, { order: change.order }),
         ).then((updated) => (updated ? (mask: LaurusMaskResult) => applyLightDelta(mask, updated) : undefined));
       });
 
@@ -1515,7 +1944,7 @@ export default function Workspace({
 
       const updated = await sendMaskObjectUpdate(
         maskData.mask_media_id,
-        toObjectUpdate(object, { remove: true, polygon_indices: [] }),
+        toObjectUpdate(object, POLYGONS_UNCHANGED, { remove: true }),
       );
       if (!updated) return;
 
@@ -1612,6 +2041,7 @@ export default function Workspace({
       closeContextMenus,
       getNewAnimations,
       handleMixRestoration,
+      uiDispatch,
       uiState.filledForwards,
       uiState.maskEdit,
       uiState.playbackMode.type,
@@ -1686,6 +2116,7 @@ export default function Workspace({
     closeContextMenus,
     getNewAnimations,
     handleMixRestoration,
+    uiDispatch,
     uiState.maskEdit,
     uiState.playbackMode.type,
     uiState.tool.type,
@@ -1774,6 +2205,7 @@ export default function Workspace({
       coreState.effects,
       getNewAnimationsByTarget,
       handleMixRestoration,
+      uiDispatch,
       uiState.maskEdit,
       uiState.playbackMode.type,
       uiState.activeElement,
@@ -1826,7 +2258,14 @@ export default function Workspace({
         value: { type: "playing" },
       });
     },
-    [closeContextMenus, getNewAnimations, handleMixRestoration, uiState.maskEdit, uiState.playbackMode.type],
+    [
+      closeContextMenus,
+      getNewAnimations,
+      handleMixRestoration,
+      uiDispatch,
+      uiState.maskEdit,
+      uiState.playbackMode.type,
+    ],
   );
 
   const handleStopAll = useCallback(async () => {
@@ -1847,7 +2286,7 @@ export default function Workspace({
       value: { type: "stopped" },
     });
     uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
-  }, [uiState.playbackMode.type]);
+  }, [uiDispatch, uiState.playbackMode.type]);
 
   const hoverContextValue = useMemo(
     () => ({
@@ -1915,10 +2354,53 @@ export default function Workspace({
     [sendMaskLightUpdate, closeMaskLightSocket, sendMaskObjectUpdate, closeMaskObjectSocket],
   );
 
+  const maskNotifiers = useMemo(
+    () => ({
+      notifyMaskToolChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskHighlightSuppressed,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskRetouchRequested,
+      notifyMaskObjectReviewPreview,
+      notifyCanvasZoomChanged,
+      notifyMaskObjectsUpdated,
+    }),
+    [
+      notifyMaskToolChanged,
+      notifyMaskSelectionChanged,
+      notifyMaskHighlightSuppressed,
+      notifyMaskSelectedLightChanged,
+      notifyMaskSelectedObjectChanged,
+      notifyMaskPendingLightSet,
+      notifyMaskPendingLightCleared,
+      notifyMaskLightUpdated,
+      notifyMaskAppearanceChanged,
+      notifyMaskLightSourcePreviewToggled,
+      notifyMaskPendingTopologySet,
+      notifyMaskPendingTopologyCleared,
+      notifyMaskRetouchRequested,
+      notifyMaskObjectReviewPreview,
+      notifyCanvasZoomChanged,
+      notifyMaskObjectsUpdated,
+    ],
+  );
+
   const maskNotifyContextValue = useMemo(
     () => ({
       lightMeshSection,
       createObject,
+      copyObject,
+      copyLight,
+      convertLightToObject,
+      convertObjectToLight,
       deleteObject,
       reorderElement,
       restackMaskStack,
@@ -1942,6 +2424,10 @@ export default function Workspace({
     [
       lightMeshSection,
       createObject,
+      copyObject,
+      copyLight,
+      convertLightToObject,
+      convertObjectToLight,
       deleteObject,
       reorderElement,
       restackMaskStack,
@@ -1969,13 +2455,142 @@ export default function Workspace({
       uiState,
       uiDispatch,
     }),
-    [uiState],
+    [uiState, uiDispatch],
   );
 
-  const maskPreview = useMaskPreview(coreState.apiOrigin, coreState.accessToken);
+  const maskPreview = useMaskPreview(coreState.apiOrigin, liveAccessToken);
   const maskContextValue = useMemo(
     () => ({ ...maskPreview, ...maskNotifyContextValue }),
     [maskPreview, maskNotifyContextValue],
+  );
+
+  const canvasImgItems = useMemo(
+    () =>
+      Array.from(coreState.project.imgs.entries()).map((e) => {
+        const [key, meta] = e;
+        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
+        const imgData = coreState.canvasImgs.get(key);
+        if (imgData) {
+          return (
+            <div key={key}>
+              <DraggableProjectImg
+                mediaKey={key}
+                data={imgData}
+                meta={meta}
+                zIndex={
+                  uiState.tool.type === "marquee" && uiState.tool.stack
+                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                }
+                imgElementsRef={imgElementsRef}
+                framesCacheRef={framesCacheRef}
+                refKey={key}
+                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+              />
+            </div>
+          );
+        }
+      }),
+    [
+      coreState.project.imgs,
+      coreState.canvasImgs,
+      uiState.projectContextMenus,
+      uiState.tool,
+      imgElementsRef,
+      framesCacheRef,
+    ],
+  );
+
+  const canvasSvgItems = useMemo(
+    () =>
+      Array.from(coreState.project.svgs.entries()).map((e) => {
+        const [key, meta] = e;
+        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
+        const svgData = coreState.canvasSvgs.get(key);
+        if (!svgData) return;
+        let decodedString = "";
+        try {
+          decodedString = decodeURIComponent(
+            atob(svgData.markup)
+              .split("")
+              .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+              .join(""),
+          );
+        } catch (error) {
+          console.log("Failed to decode svg markup", {
+            media_key: meta.media_key,
+            error,
+          });
+        }
+        if (decodedString) {
+          return (
+            <div key={key}>
+              <DraggableProjectSvg
+                mediaKey={key}
+                decodedString={decodedString}
+                meta={meta}
+                zIndex={
+                  uiState.tool.type === "marquee" && uiState.tool.stack
+                    ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                    : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+                }
+                svgElementsRef={svgElementsRef}
+                framesCacheRef={framesCacheRef}
+                refKey={key}
+                forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+              />
+            </div>
+          );
+        }
+      }),
+    [
+      coreState.project.svgs,
+      coreState.canvasSvgs,
+      uiState.projectContextMenus,
+      uiState.tool,
+      svgElementsRef,
+      framesCacheRef,
+    ],
+  );
+
+  const canvasMaskItems = useMemo(
+    () =>
+      Array.from(coreState.project.masks.entries()).map((e) => {
+        const [key, meta] = e;
+        const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
+        if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu)) return;
+        const maskData = coreState.canvasMasks.get(key);
+        if (!maskData) return;
+        return (
+          <div key={key}>
+            <DraggableProjectMask
+              mediaKey={key}
+              meta={meta}
+              maskData={maskData}
+              zIndex={
+                uiState.tool.type === "marquee" && uiState.tool.stack
+                  ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
+                  : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
+              }
+              maskHandlesRef={maskHandlesRef}
+              maskElementsRef={maskElementsRef}
+              framesCacheRef={framesCacheRef}
+              forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
+            />
+          </div>
+        );
+      }),
+    [
+      coreState.project.masks,
+      coreState.canvasMasks,
+      uiState.projectContextMenus,
+      uiState.tool,
+      maskHandlesRef,
+      maskElementsRef,
+      framesCacheRef,
+    ],
   );
 
   const canvasCursor = useToolCursor({ target: "canvas" });
@@ -1988,7 +2603,7 @@ export default function Workspace({
   useEffect(() => {
     if (selectedMaskKeys.size === 0 || uiState.browserElement?.type !== "img") return;
     uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
-  }, [selectedMaskKeys, uiState.browserElement]);
+  }, [selectedMaskKeys, uiDispatch, uiState.browserElement]);
 
   useLayoutEffect(() => {
     const initCurrentPaper = async () => {
@@ -2019,8 +2634,8 @@ export default function Workspace({
         setSelectedMaskKeys(new Set<string>());
         notifyMaskSelectionChanged(undefined);
         uiDispatch({ type: UIActionType.SetSelectedElement, value: undefined });
-        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, duplicate: false } });
+        if (uiState.tool.type === "marquee" && uiState.tool.copy) {
+          uiDispatch({ type: UIActionType.SetTool, value: { ...uiState.tool, copy: false } });
           notifyMaskToolChanged(uiState.tool.type);
         }
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
@@ -2084,7 +2699,7 @@ export default function Workspace({
         notifyMaskToolChanged(newTool.type);
         uiDispatch({ type: UIActionType.CloseAllContextMenus });
       } else if (event.key.toLowerCase() === "l" && !isInput && uiState.playbackMode.type === "stopped") {
-        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : { type: "light_source" };
+        const newTool: LaurusTool = uiState.tool.type === "light_source" ? { type: "none" } : defaultLightSourceTool;
         if (!confirmLeavingPen(uiState.maskEdit, newTool)) return;
         uiDispatch({ type: UIActionType.SetTool, value: newTool });
         notifyMaskToolChanged(newTool.type);
@@ -2104,6 +2719,7 @@ export default function Workspace({
   }, [
     handlePlayAll,
     handleStopAll,
+    uiDispatch,
     uiState.playbackMode.type,
     uiState.tool,
     uiState.maskEdit,
@@ -2153,7 +2769,7 @@ export default function Workspace({
         });
       }
     })();
-  }, [getNewAnimations]);
+  }, [getNewAnimations, uiDispatch]);
 
   return (
     <>
@@ -2171,8 +2787,8 @@ export default function Workspace({
         <HoverContext value={hoverContextValue}>
           <CoreContext value={coreContextValue}>
             <SocketContext value={socketContextValue}>
-              <UIContext value={uiContextValue}>
-                <MaskContext value={maskContextValue}>
+              <UIProviders store={uiStore} value={uiContextValue}>
+                <MaskProviders notifiers={maskNotifiers} value={maskContextValue}>
                   <div style={{ gridRow: "1", gridColumn: "1 / -1" }}>
                     <div
                       style={{
@@ -2310,31 +2926,9 @@ export default function Workspace({
                             zIndex: Z_INDEX.CANVAS_BG,
                           }}
                         />
-                        {(uiState.tool.type === "marquee" || uiState.tool.type === "mask") && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              width: "min-content",
-                              height: "min-content",
-                              zIndex: isMetaKeyPressed ? Z_INDEX.META_KEY_CANVAS : Z_INDEX.INTERACTION_CANVAS,
-                              pointerEvents:
-                                uiState.maskEdit !== undefined
-                                  ? "none"
-                                  : uiState.tool.type === "mask" &&
-                                      !uiState.tool.lightingMeshSection &&
-                                      !uiState.tool.raisingObjects &&
-                                      uiState.browserElement?.type !== "img"
-                                    ? "none"
-                                    : isMetaKeyPressed || (uiState.tool.type === "mask" && isAltKeyPressed)
-                                      ? "none"
-                                      : "auto",
-                            }}
-                          >
-                            <Canvas />
-                          </div>
-                        )}
+                        {(uiState.tool.type === "marquee" ||
+                          uiState.tool.type === "mask" ||
+                          (uiState.tool.type === "light_source" && uiState.tool.copy)) && <Canvas />}
                         <DraggableCamera
                           contextId={"draggable-camera-context-id"}
                           nodeId={"draggable-camera-node-id"}
@@ -2394,101 +2988,9 @@ export default function Workspace({
                           disabled={uiState.tool.type != "move"}
                         />
                         <>
-                          {Array.from(coreState.project.imgs.entries()).map((e) => {
-                            const [key, meta] = e;
-                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                              return;
-                            const imgData = coreState.canvasImgs.get(key);
-                            if (imgData) {
-                              return (
-                                <div key={key}>
-                                  <DraggableProjectImg
-                                    mediaKey={key}
-                                    data={imgData}
-                                    meta={meta}
-                                    zIndex={
-                                      uiState.tool.type === "marquee" && uiState.tool.stack
-                                        ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                        : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                                    }
-                                    imgElementsRef={imgElementsRef}
-                                    framesCacheRef={framesCacheRef}
-                                    refKey={key}
-                                    forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                                  />
-                                </div>
-                              );
-                            }
-                          })}
-                          {Array.from(coreState.project.svgs.entries()).map((e) => {
-                            const [key, meta] = e;
-                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                              return;
-                            const svgData = coreState.canvasSvgs.get(key);
-                            if (!svgData) return;
-                            let decodedString = "";
-                            try {
-                              decodedString = decodeURIComponent(
-                                atob(svgData.markup)
-                                  .split("")
-                                  .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-                                  .join(""),
-                              );
-                            } catch (error) {
-                              console.log("Failed to decode svg markup", {
-                                media_key: meta.media_key,
-                                error,
-                              });
-                            }
-                            if (decodedString) {
-                              return (
-                                <div key={key}>
-                                  <DraggableProjectSvg
-                                    mediaKey={key}
-                                    decodedString={decodedString}
-                                    meta={meta}
-                                    zIndex={
-                                      uiState.tool.type === "marquee" && uiState.tool.stack
-                                        ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                        : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                                    }
-                                    svgElementsRef={svgElementsRef}
-                                    framesCacheRef={framesCacheRef}
-                                    refKey={key}
-                                    forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                                  />
-                                </div>
-                              );
-                            }
-                          })}
-                          {Array.from(coreState.project.masks.entries()).map((e) => {
-                            const [key, meta] = e;
-                            const showContextMenu = uiState.projectContextMenus.get(key)?.showContextMenu ?? false;
-                            if (meta.top < 0 || meta.left < 0 || (uiState.tool.type === "viewport" && !showContextMenu))
-                              return;
-                            const maskData = coreState.canvasMasks.get(key);
-                            if (!maskData) return;
-                            return (
-                              <div key={key}>
-                                <DraggableProjectMask
-                                  mediaKey={key}
-                                  meta={meta}
-                                  maskData={maskData}
-                                  zIndex={
-                                    uiState.tool.type === "marquee" && uiState.tool.stack
-                                      ? Z_INDEX.ITEMS_STACKING_OFFSET + meta.order
-                                      : meta.order + Z_INDEX.ITEMS_NORMAL_OFFSET
-                                  }
-                                  maskHandlesRef={maskHandlesRef}
-                                  maskElementsRef={maskElementsRef}
-                                  framesCacheRef={framesCacheRef}
-                                  forceAbsolutePosition={uiState.tool.type === "viewport" && showContextMenu}
-                                />
-                              </div>
-                            );
-                          })}
+                          {canvasImgItems}
+                          {canvasSvgItems}
+                          {canvasMaskItems}
                         </>
                       </div>
                     </div>
@@ -2539,8 +3041,8 @@ export default function Workspace({
                   >
                     <Statusbar action={statusAction} body={statusBody} framesCacheRef={framesCacheRef} />
                   </div>
-                </MaskContext>
-              </UIContext>
+                </MaskProviders>
+              </UIProviders>
             </SocketContext>
           </CoreContext>
         </HoverContext>

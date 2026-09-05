@@ -8,6 +8,7 @@ import {
   toObjectUpdate,
   type LaurusMaskResult,
   type LaurusPolygonPath,
+  polygonsReplacedWith,
 } from "../workspace.server";
 import { polygonIndicesForLight, polygonIndicesForObject } from "../canvas-media/mask-geometry";
 import { applyLightDelta, applyObjectDelta } from "../canvas-media/mask-delta";
@@ -272,14 +273,13 @@ export function useObjectReview() {
       try {
         updated = await sendMaskObjectUpdate(
           maskData.mask_media_id,
-          toObjectUpdate(object, {
+          toObjectUpdate(object, polygonsReplacedWith([...review.currentIndices].sort((a, b) => a - b)), {
             cx: review.editedShape?.cx ?? object.cx,
             cy: review.editedShape?.cy ?? object.cy,
             radius: review.editedShape?.radius ?? object.radius,
             shape: review.editedShape?.path ?? object.shape,
             description,
             reviewed: true,
-            polygon_indices: [...review.currentIndices].sort((a, b) => a - b),
             ...(review.retouch ? { retouch: retouchDelta(review.retouch) } : {}),
           }),
         );
@@ -316,14 +316,13 @@ export function useObjectReview() {
       try {
         updated = await sendMaskLightUpdate(
           maskData.mask_media_id,
-          toLightUpdate(light, {
+          toLightUpdate(light, polygonsReplacedWith([...session.currentIndices].sort((a, b) => a - b)), {
             cx: session.editedShape?.cx ?? light.cx,
             cy: session.editedShape?.cy ?? light.cy,
             radius: session.editedShape?.radius ?? light.radius,
             shape: session.editedShape?.path ?? light.shape,
             lowpoly: session.lowpoly,
             description,
-            polygon_indices: [...session.currentIndices].sort((a, b) => a - b),
             ...(session.retouch ? { retouch: retouchDelta(session.retouch) } : {}),
           }),
         );

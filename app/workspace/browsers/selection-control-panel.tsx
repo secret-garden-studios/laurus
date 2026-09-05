@@ -46,11 +46,11 @@ export default function MediaGroupSelectionPanel({ containerStyle }: MediaGroupS
           selectedInputFontSize: 14,
           selectedLabelFontSize: 13,
           selectedInputGap: 2,
-          mainSvg: 18,
+          mainSvg: 16,
           recordingLightSize: 12,
           input: {
-            fontSize: 10,
-            padding: 10,
+            fontSize: 9,
+            padding: 8,
           },
         };
       case "midlow":
@@ -61,11 +61,11 @@ export default function MediaGroupSelectionPanel({ containerStyle }: MediaGroupS
           selectedInputFontSize: 12,
           selectedLabelFontSize: 11,
           selectedInputGap: 2,
-          mainSvg: 18,
+          mainSvg: 16,
           recordingLightSize: 11,
           input: {
-            fontSize: 10,
-            padding: 10,
+            fontSize: 7,
+            padding: 4,
           },
         };
     }
@@ -118,8 +118,8 @@ export default function MediaGroupSelectionPanel({ containerStyle }: MediaGroupS
           setSelectedImgKeys(new Set());
           setSelectedSvgKeys(new Set());
           setSelectedMaskKeys(new Set());
-          if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-            const newTool = { ...uiState.tool, duplicate: false };
+          if (uiState.tool.type === "marquee" && uiState.tool.copy) {
+            const newTool = { ...uiState.tool, copy: false };
             uiDispatch({ type: UIActionType.SetTool, value: newTool });
             notifyMaskToolChanged(newTool.type);
           }

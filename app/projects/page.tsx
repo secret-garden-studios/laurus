@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 async function getProjectDependencies(
   laurusApi: string | undefined,
-  guest: boolean,
+  mePromise: Promise<MeDependencies>,
   projects: Promise<LaurusProjectResult[] | undefined>,
 ) {
   const projectDepArray: ProjectDependencies[] = [];
@@ -13,7 +13,7 @@ async function getProjectDependencies(
   if (!p) return projectDepArray;
   for (let i = 0; i < p?.length; i++) {
     const project = p[i];
-    const projectDep = await fetchProject(laurusApi, guest, projects, project.project_id, false);
+    const projectDep = await fetchProject(laurusApi, mePromise, projects, project.project_id, false);
     if (projectDep) {
       projectDepArray.push(projectDep);
     }
@@ -31,8 +31,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ g
   const { guest } = await searchParams;
   const laurusApi = process.env.LAURUS_API;
   const projects = getProjects(laurusApi);
-  const projectDependenciesPromise = getProjectDependencies(laurusApi, Boolean(guest), projects);
   const mePromise = fetchMe(laurusApi, Boolean(guest));
+  const projectDependenciesPromise = getProjectDependencies(laurusApi, mePromise, projects);
   const pinsPromise = getMyPins(laurusApi, mePromise, Boolean(guest));
   return (
     <ProjectsBoot

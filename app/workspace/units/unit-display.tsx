@@ -4,7 +4,7 @@ import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, che
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "@/app/app.module.css";
-import { CarouselEntry, LaurusActiveElement, UIActionType, UIState } from "../states/ui-state";
+import { CarouselEntry, LaurusActiveElement, UIActionType, UIState, isMaskEditSubject } from "../states/ui-state";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import { maskGeometry } from "../canvas-media/mask-geometry";
 import { LaurusMaskResult } from "../workspace.server";
@@ -186,6 +186,14 @@ export default function UnitDisplay({
     useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
+
+  const editedPolygonCount = useCallback(
+    (entry: CarouselEntry): number | undefined => {
+      const session = uiState.maskEdit;
+      return session && isMaskEditSubject(session, entry) ? session.currentIndices.size : undefined;
+    },
+    [uiState.maskEdit],
+  );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -577,7 +585,7 @@ export default function UnitDisplay({
                       <ObjectOrLightThumbnail
                         key={`${c.key}-light-${c.lightId}`}
                         title="mesh light"
-                        polygonCount={litPolygons.length}
+                        polygonCount={editedPolygonCount(c) ?? litPolygons.length}
                         name={name}
                         sourceImgMediaId={maskData.source_img_media_id}
                         icon={asterisk200("rgb(255, 255, 255)")}
@@ -597,7 +605,8 @@ export default function UnitDisplay({
                     const maskData = coreState.canvasMasks.get(c.key);
                     const object = maskData?.objects.find((p) => p.id === c.objectId);
                     if (!maskData || !object) break;
-                    const coveredPolygonCount = maskData.polygons.filter((p) => p.object_id === c.objectId).length;
+                    const coveredPolygonCount =
+                      editedPolygonCount(c) ?? maskData.polygons.filter((p) => p.object_id === c.objectId).length;
                     const name = object.description
                       ? object.description
                       : object.name

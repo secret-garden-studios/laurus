@@ -1,6 +1,6 @@
-import { useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
+import { memo, useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import {
@@ -11,7 +11,6 @@ import {
   asterisk200,
   checkCircle,
   circle,
-  closeIcon,
   SvgRepo,
   type LaurusClientSvg,
 } from "../../svg-repo";
@@ -39,6 +38,7 @@ import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
+import { useUIBrowserImgs, useUIDispatch, useUIResolution, useUITool } from "../states/ui-store";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import {
   closestCenter,
@@ -64,7 +64,7 @@ export interface MediaGroupBrowser {
   mediaGroupResult: LaurusMediaGroupResult;
   maxWidth: number;
 }
-export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
+function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
   const { coreState, dispatch } = useContext(CoreContext);
   const {
     notifyMaskToolChanged,
@@ -73,7 +73,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     notifyMaskSelectedObjectChanged,
     restackMaskStack,
   } = useContext(MaskContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const uiDispatch = useUIDispatch();
+  const tool = useUITool();
+  const resolution = useUIResolution();
   const guardSelection = useSelectionGuard();
   const {
     isAltKeyPressed,
@@ -87,9 +89,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   const [adding, setAdding] = useState(false);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
 
-  const [expandedMaskKeys, setExpandedMaskKeys] = useState<Set<string>>(new Set());
+  const [collapsedMaskKeys, setCollapsedMaskKeys] = useState<Set<string>>(new Set());
   const toggleMaskExpanded = useCallback((key: string) => {
-    setExpandedMaskKeys((current) => {
+    setCollapsedMaskKeys((current) => {
       const next = new Set(current);
       if (!next.delete(key)) next.add(key);
       return next;
@@ -139,7 +141,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     mediaGroupId,
   ]);
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           flex: {
@@ -185,7 +187,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 9,
           },
           removeOverlay: {
-            size: 14,
+            size: 20,
           },
         };
       case "midhigh":
@@ -233,7 +235,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 14,
+            size: 18,
           },
         };
       case "midlow":
@@ -282,7 +284,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
             fontSize: 7,
           },
           removeOverlay: {
-            size: 12,
+            size: 16,
           },
         };
     }
@@ -350,8 +352,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
         setSelectedMaskKeys(new Set());
-        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-          const newTool = { ...uiState.tool, duplicate: false };
+        if (tool.type === "marquee" && tool.copy) {
+          const newTool = { ...tool, copy: false };
           uiDispatch({ type: UIActionType.SetTool, value: newTool });
           notifyMaskToolChanged(newTool.type);
         }
@@ -373,7 +375,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     setSelectedImgKeys,
     setSelectedSvgKeys,
     setSelectedMaskKeys,
-    uiState.tool,
+    tool,
     uiDispatch,
     notifyMaskToolChanged,
   ]);
@@ -402,6 +404,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
 
   const onRemoveImgFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.imgs.get(key);
       if (!entry) return;
@@ -415,11 +418,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onRemoveSvgFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.svgs.get(key);
       if (!entry) return;
@@ -433,11 +437,12 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onRemoveMaskFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.masks.get(key);
       if (!entry) return;
@@ -451,7 +456,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onImgContextMenuClick = useCallback(
@@ -504,13 +509,13 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
   const expandedStacks = useMemo(() => {
     const stacks = new Map<string, StackRow[]>();
     groupItems.forEach((item) => {
-      if (item.type !== "mask" || !expandedMaskKeys.has(item.key)) return;
+      if (item.type !== "mask" || collapsedMaskKeys.has(item.key)) return;
       const stack = maskStack(item.mask);
       if (stack.length === 0) return;
       stacks.set(item.key, stackRows(stack));
     });
     return stacks;
-  }, [groupItems, expandedMaskKeys]);
+  }, [groupItems, collapsedMaskKeys]);
 
   const siblingRowIds = useCallback(
     (activeId: string): Set<string> => {
@@ -724,6 +729,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                   isEven={index % 2 === 0}
                   indexColumnStyle={dynamicSizes.indexColumn}
                   removeOverlaySize={dynamicSizes.removeOverlay.size}
+                  isAltKeyPressed={isAltKeyPressed}
                   onRemoveFromGroupClick={() => {
                     if (item.type === "img") onRemoveImgFromGroupClick(item.key);
                     else if (item.type === "svg") onRemoveSvgFromGroupClick(item.key);
@@ -735,7 +741,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
                     else if (item.type === "svg") onSvgContextMenuClick(item.key);
                     else onMaskContextMenuClick(item.key);
                   }}
-                  expanded={expandedMaskKeys.has(item.key)}
+                  expanded={!collapsedMaskKeys.has(item.key)}
                   onExpandClick={() => toggleMaskExpanded(item.key)}
                   onElementContextMenuClick={(ref) => {
                     if (ref.kind === "object") {
@@ -794,7 +800,7 @@ function MaskGroupThumbnail({
   isSquareish: boolean;
 }) {
   const { coreState } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const browserImgs = useUIBrowserImgs();
 
   let sourceImgSrc: string | undefined;
   for (const [key, img] of coreState.project.imgs) {
@@ -804,7 +810,7 @@ function MaskGroupThumbnail({
     }
   }
   if (!sourceImgSrc) {
-    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+    sourceImgSrc = browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
   }
 
   return (
@@ -879,7 +885,7 @@ function StackElementThumbnail({
   onClick: () => void;
 }) {
   const { coreState } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const browserImgs = useUIBrowserImgs();
 
   let sourceImgSrc: string | undefined;
   for (const [key, img] of coreState.project.imgs) {
@@ -889,7 +895,7 @@ function StackElementThumbnail({
     }
   }
   if (!sourceImgSrc) {
-    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+    sourceImgSrc = browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
   }
 
   return (
@@ -1108,6 +1114,7 @@ interface MediaGroupRow {
   isEven: boolean;
   indexColumnStyle: { width: string; fontSize: number };
   removeOverlaySize: number;
+  isAltKeyPressed: boolean;
   expanded: boolean;
   onExpandClick: () => void;
   onRemoveFromGroupClick: () => void;
@@ -1122,6 +1129,7 @@ function MediaGroupRow({
   isEven,
   indexColumnStyle,
   removeOverlaySize,
+  isAltKeyPressed,
   expanded,
   onExpandClick,
   onRemoveFromGroupClick,
@@ -1130,7 +1138,7 @@ function MediaGroupRow({
   stack,
   restacking,
 }: MediaGroupRow) {
-  const { uiState } = useContext(UIContext);
+  const resolution = useUIResolution();
   const { coreState } = useContext(CoreContext);
   const stackOpen = item.type === "mask" && stack !== undefined;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -1138,7 +1146,7 @@ function MediaGroupRow({
     disabled: { draggable: stackOpen, droppable: false },
   });
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           filename: {
@@ -1276,18 +1284,27 @@ function MediaGroupRow({
               </div>
             </div>
             <div />
-            <div style={{ padding: "5px 5px 0px 0px", height: "100%", width: "min-content" }}>
+            <div
+              style={{
+                height: "100%",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
+              }}
+            >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1351,18 +1368,27 @@ function MediaGroupRow({
               </div>
             </div>
             <div />
-            <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+            <div
+              style={{
+                height: "100%",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
+              }}
+            >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1422,26 +1448,25 @@ function MediaGroupRow({
             <div />
             <div
               style={{
-                padding: 4,
                 height: "100%",
-                width: "min-content",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "space-between",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
               }}
             >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1454,14 +1479,14 @@ function MediaGroupRow({
                       ? arrowDropUp(isItemHovered ? "rgba(227,227,227,1)" : "rgb(110, 110, 110)")
                       : arrowDropDown(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")
                 }
-                scale={1.1}
+                scale={1}
                 scaleToContaier={true}
                 onContainerClick={stackCount === 0 ? undefined : onExpandClick}
                 style={{ cursor: stackCount === 0 ? "default" : "pointer" }}
                 containerStyle={{
                   cursor: stackCount === 0 ? "default" : "pointer",
-                  width: removeOverlaySize * 1.25,
-                  height: removeOverlaySize * 1.25,
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
                 }}
               />
             </div>
@@ -1560,7 +1585,7 @@ export interface MediaGroupSkeleton {
   maxWidth: number;
 }
 export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
-  const { uiState } = useContext(UIContext);
+  const resolution = useUIResolution();
   return (
     <div
       style={{
@@ -1570,7 +1595,7 @@ export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
         placeContent: "center",
         minHeight: 60,
         color: "rgba(255, 255, 255, 0.4)",
-        fontSize: uiState.resolution.type == "high" ? 14 : 12,
+        fontSize: resolution.type == "high" ? 14 : 12,
         letterSpacing: "2px",
       }}
     >
@@ -1578,3 +1603,5 @@ export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
     </div>
   );
 }
+
+export default memo(MediaGroupBrowser);

@@ -19,7 +19,14 @@ import {
   inkPen300,
   skew300,
 } from "../../svg-repo";
-import { defaultMarqueeTool, defaultMaskTool, defaultPenTool, LaurusTool, UIActionType } from "../states/ui-state";
+import {
+  defaultLightSourceTool,
+  defaultMarqueeTool,
+  defaultMaskTool,
+  defaultPenTool,
+  LaurusTool,
+  UIActionType,
+} from "../states/ui-state";
 import { useToolSwitch } from "../hooks/useMaskEditExit";
 import ToolbarButton from "@/app/components/toolbar-button";
 import { LaurusUserResult } from "@/app/landing.server";
@@ -108,39 +115,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
-            tooltipId="marquee-tool-tooltip"
-          />
-          <Tooltip
-            className={dellaRespira.className}
-            id="marquee-tool-tooltip"
-            delayShow={tooltipDelay}
-            content="marquee"
-            style={{
-              backgroundColor: "rgb(40, 40, 40)",
-              color: "rgb(227, 227, 227)",
-              fontSize: dynamicSizes.tooltipFont2,
-              borderRadius: "8px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-              maxWidth: "300px",
-              zIndex: 99,
-            }}
-            render={() => (
-              <div style={{ padding: 4, width: "100%" }}>
-                <h4
-                  style={{
-                    marginBottom: dynamicSizes.tooltipMarginBottom,
-                    color: "rgb(255, 255, 255)",
-                    fontSize: dynamicSizes.tooltipFont,
-                  }}
-                >
-                  Marquee Tool
-                </h4>
-                <p>
-                  Drop media from the <strong>browser</strong> into an area on the canvas, or select multiple pieces of
-                  existing media on the canvas.
-                </p>
-              </div>
-            )}
+            title="marquee tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "mask"}
@@ -157,38 +132,24 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
-            tooltipId="mask-tool-tooltip"
+            title="mask tool"
           />
-          <Tooltip
-            className={dellaRespira.className}
-            id="mask-tool-tooltip"
-            delayShow={tooltipDelay}
-            style={{
-              backgroundColor: "rgb(40, 40, 40)",
-              color: "rgb(227, 227, 227)",
-              fontSize: dynamicSizes.tooltipFont2,
-              borderRadius: "8px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-              maxWidth: "300px",
-              zIndex: 99,
+          <ToolbarButton
+            selected={uiState.tool.type == "light_source"}
+            svg={{
+              svg: asterisk200(),
+              scale: 0.65,
+              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
             }}
-            render={() => (
-              <div style={{ padding: 4, width: "100%" }}>
-                <h4
-                  style={{
-                    marginBottom: dynamicSizes.tooltipMarginBottom,
-                    color: "rgb(255, 255, 255)",
-                    fontSize: dynamicSizes.tooltipFont,
-                  }}
-                >
-                  Mask Tool
-                </h4>
-                <p>
-                  Convert media from the <strong>browser</strong> into a mask while dropping it on the canvas. Define
-                  light sources on existing masks or sculpt their surface.
-                </p>
-              </div>
-            )}
+            onClick={() => {
+              if (uiState.playbackMode.type !== "stopped") return;
+              handleMixRestoration();
+              const next: LaurusTool = uiState.tool.type == "light_source" ? { type: "none" } : defaultLightSourceTool;
+              if (!switchTool(next)) return;
+              uiDispatch({ type: UIActionType.CloseAllContextMenus });
+            }}
+            resolution={{ ...uiState.resolution }}
+            title="shader tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "pen"}
@@ -205,38 +166,7 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
               uiDispatch({ type: UIActionType.CloseAllContextMenus });
             }}
             resolution={{ ...uiState.resolution }}
-            tooltipId="pen-tool-tooltip"
-          />
-          <Tooltip
-            className={dellaRespira.className}
-            id="pen-tool-tooltip"
-            delayShow={tooltipDelay}
-            style={{
-              backgroundColor: "rgb(40, 40, 40)",
-              color: "rgb(227, 227, 227)",
-              fontSize: dynamicSizes.tooltipFont2,
-              borderRadius: "8px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-              maxWidth: "300px",
-              zIndex: 99,
-            }}
-            render={() => (
-              <div style={{ padding: 4, width: "100%" }}>
-                <h4
-                  style={{
-                    marginBottom: dynamicSizes.tooltipMarginBottom,
-                    color: "rgb(255, 255, 255)",
-                    fontSize: dynamicSizes.tooltipFont,
-                  }}
-                >
-                  Pen Tool
-                </h4>
-                <p>
-                  Redraw the outline of a light or an <strong>object</strong> on a mask. Click one on the canvas and its
-                  handles come up straight away -- or pick it from a context menu and the pen is already here.
-                </p>
-              </div>
-            )}
+            title="pen tool"
           />
           <ToolbarButton
             selected={uiState.tool.type == "contextmenu"}
@@ -367,52 +297,6 @@ export default function Toolbar({ handleMixRestoration, me }: Toolbar) {
             }}
             resolution={{ ...uiState.resolution }}
             title="skew tool"
-          />
-          <ToolbarButton
-            selected={uiState.tool.type == "light_source"}
-            svg={{
-              svg: asterisk200(),
-              scale: 0.65,
-              cursor: uiState.playbackMode.type != "stopped" ? "wait" : "pointer",
-            }}
-            onClick={() => {
-              if (uiState.playbackMode.type !== "stopped") return;
-              handleMixRestoration();
-              const next: LaurusTool =
-                uiState.tool.type == "light_source" ? { type: "none" } : { type: "light_source" };
-              if (!switchTool(next)) return;
-              uiDispatch({ type: UIActionType.CloseAllContextMenus });
-            }}
-            resolution={{ ...uiState.resolution }}
-            tooltipId="light-source-tool-tooltip"
-          />
-          <Tooltip
-            className={dellaRespira.className}
-            id="light-source-tool-tooltip"
-            delayShow={tooltipDelay}
-            style={{
-              backgroundColor: "rgb(40, 40, 40)",
-              color: "rgb(227, 227, 227)",
-              fontSize: dynamicSizes.tooltipFont2,
-              borderRadius: "8px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-              maxWidth: "300px",
-              zIndex: 99,
-            }}
-            render={() => (
-              <div style={{ padding: 4, width: "100%" }}>
-                <h4
-                  style={{
-                    marginBottom: dynamicSizes.tooltipMarginBottom,
-                    color: "rgb(255, 255, 255)",
-                    fontSize: dynamicSizes.tooltipFont,
-                  }}
-                >
-                  Shader Tool
-                </h4>
-                <p>Select features of an existing mask and control how light interacts with them.</p>
-              </div>
-            )}
           />
           <ToolbarButton
             selected={uiState.tool.type == "mix"}

@@ -13,10 +13,10 @@ import {
 } from "./object-retouch.ts";
 import type { LaurusPolygonPath } from "../workspace.server";
 
-/** A square from -1 to 1, as a closed path in normalized shape units. */
 const SQUARE = "M -1,-1 L 1,-1 L 1,1 L -1,1 Z";
-/** A square with a square hole in the middle of it. */
 const ANNULUS = `${SQUARE} M -0.4,-0.4 L -0.4,0.4 L 0.4,0.4 L 0.4,-0.4 Z`;
+const CIRCLE =
+  "M 1,0 C 1,0.5523 0.5523,1 0,1 C -0.5523,1 -1,0.5523 -1,0 C -1,-0.5523 -0.5523,-1 0,-1 C 0.5523,-1 1,-0.5523 1,0 Z";
 
 const tri = (a: Point, b: Point, c: Point): Point[] => [a, b, c];
 
@@ -70,11 +70,9 @@ describe("outlineChains", () => {
   });
 
   it("walks a chain from one edge to another", () => {
-    // a big square whose corner cuts across the triangle
     const outline = shapeOutline(SQUARE, { cx: -3, cy: -3, radius: 8 })!;
     const chains = outlineChains(triangle, outline.all)!;
     assert.equal(chains.length, 1);
-    // both feet on the triangle's boundary
     assert.notEqual(boundaryParam(triangle, chains[0][0]), undefined);
     assert.notEqual(boundaryParam(triangle, chains[0][chains[0].length - 1]), undefined);
   });
@@ -85,8 +83,6 @@ describe("outlineChains", () => {
   });
 
   it("thins a densely flattened curve down to the triangle's own scale", () => {
-    // a circle traced at a hundred points, far denser than a 10px triangle
-    // could ever need
     const ring: Point[] = [];
     for (let i = 0; i < 100; i++) {
       const angle = (i / 100) * Math.PI * 2;
@@ -174,7 +170,6 @@ describe("earClip", () => {
   });
 
   it("triangulates a concave polygon without spilling outside it", () => {
-    // an arrowhead: the notch at [5,5] is what a centroid fan gets wrong
     const arrow: Point[] = [
       [0, 0],
       [10, 0],
@@ -185,7 +180,6 @@ describe("earClip", () => {
     const triangles = earClip(arrow);
     const total = triangles.reduce((sum, t) => sum + area(t), 0);
     assert.ok(Math.abs(total - area(arrow)) < 1e-6, `${total} vs ${area(arrow)}`);
-    // every piece's own middle has to be inside the polygon it came from
     for (const triangle of triangles) {
       const middle: Point = [
         (triangle[0][0] + triangle[1][0] + triangle[2][0]) / 3,
@@ -250,7 +244,6 @@ describe("retouchTriangle", () => {
     const above = retouchTriangle([shared[0], shared[1], [0, -9]], outline)!;
     const below = retouchTriangle([shared[1], shared[0], [0, 9]], outline)!;
 
-    // every fragment vertex that lies on the shared edge, from either side
     const onEdge = (fragments: typeof above): number[] =>
       [
         ...new Set(
@@ -266,7 +259,6 @@ describe("retouchTriangle", () => {
 
   it("cuts against a hole's rim as readily as the outer boundary", () => {
     const outline = shapeOutline(ANNULUS, { cx: 0, cy: 0, radius: 10 })!;
-    // straddles the hole's left wall at x = -4
     const fragments = retouchTriangle(tri([-6, -1], [-1, -1], [-6, 3]), outline)!;
     assert.ok(
       fragments.some((f) => f.inside) && fragments.some((f) => !f.inside),
@@ -276,7 +268,6 @@ describe("retouchTriangle", () => {
 });
 
 describe("retouchMesh", () => {
-  // a two-by-two grid of 10px cells, each split into two triangles
   const mesh: { polygons: LaurusPolygonPath[]; points: Point[][] } = (() => {
     const points: Point[][] = [];
     for (let row = 0; row < 2; row++) {
@@ -301,8 +292,6 @@ describe("retouchMesh", () => {
     };
   })();
 
-  // spans [2,8] in both axes, so it straddles the two triangles of the first
-  // cell and comes nowhere near the other three cells
   const outline = shapeOutline(SQUARE, { cx: 5, cy: 5, radius: 3 })!;
 
   it("keeps every original index pointing at the same place", () => {
@@ -314,7 +303,6 @@ describe("retouchMesh", () => {
 
   it("leaves untouched polygons as the very same object", () => {
     const result = retouchMesh(mesh.polygons, mesh.points, outline);
-    // everything past the first cell is clear of an outline spanning [2,8]
     for (let index = 2; index < mesh.polygons.length; index++) {
       assert.equal(result.polygons[index], mesh.polygons[index], `polygon ${index} was rebuilt for nothing`);
     }
@@ -342,9 +330,62 @@ describe("retouchMesh", () => {
     }
   });
 
+  it("never emits a polygon that writes out as enclosing no area", () => {
+    const needle: Point[] = [
+      [0, 0],
+      [10, 0],
+      [10, 0.0000005],
+    ];
+    const polygons = [polygon(`M ${needle.map(([x, y]) => `${x.toFixed(9)},${y.toFixed(9)}`).join(" L ")} Z`)];
+    const band = shapeOutline(SQUARE, { cx: 5, cy: 0, radius: 1 })!;
+
+    const result = retouchMesh(polygons, [needle], band);
+
+    for (const [index, path] of result.polygons.entries()) {
+      const written = pointsOf(path.d);
+      assert.ok(written.length >= 3, `polygon ${index} came out with ${written.length} points: ${path.d}`);
+      assert.ok(Math.abs(polygonArea2(written)) > 0, `polygon ${index} encloses no area: ${path.d}`);
+    }
+
+    assert.equal(result.added, 0, "a needle was cut into pieces too small to write down");
+    assert.equal(result.polygons[0], polygons[0], "the needle was rebuilt for nothing");
+  });
+
+  it("costs the same the second time a shape is cut from the mesh it was found with", () => {
+    const curve = shapeOutline(CIRCLE, { cx: 10, cy: 10, radius: 6 })!;
+    const first = retouchMesh(mesh.polygons, mesh.points, curve);
+    assert.ok(first.added > 0, "nothing was cut, so this proves nothing -- pick another fixture");
+
+    const again = retouchMesh(mesh.polygons, mesh.points, curve);
+    assert.equal(again.added, first.added);
+    assert.deepEqual(
+      again.polygons.map((p) => p.d),
+      first.polygons.map((p) => p.d),
+      "a retouch is not a pure function of the mesh and the shape",
+    );
+  });
+
+  it("buys almost no coverage when a cut mesh is cut again, which is why callers recut the original", () => {
+    const curve = shapeOutline(CIRCLE, { cx: 10, cy: 10, radius: 6 })!;
+    const first = retouchMesh(mesh.polygons, mesh.points, curve);
+    const layered = retouchMesh(
+      first.polygons,
+      first.polygons.map((p) => pointsOf(p.d)),
+      curve,
+    );
+
+    assert.ok(
+      layered.added > 0,
+      "cutting a cut mesh no longer compounds -- retouchObjectMesh need not hold on to the mesh it was found with",
+    );
+
+    const covered = (result: { polygons: LaurusPolygonPath[]; indices: Set<number> }): number =>
+      [...result.indices].reduce((sum, index) => sum + area(pointsOf(result.polygons[index].d)), 0);
+    const gained = (covered(layered) - covered(first)) / covered(first);
+    assert.ok(gained < 0.01, `a second cut moved coverage by ${(gained * 100).toFixed(1)}%, so it was worth making`);
+  });
+
   it("carries a neighbouring object's tag onto the fragments it cut from it", () => {
-    // polygon 0 straddles the outline, so it is one the recut takes apart --
-    // and it belongs to an object accepted long before this review started
     const tagged = mesh.polygons.map((p, i) => (i === 0 ? { ...p, object_id: 7 } : p));
     const before = tagged.filter((p) => p.object_id === 7).length;
     const result = retouchMesh(tagged, mesh.points, outline);
@@ -393,16 +434,10 @@ describe("retouchDelta", () => {
   });
 
   it("measures a second recut from the mesh the mask was found with", () => {
-    // what the reducer composes: `restore` stays the original and `added` is
-    // the running total, so the boundary between replaced and appended lands
-    // where the server's own copy still ends
     const original = [polygon("a"), polygon("b")];
-    const first = [original[0], polygon("b1"), polygon("x")];
     const second = [original[0], polygon("b2"), polygon("x2"), polygon("y")];
+    const delta = retouchDelta({ polygons: second, restore: original, added: 2 });
 
-    const delta = retouchDelta({ polygons: second, restore: original, added: 1 + 1 });
-
-    // only slots the server actually has may be named as replacements
     for (const { index } of delta.replaced) {
       assert.ok(index < original.length, `named slot ${index}, but the server's mesh ends at ${original.length}`);
     }
@@ -411,6 +446,5 @@ describe("retouchDelta", () => {
       delta.added.map((p) => p.d),
       ["x2", "y"],
     );
-    assert.equal(first.length, 3, "the intermediate mesh is what the second recut was measured against");
   });
 });

@@ -5,10 +5,9 @@ import {
   HoverContext,
   getNewContextMenuConfig,
   LaurusTransform,
-  MaskContext,
-  UIContext,
+  MaskNotifyContext,
 } from "../workspace.client";
-import { RefObject, useCallback, useContext, useMemo } from "react";
+import { memo, RefObject, useCallback, useContext, useMemo } from "react";
 import {
   updateProject,
   DEFAULT_CONTEXT_MENU_CONFIG,
@@ -19,6 +18,15 @@ import {
 import { v4 } from "uuid";
 import { LaurusFrame } from "../workspace.server";
 import { LaurusActiveElement, UIActionType } from "../states/ui-state";
+import {
+  useUIBrowserElement,
+  useUIBrowserImgs,
+  useUIBrowserSvgs,
+  useUIDispatch,
+  useUIFilledForwards,
+  useUIProjectContextMenus,
+  useUITool,
+} from "../states/ui-store";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { toCssSkewAngle } from "../skew-angle.ts";
@@ -36,7 +44,7 @@ interface DraggableProjectSvg {
   refKey?: string;
   forceAbsolutePosition?: boolean;
 }
-export function DraggableProjectSvg({
+function DraggableProjectSvgItem({
   mediaKey,
   decodedString,
   meta,
@@ -47,8 +55,14 @@ export function DraggableProjectSvg({
   forceAbsolutePosition,
 }: DraggableProjectSvg) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { notifyMaskSelectionChanged } = useContext(MaskContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskSelectionChanged } = useContext(MaskNotifyContext);
+  const uiDispatch = useUIDispatch();
+  const tool = useUITool();
+  const browserElement = useUIBrowserElement();
+  const browserImgs = useUIBrowserImgs();
+  const browserSvgs = useUIBrowserSvgs();
+  const filledForwards = useUIFilledForwards();
+  const projectContextMenus = useUIProjectContextMenus();
   const { selectedImgKeys, selectedSvgKeys, setSelectedSvgKeys, isAltKeyPressed } = useContext(HoverContext);
   const transformedBounds = useMemo(() => {
     return calculateTransformedBounds(meta);
@@ -60,7 +74,7 @@ export function DraggableProjectSvg({
         y: Math.max(0, meta.top),
       };
     }
-    switch (uiState.tool.type) {
+    switch (tool.type) {
       case "viewport": {
         return {
           x: meta.left - coreState.project.frame_left,
@@ -76,7 +90,7 @@ export function DraggableProjectSvg({
     }
   }, [
     forceAbsolutePosition,
-    uiState.tool.type,
+    tool.type,
     meta.left,
     meta.top,
     coreState.project.frame_left,
@@ -165,7 +179,7 @@ export function DraggableProjectSvg({
         if (xMaxActual > coreState.project.canvas_width) newLeft -= xMaxActual - coreState.project.canvas_width;
         if (yMinActual < 0) newTop += Math.abs(yMinActual);
         if (xMinActual < 0) newLeft += Math.abs(xMinActual);
-        const itemContextMenu = uiState.projectContextMenus.get(itemKey);
+        const itemContextMenu = projectContextMenus.get(itemKey);
         const nContextMenuConfig = getNewContextMenuConfig(
           { left: newLeft, top: newTop },
           {
@@ -228,14 +242,14 @@ export function DraggableProjectSvg({
       mediaKey,
       selectedImgKeys,
       selectedSvgKeys,
-      uiState.projectContextMenus,
+      projectContextMenus,
       uiDispatch,
     ],
   );
 
   const onSvgStackDrop = useCallback(async () => {
-    if (!uiState.browserElement) return;
-    const browserElement = { ...uiState.browserElement };
+    if (!browserElement) return;
+    const armed = { ...browserElement };
     const snapshot = { ...coreState.project };
     const newKey = v4();
     const maxOrder = Math.max(
@@ -245,11 +259,11 @@ export function DraggableProjectSvg({
       -1,
     );
 
-    if (browserElement.type === "img") {
+    if (armed.type === "img") {
       const newProjectImg: LaurusProjectImg = {
         ...meta,
-        media_key: browserElement.value.media_key,
-        img_media_id: browserElement.value.img_media_id,
+        media_key: armed.value.media_key,
+        img_media_id: armed.value.img_media_id,
         order: maxOrder + 1,
       } as LaurusProjectImg;
       const newImgs = new Map(snapshot.imgs);
@@ -260,7 +274,7 @@ export function DraggableProjectSvg({
       });
       if (updated) {
         dispatch({ type: CoreActionType.SetProject, value: newProject });
-        const encodedImg = uiState.browserImgs.find((i) => i.media_key === browserElement.value.media_key);
+        const encodedImg = browserImgs.find((i) => i.media_key === armed.value.media_key);
         if (encodedImg) {
           dispatch({
             type: CoreActionType.SetCanvasImg,
@@ -279,15 +293,15 @@ export function DraggableProjectSvg({
           });
         }
       }
-    } else if (browserElement.type === "svg") {
+    } else if (armed.type === "svg") {
       const newProjectSvg: LaurusProjectSvg = {
         ...meta,
-        media_key: browserElement.value.media_key,
-        svg_media_id: browserElement.value.svg_media_id,
-        viewbox: browserElement.value.viewbox,
-        fill: browserElement.value.fill,
-        stroke: browserElement.value.stroke,
-        stroke_width: browserElement.value.stroke_width,
+        media_key: armed.value.media_key,
+        svg_media_id: armed.value.svg_media_id,
+        viewbox: armed.value.viewbox,
+        fill: armed.value.fill,
+        stroke: armed.value.stroke,
+        stroke_width: armed.value.stroke_width,
         order: maxOrder + 1,
       } as LaurusProjectSvg;
       const newSvgs = new Map(snapshot.svgs);
@@ -298,7 +312,7 @@ export function DraggableProjectSvg({
       });
       if (updated) {
         dispatch({ type: CoreActionType.SetProject, value: newProject });
-        const encodedSvg = uiState.browserSvgs.find((i) => i.media_key === browserElement.value.media_key);
+        const encodedSvg = browserSvgs.find((i) => i.media_key === armed.value.media_key);
         if (encodedSvg) {
           dispatch({
             type: CoreActionType.SetCanvasSvg,
@@ -319,9 +333,9 @@ export function DraggableProjectSvg({
       }
     }
   }, [
-    uiState.browserElement,
-    uiState.browserImgs,
-    uiState.browserSvgs,
+    browserElement,
+    browserImgs,
+    browserSvgs,
     coreState.project,
     coreState.apiOrigin,
     coreState.accessToken,
@@ -332,7 +346,7 @@ export function DraggableProjectSvg({
 
   const onSvgClick = useCallback(
     (metaKey: boolean) => {
-      const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
+      const itemContextMenu = projectContextMenus.get(mediaKey);
       const showContextMenu = itemContextMenu?.showContextMenu ?? false;
       const contextMenuConfig = itemContextMenu?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
 
@@ -346,7 +360,7 @@ export function DraggableProjectSvg({
         { x: meta.scale_x, y: meta.scale_y },
         contextMenuConfig,
       );
-      if (isAltKeyPressed && uiState.tool.type !== "marquee") {
+      if (isAltKeyPressed && tool.type !== "marquee") {
         setSelectedSvgKeys((prev) => {
           const next = new Set(prev);
           if (next.has(mediaKey)) {
@@ -357,7 +371,7 @@ export function DraggableProjectSvg({
           return next;
         });
         uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
-      } else if (metaKey && !uiState.filledForwards) {
+      } else if (metaKey && !filledForwards) {
         uiDispatch({
           type: UIActionType.SetProjectContextMenu,
           key: mediaKey,
@@ -365,9 +379,9 @@ export function DraggableProjectSvg({
           contextMenuConfig: newContextMenuConfig,
         });
       } else {
-        switch (uiState.tool.type) {
+        switch (tool.type) {
           case "marquee": {
-            if (uiState.tool.stack) {
+            if (tool.stack) {
               onSvgStackDrop();
             }
             break;
@@ -429,9 +443,9 @@ export function DraggableProjectSvg({
       }
     },
     [
-      uiState.projectContextMenus,
-      uiState.tool,
-      uiState.filledForwards,
+      projectContextMenus,
+      tool,
+      filledForwards,
       mediaKey,
       meta,
       coreState.project.canvas_width,
@@ -475,3 +489,5 @@ export function DraggableProjectSvg({
     </>
   );
 }
+
+export const DraggableProjectSvg = memo(DraggableProjectSvgItem);

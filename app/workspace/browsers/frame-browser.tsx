@@ -1,9 +1,10 @@
-import { useContext, useState } from "react";
+import { memo, useContext, useState } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, UIContext } from "../workspace.client";
+import { CoreContext } from "../workspace.client";
 import { LaurusCropSvg } from "../../svg-repo";
 import { RESOLUTION } from "../../landing.config";
 import { getCropSize } from "../workspace.config";
+import { useUIResolution } from "../states/ui-store";
 import { updateProject, createProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 
@@ -11,10 +12,10 @@ export interface FrameBrowser {
   frame: LaurusCropSvg;
   i: number;
 }
-export default function FrameBrowser({ frame, i }: FrameBrowser) {
-  const { uiState } = useContext(UIContext);
+function FrameBrowser({ frame, i }: FrameBrowser) {
+  const resolution = useUIResolution();
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           mediaItemSize: {
@@ -108,7 +109,6 @@ export default function FrameBrowser({ frame, i }: FrameBrowser) {
   return (
     <div
       style={{
-        //gridColumn: 2,
         padding: dynamicSizes.mediaItemSize.padding,
         display: "grid",
         alignItems: "start",
@@ -127,8 +127,8 @@ export default function FrameBrowser({ frame, i }: FrameBrowser) {
       />
       <div
         style={{
-          paddingTop: Math.round(20 * uiState.resolution.factor),
-          paddingBottom: Math.round(20 * uiState.resolution.factor),
+          paddingTop: Math.round(20 * resolution.factor),
+          paddingBottom: Math.round(20 * resolution.factor),
         }}
       >
         <FrameSvg
@@ -165,7 +165,7 @@ interface FrameSvg {
 }
 function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSize, svgSize }: FrameSvg) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const resolution = useUIResolution();
   const [cropSize] = useState(() => {
     const s = getCropSize(crop);
     return {
@@ -174,7 +174,7 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
     };
   });
   const [overlaySize] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           padding: "9px 13px",
@@ -313,3 +313,5 @@ function FrameSvg({ scale, footer, crop, cropFactor, decodedString, containerSiz
     </div>
   );
 }
+
+export default memo(FrameBrowser);

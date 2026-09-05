@@ -2,7 +2,7 @@ import { useCallback, useContext } from "react";
 import { v4 as newUUID } from "uuid";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { CoreActionType } from "../states/core-state";
-import { UIActionType } from "../states/ui-state";
+import { UIActionType, armedCopy } from "../states/ui-state";
 import {
   LaurusProjectImg,
   LaurusProjectMask,
@@ -18,9 +18,14 @@ export type MaskSourceFrame = Pick<LaurusProjectImg, "width" | "height" | "top" 
 export function useMaskPersist() {
   const { coreState, dispatch } = useContext(CoreContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { setSelectedMaskKeys } = useContext(HoverContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const mask = useContext(MaskContext);
-  const { position, size } = mask;
+  const copy = armedCopy(
+    uiState,
+    selectedImgKeys,
+    selectedSvgKeys,
+    selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
+  );
 
   const persistMask = useCallback(
     (sourceFrame: MaskSourceFrame, result: LaurusMaskResult) => {
@@ -35,10 +40,10 @@ export function useMaskPersist() {
       const projectMask: LaurusProjectMask = {
         media_id: result.mask_media_id,
         media_group_id: "",
-        width: size.value && size.width !== undefined ? size.width : sourceFrame.width,
-        height: size.value && size.height !== undefined ? size.height : sourceFrame.height,
-        top: position.value && position.y !== undefined ? position.y : sourceFrame.top,
-        left: position.value && position.x !== undefined ? position.x : sourceFrame.left,
+        width: copy?.size.value && copy.size.width !== undefined ? copy.size.width : sourceFrame.width,
+        height: copy?.size.value && copy.size.height !== undefined ? copy.size.height : sourceFrame.height,
+        top: copy?.position.value && copy.position.y !== undefined ? copy.position.y : sourceFrame.top,
+        left: copy?.position.value && copy.position.x !== undefined ? copy.position.x : sourceFrame.left,
         order,
         scale_x: sourceFrame.scale_x,
         scale_y: sourceFrame.scale_y,
@@ -86,29 +91,35 @@ export function useMaskPersist() {
       }
       setSelectedMaskKeys(new Set([newKey]));
 
+      const rollBack = () => {
+        dispatch({ type: CoreActionType.SetProject, value: rollback });
+        dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
+        setSelectedMaskKeys((keys) => {
+          if (!keys.has(newKey)) return keys;
+          const next = new Set(keys);
+          next.delete(newKey);
+          return next;
+        });
+      };
+
       (async () => {
         if (newProject.project_id) {
           const updated = await updateProject(coreState.apiOrigin, coreState.accessToken, newProject.project_id, {
             ...newProject,
           });
-          if (!updated) {
-            dispatch({ type: CoreActionType.SetProject, value: rollback });
-            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
-          }
+          if (!updated) rollBack();
         } else {
           const created = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
           if (created) {
             dispatch({ type: CoreActionType.SetProject, value: { ...created } });
           } else {
-            dispatch({ type: CoreActionType.SetProject, value: rollback });
-            dispatch({ type: CoreActionType.DeleteCanvasMask, key: newKey });
+            rollBack();
           }
         }
       })();
     },
     [
-      position,
-      size,
+      copy,
       coreState.project,
       coreState.apiOrigin,
       coreState.accessToken,

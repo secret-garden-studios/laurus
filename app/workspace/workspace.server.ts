@@ -388,6 +388,7 @@ export interface MaskMediaResult_V1_0 {
   curves: CurvePath_V1_0[];
   lights: Light_V1_0[];
   objects: Object_V1_0[];
+  has_object_review: boolean;
   creator: string;
   last_editor: string;
 }
@@ -423,10 +424,14 @@ type RawLight_V1_0 = Omit<Light_V1_0, "order" | "lowpoly" | "cast"> & {
   lowpoly?: boolean;
   cast?: number;
 };
-type RawMaskMediaResult_V1_0 = Omit<MaskMediaResult_V1_0, "objects" | "lights" | "description"> & {
+type RawMaskMediaResult_V1_0 = Omit<
+  MaskMediaResult_V1_0,
+  "objects" | "lights" | "description" | "has_object_review"
+> & {
   objects?: RawObject_V1_0[];
   lights?: RawLight_V1_0[];
   description?: string;
+  has_object_review?: boolean;
 };
 
 export function normalizeObject(object: RawObject_V1_0): Object_V1_0 {
@@ -463,6 +468,7 @@ export function normalizeMaskResult(mask: RawMaskMediaResult_V1_0): MaskMediaRes
     description: mask.description ?? "",
     objects: (mask.objects ?? []).map(normalizeObject),
     lights: (mask.lights ?? []).map(normalizeLight),
+    has_object_review: mask.has_object_review ?? false,
   };
 }
 
@@ -734,10 +740,19 @@ export function maskImage(
   return socket;
 }
 
+export type MembershipEdit_V1_0 = { kind: "unchanged" } | { kind: "replaced"; polygon_indices: number[] };
+
+export const POLYGONS_UNCHANGED: MembershipEdit_V1_0 = { kind: "unchanged" };
+
+export function polygonsReplacedWith(polygon_indices: number[]): MembershipEdit_V1_0 {
+  return { kind: "replaced", polygon_indices };
+}
+
 export interface MaskLightUpdateRequest_V1_0 {
   light_id: number;
   name: string;
-  polygon_indices: number[];
+  membership: MembershipEdit_V1_0;
+  remove: boolean;
   size: number;
   intensity: number;
   spread: number;
@@ -792,10 +807,13 @@ export function newLight(id: number, name: string): Light_V1_0 {
 
 export function toLightUpdate(
   light: Light_V1_0,
-  changes: Partial<Omit<MaskLightUpdateRequest_V1_0, "light_id">> & { polygon_indices: number[] },
+  membership: MembershipEdit_V1_0,
+  changes: Partial<Omit<MaskLightUpdateRequest_V1_0, "light_id" | "membership">> = {},
 ): MaskLightUpdateRequest_V1_0 {
   return {
     light_id: light.id,
+    membership,
+    remove: false,
     name: light.name,
     size: light.size,
     intensity: light.intensity,
@@ -843,7 +861,7 @@ export interface MaskObjectUpdateRequest_V1_0 {
   lift: boolean;
   order: number;
   remove: boolean;
-  polygon_indices: number[];
+  membership: MembershipEdit_V1_0;
   retouch?: RetouchedMesh_V1_0;
 }
 
@@ -867,10 +885,12 @@ export function newObject(id: number, name: string): Object_V1_0 {
 
 export function toObjectUpdate(
   object: Object_V1_0,
-  changes: Partial<Omit<MaskObjectUpdateRequest_V1_0, "object_id">> & { polygon_indices: number[] },
+  membership: MembershipEdit_V1_0,
+  changes: Partial<Omit<MaskObjectUpdateRequest_V1_0, "object_id" | "membership">> = {},
 ): MaskObjectUpdateRequest_V1_0 {
   return {
     object_id: object.id,
+    membership,
     name: object.name,
     cx: object.cx,
     cy: object.cy,

@@ -23,6 +23,7 @@ function maskWith(polygons: LaurusPolygonPath[]): LaurusMaskResult {
     curves: [],
     lights: [],
     objects: [],
+    has_object_review: false,
     creator: "stef",
     last_editor: "stef",
   };

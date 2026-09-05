@@ -25,18 +25,7 @@ export type LaurusTool =
   | {
       type: "marquee";
       stack: boolean;
-      size: {
-        value: boolean;
-        width: number | undefined;
-        height: number | undefined;
-      };
-      position: {
-        value: boolean;
-        x: number | undefined;
-        y: number | undefined;
-      };
-      select: boolean;
-      duplicate: boolean;
+      copy: boolean;
     }
   | { type: "none" }
   | { type: "contextmenu" }
@@ -47,16 +36,18 @@ export type LaurusTool =
   | { type: "skew" }
   | { type: "mix" }
   | { type: "mask"; lightingMeshSection: boolean; raisingObjects: boolean }
-  | { type: "light_source" }
+  | { type: "light_source"; copy: boolean }
   | { type: "pen"; stitch: boolean; addAnchor: boolean; showAnchors: boolean };
 
 export const defaultMarqueeTool: LaurusTool = {
   type: "marquee",
   stack: false,
-  size: { value: false, width: undefined, height: undefined },
-  position: { value: false, x: undefined, y: undefined },
-  select: false,
-  duplicate: false,
+  copy: false,
+};
+
+export const defaultLightSourceTool: LaurusTool = {
+  type: "light_source",
+  copy: false,
 };
 
 export const defaultMaskTool: LaurusTool = {
@@ -70,6 +61,18 @@ export const defaultPenTool: LaurusTool = {
   stitch: false,
   addAnchor: false,
   showAnchors: true,
+};
+
+export interface CopySettings {
+  position: { value: boolean; x: number | undefined; y: number | undefined };
+  size: { value: boolean; width: number | undefined; height: number | undefined };
+  convert: boolean;
+}
+
+export const defaultCopySettings: CopySettings = {
+  position: { value: false, x: undefined, y: undefined },
+  size: { value: false, width: undefined, height: undefined },
+  convert: false,
 };
 
 export type MediaBrowserFilter = "img" | "svg" | "frame" | "group";
@@ -165,7 +168,7 @@ function openMaskEdit(state: UIState, session: MaskEditSession): UIState {
   return { ...state, tool: defaultPenTool, maskEdit: session };
 }
 
-export function isPenArmed(state: UIState): boolean {
+export function isPenArmed(state: Pick<UIState, "tool" | "maskEdit">): boolean {
   return state.tool.type === "pen" && state.maskEdit === undefined;
 }
 
@@ -173,6 +176,16 @@ export function isAwaitingRegionPick(state: UIState): boolean {
   if (isPenArmed(state)) return true;
   if (state.tool.type !== "light_source" || state.lightSourcePreview) return false;
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
+}
+
+export function isMaskDropZoneArmed(
+  state: Pick<UIState, "maskEdit" | "tool" | "browserElement">,
+  modifiers: { meta: boolean; alt: boolean },
+): boolean {
+  if (state.maskEdit !== undefined || modifiers.meta) return false;
+  if (state.tool.type === "light_source") return state.tool.copy;
+  if (state.tool.type !== "mask" || modifiers.alt) return false;
+  return state.tool.lightingMeshSection || state.tool.raisingObjects || state.browserElement?.type === "img";
 }
 
 export type MediaArm = { key: string; type: "img" | "svg" | "mask" };
@@ -198,6 +211,65 @@ export function maskArm(state: UIState, selectedMaskKey: string | undefined): Ma
   if (selectedMaskKey !== undefined) return { type: "mask", maskKey: selectedMaskKey };
   if (state.browserElement?.type === "img") return { type: "img", img: state.browserElement.value };
   return undefined;
+}
+
+export type MarqueeArm = { type: "selection" } | { type: "browser"; element: LaurusBrowserElement };
+
+export function marqueeArm(
+  state: Pick<UIState, "tool" | "browserElement">,
+  selectedImgKeys: Set<string>,
+  selectedSvgKeys: Set<string>,
+): MarqueeArm | undefined {
+  if (state.tool.type !== "marquee") return undefined;
+  if (selectedImgKeys.size > 0 || selectedSvgKeys.size > 0) return { type: "selection" };
+  if (state.browserElement) return { type: "browser", element: state.browserElement };
+  return undefined;
+}
+
+export function isDropImplied(
+  state: UIState,
+  selectedImgKeys: Set<string>,
+  selectedSvgKeys: Set<string>,
+  selectedMaskKey: string | undefined,
+): boolean {
+  switch (state.tool.type) {
+    case "marquee":
+      return !state.tool.stack && marqueeArm(state, selectedImgKeys, selectedSvgKeys)?.type === "browser";
+    case "mask":
+      return maskArm(state, selectedMaskKey)?.type === "img";
+    default:
+      return false;
+  }
+}
+
+export function isCopyArmed(
+  state: UIState,
+  selectedImgKeys: Set<string>,
+  selectedSvgKeys: Set<string>,
+  selectedMaskKey: string | undefined,
+): boolean {
+  switch (state.tool.type) {
+    case "marquee": {
+      const arm = marqueeArm(state, selectedImgKeys, selectedSvgKeys);
+      if (arm === undefined) return false;
+      return arm.type === "browser" ? !state.tool.stack : state.tool.copy;
+    }
+    case "mask":
+      return maskArm(state, selectedMaskKey)?.type === "img";
+    case "light_source":
+      return state.tool.copy;
+    default:
+      return false;
+  }
+}
+
+export function armedCopy(
+  state: UIState,
+  selectedImgKeys: Set<string>,
+  selectedSvgKeys: Set<string>,
+  selectedMaskKey: string | undefined,
+): CopySettings | undefined {
+  return isCopyArmed(state, selectedImgKeys, selectedSvgKeys, selectedMaskKey) ? state.copy : undefined;
 }
 
 export function isMaskEditLocked(session: MaskEditSession): boolean {
@@ -237,6 +309,7 @@ export interface UIState {
   maskEdit: MaskEditSession | undefined;
   gridlinesBright: boolean;
   lightGridlines: { key: string; lightId: number; value: number } | undefined;
+  copy: CopySettings;
 }
 
 export const defaultUIState: UIState = {
@@ -277,6 +350,7 @@ export const defaultUIState: UIState = {
   maskEdit: undefined,
   gridlinesBright: false,
   lightGridlines: undefined,
+  copy: { ...defaultCopySettings },
 };
 
 export enum UIActionType {
@@ -316,6 +390,7 @@ export enum UIActionType {
   SetLightSourcePreview,
   SetCanvasZoom,
   SetStagedObject,
+  SetCopy,
   StartObjectReview,
   StartObjectEdit,
   StartLightEdit,
@@ -390,6 +465,7 @@ export type UIAction =
   | { type: UIActionType.SetLightSourcePreview; value: boolean }
   | { type: UIActionType.SetCanvasZoom; value: number }
   | { type: UIActionType.SetStagedObject; value: Partial<UIState["stagedObject"]> }
+  | { type: UIActionType.SetCopy; value: CopySettings }
   | {
       type: UIActionType.StartObjectReview;
       maskMediaId: string;
@@ -481,6 +557,52 @@ export function resumeObjectReview(
   };
 }
 
+function sameTool(a: LaurusTool, b: LaurusTool): boolean {
+  if (a.type !== b.type) return false;
+  switch (a.type) {
+    case "marquee": {
+      const other = b as typeof a;
+      return a.stack === other.stack && a.copy === other.copy;
+    }
+    case "mask": {
+      const other = b as typeof a;
+      return a.lightingMeshSection === other.lightingMeshSection && a.raisingObjects === other.raisingObjects;
+    }
+    case "light_source": {
+      const other = b as typeof a;
+      return a.copy === other.copy;
+    }
+    case "pen": {
+      const other = b as typeof a;
+      return a.stitch === other.stitch && a.addAnchor === other.addAnchor && a.showAnchors === other.showAnchors;
+    }
+    default:
+      return true;
+  }
+}
+
+function sameBrowserElement(a: LaurusBrowserElement | undefined, b: LaurusBrowserElement | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.type !== b.type) return false;
+  const held = a.value as unknown as Record<string, unknown>;
+  const incoming = b.value as unknown as Record<string, unknown>;
+  const keys = Object.keys(held);
+  if (keys.length !== Object.keys(incoming).length) return false;
+  return keys.every((key) => held[key] === incoming[key]);
+}
+
+function sameCopySettings(a: CopySettings, b: CopySettings): boolean {
+  return (
+    a.convert === b.convert &&
+    a.position.value === b.position.value &&
+    a.position.x === b.position.x &&
+    a.position.y === b.position.y &&
+    a.size.value === b.size.value &&
+    a.size.width === b.size.width &&
+    a.size.height === b.size.height
+  );
+}
+
 export function uiContextReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
     case UIActionType.SetUIState: {
@@ -553,20 +675,24 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, browserSvgs: newBrowserSvgs };
     }
     case UIActionType.SetTool: {
+      if (sameTool(state.tool, action.value)) return state;
       return { ...state, tool: { ...action.value } };
     }
     case UIActionType.SetBrowserElement: {
+      if (sameBrowserElement(state.browserElement, action.value)) return state;
       return { ...state, browserElement: action.value };
     }
     case UIActionType.SetActiveElement: {
       return { ...state, activeElement: action.value };
     }
     case UIActionType.SetSelectedElement: {
-      const endsPreview = action.value?.type === "light" || action.value?.type === "object";
+      const isRegion = action.value?.type === "light" || action.value?.type === "object";
+      const disarmsCopy = !isRegion && state.tool.type === "light_source" && state.tool.copy;
       return {
         ...state,
         selectedElement: action.value,
-        lightSourcePreview: endsPreview ? false : state.lightSourcePreview,
+        lightSourcePreview: isRegion ? false : state.lightSourcePreview,
+        tool: disarmsCopy ? defaultLightSourceTool : state.tool,
       };
     }
     case UIActionType.SetLightFrameBackground: {
@@ -670,6 +796,17 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     case UIActionType.SetStagedObject: {
       return { ...state, stagedObject: { ...state.stagedObject, ...action.value } };
     }
+    case UIActionType.SetCopy: {
+      if (sameCopySettings(state.copy, action.value)) return state;
+      return {
+        ...state,
+        copy: {
+          position: { ...action.value.position },
+          size: { ...action.value.size },
+          convert: action.value.convert,
+        },
+      };
+    }
     case UIActionType.StartObjectReview: {
       if (action.candidates.length === 0) return state;
       return openMaskEdit(state, {
@@ -771,7 +908,7 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
           retouch: {
             polygons: action.retouch.polygons,
             restore: previous?.restore ?? action.retouch.restore,
-            added: (previous?.added ?? 0) + action.retouch.added,
+            added: action.retouch.added,
           },
         },
       };
