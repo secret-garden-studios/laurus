@@ -73,6 +73,7 @@ function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
           newShowContextMenu = !showContextMenu;
         }
         setShowContextMenu(newShowContextMenu);
+        setSelectedMaskKeys(clearedKeys);
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
