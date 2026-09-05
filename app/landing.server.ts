@@ -1,3 +1,15 @@
+import {
+  forgetAccessToken,
+  freshAccessToken,
+  LaurusToken,
+  rememberAccessToken,
+  renewRefusedAccessToken,
+  Token_V1_0,
+} from "./auth-session";
+
+export type { LaurusToken, Token_V1_0 } from "./auth-session";
+export { exchangeRefreshCookie } from "./auth-session";
+
 export const LANDING_ERROR = "try again later";
 export const EMAIL_ERROR = "try another email";
 export const USERNAME_ERROR = "try another username";
@@ -17,8 +29,9 @@ export async function authFetch(
   url: string,
   method: string,
 ): Promise<AuthResponse> {
+  const token = await freshAccessToken(baseUrl, accessToken);
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
+    Authorization: `Bearer ${token}`,
   };
 
   if (!(body instanceof FormData)) {
@@ -31,25 +44,10 @@ export async function authFetch(
     body,
     credentials: "include",
   });
-  if (response.status == 401) {
-    const newToken = await refreshAccessToken(baseUrl);
-    if (newToken.success) {
-      return {
-        response,
-        newToken: newToken.access_token,
-      };
-    } else {
-      return {
-        response,
-        newToken: undefined,
-      };
-    }
-  } else {
-    return {
-      response,
-      newToken: undefined,
-    };
+  if (response.status != 401) {
+    return { response, newToken: undefined };
   }
+  return { response, newToken: await renewRefusedAccessToken(baseUrl, token) };
 }
 export interface Register_V1_0 {
   username: string;
@@ -80,14 +78,6 @@ export interface ResetPasswordResult_V1_0 {
   detail: string;
   username: string;
   email: string;
-}
-export interface Token_V1_0 {
-  access_token: string;
-  token_type: string;
-}
-export interface LaurusToken extends Token_V1_0 {
-  success: boolean;
-  message: string;
 }
 export interface ValidationError_V1_0 {
   field: string;
@@ -163,6 +153,7 @@ export async function login(baseUrl: string | undefined, username: string, passw
       };
     }
     const response: Token_V1_0 = await raw_response.json();
+    rememberAccessToken(response.access_token);
     return { ...response, success: true, message: "" };
   } catch (error) {
     console.log(error);
@@ -174,52 +165,18 @@ export async function login(baseUrl: string | undefined, username: string, passw
     };
   }
 }
-export async function refreshAccessToken(baseUrl: string | undefined): Promise<LaurusToken> {
-  const url = `${baseUrl}/refresh`;
+
+export async function logout(baseUrl: string | undefined): Promise<boolean> {
   try {
-    const raw_response = await fetch(url, {
+    const response = await fetch(`${baseUrl}/logout`, {
       method: "POST",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
     });
-
-    if (!raw_response.ok) {
-      return {
-        success: false,
-        message: raw_response.statusText,
-        access_token: "",
-        token_type: "",
-      };
-    }
-
-    const response: LaurusToken = await raw_response.json();
-    return { ...response, success: true, message: "" };
-  } catch (error) {
-    console.log(error);
-    return {
-      success: false,
-      message: "unknown error",
-      access_token: "",
-      token_type: "",
-    };
-  }
-}
-export async function logout(baseUrl: string | undefined, accessToken: string): Promise<boolean> {
-  try {
-    const url = `${baseUrl}/logout`;
-    let response: Response | undefined = undefined;
-    const authResponse = await authFetch(baseUrl, accessToken, undefined, url, "POST");
-    if (authResponse.newToken) {
-      const authResponse2 = await authFetch(baseUrl, authResponse.newToken, undefined, url, "POST");
-      response = authResponse2.response;
-    } else {
-      response = authResponse.response;
-    }
+    forgetAccessToken();
     return response.ok;
   } catch (error) {
     console.log({ error });
+    forgetAccessToken();
     return false;
   }
 }

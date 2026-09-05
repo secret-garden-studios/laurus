@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import LandingBoot from "./landing.boot";
-import { logout, getMe, UserResult_V1_0 } from "./landing.server";
+import { exchangeRefreshCookie, getMe, UserResult_V1_0 } from "./landing.server";
 import { ProjectResult_V1_0 } from "./projects/projects.server";
 import {
   ScaleResult_V1_0,
@@ -30,20 +30,21 @@ export interface MeDependencies {
   me: UserResult_V1_0 | undefined;
   accessToken: string | undefined;
 }
-export async function fetchMe(laurusApi: string | undefined, logoutFlag: boolean): Promise<MeDependencies> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("refresh_token")?.value;
-  if (token) {
-    if (logoutFlag) {
-      await logout(laurusApi, token);
-      return { me: undefined, accessToken: undefined };
-    } else {
-      const me = await getMe(laurusApi, token);
-      return { me, accessToken: token };
-    }
-  } else {
+export async function fetchMe(laurusApi: string | undefined, guest: boolean): Promise<MeDependencies> {
+  if (guest) {
     return { me: undefined, accessToken: undefined };
   }
+  const cookieStore = await cookies();
+  const refreshToken = cookieStore.get("refresh_token")?.value;
+  if (!refreshToken) {
+    return { me: undefined, accessToken: undefined };
+  }
+  const accessToken = await exchangeRefreshCookie(laurusApi, refreshToken);
+  if (!accessToken) {
+    return { me: undefined, accessToken: undefined };
+  }
+  const me = await getMe(laurusApi, accessToken);
+  return me ? { me, accessToken } : { me: undefined, accessToken: undefined };
 }
 
 export interface ProjectDependencies {
@@ -61,21 +62,17 @@ export interface ProjectDependencies {
 }
 export async function fetchProject(
   laurusApi: string | undefined,
-  logoutFlag: boolean,
+  mePromise: Promise<MeDependencies>,
   projects: Promise<ProjectResult_V1_0[] | undefined>,
   requested_project_id: string | undefined,
   fetchMedia: boolean,
 ): Promise<ProjectDependencies | undefined> {
   const p = await projects;
   if (p && p.length > 0) {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("refresh_token")?.value;
-    if (token && logoutFlag) {
-      await logout(laurusApi, token);
-    }
+    const { me, accessToken } = await mePromise;
 
     const requestedProject = requested_project_id ? p.find((p) => p.project_id == requested_project_id) : undefined;
-    const myUsername: string = token && !logoutFlag ? ((await getMe(laurusApi, token))?.username ?? "") : "";
+    const myUsername: string = me?.username ?? "";
     let newProject: ProjectResult_V1_0 | undefined = undefined;
     if (requestedProject) {
       newProject = requestedProject;
@@ -126,9 +123,9 @@ export async function fetchProject(
       canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
     }
     const objectReviews: ObjectReviewState_V1_0[] = [];
-    if (fetchMedia && token) {
+    if (fetchMedia && accessToken) {
       for (const maskResult of canvasMasks.filter((m) => m.has_object_review)) {
-        const review = await getObjectReview(laurusApi, token, maskResult.mask_media_id);
+        const review = await getObjectReview(laurusApi, accessToken, maskResult.mask_media_id);
         if (review) objectReviews.push(review);
       }
     }

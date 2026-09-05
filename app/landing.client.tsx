@@ -5,6 +5,7 @@ import { SvgRepo, visibility, visibilityOff } from "./svg-repo";
 import { LaurusResolution } from "./landing.boot";
 import {
   login,
+  logout,
   registerUser,
   Register_V1_0,
   resetPassword,
@@ -806,6 +807,7 @@ function LoginBody({ laurusApi, resolution, newUsername }: LoginBody) {
         <div
           className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
           onClick={async () => {
+            await logout(laurusApi);
             if (resolution.type == "low") {
               router.push("/screens?guest=true");
             } else {
@@ -1555,6 +1557,7 @@ function PasswordConfirmationBody({
           <div
             className={`${styles["animated-button-dark"]} ${dellaRespira.className}`}
             onClick={async () => {
+              await logout(laurusApi);
               if (resolution.type == "low") {
                 router.push("/screens?guest=true");
               } else {

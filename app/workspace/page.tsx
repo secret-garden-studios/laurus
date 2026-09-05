@@ -61,7 +61,7 @@ export default async function Page({
   const projects = getProjects(laurusApi);
   const effectsEnum = getEffects(laurusApi);
   const mediaPageSizeInit = mediaPageSize ? parseInt(mediaPageSize) || 0 : 0;
-  const projectDependencies = fetchProject(laurusApi, Boolean(guest), projects, project_id, true);
+  const projectDependencies = fetchProject(laurusApi, me, projects, project_id, true);
   const browserDependencies = fetchMediaFromServer(laurusApi, mediaPageSizeInit);
   const mediaGroupsDependencies = fetchMediaGroupsFromServer(laurusApi, projectDependencies);
 

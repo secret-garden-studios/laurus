@@ -6,6 +6,7 @@ import { dellaRespira, italiana } from "../fonts";
 import styles from "../app.module.css";
 import { getScreenResolution, ScreensResolution } from "./screens-resolution";
 import { MeDependencies } from "../page";
+import { useAccessToken } from "../hooks/useAccessToken";
 
 interface ScreensBoot {
   apiOriginInit: string | undefined;
@@ -15,6 +16,7 @@ interface ScreensBoot {
 }
 export default function ScreensBoot({ apiOriginInit, videoMediaPromise, videoMediaPageSize, mePromise }: ScreensBoot) {
   const me = use(mePromise);
+  useAccessToken(apiOriginInit, me.accessToken);
   const [booted, setBooted] = useState(false);
   const [resolution, setResolution] = useState<ScreensResolution | undefined>(undefined);
 

@@ -115,6 +115,7 @@ import {
 } from "../projects/projects.server";
 import { MeDependencies, ProjectDependencies } from "../page";
 import { UNAUTHORIZED_EDIT } from "../landing.server";
+import { useAccessToken } from "../hooks/useAccessToken";
 import {
   CarouselEntry,
   UIAction,
@@ -968,13 +969,14 @@ export default function Workspace({
   const uiState = useSyncExternalStore(uiStore.subscribe, uiStore.getState, uiStore.getState);
   const uiDispatch = uiStore.dispatch;
   const isGuest = !coreState.accessToken;
+  const liveAccessToken = useAccessToken(coreState.apiOrigin, coreState.accessToken);
   const { sendLightUpdate: sendMaskLightUpdate, closeSocket: closeMaskLightSocket } = useMaskLightSockets(
     coreState.apiOrigin,
-    coreState.accessToken,
+    liveAccessToken,
   );
   const { sendObjectUpdate: sendMaskObjectUpdate, closeSocket: closeMaskObjectSocket } = useMaskObjectSockets(
     coreState.apiOrigin,
-    coreState.accessToken,
+    liveAccessToken,
   );
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
@@ -2456,7 +2458,7 @@ export default function Workspace({
     [uiState, uiDispatch],
   );
 
-  const maskPreview = useMaskPreview(coreState.apiOrigin, coreState.accessToken);
+  const maskPreview = useMaskPreview(coreState.apiOrigin, liveAccessToken);
   const maskContextValue = useMemo(
     () => ({ ...maskPreview, ...maskNotifyContextValue }),
     [maskPreview, maskNotifyContextValue],
