@@ -11,7 +11,6 @@ import {
   asterisk200,
   checkCircle,
   circle,
-  closeIcon,
   SvgRepo,
   type LaurusClientSvg,
 } from "../../svg-repo";
@@ -90,9 +89,9 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
   const [adding, setAdding] = useState(false);
   const [isTitleBarHovered, setIsTitleBarHovered] = useState(false);
 
-  const [expandedMaskKeys, setExpandedMaskKeys] = useState<Set<string>>(new Set());
+  const [collapsedMaskKeys, setCollapsedMaskKeys] = useState<Set<string>>(new Set());
   const toggleMaskExpanded = useCallback((key: string) => {
-    setExpandedMaskKeys((current) => {
+    setCollapsedMaskKeys((current) => {
       const next = new Set(current);
       if (!next.delete(key)) next.add(key);
       return next;
@@ -188,7 +187,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
             fontSize: 9,
           },
           removeOverlay: {
-            size: 14,
+            size: 20,
           },
         };
       case "midhigh":
@@ -236,7 +235,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
             fontSize: 7,
           },
           removeOverlay: {
-            size: 14,
+            size: 18,
           },
         };
       case "midlow":
@@ -285,7 +284,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
             fontSize: 7,
           },
           removeOverlay: {
-            size: 12,
+            size: 16,
           },
         };
     }
@@ -405,6 +404,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
 
   const onRemoveImgFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.imgs.get(key);
       if (!entry) return;
@@ -418,11 +418,12 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onRemoveSvgFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.svgs.get(key);
       if (!entry) return;
@@ -436,11 +437,12 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onRemoveMaskFromGroupClick = useCallback(
     async (key: string) => {
+      if (!isAltKeyPressed) return;
       if (!coreState.project.project_id) return;
       const entry = coreState.project.masks.get(key);
       if (!entry) return;
@@ -454,7 +456,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
         dispatch({ type: CoreActionType.SetProject, value: newProject });
       }
     },
-    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch],
+    [coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, isAltKeyPressed],
   );
 
   const onImgContextMenuClick = useCallback(
@@ -507,13 +509,13 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
   const expandedStacks = useMemo(() => {
     const stacks = new Map<string, StackRow[]>();
     groupItems.forEach((item) => {
-      if (item.type !== "mask" || !expandedMaskKeys.has(item.key)) return;
+      if (item.type !== "mask" || collapsedMaskKeys.has(item.key)) return;
       const stack = maskStack(item.mask);
       if (stack.length === 0) return;
       stacks.set(item.key, stackRows(stack));
     });
     return stacks;
-  }, [groupItems, expandedMaskKeys]);
+  }, [groupItems, collapsedMaskKeys]);
 
   const siblingRowIds = useCallback(
     (activeId: string): Set<string> => {
@@ -727,6 +729,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
                   isEven={index % 2 === 0}
                   indexColumnStyle={dynamicSizes.indexColumn}
                   removeOverlaySize={dynamicSizes.removeOverlay.size}
+                  isAltKeyPressed={isAltKeyPressed}
                   onRemoveFromGroupClick={() => {
                     if (item.type === "img") onRemoveImgFromGroupClick(item.key);
                     else if (item.type === "svg") onRemoveSvgFromGroupClick(item.key);
@@ -738,7 +741,7 @@ function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGr
                     else if (item.type === "svg") onSvgContextMenuClick(item.key);
                     else onMaskContextMenuClick(item.key);
                   }}
-                  expanded={expandedMaskKeys.has(item.key)}
+                  expanded={!collapsedMaskKeys.has(item.key)}
                   onExpandClick={() => toggleMaskExpanded(item.key)}
                   onElementContextMenuClick={(ref) => {
                     if (ref.kind === "object") {
@@ -1111,6 +1114,7 @@ interface MediaGroupRow {
   isEven: boolean;
   indexColumnStyle: { width: string; fontSize: number };
   removeOverlaySize: number;
+  isAltKeyPressed: boolean;
   expanded: boolean;
   onExpandClick: () => void;
   onRemoveFromGroupClick: () => void;
@@ -1125,6 +1129,7 @@ function MediaGroupRow({
   isEven,
   indexColumnStyle,
   removeOverlaySize,
+  isAltKeyPressed,
   expanded,
   onExpandClick,
   onRemoveFromGroupClick,
@@ -1279,18 +1284,27 @@ function MediaGroupRow({
               </div>
             </div>
             <div />
-            <div style={{ padding: "5px 5px 0px 0px", height: "100%", width: "min-content" }}>
+            <div
+              style={{
+                height: "100%",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
+              }}
+            >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1354,18 +1368,27 @@ function MediaGroupRow({
               </div>
             </div>
             <div />
-            <div style={{ padding: 4, height: "100%", width: "min-content" }}>
+            <div
+              style={{
+                height: "100%",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
+              }}
+            >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1425,26 +1448,25 @@ function MediaGroupRow({
             <div />
             <div
               style={{
-                padding: 4,
                 height: "100%",
-                width: "min-content",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "space-between",
+                display: "grid",
+                alignContent: "space-between",
+                justifyItems: "center",
               }}
             >
               <SvgRepo
                 title={"remove from group"}
-                svg={closeIcon(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")}
-                scale={0.9}
+                svg={
+                  isAltKeyPressed && isItemHovered ? circle("rgb(220, 112, 112)") : circle("rgba(255, 255, 255, 0.05)")
+                }
+                scale={0.5}
                 scaleToContaier={true}
                 onContainerClick={onRemoveFromGroupClick}
                 style={{
-                  cursor: "pointer",
+                  cursor: isAltKeyPressed && isItemHovered ? "pointer" : "",
                 }}
                 containerStyle={{
-                  cursor: "pointer",
+                  cursor: "",
                   width: removeOverlaySize,
                   height: removeOverlaySize,
                 }}
@@ -1457,14 +1479,14 @@ function MediaGroupRow({
                       ? arrowDropUp(isItemHovered ? "rgba(227,227,227,1)" : "rgb(110, 110, 110)")
                       : arrowDropDown(isItemHovered ? "rgba(227,227,227,1)" : "rgb(67, 67, 67)")
                 }
-                scale={1.1}
+                scale={1}
                 scaleToContaier={true}
                 onContainerClick={stackCount === 0 ? undefined : onExpandClick}
                 style={{ cursor: stackCount === 0 ? "default" : "pointer" }}
                 containerStyle={{
                   cursor: stackCount === 0 ? "default" : "pointer",
-                  width: removeOverlaySize * 1.25,
-                  height: removeOverlaySize * 1.25,
+                  width: removeOverlaySize,
+                  height: removeOverlaySize,
                 }}
               />
             </div>
