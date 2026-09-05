@@ -2,6 +2,7 @@ import { useCallback, useContext } from "react";
 import { Transform } from "@dnd-kit/utilities";
 import { MaskContext, UIContext } from "../workspace.client";
 import { UIActionType } from "../states/ui-state";
+import { useUICanvasZoom } from "../states/ui-store";
 
 export function useCanvasZoom() {
   const { uiState, uiDispatch } = useContext(UIContext);
@@ -14,17 +15,10 @@ export function useCanvasZoom() {
   return { zoom: uiState.canvasZoom, setZoom, previewZoom };
 }
 
-/* Reads the zoom on its own so a media item re-renders when the canvas is
-   scaled and not every time a mask preview changes. */
 export function useCanvasZoomValue(): number {
-  const { uiState } = useContext(UIContext);
-  return uiState.canvasZoom;
+  return useUICanvasZoom();
 }
 
-/* Pointer deltas come out of dnd-kit in screen pixels, but positions are stored
-   in unzoomed canvas units -- and a translate applied inside the scaled canvas
-   is itself multiplied by the zoom on the way to the screen. Dividing by the
-   zoom in both places keeps a drag tracking the cursor 1:1 at any zoom. */
 export function toCanvasDelta(delta: { x: number; y: number }, zoom: number): { x: number; y: number } {
   if (zoom === 1) return delta;
   return { x: delta.x / zoom, y: delta.y / zoom };

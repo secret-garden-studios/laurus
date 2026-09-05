@@ -9,12 +9,13 @@ import {
   LaurusProjectResult,
   LaurusProjectSvg,
 } from "../projects/projects.server";
-import { LaurusTool, UIActionType } from "./states/ui-state";
+import { CopySettings, UIActionType, armedCopy, marqueeArm } from "./states/ui-state";
 import { LaurusImgResult, LaurusSvgResult } from "./workspace.server";
 import { CoreActionType } from "./states/core-state";
 import { ProjectMaskItem, ProjectMaskItemSource } from "./canvas-media/project-mask-item";
 import { indicesInCircleFromCentroids } from "./canvas-media/light-geometry";
 import { maskGeometry } from "./canvas-media/mask-geometry";
+import { ProjectCircle, canvasCircleToMesh, maskSpace } from "./canvas-media/canvas-space";
 import { warmImageTexture } from "./mask-gl";
 import { useMaskPersist } from "./hooks/useMaskPersist";
 import { Z_INDEX } from "./workspace.config";
@@ -68,44 +69,51 @@ function getCenteredRectInCircle(
   return { x, y, width: newWidth, height: newHeight };
 }
 
-interface ProjectCircle {
-  cx: number;
-  cy: number;
-  radius: number;
-}
-
-function calculateDropFrame(width: number, height: number, dropArea: ProjectCircle, tool: LaurusTool) {
+function calculateDropFrame(width: number, height: number, dropArea: ProjectCircle, copy: CopySettings | undefined) {
   const frame = getCenteredRectInCircle(width, height, dropArea.cx, dropArea.cy, dropArea.radius);
-  if (tool.type != "marquee") return frame;
-  if (tool.size.value) {
+  if (!copy) return frame;
+  if (copy.size.value) {
     const mediaAspectRatio = width / height;
-    if (tool.size.width !== undefined && tool.size.height !== undefined) {
-      if (mediaAspectRatio > tool.size.width / tool.size.height) {
-        frame.width = tool.size.width;
+    if (copy.size.width !== undefined && copy.size.height !== undefined) {
+      if (mediaAspectRatio > copy.size.width / copy.size.height) {
+        frame.width = copy.size.width;
         frame.height = frame.width / mediaAspectRatio;
       } else {
-        frame.height = tool.size.height;
+        frame.height = copy.size.height;
         frame.width = frame.height * mediaAspectRatio;
       }
-    } else if (tool.size.width !== undefined) {
-      frame.width = tool.size.width;
+    } else if (copy.size.width !== undefined) {
+      frame.width = copy.size.width;
       frame.height = frame.width / mediaAspectRatio;
-    } else if (tool.size.height !== undefined) {
-      frame.height = tool.size.height;
+    } else if (copy.size.height !== undefined) {
+      frame.height = copy.size.height;
       frame.width = frame.height * mediaAspectRatio;
     }
     frame.x = dropArea.cx - frame.width / 2;
     frame.y = dropArea.cy - frame.height / 2;
   }
-  if (tool.position.value) {
-    if (tool.position.x !== undefined) {
-      frame.x = tool.position.x;
+  if (copy.position.value) {
+    if (copy.position.x !== undefined) {
+      frame.x = copy.position.x;
     }
-    if (tool.position.y !== undefined) {
-      frame.y = tool.position.y;
+    if (copy.position.y !== undefined) {
+      frame.y = copy.position.y;
     }
   }
   return frame;
+}
+
+function calculateDropCircle(dropArea: ProjectCircle, copy: CopySettings | undefined): ProjectCircle {
+  if (!copy) return dropArea;
+  const circle = { ...dropArea };
+  if (copy.size.value && copy.size.width !== undefined) {
+    circle.radius = copy.size.width / 2;
+  }
+  if (copy.position.value) {
+    if (copy.position.x !== undefined) circle.cx = copy.position.x;
+    if (copy.position.y !== undefined) circle.cy = copy.position.y;
+  }
+  return circle;
 }
 
 function isBadFrame(
@@ -147,8 +155,15 @@ export default function Canvas() {
     isAltKeyPressed,
     isMetaKeyPressed,
   } = useContext(HoverContext);
-  const { lightMeshSection, createObject, copyObject, copyLight, ...mask } = useContext(MaskContext);
+  const { lightMeshSection, createObject, copyObject, copyLight, convertLightToObject, convertObjectToLight, ...mask } =
+    useContext(MaskContext);
   const { triggerMask } = useMaskPersist();
+  const copy = armedCopy(
+    uiState,
+    selectedImgKeys,
+    selectedSvgKeys,
+    selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
+  );
   const [anchor, setAnchor] = useState<{ x: number; y: number } | undefined>(undefined);
   const [minRadius] = useState(10);
 
@@ -175,21 +190,21 @@ export default function Canvas() {
     const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
     if (!frame) return undefined;
     return {
-      width: mask.size.value && mask.size.width !== undefined ? mask.size.width : frame.width,
-      height: mask.size.value && mask.size.height !== undefined ? mask.size.height : frame.height,
+      width: copy?.size.value && copy.size.width !== undefined ? copy.size.width : frame.width,
+      height: copy?.size.value && copy.size.height !== undefined ? copy.size.height : frame.height,
       scale_x: activeMaskImg?.meta.scale_x ?? 1,
       scale_y: activeMaskImg?.meta.scale_y ?? 1,
     };
-  }, [activeMaskImg, activeBrowserMaskDrop, mask.size]);
+  }, [activeMaskImg, activeBrowserMaskDrop, copy]);
 
   const liveMaskDndPosition = useMemo(() => {
     const frame = activeMaskImg?.meta ?? activeBrowserMaskDrop?.frame;
     if (!frame) return undefined;
     return {
-      x: mask.position.value && mask.position.x !== undefined ? mask.position.x : frame.left,
-      y: mask.position.value && mask.position.y !== undefined ? mask.position.y : frame.top,
+      x: copy?.position.value && copy.position.x !== undefined ? copy.position.x : frame.left,
+      y: copy?.position.value && copy.position.y !== undefined ? copy.position.y : frame.top,
     };
-  }, [activeMaskImg, activeBrowserMaskDrop, mask.position]);
+  }, [activeMaskImg, activeBrowserMaskDrop, copy]);
 
   const liveMaskKey = activeMaskImg?.key ?? activeBrowserMaskDrop?.imgData.media_key;
 
@@ -299,7 +314,7 @@ export default function Canvas() {
 
   const handleSvgDrop = useCallback(
     async (svgData: LaurusSvgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(svgData.width, svgData.height, dropArea, uiState.tool);
+      const newFrame = calculateDropFrame(svgData.width, svgData.height, dropArea, copy);
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -331,6 +346,7 @@ export default function Canvas() {
         scale_y: 1,
         description: "",
       };
+      let dropped = false;
       const newSvgs: Map<string, LaurusProjectSvg> = new Map(coreState.project.svgs);
       const newKey = newUUID();
       newSvgs.set(newKey, projectSvg);
@@ -344,6 +360,7 @@ export default function Canvas() {
           ...newProject,
         });
         if (projectUpdated) {
+          dropped = true;
           const encodedSvg = uiState.browserSvgs.find((i) => i.media_key == svgData.media_key);
           if (encodedSvg) {
             dispatch({
@@ -366,6 +383,7 @@ export default function Canvas() {
       } else {
         const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
         if (projectCreated) {
+          dropped = true;
           const newProject2: LaurusProjectResult = {
             ...projectCreated,
             svgs: newSvgs,
@@ -391,21 +409,14 @@ export default function Canvas() {
           }
         }
       }
+      if (dropped) uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
     },
-    [
-      uiState.tool,
-      uiState.browserSvgs,
-      coreState.project,
-      coreState.apiOrigin,
-      coreState.accessToken,
-      dispatch,
-      uiDispatch,
-    ],
+    [copy, uiState.browserSvgs, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, uiDispatch],
   );
 
   const handleImgDrop = useCallback(
     async (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
+      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, copy);
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -433,6 +444,7 @@ export default function Canvas() {
         scale_y: 1,
         description: "",
       };
+      let dropped = false;
       const newImgs: Map<string, LaurusProjectImg> = new Map(coreState.project.imgs);
       const newKey = newUUID();
       newImgs.set(newKey, projectImg);
@@ -445,6 +457,7 @@ export default function Canvas() {
           ...newProject,
         });
         if (projectUpdated) {
+          dropped = true;
           dispatch({ type: CoreActionType.SetProject, value: newProject });
           const encodedImg = uiState.browserImgs.find((i) => i.media_key == imgData.media_key);
           if (encodedImg) {
@@ -468,6 +481,7 @@ export default function Canvas() {
       } else {
         const projectCreated = await createProject(coreState.apiOrigin, coreState.accessToken, { ...newProject });
         if (projectCreated) {
+          dropped = true;
           const newProject2: LaurusProjectResult = {
             ...projectCreated,
             imgs: newImgs,
@@ -493,16 +507,9 @@ export default function Canvas() {
           }
         }
       }
+      if (dropped) uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
     },
-    [
-      uiState.tool,
-      uiState.browserImgs,
-      coreState.project,
-      coreState.apiOrigin,
-      coreState.accessToken,
-      dispatch,
-      uiDispatch,
-    ],
+    [copy, uiState.browserImgs, coreState.project, coreState.apiOrigin, coreState.accessToken, dispatch, uiDispatch],
   );
 
   useEffect(() => {
@@ -512,7 +519,7 @@ export default function Canvas() {
 
   const handleMaskDrop = useCallback(
     (imgData: LaurusImgResult, dropArea: ProjectCircle) => {
-      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, uiState.tool);
+      const newFrame = calculateDropFrame(imgData.width, imgData.height, dropArea, copy);
       if (isBadFrame(newFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
@@ -520,68 +527,36 @@ export default function Canvas() {
       if (!triggerMask(imgData, { ...frame, scale_x: 1, scale_y: 1 })) return;
       setPendingMaskDrop({ imgData, frame });
     },
-    [uiState.tool, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
+    [copy, coreState.project.canvas_width, coreState.project.canvas_height, triggerMask],
   );
-
-  function screenCircleToMeshSpace(
-    maskKey: string,
-    drawingCanvas: HTMLCanvasElement,
-    dropArea: ProjectCircle,
-  ): { cx: number; cy: number; radius: number } | undefined {
-    const maskCanvasEl = document.querySelector<HTMLCanvasElement>(`canvas[data-mask-key="${CSS.escape(maskKey)}"]`);
-    if (!maskCanvasEl) return undefined;
-
-    const drawingRect = drawingCanvas.getBoundingClientRect();
-    const maskRect = maskCanvasEl.getBoundingClientRect();
-    if (maskRect.width === 0 || maskRect.height === 0) return undefined;
-
-    if (drawingRect.width === 0) return undefined;
-    const zoomed = drawingRect.width / drawingCanvas.width;
-    const localX = dropArea.cx * zoomed + drawingRect.left - maskRect.left;
-    const localY = dropArea.cy * zoomed + drawingRect.top - maskRect.top;
-
-    const scaleX = maskCanvasEl.width / maskRect.width;
-    const scaleY = maskCanvasEl.height / maskRect.height;
-
-    return {
-      cx: localX * scaleX,
-      cy: localY * scaleY,
-      radius: dropArea.radius * zoomed * scaleX,
-    };
-  }
 
   const handleLightDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
       const maskData = coreState.canvasMasks.get(maskKey);
-      const drawingCanvas = drawingCanvasRef.current;
-      if (!maskData || !drawingCanvas) return;
+      const space = maskSpace(coreState.project.masks.get(maskKey), maskData);
+      if (!maskData || !space) return;
 
-      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
-      if (!meshCircle) return;
+      const meshCircle = canvasCircleToMesh(space, dropArea);
 
       const polygonIndices = indicesInCircleFromCentroids(maskGeometry(maskData).centroids, meshCircle);
       if (polygonIndices.size === 0) return;
       lightMeshSection(maskKey, Array.from(polygonIndices), meshCircle.radius * 2);
     },
-    [selectedMaskKeys, coreState.canvasMasks, lightMeshSection],
+    [selectedMaskKeys, coreState.canvasMasks, coreState.project.masks, lightMeshSection],
   );
 
   const handleTopologyDrop = useCallback(
     (dropArea: ProjectCircle) => {
       if (selectedMaskKeys.size !== 1) return;
       const maskKey = Array.from(selectedMaskKeys)[0];
-      const maskData = coreState.canvasMasks.get(maskKey);
-      const drawingCanvas = drawingCanvasRef.current;
-      if (!maskData || !drawingCanvas) return;
+      const space = maskSpace(coreState.project.masks.get(maskKey), coreState.canvasMasks.get(maskKey));
+      if (!space) return;
 
-      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
-      if (!meshCircle) return;
-
-      createObject(maskKey, meshCircle, { ...uiState.stagedObject });
+      createObject(maskKey, canvasCircleToMesh(space, dropArea), { ...uiState.stagedObject });
     },
-    [selectedMaskKeys, coreState.canvasMasks, createObject, uiState.stagedObject],
+    [selectedMaskKeys, coreState.canvasMasks, coreState.project.masks, createObject, uiState.stagedObject],
   );
 
   const handleCopyDrop = useCallback(
@@ -589,11 +564,19 @@ export default function Canvas() {
       const selected = uiState.selectedElement;
       if (selected?.type !== "light" && selected?.type !== "object") return;
       const maskKey = selected.key;
-      const drawingCanvas = drawingCanvasRef.current;
-      if (!coreState.canvasMasks.has(maskKey) || !drawingCanvas) return;
+      const space = maskSpace(coreState.project.masks.get(maskKey), coreState.canvasMasks.get(maskKey));
+      if (!space) return;
 
-      const meshCircle = screenCircleToMeshSpace(maskKey, drawingCanvas, dropArea);
-      if (!meshCircle) return;
+      const meshCircle = canvasCircleToMesh(space, calculateDropCircle(dropArea, copy));
+
+      if (copy?.convert) {
+        if (selected.type === "object") {
+          void convertObjectToLight(maskKey, selected.objectId, meshCircle);
+        } else {
+          void convertLightToObject(maskKey, selected.lightId, meshCircle);
+        }
+        return;
+      }
 
       if (selected.type === "object") {
         void copyObject(maskKey, selected.objectId, meshCircle);
@@ -601,7 +584,16 @@ export default function Canvas() {
         void copyLight(maskKey, selected.lightId, meshCircle);
       }
     },
-    [uiState.selectedElement, coreState.canvasMasks, copyObject, copyLight],
+    [
+      uiState.selectedElement,
+      coreState.canvasMasks,
+      coreState.project.masks,
+      copyObject,
+      copyLight,
+      convertLightToObject,
+      convertObjectToLight,
+      copy,
+    ],
   );
 
   const handleDuplicateDrop = useCallback(
@@ -620,21 +612,39 @@ export default function Canvas() {
       const minY = Math.min(...allMetas.map((m) => m.top));
       const maxX = Math.max(...allMetas.map((m) => m.left + m.width * m.scale_x));
       const maxY = Math.max(...allMetas.map((m) => m.top + m.height * m.scale_y));
-      let deltaX = dropArea.cx - (minX + maxX) / 2;
-      let deltaY = dropArea.cy - (minY + maxY) / 2;
-      if (uiState.tool.type === "marquee" && uiState.tool.position.value) {
-        if (uiState.tool.position.x !== undefined) {
-          deltaX = uiState.tool.position.x - minX;
-        }
-        if (uiState.tool.position.y !== undefined) {
-          deltaY = uiState.tool.position.y - minY;
+      const groupWidth = maxX - minX;
+      const groupHeight = maxY - minY;
+
+      let scale = 1;
+      if (groupWidth > 0 && groupHeight > 0) {
+        if (copy?.size.value) {
+          const byWidth = copy.size.width !== undefined ? copy.size.width / groupWidth : undefined;
+          const byHeight = copy.size.height !== undefined ? copy.size.height / groupHeight : undefined;
+          const candidates = [byWidth, byHeight].filter((f): f is number => f !== undefined && f > 0);
+          if (candidates.length > 0) scale = Math.min(...candidates);
+        } else {
+          const inCircle = getCenteredRectInCircle(groupWidth, groupHeight, dropArea.cx, dropArea.cy, dropArea.radius);
+          scale = inCircle.width / groupWidth;
         }
       }
 
-      const groupFrame = { x: minX + deltaX, y: minY + deltaY, width: maxX - minX, height: maxY - minY };
+      let originX = dropArea.cx - (groupWidth * scale) / 2;
+      let originY = dropArea.cy - (groupHeight * scale) / 2;
+      if (copy?.position.value) {
+        if (copy.position.x !== undefined) originX = copy.position.x;
+        if (copy.position.y !== undefined) originY = copy.position.y;
+      }
+
+      const groupFrame = { x: originX, y: originY, width: groupWidth * scale, height: groupHeight * scale };
       if (isBadFrame(groupFrame, coreState.project.canvas_width, coreState.project.canvas_height)) {
         return;
       }
+      const placed = (meta: LaurusProjectImg | LaurusProjectSvg) => ({
+        left: Math.round(originX + (meta.left - minX) * scale),
+        top: Math.round(originY + (meta.top - minY) * scale),
+        scale_x: meta.scale_x * scale,
+        scale_y: meta.scale_y * scale,
+      });
 
       let maxOrder = Math.max(
         -1,
@@ -656,8 +666,7 @@ export default function Canvas() {
         newImgs.set(newKey, {
           ...meta,
           media_group_id: "",
-          left: Math.round(meta.left + deltaX),
-          top: Math.round(meta.top + deltaY),
+          ...placed(meta),
           order: maxOrder,
         });
         const canvasImg = coreState.canvasImgs.get(key);
@@ -671,8 +680,7 @@ export default function Canvas() {
         newSvgs.set(newKey, {
           ...meta,
           media_group_id: "",
-          left: Math.round(meta.left + deltaX),
-          top: Math.round(meta.top + deltaY),
+          ...placed(meta),
           order: maxOrder,
         });
         const canvasSvg = coreState.canvasSvgs.get(key);
@@ -725,7 +733,7 @@ export default function Canvas() {
       uiDispatch,
       setSelectedImgKeys,
       setSelectedSvgKeys,
-      uiState.tool,
+      copy,
     ],
   );
 
@@ -747,7 +755,13 @@ export default function Canvas() {
             radius: newRadius,
           };
 
-          if (uiState.tool.select) {
+          const arm = marqueeArm(
+            { tool: uiState.tool, browserElement: uiState.browserElement },
+            selectedImgKeys,
+            selectedSvgKeys,
+          );
+
+          if (arm === undefined) {
             const foundImgKeys = new Set<string>();
             const foundSvgKeys = new Set<string>();
             const isInside = (meta: LaurusProjectImg | LaurusProjectSvg) => {
@@ -768,22 +782,17 @@ export default function Canvas() {
 
             setSelectedImgKeys(foundImgKeys);
             setSelectedSvgKeys(foundSvgKeys);
-            uiDispatch({ type: UIActionType.SetBrowserElement, value: undefined });
             break;
           }
 
-          if (uiState.tool.duplicate) {
-            if (selectedImgKeys.size > 0 || selectedSvgKeys.size > 0) {
-              handleDuplicateDrop(dropArea);
-            }
+          if (arm.type === "selection") {
+            if (uiState.tool.copy) void handleDuplicateDrop(dropArea);
             break;
           }
 
-          if (!uiState.browserElement) break;
-
-          switch (uiState.browserElement.type) {
+          switch (arm.element.type) {
             case "svg": {
-              const key = uiState.browserElement.value.media_key;
+              const key = arm.element.value.media_key;
               const svgData = uiState.browserSvgs.find((s) => s.media_key === key);
               if (svgData) {
                 handleSvgDrop(svgData, dropArea);
@@ -791,7 +800,7 @@ export default function Canvas() {
               break;
             }
             case "img": {
-              const key = uiState.browserElement.value.media_key;
+              const key = arm.element.value.media_key;
               const imgData = uiState.browserImgs.find((s) => s.media_key === key);
               if (imgData) {
                 handleImgDrop(imgData, dropArea);
@@ -857,7 +866,6 @@ export default function Canvas() {
       handleImgDrop,
       handleMaskDrop,
       handleDuplicateDrop,
-      uiDispatch,
     ],
   );
 

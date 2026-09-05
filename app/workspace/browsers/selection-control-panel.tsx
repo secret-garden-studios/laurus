@@ -118,8 +118,8 @@ export default function MediaGroupSelectionPanel({ containerStyle }: MediaGroupS
           setSelectedImgKeys(new Set());
           setSelectedSvgKeys(new Set());
           setSelectedMaskKeys(new Set());
-          if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-            const newTool = { ...uiState.tool, duplicate: false };
+          if (uiState.tool.type === "marquee" && uiState.tool.copy) {
+            const newTool = { ...uiState.tool, copy: false };
             uiDispatch({ type: UIActionType.SetTool, value: newTool });
             notifyMaskToolChanged(newTool.type);
           }

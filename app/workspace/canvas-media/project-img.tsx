@@ -2,13 +2,14 @@
 import LaurusImage from "../../components/laurus-image";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { HoverContext, LaurusTransform, UIContext } from "../workspace.client";
+import { HoverContext, LaurusTransform } from "../workspace.client";
 import { RefObject, useContext, useMemo, useState } from "react";
 import { LaurusProjectImg } from "../../projects/projects.server";
 import ContextMenu from "../context-menu";
 import { Z_INDEX } from "../workspace.config";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
 import { isMaskDropZoneArmed } from "../states/ui-state";
+import { useUIBrowserElement, useUIContextMenuOpen, useUIMaskEdit, useUITool } from "../states/ui-store";
 import { useToolCursor } from "../hooks/useToolCursor";
 import { toCanvasTranslate, useCanvasZoomValue } from "../hooks/useCanvasZoom";
 
@@ -42,19 +43,23 @@ export function ProjectImg({
   title,
   transform,
 }: ProjectImg) {
-  const { uiState } = useContext(UIContext);
-  const contextMenuState = uiState.projectContextMenus.get(mediaKey);
-  const showContextMenu = contextMenuState?.showContextMenu ?? false;
+  const tool = useUITool();
+  const maskEdit = useUIMaskEdit();
+  const browserElement = useUIBrowserElement();
+  const showContextMenu = useUIContextMenuOpen(mediaKey);
   const { selectedImgKeys, isAltKeyPressed, isMetaKeyPressed } = useContext(HoverContext);
-  const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
+  const dropZoneArmed = isMaskDropZoneArmed(
+    { tool, maskEdit, browserElement },
+    { meta: isMetaKeyPressed, alt: isAltKeyPressed },
+  );
   const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedImgKeys.has(mediaKey);
   const dragDisabled = useMemo(() => {
-    return uiState.tool.type != "move";
-  }, [uiState.tool.type]);
+    return tool.type != "move";
+  }, [tool.type]);
   const isStackable = useMemo(() => {
-    return uiState.tool.type === "marquee" && uiState.tool.stack;
-  }, [uiState.tool]);
+    return tool.type === "marquee" && tool.stack;
+  }, [tool]);
   const {
     listeners,
     setNodeRef,

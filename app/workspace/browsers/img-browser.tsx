@@ -1,22 +1,30 @@
-import { useContext, useState, useMemo, useCallback, useEffect, useRef, RefObject } from "react";
-import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
+import { useContext, useState, useMemo, useCallback, useEffect, useRef, RefObject, memo } from "react";
+import { CoreContext, HoverContext, MaskNotifyContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusImgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { LaurusTool, UIActionType, defaultMarqueeTool } from "../states/ui-state";
+import { useUIBrowserElement, useUIDispatch, useUIMaskEdit, useUIResolution, useUITool } from "../states/ui-store";
 
 export interface ImgBrowser {
   img: LaurusImgResult;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
-export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
+
+const clearedKeys = (previous: Set<string>) => (previous.size === 0 ? previous : new Set<string>());
+
+function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
   const { coreState } = useContext(CoreContext);
-  const { notifyMaskToolChanged } = useContext(MaskContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskNotifyContext);
+  const uiDispatch = useUIDispatch();
+  const browserElement = useUIBrowserElement();
+  const tool = useUITool();
+  const maskEdit = useUIMaskEdit();
+  const resolution = useUIResolution();
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           mediaItemSize: {
@@ -50,8 +58,8 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
 
   const [showContextMenu, setShowContextMenu] = useState(false);
   const browserElementMediaId = useMemo(() => {
-    return uiState.browserElement?.type == "img" ? uiState.browserElement.value.img_media_id : "";
-  }, [uiState.browserElement]);
+    return browserElement?.type == "img" ? browserElement.value.img_media_id : "";
+  }, [browserElement]);
 
   const onImgClick = useCallback(
     (e: React.MouseEvent<HTMLImageElement, MouseEvent>, img: LaurusImgResult) => {
@@ -71,14 +79,14 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
         });
       } else {
         if (showContextMenu) setShowContextMenu(false);
-        setSelectedImgKeys(new Set());
-        setSelectedSvgKeys(new Set());
-        setSelectedMaskKeys(new Set());
+        setSelectedImgKeys(clearedKeys);
+        setSelectedSvgKeys(clearedKeys);
+        setSelectedMaskKeys(clearedKeys);
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...img }, type: "img" },
         });
-        if (uiState.maskEdit === undefined && uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+        if (maskEdit === undefined && tool.type !== "mask" && tool.type !== "marquee") {
           const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
@@ -92,8 +100,8 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
       browserElementMediaId,
       showContextMenu,
       uiDispatch,
-      uiState.tool,
-      uiState.maskEdit,
+      tool,
+      maskEdit,
       setSelectedImgKeys,
       setSelectedSvgKeys,
       setSelectedMaskKeys,
@@ -161,7 +169,7 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
           position: "relative",
           borderRadius: 10,
           outline:
-            uiState.browserElement?.type == "img" && uiState.browserElement.value.img_media_id == img.img_media_id
+            browserElement?.type == "img" && browserElement.value.img_media_id == img.img_media_id
               ? "2px solid rgba(66, 133, 244, 1)"
               : "none",
         }}
@@ -215,3 +223,5 @@ export default function ImgBrowser({ img, framesCacheRef }: ImgBrowser) {
     </div>
   );
 }
+
+export default memo(ImgBrowser);

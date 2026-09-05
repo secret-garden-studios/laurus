@@ -1,22 +1,30 @@
-import { useContext, useState, useMemo, useCallback, useEffect, RefObject } from "react";
-import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
+import { useContext, useState, useMemo, useCallback, useEffect, RefObject, memo } from "react";
+import { CoreContext, HoverContext, MaskNotifyContext } from "../workspace.client";
 import styles from "../../app.module.css";
 import { LaurusFrame, LaurusSvgResult } from "../workspace.server";
 import { BrowserContextMenu } from "../context-menu";
 import { defaultMarqueeTool, LaurusTool, UIActionType } from "../states/ui-state";
 import { decodeSvgMarkup } from "../canvas-media/object-shape";
+import { useUIBrowserElement, useUIDispatch, useUIMaskEdit, useUIResolution, useUITool } from "../states/ui-store";
 
 export interface SvgBrowser {
   svg: LaurusSvgResult;
   framesCacheRef: RefObject<Map<string, LaurusFrame[]>>;
 }
-export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
+
+const clearedKeys = (previous: Set<string>) => (previous.size === 0 ? previous : new Set<string>());
+
+function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
   const { coreState } = useContext(CoreContext);
-  const { notifyMaskToolChanged } = useContext(MaskContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskNotifyContext);
+  const uiDispatch = useUIDispatch();
+  const browserElement = useUIBrowserElement();
+  const tool = useUITool();
+  const maskEdit = useUIMaskEdit();
+  const resolution = useUIResolution();
   const { isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           mediaItemSize: {
@@ -50,8 +58,8 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
 
   const [showContextMenu, setShowContextMenu] = useState(false);
   const browserElementMediaId = useMemo(() => {
-    return uiState.browserElement?.type == "svg" ? uiState.browserElement.value.svg_media_id : "";
-  }, [uiState.browserElement]);
+    return browserElement?.type == "svg" ? browserElement.value.svg_media_id : "";
+  }, [browserElement]);
 
   const onSvgClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement, MouseEvent>, svg: LaurusSvgResult) => {
@@ -71,13 +79,13 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
         });
       } else {
         if (showContextMenu) setShowContextMenu(false);
-        setSelectedImgKeys(new Set());
-        setSelectedSvgKeys(new Set());
+        setSelectedImgKeys(clearedKeys);
+        setSelectedSvgKeys(clearedKeys);
         uiDispatch({
           type: UIActionType.SetBrowserElement,
           value: { value: { ...svg }, type: "svg" },
         });
-        if (uiState.maskEdit === undefined && uiState.tool.type !== "mask" && uiState.tool.type !== "marquee") {
+        if (maskEdit === undefined && tool.type !== "mask" && tool.type !== "marquee") {
           const newTool: LaurusTool = defaultMarqueeTool;
           uiDispatch({
             type: UIActionType.SetTool,
@@ -93,8 +101,8 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
       uiDispatch,
       setSelectedImgKeys,
       setSelectedSvgKeys,
-      uiState.tool.type,
-      uiState.maskEdit,
+      tool.type,
+      maskEdit,
       notifyMaskToolChanged,
     ],
   );
@@ -143,7 +151,7 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
             border: "1px solid rgba(255,255,255,0.05)",
             cursor: isMetaKeyPressed ? "context-menu" : "pointer",
             outline:
-              uiState.browserElement?.type == "svg" && uiState.browserElement.value.svg_media_id == svg.svg_media_id
+              browserElement?.type == "svg" && browserElement.value.svg_media_id == svg.svg_media_id
                 ? "2px solid rgba(66, 133, 244, 1)"
                 : "none",
           }}
@@ -180,3 +188,5 @@ export default function SvgBrowser({ svg, framesCacheRef }: SvgBrowser) {
     </div>
   );
 }
+
+export default memo(SvgBrowser);

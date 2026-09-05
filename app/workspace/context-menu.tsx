@@ -228,7 +228,8 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     reorderElement,
   } = useContext(MaskContext);
   const { uiState, uiDispatch } = useContext(UIContext);
-  const { isAltKeyPressed, isMetaKeyPressed } = useContext(HoverContext);
+  const { isAltKeyPressed, isMetaKeyPressed, setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys } =
+    useContext(HoverContext);
   const contextMenuState = uiState.projectContextMenus.get(media.key);
   const contextMenuConfig = contextMenuState?.contextMenuConfig ?? DEFAULT_CONTEXT_MENU_CONFIG;
   const dropZoneArmed = isMaskDropZoneArmed(uiState, { meta: isMetaKeyPressed, alt: isAltKeyPressed });
@@ -494,6 +495,29 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     }
   });
 
+  const dropSelectedKey = useCallback(
+    (mediaType: ContextMenu["media"]["type"], mediaKey: string) => {
+      const without = (keys: Set<string>) => {
+        if (!keys.has(mediaKey)) return keys;
+        const next = new Set(keys);
+        next.delete(mediaKey);
+        return next;
+      };
+      switch (mediaType) {
+        case "img":
+          setSelectedImgKeys(without);
+          break;
+        case "svg":
+          setSelectedSvgKeys(without);
+          break;
+        case "mask":
+          setSelectedMaskKeys(without);
+          break;
+      }
+    },
+    [setSelectedImgKeys, setSelectedSvgKeys, setSelectedMaskKeys],
+  );
+
   const deleteProjectMedia = useCallback(
     async (
       snapshot: LaurusProjectResult,
@@ -529,6 +553,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
             });
             notifyMaskSelectionChanged(undefined);
           }
+          dropSelectedKey(media.type, media.key);
           uiDispatch({
             type: UIActionType.DeleteCarouselEntry,
             key: media.key,
@@ -564,6 +589,7 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
       uiDispatch,
       framesCacheRef,
       notifyMaskSelectionChanged,
+      dropSelectedKey,
     ],
   );
 

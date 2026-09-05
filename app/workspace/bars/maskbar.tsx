@@ -1,13 +1,11 @@
-import { useContext, useMemo, useRef, useState, CSSProperties, useCallback, useEffect } from "react";
+import { useContext, useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { CoreContext, HoverContext, UIContext, MaskContext } from "../workspace.client";
 import { SvgRepo, texture300 } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import styles from "@/app/app.module.css";
 import { CoreActionType } from "../states/core-state";
 import { maskArm, UIActionType } from "../states/ui-state";
 import { LaurusProjectMask, LaurusProjectResult, updateProject } from "@/app/projects/projects.server";
 import { UNAUTHORIZED_EDIT } from "@/app/landing.server";
-import { LaurusImgResult } from "../workspace.server";
 import { WorkspaceResolution } from "../workspace.config";
 import { TEXTURE_MIX_DEFAULT } from "../mask-gl";
 
@@ -178,7 +176,7 @@ export default function Maskbar() {
     if (nextLight === uiState.tool.lightingMeshSection && nextRaising === uiState.tool.raisingObjects) return;
     uiDispatch({
       type: UIActionType.SetTool,
-      value: { type: "mask", lightingMeshSection: nextLight, raisingObjects: nextRaising },
+      value: { ...uiState.tool, lightingMeshSection: nextLight, raisingObjects: nextRaising },
     });
     notifyMaskToolChanged("mask");
   }, [armType, uiState.tool, uiDispatch, notifyMaskToolChanged]);
@@ -220,13 +218,11 @@ export default function Maskbar() {
               whiteSpace: "nowrap",
             }}
           >
-            {
-              "select an image from the browser to generate a mask, or select an existing mask to add lights and objects to it"
-            }
+            {"choose an image from the browser, or click a mask on the canvas"}
           </div>
         </div>
       ) : arm.type === "img" ? (
-        <MaskGenerationControls img={arm.img} />
+        <MaskGenerationControls />
       ) : (
         <MaskMeshControls maskKey={arm.maskKey} />
       )}
@@ -234,255 +230,16 @@ export default function Maskbar() {
   );
 }
 
-interface MaskGenerationControls {
-  img: LaurusImgResult;
-}
-
-function MaskGenerationControls({ img }: MaskGenerationControls) {
+function MaskGenerationControls() {
   const { uiState, uiDispatch } = useContext(UIContext);
-  const {
-    notifyMaskToolChanged,
-    position,
-    setPosition,
-    size,
-    setSize,
-    resolution,
-    setResolution,
-    textureMix,
-    setTextureMix,
-  } = useContext(MaskContext);
+  const { notifyMaskToolChanged, resolution, setResolution, textureMix, setTextureMix } = useContext(MaskContext);
   const [dynamicSizes] = useState(() => maskbarSizes(uiState.resolution));
-
-  const xInputRef = useRef<HTMLInputElement | null>(null);
-  const yInputRef = useRef<HTMLInputElement | null>(null);
-  const wInputRef = useRef<HTMLInputElement | null>(null);
-  const hInputRef = useRef<HTMLInputElement | null>(null);
-
-  const isPositionOn = position.value;
-  const isSizeOn = size.value;
-  const xValue = position.x?.toString() ?? "0";
-  const yValue = position.y?.toString() ?? "0";
-  const widthValue = size.width?.toFixed() ?? "0";
-  const heightValue = size.height?.toFixed() ?? "0";
-  const positionInputStyle = useMemo<CSSProperties>(() => {
-    return {
-      textAlign: "center",
-      background: "none",
-      color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-      border: "none",
-      outline: "none",
-      display: "inline-block",
-      overflowX: "scroll",
-      width: "6ch",
-      ...dynamicSizes.input.input,
-    };
-  }, [dynamicSizes.input.input, isPositionOn]);
-  const sizeInputStyle = useMemo<CSSProperties>(() => {
-    return {
-      textAlign: "center",
-      background: "none",
-      color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-      border: "none",
-      outline: "none",
-      display: "inline-block",
-      overflowX: "scroll",
-      width: "6ch",
-      ...dynamicSizes.input.input,
-    };
-  }, [dynamicSizes.input.input, isSizeOn]);
-
-  const updateToolPosition = useCallback(() => {
-    const newX = parseFloat(xInputRef.current?.value || "");
-    const newY = parseFloat(yInputRef.current?.value || "");
-    setPosition((prev) => ({
-      ...prev,
-      x: isNaN(newX) ? undefined : newX,
-      y: isNaN(newY) ? undefined : newY,
-    }));
-  }, [setPosition]);
-
-  const sourceAspectRatio = useMemo(() => {
-    if (!img.height) return undefined;
-    return img.width / img.height;
-  }, [img.width, img.height]);
-
-  const updateToolWidth = useCallback(() => {
-    const newWidth = parseFloat(wInputRef.current?.value || "");
-    setSize((prev) => ({
-      ...prev,
-      width: isNaN(newWidth) ? undefined : newWidth,
-      height: isNaN(newWidth) || !sourceAspectRatio ? prev.height : newWidth / sourceAspectRatio,
-    }));
-  }, [sourceAspectRatio, setSize]);
-
-  const updateToolHeight = useCallback(() => {
-    const newHeight = parseFloat(hInputRef.current?.value || "");
-    setSize((prev) => ({
-      ...prev,
-      height: isNaN(newHeight) ? undefined : newHeight,
-      width: isNaN(newHeight) || !sourceAspectRatio ? prev.width : newHeight * sourceAspectRatio,
-    }));
-  }, [sourceAspectRatio, setSize]);
 
   const isObjectsOn = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          height: "100%",
-          alignItems: "center",
-          ...dynamicSizes.input.container,
-        }}
-      >
-        <div
-          title={"place the generated mask at an exact x/y position"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"position"}</span>
-          <Toggle
-            value={isPositionOn}
-            onClick={() => {
-              const newPositionValue = !isPositionOn;
-              const newX = parseFloat(xInputRef.current?.value || "");
-              const newY = parseFloat(yInputRef.current?.value || "");
-              setPosition({
-                value: newPositionValue,
-                x: newPositionValue && !isNaN(newX) ? newX : undefined,
-                y: newPositionValue && !isNaN(newY) ? newY : undefined,
-              });
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-            ...dynamicSizes.input.label,
-          }}
-        >
-          {"x"}
-        </div>
-        <input
-          className={styles["numberInput"]}
-          id={`${img.media_key}|input|x`}
-          disabled={!isPositionOn}
-          ref={xInputRef}
-          onChange={updateToolPosition}
-          type="text"
-          value={xValue}
-          autoComplete="off"
-          style={positionInputStyle}
-        />
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-            ...dynamicSizes.input.label,
-          }}
-        >
-          {"y"}
-        </div>
-        <input
-          className={styles["numberInput"]}
-          id={`${img.media_key}|input|y`}
-          disabled={!isPositionOn}
-          ref={yInputRef}
-          onChange={updateToolPosition}
-          type="text"
-          value={yValue}
-          autoComplete="off"
-          style={positionInputStyle}
-        />
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          height: "100%",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-          ...dynamicSizes.input.container,
-        }}
-      >
-        <div
-          title={"size the generated mask to an exact width/height"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            ...dynamicSizes.toggle.div,
-          }}
-        >
-          <span style={{ textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none" }}>{"size"}</span>
-          <Toggle
-            value={isSizeOn}
-            onClick={() => {
-              const newSizeValue = !isSizeOn;
-              setSize(
-                newSizeValue
-                  ? { value: true, width: img.width, height: img.height }
-                  : { value: false, width: undefined, height: undefined },
-              );
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-            ...dynamicSizes.input.label,
-          }}
-        >
-          {"width"}
-        </div>
-        <input
-          className={styles["numberInput"]}
-          id={`${img.media_key}|input|w`}
-          disabled={!isSizeOn}
-          ref={wInputRef}
-          onChange={updateToolWidth}
-          type="text"
-          value={widthValue}
-          autoComplete="off"
-          style={sizeInputStyle}
-        />
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-            ...dynamicSizes.input.label,
-          }}
-        >
-          {"height"}
-        </div>
-        <input
-          className={styles["numberInput"]}
-          id={`${img.media_key}|input|h`}
-          disabled={!isSizeOn}
-          ref={hInputRef}
-          onChange={updateToolHeight}
-          type="text"
-          value={heightValue}
-          autoComplete="off"
-          style={sizeInputStyle}
-        />
-      </div>
+      <CopyToggle dynamicSizes={dynamicSizes} />
       <div
         title={"how finely the generated mask is triangulated"}
         style={{
@@ -691,6 +448,34 @@ function MaskMeshControls({ maskKey }: MaskMeshControls) {
       </div>
       <div />
     </>
+  );
+}
+
+interface CopyToggle {
+  dynamicSizes: MaskbarSizes;
+}
+
+function CopyToggle({ dynamicSizes }: CopyToggle) {
+  return (
+    <div
+      title={"an armed image can always be dropped freeform -- de-select it in the browser to stop"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        cursor: "default",
+        ...dynamicSizes.toggle.div,
+      }}
+    >
+      <span style={{ textShadow: "0 0 1px rgba(255, 255, 255, 1)" }}>{"drop"}</span>
+      <Toggle
+        value={true}
+        onClick={() => {}}
+        trackStyles={{ ...dynamicSizes.toggle.track, cursor: "default" }}
+        buttonStyles={{ ...dynamicSizes.toggle.button }}
+        translateX={dynamicSizes.toggle.translateX}
+      />
+    </div>
   );
 }
 

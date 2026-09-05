@@ -1,530 +1,228 @@
-import { useContext, useMemo, useRef, useState, CSSProperties, useCallback } from "react";
+import { useContext, useEffect, useState } from "react";
 import { HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { lassoSelect, SvgRepo } from "@/app/svg-repo";
 import Toggle from "@/app/components/toggle";
-import styles from "@/app/app.module.css";
-import { UIActionType } from "../states/ui-state";
+import { MarqueeArm, UIActionType, marqueeArm } from "../states/ui-state";
+import { WorkspaceResolution } from "../workspace.config";
+
+function marqueebarSizes(resolution: WorkspaceResolution) {
+  switch (resolution.type) {
+    case "high":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 22,
+          height: 22,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 20,
+            paddingRight: 20,
+            gap: 12,
+            fontSize: 13,
+          },
+          track: {
+            width: 26,
+            height: 12,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 8,
+            height: 8,
+          },
+          translateX: 14,
+        },
+      };
+    case "midhigh":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 18,
+          height: 18,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 14,
+            paddingRight: 14,
+            gap: 8,
+            fontSize: 12,
+          },
+          track: {
+            width: 22,
+            height: 10,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 12,
+        },
+      };
+    case "low":
+    case "midlow":
+      return {
+        flex: {
+          gap: 0,
+        },
+        svgSize: {
+          width: 20,
+          height: 20,
+        },
+        toggle: {
+          div: {
+            paddingLeft: 16,
+            paddingRight: 16,
+            gap: 12,
+            fontSize: 12,
+          },
+          track: {
+            width: 20,
+            height: 9,
+            borderRadius: 10,
+            padding: 1,
+          },
+          button: {
+            width: 6,
+            height: 6,
+          },
+          translateX: 10,
+        },
+      };
+  }
+}
+
+type MarqueebarSizes = ReturnType<typeof marqueebarSizes>;
 
 export default function Marqueebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { notifyMaskToolChanged } = useContext(MaskContext);
-  const { selectedImgKeys, selectedSvgKeys, setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
-  const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
-      case "high":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 22,
-            height: 22,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 20,
-              paddingRight: 20,
-              gap: 12,
-              fontSize: 13,
-            },
-            track: {
-              width: 26,
-              height: 12,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 8,
-              height: 8,
-            },
-            translateX: 14,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 20,
-            },
-            label: {
-              fontSize: 12,
-            },
-            input: {
-              fontSize: 12,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-      case "midhigh":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 18,
-            height: 18,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 14,
-              paddingRight: 14,
-              gap: 8,
-              fontSize: 12,
-            },
-            track: {
-              width: 22,
-              height: 10,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 12,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 14,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-      case "low":
-      case "midlow":
-        return {
-          flex: {
-            gap: 0,
-          },
-          svgSize: {
-            width: 20,
-            height: 20,
-          },
-          toggle: {
-            div: {
-              paddingLeft: 16,
-              paddingRight: 16,
-              gap: 12,
-              fontSize: 12,
-            },
-            track: {
-              width: 20,
-              height: 9,
-              borderRadius: 10,
-              padding: 1,
-            },
-            button: {
-              width: 6,
-              height: 6,
-            },
-            translateX: 10,
-          },
-          input: {
-            container: {
-              gap: 10,
-              paddingRight: 16,
-            },
-            label: {
-              fontSize: 11,
-            },
-            input: {
-              fontSize: 11,
-              padding: 4,
-              letterSpacing: 1,
-            },
-          },
-        };
-    }
-  });
+  const { selectedImgKeys, selectedSvgKeys } = useContext(HoverContext);
+  const [dynamicSizes] = useState(() => marqueebarSizes(uiState.resolution));
 
-  const xInputRef = useRef<HTMLInputElement | null>(null);
-  const yInputRef = useRef<HTMLInputElement | null>(null);
-  const wInputRef = useRef<HTMLInputElement | null>(null);
-  const hInputRef = useRef<HTMLInputElement | null>(null);
+  const arm = marqueeArm(uiState, selectedImgKeys, selectedSvgKeys);
+  const armType = arm?.type;
 
-  const hasSelection = useMemo(() => {
-    return selectedImgKeys.size > 0 || selectedSvgKeys.size > 0;
-  }, [selectedImgKeys, selectedSvgKeys]);
-  const isDuplicateOn = useMemo(() => {
-    return uiState.tool.type === "marquee" ? uiState.tool.duplicate : false;
-  }, [uiState.tool]);
-  const hasBrowserElement = useMemo(() => {
-    return Boolean(uiState.browserElement);
-  }, [uiState.browserElement]);
-  const isSizeDisabled = !hasBrowserElement;
-  const isPositionDisabled = !hasBrowserElement && !isDuplicateOn;
-  const isPositionOn = useMemo(() => {
-    return uiState.tool.type === "marquee" ? uiState.tool.position.value : false;
-  }, [uiState.tool]);
-  const isSizeOn = useMemo(() => {
-    return uiState.tool.type === "marquee" ? uiState.tool.size.value : false;
-  }, [uiState.tool]);
-  const xValue = useMemo(() => {
-    return uiState.tool.type === "marquee" ? (uiState.tool.position.x?.toString() ?? "0") : "0";
-  }, [uiState.tool]);
-  const yValue = useMemo(() => {
-    return uiState.tool.type === "marquee" ? (uiState.tool.position.y?.toString() ?? "0") : "0";
-  }, [uiState.tool]);
-  const widthValue = useMemo(() => {
-    return uiState.tool.type === "marquee" ? (uiState.tool.size.width?.toString() ?? "0") : "0";
-  }, [uiState.tool]);
-  const heightValue = useMemo(() => {
-    return uiState.tool.type === "marquee" ? (uiState.tool.size.height?.toString() ?? "0") : "0";
-  }, [uiState.tool]);
-  const positionInputStyle = useMemo<CSSProperties>(() => {
-    return {
-      textAlign: "center",
-      background: "none",
-      color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-      border: "none",
-      outline: "none",
-      display: "inline-block",
-      overflowX: "scroll",
-      width: "6ch",
-      ...dynamicSizes.input.input,
-    };
-  }, [dynamicSizes.input.input, isPositionOn]);
-  const sizeInputStyle = useMemo<CSSProperties>(() => {
-    return {
-      textAlign: "center",
-      background: "none",
-      color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-      border: "none",
-      outline: "none",
-      display: "inline-block",
-      overflowX: "scroll",
-      width: "6ch",
-      ...dynamicSizes.input.input,
-    };
-  }, [dynamicSizes.input.input, isSizeOn]);
+  useEffect(() => {
+    if (uiState.tool.type !== "marquee") return;
+    const nextStack = armType === "browser" && uiState.tool.stack;
+    const nextCopy = armType === "selection" && uiState.tool.copy;
+    if (nextStack === uiState.tool.stack && nextCopy === uiState.tool.copy) return;
+    uiDispatch({
+      type: UIActionType.SetTool,
+      value: { ...uiState.tool, stack: nextStack, copy: nextCopy },
+    });
+    notifyMaskToolChanged("marquee");
+  }, [armType, uiState.tool, uiDispatch, notifyMaskToolChanged]);
 
-  const updateToolPosition = useCallback(() => {
-    if (uiState.tool.type === "marquee") {
-      const newX = parseFloat(xInputRef.current?.value || "");
-      const newY = parseFloat(yInputRef.current?.value || "");
-      uiDispatch({
-        type: UIActionType.SetTool,
-        value: {
-          ...uiState.tool,
-          position: {
-            ...uiState.tool.position,
-            x: isNaN(newX) ? undefined : newX,
-            y: isNaN(newY) ? undefined : newY,
-          },
-        },
-      });
-      notifyMaskToolChanged(uiState.tool.type);
-    }
-  }, [uiState.tool, uiDispatch, notifyMaskToolChanged]);
+  return (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        overflowX: "auto",
+        ...dynamicSizes.flex,
+      }}
+    >
+      <SvgRepo
+        svg={lassoSelect()}
+        containerStyle={{
+          width: dynamicSizes.svgSize.width,
+          height: dynamicSizes.svgSize.height,
+        }}
+        scale={1}
+        scaleToContaier={true}
+      />
+      {arm === undefined ? (
+        <Greeting dynamicSizes={dynamicSizes} />
+      ) : (
+        <DropControls dynamicSizes={dynamicSizes} arm={arm} />
+      )}
+    </div>
+  );
+}
 
-  const updateToolSize = useCallback(() => {
-    if (uiState.tool.type === "marquee") {
-      const newWidth: number = parseFloat(wInputRef.current?.value || "");
-      const newHeight: number = parseFloat(hInputRef.current?.value || "");
-      uiDispatch({
-        type: UIActionType.SetTool,
-        value: {
-          ...uiState.tool,
-          size: {
-            ...uiState.tool.size,
-            width: isNaN(newWidth) ? undefined : newWidth,
-            height: isNaN(newHeight) ? undefined : newHeight,
-          },
-        },
-      });
-      notifyMaskToolChanged(uiState.tool.type);
-    }
-  }, [uiState.tool, uiDispatch, notifyMaskToolChanged]);
+interface MarqueebarControls {
+  dynamicSizes: MarqueebarSizes;
+}
+
+interface DropControls extends MarqueebarControls {
+  arm: MarqueeArm;
+}
+
+function Greeting({ dynamicSizes }: MarqueebarControls) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        ...dynamicSizes.toggle.div,
+        overflowX: "auto",
+      }}
+    >
+      <div
+        style={{
+          userSelect: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {"choose media from the browser, or circle media on the canvas"}
+      </div>
+    </div>
+  );
+}
+
+function DropControls({ dynamicSizes, arm }: DropControls) {
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
+  const { setSelectedImgKeys, setSelectedSvgKeys } = useContext(HoverContext);
+  const isStackOn = uiState.tool.type === "marquee" && uiState.tool.stack;
+  const isCopyOn =
+    uiState.tool.type === "marquee" && (arm.type === "browser" ? !uiState.tool.stack : uiState.tool.copy);
+  const isDropDerived = arm.type === "browser" && isCopyOn;
+  const verb = arm.type === "browser" ? "drop" : "copy";
 
   return (
     <>
-      <div
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          height: "100%",
-          overflowX: "auto",
-          ...dynamicSizes.flex,
-        }}
-      >
-        <SvgRepo
-          svg={lassoSelect()}
-          containerStyle={{
-            width: dynamicSizes.svgSize.width,
-            height: dynamicSizes.svgSize.height,
-          }}
-          scale={1}
-          scaleToContaier={true}
-        />
-        <div
-          style={{
-            display: "flex",
-            height: "100%",
-            alignItems: "center",
-            ...dynamicSizes.input.container,
-          }}
-        >
-          <div
-            title={
-              isPositionDisabled
-                ? "select a browser item, or enable duplicate, to set an exact drop position"
-                : "drop at an exact x/y position instead of the marquee's center"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              style={{
-                textShadow: isPositionOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-              }}
-            >
-              {"position"}
-            </span>
-            <Toggle
-              value={isPositionOn}
-              onClick={() => {
-                if (uiState.tool.type === "marquee") {
-                  const newPositionValue = !isPositionOn;
-                  const newX = parseFloat(xInputRef.current?.value || "");
-                  const newY = parseFloat(yInputRef.current?.value || "");
-                  uiDispatch({
-                    type: UIActionType.SetTool,
-                    value: {
-                      ...uiState.tool,
-                      position: {
-                        value: newPositionValue,
-                        x: newPositionValue && !isNaN(newX) ? newX : undefined,
-                        y: newPositionValue && !isNaN(newY) ? newY : undefined,
-                      },
-                      ...(newPositionValue && { stack: false, select: false }),
-                    },
-                  });
-                  notifyMaskToolChanged(uiState.tool.type);
-                  if (newPositionValue && !uiState.tool.duplicate) {
-                    setSelectedImgKeys(new Set());
-                    setSelectedSvgKeys(new Set());
-                  }
-                }
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isPositionDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"x"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${uiState.activeElement?.key ?? "marqueebar"}|input|x`}
-            disabled={!isPositionOn}
-            ref={xInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={xValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isPositionOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"y"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${uiState.activeElement?.key ?? "marqueebar"}|input|y`}
-            disabled={!isPositionOn}
-            ref={yInputRef}
-            onChange={updateToolPosition}
-            type="text"
-            value={yValue}
-            autoComplete="off"
-            style={positionInputStyle}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.input.container,
-          }}
-        >
-          <div
-            title={
-              isSizeDisabled
-                ? "select a browser item to set an exact drop size"
-                : "drop at an exact width/height instead of the marquee's size"
-            }
-            style={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              ...dynamicSizes.toggle.div,
-            }}
-          >
-            <span
-              style={{
-                textShadow: isSizeOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-              }}
-            >
-              {"size"}
-            </span>
-            <Toggle
-              value={isSizeOn}
-              onClick={() => {
-                if (uiState.tool.type === "marquee") {
-                  const newSizeValue = !isSizeOn;
-                  const newWidth = parseFloat(wInputRef.current?.value || "");
-                  const newHeight = parseFloat(hInputRef.current?.value || "");
-                  uiDispatch({
-                    type: UIActionType.SetTool,
-                    value: {
-                      ...uiState.tool,
-                      size: {
-                        value: newSizeValue,
-                        width: newSizeValue && !isNaN(newWidth) ? newWidth : undefined,
-                        height: newSizeValue && !isNaN(newHeight) ? newHeight : undefined,
-                      },
-                      ...(newSizeValue && { stack: false, select: false, duplicate: false }),
-                    },
-                  });
-                  notifyMaskToolChanged(uiState.tool.type);
-                  if (newSizeValue) {
-                    setSelectedImgKeys(new Set());
-                    setSelectedSvgKeys(new Set());
-                  }
-                }
-              }}
-              trackStyles={{ ...dynamicSizes.toggle.track }}
-              buttonStyles={{ ...dynamicSizes.toggle.button }}
-              translateX={dynamicSizes.toggle.translateX}
-              disabled={isSizeDisabled}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"width"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${uiState.activeElement?.key ?? "marqueebar"}|input|w`}
-            disabled={!isSizeOn}
-            ref={wInputRef}
-            onChange={updateToolSize}
-            type="text"
-            value={widthValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: isSizeOn ? "inherit" : "rgb(67,67,67)",
-              ...dynamicSizes.input.label,
-            }}
-          >
-            {"height"}
-          </div>
-          <input
-            className={styles["numberInput"]}
-            id={`${uiState.activeElement?.key ?? "marqueebar"}|input|h`}
-            disabled={!isSizeOn}
-            ref={hInputRef}
-            onChange={updateToolSize}
-            type="text"
-            value={heightValue}
-            autoComplete="off"
-            style={sizeInputStyle}
-          />
-        </div>
+      {arm.type !== "browser" ? null : (
         <div
           title="click existing canvas media to stack the browser item on top of it"
           style={{
             display: "flex",
             alignItems: "center",
             height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
             ...dynamicSizes.toggle.div,
           }}
         >
           <span
             style={{
-              textShadow:
-                uiState.tool.type === "marquee" && uiState.tool.stack ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
+              textShadow: isStackOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
             }}
           >
             {"stack"}
           </span>
           <Toggle
-            value={uiState.tool.type === "marquee" ? uiState.tool.stack : false}
+            value={isStackOn}
             onClick={() => {
-              const currentTool = { ...uiState.tool };
-              if (currentTool.type === "marquee") {
-                const newStack = !currentTool.stack;
-                const newValue = newStack
-                  ? {
-                      ...currentTool,
-                      stack: newStack,
-                      select: false,
-                      duplicate: false,
-                      position: {
-                        value: false,
-                        x: undefined,
-                        y: undefined,
-                      },
-                      size: {
-                        value: false,
-                        width: undefined,
-                        height: undefined,
-                      },
-                    }
-                  : {
-                      ...currentTool,
-                      stack: newStack,
-                    };
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: newValue,
-                });
-                notifyMaskToolChanged(newValue.type);
-                if (newStack) {
-                  setSelectedImgKeys(new Set());
-                  setSelectedSvgKeys(new Set());
-                }
+              if (uiState.tool.type !== "marquee") return;
+              const newStack = !isStackOn;
+              const newValue = newStack
+                ? { ...uiState.tool, stack: newStack, copy: false }
+                : { ...uiState.tool, stack: newStack };
+              uiDispatch({ type: UIActionType.SetTool, value: newValue });
+              notifyMaskToolChanged(newValue.type);
+              if (newStack) {
+                setSelectedImgKeys(new Set());
+                setSelectedSvgKeys(new Set());
               }
             }}
             trackStyles={{ ...dynamicSizes.toggle.track }}
@@ -532,122 +230,45 @@ export default function Marqueebar() {
             translateX={dynamicSizes.toggle.translateX}
           />
         </div>
-        <div
-          title="drag the marquee circle to select the media inside it, instead of dropping"
+      )}
+      <div
+        title={
+          arm.type === "browser"
+            ? "an armed browser item can always be dropped freeform -- turn on stack, or de-select the item, to stop"
+            : "open the copy panel to preset where and how big the copy lands"
+        }
+        style={{
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          ...(arm.type === "browser" ? { borderLeft: "1px solid rgba(255, 255, 255, 0.1)" } : {}),
+          ...dynamicSizes.toggle.div,
+        }}
+      >
+        <span
           style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
+            textShadow: isCopyOn ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
           }}
         >
-          <span
-            style={{
-              textShadow:
-                uiState.tool.type === "marquee" && uiState.tool.select ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"select"}
-          </span>
-          <Toggle
-            value={uiState.tool.type === "marquee" ? uiState.tool.select : false}
-            onClick={() => {
-              const currentTool = { ...uiState.tool };
-              if (currentTool.type === "marquee") {
-                const newSelect = !currentTool.select;
-                const newValue = newSelect
-                  ? {
-                      ...currentTool,
-                      select: newSelect,
-                      stack: false,
-                      duplicate: false,
-                      position: {
-                        value: false,
-                        x: undefined,
-                        y: undefined,
-                      },
-                      size: {
-                        value: false,
-                        width: undefined,
-                        height: undefined,
-                      },
-                    }
-                  : {
-                      ...currentTool,
-                      select: newSelect,
-                    };
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: newValue,
-                });
-                notifyMaskToolChanged(newValue.type);
-                if (newSelect) {
-                  setSelectedImgKeys(new Set());
-                  setSelectedSvgKeys(new Set());
-                }
-              }
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-          />
-        </div>
-        <div
-          title={hasSelection ? "drop a copy of the current selection" : "select media to enable duplicate"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-            ...dynamicSizes.toggle.div,
+          {verb}
+        </span>
+        <Toggle
+          value={isCopyOn}
+          onClick={() => {
+            if (uiState.tool.type !== "marquee") return;
+            const newValue =
+              arm.type === "browser"
+                ? { ...uiState.tool, stack: false }
+                : { ...uiState.tool, copy: !isCopyOn, stack: false };
+            uiDispatch({ type: UIActionType.SetTool, value: newValue });
+            notifyMaskToolChanged(newValue.type);
           }}
-        >
-          <span
-            style={{
-              color: hasSelection ? "inherit" : "rgb(67,67,67)",
-              textShadow:
-                uiState.tool.type === "marquee" && uiState.tool.duplicate ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-            }}
-          >
-            {"duplicate"}
-          </span>
-          <Toggle
-            value={uiState.tool.type === "marquee" ? uiState.tool.duplicate : false}
-            onClick={() => {
-              const currentTool = { ...uiState.tool };
-              if (currentTool.type === "marquee") {
-                const newDuplicate = !currentTool.duplicate;
-                const newValue = newDuplicate
-                  ? {
-                      ...currentTool,
-                      duplicate: newDuplicate,
-                      stack: false,
-                      select: false,
-                      size: {
-                        value: false,
-                        width: undefined,
-                        height: undefined,
-                      },
-                    }
-                  : {
-                      ...currentTool,
-                      duplicate: newDuplicate,
-                    };
-                uiDispatch({
-                  type: UIActionType.SetTool,
-                  value: newValue,
-                });
-                notifyMaskToolChanged(newValue.type);
-              }
-            }}
-            trackStyles={{ ...dynamicSizes.toggle.track }}
-            buttonStyles={{ ...dynamicSizes.toggle.button }}
-            translateX={dynamicSizes.toggle.translateX}
-            disabled={!hasSelection}
-          />
-        </div>
+          trackStyles={{ ...dynamicSizes.toggle.track, ...(isDropDerived ? { cursor: "default" } : {}) }}
+          buttonStyles={{ ...dynamicSizes.toggle.button }}
+          translateX={dynamicSizes.toggle.translateX}
+        />
       </div>
+      <div />
     </>
   );
 }

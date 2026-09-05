@@ -1,6 +1,7 @@
 import { useCallback, useContext } from "react";
-import { MaskContext, UIContext } from "../workspace.client";
+import { MaskContext } from "../workspace.client";
 import { CarouselEntry, isMaskEditSubject, LaurusTool, MaskEditSession, UIActionType } from "../states/ui-state";
+import { useUIDispatch, useUIMaskEdit } from "../states/ui-store";
 
 export function confirmEndingMaskEdit(session: MaskEditSession | undefined): boolean {
   if (!session) return true;
@@ -13,9 +14,9 @@ export function confirmLeavingPen(session: MaskEditSession | undefined, next: La
 }
 
 export function useToolSwitch(): (next: LaurusTool) => boolean {
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const uiDispatch = useUIDispatch();
   const { notifyMaskToolChanged } = useContext(MaskContext);
-  const session = uiState.maskEdit;
+  const session = useUIMaskEdit();
 
   return useCallback(
     (next: LaurusTool): boolean => {
@@ -29,8 +30,8 @@ export function useToolSwitch(): (next: LaurusTool) => boolean {
 }
 
 export function useSelectionGuard(): (entry: CarouselEntry) => boolean {
-  const { uiState, uiDispatch } = useContext(UIContext);
-  const session = uiState.maskEdit;
+  const uiDispatch = useUIDispatch();
+  const session = useUIMaskEdit();
 
   return useCallback(
     (entry: CarouselEntry): boolean => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LaurusImgResult,
   LaurusMaskResult,
@@ -27,17 +27,6 @@ export type MaskResolutionFactor = 1 | 2 | 3;
 export const MASK_RESOLUTION_DEFAULT: MaskResolutionFactor = 1;
 const BASE_MAX_TRIANGLE_AREA = 600.0;
 const BASE_DETAIL_POINTS = 3000;
-
-export interface MaskPositionOverride {
-  value: boolean;
-  x: number | undefined;
-  y: number | undefined;
-}
-export interface MaskSizeOverride {
-  value: boolean;
-  width: number | undefined;
-  height: number | undefined;
-}
 
 export interface EdgeObjectSeed {
   elevation: number;
@@ -125,17 +114,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setResolutionState(value);
   }, []);
 
-  const [position, setPosition] = useState<MaskPositionOverride>({
-    value: false,
-    x: undefined,
-    y: undefined,
-  });
-  const [size, setSize] = useState<MaskSizeOverride>({
-    value: false,
-    width: undefined,
-    height: undefined,
-  });
-
   useEffect(() => {
     return () => {
       socketRef.current?.close();
@@ -196,8 +174,6 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     setLightSpread(LIGHT_SPREAD_CSS_PX_DEFAULT);
     setLightShadow(LIGHT_SHADOW_DEFAULT);
     setLightCast(LIGHT_CAST_DEFAULT);
-    setPosition({ value: false, x: undefined, y: undefined });
-    setSize({ value: false, width: undefined, height: undefined });
   }, [setStatus, setTextureMix, setLightSize, setLightIntensity, setLightSpread, setLightShadow, setLightCast]);
 
   const start = useCallback(
@@ -313,40 +289,8 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
     ],
   );
 
-  return {
-    status,
-    statusRef,
-    triangleCount,
-    result,
-    objectCandidatesRef,
-    errorMessage,
-    textureMix,
-    setTextureMix,
-    textureMixRef,
-    lightSize,
-    setLightSize,
-    lightSizeRef,
-    lightIntensity,
-    setLightIntensity,
-    lightIntensityRef,
-    lightSpread,
-    setLightSpread,
-    lightSpreadRef,
-    lightShadow,
-    setLightShadow,
-    lightShadowRef,
-    lightCast,
-    setLightCast,
-    lightCastRef,
-    position,
-    setPosition,
-    size,
-    setSize,
-    resolution,
-    setResolution,
-    start,
-    reset,
-    meshRefs: {
+  const meshRefs = useMemo(
+    () => ({
       positionsRef,
       colorsRef,
       barycentricsRef,
@@ -357,8 +301,66 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       curvesRef,
       glowColorRef,
       backingVertexCountRef,
-    },
-  };
+    }),
+    [],
+  );
+
+  return useMemo(
+    () => ({
+      status,
+      statusRef,
+      triangleCount,
+      result,
+      objectCandidatesRef,
+      errorMessage,
+      textureMix,
+      setTextureMix,
+      textureMixRef,
+      lightSize,
+      setLightSize,
+      lightSizeRef,
+      lightIntensity,
+      setLightIntensity,
+      lightIntensityRef,
+      lightSpread,
+      setLightSpread,
+      lightSpreadRef,
+      lightShadow,
+      setLightShadow,
+      lightShadowRef,
+      lightCast,
+      setLightCast,
+      lightCastRef,
+      resolution,
+      setResolution,
+      start,
+      reset,
+      meshRefs,
+    }),
+    [
+      status,
+      triangleCount,
+      result,
+      errorMessage,
+      textureMix,
+      setTextureMix,
+      lightSize,
+      setLightSize,
+      lightIntensity,
+      setLightIntensity,
+      lightSpread,
+      setLightSpread,
+      lightShadow,
+      setLightShadow,
+      lightCast,
+      setLightCast,
+      resolution,
+      setResolution,
+      start,
+      reset,
+      meshRefs,
+    ],
+  );
 }
 
 export type UseMaskPreview = ReturnType<typeof useMaskPreview>;

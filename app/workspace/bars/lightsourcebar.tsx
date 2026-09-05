@@ -60,12 +60,9 @@ export default function LightSourcebar() {
     notifyMaskPendingTopologyCleared,
     notifyMaskObjectsUpdated,
     notifyMaskHighlightSuppressed,
-    convertLightToObject,
-    convertObjectToLight,
     ...mask
   } = useContext(MaskContext);
   const [target, setTarget] = useState<"light" | "object">("light");
-  const [isConverting, setIsConverting] = useState(false);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -259,7 +256,7 @@ export default function LightSourcebar() {
   const isRaisingObjects = uiState.tool.type === "mask" && uiState.tool.raisingObjects;
   const isObjectParamDisabled = !selectedObject && !isRaisingObjects;
   const isCopying = uiState.tool.type === "light_source" && uiState.tool.copy;
-  const isBusy = isCopying || isConverting;
+  const isBusy = isCopying;
   const isLightControlsDisabled = isLightParamDisabled || isBusy;
   const isObjectControlsDisabled = isObjectParamDisabled || isBusy;
 
@@ -787,46 +784,9 @@ export default function LightSourcebar() {
     if (uiState.tool.type !== "light_source") return;
     uiDispatch({ type: UIActionType.SetTool, value: { type: "light_source", copy: next } });
   };
-  const convert = async (subject: "light" | "object") => {
-    if (isConverting || isCopying) return;
-    setIsConverting(true);
-    try {
-      if (subject === "light") {
-        if (!selectedLight || selectedLightMaskKey === undefined) return;
-        await convertLightToObject(selectedLightMaskKey, selectedLight.id);
-      } else {
-        if (!selectedObject || selectedObjectMaskKey === undefined) return;
-        await convertObjectToLight(selectedObjectMaskKey, selectedObject.id);
-      }
-    } finally {
-      setIsConverting(false);
-    }
-  };
-  const convertButton = (subject: "light" | "object") => {
-    const enabled = !isCopying && !isConverting && (subject === "light" ? !!selectedLight : !!selectedObject);
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          height: "100%",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.1)",
-          cursor: isConverting ? "progress" : enabled ? "pointer" : "default",
-          opacity: enabled ? 1 : 0.3,
-          userSelect: "none",
-          ...dynamicSizes.toggle.div,
-        }}
-        onClick={() => {
-          if (!enabled) return;
-          void convert(subject);
-        }}
-      >
-        {"convert"}
-      </div>
-    );
-  };
   const copyToggle = () => (
     <div
+      title={"open the copy panel to preset where and how big the copy lands"}
       style={{
         display: "flex",
         alignItems: "center",
@@ -838,7 +798,6 @@ export default function LightSourcebar() {
       <span
         style={{
           textShadow: isCopying ? "0 0 1px rgba(255, 255, 255, 1)" : "none",
-          opacity: isConverting ? 0.3 : 1,
           userSelect: "none",
         }}
       >
@@ -846,7 +805,6 @@ export default function LightSourcebar() {
       </span>
       <Toggle
         value={isCopying}
-        disabled={isConverting}
         onClick={() => setCopying(!isCopying)}
         trackStyles={{ ...dynamicSizes.toggle.track }}
         buttonStyles={{ ...dynamicSizes.toggle.button }}
@@ -945,7 +903,6 @@ export default function LightSourcebar() {
             </div>
           )}
           {isLightGreeting ? null : copyToggle()}
-          {isLightGreeting ? null : convertButton("light")}
           {isPreviewAvailable ? (
             <div
               style={{
@@ -1455,7 +1412,6 @@ export default function LightSourcebar() {
             {"edit"}
           </div>
           {copyToggle()}
-          {convertButton("object")}
           <div
             style={{
               display: "flex",

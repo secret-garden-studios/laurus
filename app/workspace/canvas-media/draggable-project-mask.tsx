@@ -1,7 +1,7 @@
 "use client";
 import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { CoreContext, getNewContextMenuConfig, LaurusTransform, UIContext } from "../workspace.client";
-import { RefObject, useCallback, useContext, useMemo } from "react";
+import { CoreContext, getNewContextMenuConfig, LaurusTransform } from "../workspace.client";
+import { memo, RefObject, useCallback, useContext, useMemo } from "react";
 import {
   DEFAULT_CONTEXT_MENU_CONFIG,
   updateProject,
@@ -10,6 +10,7 @@ import {
 } from "../../projects/projects.server";
 import { LaurusFrame, LaurusMaskResult } from "../workspace.server";
 import { UIActionType } from "../states/ui-state";
+import { useUIDispatch, useUIProjectContextMenus, useUITool } from "../states/ui-store";
 import { CoreActionType } from "../states/core-state";
 import { calculateTransformedBounds } from "./geometry";
 import { toCssSkewAngle } from "../skew-angle.ts";
@@ -27,7 +28,7 @@ interface DraggableProjectMask {
   maskElementsRef?: RefObject<Map<string, HTMLCanvasElement> | null>;
   forceAbsolutePosition?: boolean;
 }
-export function DraggableProjectMask({
+function DraggableProjectMaskItem({
   mediaKey,
   meta,
   maskData,
@@ -38,7 +39,9 @@ export function DraggableProjectMask({
   forceAbsolutePosition,
 }: DraggableProjectMask) {
   const { coreState, dispatch } = useContext(CoreContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const uiDispatch = useUIDispatch();
+  const tool = useUITool();
+  const projectContextMenus = useUIProjectContextMenus();
 
   const dndPosition = useMemo(() => {
     if (forceAbsolutePosition) {
@@ -47,7 +50,7 @@ export function DraggableProjectMask({
         y: Math.max(0, meta.top),
       };
     }
-    switch (uiState.tool.type) {
+    switch (tool.type) {
       case "viewport": {
         return {
           x: meta.left - coreState.project.frame_left,
@@ -63,7 +66,7 @@ export function DraggableProjectMask({
     }
   }, [
     forceAbsolutePosition,
-    uiState.tool.type,
+    tool.type,
     meta.left,
     meta.top,
     coreState.project.frame_left,
@@ -146,7 +149,7 @@ export function DraggableProjectMask({
       if (yMinActual < 0) newTop += Math.abs(yMinActual);
       if (xMinActual < 0) newLeft += Math.abs(xMinActual);
 
-      const itemContextMenu = uiState.projectContextMenus.get(mediaKey);
+      const itemContextMenu = projectContextMenus.get(mediaKey);
       const newContextMenuConfig = getNewContextMenuConfig(
         { left: newLeft, top: newTop },
         {
@@ -182,7 +185,7 @@ export function DraggableProjectMask({
       coreState.project,
       dispatch,
       mediaKey,
-      uiState.projectContextMenus,
+      projectContextMenus,
       uiDispatch,
     ],
   );
@@ -215,3 +218,5 @@ export function DraggableProjectMask({
     </DndContext>
   );
 }
+
+export const DraggableProjectMask = memo(DraggableProjectMaskItem);

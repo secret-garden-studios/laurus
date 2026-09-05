@@ -1,8 +1,8 @@
 import { MASK_OBJECT_COLLISION_BUFFER_PX, activeMaskObjects, objectProfileUAt, objectSwellAt } from "../mask-gl.ts";
 import type { ObjectGeometryInput } from "../mask-gl.ts";
-import type { LaurusObject, LaurusPolygonPath } from "../workspace.server";
+import type { LaurusLight, LaurusMaskResult, LaurusObject, LaurusPolygonPath } from "../workspace.server";
 import { cachedObjectShape } from "./object-shape.ts";
-import { centroidOf } from "./mask-geometry.ts";
+import { centroidOf, maskGeometry, polygonIndicesForLight, polygonIndicesForObject } from "./mask-geometry.ts";
 
 function pointInTriangle(
   px: number,
@@ -30,9 +30,6 @@ export function polygonIndexAtPoint(points: [number, number][][], point: [number
 }
 
 function maxSwellReach(object: ObjectGeometryInput): number {
-  // maxExtent is 1 for every shape the normalization produced, so this is
-  // almost always just the radius -- read rather than assumed so a shape
-  // normalized some other way still reports its true reach.
   return object.radius * (object.shape?.maxExtent ?? 1);
 }
 
@@ -93,12 +90,6 @@ export interface ObjectRegion {
   shape: string;
 }
 
-/**
- * `tile` is the shape editor's, for the same reason cachedObjectShape takes one:
- * a drag mints a new path every frame, so asking at full resolution is a ~58ms
- * rebuild per frame. Passing the draft tile a live gesture is already
- * rasterizing at makes this share that build rather than starting its own.
- */
 export function indicesInObjectFromCentroids(
   centroids: [number, number][],
   object: ObjectRegion,
@@ -129,7 +120,6 @@ function pointToSegmentDistanceSq(
   return dx * dx + dy * dy;
 }
 
-/** Zero when the point is inside the triangle, else the distance to its rim. */
 function pointToTriangleDistanceSq(px: number, py: number, triangle: [number, number][]): number {
   const [a, b, c] = triangle;
   if (pointInTriangle(px, py, a, b, c)) return 0;
@@ -148,31 +138,6 @@ interface ClaimedTriangle {
   maxY: number;
 }
 
-/**
- * Drop the candidates that run into an object already on the mesh.
- *
- * A triangle belongs to exactly one object -- `object_id` is a single field --
- * so two overlapping outlines are not two claims on a triangle, they are the
- * second one silently taking it from the first. Raising an object over a
- * neighbour therefore used to hollow the neighbour out: its own triangles were
- * retagged out from under it, and its fill and highlight went with them.
- *
- * The object already there wins, because it is the one somebody has already
- * placed and reviewed; the new one gives up whatever it cannot have. That is a
- * subtraction from the newcomer's membership only -- nothing about the older
- * object changes, and no triangle is left tagged to something that no longer
- * covers it.
- *
- * `buffer` widens each existing claim by that many mesh pixels before the
- * subtraction, so the two objects end up separated by a lane of unclaimed mesh
- * rather than flush against each other. It is measured to the nearest point of
- * a claimed triangle rather than between centroids, which is what lets zero
- * mean "only drop the actual overlap" instead of "drop nothing".
- *
- * `objectId` exempts one object's own triangles -- pass it when recomputing
- * membership for an object that already exists, so it does not collide with
- * itself and shrink a little on every edit.
- */
 export function dropIndicesClaimedByObjects(
   candidates: Set<number>,
   geometry: { points: [number, number][][]; centroids: [number, number][] },
@@ -237,6 +202,58 @@ export function lightCenterFromCentroids(
   });
   if (members.length === 0) return undefined;
   return centroidOf(members);
+}
+
+export function lightOutline(
+  maskData: LaurusMaskResult,
+  light: LaurusLight,
+): { cx: number; cy: number; radius: number; shape: string } {
+  if (light.radius > 0) return { cx: light.cx, cy: light.cy, radius: light.radius, shape: light.shape };
+  const held = new Set(polygonIndicesForLight(maskData.polygons, light.id));
+  const center = lightCenterFromCentroids(maskGeometry(maskData).centroids, held);
+  return {
+    cx: center?.[0] ?? light.cx,
+    cy: center?.[1] ?? light.cy,
+    radius: light.size / 2,
+    shape: light.shape,
+  };
+}
+
+export function lightsStrippedBy(
+  polygons: LaurusPolygonPath[] | undefined,
+  lights: LaurusLight[],
+  taken: Set<number>,
+): LaurusLight[] {
+  if (!polygons || taken.size === 0) return [];
+  const held = new Map<number, { total: number; lost: number }>();
+  polygons.forEach((polygon, index) => {
+    const lightId = polygon.light_id;
+    if (!lightId) return;
+    const entry = held.get(lightId) ?? { total: 0, lost: 0 };
+    entry.total += 1;
+    if (taken.has(index)) entry.lost += 1;
+    held.set(lightId, entry);
+  });
+  return lights.filter((light) => {
+    const entry = held.get(light.id);
+    return entry !== undefined && entry.total > 0 && entry.lost === entry.total;
+  });
+}
+
+export function objectOutline(
+  maskData: LaurusMaskResult,
+  object: LaurusObject,
+): { cx: number; cy: number; radius: number; shape: string } {
+  if (object.radius > 0) return { cx: object.cx, cy: object.cy, radius: object.radius, shape: object.shape };
+  const centroids = maskGeometry(maskData).centroids;
+  const members: [number, number][] = [];
+  for (const index of polygonIndicesForObject(maskData.polygons, object.id)) {
+    const centroid = centroids[index];
+    if (centroid && !Number.isNaN(centroid[0]) && !Number.isNaN(centroid[1])) members.push(centroid);
+  }
+  if (members.length === 0) return { cx: object.cx, cy: object.cy, radius: object.radius, shape: object.shape };
+  const [cx, cy] = centroidOf(members);
+  return { cx, cy, radius: Math.max(...members.map(([x, y]) => Math.hypot(x - cx, y - cy))), shape: object.shape };
 }
 
 export function centerOfIndices(
@@ -314,16 +331,6 @@ export function lightIdAtPoint(
   return undefined;
 }
 
-/**
- * Which object a point lands in, preferring the smallest when several overlap
- * -- so an object nested inside a larger one stays clickable rather than being
- * shadowed by whatever encloses it.
- *
- * "Smallest" is the object's whole extent rather than its outline distance in
- * the point's own direction, which is what this measured while a shape was one
- * radius per direction. A shape is no longer obliged to have such a distance,
- * and total extent ranks the same way for the nesting case this exists for.
- */
 export function objectIdAtPoint(objects: LaurusObject[], point: [number, number]): number | undefined {
   let bestId: number | undefined;
   let bestReach = Infinity;

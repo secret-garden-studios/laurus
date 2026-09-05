@@ -3,12 +3,13 @@ import { useContext, useLayoutEffect, useRef, useState } from "react";
 import { DndContext, PointerSensor, useDraggable, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import { UIContext } from "../workspace.client";
+import { HoverContext, MaskContext, UIContext } from "../workspace.client";
 import { Z_INDEX } from "../workspace.config";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 import { ReviewPanel, EditPanel } from "../object-review-panel";
+import CopyPanel from "../copy-panel";
 import { useObjectReview } from "../hooks/useObjectReview";
-import { editedRegion } from "../states/ui-state";
+import { UIActionType, editedRegion, isCopyArmed } from "../states/ui-state";
 
 export const FLOATINGBAR_DND_ID = "floatingbar";
 
@@ -32,7 +33,9 @@ function regionOnScreen(maskKey: string, cx: number, cy: number, radius: number)
 const clamp = (value: number, low: number, high: number) => (high < low ? low : Math.min(Math.max(value, low), high));
 
 export default function Floatingbar() {
-  const { uiState } = useContext(UIContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const { notifyMaskToolChanged } = useContext(MaskContext);
+  const { selectedImgKeys, selectedSvgKeys, selectedMaskKeys } = useContext(HoverContext);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const { session } = useObjectReview();
@@ -75,13 +78,31 @@ export default function Floatingbar() {
     }));
   }, [placementKey, session, region]);
 
-  if (!session) return null;
-  const isEdit = session.subject === "light" || session.mode === "edit";
+  const closeCopy = () => {
+    const tool = uiState.tool;
+    if (tool.type !== "marquee" && tool.type !== "light_source") return;
+    uiDispatch({ type: UIActionType.SetTool, value: { ...tool, copy: false } });
+    notifyMaskToolChanged(tool.type);
+  };
 
   const content = (() => {
     switch (uiState.tool.type) {
-      case "pen":
-        return uiState.maskEdit ? isEdit ? <EditPanel /> : <ReviewPanel /> : null;
+      case "pen": {
+        if (!session || !uiState.maskEdit) return null;
+        const isEdit = session.subject === "light" || session.mode === "edit";
+        return isEdit ? <EditPanel /> : <ReviewPanel />;
+      }
+      case "marquee":
+      case "mask":
+      case "light_source":
+        return isCopyArmed(
+          uiState,
+          selectedImgKeys,
+          selectedSvgKeys,
+          selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
+        ) ? (
+          <CopyPanel onClose={closeCopy} />
+        ) : null;
       default:
         return null;
     }

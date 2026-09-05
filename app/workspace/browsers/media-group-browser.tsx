@@ -1,6 +1,6 @@
-import { useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
+import { memo, useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../../fonts";
-import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
+import { CoreContext, HoverContext, MaskContext } from "../workspace.client";
 import LaurusImage from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import {
@@ -39,6 +39,7 @@ import { frontToBackMedia, restackGroupWithinProject, type StackedMedia } from "
 import { updateProject, LaurusProjectResult } from "../../projects/projects.server";
 import { CoreActionType } from "../states/core-state";
 import { UIActionType } from "../states/ui-state";
+import { useUIBrowserImgs, useUIDispatch, useUIResolution, useUITool } from "../states/ui-store";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import {
   closestCenter,
@@ -64,7 +65,7 @@ export interface MediaGroupBrowser {
   mediaGroupResult: LaurusMediaGroupResult;
   maxWidth: number;
 }
-export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
+function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxWidth }: MediaGroupBrowser) {
   const { coreState, dispatch } = useContext(CoreContext);
   const {
     notifyMaskToolChanged,
@@ -73,7 +74,9 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     notifyMaskSelectedObjectChanged,
     restackMaskStack,
   } = useContext(MaskContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const uiDispatch = useUIDispatch();
+  const tool = useUITool();
+  const resolution = useUIResolution();
   const guardSelection = useSelectionGuard();
   const {
     isAltKeyPressed,
@@ -139,7 +142,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     mediaGroupId,
   ]);
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           flex: {
@@ -350,8 +353,8 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
         setSelectedImgKeys(new Set());
         setSelectedSvgKeys(new Set());
         setSelectedMaskKeys(new Set());
-        if (uiState.tool.type === "marquee" && uiState.tool.duplicate) {
-          const newTool = { ...uiState.tool, duplicate: false };
+        if (tool.type === "marquee" && tool.copy) {
+          const newTool = { ...tool, copy: false };
           uiDispatch({ type: UIActionType.SetTool, value: newTool });
           notifyMaskToolChanged(newTool.type);
         }
@@ -373,7 +376,7 @@ export default function MediaGroupBrowser({ mediaGroupId, mediaGroupResult, maxW
     setSelectedImgKeys,
     setSelectedSvgKeys,
     setSelectedMaskKeys,
-    uiState.tool,
+    tool,
     uiDispatch,
     notifyMaskToolChanged,
   ]);
@@ -794,7 +797,7 @@ function MaskGroupThumbnail({
   isSquareish: boolean;
 }) {
   const { coreState } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const browserImgs = useUIBrowserImgs();
 
   let sourceImgSrc: string | undefined;
   for (const [key, img] of coreState.project.imgs) {
@@ -804,7 +807,7 @@ function MaskGroupThumbnail({
     }
   }
   if (!sourceImgSrc) {
-    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+    sourceImgSrc = browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
   }
 
   return (
@@ -879,7 +882,7 @@ function StackElementThumbnail({
   onClick: () => void;
 }) {
   const { coreState } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
+  const browserImgs = useUIBrowserImgs();
 
   let sourceImgSrc: string | undefined;
   for (const [key, img] of coreState.project.imgs) {
@@ -889,7 +892,7 @@ function StackElementThumbnail({
     }
   }
   if (!sourceImgSrc) {
-    sourceImgSrc = uiState.browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
+    sourceImgSrc = browserImgs.find((img) => img.img_media_id === mask.source_img_media_id)?.src;
   }
 
   return (
@@ -1130,7 +1133,7 @@ function MediaGroupRow({
   stack,
   restacking,
 }: MediaGroupRow) {
-  const { uiState } = useContext(UIContext);
+  const resolution = useUIResolution();
   const { coreState } = useContext(CoreContext);
   const stackOpen = item.type === "mask" && stack !== undefined;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -1138,7 +1141,7 @@ function MediaGroupRow({
     disabled: { draggable: stackOpen, droppable: false },
   });
   const [dynamicSizes] = useState(() => {
-    switch (uiState.resolution.type) {
+    switch (resolution.type) {
       case "high":
         return {
           filename: {
@@ -1560,7 +1563,7 @@ export interface MediaGroupSkeleton {
   maxWidth: number;
 }
 export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
-  const { uiState } = useContext(UIContext);
+  const resolution = useUIResolution();
   return (
     <div
       style={{
@@ -1570,7 +1573,7 @@ export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
         placeContent: "center",
         minHeight: 60,
         color: "rgba(255, 255, 255, 0.4)",
-        fontSize: uiState.resolution.type == "high" ? 14 : 12,
+        fontSize: resolution.type == "high" ? 14 : 12,
         letterSpacing: "2px",
       }}
     >
@@ -1578,3 +1581,5 @@ export function MediaGroupSkeleton({ maxWidth }: MediaGroupSkeleton) {
     </div>
   );
 }
+
+export default memo(MediaGroupBrowser);
