@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { freshAccessToken } from "@/app/auth-session";
 import {
   LaurusImgResult,
   LaurusMaskResult,
@@ -35,6 +36,7 @@ export interface EdgeObjectSeed {
 
 export function useMaskPreview(apiOrigin: string | undefined, accessToken: string | undefined) {
   const socketRef = useRef<WebSocket | undefined>(undefined);
+  const connectGenerationRef = useRef(0);
   const colorCtxRef = useRef<CanvasRenderingContext2D | undefined>(undefined);
 
   const positionsRef = useRef<number[]>([]);
@@ -116,6 +118,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
 
   useEffect(() => {
     return () => {
+      connectGenerationRef.current += 1;
       socketRef.current?.close();
     };
   }, []);
@@ -151,6 +154,7 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
   }, []);
 
   const reset = useCallback(() => {
+    connectGenerationRef.current += 1;
     socketRef.current?.close();
     socketRef.current = undefined;
     backingVertexCountRef.current = 0;
@@ -201,78 +205,84 @@ export function useMaskPreview(apiOrigin: string | undefined, accessToken: strin
       setLightCast(LIGHT_CAST_DEFAULT);
 
       const resolutionFactor = resolutionRef.current;
+      const generation = ++connectGenerationRef.current;
       socketRef.current?.close();
-      socketRef.current = maskImage(
-        apiOrigin,
-        accessToken,
-        {
-          img_media_id: img.img_media_id,
-          ...(resolutionFactor === 1
-            ? {}
-            : {
-                max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
-                detail_points: BASE_DETAIL_POINTS * resolutionFactor,
-              }),
-          ...(objectSeed
-            ? { edge_objects: true, object_elevation: objectSeed.elevation, object_falloff: objectSeed.falloff }
-            : {}),
-        },
-        {
-          onGroupStart: () => {
-            setStatus("streaming");
+      socketRef.current = undefined;
+      void (async () => {
+        const token = await freshAccessToken(apiOrigin, accessToken);
+        if (connectGenerationRef.current !== generation) return;
+        socketRef.current = maskImage(
+          apiOrigin,
+          token,
+          {
+            img_media_id: img.img_media_id,
+            ...(resolutionFactor === 1
+              ? {}
+              : {
+                  max_triangle_area: BASE_MAX_TRIANGLE_AREA / resolutionFactor,
+                  detail_points: BASE_DETAIL_POINTS * resolutionFactor,
+                }),
+            ...(objectSeed
+              ? { edge_objects: true, object_elevation: objectSeed.elevation, object_falloff: objectSeed.falloff }
+              : {}),
           },
-          onCurve: (event: MaskCurve_V1_0) => {
-            curvesRef.current.push(event);
-            if (event.glow_color) {
-              const colorCtx = getColorCtx();
-              if (colorCtx) glowColorRef.current = colorToRGB01(colorCtx, event.glow_color);
-            }
-
-            if (curvesRef.current.length === 1) {
-              const colorCtx = getColorCtx();
-              const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
-              for (let i = 0; i < MASK_BACKING_VERTEX_COUNT; i++) {
-                colorsRef.current[i * 3] = r;
-                colorsRef.current[i * 3 + 1] = g;
-                colorsRef.current[i * 3 + 2] = b;
+          {
+            onGroupStart: () => {
+              setStatus("streaming");
+            },
+            onCurve: (event: MaskCurve_V1_0) => {
+              curvesRef.current.push(event);
+              if (event.glow_color) {
+                const colorCtx = getColorCtx();
+                if (colorCtx) glowColorRef.current = colorToRGB01(colorCtx, event.glow_color);
               }
+
+              if (curvesRef.current.length === 1) {
+                const colorCtx = getColorCtx();
+                const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.fill) : [1, 1, 1];
+                for (let i = 0; i < MASK_BACKING_VERTEX_COUNT; i++) {
+                  colorsRef.current[i * 3] = r;
+                  colorsRef.current[i * 3 + 1] = g;
+                  colorsRef.current[i * 3 + 2] = b;
+                }
+                dirtyRef.current = true;
+              }
+            },
+            onTriangle: (event: MaskTriangle_V1_0) => {
+              const colorCtx = getColorCtx();
+              const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.shaded) : [1, 1, 1];
+              const centroid: [number, number] = [
+                event.points.reduce((sum, [x]) => sum + x, 0) / event.points.length,
+                event.points.reduce((sum, [, y]) => sum + y, 0) / event.points.length,
+              ];
+              for (const [x, y] of event.points) {
+                positionsRef.current.push(x, y);
+                colorsRef.current.push(r, g, b);
+                uvsRef.current.push(x / img.width, 1 - y / img.height);
+                centroidsRef.current.push(...centroid);
+              }
+              barycentricsRef.current.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
               dirtyRef.current = true;
-            }
+              setTriangleCount((n) => n + 1);
+            },
+            onObject: (event: MaskObject_V1_0) => {
+              objectCandidatesRef.current = [
+                ...objectCandidatesRef.current,
+                { object: event.object, polygon_indices: event.polygon_indices },
+              ];
+            },
+            onComplete: (event: MaskComplete_V1_0) => {
+              setStatus("done");
+              setResult(event.result);
+              onComplete?.(event.result);
+            },
+            onError: (message: MaskError_V1_0["message"]) => {
+              setStatus("error");
+              setErrorMessage(message);
+            },
           },
-          onTriangle: (event: MaskTriangle_V1_0) => {
-            const colorCtx = getColorCtx();
-            const [r, g, b] = colorCtx ? colorToRGB01(colorCtx, event.shaded) : [1, 1, 1];
-            const centroid: [number, number] = [
-              event.points.reduce((sum, [x]) => sum + x, 0) / event.points.length,
-              event.points.reduce((sum, [, y]) => sum + y, 0) / event.points.length,
-            ];
-            for (const [x, y] of event.points) {
-              positionsRef.current.push(x, y);
-              colorsRef.current.push(r, g, b);
-              uvsRef.current.push(x / img.width, 1 - y / img.height);
-              centroidsRef.current.push(...centroid);
-            }
-            barycentricsRef.current.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
-            dirtyRef.current = true;
-            setTriangleCount((n) => n + 1);
-          },
-          onObject: (event: MaskObject_V1_0) => {
-            objectCandidatesRef.current = [
-              ...objectCandidatesRef.current,
-              { object: event.object, polygon_indices: event.polygon_indices },
-            ];
-          },
-          onComplete: (event: MaskComplete_V1_0) => {
-            setStatus("done");
-            setResult(event.result);
-            onComplete?.(event.result);
-          },
-          onError: (message: MaskError_V1_0["message"]) => {
-            setStatus("error");
-            setErrorMessage(message);
-          },
-        },
-      );
+        );
+      })();
     },
     [
       apiOrigin,

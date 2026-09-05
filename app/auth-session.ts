@@ -11,6 +11,7 @@ const inBrowser = typeof window !== "undefined";
 
 let browserAccessToken: string | undefined = undefined;
 let refreshInFlight: Promise<string | undefined> | undefined = undefined;
+let sessionEnded = false;
 
 const EXPIRY_SKEW_SECONDS = 30;
 const RENEW_LEAD_SECONDS = 90;
@@ -42,29 +43,55 @@ export function msUntilRenewal(token: string): number {
   return Math.max((expiry - RENEW_LEAD_SECONDS) * 1000 - Date.now(), 1_000);
 }
 
+export function currentAccessToken(): string | undefined {
+  return inBrowser ? browserAccessToken : undefined;
+}
+
+export function isSessionEnded(): boolean {
+  return sessionEnded;
+}
+
 export function rememberAccessToken(token: string | undefined): void {
-  if (inBrowser) browserAccessToken = token;
+  if (!inBrowser) return;
+  if (!token) {
+    browserAccessToken = undefined;
+    return;
+  }
+
+  const heldExpiry = browserAccessToken ? tokenExpirySeconds(browserAccessToken) : undefined;
+  const incomingExpiry = tokenExpirySeconds(token);
+  if (heldExpiry !== undefined && incomingExpiry !== undefined && incomingExpiry < heldExpiry) return;
+  browserAccessToken = token;
+  sessionEnded = false;
 }
 
 export function forgetAccessToken(): void {
   if (!inBrowser) return;
   browserAccessToken = undefined;
   refreshInFlight = undefined;
+  sessionEnded = false;
 }
 
-async function postRefresh(baseUrl: string | undefined): Promise<string | undefined> {
+interface RefreshOutcome {
+  token: string | undefined;
+  ended: boolean;
+}
+
+async function postRefresh(baseUrl: string | undefined): Promise<RefreshOutcome> {
   try {
     const raw_response = await fetch(`${baseUrl}/refresh`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
     });
-    if (!raw_response.ok) return undefined;
+    if (!raw_response.ok) {
+      return { token: undefined, ended: raw_response.status === 401 || raw_response.status === 403 };
+    }
     const response: Token_V1_0 = await raw_response.json();
-    return response.access_token;
+    return { token: response.access_token, ended: false };
   } catch (error) {
     console.log({ error });
-    return undefined;
+    return { token: undefined, ended: false };
   }
 }
 
@@ -72,8 +99,14 @@ export function renewAccessToken(baseUrl: string | undefined): Promise<string | 
   if (!inBrowser) return Promise.resolve(undefined);
   if (!refreshInFlight) {
     refreshInFlight = postRefresh(baseUrl)
-      .then((token) => {
-        browserAccessToken = token;
+      .then(({ token, ended }) => {
+        if (token) {
+          browserAccessToken = token;
+          sessionEnded = false;
+        } else if (ended) {
+          browserAccessToken = undefined;
+          sessionEnded = true;
+        }
         return token;
       })
       .finally(() => {
