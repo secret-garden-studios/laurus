@@ -2060,18 +2060,19 @@ export function ProjectMaskItem({
                     select({ key: mediaKey, type: "mask" });
                   }
                 }
+                const takesSelection = !selectedMaskKeys.has(mediaKey);
                 setSelectedMaskKeys((prev) => {
                   const next = new Set(prev);
                   if (next.has(mediaKey)) {
                     next.delete(mediaKey);
                   } else {
                     next.add(mediaKey);
-                    if (source.maskData.lights.length > 0) {
-                      select({ key: mediaKey, type: "mask" });
-                    }
                   }
                   return next;
                 });
+                if (takesSelection && source.maskData.lights.length > 0) {
+                  select({ key: mediaKey, type: "mask" });
+                }
                 return;
               }
               if ((uiState.tool.type === "rotate" || uiState.tool.type === "skew") && !e.metaKey) {
