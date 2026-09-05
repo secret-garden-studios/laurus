@@ -46,6 +46,11 @@ export const GRIDLINES_BRIGHT_ALPHA = 1;
 export const MASK_BACKING_VERTEX_COUNT = 6;
 export const MASK_BACKING_GREY_LEVEL = 0.55;
 
+export function highlightCss(color: [number, number, number, number]): string {
+  const [r, g, b, a] = color;
+  return `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`;
+}
+
 export function highlightShapeEditColor(bright: boolean): [number, number, number, number] {
   return [0.258824, 0.521569, 0.956863, bright ? GRIDLINES_BRIGHT_ALPHA : GRIDLINES_DIM_ALPHA];
 }

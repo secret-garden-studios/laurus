@@ -41,6 +41,66 @@ const GHOST_FILL = "rgba(66, 133, 244, 0.65)";
 const PICK_FILL = "rgba(66, 133, 244, 0.12)";
 const PICK_HOVER_FILL = "rgba(66, 133, 244, 0.34)";
 
+function screenPxUnit(bufferWidth: number, cssWidth: number, canvasZoom: number): number {
+  const perBufferUnit = cssWidth > 0 ? bufferWidth / cssWidth : 1;
+  return perBufferUnit / Math.pow(canvasZoom > 0 ? canvasZoom : 1, ZOOM_COMPENSATION);
+}
+
+export interface ShapeOutline {
+  id: number | string;
+  region: { cx: number; cy: number; radius: number; shape: string };
+  color: string;
+}
+
+export interface ShapeOutlinesProps {
+  outlines: ShapeOutline[];
+  bufferWidth: number;
+  bufferHeight: number;
+  cssWidth: number;
+  cssHeight: number;
+  canvasZoom: number;
+}
+
+export function ShapeOutlines({
+  outlines,
+  bufferWidth,
+  bufferHeight,
+  cssWidth,
+  cssHeight,
+  canvasZoom,
+}: ShapeOutlinesProps) {
+  const drawable = outlines.filter(({ region }) => region.shape && region.radius > 0);
+  if (drawable.length === 0) return null;
+  const stroke = OUTLINE_WIDTH_PX * screenPxUnit(bufferWidth, cssWidth, canvasZoom);
+  return (
+    <svg
+      width={cssWidth}
+      height={cssHeight}
+      viewBox={`0 0 ${bufferWidth} ${bufferHeight}`}
+      preserveAspectRatio="none"
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        zIndex: Z_INDEX.ITEM_CONTENT + 1,
+        pointerEvents: "none",
+        overflow: "visible",
+      }}
+    >
+      {drawable.map(({ id, region, color }) => (
+        <path
+          key={id}
+          d={region.shape}
+          transform={`translate(${region.cx} ${region.cy}) scale(${region.radius})`}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke / region.radius}
+        />
+      ))}
+    </svg>
+  );
+}
+
 interface Grab {
   pointerId: number;
   ring: number;
@@ -112,14 +172,8 @@ export default function ObjectShapeEditor({
   }, []);
 
   const [selected, setSelected] = useState<{ ring: number; anchor: number } | undefined>(undefined);
-  // Where a click on the outline would put an anchor, tracked as the pointer
-  // slides along it so the reviewer sees the anchor before committing to it.
   const [ghost, setGhost] = useState<RingPlace | undefined>(undefined);
 
-  // Both modes are reached by clicking, and both leave something on screen
-  // that only makes sense while they are on -- an anchor picked but not yet
-  // stitched to, an anchor hovered but not yet placed. Switching out of either
-  // has to take that with it, or the next click lands on a leftover.
   const pickable = stitch && showAnchors;
   const inserting = addAnchor && showAnchors;
   const [modeWas, setModeWas] = useState({ pickable, inserting });
@@ -131,16 +185,7 @@ export default function ObjectShapeEditor({
 
   const [hoveredPiece, setHoveredPiece] = useState<number | undefined>(undefined);
 
-  /* Every size here is chrome -- an anchor, a control, the leash between them,
-     the fat invisible stroke that catches a grab -- and chrome is sized against
-     the hand holding it, not against the mask underneath. Buffer over layout
-     size puts a CSS pixel into buffer units; dividing out the zoom then holds it
-     near that many pixels on the display, so zooming in to reach a fine detail
-     grows the detail and very nearly leaves the anchors alone rather than
-     burying it under them. (The opposite of an authored value like a light's
-     reach, which is in canvas units and must not divide.) */
-  const perBufferUnit = cssWidth > 0 ? bufferWidth / cssWidth : 1;
-  const perScreenPx = perBufferUnit / Math.pow(canvasZoom > 0 ? canvasZoom : 1, ZOOM_COMPENSATION);
+  const perScreenPx = screenPxUnit(bufferWidth, cssWidth, canvasZoom);
   const px = useCallback((size: number) => size * perScreenPx, [perScreenPx]);
 
   const fromClient = useCallback(
@@ -190,8 +235,6 @@ export default function ObjectShapeEditor({
     [applyRings, preview],
   );
 
-  // A grab in flight when the pen closes would otherwise leave its frame
-  // scheduled against an unmounted editor.
   useEffect(
     () => () => {
       const grab = grabRef.current;
@@ -244,14 +287,6 @@ export default function ObjectShapeEditor({
     if (edit) onCommit(edit);
   };
 
-  /**
-   * Where on the outline this pointer is, as a place a new anchor could go.
-   *
-   * The hit target is a fat transparent stroke laid over the outline, so the
-   * pointer is only ever near the curve, never on it. Projecting back onto the
-   * curve is what makes the anchor land where the reviewer was pointing rather
-   * than where they happened to click within the stroke's width.
-   */
   const placeOnOutline = (event: React.PointerEvent): RingPlace | undefined => {
     const at = fromClient(event.clientX, event.clientY);
     return at ? nearestOnRings(ringsRef.current, at) : undefined;
@@ -267,9 +302,6 @@ export default function ObjectShapeEditor({
     setGhost(undefined);
     setSelected(undefined);
     applyRings(next);
-    // The split is exact, so the outline is unchanged and only the anchor
-    // count differs -- but that count is the edit, and it lives nowhere but
-    // the path, so it has to be committed like any other.
     const edit = normalizeEditedRings(next, BUFFER_SPACE);
     if (edit) onCommit(edit);
   };
@@ -299,10 +331,6 @@ export default function ObjectShapeEditor({
   const onPointerUp = (event: React.PointerEvent) => {
     const grab = grabRef.current;
     if (!grab || grab.pointerId !== event.pointerId) return;
-    // The frame the last sample was waiting on is never going to run, and that
-    // sample is where the anchor was actually let go -- so take it here, and
-    // without a preview, because the commit below renders the same rings at
-    // full resolution a line later.
     if (grab.rafId !== undefined) cancelAnimationFrame(grab.rafId);
     flushGrab(false);
     grabRef.current = undefined;
@@ -320,13 +348,6 @@ export default function ObjectShapeEditor({
       width={cssWidth}
       height={cssHeight}
       viewBox={`0 0 ${bufferWidth} ${bufferHeight}`}
-      /* The canvas underneath stretches its buffer to fill its box, and
-         `fromClient` below reads a pointer back the same way. An SVG left to
-         itself does neither -- the default is to scale uniformly and centre the
-         letterbox -- so the moment a mask is scaled unevenly the overlay sits
-         at a different place and a different size than the mask it is tracing,
-         drifting further the further a point is from the centre. Matching the
-         canvas is the whole job here, so: stretch, like it does. */
       preserveAspectRatio="none"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -386,9 +407,6 @@ export default function ObjectShapeEditor({
           stroke="transparent"
           strokeWidth={px(GRAB_RADIUS_PX * 2)}
           style={{ cursor: "copy" }}
-          // stroke rather than all: the fill of this same path is the inside
-          // of the object, and swallowing clicks there would take the piece
-          // picker and every anchor's own grab circle out with it
           pointerEvents="stroke"
           onPointerMove={(e) => {
             if (grabRef.current) return;
@@ -419,17 +437,6 @@ export default function ObjectShapeEditor({
             const { point, inControl, outControl } = anchor;
             const key = `${ringIndex}-${anchorIndex}`;
             const isSelected = selected?.ring === ringIndex && selected.anchor === anchorIndex;
-            /* An anchor and its two controls each catch a grab over a circle
-               wider than the dot drawn for them, because a 3.5px dot is not a
-               thing a hand can hit. Those circles must not overlap: the one
-               drawn last wins the overlap, so a fat anchor circle laid over a
-               control eats the half of it facing the anchor and leaves a
-               crescent -- the control then only answers on its far side, which
-               reads exactly like the dot being off-centre, and worst on the
-               short handles where it matters most. Half the distance to the
-               neighbour is the furthest either can reach without touching, so
-               each keeps a circle centred on its own dot and the boundary
-               between them falls where a hand would guess it does. */
             const toIn = Math.hypot(inControl[0] - point[0], inControl[1] - point[1]);
             const toOut = Math.hypot(outControl[0] - point[0], outControl[1] - point[1]);
             const reach = (toNeighbour: number, drawn: number) =>

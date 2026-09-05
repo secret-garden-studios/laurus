@@ -23,6 +23,7 @@ import {
   HIGHLIGHT_MOVING_COLOR,
   HIGHLIGHT_SELECTED_COLOR,
   HIGHLIGHT_SIBLING_COLOR,
+  highlightCss,
   highlightObjectReviewAddedColor,
   highlightShapeEditColor,
   LIGHT_CAST_ENDLESS,
@@ -74,7 +75,7 @@ import { shapeOutline } from "./object-clip";
 import { frontElementOrder, isBehindMask, MASK_ORDER_UNRANKED, maskStack } from "./mask-order";
 import { retouchMesh } from "./object-retouch";
 import { unitCirclePath } from "./object-path";
-import ObjectShapeEditor, { type ShapeEdit } from "./object-shape-editor";
+import ObjectShapeEditor, { ShapeOutlines, type ShapeEdit, type ShapeOutline } from "./object-shape-editor";
 import {
   getFrames,
   getImg,
@@ -339,6 +340,7 @@ export function ProjectMaskItem({
   const selectedHighlightRef = useRef(false);
   const pickHoverRef = useRef(false);
   const highlightSuppressedRef = useRef(false);
+  const [highlightSuppressed, setHighlightSuppressed] = useState(false);
   const lightsRef = useRef<Map<number, Set<number>>>(new Map());
   const lightsMetaRef = useRef<Map<number, LaurusLight>>(new Map());
   const pendingLightShapeRef = useRef<
@@ -851,16 +853,6 @@ export function ProjectMaskItem({
 
     const pendingLight = pendingLightRef.current;
     const maskEditSubject = maskEditSubjectRef.current;
-    const editingLightId =
-      (pendingLight ? (pendingLightIdRef.current ?? selectedLightIdRef.current) : undefined) ??
-      (maskEditSubject?.subject === "light" ? maskEditSubject.id : undefined);
-    if ((selectedHighlightRef.current || pickHoverRef.current) && !suppressed) {
-      const activeLightId = selectedLightIdRef.current;
-      lightsRef.current.forEach((indices, lightId) => {
-        if (lightId === editingLightId) return;
-        paint(indices, lightId === activeLightId ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
-      });
-    }
     if (pendingLight && pendingLight.size > 0 && !suppressed) {
       paint(pendingLight, HIGHLIGHT_MOVING_COLOR);
     }
@@ -1530,6 +1522,44 @@ export function ProjectMaskItem({
     recolorHighlight();
   }, [pickHover, recolorHighlight]);
 
+  const editedRegionKey = useMemo(() => {
+    const edited = maskEditSubjectFor(uiState.maskEdit, mediaKey);
+    return edited && `${edited.subject}:${edited.id}`;
+  }, [uiState.maskEdit, mediaKey]);
+
+  const tracedRegions = useMemo((): ShapeOutline[] => {
+    if (source.kind !== "static") return [];
+    if (highlightSuppressed) return [];
+    const selected = uiState.selectedElement?.key === mediaKey ? uiState.selectedElement : undefined;
+    if (!selected && !pickHover) return [];
+    const maskData = coreState.canvasMasks.get(mediaKey) ?? source.maskData;
+    const selectedLightId = selected?.type === "light" ? selected.lightId : undefined;
+    const selectedObjectId = selected?.type === "object" ? selected.objectId : undefined;
+    const color = (isSelected: boolean) =>
+      highlightCss(isSelected ? HIGHLIGHT_SELECTED_COLOR : HIGHLIGHT_SIBLING_COLOR);
+    return [
+      ...maskData.lights.map((light) => ({
+        id: `light:${light.id}`,
+        region: lightRegion(light, new Set(polygonIndicesForLight(maskData.polygons, light.id))),
+        color: color(light.id === selectedLightId),
+      })),
+      ...maskData.objects.map((object) => ({
+        id: `object:${object.id}`,
+        region: object,
+        color: color(object.id === selectedObjectId),
+      })),
+    ].filter(({ id }) => id !== editedRegionKey);
+  }, [
+    source,
+    uiState.selectedElement,
+    editedRegionKey,
+    highlightSuppressed,
+    pickHover,
+    mediaKey,
+    coreState.canvasMasks,
+    lightRegion,
+  ]);
+
   const meshIdentityKey = source.kind === "static" ? source.maskData.mask_media_id : source;
   const setupCanvas = useCallback(
     (canvas: HTMLCanvasElement | null) => {
@@ -1681,6 +1711,7 @@ export function ProjectMaskItem({
           setHighlightSuppressed: (suppressed) => {
             if (highlightSuppressedRef.current === suppressed) return;
             highlightSuppressedRef.current = suppressed;
+            setHighlightSuppressed(suppressed);
             recolorHighlight();
           },
           setSelectedHighlighted: (active) => {
@@ -2347,6 +2378,14 @@ export function ProjectMaskItem({
               gridlinesBright={uiState.gridlinesBright}
             />
           )}
+          <ShapeOutlines
+            outlines={tracedRegions}
+            bufferWidth={canvasSize.width}
+            bufferHeight={canvasSize.height}
+            cssWidth={containerSize.width}
+            cssHeight={containerSize.height}
+            canvasZoom={canvasZoom}
+          />
         </div>
         {showContextMenu && maskMeta && framesCacheRef && (
           <ContextMenu
