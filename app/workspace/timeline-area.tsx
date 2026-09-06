@@ -53,7 +53,6 @@ import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifi
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { beginBodyDragCursor, endBodyDragCursor, isAnyDragActive } from "./hooks/useToolCursor";
-import { subscribeToPlaybackClock } from "./playback-clock";
 import { PointerStyle, Trackpad } from "../components/trackpad";
 import { useTrackpadState } from "../hooks/useTrackpadState";
 
@@ -265,6 +264,8 @@ export default function TimelineArea() {
   );
 }
 
+const PLAYHEAD_TRAVEL_KEYFRAMES = "timeline-playhead-travel";
+
 interface TimelineRuler {
   containerStyle?: CSSProperties;
 }
@@ -406,11 +407,9 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
   const rulerRef = useRef<HTMLDivElement | null>(null);
   const firstTickRef = useRef<HTMLDivElement | null>(null);
   const lastTickRef = useRef<HTMLDivElement | null>(null);
-  const playheadRef = useRef<HTMLDivElement | null>(null);
   const scrubTitleRef = useRef<HTMLDivElement | null>(null);
 
   const [axis, setAxis] = useState({ origin: 0, length: 0 });
-  const axisRef = useRef(axis);
 
   const measureAxis = useCallback(() => {
     const ruler = rulerRef.current;
@@ -420,7 +419,6 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
     const rulerLeft = ruler.getBoundingClientRect().left;
     const origin = firstTick.getBoundingClientRect().left - rulerLeft;
     const length = lastTick.getBoundingClientRect().left - rulerLeft - origin;
-    axisRef.current = { origin, length };
     setAxis((current) => (current.origin === origin && current.length === length ? current : { origin, length }));
   }, []);
 
@@ -436,20 +434,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
   const rulerSpanSeconds = coreState.timelineMaxValue * (coreState.timelineUnit === "min" ? 60 : 1);
   const rulerSpanMs = rulerSpanSeconds * 1000;
 
-  useEffect(() => {
-    return subscribeToPlaybackClock((elapsedMs, running) => {
-      const playhead = playheadRef.current;
-      if (!playhead) return;
-      const { origin, length } = axisRef.current;
-      if (!running || rulerSpanMs <= 0 || length <= 0) {
-        playhead.style.visibility = "hidden";
-        return;
-      }
-      const progress = Math.min(elapsedMs / rulerSpanMs, 1);
-      playhead.style.transform = `translateX(${Math.round(origin + progress * length)}px)`;
-      playhead.style.visibility = "visible";
-    });
-  }, [rulerSpanMs]);
+  const playheadTravelling = uiState.playbackMode.type === "playing" && rulerSpanMs > 0 && axis.length > 0;
 
   const scrubTrackWidth = axis.length + dynamicSizes.playhead.grabWidth;
   const { getTrackValue: getScrubSeconds, getTrackCursor: getScrubCursor } = useTrackpadState(
@@ -528,8 +513,8 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           );
         })}
       </div>
+      <style>{`@keyframes ${PLAYHEAD_TRAVEL_KEYFRAMES}{from{transform:translateX(${axis.origin}px)}to{transform:translateX(${axis.origin + axis.length}px)}}`}</style>
       <div
-        ref={playheadRef}
         aria-hidden
         style={{
           position: "absolute",
@@ -540,8 +525,9 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           background: "rgb(239, 239, 239)",
           boxShadow: "rgba(255, 255, 255, 0.35) 0px 0px 6px 0px",
           pointerEvents: "none",
-          visibility: "hidden",
+          visibility: playheadTravelling ? "visible" : "hidden",
           willChange: "transform",
+          animation: playheadTravelling ? `${PLAYHEAD_TRAVEL_KEYFRAMES} ${rulerSpanMs}ms linear forwards` : undefined,
         }}
       >
         <div

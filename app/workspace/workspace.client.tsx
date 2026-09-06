@@ -74,7 +74,6 @@ import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
 import TimelineArea from "./timeline-area";
-import { startPlaybackClock, stopPlaybackClock } from "./playback-clock";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { toCssSkewAngle } from "./skew-angle.ts";
@@ -2297,12 +2296,7 @@ export default function Workspace({
   }, [coreState.inputsToRender, discardScrub]);
 
   useEffect(() => {
-    if (uiState.playbackMode.type === "playing") {
-      discardScrub();
-      startPlaybackClock();
-      return;
-    }
-    stopPlaybackClock();
+    if (uiState.playbackMode.type === "playing") discardScrub();
   }, [uiState.playbackMode, discardScrub]);
 
   const hoverContextValue = useMemo(
