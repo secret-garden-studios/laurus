@@ -1,7 +1,6 @@
 import { LaurusClientSvg, SvgRepo, browse } from "@/app/svg-repo";
 import { useContext, useState, useRef, useEffect } from "react";
 import { UIContext } from "../workspace.client";
-import { subscribeToPlaybackClock } from "../playback-clock";
 
 function formatTime(totalMilliseconds: number) {
   const hours = Math.floor(totalMilliseconds / 3600000);
@@ -122,11 +121,17 @@ export default function Viewportbar({ icon }: Viewportbar) {
 
   useEffect(() => {
     if (uiState.playbackMode.type !== "playing") return;
-    return subscribeToPlaybackClock((elapsedMs) => {
-      if (playbackTimeRef.current) {
-        playbackTimeRef.current.textContent = formatTime(elapsedMs);
-      }
-    });
+    const startedAt = performance.now();
+    const write = (elapsedMs: number) => {
+      if (playbackTimeRef.current) playbackTimeRef.current.textContent = formatTime(elapsedMs);
+    };
+    const frame = (now: number) => {
+      write(now - startedAt);
+      frameId = requestAnimationFrame(frame);
+    };
+    write(0);
+    let frameId = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(frameId);
   }, [uiState.playbackMode.type]);
 
   switch (uiState.playbackMode.type) {
