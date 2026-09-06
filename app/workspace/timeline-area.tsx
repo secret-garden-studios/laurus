@@ -1,4 +1,4 @@
-import { CSSProperties, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "../app.module.css";
 import { dellaRespira } from "../fonts";
 import {
@@ -48,11 +48,15 @@ import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
 import { CoreActionType } from "./states/core-state";
+import { UIActionType } from "./states/ui-state";
 import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { beginBodyDragCursor, endBodyDragCursor, isAnyDragActive } from "./hooks/useToolCursor";
+import { subscribeToPlaybackClock } from "./playback-clock";
+import { PointerStyle, Trackpad } from "../components/trackpad";
+import { useTrackpadState } from "../hooks/useTrackpadState";
 
 function reindexEffectGroups(effectGroups: Map<string, LaurusEffectGroupResult>): LaurusEffectGroupResult[] {
   return Array.from(effectGroups.values())
@@ -266,9 +270,82 @@ interface TimelineRuler {
   containerStyle?: CSSProperties;
 }
 function TimelineRuler({ containerStyle }: TimelineRuler) {
-  const { coreState, dispatch } = useContext(CoreContext);
-  const { uiState } = useContext(UIContext);
-  const [rulerSize] = useState(20);
+  const { coreState, dispatch, handleScrubTo } = useContext(CoreContext);
+  const { uiState, uiDispatch } = useContext(UIContext);
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          height: 20,
+          ticks: {
+            padding: "0px 16px 0px 32px",
+            fontSize: 10,
+            markWidth: 10,
+            markHeight: "50%",
+            labelHeight: "75%",
+            labelPaddingLeft: 2,
+          },
+          playhead: {
+            grabWidth: 11,
+            lineWidth: 1,
+            capWidth: 5,
+            capHeight: 3,
+            zIndex: 2,
+          },
+          unit: {
+            width: 38,
+            fontSize: 12,
+          },
+        };
+      case "midhigh":
+        return {
+          height: 20,
+          ticks: {
+            padding: "0px 12px 0px 28px",
+            fontSize: 10,
+            markWidth: 10,
+            markHeight: "50%",
+            labelHeight: "75%",
+            labelPaddingLeft: 2,
+          },
+          playhead: {
+            grabWidth: 11,
+            lineWidth: 1,
+            capWidth: 5,
+            capHeight: 3,
+            zIndex: 2,
+          },
+          unit: {
+            width: 38,
+            fontSize: 12,
+          },
+        };
+      case "midlow":
+      case "low":
+        return {
+          height: 20,
+          ticks: {
+            padding: "0px 10px 0px 26px",
+            fontSize: 10,
+            markWidth: 10,
+            markHeight: "50%",
+            labelHeight: "75%",
+            labelPaddingLeft: 2,
+          },
+          playhead: {
+            grabWidth: 11,
+            lineWidth: 1,
+            capWidth: 5,
+            capHeight: 3,
+            zIndex: 2,
+          },
+          unit: {
+            width: 38,
+            fontSize: 12,
+          },
+        };
+    }
+  });
   function calculateRuler(timelineMaxValue: number, resolution: WorkspaceResolution) {
     switch (resolution.type) {
       case "high": {
@@ -326,31 +403,84 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
     }
   }
   const [rulerParams, setRulerParams] = useState(() => calculateRuler(coreState.timelineMaxValue, uiState.resolution));
+
+  const rulerRef = useRef<HTMLDivElement | null>(null);
+  const firstTickRef = useRef<HTMLDivElement | null>(null);
+  const lastTickRef = useRef<HTMLDivElement | null>(null);
+  const playheadRef = useRef<HTMLDivElement | null>(null);
+  const scrubTitleRef = useRef<HTMLDivElement | null>(null);
+
+  const [axis, setAxis] = useState({ origin: 0, length: 0 });
+  const axisRef = useRef(axis);
+
+  const measureAxis = useCallback(() => {
+    const ruler = rulerRef.current;
+    const firstTick = firstTickRef.current;
+    const lastTick = lastTickRef.current;
+    if (!ruler || !firstTick || !lastTick) return;
+    const rulerLeft = ruler.getBoundingClientRect().left;
+    const origin = firstTick.getBoundingClientRect().left - rulerLeft;
+    const length = lastTick.getBoundingClientRect().left - rulerLeft - origin;
+    axisRef.current = { origin, length };
+    setAxis((current) => (current.origin === origin && current.length === length ? current : { origin, length }));
+  }, []);
+
+  useLayoutEffect(() => {
+    measureAxis();
+    const ruler = rulerRef.current;
+    if (!ruler) return;
+    const observer = new ResizeObserver(measureAxis);
+    observer.observe(ruler);
+    return () => observer.disconnect();
+  }, [measureAxis, rulerParams, uiState.resolution.type]);
+
+  const rulerSpanSeconds = coreState.timelineMaxValue * (coreState.timelineUnit === "min" ? 60 : 1);
+  const rulerSpanMs = rulerSpanSeconds * 1000;
+
+  useEffect(() => {
+    return subscribeToPlaybackClock((elapsedMs, kind) => {
+      const playhead = playheadRef.current;
+      if (!playhead) return;
+      const { origin, length } = axisRef.current;
+      if (kind !== "play" || rulerSpanMs <= 0 || length <= 0) {
+        playhead.style.visibility = "hidden";
+        return;
+      }
+      const progress = Math.min(elapsedMs / rulerSpanMs, 1);
+      playhead.style.transform = `translateX(${Math.round(origin + progress * length)}px)`;
+      playhead.style.visibility = "visible";
+    });
+  }, [rulerSpanMs]);
+
+  const scrubTrackWidth = axis.length + dynamicSizes.playhead.grabWidth;
+  const { getTrackValue: getScrubSeconds, getTrackCursor: getScrubCursor } = useTrackpadState(
+    dynamicSizes.playhead.grabWidth,
+    rulerSpanSeconds,
+  );
+
+  const scrubSeconds = uiState.playheadSeconds;
+  const formatScrubTitle = useCallback(
+    (seconds: number) => `${seconds.toFixed(2)} ${coreState.timelineUnit}`,
+    [coreState.timelineUnit],
+  );
+
   return (
     <div
+      ref={rulerRef}
       style={{
         display: "flex",
+        position: "relative",
         borderTop: "1px solid rgba(255,255,255,0.15)",
         borderBottom: "1px solid rgba(255,255,255,0.15)",
         borderRight: "1px solid rgba(255,255,255,0.15)",
-        height: rulerSize,
+        height: dynamicSizes.height,
         ...containerStyle,
       }}
     >
       <div
         style={{
-          padding: (() => {
-            switch (uiState.resolution.type) {
-              case "high":
-                return "0px 16px 0px 32px";
-              case "midhigh":
-                return "0px 12px 0px 28px";
-              case "midlow":
-              case "low":
-                return "0px 10px 0px 26px";
-            }
-          })(),
-          fontSize: 10,
+          padding: dynamicSizes.ticks.padding,
+          fontSize: dynamicSizes.ticks.fontSize,
           display: "flex",
           width: "100%",
           justifyContent: "space-between",
@@ -373,13 +503,13 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
       >
         {[...Array(rulerParams.ticks)].map((_, i) => {
           return (
-            <div key={i}>
+            <div key={i} ref={i === 0 ? firstTickRef : i === rulerParams.ticks - 1 ? lastTickRef : undefined}>
               {i % rulerParams.modulo == 0 ? (
                 <div
                   style={{
-                    paddingLeft: 2,
-                    width: 10,
-                    height: "75%",
+                    paddingLeft: dynamicSizes.ticks.labelPaddingLeft,
+                    width: dynamicSizes.ticks.markWidth,
+                    height: dynamicSizes.ticks.labelHeight,
                     borderLeft: `1px solid ${"rgb(72, 72, 72)"}`,
                   }}
                 >
@@ -388,8 +518,8 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
               ) : (
                 <div
                   style={{
-                    height: "50%",
-                    width: 10,
+                    height: dynamicSizes.ticks.markHeight,
+                    width: dynamicSizes.ticks.markWidth,
                     borderLeft: `1px solid ${"rgb(72, 72, 72)"}`,
                   }}
                 />
@@ -399,11 +529,76 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
         })}
       </div>
       <div
+        ref={playheadRef}
+        aria-hidden
         style={{
-          fontSize: 12,
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: dynamicSizes.playhead.lineWidth,
+          background: "rgb(239, 239, 239)",
+          boxShadow: "rgba(255, 255, 255, 0.35) 0px 0px 6px 0px",
+          pointerEvents: "none",
+          visibility: "hidden",
+          willChange: "transform",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: -(dynamicSizes.playhead.capWidth - dynamicSizes.playhead.lineWidth) / 2,
+            width: dynamicSizes.playhead.capWidth,
+            height: dynamicSizes.playhead.capHeight,
+            background: "rgb(239, 239, 239)",
+          }}
+        />
+      </div>
+      {uiState.playbackMode.type === "stopped" && axis.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: axis.origin - dynamicSizes.playhead.grabWidth / 2,
+            width: scrubTrackWidth,
+          }}
+        >
+          <Trackpad
+            resolution={{ ...uiState.resolution }}
+            ids={{ contextId: "timeline|playhead|c", draggableId: "timeline|playhead|d" }}
+            width={"100%"}
+            height={"100%"}
+            coarsePointer={{
+              width: dynamicSizes.playhead.grabWidth,
+              height: "100%",
+              pointerStyle: PointerStyle.Playhead,
+              zIndex: dynamicSizes.playhead.zIndex,
+            }}
+            value={{ x: getScrubCursor(scrubSeconds, scrubTrackWidth), y: 0 }}
+            onMove={(newCursor) => {
+              if (scrubTitleRef.current) {
+                scrubTitleRef.current.textContent = formatScrubTitle(getScrubSeconds(newCursor.x, scrubTrackWidth, 0));
+              }
+            }}
+            onNewValue={(newCursor) => {
+              const seconds = getScrubSeconds(newCursor.x, scrubTrackWidth, 0);
+              uiDispatch({ type: UIActionType.SetPlayheadSeconds, value: seconds });
+              handleScrubTo(seconds);
+            }}
+            title={formatScrubTitle(scrubSeconds)}
+            liveTitleRef={scrubTitleRef}
+            escapeOverflow={true}
+          />
+        </div>
+      )}
+      <div
+        style={{
+          fontSize: dynamicSizes.unit.fontSize,
           textAlign: "center",
           position: "relative",
-          width: 38,
+          width: dynamicSizes.unit.width,
           backgroundColor: "rgb(33, 33, 33)",
           color: "rgb(255, 255, 255)",
         }}

@@ -10,6 +10,7 @@ export enum PointerStyle {
   Blurry,
   Solid,
   BlurryBottomTitle,
+  Playhead,
 }
 
 interface TrackpadProps {
@@ -295,6 +296,16 @@ function CoarsePointer({
             "radial-gradient(circle at 30% 30%, rgb(230, 230, 230) 0%, rgb(170, 170, 170) 45%, rgb(115, 115, 115) 100%)",
           borderRadius: "50%",
           boxShadow: "1px 1px 6px rgba(0, 0, 0, 0.9)",
+        };
+      }
+      case PointerStyle.Playhead: {
+        return {
+          background: [
+            "linear-gradient(rgb(239, 239, 239), rgb(239, 239, 239)) center top / 5px 3px no-repeat",
+            "linear-gradient(to right, transparent calc(50% - 0.5px), rgb(239, 239, 239) calc(50% - 0.5px)," +
+              " rgb(239, 239, 239) calc(50% + 0.5px), transparent calc(50% + 0.5px))",
+          ].join(", "),
+          filter: "drop-shadow(0 0 4px rgba(255, 255, 255, 0.35))",
         };
       }
     }

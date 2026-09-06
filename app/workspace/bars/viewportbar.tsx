@@ -1,6 +1,16 @@
 import { LaurusClientSvg, SvgRepo, browse } from "@/app/svg-repo";
 import { useContext, useState, useRef, useEffect } from "react";
 import { UIContext } from "../workspace.client";
+import { subscribeToPlaybackClock } from "../playback-clock";
+
+function formatTime(totalMilliseconds: number) {
+  const hours = Math.floor(totalMilliseconds / 3600000);
+  const minutes = Math.floor((totalMilliseconds % 3600000) / 60000);
+  const seconds = Math.floor((totalMilliseconds % 60000) / 1000);
+  const milliseconds = Math.floor((totalMilliseconds % 1000) / 10);
+  const pad = (num: number) => String(num).padStart(2, "0");
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(milliseconds)}`;
+}
 
 interface Viewportbar {
   icon?: LaurusClientSvg;
@@ -108,36 +118,15 @@ export default function Viewportbar({ icon }: Viewportbar) {
         };
     }
   });
-  const timeRef = useRef<number>(0);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const playbackTimeRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (uiState.playbackMode.type === "stopped" || uiState.playbackMode.type === "waiting") {
-      timeRef.current = 0;
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-    }
-    const intervalMs = 30;
-    const formatTime = (totalMilliseconds: number) => {
-      const hours = Math.floor(totalMilliseconds / 3600000);
-      const minutes = Math.floor((totalMilliseconds % 3600000) / 60000);
-      const seconds = Math.floor((totalMilliseconds % 60000) / 1000);
-      const milliseconds = Math.floor((totalMilliseconds % 1000) / 10);
-      const pad = (num: number) => String(num).padStart(2, "0");
-      return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(milliseconds)}`;
-    };
-    timerRef.current = setInterval(() => {
-      const newTime = timeRef.current + intervalMs;
-      timeRef.current = newTime;
+    if (uiState.playbackMode.type !== "playing") return;
+    return subscribeToPlaybackClock((elapsedMs) => {
       if (playbackTimeRef.current) {
-        playbackTimeRef.current.textContent = formatTime(newTime);
+        playbackTimeRef.current.textContent = formatTime(elapsedMs);
       }
-    }, intervalMs);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    });
   }, [uiState.playbackMode.type]);
 
   switch (uiState.playbackMode.type) {

@@ -10,6 +10,7 @@ import {
   LaurusPolygonPath,
 } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
+import { PlaybackKind } from "../playback-clock";
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, MIN_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
@@ -98,7 +99,7 @@ export type CarouselEntry =
   | { type: "light"; key: string; lightId: number }
   | { type: "object"; key: string; objectId: number };
 
-export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
+export type PlaybackMode = { type: "playing"; kind: PlaybackKind } | { type: "stopped" } | { type: "waiting" };
 
 export type ObjectReviewMode = "review" | "edit";
 
@@ -297,6 +298,7 @@ export interface UIState {
   resolution: WorkspaceResolution;
   mixableEffects: string[];
   playbackMode: PlaybackMode;
+  playheadSeconds: number;
   filledForwards: boolean;
   projectContextMenus: Map<string, ProjectMediaContextMenu>;
   animationDownloadProgress: number | undefined;
@@ -334,6 +336,7 @@ export const defaultUIState: UIState = {
   },
   mixableEffects: [],
   playbackMode: { type: "stopped" },
+  playheadSeconds: 0,
   filledForwards: false,
   projectContextMenus: new Map(),
   animationDownloadProgress: undefined,
@@ -375,6 +378,7 @@ export enum UIActionType {
   AddCarouselEntry,
   DeleteCarouselEntry,
   SetPlaybackMode,
+  SetPlayheadSeconds,
   SetResolution,
   SetEffectNames,
   SetTimelineUnits,
@@ -442,6 +446,7 @@ export type UIAction =
   | { type: UIActionType.AddCarouselEntry; value: CarouselEntry }
   | { type: UIActionType.DeleteCarouselEntry; key: string; lightId?: number; objectId?: number }
   | { type: UIActionType.SetPlaybackMode; value: PlaybackMode }
+  | { type: UIActionType.SetPlayheadSeconds; value: number }
   | { type: UIActionType.SetResolution; value: WorkspaceResolution }
   | { type: UIActionType.SetEffectNames; value: string[] }
   | { type: UIActionType.SetTimelineUnits; value: string[] }
@@ -726,7 +731,14 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
       return { ...state, carouselEntries: newEntries };
     }
     case UIActionType.SetPlaybackMode: {
-      return { ...state, playbackMode: action.value };
+      return {
+        ...state,
+        playbackMode: action.value,
+        playheadSeconds: action.value.type === "playing" ? 0 : state.playheadSeconds,
+      };
+    }
+    case UIActionType.SetPlayheadSeconds: {
+      return { ...state, playheadSeconds: action.value };
     }
     case UIActionType.SetResolution: {
       return { ...state, resolution: action.value };

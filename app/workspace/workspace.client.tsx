@@ -62,7 +62,7 @@ import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-re
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
-import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
+import { MaskAppearanceOverride, MaskImperativeHandle, MaskPlaybackSession } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
 import {
   deleteMaskLightEffects,
@@ -74,6 +74,7 @@ import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
 import TimelineArea from "./timeline-area";
+import { startPlaybackClock, stopPlaybackClock } from "./playback-clock";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { toCssSkewAngle } from "./skew-angle.ts";
@@ -261,6 +262,7 @@ export interface CoreContextProps {
   handleFastForwardAll: (playbackRate: number) => void;
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
+  handleScrubTo: (timeSeconds: number) => Promise<void>;
   cancelFrameDownload: () => void;
 }
 
@@ -272,6 +274,7 @@ export const CoreContext = createContext<CoreContextProps>({
   handleFastForwardAll: () => {},
   handlePlayTarget: () => {},
   handleStopAll: () => {},
+  handleScrubTo: async () => {},
   cancelFrameDownload: () => {},
 });
 
@@ -2069,7 +2072,7 @@ export default function Workspace({
       });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
-        value: { type: "playing" },
+        value: { type: "playing", kind: "rewind" },
       });
     },
     [
@@ -2109,13 +2112,13 @@ export default function Workspace({
     const players: MaskImperativeHandle[] = [];
     maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
 
-    const [newAnimations, preparedStarts] = await Promise.all([
+    const [newAnimations, preparedSessions] = await Promise.all([
       getNewAnimations("none", false, true),
       Promise.all(players.map((player) => player.preparePlayback())),
     ]);
-    const readyStarts = preparedStarts.filter((start) => start !== undefined);
+    const readySessions = preparedSessions.filter((session) => session !== undefined);
 
-    if (newAnimations.length == 0 && readyStarts.length == 0) {
+    if (newAnimations.length == 0 && readySessions.length == 0) {
       uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
@@ -2126,7 +2129,7 @@ export default function Workspace({
       return;
     }
 
-    const lightSourceFinished = readyStarts.map((start) => start());
+    const lightSourceFinished = readySessions.map((session) => session.start());
 
     Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
       .then(() => {
@@ -2145,7 +2148,7 @@ export default function Workspace({
     newAnimations.forEach((a) => a.play());
     uiDispatch({
       type: UIActionType.SetPlaybackMode,
-      value: { type: "playing" },
+      value: { type: "playing", kind: "play" },
     });
   }, [
     closeContextMenus,
@@ -2232,7 +2235,7 @@ export default function Workspace({
       newAnimations.forEach((a) => a.play());
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
-        value: { type: "playing" },
+        value: { type: "playing", kind: "play" },
       });
     },
     [
@@ -2290,7 +2293,7 @@ export default function Workspace({
       });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
-        value: { type: "playing" },
+        value: { type: "playing", kind: "fast-forward" },
       });
     },
     [
@@ -2322,6 +2325,72 @@ export default function Workspace({
     });
     uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
   }, [uiDispatch, uiState.playbackMode.type]);
+
+  const scrubAnimationsRef = useRef<Animation[]>([]);
+  const scrubSessionsRef = useRef<MaskPlaybackSession[]>([]);
+  const scrubArmingRef = useRef<Promise<void> | undefined>(undefined);
+  const scrubGenerationRef = useRef(0);
+
+  const discardScrub = useCallback(() => {
+    scrubGenerationRef.current += 1;
+    scrubAnimationsRef.current.forEach((animation) => animation.cancel());
+    scrubAnimationsRef.current = [];
+    scrubSessionsRef.current = [];
+    scrubArmingRef.current = undefined;
+  }, []);
+
+  const armScrub = useCallback(() => {
+    const armed = scrubArmingRef.current;
+    if (armed) return armed;
+    const generation = scrubGenerationRef.current;
+    const arming = (async () => {
+      const players: MaskImperativeHandle[] = [];
+      maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
+      const [newAnimations, preparedSessions] = await Promise.all([
+        getNewAnimations("both", false, true),
+        Promise.all(players.map((player) => player.preparePlayback())),
+      ]);
+      if (scrubGenerationRef.current !== generation) {
+        newAnimations.forEach((animation) => animation.cancel());
+        return;
+      }
+      scrubAnimationsRef.current = newAnimations;
+      scrubSessionsRef.current = preparedSessions.filter((session) => session !== undefined);
+    })();
+    scrubArmingRef.current = arming;
+    return arming;
+  }, [getNewAnimations]);
+
+  const handleScrubTo = useCallback(
+    async (timeSeconds: number) => {
+      if (uiState.playbackMode.type !== "stopped") return;
+      await armScrub();
+      const timeMs = timeSeconds * 1000;
+      scrubAnimationsRef.current.forEach((animation) => {
+        const duration = Number(animation.effect?.getComputedTiming().duration ?? 0);
+        animation.currentTime = Math.max(0, Math.min(timeMs, duration));
+      });
+      scrubSessionsRef.current.forEach((session) => session.seek(timeSeconds));
+    },
+    [armScrub, uiState.playbackMode.type],
+  );
+
+  useEffect(() => {
+    discardScrub();
+  }, [coreState.effects, coreState.effectGroups, discardScrub]);
+
+  useEffect(() => {
+    if (coreState.inputsToRender.size > 0) discardScrub();
+  }, [coreState.inputsToRender, discardScrub]);
+
+  useEffect(() => {
+    if (uiState.playbackMode.type === "playing") {
+      discardScrub();
+      startPlaybackClock(uiState.playbackMode.kind);
+      return;
+    }
+    stopPlaybackClock();
+  }, [uiState.playbackMode, discardScrub]);
 
   const hoverContextValue = useMemo(
     () => ({
@@ -2362,6 +2431,7 @@ export default function Workspace({
       handleRewindAll,
       handlePlayAll,
       handleFastForwardAll,
+      handleScrubTo,
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
@@ -2373,6 +2443,7 @@ export default function Workspace({
       handleRewindAll,
       handlePlayAll,
       handleFastForwardAll,
+      handleScrubTo,
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
