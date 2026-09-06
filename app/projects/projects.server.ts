@@ -173,6 +173,26 @@ export type LaurusProjectSearch = ProjectSearch_V1_0;
 export type LaurusPin = Pin_V1_0;
 export type LaurusPinResult = PinResult_V1_0;
 
+export async function getEffectCounts(baseUrl: string | undefined) {
+  try {
+    const url = `${baseUrl}/projects/effect-counts`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const result: Record<string, number> = await response.json();
+    return new Map(Object.entries(result));
+  } catch (error) {
+    console.log({ error });
+    return undefined;
+  }
+}
+
 export async function getProjects(baseUrl: string | undefined) {
   try {
     const url = `${baseUrl}/projects`;

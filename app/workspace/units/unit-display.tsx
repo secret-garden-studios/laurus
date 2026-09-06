@@ -2,7 +2,7 @@ import { useContext, useState, useCallback } from "react";
 import { dmSans } from "@/app/fonts";
 import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
-import LaurusImage from "../../components/laurus-image";
+import LaurusImage, { pxSizes } from "../../components/laurus-image";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState, isMaskEditSubject } from "../states/ui-state";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
@@ -59,6 +59,7 @@ function ObjectOrLightThumbnail({
         alt={sourceImgSrc ?? ""}
         src={sourceImgSrc ?? ""}
         fill
+        sizes={pxSizes(style.width, 200)}
         style={{
           objectFit: "cover",
         }}
@@ -164,7 +165,14 @@ function MaskThumbnail({
         ...style,
       }}
     >
-      <LaurusImage draggable={false} alt={mediaKey} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+      <LaurusImage
+        draggable={false}
+        alt={mediaKey}
+        src={sourceImgSrc ?? ""}
+        fill
+        sizes={pxSizes(style.width, 200)}
+        style={{ objectFit: "cover" }}
+      />
     </div>
   );
 }
@@ -515,6 +523,7 @@ export default function UnitDisplay({
                           alt={c.key}
                           src={canvasImg.src}
                           fill
+                          sizes={pxSizes(dynamicSizes.displayImg.width, 200)}
                           style={{
                             objectFit: "cover",
                           }}

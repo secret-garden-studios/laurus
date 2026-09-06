@@ -5,21 +5,25 @@ import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
 import Projects from "./projects.client";
 import { ProjectsResolution } from "./projects-resolution";
-import { MeDependencies, ProjectDependencies } from "../page";
-import { LaurusPinResult } from "./projects.server";
+import { MeDependencies } from "../page";
+import { LaurusPinResult, LaurusProjectResult } from "./projects.server";
 import { useAccessToken } from "../hooks/useAccessToken";
+import Skeleton from "../components/skeleton";
 
 interface ProjectsBoot {
   laurusApi: string | undefined;
-  projectDependenciesPromise: Promise<ProjectDependencies[]>;
+  projectsPromise: Promise<LaurusProjectResult[] | undefined>;
+  effectCountsPromise: Promise<Map<string, number> | undefined>;
   mePromise: Promise<MeDependencies>;
   pinsPromise: Promise<LaurusPinResult[] | undefined>;
 }
-export default function ProjectsBoot({ laurusApi, projectDependenciesPromise, mePromise, pinsPromise }: ProjectsBoot) {
-  const me = use(mePromise);
-  useAccessToken(laurusApi, me.accessToken);
-  const projectDependencies = use(projectDependenciesPromise);
-  const pins = use(pinsPromise);
+export default function ProjectsBoot({
+  laurusApi,
+  projectsPromise,
+  effectCountsPromise,
+  mePromise,
+  pinsPromise,
+}: ProjectsBoot) {
   const [resolution, setResolution] = useState<ProjectsResolution | undefined>(undefined);
 
   useEffect(() => {
@@ -31,12 +35,13 @@ export default function ProjectsBoot({ laurusApi, projectDependenciesPromise, me
   return resolution !== undefined ? (
     resolution.type != "low" ? (
       <Suspense fallback={<Skeleton />}>
-        <Projects
-          apiOrigin={laurusApi}
-          projectDependencies={projectDependencies}
+        <ProjectsWithDependencies
+          laurusApi={laurusApi}
+          projectsPromise={projectsPromise}
+          effectCountsPromise={effectCountsPromise}
+          mePromise={mePromise}
+          pinsPromise={pinsPromise}
           resolution={resolution}
-          me={me}
-          pins={pins ?? []}
         />
       </Suspense>
     ) : (
@@ -47,11 +52,28 @@ export default function ProjectsBoot({ laurusApi, projectDependenciesPromise, me
   );
 }
 
-function Skeleton() {
+function ProjectsWithDependencies({
+  laurusApi,
+  projectsPromise,
+  effectCountsPromise,
+  mePromise,
+  pinsPromise,
+  resolution,
+}: ProjectsBoot & { resolution: ProjectsResolution }) {
+  const me = use(mePromise);
+  useAccessToken(laurusApi, me.accessToken);
+  const projects = use(projectsPromise);
+  const effectCounts = use(effectCountsPromise);
+  const pins = use(pinsPromise);
+
   return (
-    <div
-      className={`${styles["noisy-background-16-2-low-res"]} ${italiana.className}`}
-      style={{ cursor: "progress", width: "100vw", height: "100vh" }}
+    <Projects
+      apiOrigin={laurusApi}
+      projects={projects ?? []}
+      effectCounts={effectCounts ?? new Map()}
+      resolution={resolution}
+      me={me}
+      pins={pins ?? []}
     />
   );
 }

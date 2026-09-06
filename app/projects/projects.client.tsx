@@ -4,7 +4,7 @@ import { LaurusPinResult, LaurusProjectImg, LaurusProjectResult, LaurusProjectSv
 import { dellaRespira, italiana } from "../fonts";
 import styles from "../app.module.css";
 import Statusbar from "./bars/statusbar";
-import { MeDependencies, ProjectDependencies } from "../page";
+import { MeDependencies } from "../page";
 import Titlebar, { Subtitlebar } from "./bars/titlebar";
 import Toolbar from "./bars/toolbar";
 import { defaultUIState, SortValue, UIAction, uiContextReducer, UIState } from "./states/ui-state";
@@ -35,44 +35,35 @@ export const CoreContext = createContext<CoreContextProps>({
 });
 
 interface InitReducer {
-  arg1: ProjectDependencies[] | undefined;
+  arg1: LaurusProjectResult[];
   arg2: ProjectsResolution;
   arg3: string | undefined;
   arg4: string | undefined;
   arg5: LaurusPinResult[];
+  arg6: Map<string, number>;
 }
 
 function initReducer({
-  arg1: projectDependencies,
+  arg1: projects,
   arg2: resolution,
   arg3: apiOrigin,
   arg4: accessToken,
   arg5: pins,
+  arg6: effectCounts,
 }: InitReducer): { core: CoreState; ui: UIState } {
-  const newProjects: LaurusProjectResult[] = projectDependencies
-    ? projectDependencies.map((x) => {
-        const newImgs: Map<string, LaurusProjectImg> = new Map(
-          x.project.imgs.entries().map((e) => [e[0], { ...e[1] }]),
-        );
-        const newSvgs: Map<string, LaurusProjectSvg> = new Map(
-          x.project.svgs.entries().map((e) => [e[0], { ...e[1] }]),
-        );
-        return {
-          ...x.project,
-          imgs: newImgs,
-          svgs: newSvgs,
-        };
-      })
-    : [];
+  const newProjects: LaurusProjectResult[] = projects.map((p) => {
+    const newImgs: Map<string, LaurusProjectImg> = new Map(p.imgs.entries().map((e) => [e[0], { ...e[1] }]));
+    const newSvgs: Map<string, LaurusProjectSvg> = new Map(p.svgs.entries().map((e) => [e[0], { ...e[1] }]));
+    return {
+      ...p,
+      imgs: newImgs,
+      svgs: newSvgs,
+    };
+  });
 
-  const newEffectsMetadata: Map<string, number> = projectDependencies
-    ? new Map(
-        projectDependencies.map((x) => [
-          x.project.project_id,
-          x.scales.length + x.moves.length + x.rotates.length + x.skews.length,
-        ]),
-      )
-    : new Map();
+  const newEffectsMetadata: Map<string, number> = new Map(
+    projects.map((p) => [p.project_id, effectCounts.get(p.project_id) ?? 0]),
+  );
 
   const newPinsByProject: Map<string, LaurusPinResult> = new Map();
   pins.forEach((p) => {
@@ -97,19 +88,28 @@ function initReducer({
 
 interface Projects {
   apiOrigin: string | undefined;
-  projectDependencies: ProjectDependencies[];
+  projects: LaurusProjectResult[];
+  effectCounts: Map<string, number>;
   resolution: ProjectsResolution;
   me: MeDependencies;
   pins: LaurusPinResult[];
 }
-export default function Projects({ apiOrigin, projectDependencies, resolution: resolutionInit, me, pins }: Projects) {
+export default function Projects({
+  apiOrigin,
+  projects,
+  effectCounts,
+  resolution: resolutionInit,
+  me,
+  pins,
+}: Projects) {
   const [{ core: coreInit, ui: uiInit }] = useState(() => {
     return initReducer({
-      arg1: projectDependencies,
+      arg1: projects,
       arg2: resolutionInit,
       arg3: apiOrigin,
       arg4: me.accessToken,
       arg5: pins,
+      arg6: effectCounts,
     });
   });
   const [uiState, uiDispatch] = useReducer(uiContextReducer, uiInit);

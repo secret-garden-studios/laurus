@@ -1,21 +1,12 @@
 "use client";
-import { useState, Suspense, useEffect, use } from "react";
+import { useState, Suspense, useEffect, use, ComponentProps } from "react";
 import { WorkspaceResolution, getScreenResolution } from "./workspace.config";
 import Workspace from "./workspace.client";
 import styles from "../app.module.css";
 import { dellaRespira, italiana } from "../fonts";
-import { BrowserDependencies } from "./page";
 import { MeDependencies, ProjectDependencies } from "../page";
 import { LaurusMediaGroupResult } from "./workspace.server";
-
-function Skeleton() {
-  return (
-    <div
-      className={`${styles["noisy-background-16-2-low-res"]} ${italiana.className}`}
-      style={{ cursor: "progress", width: "100vw", height: "100vh" }}
-    />
-  );
-}
+import Skeleton from "../components/skeleton";
 
 interface Forbidden {
   resolution: WorkspaceResolution;
@@ -69,7 +60,6 @@ interface WorkspaceBoot {
   mediaPageSizeInit: number;
   effectsEnum: Promise<string[] | undefined>;
   projectDependencies: Promise<ProjectDependencies | undefined>;
-  browserDependencies: Promise<BrowserDependencies>;
   mediaGroupsDependencies: Promise<LaurusMediaGroupResult[]>;
   mePromise: Promise<MeDependencies>;
 }
@@ -78,7 +68,6 @@ export default function WorkspaceBoot({
   mediaPageSizeInit,
   effectsEnum,
   projectDependencies,
-  browserDependencies,
   mediaGroupsDependencies,
   mePromise,
 }: WorkspaceBoot) {
@@ -86,7 +75,6 @@ export default function WorkspaceBoot({
   const timelineValues = [15, 30, 60, 90];
   const timelineUnits = ["sec", "min"];
   const mixableEffects = ["move"];
-  const me = use(mePromise);
 
   useEffect(() => {
     (() => {
@@ -99,7 +87,7 @@ export default function WorkspaceBoot({
   return resolution !== undefined ? (
     resolution.type != "low" ? (
       <Suspense fallback={<Skeleton />}>
-        <Workspace
+        <WorkspaceWithMe
           apiOriginInit={laurusApi}
           mediaPageSizeInit={mediaPageSizeInit}
           effectNamesInitPromise={effectsEnum}
@@ -107,10 +95,9 @@ export default function WorkspaceBoot({
           timelineUnitsInit={timelineUnits}
           mixableEffectsInit={mixableEffects}
           projectInitPromise={projectDependencies}
-          browserInitPromise={browserDependencies}
           mediaGroupsInitPromise={mediaGroupsDependencies}
           resolutionInit={resolution}
-          me={me}
+          mePromise={mePromise}
         />
       </Suspense>
     ) : (
@@ -119,4 +106,13 @@ export default function WorkspaceBoot({
   ) : (
     <Skeleton />
   );
+}
+
+type WorkspaceWithMe = Omit<ComponentProps<typeof Workspace>, "me"> & {
+  mePromise: Promise<MeDependencies>;
+};
+
+function WorkspaceWithMe({ mePromise, ...props }: WorkspaceWithMe) {
+  const me = use(mePromise);
+  return <Workspace {...props} me={me} />;
 }

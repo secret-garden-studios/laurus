@@ -6,6 +6,11 @@ export interface LaurusImageProps extends ImageProps {
   imgRef?: Ref<HTMLImageElement>;
 }
 
+export function pxSizes(width: number | string | undefined, fallback: number): string {
+  const px = typeof width === "number" ? width : fallback;
+  return `${Math.max(1, Math.round(px))}px`;
+}
+
 export default function LaurusImage(props: LaurusImageProps) {
   const { src, alt, width, height, fill, style, className, imgRef, ...rest } = props;
   const isValidSrc = useMemo(() => {

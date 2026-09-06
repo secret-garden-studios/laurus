@@ -1,5 +1,5 @@
 "use client";
-import LaurusImage from "../../components/laurus-image";
+import LaurusImage, { pxSizes } from "../../components/laurus-image";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { HoverContext, LaurusTransform } from "../workspace.client";
@@ -119,6 +119,7 @@ export function ProjectImg({
             alt={data.media_key}
             src={data.src}
             fill
+            sizes={pxSizes(meta.width * meta.scale_x, 1024)}
             style={{
               objectFit: "cover",
               cursor: "inherit",
