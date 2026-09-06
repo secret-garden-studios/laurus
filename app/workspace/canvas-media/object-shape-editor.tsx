@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  EDITABLE_MAX_ANCHORS,
   cubicRingsToPathData,
   editableRings,
   moveAnchor,
@@ -27,6 +28,7 @@ const LEASH_WIDTH_PX = 1;
 const GRAB_RADIUS_PX = 9;
 const ZOOM_COMPENSATION = 0.85;
 const COLLAPSED_AREA = 1e-3;
+const ANCHOR_LIMIT_REACHED = "anchor limit reached!";
 const BUFFER_SPACE = { cx: 0, cy: 0, radius: 1 };
 
 const outlineColor = (bright: boolean) => `rgba(66, 133, 244, ${bright ? 1 : 0.5})`;
@@ -292,11 +294,18 @@ export default function ObjectShapeEditor({
     return at ? nearestOnRings(ringsRef.current, at) : undefined;
   };
 
+  const ringIsFull = (at: number): boolean => (ringsRef.current[at]?.length ?? 0) >= EDITABLE_MAX_ANCHORS;
+
   const putAnchor = (event: React.PointerEvent) => {
     event.stopPropagation();
     event.preventDefault();
     const place = placeOnOutline(event);
     if (!place) return;
+    if (ringIsFull(place.ring)) {
+      setGhost(undefined);
+      alert(ANCHOR_LIMIT_REACHED);
+      return;
+    }
     const next = insertAnchor(ringsRef.current, place.ring, place.segment, place.t);
     if (!next) return;
     setGhost(undefined);
@@ -339,6 +348,8 @@ export default function ObjectShapeEditor({
     const edit = normalizeEditedRings(ringsRef.current, BUFFER_SPACE);
     if (edit) onCommit(edit);
   };
+
+  const ghostIsRefused = ghost !== undefined && (rings[ghost.ring]?.length ?? 0) >= EDITABLE_MAX_ANCHORS;
 
   const stroke = invalid ? INVALID_COLOR : outlineColor(gridlinesBright);
 
@@ -406,7 +417,7 @@ export default function ObjectShapeEditor({
           fill="none"
           stroke="transparent"
           strokeWidth={px(GRAB_RADIUS_PX * 2)}
-          style={{ cursor: "copy" }}
+          style={{ cursor: ghostIsRefused ? "not-allowed" : "copy" }}
           pointerEvents="stroke"
           onPointerMove={(e) => {
             if (grabRef.current) return;
@@ -415,11 +426,13 @@ export default function ObjectShapeEditor({
           onPointerLeave={() => setGhost(undefined)}
           onPointerDown={putAnchor}
         >
-          <title>{"click anywhere on the outline to put a new anchor there"}</title>
+          <title>
+            {ghostIsRefused ? ANCHOR_LIMIT_REACHED : "click anywhere on the outline to put a new anchor there"}
+          </title>
         </path>
       )}
 
-      {inserting && ghost && (
+      {inserting && ghost && !ghostIsRefused && (
         <circle
           cx={ghost.point[0]}
           cy={ghost.point[1]}

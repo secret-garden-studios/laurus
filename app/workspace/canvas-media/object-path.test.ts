@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   EDITABLE_MAX_ANCHORS,
+  FITTED_MAX_ANCHORS,
   anchorsForRing,
   cubicPointAt,
   cubicRingsToPathData,
@@ -40,8 +41,6 @@ const DIAMOND: Point[] = [
 
 describe("parseCubicRings -- a path as anchors rather than points", () => {
   it("reads one anchor per corner, not one per curve", () => {
-    // the closing curve lands back on the first anchor; that is the same
-    // anchor, not a fifth one
     const path = cubicRingsToPathData([fitCubicRing(DIAMOND)]);
     const rings = parseCubicRings(path);
     assert.ok(rings);
@@ -91,8 +90,6 @@ describe("the editable round trip", () => {
   });
 
   it("leaves a polyline's geometry alone through the conversion to cubics", () => {
-    // a straight segment with controls at the thirds is the same straight
-    // segment, so reading a legacy shape and writing it back must not move it
     const square = "M-1,-1L1,-1L1,1L-1,1Z";
     const rings = parseCubicRings(square);
     assert.ok(rings);
@@ -117,8 +114,6 @@ describe("the editable round trip", () => {
 
 describe("editableRings -- opening whatever is stored", () => {
   it("leaves a detected shape's own anchors alone", () => {
-    // re-fitting a shape merely to look at it would redraw work already
-    // approved, so a path already within the cap opens verbatim
     const path = cubicRingsToPathData([fitCubicRing(DIAMOND)]);
     assert.equal(cubicRingsToPathData(editableRings(path)), path);
   });
@@ -132,8 +127,49 @@ describe("editableRings -- opening whatever is stored", () => {
       "Z";
     const rings = editableRings(polyline);
     assert.equal(rings.length, 1);
-    assert.ok(rings[0].length <= EDITABLE_MAX_ANCHORS, `${rings[0].length} anchors is unusable`);
+    assert.ok(rings[0].length <= FITTED_MAX_ANCHORS, `${rings[0].length} anchors is unusable`);
     assert.ok(rings[0].length >= 4, "it was thinned past being a shape");
+  });
+
+  it("opens an authored ring far past the fitting cap untouched", () => {
+    for (const count of [FITTED_MAX_ANCHORS + 1, FITTED_MAX_ANCHORS * 2, EDITABLE_MAX_ANCHORS]) {
+      const path = cubicRingsToPathData([fitCubicRing(circlePoints(1, count))]);
+      const opened = editableRings(path);
+      assert.equal(opened.length, 1);
+      assert.equal(opened[0].length, count, `${count} anchors did not open as ${count}`);
+      assert.equal(cubicRingsToPathData(opened), path, `${count} anchors did not survive being opened`);
+    }
+  });
+
+  it("re-fits an authored ring only once it is over the openable ceiling", () => {
+    const path = cubicRingsToPathData([fitCubicRing(circlePoints(1, EDITABLE_MAX_ANCHORS + 1))]);
+    const opened = editableRings(path);
+    assert.ok(opened[0].length <= FITTED_MAX_ANCHORS, "past the ceiling it has to be thinned");
+  });
+
+  it("measures a flattened outline against the fitting cap, not the ceiling", () => {
+    const polyline =
+      "M" +
+      circlePoints(1, FITTED_MAX_ANCHORS + 12)
+        .map(([x, y]) => `${x},${y}`)
+        .join("L") +
+      "Z";
+    assert.ok(editableRings(polyline)[0].length <= FITTED_MAX_ANCHORS);
+  });
+
+  it("re-fits every ring once any one of them is over", () => {
+    const big = fitCubicRing(circlePoints(1, EDITABLE_MAX_ANCHORS + 1));
+    const small = fitCubicRing(circlePoints(0.2, 6));
+    const opened = editableRings(cubicRingsToPathData([big, small]));
+    assert.equal(opened.length, 2);
+    for (const ring of opened) assert.ok(ring.length <= FITTED_MAX_ANCHORS);
+  });
+
+  it("is the identity on anything the editor can save", () => {
+    for (let count = 3; count <= EDITABLE_MAX_ANCHORS; count++) {
+      const path = cubicRingsToPathData([fitCubicRing(circlePoints(1, count))]);
+      assert.equal(cubicRingsToPathData(editableRings(path)), path, `${count} anchors did not round trip`);
+    }
   });
 
   it("keeps a re-fitted circle round", () => {
@@ -159,7 +195,6 @@ describe("fitCubicRing -- re-fitting a path with no boundary underneath it", () 
   });
 
   it("overshoots less than uniform weighting on uneven anchors", () => {
-    // the reason for centripetal alpha
     const anchors: Point[] = [
       [-1, -0.2],
       [1, -0.2],
@@ -183,7 +218,7 @@ describe("fitCubicRing -- re-fitting a path with no boundary underneath it", () 
 describe("anchorsForRing", () => {
   it("thins until it fits, however dense the input", () => {
     for (const count of [64, 128, 720]) {
-      assert.ok(anchorsForRing(circlePoints(1, count)).length <= EDITABLE_MAX_ANCHORS);
+      assert.ok(anchorsForRing(circlePoints(1, count)).length <= FITTED_MAX_ANCHORS);
     }
   });
 
@@ -213,7 +248,6 @@ describe("dragging", () => {
     const ring = fitCubicRing(DIAMOND);
     const moved = moveControl(ring, 1, "out", [0.5, 2]);
     assert.deepEqual(moved[1].outControl, [0.5, 2]);
-    // reflected through the anchor at [0, 1]
     assert.deepEqual(moved[1].inControl, [-0.5, 0]);
   });
 
@@ -232,9 +266,6 @@ describe("dragging", () => {
 
 describe("what the editor writes is what the renderer reads", () => {
   it("agrees with flattenPathData about where the outline goes", () => {
-    // two flatteners, one path: object-path's for drawing handles, and
-    // object-shape's for rasterizing. They must not disagree, or the outline
-    // drawn on screen sits somewhere the relief does not.
     const ring = fitCubicRing(DIAMOND);
     const viaEditor = flattenCubicRing(ring);
     const viaRenderer = flattenPathData(cubicRingsToPathData([ring]))[0];
@@ -258,13 +289,10 @@ describe("normalizeEditedRings -- keeping an edit where it was drawn", () => {
   });
 
   it("grows the radius rather than shrinking the shape when an anchor is pulled out", () => {
-    // the failure this exists to prevent: the renderer re-normalizes whatever
-    // it is given, so an edit that only widened the path would render smaller
     const pulled = moveAnchor(fitCubicRing(DIAMOND), 0, [2, 0]);
     const result = normalizeEditedRings([pulled], object);
     assert.ok(result);
     assert.ok(result.radius > object.radius, `radius should grow, got ${result.radius}`);
-    // and the outline it stores is normalized again, ready to be scaled by it
     const reach = Math.max(...flattenPathData(result.path).flatMap((r) => r.map((p) => Math.hypot(...p))));
     assert.ok(Math.abs(reach - 1) < 1e-4, `stored path is not unit extent: ${reach}`);
   });
@@ -273,8 +301,6 @@ describe("normalizeEditedRings -- keeping an edit where it was drawn", () => {
     const pulled = moveAnchor(fitCubicRing(DIAMOND), 0, [2, 0]);
     const result = normalizeEditedRings([pulled], object);
     assert.ok(result);
-    // the anchor was dragged to normalized x=2 against the original geometry,
-    // i.e. mesh x = 200 + 2*50 = 300; it must still land there afterwards
     const rings = parseCubicRings(result.path);
     assert.ok(rings);
     const meshX = Math.max(...rings[0].map((a) => result.cx + a.point[0] * result.radius));
@@ -297,7 +323,6 @@ describe("an edited outline must be read back with its own geometry", () => {
     const edit = normalizeEditedRings([dragged], original);
     assert.ok(edit);
 
-    // where the reviewer actually dragged it, in mesh units
     const wanted: Point = [original.cx + 1.7 * original.radius, original.cy + 0.2 * original.radius];
 
     const reread = parseCubicRings(edit.path);
@@ -316,9 +341,6 @@ describe("an edited outline must be read back with its own geometry", () => {
   });
 
   it("lands somewhere else entirely if paired with the pre-edit geometry", () => {
-    // the bug this guards: the editor was handed the edited path but the
-    // candidate's original cx/cy/radius, so the curve sprang back toward where
-    // it started the moment the pointer was released
     const dragged = moveAnchor(fitCubicRing(DIAMOND), 0, [1.7, 0.2]);
     const edit = normalizeEditedRings([dragged], original);
     assert.ok(edit);
@@ -339,10 +361,8 @@ describe("an edited outline must be read back with its own geometry", () => {
 });
 
 describe("what the pen holds on to between commits", () => {
-  /** As the editor holds its rings: in the canvas's own buffer coordinates. */
   const BUFFER_SPACE = { cx: 0, cy: 0, radius: 1 };
   const opened = { cx: 200, cy: 150, radius: 50 };
-  /** Three successive drags of anchor 0, in buffer coordinates. */
   const DRAGS: Point[] = [
     [285, 160],
     [295, 165],
@@ -365,11 +385,8 @@ describe("what the pen holds on to between commits", () => {
     }
     assert.ok(edit);
 
-    // the pen's own numbers: nothing but the dragged anchor has moved
     assert.deepEqual(ring[untouched].point, startedAt);
 
-    // and what it committed draws it in the same place -- the path is
-    // normalized, so this is the renderer's reading of it
     const reread = parseCubicRings(edit.path);
     assert.ok(reread);
     const drawn: Point = [
@@ -383,12 +400,6 @@ describe("what the pen holds on to between commits", () => {
   });
 
   it("pins the drift: held in normalized space, each commit walks the ones nobody touched", () => {
-    // The bug this guards. The editor used to keep its rings normalized
-    // against the object's geometry -- and committing hands back *new*
-    // geometry, which arrives as a prop while the rings stay as they were.
-    // Every anchor then gets drawn against a radius it was never measured in,
-    // so the whole outline slides a little further with each release while the
-    // one under the cursor, read through that same new geometry, looks fine.
     let ring = fitCubicRing(DIAMOND);
     let geometry = opened;
     const startedAt: Point = [
@@ -418,8 +429,6 @@ describe("what the pen holds on to between commits", () => {
 
 describe("nearestOnRings -- reading a click back onto the curve", () => {
   it("lands on the curve, not on the anchors it was fitted through", () => {
-    // a click just outside the bow between two anchors: the nearest anchor is
-    // a long way round, and the nearest point on the curve is right there
     const ring = fitCubicRing(DIAMOND);
     const bow = flattenCubicRing(ring)[3];
     const place = nearestOnRings([ring], [bow[0] * 1.2, bow[1] * 1.2]);
@@ -440,8 +449,6 @@ describe("nearestOnRings -- reading a click back onto the curve", () => {
   });
 
   it("beats the flattened outline it is refined out of", () => {
-    // the refinement has to buy something over just taking the nearest drawn
-    // sample, or the anchor lands visibly off the curve on a coarse segment
     const ring = fitCubicRing(circlePoints(1, 7));
     const at: Point = [0.37, 0.9];
     const place = nearestOnRings([ring], at);
@@ -469,18 +476,11 @@ describe("insertAnchor -- somewhere new to take hold", () => {
     const next = insertAnchor([ring], 0, 1, 0.5);
     assert.ok(next);
     assert.equal(next[0].length, ring.length + 1);
-    // the new one sits between the anchors that bounded the segment
     assert.deepEqual(next[0][1].point, ring[1].point);
     assert.deepEqual(next[0][3].point, ring[2].point);
   });
 
   it("does not move the outline at all", () => {
-    // The whole point of splitting rather than re-fitting: the reviewer asked
-    // for a handle, not for a different shape. Checked against the original
-    // segment rather than against a flattening of the whole ring, because the
-    // split gives that ring an extra segment and so an extra helping of
-    // samples -- which would put the two flattenings a step out of phase and
-    // measure the subdivision instead of the curve.
     const ring = fitCubicRing(circlePoints(1, 9));
     const split = 0.37;
     for (const segment of [0, 3, 8]) {
@@ -493,8 +493,6 @@ describe("insertAnchor -- somewhere new to take hold", () => {
 
       for (let step = 0; step <= 32; step++) {
         const u = step / 32;
-        // the two halves, walked at u, against the one curve at the parameter
-        // that same point had before the split
         const halves: [Point, number][] = [
           [cubicPointAt(next[0][segment], added, u), u * split],
           [cubicPointAt(added, beyond, u), split + u * (1 - split)],
@@ -550,6 +548,20 @@ describe("insertAnchor -- somewhere new to take hold", () => {
     assert.equal(next[1], hole);
   });
 
+  it("refuses to push a ring past what can be reopened", () => {
+    const full = fitCubicRing(circlePoints(1, EDITABLE_MAX_ANCHORS));
+    assert.equal(insertAnchor([full], 0, 0, 0.5), undefined);
+    const room = fitCubicRing(circlePoints(1, EDITABLE_MAX_ANCHORS - 1));
+    const next = insertAnchor([room], 0, 0, 0.5);
+    assert.ok(next, "the last anchor that still fits has to be allowed");
+    assert.equal(next[0].length, EDITABLE_MAX_ANCHORS);
+    assert.equal(
+      cubicRingsToPathData(editableRings(cubicRingsToPathData(next))),
+      cubicRingsToPathData(next),
+      "a ring filled to the ceiling still has to reopen verbatim",
+    );
+  });
+
   it("refuses a segment that is not there", () => {
     const ring = fitCubicRing(DIAMOND);
     assert.equal(insertAnchor([ring], 0, ring.length, 0.5), undefined);
@@ -568,7 +580,6 @@ describe("insertAnchor -- somewhere new to take hold", () => {
   });
 
   it("lands where nearestOnRings said it would", () => {
-    // the two halves of one gesture: hit-test a click, then split there
     const ring = fitCubicRing(circlePoints(1, 8));
     const at: Point = [0.71, 0.75];
     const place = nearestOnRings([ring], at);
@@ -587,7 +598,6 @@ describe("insertAnchor -- somewhere new to take hold", () => {
 });
 
 describe("stitchRing -- cutting a bay out of an outline", () => {
-  /** An n-gon on the unit circle, fitted so every anchor carries real controls. */
   function polygon(count: number): CubicRing {
     return fitCubicRing(
       Array.from({ length: count }, (_, i) => {
@@ -597,7 +607,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
     );
   }
 
-  /** Whether a ring's closing segment -- last anchor back to first -- is straight. */
   function closesStraight(ring: CubicRing): boolean {
     const last = ring[ring.length - 1];
     const first = ring[0];
@@ -615,7 +624,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
   }
 
   it("branches a run of two or more off as its own island", () => {
-    // 0 and 3 with 1 and 2 between them the short way round
     const next = stitchRing([polygon(8)], 0, 0, 3);
     assert.ok(next);
     assert.equal(next.length, 2);
@@ -641,7 +649,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
         "a selected anchor was copied into the island",
       );
     }
-    // and both are still on the outline
     const outline = next[0].map((anchor) => anchor.point);
     for (const selected of [ring[0].point, ring[3].point]) {
       assert.ok(outline.some((p) => Math.hypot(p[0] - selected[0], p[1] - selected[1]) < 1e-9));
@@ -649,8 +656,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
   });
 
   it("deletes a lone anchor rather than making an island of it", () => {
-    // one anchor closed against itself encloses nothing, so there is no island
-    // to make -- see stitchRing
     const ring = polygon(8);
     const next = stitchRing([ring], 0, 0, 2);
     assert.ok(next);
@@ -705,8 +710,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
   });
 
   it("survives the round trip out to a path and back", () => {
-    // an island is a ring like any other downstream -- if it did not read back
-    // it would vanish the next time the editor opened on the shape
     const next = stitchRing([polygon(10)], 0, 0, 4);
     assert.ok(next);
     const reread = parseCubicRings(cubicRingsToPathData(next));
@@ -717,10 +720,6 @@ describe("stitchRing -- cutting a bay out of an outline", () => {
   });
 
   it("leaves the island filled rather than cut out of the outline", () => {
-    // the whole point of an island. Containment is even-odd everywhere
-    // downstream -- the rasterizer's insideMask, the mesh's clipTriangle -- so
-    // a ring lying outside every other ring reads as more inside, and one
-    // lying within the outline would read as a hole instead
     const next = stitchRing([polygon(12)], 0, 0, 5);
     assert.ok(next);
     const flat = next.map((ring) => flattenCubicRing(ring));
@@ -769,8 +768,6 @@ describe("ringPieces -- which rings draw which piece", () => {
   });
 
   it("keeps an island sitting in a hole with the piece around it", () => {
-    // depth two is filled again -- even-odd says so -- but it is still part of
-    // the same piece, not one the reviewer has to choose between
     const { depth, pieces } = ringPieces([square(0, 0, 10), square(0, 0, 6), square(0, 0, 2)]);
     assert.deepEqual(depth, [0, 1, 2]);
     assert.deepEqual(pieces, [[0, 1, 2]]);
@@ -801,8 +798,6 @@ describe("ringPieces -- which rings draw which piece", () => {
 
 describe("unitCirclePath -- the outline a dropped object gets", () => {
   it("is a real circle", () => {
-    // within a thousandth of a true arc is what kappa buys; anything looser
-    // and a dropped object would visibly not be the circle it renders as
     for (const point of flattenCubicRing(unitCircleRing())) {
       const reach = Math.hypot(point[0], point[1]);
       assert.ok(Math.abs(reach - 1) < 1e-3, `${point} is ${reach} from the origin`);
@@ -810,9 +805,6 @@ describe("unitCirclePath -- the outline a dropped object gets", () => {
   });
 
   it("is already unit extent, so storing it moves no geometry", () => {
-    // the drop writes this path straight to the object without going through
-    // normalizeEditedRings, so it has to arrive in the space a shape is
-    // stored in or the renderer would rescale the object on its first draw
     const object = { cx: 200, cy: 150, radius: 50 };
     const result = normalizeEditedRings([unitCircleRing()], object);
     assert.ok(result);
@@ -822,8 +814,6 @@ describe("unitCirclePath -- the outline a dropped object gets", () => {
   });
 
   it("opens in the pen with four anchors to grab", () => {
-    // the whole point of the change: editableRings on the empty path a drop
-    // used to store returns no rings at all, and the editor drew nothing
     assert.equal(editableRings("").length, 0);
     const rings = editableRings(unitCirclePath());
     assert.equal(rings.length, 1);
