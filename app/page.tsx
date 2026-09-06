@@ -65,7 +65,6 @@ export async function fetchProject(
   mePromise: Promise<MeDependencies>,
   projects: Promise<ProjectResult_V1_0[] | undefined>,
   requested_project_id: string | undefined,
-  fetchMedia: boolean,
 ): Promise<ProjectDependencies | undefined> {
   const p = await projects;
   if (p && p.length > 0) {
@@ -84,64 +83,55 @@ export async function fetchProject(
         newProject = myLatestEdits[0];
       }
     } else {
-      const thePublicsLatestEdits = p.sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
+      const thePublicsLatestEdits = [...p].sort((a, b) => Date.parse(b.last_active) - Date.parse(a.last_active));
       if (thePublicsLatestEdits.length > 0) {
         newProject = thePublicsLatestEdits[0];
       }
     }
     if (!newProject) return undefined;
-    const scales = await getScales(laurusApi, newProject.project_id);
-    const moves = await getMoves(laurusApi, newProject.project_id);
-    const rotates = await getRotates(laurusApi, newProject.project_id);
-    const skews = await getSkews(laurusApi, newProject.project_id);
-    const lightSources = await getLightSources(laurusApi, newProject.project_id);
-    const effectGroups = await getEffectGroups(laurusApi, newProject.project_id);
     const svgsArray = Array.from(newProject.svgs.values());
-    const canvasSvgs: SvgMediaResult_V1_0[] = [];
-    if (fetchMedia) {
-      for (let i = 0; i < svgsArray.length; i++) {
-        const svgMediaResult = await getSvg(laurusApi, svgsArray[i].svg_media_id);
-        if (svgMediaResult) {
-          canvasSvgs.push({ ...svgMediaResult });
-        }
-      }
-    }
     const imgsArray = Array.from(newProject.imgs.values());
-    const canvasImgs: ImgMediaResult_V1_0[] = [];
-    if (fetchMedia) {
-      for (let i = 0; i < imgsArray.length; i++) {
-        const imgMediaResult = await getImg(laurusApi, imgsArray[i].img_media_id);
-        if (imgMediaResult) {
-          canvasImgs.push({ ...imgMediaResult });
-        }
-      }
-    }
     const masksArray = Array.from(newProject.masks.values());
-    let canvasMasks: MaskMediaResult_V1_0[] = [];
-    if (fetchMedia) {
-      const maskMediaIds = masksArray.map((m) => m.media_id);
-      canvasMasks = (await getMasksByIds(laurusApi, maskMediaIds)) ?? [];
-    }
-    const objectReviews: ObjectReviewState_V1_0[] = [];
-    if (fetchMedia && accessToken) {
-      for (const maskResult of canvasMasks.filter((m) => m.has_object_review)) {
-        const review = await getObjectReview(laurusApi, accessToken, maskResult.mask_media_id);
-        if (review) objectReviews.push(review);
-      }
-    }
-    if (fetchMedia) {
-      const placedImgIds = new Set(imgsArray.map((i) => i.img_media_id));
-      const fetchedImgIds = new Set(canvasImgs.map((i) => i.img_media_id));
-      const missingSourceImgIds = new Set(
-        canvasMasks.map((m) => m.source_img_media_id).filter((id) => !placedImgIds.has(id) && !fetchedImgIds.has(id)),
-      );
-      for (const sourceImgMediaId of missingSourceImgIds) {
-        const imgMediaResult = await getImg(laurusApi, sourceImgMediaId);
-        if (imgMediaResult) {
-          canvasImgs.push({ ...imgMediaResult });
-        }
-      }
-    }
+
+    const [scales, moves, rotates, skews, lightSources, effectGroups, canvasSvgs, canvasImgs, canvasMasks] =
+      await Promise.all([
+        getScales(laurusApi, newProject.project_id),
+        getMoves(laurusApi, newProject.project_id),
+        getRotates(laurusApi, newProject.project_id),
+        getSkews(laurusApi, newProject.project_id),
+        getLightSources(laurusApi, newProject.project_id),
+        getEffectGroups(laurusApi, newProject.project_id),
+        Promise.all(svgsArray.map((s) => getSvg(laurusApi, s.svg_media_id))).then((r) =>
+          r.filter((x) => x !== undefined).map((x) => ({ ...x })),
+        ),
+        Promise.all(imgsArray.map((i) => getImg(laurusApi, i.img_media_id))).then((r) =>
+          r.filter((x) => x !== undefined).map((x) => ({ ...x })),
+        ),
+        getMasksByIds(
+          laurusApi,
+          masksArray.map((m) => m.media_id),
+        ).then((r) => r ?? []),
+      ]);
+
+    const placedImgIds = new Set(imgsArray.map((i) => i.img_media_id));
+    const fetchedImgIds = new Set(canvasImgs.map((i) => i.img_media_id));
+    const missingSourceImgIds = new Set(
+      canvasMasks.map((m) => m.source_img_media_id).filter((id) => !placedImgIds.has(id) && !fetchedImgIds.has(id)),
+    );
+
+    const [objectReviews, missingSourceImgs] = await Promise.all([
+      accessToken
+        ? Promise.all(
+            canvasMasks
+              .filter((m) => m.has_object_review)
+              .map((m) => getObjectReview(laurusApi, accessToken, m.mask_media_id)),
+          ).then((r) => r.filter((x) => x !== undefined))
+        : Promise.resolve<ObjectReviewState_V1_0[]>([]),
+      Promise.all(Array.from(missingSourceImgIds).map((id) => getImg(laurusApi, id))).then((r) =>
+        r.filter((x) => x !== undefined).map((x) => ({ ...x })),
+      ),
+    ]);
+    canvasImgs.push(...missingSourceImgs);
     return {
       project: newProject,
       scales: scales ?? [],

@@ -29,6 +29,8 @@ import {
   LaurusImgPageSearch,
   LaurusSvgPageSearch,
   searchSvgs,
+  downloadImgs,
+  downloadSvgs,
   nextLightId,
   nextObjectId,
   LightUpdateDelta_V1_0,
@@ -600,6 +602,8 @@ interface InitReducer {
   arg10: LaurusMediaGroupResult[];
 }
 
+const EMPTY_BROWSER_DEPENDENCIES: BrowserDependencies = { browserImgs: [], browserSvgs: [] };
+
 function initReducer({
   arg1: projectDependencies,
   arg2: effectNames,
@@ -870,7 +874,6 @@ interface Workspace {
   mixableEffectsInit: string[];
   effectNamesInitPromise: Promise<string[] | undefined>;
   projectInitPromise: Promise<ProjectDependencies | undefined>;
-  browserInitPromise: Promise<BrowserDependencies>;
   mediaGroupsInitPromise: Promise<LaurusMediaGroupResult[]>;
   resolutionInit: WorkspaceResolution;
   me: MeDependencies;
@@ -884,14 +887,12 @@ export default function Workspace({
   mixableEffectsInit,
   effectNamesInitPromise,
   projectInitPromise,
-  browserInitPromise,
   mediaGroupsInitPromise,
   resolutionInit,
   me,
 }: Workspace) {
   const effectNamesInit = use(effectNamesInitPromise);
   const projectInit = use(projectInitPromise);
-  const browserInit = use(browserInitPromise);
   const mediaGroupsInit = use(mediaGroupsInitPromise);
   const [isMetaKeyPressed, setIsMetaKeyPressed] = useState(false);
   const [isAltKeyPressed, setIsAltKeyPressed] = useState(false);
@@ -957,7 +958,7 @@ export default function Workspace({
       arg3: timelineValuesInit,
       arg4: timelineUnitsInit,
       arg5: apiOriginInit,
-      arg6: browserInit,
+      arg6: EMPTY_BROWSER_DEPENDENCIES,
       arg7: resolutionInit,
       arg8: me.accessToken,
       arg9: mixableEffectsInit,
@@ -1088,6 +1089,40 @@ export default function Workspace({
       return false;
     }
   }, [coreState.apiOrigin, mediaPageSize, uiDispatch, uiState.browserSvgs]);
+
+  const browserPageOneRequestedRef = useRef(false);
+  const browserImgsRef = useRef(uiState.browserImgs);
+  const browserSvgsRef = useRef(uiState.browserSvgs);
+  browserImgsRef.current = uiState.browserImgs;
+  browserSvgsRef.current = uiState.browserSvgs;
+  useEffect(() => {
+    if (browserPageOneRequestedRef.current) return;
+    if (mediaPageSize <= 0) return;
+    browserPageOneRequestedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      const [imgPageOne, svgPageOne] = await Promise.all([
+        downloadImgs(coreState.apiOrigin, mediaPageSize),
+        downloadSvgs(coreState.apiOrigin, mediaPageSize),
+      ]);
+      if (cancelled) return;
+      const heldImgIds = new Set(browserImgsRef.current.map((i) => i.img_media_id));
+      const heldSvgIds = new Set(browserSvgsRef.current.map((s) => s.svg_media_id));
+      imgPageOne?.forEach((img) => {
+        if (heldImgIds.has(img.img_media_id)) return;
+        uiDispatch({ type: UIActionType.AddBrowserImg, value: { ...img }, first: false });
+      });
+      svgPageOne?.forEach((svg) => {
+        if (heldSvgIds.has(svg.svg_media_id)) return;
+        uiDispatch({ type: UIActionType.AddBrowserSvg, value: { ...svg }, first: false });
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [coreState.apiOrigin, mediaPageSize, uiDispatch]);
 
   const handleMixRestoration = useCallback(() => {
     if (uiState.tool.type === "mix") {

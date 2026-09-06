@@ -25,6 +25,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
           if (containerRef.current) {
             containerRef.current.style.cursor = "wait";
           }
+          cancelFrameDownload();
           router.push(!guest ? "/" : "/?guest=true");
         }}
         resolution={resolution}
@@ -52,6 +53,7 @@ export default function Navbar({ resolution, guest }: Navbar) {
           if (containerRef.current) {
             containerRef.current.style.cursor = "wait";
           }
+          cancelFrameDownload();
           router.push(!guest ? "/workspace" : "/workspace?guest=true");
         }}
         resolution={resolution}

@@ -1,7 +1,7 @@
 import { memo, useContext, useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { dellaRespira } from "../../fonts";
 import { CoreContext, HoverContext, MaskContext } from "../workspace.client";
-import LaurusImage from "../../components/laurus-image";
+import LaurusImage, { pxSizes } from "../../components/laurus-image";
 import styles from "../../app.module.css";
 import {
   addCircle,
@@ -912,7 +912,14 @@ function StackElementThumbnail({
         backgroundColor: "rgb(60, 60, 60)",
       }}
     >
-      <LaurusImage draggable={false} alt={label} src={sourceImgSrc ?? ""} fill style={{ objectFit: "cover" }} />
+      <LaurusImage
+        draggable={false}
+        alt={label}
+        src={sourceImgSrc ?? ""}
+        fill
+        sizes={pxSizes(size, 200)}
+        style={{ objectFit: "cover" }}
+      />
       <div
         style={{
           position: "absolute",
