@@ -10,7 +10,6 @@ import {
   contentPaste,
   earthquake,
   experiment,
-  forward,
   keyboardCommandKey,
   lassoSelect,
   SvgRepo,
@@ -202,22 +201,6 @@ export default function Statusbar({ action, body, framesCacheRef }: Statusbar) {
         <SvgRepo
           title={"cache"}
           svg={coreState.inputsToRender.size == 0 ? autorenew() : autorenew("rgb(62, 62, 62)")}
-          containerStyle={{
-            width: 30,
-            height: 30,
-          }}
-          scale={0.5}
-        />
-      </div>
-      <div
-        title={"filled forwards"}
-        style={{
-          fontSize: dynamicSizes.actionFont,
-        }}
-      >
-        <SvgRepo
-          title={"filled forwards"}
-          svg={uiState.filledForwards ? forward() : forward("rgb(62, 62, 62)")}
           containerStyle={{
             width: 30,
             height: 30,
