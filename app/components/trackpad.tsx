@@ -300,6 +300,7 @@ function CoarsePointer({
       }
       case PointerStyle.Playhead: {
         return {
+          pointerEvents: "auto",
           background: [
             "linear-gradient(rgb(239, 239, 239), rgb(239, 239, 239)) center top / 5px 3px no-repeat",
             "linear-gradient(to right, transparent calc(50% - 0.5px), rgb(239, 239, 239) calc(50% - 0.5px)," +

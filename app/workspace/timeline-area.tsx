@@ -48,7 +48,6 @@ import { WorkspaceResolution } from "./workspace.config";
 import { updateProject, createProject, LaurusProjectResult } from "../projects/projects.server";
 import Toggle from "../components/toggle";
 import { CoreActionType } from "./states/core-state";
-import { UIActionType } from "./states/ui-state";
 import { closestCenter, DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -271,7 +270,7 @@ interface TimelineRuler {
 }
 function TimelineRuler({ containerStyle }: TimelineRuler) {
   const { coreState, dispatch, handleScrubTo } = useContext(CoreContext);
-  const { uiState, uiDispatch } = useContext(UIContext);
+  const { uiState } = useContext(UIContext);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -279,7 +278,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           height: 20,
           ticks: {
             padding: "0px 16px 0px 32px",
-            fontSize: 10,
+            fontSize: 11,
             markWidth: 10,
             markHeight: "50%",
             labelHeight: "75%",
@@ -299,10 +298,10 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
         };
       case "midhigh":
         return {
-          height: 20,
+          height: 18,
           ticks: {
             padding: "0px 12px 0px 28px",
-            fontSize: 10,
+            fontSize: 9,
             markWidth: 10,
             markHeight: "50%",
             labelHeight: "75%",
@@ -317,16 +316,16 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           },
           unit: {
             width: 38,
-            fontSize: 12,
+            fontSize: 9,
           },
         };
       case "midlow":
       case "low":
         return {
-          height: 20,
+          height: 16,
           ticks: {
             padding: "0px 10px 0px 26px",
-            fontSize: 10,
+            fontSize: 8,
             markWidth: 10,
             markHeight: "50%",
             labelHeight: "75%",
@@ -341,7 +340,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           },
           unit: {
             width: 38,
-            fontSize: 12,
+            fontSize: 9,
           },
         };
     }
@@ -438,11 +437,11 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
   const rulerSpanMs = rulerSpanSeconds * 1000;
 
   useEffect(() => {
-    return subscribeToPlaybackClock((elapsedMs, kind) => {
+    return subscribeToPlaybackClock((elapsedMs, running) => {
       const playhead = playheadRef.current;
       if (!playhead) return;
       const { origin, length } = axisRef.current;
-      if (kind !== "play" || rulerSpanMs <= 0 || length <= 0) {
+      if (!running || rulerSpanMs <= 0 || length <= 0) {
         playhead.style.visibility = "hidden";
         return;
       }
@@ -485,6 +484,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           width: "100%",
           justifyContent: "space-between",
           background: "rgba(46,46,46,1)",
+          userSelect: "none",
         }}
         onDoubleClick={() => {
           if (uiState.playbackMode.type !== "stopped") return;
@@ -563,6 +563,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
             bottom: 0,
             left: axis.origin - dynamicSizes.playhead.grabWidth / 2,
             width: scrubTrackWidth,
+            pointerEvents: "none",
           }}
         >
           <Trackpad
@@ -583,24 +584,22 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
               }
             }}
             onNewValue={(newCursor) => {
-              const seconds = getScrubSeconds(newCursor.x, scrubTrackWidth, 0);
-              uiDispatch({ type: UIActionType.SetPlayheadSeconds, value: seconds });
-              handleScrubTo(seconds);
+              handleScrubTo(getScrubSeconds(newCursor.x, scrubTrackWidth, 0));
             }}
             title={formatScrubTitle(scrubSeconds)}
-            liveTitleRef={scrubTitleRef}
-            escapeOverflow={true}
           />
         </div>
       )}
       <div
         style={{
           fontSize: dynamicSizes.unit.fontSize,
-          textAlign: "center",
-          position: "relative",
+          display: "grid",
+          placeContent: "center",
           width: dynamicSizes.unit.width,
           backgroundColor: "rgb(33, 33, 33)",
           color: "rgb(255, 255, 255)",
+          userSelect: "none",
+          cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "default",
         }}
         onDoubleClick={() => {
           if (uiState.playbackMode.type !== "stopped") return;
@@ -614,14 +613,7 @@ function TimelineRuler({ containerStyle }: TimelineRuler) {
           dispatch({ type: CoreActionType.SetTimelineUnit, value: newUnit });
         }}
       >
-        {(() => {
-          return (
-            <>
-              <div style={{ position: "absolute", width: "100%", height: "100%" }}>{coreState.timelineUnit}</div>
-              <div style={{ position: "absolute", width: "100%", height: "100%" }} />
-            </>
-          );
-        })()}
+        {coreState.timelineUnit}
       </div>
     </div>
   );
@@ -1716,7 +1708,6 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
   const { uiState } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
   const [isControlPanelHovered, setIsControlPanelHovered] = useState(false);
-  const [playbackRate] = useState(10);
   const [dynamicSizes] = useState(() => {
     switch (uiState.resolution.type) {
       case "high":
@@ -1875,7 +1866,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
           onContainerClick={() => {
             switch (uiState.playbackMode.type) {
               case "stopped": {
-                handleRewindAll(playbackRate);
+                handleRewindAll();
                 break;
               }
               case "playing": {
@@ -1940,7 +1931,7 @@ function ControlPanel({ onSwitchViews, containerStyle }: ControlPanel) {
           onContainerClick={() => {
             switch (uiState.playbackMode.type) {
               case "stopped": {
-                handleFastForwardAll(playbackRate);
+                handleFastForwardAll();
                 break;
               }
               case "playing": {

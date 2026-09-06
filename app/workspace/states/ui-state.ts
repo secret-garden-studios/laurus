@@ -10,7 +10,6 @@ import {
   LaurusPolygonPath,
 } from "../workspace.server";
 import { ContextMenuConfig, DEFAULT_CONTEXT_MENU_CONFIG } from "../../projects/projects.server";
-import { PlaybackKind } from "../playback-clock";
 import { RESOLUTION } from "@/app/landing.config";
 import { MAX_MASK_OBJECTS, MIN_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { CANVAS_ZOOM_DEFAULT, CANVAS_ZOOM_MAX, CANVAS_ZOOM_MIN } from "../workspace.config";
@@ -99,7 +98,7 @@ export type CarouselEntry =
   | { type: "light"; key: string; lightId: number }
   | { type: "object"; key: string; objectId: number };
 
-export type PlaybackMode = { type: "playing"; kind: PlaybackKind } | { type: "stopped" } | { type: "waiting" };
+export type PlaybackMode = { type: "playing" } | { type: "stopped" } | { type: "waiting" };
 
 export type ObjectReviewMode = "review" | "edit";
 

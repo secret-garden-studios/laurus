@@ -1,16 +1,14 @@
-export type PlaybackKind = "play" | "fast-forward" | "rewind";
-
-type PlaybackClockSubscriber = (elapsedMs: number, kind: PlaybackKind | null) => void;
+type PlaybackClockSubscriber = (elapsedMs: number, running: boolean) => void;
 
 const subscribers = new Set<PlaybackClockSubscriber>();
 
 let frameId: number | null = null;
 let startedAt = 0;
 let elapsedMs = 0;
-let kind: PlaybackKind | null = null;
+let running = false;
 
 function notify() {
-  subscribers.forEach((subscriber) => subscriber(elapsedMs, kind));
+  subscribers.forEach((subscriber) => subscriber(elapsedMs, running));
 }
 
 function frame(now: number) {
@@ -19,11 +17,11 @@ function frame(now: number) {
   frameId = requestAnimationFrame(frame);
 }
 
-export function startPlaybackClock(newKind: PlaybackKind) {
+export function startPlaybackClock() {
   if (frameId !== null) cancelAnimationFrame(frameId);
   startedAt = performance.now();
   elapsedMs = 0;
-  kind = newKind;
+  running = true;
   notify();
   frameId = requestAnimationFrame(frame);
 }
@@ -34,13 +32,13 @@ export function stopPlaybackClock() {
     frameId = null;
   }
   elapsedMs = 0;
-  kind = null;
+  running = false;
   notify();
 }
 
 export function subscribeToPlaybackClock(subscriber: PlaybackClockSubscriber) {
   subscribers.add(subscriber);
-  subscriber(elapsedMs, kind);
+  subscriber(elapsedMs, running);
   return () => {
     subscribers.delete(subscriber);
   };
