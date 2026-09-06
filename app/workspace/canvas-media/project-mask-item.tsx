@@ -189,13 +189,18 @@ function toBufferPoint(canvas: HTMLCanvasElement, clientX: number, clientY: numb
   return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
 }
 
+export interface MaskPlaybackSession {
+  start: () => Promise<void>;
+  seek: (timeSeconds: number) => void;
+}
+
 export interface MaskImperativeHandle {
   play: (effectKey?: string, lightId?: number, objectId?: number) => Promise<void>;
   preparePlayback: (
     effectKey?: string,
     lightId?: number,
     objectId?: number,
-  ) => Promise<(() => Promise<void>) | undefined>;
+  ) => Promise<MaskPlaybackSession | undefined>;
   stop: () => void;
   abortLightDragForToolChange: (newToolType: string) => void;
   setSelectedHighlighted: (active: boolean) => void;
@@ -999,7 +1004,7 @@ export function ProjectMaskItem({
   }, [render, recolorHighlight, applyDefaultLightValue]);
 
   const preparePlayback = useCallback(
-    (effectKey?: string, lightId?: number, objectId?: number): Promise<(() => Promise<void>) | undefined> => {
+    (effectKey?: string, lightId?: number, objectId?: number): Promise<MaskPlaybackSession | undefined> => {
       stopLightSourceAnimation();
       if (source.kind !== "static") return Promise.resolve(undefined);
       const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
@@ -1274,171 +1279,171 @@ export function ProjectMaskItem({
         ready = Promise.all(fetches).then(() => {});
       }
 
-      return ready.then((): (() => Promise<void>) | undefined => {
+      const renderFrameAt = (frameIndex: number) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const { x: scaleX, y: scaleY } = bufferScaleRef.current;
+
+        targets.forEach((t) => {
+          const mergedFrames = mergedFramesByLight.get(t.lightId);
+          const moveFrames = moveFramesByLight.get(t.lightId);
+          const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
+          const scaleFrames = scaleFramesByLight.get(t.lightId);
+          const skewFrames = skewFramesByLight.get(t.lightId);
+
+          const movePoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : moveFrames && moveFrames.length > 0
+              ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
+              : undefined;
+          const lightPoint = playAll
+            ? t.wiredLightSource
+              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+              : undefined
+            : lightSourceFrames && lightSourceFrames.length > 0
+              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+              : undefined;
+          const scalePoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : scaleFrames && scaleFrames.length > 0
+              ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
+              : undefined;
+          const skewPoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : skewFrames && skewFrames.length > 0
+              ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
+              : undefined;
+          const restX = t.restPosition?.x ?? canvas.width / 2;
+          const restY = t.restPosition?.y ?? canvas.height / 2;
+          const pointX = movePoint?.x ?? 0;
+          const pointY = movePoint?.y ?? 0;
+          const bufferX = restX + pointX * scaleX;
+          const bufferY = restY + pointY * scaleY;
+          const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
+          const size = lightMeta?.size ?? lightSizeRef.current;
+          const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
+          const spread = lightPoint?.light_spread ?? lightMeta?.spread ?? lightSpreadRef.current;
+          const shadow = lightPoint?.light_shadow ?? lightMeta?.shadow ?? lightShadowRef.current;
+          const scaleMultiplier = scalePoint?.sx ?? 1;
+
+          const shapedMeta = resolveLightSilhouette(t.lightId);
+          playbackLightSourcesRef.current.set(t.lightId, {
+            order: lightMeta?.order ?? MASK_ORDER_UNRANKED,
+            lowpoly: lightMeta?.lowpoly ?? false,
+            x: bufferX,
+            y: canvas.height - bufferY,
+            radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
+            shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
+            spread,
+            intensity,
+            shadow,
+            cast: lightMeta?.cast ?? lightCastRef.current,
+            transform: skewPoint ? objectTransform(undefined, { ax: skewPoint.ax, ay: skewPoint.ay }) : undefined,
+          });
+        });
+
+        objectTargets.forEach((t) => {
+          const object = objectsRef.current.find((p) => p.id === t.objectId);
+          if (!object) return;
+          const mergedFrames = mergedFramesByObject.get(t.objectId);
+          const moveFrames = moveFramesByObject.get(t.objectId);
+          const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
+          const scaleFrames = scaleFramesByObject.get(t.objectId);
+          const rotateFrames = rotateFramesByObject.get(t.objectId);
+          const skewFrames = skewFramesByObject.get(t.objectId);
+
+          const movePoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : moveFrames && moveFrames.length > 0
+              ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
+              : undefined;
+          const lightSourcePoint = playAll
+            ? t.wiredLightSource
+              ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+              : undefined
+            : lightSourceFrames && lightSourceFrames.length > 0
+              ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
+              : undefined;
+          const scalePoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : scaleFrames && scaleFrames.length > 0
+              ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
+              : undefined;
+          const rotatePoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : rotateFrames && rotateFrames.length > 0
+              ? rotateFrames[Math.min(frameIndex, rotateFrames.length - 1)]
+              : undefined;
+          const skewPoint = playAll
+            ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
+            : skewFrames && skewFrames.length > 0
+              ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
+              : undefined;
+          const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
+          const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
+          const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
+          const radius = object.radius;
+          const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
+          const fill = lightSourcePoint ? toEquationObjectFill(lightSourcePoint) : toObjectFill(object);
+          const scaleMultiplier = scalePoint?.sx ?? 1;
+
+          playbackObjectsRef.current.set(t.objectId, {
+            cx,
+            cy,
+            elevation,
+            radius: radius * scaleMultiplier,
+            falloff,
+            fill,
+            rotation: objectTransform(
+              rotatePoint
+                ? {
+                    x: rotatePoint.rx,
+                    y: rotatePoint.ry,
+                    z: rotatePoint.rz,
+                    angleDegrees: rotatePoint.rangle,
+                  }
+                : undefined,
+              skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined,
+            ),
+          });
+        });
+        render();
+      };
+
+      return ready.then((): MaskPlaybackSession | undefined => {
         if (activePlaybackRef.current !== session) return undefined;
 
-        return () =>
-          new Promise<void>((resolve) => {
-            session.resolve = resolve;
-            const loopStartMs = performance.now();
-            let lastFrameIndex = -1;
+        return {
+          start: () =>
+            new Promise<void>((resolve) => {
+              session.resolve = resolve;
+              const loopStartMs = performance.now();
+              let lastFrameIndex = -1;
 
-            const loop = () => {
-              if (activePlaybackRef.current !== session) return;
+              const loop = () => {
+                if (activePlaybackRef.current !== session) return;
 
-              const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
-              const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
+                const elapsedSeconds = (performance.now() - loopStartMs) / 1000;
+                const frameIndex = Math.min(Math.floor(elapsedSeconds * fps), totalFrames - 1);
 
-              if (frameIndex === lastFrameIndex) {
+                if (frameIndex !== lastFrameIndex) {
+                  lastFrameIndex = frameIndex;
+                  renderFrameAt(frameIndex);
+                }
+
                 if (elapsedSeconds < durationSeconds) {
                   session.rafId = requestAnimationFrame(loop);
                 } else {
                   stopLightSourceAnimation();
                 }
-                return;
-              }
-              lastFrameIndex = frameIndex;
-
-              const canvas = canvasRef.current;
-              if (canvas) {
-                const { x: scaleX, y: scaleY } = bufferScaleRef.current;
-
-                targets.forEach((t) => {
-                  const mergedFrames = mergedFramesByLight.get(t.lightId);
-                  const moveFrames = moveFramesByLight.get(t.lightId);
-                  const lightSourceFrames = lightSourceFramesByLight.get(t.lightId);
-                  const scaleFrames = scaleFramesByLight.get(t.lightId);
-                  const skewFrames = skewFramesByLight.get(t.lightId);
-
-                  const movePoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : moveFrames && moveFrames.length > 0
-                      ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
-                      : undefined;
-                  const lightPoint = playAll
-                    ? t.wiredLightSource
-                      ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                      : undefined
-                    : lightSourceFrames && lightSourceFrames.length > 0
-                      ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-                      : undefined;
-                  const scalePoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : scaleFrames && scaleFrames.length > 0
-                      ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
-                      : undefined;
-                  const skewPoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : skewFrames && skewFrames.length > 0
-                      ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
-                      : undefined;
-                  const restX = t.restPosition?.x ?? canvas.width / 2;
-                  const restY = t.restPosition?.y ?? canvas.height / 2;
-                  const pointX = movePoint?.x ?? 0;
-                  const pointY = movePoint?.y ?? 0;
-                  const bufferX = restX + pointX * scaleX;
-                  const bufferY = restY + pointY * scaleY;
-                  const lightMeta = source.maskData.lights.find((c) => c.id === t.lightId);
-                  const size = lightMeta?.size ?? lightSizeRef.current;
-                  const intensity = lightPoint?.light_intensity ?? lightMeta?.intensity ?? lightIntensityRef.current;
-                  const spread = lightPoint?.light_spread ?? lightMeta?.spread ?? lightSpreadRef.current;
-                  const shadow = lightPoint?.light_shadow ?? lightMeta?.shadow ?? lightShadowRef.current;
-                  const scaleMultiplier = scalePoint?.sx ?? 1;
-
-                  const shapedMeta = resolveLightSilhouette(t.lightId);
-                  playbackLightSourcesRef.current.set(t.lightId, {
-                    order: lightMeta?.order ?? MASK_ORDER_UNRANKED,
-                    lowpoly: lightMeta?.lowpoly ?? false,
-                    x: bufferX,
-                    y: canvas.height - bufferY,
-                    radius: (shapedMeta ? shapedMeta.radius : size / 2) * scaleMultiplier,
-                    shape: shapedMeta ? cachedObjectShape(shapedMeta.shape) : undefined,
-                    spread,
-                    intensity,
-                    shadow,
-                    cast: lightMeta?.cast ?? lightCastRef.current,
-                    transform: skewPoint
-                      ? objectTransform(undefined, { ax: skewPoint.ax, ay: skewPoint.ay })
-                      : undefined,
-                  });
-                });
-
-                objectTargets.forEach((t) => {
-                  const object = objectsRef.current.find((p) => p.id === t.objectId);
-                  if (!object) return;
-                  const mergedFrames = mergedFramesByObject.get(t.objectId);
-                  const moveFrames = moveFramesByObject.get(t.objectId);
-                  const lightSourceFrames = lightSourceFramesByObject.get(t.objectId);
-                  const scaleFrames = scaleFramesByObject.get(t.objectId);
-                  const rotateFrames = rotateFramesByObject.get(t.objectId);
-                  const skewFrames = skewFramesByObject.get(t.objectId);
-
-                  const movePoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : moveFrames && moveFrames.length > 0
-                      ? moveFrames[Math.min(frameIndex, moveFrames.length - 1)]
-                      : undefined;
-                  const lightSourcePoint = playAll
-                    ? t.wiredLightSource
-                      ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                      : undefined
-                    : lightSourceFrames && lightSourceFrames.length > 0
-                      ? lightSourceFrames[Math.min(frameIndex, lightSourceFrames.length - 1)]
-                      : undefined;
-                  const scalePoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : scaleFrames && scaleFrames.length > 0
-                      ? scaleFrames[Math.min(frameIndex, scaleFrames.length - 1)]
-                      : undefined;
-                  const rotatePoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : rotateFrames && rotateFrames.length > 0
-                      ? rotateFrames[Math.min(frameIndex, rotateFrames.length - 1)]
-                      : undefined;
-                  const skewPoint = playAll
-                    ? mergedFrames?.[Math.min(frameIndex, (mergedFrames?.length ?? 1) - 1)]
-                    : skewFrames && skewFrames.length > 0
-                      ? skewFrames[Math.min(frameIndex, skewFrames.length - 1)]
-                      : undefined;
-                  const cx = object.cx + (movePoint?.x ?? 0) * scaleX;
-                  const cy = object.cy + (movePoint?.y ?? 0) * scaleY;
-                  const elevation = lightSourcePoint?.object_elevation ?? object.elevation;
-                  const radius = object.radius;
-                  const falloff = lightSourcePoint?.object_falloff ?? object.falloff;
-                  const fill = lightSourcePoint ? toEquationObjectFill(lightSourcePoint) : toObjectFill(object);
-                  const scaleMultiplier = scalePoint?.sx ?? 1;
-
-                  playbackObjectsRef.current.set(t.objectId, {
-                    cx,
-                    cy,
-                    elevation,
-                    radius: radius * scaleMultiplier,
-                    falloff,
-                    fill,
-                    rotation: objectTransform(
-                      rotatePoint
-                        ? {
-                            x: rotatePoint.rx,
-                            y: rotatePoint.ry,
-                            z: rotatePoint.rz,
-                            angleDegrees: rotatePoint.rangle,
-                          }
-                        : undefined,
-                      skewPoint ? { ax: skewPoint.ax, ay: skewPoint.ay } : undefined,
-                    ),
-                  });
-                });
-                render();
-              }
-
-              if (elapsedSeconds < durationSeconds) {
-                session.rafId = requestAnimationFrame(loop);
-              } else {
-                stopLightSourceAnimation();
-              }
-            };
-            session.rafId = requestAnimationFrame(loop);
-          });
+              };
+              session.rafId = requestAnimationFrame(loop);
+            }),
+          seek: (timeSeconds: number) => {
+            if (activePlaybackRef.current !== session) return;
+            renderFrameAt(Math.max(0, Math.min(Math.round(timeSeconds * fps), totalFrames - 1)));
+          },
+        };
       });
     },
     [
@@ -1461,7 +1466,7 @@ export function ProjectMaskItem({
 
   const playLightSourceAnimation = useCallback(
     (effectKey?: string, lightId?: number, objectId?: number): Promise<void> =>
-      preparePlayback(effectKey, lightId, objectId).then((start) => start?.()),
+      preparePlayback(effectKey, lightId, objectId).then((session) => session?.start()),
     [preparePlayback],
   );
 

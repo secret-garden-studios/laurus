@@ -62,7 +62,7 @@ import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-re
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
-import { MaskAppearanceOverride, MaskImperativeHandle } from "./canvas-media/project-mask-item";
+import { MaskAppearanceOverride, MaskImperativeHandle, MaskPlaybackSession } from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
 import {
   deleteMaskLightEffects,
@@ -74,6 +74,7 @@ import Titlebar, { Subtitlebar as Subtitlebar } from "./bars/titlebar";
 import Floatingbar from "./bars/floatingbar";
 import { confirmEndingMaskEdit, confirmLeavingPen } from "./hooks/useMaskEditExit";
 import TimelineArea from "./timeline-area";
+import { startPlaybackClock, stopPlaybackClock } from "./playback-clock";
 import DraggableCamera from "./camera";
 import { WorkspaceResolution, Z_INDEX } from "./workspace.config";
 import { toCssSkewAngle } from "./skew-angle.ts";
@@ -253,14 +254,50 @@ export const HoverContext = createContext<HoverContextProps>({
   setSelectedMaskKeys: () => {},
 });
 
+function resolveAnimationScope(coreState: CoreState) {
+  const enabledEffects = coreState.effects.filter(
+    (e) => !e.value.disabled && !coreState.effectGroups.get(e.value.effect_group_id)?.disabled,
+  );
+  const eligibleItems = new Set<string>();
+  let globalLimit = 0;
+  let timelineLimit = 0;
+  enabledEffects.forEach((e) => {
+    e.value.math.forEach((_, inputKey) => {
+      if (coreState.project.imgs.has(inputKey) || coreState.project.svgs.has(inputKey)) {
+        eligibleItems.add(inputKey);
+        globalLimit = Math.max(globalLimit, e.value.end);
+        timelineLimit = Math.max(timelineLimit, e.value.end);
+      } else if (
+        (e.type === "move" ||
+          e.type === "light_source" ||
+          e.type === "scale" ||
+          e.type === "rotate" ||
+          e.type === "skew") &&
+        coreState.project.masks.has(parseMaskLightInputId(inputKey).maskKey)
+      ) {
+        eligibleItems.add(inputKey);
+        timelineLimit = Math.max(timelineLimit, e.value.end);
+        if (
+          parseMaskLightInputId(inputKey).lightId === undefined &&
+          parseMaskObjectInputId(inputKey).objectId === undefined
+        ) {
+          globalLimit = Math.max(globalLimit, e.value.end);
+        }
+      }
+    });
+  });
+  return { eligibleItems, globalLimit, timelineLimit };
+}
+
 export interface CoreContextProps {
   coreState: CoreState;
   dispatch: React.Dispatch<CoreAction>;
-  handleRewindAll: (playbackRate: number) => void;
+  handleRewindAll: () => void;
   handlePlayAll: () => void;
-  handleFastForwardAll: (playbackRate: number) => void;
+  handleFastForwardAll: () => void;
   handlePlayTarget: (target: AnimationTarget) => void;
   handleStopAll: () => void;
+  handleScrubTo: (timeSeconds: number) => Promise<void>;
   cancelFrameDownload: () => void;
 }
 
@@ -272,6 +309,7 @@ export const CoreContext = createContext<CoreContextProps>({
   handleFastForwardAll: () => {},
   handlePlayTarget: () => {},
   handleStopAll: () => {},
+  handleScrubTo: async () => {},
   cancelFrameDownload: () => {},
 });
 
@@ -1193,36 +1231,7 @@ export default function Workspace({
       frameDownloadAbortControllerRef.current = abortController;
       try {
         document.body.style.cursor = "progress";
-        const enabledEffects = [
-          ...coreState.effects.filter(
-            (e) => !e.value.disabled && !coreState.effectGroups.get(e.value.effect_group_id)?.disabled,
-          ),
-        ];
-        const eligibleItems = new Set<string>();
-        let globalLimit = 0;
-        enabledEffects.forEach((e) => {
-          e.value.math.forEach((_, inputKey) => {
-            if (coreState.project.imgs.has(inputKey) || coreState.project.svgs.has(inputKey)) {
-              eligibleItems.add(inputKey);
-              globalLimit = Math.max(globalLimit, e.value.end);
-            } else if (
-              (e.type === "move" ||
-                e.type === "light_source" ||
-                e.type === "scale" ||
-                e.type === "rotate" ||
-                e.type === "skew") &&
-              coreState.project.masks.has(parseMaskLightInputId(inputKey).maskKey)
-            ) {
-              eligibleItems.add(inputKey);
-              if (
-                parseMaskLightInputId(inputKey).lightId === undefined &&
-                parseMaskObjectInputId(inputKey).objectId === undefined
-              ) {
-                globalLimit = Math.max(globalLimit, e.value.end);
-              }
-            }
-          });
-        });
+        const { eligibleItems, globalLimit } = resolveAnimationScope(coreState);
         const animationOptions: KeyframeAnimationOptions = {
           duration: globalLimit * 1000,
           iterations: 1,
@@ -1292,18 +1301,7 @@ export default function Workspace({
         }
       }
     },
-    [
-      coreState.apiOrigin,
-      coreState.inputsToRender,
-      coreState.effectGroups,
-      coreState.effects,
-      coreState.project.fps,
-      coreState.project.imgs,
-      coreState.project.masks,
-      coreState.project.project_id,
-      coreState.project.svgs,
-      uiDispatch,
-    ],
+    [coreState, uiDispatch],
   );
 
   const cancelFrameDownload = useCallback(() => {
@@ -2028,60 +2026,64 @@ export default function Workspace({
     ],
   );
 
-  const handleRewindAll = useCallback(
-    async (playbackRate: number) => {
-      if (uiState.playbackMode.type !== "stopped" || !uiState.filledForwards) return;
-      if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
-      handleMixRestoration();
-      closeContextMenus();
-      uiDispatch({
-        type: UIActionType.SetPlaybackMode,
-        value: { type: "waiting" },
-      });
+  const scrubAnimationsRef = useRef<Animation[]>([]);
+  const scrubSessionsRef = useRef<MaskPlaybackSession[]>([]);
+  const scrubArmingRef = useRef<Promise<void> | undefined>(undefined);
+  const scrubGenerationRef = useRef(0);
 
-      const newAnimations = await getNewAnimations("forwards", true, false);
-      if (newAnimations.length == 0) {
-        uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-        uiDispatch({
-          type: UIActionType.SetPlaybackMode,
-          value: { type: "stopped" },
-        });
-        uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
+  const discardScrub = useCallback(() => {
+    scrubGenerationRef.current += 1;
+    scrubAnimationsRef.current.forEach((animation) => animation.cancel());
+    scrubAnimationsRef.current = [];
+    scrubSessionsRef.current = [];
+    scrubArmingRef.current = undefined;
+  }, []);
+
+  const armScrub = useCallback(() => {
+    const armed = scrubArmingRef.current;
+    if (armed) return armed;
+    const generation = scrubGenerationRef.current;
+    const arming = (async () => {
+      const players: MaskImperativeHandle[] = [];
+      maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
+      const [newAnimations, preparedSessions] = await Promise.all([
+        getNewAnimations("both", false, true),
+        Promise.all(players.map((player) => player.preparePlayback())),
+      ]);
+      if (scrubGenerationRef.current !== generation) {
+        newAnimations.forEach((animation) => animation.cancel());
         return;
       }
-      Promise.all(newAnimations.map((animation) => animation.finished))
-        .then(() => {
-          uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-          uiDispatch({
-            type: UIActionType.SetPlaybackMode,
-            value: { type: "stopped" },
-          });
-          uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
-        })
-        .catch((err) => {
-          if (err instanceof Error && err.name !== "AbortError") {
-            console.log("unknown error from waapi:", err);
-          }
-        });
-      newAnimations.forEach((a) => {
-        a.updatePlaybackRate(playbackRate);
-        a.play();
+      scrubAnimationsRef.current = newAnimations;
+      scrubSessionsRef.current = preparedSessions.filter((session) => session !== undefined);
+    })();
+    scrubArmingRef.current = arming;
+    return arming;
+  }, [getNewAnimations]);
+
+  const handleScrubTo = useCallback(
+    async (timeSeconds: number) => {
+      if (uiState.playbackMode.type !== "stopped") return;
+      uiDispatch({ type: UIActionType.SetPlayheadSeconds, value: timeSeconds });
+      await armScrub();
+      const timeMs = timeSeconds * 1000;
+      scrubAnimationsRef.current.forEach((animation) => {
+        const duration = Number(animation.effect?.getComputedTiming().duration ?? 0);
+        animation.currentTime = Math.max(0, Math.min(timeMs, duration));
       });
-      uiDispatch({
-        type: UIActionType.SetPlaybackMode,
-        value: { type: "playing" },
-      });
+      scrubSessionsRef.current.forEach((session) => session.seek(timeSeconds));
     },
-    [
-      closeContextMenus,
-      getNewAnimations,
-      handleMixRestoration,
-      uiDispatch,
-      uiState.filledForwards,
-      uiState.maskEdit,
-      uiState.playbackMode.type,
-    ],
+    [armScrub, uiDispatch, uiState.playbackMode.type],
   );
+
+  const handleRewindAll = useCallback(() => {
+    if (uiState.playbackMode.type !== "stopped") return;
+    if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
+    handleMixRestoration();
+    closeContextMenus();
+    uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
+    handleScrubTo(0);
+  }, [closeContextMenus, handleMixRestoration, handleScrubTo, uiDispatch, uiState.maskEdit, uiState.playbackMode.type]);
 
   const handlePlayAll = useCallback(async () => {
     if (uiState.playbackMode.type !== "stopped") return;
@@ -2109,13 +2111,13 @@ export default function Workspace({
     const players: MaskImperativeHandle[] = [];
     maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
 
-    const [newAnimations, preparedStarts] = await Promise.all([
+    const [newAnimations, preparedSessions] = await Promise.all([
       getNewAnimations("none", false, true),
       Promise.all(players.map((player) => player.preparePlayback())),
     ]);
-    const readyStarts = preparedStarts.filter((start) => start !== undefined);
+    const readySessions = preparedSessions.filter((session) => session !== undefined);
 
-    if (newAnimations.length == 0 && readyStarts.length == 0) {
+    if (newAnimations.length == 0 && readySessions.length == 0) {
       uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
       uiDispatch({
         type: UIActionType.SetPlaybackMode,
@@ -2126,7 +2128,7 @@ export default function Workspace({
       return;
     }
 
-    const lightSourceFinished = readyStarts.map((start) => start());
+    const lightSourceFinished = readySessions.map((session) => session.start());
 
     Promise.all([...newAnimations.map((animation) => animation.finished), ...lightSourceFinished])
       .then(() => {
@@ -2249,59 +2251,22 @@ export default function Workspace({
     ],
   );
 
-  const handleFastForwardAll = useCallback(
-    async (playbackRate: number) => {
-      if (uiState.playbackMode.type !== "stopped") return;
-      if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
-      handleMixRestoration();
-      closeContextMenus();
-      uiDispatch({
-        type: UIActionType.SetPlaybackMode,
-        value: { type: "waiting" },
-      });
-
-      const newAnimations = await getNewAnimations("forwards", false, false);
-      if (newAnimations.length == 0) {
-        uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-        uiDispatch({
-          type: UIActionType.SetPlaybackMode,
-          value: { type: "stopped" },
-        });
-        uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
-        return;
-      }
-      Promise.all(newAnimations.map((animation) => animation.finished))
-        .then(() => {
-          uiDispatch({ type: UIActionType.SetRecordingLight, value: false });
-          uiDispatch({
-            type: UIActionType.SetPlaybackMode,
-            value: { type: "stopped" },
-          });
-          uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
-        })
-        .catch((err) => {
-          if (err instanceof Error && err.name !== "AbortError") {
-            console.log("unknown error from waapi:", err);
-          }
-        });
-      newAnimations.forEach((a) => {
-        a.updatePlaybackRate(playbackRate);
-        a.play();
-      });
-      uiDispatch({
-        type: UIActionType.SetPlaybackMode,
-        value: { type: "playing" },
-      });
-    },
-    [
-      closeContextMenus,
-      getNewAnimations,
-      handleMixRestoration,
-      uiDispatch,
-      uiState.maskEdit,
-      uiState.playbackMode.type,
-    ],
-  );
+  const handleFastForwardAll = useCallback(() => {
+    if (uiState.playbackMode.type !== "stopped") return;
+    if (!confirmEndingMaskEdit(uiState.maskEdit)) return;
+    handleMixRestoration();
+    closeContextMenus();
+    uiDispatch({ type: UIActionType.SetFilledForwards, value: true });
+    handleScrubTo(resolveAnimationScope(coreState).timelineLimit);
+  }, [
+    closeContextMenus,
+    coreState,
+    handleMixRestoration,
+    handleScrubTo,
+    uiDispatch,
+    uiState.maskEdit,
+    uiState.playbackMode.type,
+  ]);
 
   const handleStopAll = useCallback(async () => {
     if (uiState.playbackMode.type === "stopped") return;
@@ -2322,6 +2287,23 @@ export default function Workspace({
     });
     uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
   }, [uiDispatch, uiState.playbackMode.type]);
+
+  useEffect(() => {
+    discardScrub();
+  }, [coreState.effects, coreState.effectGroups, discardScrub]);
+
+  useEffect(() => {
+    if (coreState.inputsToRender.size > 0) discardScrub();
+  }, [coreState.inputsToRender, discardScrub]);
+
+  useEffect(() => {
+    if (uiState.playbackMode.type === "playing") {
+      discardScrub();
+      startPlaybackClock();
+      return;
+    }
+    stopPlaybackClock();
+  }, [uiState.playbackMode, discardScrub]);
 
   const hoverContextValue = useMemo(
     () => ({
@@ -2362,6 +2344,7 @@ export default function Workspace({
       handleRewindAll,
       handlePlayAll,
       handleFastForwardAll,
+      handleScrubTo,
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
@@ -2373,6 +2356,7 @@ export default function Workspace({
       handleRewindAll,
       handlePlayAll,
       handleFastForwardAll,
+      handleScrubTo,
       handlePlayTarget,
       handleStopAll,
       cancelFrameDownload,
