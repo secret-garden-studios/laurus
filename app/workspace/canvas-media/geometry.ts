@@ -1,7 +1,7 @@
-import { LaurusProjectImg, LaurusProjectSvg, LaurusProjectMask } from "../../projects/projects.server";
+import type { LaurusProjectImg, LaurusProjectSvg, LaurusProjectMask } from "../../projects/projects.server";
 import { toCssSkewAngle } from "../skew-angle.ts";
 
-interface Point2D {
+export interface Point2D {
   x: number;
   y: number;
 }
@@ -11,22 +11,11 @@ interface CornerTravel {
   bottomLeft: Point2D;
   bottomRight: Point2D;
 }
-function calculate3DTravelWithPerspective(
+function projectionOf(
   meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask,
   perspective: number = Infinity,
-): CornerTravel {
-  const {
-    width,
-    height,
-    scale_x,
-    scale_y,
-    rotate_x: rx,
-    rotate_y: ry,
-    rotate_z: rz,
-    rotate_angle,
-    skew_ax,
-    skew_ay,
-  } = meta;
+): (x: number, y: number, z: number) => Point2D {
+  const { rotate_x: rx, rotate_y: ry, rotate_z: rz, rotate_angle, skew_ax, skew_ay } = meta;
   const theta = rotate_angle * (Math.PI / 180);
   const cosT = Math.cos(theta);
   const sinT = Math.sin(theta);
@@ -34,8 +23,6 @@ function calculate3DTravelWithPerspective(
 
   const tanAx = Math.tan(toCssSkewAngle(skew_ax) * (Math.PI / 180));
   const tanAy = Math.tan(toCssSkewAngle(skew_ay) * (Math.PI / 180));
-  const scaledW0 = width * scale_x;
-  const scaledH0 = height * scale_y;
 
   const skewed = (x: number, y: number): Point2D => ({
     x: x + tanAx * y,
@@ -44,16 +31,7 @@ function calculate3DTravelWithPerspective(
 
   const len = Math.sqrt(rx * rx + ry * ry + rz * rz);
   if (len === 0) {
-    const travelOf = (x: number, y: number): Point2D => {
-      const s = skewed(x, y);
-      return { x: s.x - x, y: s.y - y };
-    };
-    return {
-      topLeft: travelOf(0, 0),
-      topRight: travelOf(scaledW0, 0),
-      bottomLeft: travelOf(0, scaledH0),
-      bottomRight: travelOf(scaledW0, scaledH0),
-    };
+    return (x, y) => skewed(x, y);
   }
 
   const ux = rx / len;
@@ -68,28 +46,40 @@ function calculate3DTravelWithPerspective(
   const r31 = uz * ux * omc - uy * sinT;
   const r32 = uz * uy * omc + ux * sinT;
   const r33 = cosT + uz * uz * omc;
-  const scaledW = width * scale_x;
-  const scaledH = height * scale_y;
 
-  const getTravel = (origX: number, origY: number, origZ: number): Point2D => {
-    const { x: skewX, y: skewY } = skewed(origX, origY);
-    const rotX = r11 * skewX + r12 * skewY + r13 * origZ;
-    const rotY = r21 * skewX + r22 * skewY + r23 * origZ;
-    const rotZ = r31 * skewX + r32 * skewY + r33 * origZ;
+  return (x, y, z) => {
+    const { x: skewX, y: skewY } = skewed(x, y);
+    const rotX = r11 * skewX + r12 * skewY + r13 * z;
+    const rotY = r21 * skewX + r22 * skewY + r23 * z;
+    const rotZ = r31 * skewX + r32 * skewY + r33 * z;
     const f = perspective === Infinity ? 1 : perspective / (perspective - rotZ);
-    const projX = rotX * f;
-    const projY = rotY * f;
-    return {
-      x: projX - origX,
-      y: projY - origY,
-    };
+    return { x: rotX * f, y: rotY * f };
   };
+}
 
+export function projectLocalPoint(
+  meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask,
+  point: Point2D,
+): Point2D {
+  return projectionOf(meta)(point.x, point.y, 0);
+}
+
+function calculate3DTravelWithPerspective(
+  meta: LaurusProjectImg | LaurusProjectSvg | LaurusProjectMask,
+  perspective: number = Infinity,
+): CornerTravel {
+  const project = projectionOf(meta, perspective);
+  const scaledW = meta.width * meta.scale_x;
+  const scaledH = meta.height * meta.scale_y;
+  const travelOf = (x: number, y: number): Point2D => {
+    const projected = project(x, y, 0);
+    return { x: projected.x - x, y: projected.y - y };
+  };
   return {
-    topLeft: getTravel(0, 0, 0),
-    topRight: getTravel(scaledW, 0, 0),
-    bottomLeft: getTravel(0, scaledH, 0),
-    bottomRight: getTravel(scaledW, scaledH, 0),
+    topLeft: travelOf(0, 0),
+    topRight: travelOf(scaledW, 0),
+    bottomLeft: travelOf(0, scaledH),
+    bottomRight: travelOf(scaledW, scaledH),
   };
 }
 

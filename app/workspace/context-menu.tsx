@@ -44,6 +44,7 @@ import {
 } from "./workspace.server";
 import { applyLightDelta, applyObjectDelta } from "./canvas-media/mask-delta";
 import { polygonIndicesForLight, polygonIndicesForObject } from "./canvas-media/mask-geometry";
+import { anchoredMenuPlacement, maskSubElementCenter, type MaskSubElement } from "./canvas-media/menu-anchor";
 import type { StackDirection, StackRef } from "./canvas-media/mask-order";
 import styles from "../app.module.css";
 import { SvgRepo, polyline200, texture300, image200, antigravity300, asterisk300 } from "../svg-repo";
@@ -593,22 +594,6 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
     ],
   );
 
-  const leftSide = useMemo(() => {
-    if (contextMenuConfig.position.toLowerCase().endsWith("left")) {
-      return true;
-    } else {
-      return false;
-    }
-  }, [contextMenuConfig.position]);
-
-  const bottomSide = useMemo(() => {
-    if (contextMenuConfig.position.toLowerCase().startsWith("bottom")) {
-      return true;
-    } else {
-      return false;
-    }
-  }, [contextMenuConfig.position]);
-
   const contextMenuWidth = useMemo(() => {
     return contextMenuConfig.width * dynamicSizes.contextMenu.widthFactor;
   }, [dynamicSizes.contextMenu.widthFactor, contextMenuConfig.width]);
@@ -616,6 +601,68 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   const contextMenuHeight = useMemo(() => {
     return contextMenuConfig.height * dynamicSizes.contextMenu.heightFactor;
   }, [dynamicSizes.contextMenu.heightFactor, contextMenuConfig.height]);
+
+  const anchoredTarget = useMemo<{ meta: LaurusProjectMask; subject: MaskSubElement } | undefined>(() => {
+    if (media.type === "light") return { meta: media.meta, subject: { kind: "light", id: media.lightId } };
+    if (media.type === "object") return { meta: media.meta, subject: { kind: "object", id: media.objectId } };
+    return undefined;
+  }, [media]);
+
+  const anchoredCenter = useMemo(() => {
+    if (!anchoredTarget) return undefined;
+    return maskSubElementCenter(anchoredTarget.meta, coreState.canvasMasks.get(media.key), anchoredTarget.subject);
+  }, [anchoredTarget, coreState.canvasMasks, media.key]);
+
+  const anchoredPlacement = useMemo(() => {
+    if (!anchoredTarget || !anchoredCenter) return undefined;
+    const { meta } = anchoredTarget;
+    return anchoredMenuPlacement({
+      center: anchoredCenter,
+      wrapper: {
+        top: transform?.bounds.deltas.top ?? 0,
+        left: transform?.bounds.deltas.left ?? 0,
+        width: transform?.bounds.width ?? 0,
+      },
+      item: { top: meta.top, left: meta.left },
+      canvas: { width: coreState.project.canvas_width, height: coreState.project.canvas_height },
+      menu: { width: contextMenuWidth, height: contextMenuHeight, caretHeight: dynamicSizes.clipPath.caretHeight },
+      preferredLeft: contextMenuConfig.position.toLowerCase().endsWith("left"),
+    });
+  }, [
+    anchoredCenter,
+    anchoredTarget,
+    contextMenuConfig.position,
+    contextMenuHeight,
+    contextMenuWidth,
+    coreState.project.canvas_height,
+    coreState.project.canvas_width,
+    dynamicSizes.clipPath.caretHeight,
+    transform?.bounds.deltas.left,
+    transform?.bounds.deltas.top,
+    transform?.bounds.width,
+  ]);
+
+  const leftSide = useMemo(() => {
+    if (anchoredPlacement) {
+      return anchoredPlacement.leftSide;
+    }
+    if (contextMenuConfig.position.toLowerCase().endsWith("left")) {
+      return true;
+    } else {
+      return false;
+    }
+  }, [anchoredPlacement, contextMenuConfig.position]);
+
+  const bottomSide = useMemo(() => {
+    if (anchoredPlacement) {
+      return anchoredPlacement.bottomSide;
+    }
+    if (contextMenuConfig.position.toLowerCase().startsWith("bottom")) {
+      return true;
+    } else {
+      return false;
+    }
+  }, [anchoredPlacement, contextMenuConfig.position]);
 
   const dynamicClipPath = useMemo(() => {
     const getPath = (isInner: boolean) => {
@@ -1262,30 +1309,22 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
   }, [committingDescription, header, describable]);
 
   const subheader = useMemo(() => {
+    const box = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
     switch (media.type) {
       case "img":
       case "svg":
       case "mask": {
-        return `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
+        return box;
       }
-      case "object": {
-        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
-        const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return fallback;
-        const object = mask.objects.find((o) => o.id === media.objectId);
-        if (!object) return fallback;
-        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
-      }
+      case "object":
       case "light": {
-        const fallback = `x${media.meta.left.toFixed()} | y${media.meta.top.toFixed()} | w${media.meta.width.toFixed()} | h${media.meta.height.toFixed()}`;
-        const mask = coreState.canvasMasks.get(media.key);
-        if (!mask) return fallback;
-        const object = mask.lights.find((o) => o.id === media.lightId);
-        if (!object) return fallback;
-        return `x${object.cx.toFixed()} | y${object.cy.toFixed()}`;
+        if (!anchoredCenter) return box;
+        const x = media.meta.left + anchoredCenter.x;
+        const y = media.meta.top + anchoredCenter.y;
+        return `x${x.toFixed()} | y${y.toFixed()}`;
       }
     }
-  }, [coreState.canvasMasks, media]);
+  }, [anchoredCenter, media]);
 
   return (
     <>
@@ -1303,13 +1342,14 @@ export default function ContextMenu({ media, framesCacheRef, transform }: Contex
           style={{
             position: "absolute",
             pointerEvents: dropZoneArmed ? "auto" : undefined,
-            ...(contextMenuConfig.position.toLowerCase().endsWith("right") && {
-              left: "100%",
-            }),
-            ...(leftSide && { right: "100%" }),
-            ...(bottomSide && { bottom: "0%" }),
+            ...(leftSide ? { right: "100%" } : { left: "100%" }),
+            ...(anchoredPlacement ? { top: anchoredPlacement.top } : bottomSide && { bottom: "0%" }),
             display: "grid",
-            height: (transform?.bounds.height ?? 0) < contextMenuHeight ? contextMenuHeight : "100%",
+            height: anchoredPlacement
+              ? contextMenuHeight
+              : (transform?.bounds.height ?? 0) < contextMenuHeight
+                ? contextMenuHeight
+                : "100%",
             gridTemplateColumns: `${contextMenuWidth}px`,
             gridTemplateRows: "auto",
             padding: leftSide ? dynamicSizes.gridIsLeftPadding : dynamicSizes.gridPadding,
