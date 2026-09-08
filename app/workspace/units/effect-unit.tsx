@@ -122,8 +122,8 @@ export default function EffectUnit({ effect, showUnitControlsInit }: EffectUnit)
             containerHeight: 40,
             containerWidth: "100%",
             trackHeight: 1,
-            capWidth: 12,
-            capHeight: 12,
+            capWidth: 13,
+            capHeight: 13,
           },
           headerFlex: {
             height: 26,
