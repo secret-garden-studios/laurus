@@ -1,14 +1,17 @@
 import { useContext, useState, useCallback } from "react";
-import { dmSans } from "@/app/fonts";
-import { LaurusClientSvg, SvgRepo, antigravity200, asterisk200, chevronLeft, chevronRight } from "../../svg-repo";
+import { SvgRepo, chevronLeft200, chevronRight200 } from "../../svg-repo";
 import { CoreContext, HoverContext, MaskContext, UIContext } from "../workspace.client";
 import LaurusImage, { pxSizes } from "../../components/laurus-image";
 import styles from "@/app/app.module.css";
 import { CarouselEntry, LaurusActiveElement, UIActionType, UIState, isMaskEditSubject } from "../states/ui-state";
 import { useSelectionGuard } from "../hooks/useMaskEditExit";
 import { maskGeometry } from "../canvas-media/mask-geometry";
+import { ShapePreview } from "../canvas-media/object-shape-editor";
+import { unitCirclePath } from "../canvas-media/object-path";
 import { LaurusMaskResult } from "../workspace.server";
 import { CoreState } from "../states/core-state";
+
+const CIRCLE_SHAPE = unitCirclePath();
 
 function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browserImgs"], sourceImgMediaId: string) {
   for (const [key, img] of coreState.project.imgs) {
@@ -21,37 +24,81 @@ function resolveSourceImgSrc(coreState: CoreState, browserImgs: UIState["browser
 
 function ObjectOrLightThumbnail({
   title,
-  polygonCount,
-  name,
+  shape,
   sourceImgMediaId,
-  icon,
-  style,
   onClick,
 }: {
   title: string;
-  polygonCount: number;
-  name: string;
+  shape: string;
   sourceImgMediaId: string;
-  icon: LaurusClientSvg;
-  style: React.CSSProperties;
   onClick: () => void;
 }) {
   const { isAltKeyPressed } = useContext(HoverContext);
   const { coreState } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          display: {
+            width: 280,
+            height: 280,
+            borderRadius: 10,
+          },
+          scrim: {
+            blur: 9,
+          },
+          shape: {
+            size: 186,
+            glow: 6,
+          },
+        };
+      case "midhigh":
+        return {
+          display: {
+            width: 200,
+            height: 200,
+            borderRadius: 10,
+          },
+          scrim: {
+            blur: 9,
+          },
+          shape: {
+            size: 140,
+            glow: 4,
+          },
+        };
+      case "midlow":
+      case "low":
+        return {
+          display: {
+            width: Math.round(280 * uiState.resolution.factor),
+            height: Math.round(280 * uiState.resolution.factor),
+            borderRadius: 10,
+          },
+          scrim: {
+            blur: 9,
+          },
+          shape: {
+            size: Math.round(174 * uiState.resolution.factor),
+            glow: 4,
+          },
+        };
+    }
+  });
   const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, sourceImgMediaId);
-  const iconSize = Math.round((typeof style.width === "number" ? style.width : 200) * 0.4);
   return (
     <div
       title={title}
       onClick={onClick}
       style={{
-        ...style,
+        ...dynamicSizes.display,
         position: "relative",
         display: "grid",
         placeContent: "center",
         cursor: isAltKeyPressed ? "crosshair" : "pointer",
         backgroundColor: "rgb(50, 50, 50)",
+        filter: `drop-shadow(0px 0px ${dynamicSizes.shape.glow}px rgba(0, 0, 0, 0.75))`,
       }}
     >
       <LaurusImage
@@ -59,81 +106,32 @@ function ObjectOrLightThumbnail({
         alt={sourceImgSrc ?? ""}
         src={sourceImgSrc ?? ""}
         fill
-        sizes={pxSizes(style.width, 200)}
+        sizes={pxSizes(dynamicSizes.display.width, 200)}
         style={{
           objectFit: "cover",
+          borderRadius: dynamicSizes.display.borderRadius,
         }}
       />
 
       <div
-        className={dmSans.className}
         style={{
           position: "absolute",
           width: "100%",
           height: "100%",
-          backgroundColor: "rgba(0, 0, 0, 0.4)",
-          backdropFilter: "blur(8px)",
+          backgroundColor: "rgba(0, 0, 0, 0.05)",
+          backdropFilter: `blur(${dynamicSizes.scrim.blur}px)`,
+          borderRadius: dynamicSizes.display.borderRadius,
         }}
       />
-      <SvgRepo
-        svg={icon}
-        scale={1}
-        scaleToContaier
-        containerStyle={{
-          position: "relative",
-          width: iconSize,
-          height: iconSize,
-          filter: "drop-shadow(0px 0px 6px rgba(255, 255, 255, 0.9))",
-        }}
-      />
-      <div
+      <ShapePreview
+        shape={shape}
+        size={dynamicSizes.shape.size}
         style={{
-          position: "absolute",
-          top: 16,
-          bottom: 16,
-          left: 4,
-          right: 4,
-          fontSize: 12,
-          letterSpacing: 2,
-          display: "grid",
-          flexDirection: "column",
-          alignContent: "space-between",
-          justifyItems: "center",
-          pointerEvents: "none",
-          userSelect: "none",
+          position: "relative",
+          overflow: "visible",
+          filter: `drop-shadow(0px 0px ${dynamicSizes.shape.glow}px rgba(0, 0, 0, 0.9))`,
         }}
-      >
-        <div
-          style={{
-            textShadow: "0px 0px 1px rgba(255, 255, 255, 0.9)",
-            maxWidth: "90%",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {`${name}`}
-        </div>
-        <div
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            display: "flex",
-            gap: 4,
-          }}
-        >
-          <div
-            style={{
-              fontWeight: "bold",
-              textShadow: "0 0 1px rgba(255, 255, 255, 1)",
-            }}
-          >
-            {`${polygonCount}`}
-          </div>
-          {`polygons`}
-        </div>
-      </div>
+      />
     </div>
   );
 }
@@ -142,17 +140,47 @@ function MaskThumbnail({
   mediaKey,
   maskData,
   isAltKeyPressed,
-  style,
   onClick,
 }: {
   mediaKey: string;
   maskData: LaurusMaskResult;
   isAltKeyPressed: boolean;
-  style: React.CSSProperties;
   onClick: () => void;
 }) {
   const { coreState } = useContext(CoreContext);
   const { uiState } = useContext(UIContext);
+  const [dynamicSizes] = useState(() => {
+    switch (uiState.resolution.type) {
+      case "high":
+        return {
+          display: {
+            width: 280,
+            height: 280,
+            borderRadius: 10,
+          },
+          glow: 6,
+        };
+      case "midhigh":
+        return {
+          display: {
+            width: 200,
+            height: 200,
+            borderRadius: 10,
+          },
+          glow: 4,
+        };
+      case "midlow":
+      case "low":
+        return {
+          display: {
+            width: Math.round(280 * uiState.resolution.factor),
+            height: Math.round(280 * uiState.resolution.factor),
+            borderRadius: 10,
+          },
+          glow: 4,
+        };
+    }
+  });
 
   const sourceImgSrc = resolveSourceImgSrc(coreState, uiState.browserImgs, maskData.source_img_media_id);
 
@@ -162,7 +190,8 @@ function MaskThumbnail({
       style={{
         position: "relative",
         cursor: isAltKeyPressed ? "crosshair" : "pointer",
-        ...style,
+        filter: `drop-shadow(0px 0px ${dynamicSizes.glow}px rgba(0, 0, 0, 0.75))`,
+        ...dynamicSizes.display,
       }}
     >
       <LaurusImage
@@ -170,8 +199,8 @@ function MaskThumbnail({
         alt={mediaKey}
         src={sourceImgSrc ?? ""}
         fill
-        sizes={pxSizes(style.width, 200)}
-        style={{ objectFit: "cover" }}
+        sizes={pxSizes(dynamicSizes.display.width, 200)}
+        style={{ objectFit: "cover", borderRadius: dynamicSizes.display.borderRadius }}
       />
     </div>
   );
@@ -195,10 +224,10 @@ export default function UnitDisplay({
   const { uiState, uiDispatch } = useContext(UIContext);
   const { isAltKeyPressed } = useContext(HoverContext);
 
-  const editedPolygonCount = useCallback(
-    (entry: CarouselEntry): number | undefined => {
+  const editedShapePath = useCallback(
+    (entry: CarouselEntry): string | undefined => {
       const session = uiState.maskEdit;
-      return session && isMaskEditSubject(session, entry) ? session.currentIndices.size : undefined;
+      return session && isMaskEditSubject(session, entry) ? session.editedShape?.path : undefined;
     },
     [uiState.maskEdit],
   );
@@ -214,10 +243,20 @@ export default function UnitDisplay({
             height: 450,
             padding: 0,
           },
+          frame: {
+            borderRadius: 10,
+            borderWidth: 1,
+          },
+          chevron: {
+            width: 38,
+            height: 38,
+          },
           displayImg: {
             width: 280,
             height: 280,
+            borderRadius: 10,
           },
+          glow: 6,
           displaySvg: {
             width: 200,
             height: 200,
@@ -233,34 +272,26 @@ export default function UnitDisplay({
             height: 315,
             padding: 0,
           },
-          displayImg: {
-            width: 196,
-            height: 196,
+          frame: {
+            borderRadius: 10,
+            borderWidth: 1,
           },
+          chevron: {
+            width: 30,
+            height: 30,
+          },
+          displayImg: {
+            width: 200,
+            height: 200,
+            borderRadius: 10,
+          },
+          glow: 4,
           displaySvg: {
             width: 140,
             height: 140,
           },
         };
       case "midlow":
-        return {
-          param: {
-            padding: "0 18px 10px 10px",
-          },
-          display: {
-            width: Math.round(400 * uiState.resolution.factor),
-            height: Math.round(450 * uiState.resolution.factor),
-            padding: 0,
-          },
-          displayImg: {
-            width: Math.round(280 * uiState.resolution.factor),
-            height: Math.round(280 * uiState.resolution.factor),
-          },
-          displaySvg: {
-            width: Math.round(200 * uiState.resolution.factor),
-            height: Math.round(200 * uiState.resolution.factor),
-          },
-        };
       case "low":
         return {
           param: {
@@ -271,10 +302,20 @@ export default function UnitDisplay({
             height: Math.round(450 * uiState.resolution.factor),
             padding: 0,
           },
+          frame: {
+            borderRadius: 10,
+            borderWidth: 1,
+          },
+          chevron: {
+            width: 20,
+            height: 20,
+          },
           displayImg: {
             width: Math.round(280 * uiState.resolution.factor),
             height: Math.round(280 * uiState.resolution.factor),
+            borderRadius: 10,
           },
+          glow: 4,
           displaySvg: {
             width: Math.round(200 * uiState.resolution.factor),
             height: Math.round(200 * uiState.resolution.factor),
@@ -452,15 +493,14 @@ export default function UnitDisplay({
           className={styles["large-tiled-background-squares"]}
           style={{
             display: "grid",
-            borderRadius: 10,
-            border: "1px solid rgba(10,10,10,1)",
+            borderRadius: dynamicSizes.frame.borderRadius,
+            border: `${dynamicSizes.frame.borderWidth}px solid rgba(10,10,10,1)`,
             gridTemplateColumns: "min-content auto min-content",
             ...dynamicSizes.display,
           }}
         >
           <div
             style={{
-              width: 30,
               height: "100%",
               display: "grid",
               placeContent: "center",
@@ -468,13 +508,20 @@ export default function UnitDisplay({
           >
             <SvgRepo
               title={"select previous"}
-              svg={findNavigableIndex(carouselIndex, -1) === undefined ? chevronLeft("rgb(67,67,67)") : chevronLeft()}
+              svg={
+                findNavigableIndex(carouselIndex, -1) === undefined ? chevronLeft200("rgb(67,67,67)") : chevronLeft200()
+              }
               containerStyle={{
-                width: 30,
-                height: 30,
-                cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                width: dynamicSizes.chevron.width,
+                height: dynamicSizes.chevron.height,
+                cursor: isAltKeyPressed
+                  ? "crosshair"
+                  : findNavigableIndex(carouselIndex, -1) === undefined
+                    ? ""
+                    : "pointer",
               }}
-              scale={1}
+              scale={0.8}
+              scaleToContaier={true}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, -1);
@@ -515,6 +562,7 @@ export default function UnitDisplay({
                         style={{
                           position: "relative",
                           cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                          filter: `drop-shadow(0px 0px ${dynamicSizes.glow}px rgba(0, 0, 0, 0.75))`,
                           ...dynamicSizes.displayImg,
                         }}
                       >
@@ -526,6 +574,7 @@ export default function UnitDisplay({
                           sizes={pxSizes(dynamicSizes.displayImg.width, 200)}
                           style={{
                             objectFit: "cover",
+                            borderRadius: dynamicSizes.displayImg.borderRadius,
                           }}
                         />
                       </div>
@@ -566,7 +615,6 @@ export default function UnitDisplay({
                         mediaKey={c.key}
                         maskData={maskData}
                         isAltKeyPressed={isAltKeyPressed}
-                        style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           if (!guardSelection(c)) return;
@@ -589,16 +637,12 @@ export default function UnitDisplay({
                     );
                     if (!hasLitGeometry) break;
                     const light = maskData.lights.find((cap) => cap.id === c.lightId);
-                    const name = light ? (light.description ? light.description : light.name) : `light ${c.lightId}`;
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-light-${c.lightId}`}
                         title="mesh light"
-                        polygonCount={editedPolygonCount(c) ?? litPolygons.length}
-                        name={name}
+                        shape={editedShapePath(c) ?? (light?.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
-                        icon={asterisk200("rgb(255, 255, 255)")}
-                        style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           if (!guardSelection(c)) return;
@@ -614,22 +658,12 @@ export default function UnitDisplay({
                     const maskData = coreState.canvasMasks.get(c.key);
                     const object = maskData?.objects.find((p) => p.id === c.objectId);
                     if (!maskData || !object) break;
-                    const coveredPolygonCount =
-                      editedPolygonCount(c) ?? maskData.polygons.filter((p) => p.object_id === c.objectId).length;
-                    const name = object.description
-                      ? object.description
-                      : object.name
-                        ? object.name
-                        : `object ${c.objectId}`;
                     return (
                       <ObjectOrLightThumbnail
                         key={`${c.key}-object-${c.objectId}`}
                         title="mesh object"
-                        polygonCount={coveredPolygonCount}
-                        name={name}
+                        shape={editedShapePath(c) ?? (object.shape || CIRCLE_SHAPE)}
                         sourceImgMediaId={maskData.source_img_media_id}
-                        icon={antigravity200("rgb(255, 255, 255)")}
-                        style={dynamicSizes.displayImg}
                         onClick={() => {
                           if (isAltKeyPressed) return;
                           if (!guardSelection(c)) return;
@@ -645,7 +679,6 @@ export default function UnitDisplay({
           </div>
           <div
             style={{
-              width: 30,
               height: "100%",
               display: "grid",
               placeContent: "center",
@@ -653,13 +686,22 @@ export default function UnitDisplay({
           >
             <SvgRepo
               title={"select next"}
-              svg={findNavigableIndex(carouselIndex, 1) === undefined ? chevronRight("rgb(67,67,67)") : chevronRight()}
+              svg={
+                findNavigableIndex(carouselIndex, 1) === undefined
+                  ? chevronRight200("rgb(67,67,67)")
+                  : chevronRight200()
+              }
               containerStyle={{
-                width: 30,
-                height: 30,
-                cursor: isAltKeyPressed ? "crosshair" : "pointer",
+                width: dynamicSizes.chevron.width,
+                height: dynamicSizes.chevron.height,
+                cursor: isAltKeyPressed
+                  ? "crosshair"
+                  : findNavigableIndex(carouselIndex, 1) === undefined
+                    ? ""
+                    : "pointer",
               }}
-              scale={1}
+              scale={0.8}
+              scaleToContaier={true}
               onContainerClick={() => {
                 if (isAltKeyPressed) return;
                 const newIndex = findNavigableIndex(carouselIndex, 1);
@@ -692,6 +734,12 @@ export function DeepControls() {
             height: 450,
             padding: 0,
           },
+          message: {
+            fontSize: 16,
+          },
+          content: {
+            gap: 4,
+          },
         };
       case "midhigh":
         return {
@@ -703,18 +751,14 @@ export function DeepControls() {
             height: 315,
             padding: 0,
           },
+          message: {
+            fontSize: 16,
+          },
+          content: {
+            gap: 4,
+          },
         };
       case "midlow":
-        return {
-          param: {
-            padding: "0 18px 10px 10px",
-          },
-          display: {
-            width: Math.round(400 * uiState.resolution.factor),
-            height: Math.round(450 * uiState.resolution.factor),
-            padding: 0,
-          },
-        };
       case "low":
         return {
           param: {
@@ -724,6 +768,12 @@ export function DeepControls() {
             width: Math.round(400 * uiState.resolution.factor),
             height: Math.round(450 * uiState.resolution.factor),
             padding: 0,
+          },
+          message: {
+            fontSize: 16,
+          },
+          content: {
+            gap: 4,
           },
         };
     }
@@ -736,7 +786,7 @@ export function DeepControls() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          fontSize: 16,
+          fontSize: dynamicSizes.message.fontSize,
           padding: dynamicSizes.param.padding,
         }}
       >
@@ -745,7 +795,7 @@ export function DeepControls() {
             display: "grid",
             height: `${dynamicSizes.display.height}px`,
             alignContent: "center",
-            gap: 4,
+            gap: dynamicSizes.content.gap,
           }}
         >
           <div>{"coming soon..."}</div>

@@ -1475,6 +1475,25 @@ export function chevronLeft(
   };
 }
 
+export function chevronLeft200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "public/material-ui/thin/chevron_left_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="m404.31-480 169.84 169.85q5.62 5.61 6 13.77.39 8.15-6 14.53-6.38 6.39-14.15 6.39-7.77 0-14.15-6.39L370.31-457.38q-5.23-5.24-7.35-10.7-2.11-5.46-2.11-11.92t2.11-11.92q2.12-5.46 7.35-10.7l175.54-175.53q5.61-5.62 13.77-6 8.15-.39 14.53 6 6.39 6.38 6.39 14.15 0 7.77-6.39 14.15L404.31-480Z"/>`,
+    ),
+  };
+}
+
 export function chevronRight(
   fill: string = "rgba(227, 227, 227, 1)",
   width: number = 24,
@@ -1489,6 +1508,25 @@ export function chevronRight(
     stroke: "none",
     stroke_width: 0,
     markup: base64Encode(`<path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/>`),
+  };
+}
+
+export function chevronRight200(
+  fill: string = "rgba(227, 227, 227, 1)",
+  width: number = 24,
+  height: number = 24,
+): LaurusClientSvg {
+  return {
+    media_key: "public/material-ui/thin/chevron_right_24dp_E3E3E3_FILL0_wght200_GRAD0_opsz24.svg",
+    width,
+    height,
+    viewbox: "0 -960 960 960",
+    fill,
+    stroke: "none",
+    stroke_width: 0,
+    markup: base64Encode(
+      `<path d="M531.69-480 361.85-649.85q-5.62-5.61-6-13.77-.39-8.15 6-14.53 6.38-6.39 14.15-6.39 7.77 0 14.15 6.39l175.54 175.53q5.23 5.24 7.35 10.7 2.11 5.46 2.11 11.92t-2.11 11.92q-2.12 5.46-7.35 10.7L390.15-281.85q-5.61 5.62-13.77 6-8.15.39-14.53-6-6.39-6.38-6.39-14.15 0-7.77 6.39-14.15L531.69-480Z"/>`,
+    ),
   };
 }
 
