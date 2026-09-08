@@ -62,7 +62,12 @@ import { moreVert, playArrow, stopIcon, SvgRepo, getCrops, LaurusCropSvg, Laurus
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
-import { MaskAppearanceOverride, MaskImperativeHandle, MaskPlaybackSession } from "./canvas-media/project-mask-item";
+import {
+  KeyframePreview,
+  MaskAppearanceOverride,
+  MaskImperativeHandle,
+  MaskPlaybackSession,
+} from "./canvas-media/project-mask-item";
 import { useToolCursor } from "./hooks/useToolCursor";
 import {
   deleteMaskLightEffects,
@@ -360,8 +365,10 @@ export interface MaskNotifiers {
   notifyMaskLightUpdated: MaskNotifyValue["notifyMaskLightUpdated"];
   notifyMaskAppearanceChanged: MaskNotifyValue["notifyMaskAppearanceChanged"];
   notifyMaskLightSourcePreviewToggled: MaskNotifyValue["notifyMaskLightSourcePreviewToggled"];
+  notifyMaskKeyframePreview: MaskNotifyValue["notifyMaskKeyframePreview"];
   notifyMaskPendingTopologySet: MaskNotifyValue["notifyMaskPendingTopologySet"];
   notifyMaskPendingTopologyCleared: MaskNotifyValue["notifyMaskPendingTopologyCleared"];
+  notifyMaskPendingTopologySettle: MaskNotifyValue["notifyMaskPendingTopologySettle"];
   notifyMaskRetouchRequested: MaskNotifyValue["notifyMaskRetouchRequested"];
   notifyMaskObjectReviewPreview: MaskNotifyValue["notifyMaskObjectReviewPreview"];
   notifyCanvasZoomChanged: MaskNotifyValue["notifyCanvasZoomChanged"];
@@ -379,8 +386,10 @@ export const MaskNotifyContext = createContext<MaskNotifiers>({
   notifyMaskLightUpdated: () => {},
   notifyMaskAppearanceChanged: () => {},
   notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskKeyframePreview: () => {},
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskPendingTopologySettle: () => {},
   notifyMaskObjectReviewPreview: () => {},
   notifyCanvasZoomChanged: () => {},
   notifyMaskObjectsUpdated: () => {},
@@ -411,8 +420,10 @@ export interface MaskNotifyValue {
   notifyMaskLightUpdated: (maskKey: string, updated: LaurusMaskResult) => void;
   notifyMaskAppearanceChanged: (maskKey: string, override?: MaskAppearanceOverride) => void;
   notifyMaskLightSourcePreviewToggled: (enabled: boolean) => void;
+  notifyMaskKeyframePreview: (maskKey: string | undefined, preview: KeyframePreview | undefined) => void;
   notifyMaskPendingTopologySet: (maskKey: string, edit: PendingTopologyEdit) => void;
   notifyMaskPendingTopologyCleared: (maskKey: string | undefined) => void;
+  notifyMaskPendingTopologySettle: (maskKey: string) => void;
   notifyMaskRetouchRequested: (maskKey: string) => Promise<void>;
   notifyMaskObjectReviewPreview: (maskKey: string, indices: Set<number> | undefined, diffBase?: Set<number>) => void;
   notifyCanvasZoomChanged: (zoom: number) => void;
@@ -516,8 +527,10 @@ const defaultMaskNotifyValue: MaskNotifyValue = {
   notifyMaskLightUpdated: () => {},
   notifyMaskAppearanceChanged: () => {},
   notifyMaskLightSourcePreviewToggled: () => {},
+  notifyMaskKeyframePreview: () => {},
   notifyMaskPendingTopologySet: () => {},
   notifyMaskPendingTopologyCleared: () => {},
+  notifyMaskPendingTopologySettle: () => {},
   notifyMaskRetouchRequested: async () => {},
   notifyMaskObjectReviewPreview: () => {},
   notifyCanvasZoomChanged: () => {},
@@ -1365,6 +1378,13 @@ export default function Workspace({
   const notifyMaskLightSourcePreviewToggled = useCallback((enabled: boolean) => {
     maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.onLightSourcePreviewToggled(enabled)));
   }, []);
+  const notifyMaskKeyframePreview = useCallback((maskKey: string | undefined, preview: KeyframePreview | undefined) => {
+    if (maskKey === undefined) {
+      maskHandlesRef.current?.forEach((handles) => handles.forEach((h) => h.setKeyframePreview(undefined)));
+      return;
+    }
+    maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setKeyframePreview(preview));
+  }, []);
   const notifyMaskPendingTopologySet = useCallback((maskKey: string, edit: PendingTopologyEdit) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.setPendingTopology(edit));
   }, []);
@@ -1377,6 +1397,14 @@ export default function Workspace({
   const notifyMaskPendingTopologyCleared = useCallback((maskKey: string | undefined) => {
     if (maskKey === undefined) return;
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.clearPendingTopology());
+  }, []);
+  const scrubRevisionRef = useRef(uiState.scrubRevision);
+  scrubRevisionRef.current = uiState.scrubRevision;
+  const [pendingTopologySettle, setPendingTopologySettle] = useState<{ revision: number; maskKey: string } | undefined>(
+    undefined,
+  );
+  const notifyMaskPendingTopologySettle = useCallback((maskKey: string) => {
+    setPendingTopologySettle({ revision: scrubRevisionRef.current, maskKey });
   }, []);
   const notifyMaskObjectsUpdated = useCallback((maskKey: string, updated: LaurusMaskResult) => {
     maskHandlesRef.current?.get(maskKey)?.forEach((h) => h.syncObjects(updated));
@@ -2014,12 +2042,18 @@ export default function Workspace({
   const scrubSessionsRef = useRef<MaskPlaybackSession[]>([]);
   const scrubArmingRef = useRef<Promise<void> | undefined>(undefined);
   const scrubGenerationRef = useRef(0);
+  const scrubRearmInFlightRef = useRef(0);
 
   const discardScrub = useCallback(() => {
     scrubGenerationRef.current += 1;
     scrubAnimationsRef.current.forEach((animation) => animation.cancel());
     scrubAnimationsRef.current = [];
     scrubSessionsRef.current = [];
+    scrubArmingRef.current = undefined;
+  }, []);
+
+  const invalidateScrub = useCallback(() => {
+    scrubGenerationRef.current += 1;
     scrubArmingRef.current = undefined;
   }, []);
 
@@ -2038,12 +2072,51 @@ export default function Workspace({
         newAnimations.forEach((animation) => animation.cancel());
         return;
       }
+      const superseded = scrubAnimationsRef.current;
       scrubAnimationsRef.current = newAnimations;
       scrubSessionsRef.current = preparedSessions.filter((session) => session !== undefined);
+      superseded.forEach((animation) => animation.cancel());
     })();
     scrubArmingRef.current = arming;
     return arming;
   }, [getNewAnimations]);
+
+  const rearmScrubAt = useCallback(
+    async (timeSeconds: number) => {
+      scrubGenerationRef.current += 1;
+      const generation = scrubGenerationRef.current;
+      scrubRearmInFlightRef.current += 1;
+      const players: MaskImperativeHandle[] = [];
+      maskHandlesRef.current?.forEach((handles) => handles.forEach((player) => players.push(player)));
+      try {
+        const [newAnimations, preparedSessions] = await Promise.all([
+          getNewAnimations("both", false, true),
+          Promise.all(players.map((player) => player.preparePlayback())),
+        ]);
+        if (scrubGenerationRef.current !== generation) {
+          newAnimations.forEach((animation) => animation.cancel());
+          return;
+        }
+
+        const superseded = scrubAnimationsRef.current;
+        scrubAnimationsRef.current = newAnimations;
+        scrubSessionsRef.current = preparedSessions.filter((session) => session !== undefined);
+        scrubArmingRef.current = Promise.resolve();
+
+        const timeMs = timeSeconds * 1000;
+        newAnimations.forEach((animation) => {
+          const duration = Number(animation.effect?.getComputedTiming().duration ?? 0);
+          animation.currentTime = Math.max(0, Math.min(timeMs, duration));
+        });
+        scrubSessionsRef.current.forEach((session) => session.seek(timeSeconds));
+        superseded.forEach((animation) => animation.cancel());
+      } finally {
+        scrubRearmInFlightRef.current -= 1;
+        if (scrubRearmInFlightRef.current === 0) uiDispatch({ type: UIActionType.BumpScrubRevision });
+      }
+    },
+    [getNewAnimations, uiDispatch],
+  );
 
   const handleScrubTo = useCallback(
     async (timeSeconds: number) => {
@@ -2283,17 +2356,56 @@ export default function Workspace({
     }
   }, [uiState.playbackMode.type]);
 
-  useEffect(() => {
-    discardScrub();
-  }, [coreState.effects, coreState.effectGroups, discardScrub]);
+  const scrubContextRef = useRef({ mode: uiState.playbackMode.type, playheadSeconds: uiState.playheadSeconds });
+  scrubContextRef.current = { mode: uiState.playbackMode.type, playheadSeconds: uiState.playheadSeconds };
 
   useEffect(() => {
-    if (coreState.inputsToRender.size > 0) discardScrub();
+    if (scrubContextRef.current.mode === "stopped") {
+      invalidateScrub();
+      return;
+    }
+    discardScrub();
+  }, [coreState.effects, coreState.effectGroups, discardScrub, invalidateScrub]);
+
+  const rearmScrubAtRef = useRef(rearmScrubAt);
+  rearmScrubAtRef.current = rearmScrubAt;
+
+  useEffect(() => {
+    if (coreState.inputsToRender.size === 0) return;
+    const { mode, playheadSeconds } = scrubContextRef.current;
+    if (mode !== "stopped") {
+      discardScrub();
+      return;
+    }
+    void rearmScrubAtRef.current(playheadSeconds);
   }, [coreState.inputsToRender, discardScrub]);
+
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    const playing = uiState.playbackMode.type === "playing";
+    if (wasPlayingRef.current && uiState.playbackMode.type === "stopped") {
+      void rearmScrubAtRef.current(scrubContextRef.current.playheadSeconds);
+    }
+    wasPlayingRef.current = playing;
+  }, [uiState.playbackMode.type]);
 
   useEffect(() => {
     if (uiState.playbackMode.type === "playing") discardScrub();
   }, [uiState.playbackMode, discardScrub]);
+
+  useEffect(() => {
+    if (!pendingTopologySettle) return;
+    if (uiState.playbackMode.type === "stopped" && uiState.scrubRevision === pendingTopologySettle.revision) return;
+    setPendingTopologySettle(undefined);
+    dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+    notifyMaskPendingTopologyCleared(pendingTopologySettle.maskKey);
+  }, [
+    pendingTopologySettle,
+    uiState.scrubRevision,
+    uiState.playbackMode.type,
+    dispatch,
+    notifyMaskPendingTopologyCleared,
+  ]);
 
   const hoverContextValue = useMemo(
     () => ({
@@ -2375,8 +2487,10 @@ export default function Workspace({
       notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskKeyframePreview,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskPendingTopologySettle,
       notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
@@ -2393,8 +2507,10 @@ export default function Workspace({
       notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskKeyframePreview,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskPendingTopologySettle,
       notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
@@ -2423,8 +2539,10 @@ export default function Workspace({
       notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskKeyframePreview,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskPendingTopologySettle,
       notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,
@@ -2450,8 +2568,10 @@ export default function Workspace({
       notifyMaskLightUpdated,
       notifyMaskAppearanceChanged,
       notifyMaskLightSourcePreviewToggled,
+      notifyMaskKeyframePreview,
       notifyMaskPendingTopologySet,
       notifyMaskPendingTopologyCleared,
+      notifyMaskPendingTopologySettle,
       notifyMaskRetouchRequested,
       notifyMaskObjectReviewPreview,
       notifyCanvasZoomChanged,

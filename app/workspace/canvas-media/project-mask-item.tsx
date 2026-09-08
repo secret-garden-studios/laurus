@@ -210,6 +210,7 @@ export interface MaskImperativeHandle {
   setPendingLight: (indices: Set<number>, lightId?: number) => void;
   clearPendingLight: () => void;
   syncLitIndices: (updated: LaurusMaskResult) => void;
+  setKeyframePreview: (preview: KeyframePreview | undefined) => void;
   setPendingTopology: (edit: PendingTopologyEdit) => void;
   clearPendingTopology: () => void;
   retouchObjectMesh: () => void;
@@ -217,6 +218,17 @@ export interface MaskImperativeHandle {
   syncObjects: (updated: LaurusMaskResult) => void;
   applyMaskAppearanceDefaults: (override?: MaskAppearanceOverride) => void;
   onLightSourcePreviewToggled: (enabled: boolean) => void;
+}
+
+export interface KeyframePreview {
+  subject: "light" | "object";
+  id: number;
+  light_intensity?: number;
+  light_spread?: number;
+  light_shadow?: number;
+  object_elevation?: number;
+  object_falloff?: number;
+  object_fill?: LaurusObjectFill;
 }
 
 export interface MaskAppearanceOverride {
@@ -339,6 +351,7 @@ export function ProjectMaskItem({
   const objectReviewPreviewRef = useRef<Set<number> | undefined>(undefined);
   const objectReviewDiffBaseRef = useRef<Set<number> | undefined>(undefined);
   const maskEditSubjectRef = useRef<{ subject: "light" | "object"; id: number } | undefined>(undefined);
+  const keyframePreviewRef = useRef<KeyframePreview | undefined>(undefined);
   const editingShapeRef = useRef(false);
   const pendingLightRef = useRef<Set<number> | undefined>(undefined);
   const pendingLightIdRef = useRef<number | undefined>(undefined);
@@ -411,6 +424,17 @@ export function ProjectMaskItem({
   }, [dispatch, mediaKey, notifyMaskPendingLightCleared]);
 
   const resolveObjectUniforms = useCallback((): ObjectGeometryInput[] => {
+    const preview = keyframePreviewRef.current;
+    const previewObjectId = preview?.subject === "object" ? preview.id : undefined;
+    const withPreview = (object: ObjectGeometryInput, id: number): ObjectGeometryInput =>
+      id === previewObjectId && preview
+        ? {
+            ...object,
+            elevation: preview.object_elevation ?? object.elevation,
+            falloff: preview.object_falloff ?? object.falloff,
+            fill: preview.object_fill ?? object.fill,
+          }
+        : object;
     const pending = pendingTopologyRef.current;
     const pendingShape = pending ? cachedObjectShape(pending.shape, pendingTileSize(pending)) : undefined;
     const restingFill = (object: ObjectGeometryInput): ObjectGeometryInput =>
@@ -420,18 +444,22 @@ export function ProjectMaskItem({
       const shape = cachedObjectShape(object.shape);
       const playing = playbackObjectsRef.current.get(object.id);
       if (playing) {
-        return {
-          cx: playing.cx,
-          cy: playing.cy,
-          radius: playing.radius,
-          elevation: playing.elevation,
-          falloff: playing.falloff,
-          order: object.order,
-          shape,
-          fill: playing.fill,
-          rotation: playing.rotation,
-          lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
-        };
+        const edited = pending && pending.objectId === object.id ? pending : undefined;
+        return withPreview(
+          {
+            cx: playing.cx,
+            cy: playing.cy,
+            radius: playing.radius,
+            elevation: edited?.elevation ?? playing.elevation,
+            falloff: edited?.falloff ?? playing.falloff,
+            order: object.order,
+            shape,
+            fill: edited?.fill ?? playing.fill,
+            rotation: playing.rotation,
+            lift: object.lift ? { cx: object.cx, cy: object.cy, radius: object.radius } : undefined,
+          },
+          object.id,
+        );
       }
       const geometry =
         pending && pending.objectId === object.id
@@ -446,6 +474,7 @@ export function ProjectMaskItem({
               fill: pending.fill,
             }
           : toObjectGeometry(object);
+      if (object.id === previewObjectId) return withPreview(geometry, object.id);
       return animating.has(object.id) ? geometry : restingFill(geometry);
     });
     if (pending && !objectsRef.current.some((object) => object.id === pending.objectId)) {
@@ -520,16 +549,19 @@ export function ProjectMaskItem({
     if (!canvas) return [];
     const centroids = maskGeometryRef.current.centroids;
     const lights: MaskLightSource[] = [];
+    const preview = keyframePreviewRef.current;
+    const previewLightId = preview?.subject === "light" ? preview.id : undefined;
     lightsRef.current.forEach((indices, lightId) => {
-      if (playbackLightSourcesRef.current.has(lightId)) return;
+      if (playbackLightSourcesRef.current.has(lightId) && lightId !== previewLightId) return;
       const meta = lightsMetaRef.current.get(lightId);
       if (!meta) return;
 
       const shaped = resolveLightSilhouette(lightId);
+      const previewed = lightId === previewLightId ? preview : undefined;
       const appearance = {
-        spread: meta.spread,
-        intensity: meta.intensity,
-        shadow: meta.shadow,
+        spread: previewed?.light_spread ?? meta.spread,
+        intensity: previewed?.light_intensity ?? meta.intensity,
+        shadow: previewed?.light_shadow ?? meta.shadow,
         cast: meta.cast,
         order: meta.order,
         gridlines: lightGridlinesMix(lightId),
@@ -1003,10 +1035,21 @@ export function ProjectMaskItem({
     if (wasAnimating) recolorHighlight();
   }, [render, recolorHighlight, applyDefaultLightValue]);
 
+  const supersedeActivePlayback = useCallback(() => {
+    const session = activePlaybackRef.current;
+    if (!session) return;
+    if (session.rafId !== undefined) cancelAnimationFrame(session.rafId);
+    activePlaybackRef.current = undefined;
+    session.resolve();
+  }, []);
+
   const preparePlayback = useCallback(
     (effectKey?: string, lightId?: number, objectId?: number): Promise<MaskPlaybackSession | undefined> => {
-      stopLightSourceAnimation();
-      if (source.kind !== "static") return Promise.resolve(undefined);
+      supersedeActivePlayback();
+      if (source.kind !== "static") {
+        stopLightSourceAnimation();
+        return Promise.resolve(undefined);
+      }
       const playAll = effectKey === undefined && lightId === undefined && objectId === undefined;
       const candidateLightIds = playAll
         ? Array.from(lightsRef.current.keys())
@@ -1089,7 +1132,10 @@ export function ProjectMaskItem({
         })
         .filter((t) => t.wiredMove || t.wiredLightSource || t.wiredScale || t.wiredRotate || t.wiredSkew);
 
-      if (targets.length === 0 && objectTargets.length === 0) return Promise.resolve(undefined);
+      if (targets.length === 0 && objectTargets.length === 0) {
+        stopLightSourceAnimation();
+        return Promise.resolve(undefined);
+      }
 
       wiredMoveRef.current = targets.length > 0;
 
@@ -1106,10 +1152,16 @@ export function ProjectMaskItem({
       const skewFramesByLight = new Map<number, LaurusFrame[]>();
       const session: { rafId: number | undefined; resolve: () => void } = { rafId: undefined, resolve: () => {} };
       activePlaybackRef.current = session;
-      if (objectTargets.length > 0) {
-        playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
-        recolorHighlight();
-      }
+      playingObjectIdsRef.current = new Set(objectTargets.map((t) => t.objectId));
+      const drivenLightIds = new Set(targets.map((t) => t.lightId));
+      playbackLightSourcesRef.current.forEach((_, lightId) => {
+        if (!drivenLightIds.has(lightId)) playbackLightSourcesRef.current.delete(lightId);
+      });
+      playbackObjectsRef.current.forEach((_, objectId) => {
+        if (!playingObjectIdsRef.current.has(objectId)) playbackObjectsRef.current.delete(objectId);
+      });
+      render();
+      recolorHighlight();
 
       const projectFps = coreState.project.fps > 0 ? coreState.project.fps : 30;
       let fps: number;
@@ -1461,6 +1513,7 @@ export function ProjectMaskItem({
       render,
       recolorHighlight,
       stopLightSourceAnimation,
+      supersedeActivePlayback,
     ],
   );
 
@@ -1756,6 +1809,10 @@ export function ProjectMaskItem({
             recolorHighlight();
           },
           retouchObjectMesh: () => latestRef.current.retouchObjectMesh(),
+          setKeyframePreview: (preview) => {
+            keyframePreviewRef.current = preview;
+            renderRef.current();
+          },
           setPendingTopology: (edit) => {
             pendingTopologyRef.current = edit;
             scheduleRecolorHighlight();

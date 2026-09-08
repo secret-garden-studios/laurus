@@ -8,8 +8,9 @@ import { Z_INDEX } from "../workspace.config";
 import { beginBodyDragCursor, endBodyDragCursor } from "../hooks/useToolCursor";
 import { ReviewPanel, EditPanel } from "../object-review-panel";
 import CopyPanel from "../copy-panel";
+import KeyframePanel from "../keyframe-panel";
 import { useObjectReview } from "../hooks/useObjectReview";
-import { UIActionType, editedRegion, isCopyArmed } from "../states/ui-state";
+import { UIActionType, editedRegion, isCopyArmed, isKeyframingArmed } from "../states/ui-state";
 
 export const FLOATINGBAR_DND_ID = "floatingbar";
 
@@ -94,15 +95,19 @@ export default function Floatingbar() {
       }
       case "marquee":
       case "mask":
-      case "light_source":
-        return isCopyArmed(
-          uiState,
-          selectedImgKeys,
-          selectedSvgKeys,
-          selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
-        ) ? (
-          <CopyPanel onClose={closeCopy} />
-        ) : null;
+      case "light_source": {
+        if (
+          isCopyArmed(
+            uiState,
+            selectedImgKeys,
+            selectedSvgKeys,
+            selectedMaskKeys.size === 1 ? Array.from(selectedMaskKeys)[0] : undefined,
+          )
+        ) {
+          return <CopyPanel onClose={closeCopy} />;
+        }
+        return isKeyframingArmed(uiState) ? <KeyframePanel /> : null;
+      }
       default:
         return null;
     }

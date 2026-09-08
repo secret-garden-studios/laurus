@@ -1,3 +1,4 @@
+import type { LightSourceTargets } from "../keyframe-writer";
 import { LaurusCropSvg } from "../../svg-repo";
 import { WorkspaceResolution } from "../workspace.config";
 import {
@@ -178,6 +179,11 @@ export function isAwaitingRegionPick(state: UIState): boolean {
   return state.selectedElement?.type !== "light" && state.selectedElement?.type !== "object";
 }
 
+export function isKeyframingArmed(state: Pick<UIState, "tool" | "playheadSeconds" | "selectedElement">): boolean {
+  if (state.tool.type !== "light_source" || state.playheadSeconds <= 0) return false;
+  return state.selectedElement?.type === "light" || state.selectedElement?.type === "object";
+}
+
 export function isMaskDropZoneArmed(
   state: Pick<UIState, "maskEdit" | "tool" | "browserElement">,
   modifiers: { meta: boolean; alt: boolean },
@@ -307,10 +313,22 @@ export interface UIState {
   lightSourcePreview: boolean;
   canvasZoom: number;
   stagedObject: { elevation: number; falloff: number; fill: LaurusObjectFill };
+  keyframeDraft: KeyframeDraft | undefined;
+  scrubRevision: number;
   maskEdit: MaskEditSession | undefined;
   gridlinesBright: boolean;
   lightGridlines: { key: string; lightId: number; value: number } | undefined;
   copy: CopySettings;
+}
+
+export interface KeyframeDraft {
+  inputId: string;
+  timeSeconds: number;
+  maskKey: string;
+  subject: "light" | "object";
+  subjectId: number;
+  resting: LightSourceTargets;
+  targets: Partial<LightSourceTargets>;
 }
 
 export const defaultUIState: UIState = {
@@ -353,6 +371,8 @@ export const defaultUIState: UIState = {
   gridlinesBright: false,
   lightGridlines: undefined,
   copy: { ...defaultCopySettings },
+  keyframeDraft: undefined,
+  scrubRevision: 0,
 };
 
 export enum UIActionType {
@@ -393,6 +413,9 @@ export enum UIActionType {
   SetLightSourcePreview,
   SetCanvasZoom,
   SetStagedObject,
+  StageKeyframe,
+  ClearKeyframeDraft,
+  BumpScrubRevision,
   SetCopy,
   StartObjectReview,
   StartObjectEdit,
@@ -469,6 +492,9 @@ export type UIAction =
   | { type: UIActionType.SetLightSourcePreview; value: boolean }
   | { type: UIActionType.SetCanvasZoom; value: number }
   | { type: UIActionType.SetStagedObject; value: Partial<UIState["stagedObject"]> }
+  | { type: UIActionType.StageKeyframe; value: KeyframeDraft }
+  | { type: UIActionType.ClearKeyframeDraft }
+  | { type: UIActionType.BumpScrubRevision }
   | { type: UIActionType.SetCopy; value: CopySettings }
   | {
       type: UIActionType.StartObjectReview;
@@ -806,6 +832,25 @@ export function uiContextReducer(state: UIState, action: UIAction): UIState {
     }
     case UIActionType.SetStagedObject: {
       return { ...state, stagedObject: { ...state.stagedObject, ...action.value } };
+    }
+    case UIActionType.StageKeyframe: {
+      const current = state.keyframeDraft;
+      const continues =
+        current !== undefined &&
+        current.inputId === action.value.inputId &&
+        current.timeSeconds === action.value.timeSeconds;
+      return {
+        ...state,
+        keyframeDraft: continues
+          ? { ...action.value, targets: { ...current.targets, ...action.value.targets } }
+          : action.value,
+      };
+    }
+    case UIActionType.BumpScrubRevision: {
+      return { ...state, scrubRevision: state.scrubRevision + 1 };
+    }
+    case UIActionType.ClearKeyframeDraft: {
+      return { ...state, keyframeDraft: undefined };
     }
     case UIActionType.SetCopy: {
       if (sameCopySettings(state.copy, action.value)) return state;

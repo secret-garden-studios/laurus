@@ -32,6 +32,11 @@ import {
 } from "../workspace.server";
 import Toggle from "@/app/components/toggle";
 import { LIGHT_SHADOW_MAX, LIGHT_SPREAD_MAX, LIGHT_INTENSITY_MAX } from "../workspace.config";
+import { maskLightInputId, maskObjectInputId } from "../effects-utils";
+import { toKeyframePreview } from "../keyframe-preview";
+import { resolveTargetsAt, type LightSourceTargets } from "../keyframe-writer";
+import { OBJECT_FILL_DEFAULT, toEquationObjectFill, toObjectFillEquationFields } from "../workspace.server";
+import { NEUTRAL_MASK_OBJECT_FALLOFF, OBJECT_ELEVATION_DEFAULT } from "../mask-gl";
 import { dellaRespira, italiana } from "@/app/fonts";
 
 const GRIDLINES_OPTIONS = [
@@ -45,6 +50,28 @@ const LIGHT_PREVIEW_SIZE_MAX = 300;
 const LIGHT_PREVIEW_SPREAD_MIN = 20;
 const LIGHT_PREVIEW_SPREAD_MAX = 1000;
 
+function lightRestingTargets(light: LaurusLight): LightSourceTargets {
+  return {
+    light_intensity: light.intensity,
+    light_spread: light.spread,
+    light_shadow: light.shadow,
+    object_elevation: OBJECT_ELEVATION_DEFAULT,
+    object_falloff: NEUTRAL_MASK_OBJECT_FALLOFF,
+    ...toObjectFillEquationFields(OBJECT_FILL_DEFAULT),
+  };
+}
+
+function objectRestingTargets(object: LaurusObject | undefined): LightSourceTargets {
+  return {
+    light_intensity: 0,
+    light_spread: 0,
+    light_shadow: 0,
+    object_elevation: object?.elevation ?? OBJECT_ELEVATION_DEFAULT,
+    object_falloff: object?.falloff ?? NEUTRAL_MASK_OBJECT_FALLOFF,
+    ...toObjectFillEquationFields(object ? toObjectFill(object) : OBJECT_FILL_DEFAULT),
+  };
+}
+
 export default function LightSourcebar() {
   const { uiState, uiDispatch } = useContext(UIContext);
   const { coreState, dispatch } = useContext(CoreContext);
@@ -56,8 +83,10 @@ export default function LightSourcebar() {
     notifyMaskAppearanceChanged,
     notifyMaskLightSourcePreviewToggled,
     notifyMaskLightUpdated,
+    notifyMaskKeyframePreview,
     notifyMaskPendingTopologySet,
     notifyMaskPendingTopologyCleared,
+    notifyMaskPendingTopologySettle,
     notifyMaskObjectsUpdated,
     notifyMaskHighlightSuppressed,
     ...mask
@@ -287,10 +316,39 @@ export default function LightSourcebar() {
     coreState.pendingTopologyEdit?.objectId === selectedObject.id
       ? coreState.pendingTopologyEdit
       : undefined;
-  const elevationValue = pendingObjectEdit?.elevation ?? selectedObject?.elevation ?? uiState.stagedObject.elevation;
-  const objectFalloffValue = pendingObjectEdit?.falloff ?? selectedObject?.falloff ?? uiState.stagedObject.falloff;
-  const fillValue =
-    pendingObjectEdit?.fill ?? (selectedObject ? toObjectFill(selectedObject) : uiState.stagedObject.fill);
+  const keyframing = uiState.playheadSeconds > 0;
+  const keyframeDraft = uiState.keyframeDraft;
+
+  const keyframeTargetsFor = useCallback(
+    (inputId: string | undefined, resting: LightSourceTargets): LightSourceTargets | undefined => {
+      if (!keyframing || inputId === undefined) return undefined;
+      const base = resolveTargetsAt(coreState.effects, inputId, uiState.playheadSeconds, resting);
+      const draftApplies = keyframeDraft?.inputId === inputId && keyframeDraft.timeSeconds === uiState.playheadSeconds;
+      return draftApplies ? { ...base, ...keyframeDraft.targets } : base;
+    },
+    [keyframing, coreState.effects, uiState.playheadSeconds, keyframeDraft],
+  );
+
+  const objectKeyframeTargets = keyframeTargetsFor(
+    selectedObject && selectedObjectMaskKey !== undefined
+      ? maskObjectInputId(selectedObjectMaskKey, selectedObject.id)
+      : undefined,
+    objectRestingTargets(selectedObject),
+  );
+
+  const elevationValue =
+    objectKeyframeTargets?.object_elevation ??
+    pendingObjectEdit?.elevation ??
+    selectedObject?.elevation ??
+    uiState.stagedObject.elevation;
+  const objectFalloffValue =
+    objectKeyframeTargets?.object_falloff ??
+    pendingObjectEdit?.falloff ??
+    selectedObject?.falloff ??
+    uiState.stagedObject.falloff;
+  const fillValue = objectKeyframeTargets
+    ? toEquationObjectFill(objectKeyframeTargets)
+    : (pendingObjectEdit?.fill ?? (selectedObject ? toObjectFill(selectedObject) : uiState.stagedObject.fill));
   const selectedSubElement =
     selectedElement?.type === "light"
       ? `light|${selectedElement.key}|${selectedElement.lightId}`
@@ -451,11 +509,32 @@ export default function LightSourcebar() {
         const patched = applyLightDelta(maskData, updated);
         dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
         notifyMaskLightUpdated(toSave.maskKey, patched);
+        dispatch({
+          type: CoreActionType.SetInputsToRender,
+          value: new Set([maskLightInputId(toSave.maskKey, toSave.light.id)]),
+        });
       }
     } finally {
       isPersistingLightRef.current = false;
     }
   }, [sendMaskLightUpdate, dispatch, notifyMaskLightUpdated]);
+
+  const stageKeyframe = useCallback(
+    (
+      inputId: string,
+      maskKey: string,
+      subject: "light" | "object",
+      subjectId: number,
+      resting: LightSourceTargets,
+      targets: Partial<LightSourceTargets>,
+    ) => {
+      uiDispatch({
+        type: UIActionType.StageKeyframe,
+        value: { inputId, maskKey, subject, subjectId, timeSeconds: uiState.playheadSeconds, resting, targets },
+      });
+    },
+    [uiDispatch, uiState.playheadSeconds],
+  );
 
   const saveLightField = useCallback(
     (field: "intensity" | "spread" | "shadow" | "cast", value: number) => {
@@ -463,6 +542,17 @@ export default function LightSourcebar() {
 
       if (isGuest) {
         alert(UNAUTHORIZED_EDIT);
+        return;
+      }
+      if (uiState.playheadSeconds > 0 && field !== "cast") {
+        stageKeyframe(
+          maskLightInputId(selectedLightMaskKey, selectedLight.id),
+          selectedLightMaskKey,
+          "light",
+          selectedLight.id,
+          lightRestingTargets(selectedLight),
+          { [`light_${field}`]: value },
+        );
         return;
       }
       const patched = { ...selectedLight, [field]: value };
@@ -485,17 +575,25 @@ export default function LightSourcebar() {
       dispatch,
       notifyMaskLightUpdated,
       persistLightQueue,
+      uiState.playheadSeconds,
+      stageKeyframe,
     ],
   );
 
-  const lightIntensityValue = selectedLight?.intensity ?? 0;
+  const lightKeyframeTargets = keyframeTargetsFor(
+    selectedLight && selectedLightMaskKey !== undefined
+      ? maskLightInputId(selectedLightMaskKey, selectedLight.id)
+      : undefined,
+    selectedLight ? lightRestingTargets(selectedLight) : objectRestingTargets(undefined),
+  );
+  const lightIntensityValue = lightKeyframeTargets?.light_intensity ?? selectedLight?.intensity ?? 0;
   const handleLightIntensityChange = useCallback(
     (value: number) => saveLightField("intensity", value),
     [saveLightField],
   );
-  const lightSpreadValue = selectedLight?.spread ?? 0;
+  const lightSpreadValue = lightKeyframeTargets?.light_spread ?? selectedLight?.spread ?? 0;
   const handleLightSpreadChange = useCallback((value: number) => saveLightField("spread", value), [saveLightField]);
-  const lightShadowValue = selectedLight?.shadow ?? 0;
+  const lightShadowValue = lightKeyframeTargets?.light_shadow ?? selectedLight?.shadow ?? 0;
   const handleLightShadowChange = useCallback((value: number) => saveLightField("shadow", value), [saveLightField]);
   const lightCastValue = selectedLight?.cast ?? LIGHT_CAST_ENDLESS;
   const handleLightCastChange = useCallback((value: number) => saveLightField("cast", value), [saveLightField]);
@@ -528,6 +626,7 @@ export default function LightSourcebar() {
     if (isPersistingObjectRef.current) return;
     isPersistingObjectRef.current = true;
     let settledMaskKey: string | undefined;
+    let awaitsFrames = false;
     try {
       while (pendingObjectSaveRef.current) {
         const toSave = pendingObjectSaveRef.current;
@@ -547,16 +646,31 @@ export default function LightSourcebar() {
         const patched = applyObjectDelta(maskData, updated);
         dispatch({ type: CoreActionType.SetCanvasMask, key: toSave.maskKey, value: patched });
         notifyMaskObjectsUpdated(toSave.maskKey, patched);
+        dispatch({
+          type: CoreActionType.SetInputsToRender,
+          value: new Set([maskObjectInputId(toSave.maskKey, toSave.object.id)]),
+        });
+        awaitsFrames = true;
       }
     } finally {
       isPersistingObjectRef.current = false;
       setPendingLift(undefined);
       if (settledMaskKey !== undefined) {
-        dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
-        notifyMaskPendingTopologyCleared(settledMaskKey);
+        if (awaitsFrames) {
+          notifyMaskPendingTopologySettle(settledMaskKey);
+        } else {
+          dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+          notifyMaskPendingTopologyCleared(settledMaskKey);
+        }
       }
     }
-  }, [sendMaskObjectUpdate, dispatch, notifyMaskObjectsUpdated, notifyMaskPendingTopologyCleared]);
+  }, [
+    sendMaskObjectUpdate,
+    dispatch,
+    notifyMaskObjectsUpdated,
+    notifyMaskPendingTopologyCleared,
+    notifyMaskPendingTopologySettle,
+  ]);
 
   const selectedObjectPolygonIndices = useMemo(
     () =>
@@ -585,6 +699,14 @@ export default function LightSourcebar() {
     [selectedObjectMaskKey, selectedObject, selectedObjectPolygonIndices],
   );
 
+  const objectKeyframePatch = useCallback((patch: ObjectPatch): Partial<LightSourceTargets> => {
+    return {
+      ...(patch.elevation !== undefined ? { object_elevation: patch.elevation } : {}),
+      ...(patch.falloff !== undefined ? { object_falloff: patch.falloff } : {}),
+      ...(patch.fill !== undefined ? toObjectFillEquationFields(patch.fill) : {}),
+    };
+  }, []);
+
   const saveObjectField = useCallback(
     (patch: ObjectPatch): boolean => {
       const edit = mergeObjectPatch(patch);
@@ -598,6 +720,24 @@ export default function LightSourcebar() {
       }
       const maskData = coreState.canvasMasks.get(edit.maskKey);
       if (!maskData) return false;
+
+      if (uiState.playheadSeconds > 0 && patch.lift === undefined) {
+        const object = maskData.objects.find((p) => p.id === edit.objectId);
+        const keyframePatch = objectKeyframePatch(patch);
+        if (Object.keys(keyframePatch).length > 0) {
+          dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: undefined });
+          notifyMaskPendingTopologyCleared(edit.maskKey);
+          stageKeyframe(
+            maskObjectInputId(edit.maskKey, edit.objectId),
+            edit.maskKey,
+            "object",
+            edit.objectId,
+            objectRestingTargets(object),
+            keyframePatch,
+          );
+          return true;
+        }
+      }
 
       dispatch({ type: CoreActionType.SetPendingTopologyEdit, value: edit });
       notifyMaskPendingTopologySet(edit.maskKey, edit);
@@ -634,19 +774,53 @@ export default function LightSourcebar() {
       uiDispatch,
       persistObjectQueue,
       toStagedObjectPatch,
+      uiState.playheadSeconds,
+      stageKeyframe,
+      objectKeyframePatch,
+      notifyMaskPendingTopologyCleared,
     ],
   );
 
   const previewObjectChange = useCallback(
     (patch: ObjectPatch) => {
       const edit = mergeObjectPatch(patch);
-      if (edit) {
-        notifyMaskPendingTopologySet(edit.maskKey, edit);
-      } else {
+      if (!edit) {
         uiDispatch({ type: UIActionType.SetStagedObject, value: toStagedObjectPatch(patch) });
+        return;
       }
+      if (uiState.playheadSeconds > 0 && patch.lift === undefined) {
+        const keyframePatch = objectKeyframePatch(patch);
+        if (Object.keys(keyframePatch).length > 0) {
+          const object = coreState.canvasMasks.get(edit.maskKey)?.objects.find((p) => p.id === edit.objectId);
+          const staged = uiState.keyframeDraft;
+          const carried =
+            staged?.inputId === maskObjectInputId(edit.maskKey, edit.objectId) &&
+            staged.timeSeconds === uiState.playheadSeconds
+              ? staged.targets
+              : {};
+          notifyMaskKeyframePreview(
+            edit.maskKey,
+            toKeyframePreview("object", edit.objectId, objectRestingTargets(object), {
+              ...carried,
+              ...keyframePatch,
+            }),
+          );
+          return;
+        }
+      }
+      notifyMaskPendingTopologySet(edit.maskKey, edit);
     },
-    [mergeObjectPatch, notifyMaskPendingTopologySet, uiDispatch, toStagedObjectPatch],
+    [
+      mergeObjectPatch,
+      notifyMaskPendingTopologySet,
+      uiDispatch,
+      toStagedObjectPatch,
+      uiState.playheadSeconds,
+      uiState.keyframeDraft,
+      objectKeyframePatch,
+      coreState.canvasMasks,
+      notifyMaskKeyframePreview,
+    ],
   );
 
   const elevationTrackRef = useRef<HTMLDivElement | null>(null);
