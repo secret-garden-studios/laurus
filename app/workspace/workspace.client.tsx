@@ -58,7 +58,7 @@ import {
 import Statusbar from "./bars/statusbar";
 import Canvas from "./canvas";
 import MediaBrowser from "./browsers/media-browser";
-import { moreVert, playArrow, SvgRepo, getCrops, LaurusCropSvg } from "../svg-repo";
+import { moreVert, playArrow, stopIcon, SvgRepo, getCrops, LaurusCropSvg, LaurusClientSvg } from "../svg-repo";
 import { DraggableProjectImg } from "./canvas-media/draggable-project-img";
 import { DraggableProjectSvg } from "./canvas-media/draggable-project-svg";
 import { DraggableProjectMask } from "./canvas-media/draggable-project-mask";
@@ -951,38 +951,23 @@ export default function Workspace({
         return {
           playContainer: 44,
           playSvg: 44,
-          playBottom: 100,
+          playBottom: 70,
           playLeft: 40,
-          recordingWidth: 14,
-          recordingHeight: 14,
-          recordingBottom: 115,
-          recordingRight1: 506,
-          recordingRight2: 86,
         };
       case "midhigh":
         return {
           playContainer: 44,
           playSvg: 44,
-          playBottom: 80,
+          playBottom: 70,
           playLeft: 40,
-          recordingWidth: 14,
-          recordingHeight: 14,
-          recordingBottom: 95,
-          recordingRight1: 366,
-          recordingRight2: 66,
         };
       case "low":
       case "midlow":
         return {
-          playContainer: 40,
-          playSvg: 40,
-          playBottom: 80,
-          playLeft: 40,
-          recordingWidth: 14,
-          recordingHeight: 14,
-          recordingBottom: 95,
-          recordingRight1: 336,
-          recordingRight2: 66,
+          playContainer: 36,
+          playSvg: 36,
+          playBottom: 50,
+          playLeft: 28,
         };
     }
   });
@@ -2287,6 +2272,17 @@ export default function Workspace({
     uiDispatch({ type: UIActionType.SetFilledForwards, value: false });
   }, [uiDispatch, uiState.playbackMode.type]);
 
+  const minifiedControlIcon = useMemo<LaurusClientSvg>(() => {
+    switch (uiState.playbackMode.type) {
+      case "stopped":
+        return playArrow();
+      case "playing":
+        return stopIcon();
+      case "waiting":
+        return playArrow("rgb(67,67,67)");
+    }
+  }, [uiState.playbackMode.type]);
+
   useEffect(() => {
     discardScrub();
   }, [coreState.effects, coreState.effectGroups, discardScrub]);
@@ -2831,41 +2827,40 @@ export default function Workspace({
                             width: minifiedControlsSize.playContainer,
                             height: minifiedControlsSize.playContainer,
                             borderRadius: "50%",
+                            display: "grid",
+                            placeContent: "center",
                             border: "1px solid rgba(255, 255, 255, 0.1)",
                             background: "rgb(32, 32, 32)",
                             boxShadow: "rgba(0 ,0, 0, 0.4) 2px 2px 4px 0px",
                           }}
                         >
                           <SvgRepo
-                            svg={uiState.playbackMode.type === "stopped" ? playArrow() : playArrow("rgb(67,67,67)")}
+                            title={uiState.playbackMode.type === "playing" ? "stop all" : "play all"}
+                            svg={minifiedControlIcon}
                             containerStyle={{
                               width: minifiedControlsSize.playSvg,
                               height: minifiedControlsSize.playSvg,
-                              cursor: uiState.playbackMode.type === "stopped" ? "pointer" : "progress",
+                              cursor: uiState.playbackMode.type === "waiting" ? "progress" : "pointer",
                             }}
-                            scale={0.5}
+                            scale={uiState.playbackMode.type === "playing" ? 0.5 : 0.6}
                             scaleToContaier={true}
-                            onContainerClick={handlePlayAll}
+                            onContainerClick={() => {
+                              switch (uiState.playbackMode.type) {
+                                case "stopped": {
+                                  handlePlayAll();
+                                  break;
+                                }
+                                case "playing": {
+                                  handleStopAll();
+                                  break;
+                                }
+                                case "waiting": {
+                                  return;
+                                }
+                              }
+                            }}
                           />
                         </div>
-                        <div
-                          style={{
-                            zIndex: Z_INDEX.FLOATING_CONTROLS,
-                            position: "fixed",
-                            bottom: minifiedControlsSize.recordingBottom,
-                            right: uiState.showMediaBrowser
-                              ? minifiedControlsSize.recordingRight1
-                              : minifiedControlsSize.recordingRight2,
-                            width: minifiedControlsSize.recordingWidth,
-                            height: minifiedControlsSize.recordingHeight,
-                            borderRadius: "50%",
-                            border: uiState.recordingLight ? "1px solid rgb(239, 239, 239)" : "none",
-                            background: uiState.recordingLight
-                              ? "linear-gradient(270deg, rgb(224, 224, 224), rgb(255, 255, 255))"
-                              : "none",
-                            boxShadow: uiState.recordingLight ? "rgba(255, 255, 255, 1) 0px 0px 100px 10px" : "none",
-                          }}
-                        />
                       </>
                     )}
                   </div>
